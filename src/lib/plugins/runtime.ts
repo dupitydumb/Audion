@@ -11,8 +11,17 @@ import {
   togglePlay,
   nextTrack,
   previousTrack,
-  seek
+  seek,
+  pluginEvents,
+  addToQueue,
+  removeFromQueue,
+  reorderQueue,
+  clearUpcoming
 } from '$lib/stores/player';
+import { PluginStorage } from './plugin-storage';
+import { RateLimiter, RATE_LIMITS } from './rate-limiter';
+import type { EventListener } from './event-emitter';
+import { uiSlotManager, type UISlotName } from './ui-slots';
 
 export interface WasmPluginExports {
   init?: () => void;
@@ -28,6 +37,12 @@ export interface LoadedPlugin {
   enabled: boolean;
   grantedPermissions: string[];
   loadedAt: number;
+  storage: PluginStorage;
+  rateLimiters: {
+    api: RateLimiter;
+    storage: RateLimiter;
+  };
+  eventListeners: Map<string, EventListener[]>;
 }
 
 export interface PluginRuntimeConfig {
@@ -43,6 +58,14 @@ export class PluginRuntime {
 
   constructor(config: PluginRuntimeConfig) {
     this.config = config;
+  }
+
+  // Create rate limiters for a plugin
+  private createRateLimiters() {
+    return {
+      api: new RateLimiter(RATE_LIMITS.API_CALLS),
+      storage: new RateLimiter(RATE_LIMITS.STORAGE_WRITES)
+    };
   }
 
   // Grant permissions for a plugin
@@ -83,7 +106,10 @@ export class PluginRuntime {
           instance,
           enabled: true,
           grantedPermissions: this.grantedPermissions.get(manifest.name) || [],
-          loadedAt: Date.now()
+          loadedAt: Date.now(),
+          storage: new PluginStorage(manifest.name),
+          rateLimiters: this.createRateLimiters(),
+          eventListeners: new Map()
         };
 
         // Call init if available
@@ -129,7 +155,10 @@ export class PluginRuntime {
         instance: exports,
         enabled: true,
         grantedPermissions: this.grantedPermissions.get(manifest.name) || [],
-        loadedAt: Date.now()
+        loadedAt: Date.now(),
+        storage: new PluginStorage(manifest.name),
+        rateLimiters: this.createRateLimiters(),
+        eventListeners: new Map()
       };
 
       // Call lifecycle hooks
@@ -149,37 +178,38 @@ export class PluginRuntime {
     const api: Record<string, Function> = {};
 
     if (this.hasPermission(pluginName, 'player:control')) {
-      api.play = () => this.callHost('player.play');
-      api.pause = () => this.callHost('player.pause');
-      api.seek = (time: number) => this.callHost('player.seek', time);
-      api.next = () => this.callHost('player.next');
-      api.prev = () => this.callHost('player.prev');
+      api.play = () => this.callHost(pluginName, 'player.play');
+      api.pause = () => this.callHost(pluginName, 'player.pause');
+      api.seek = (time: number) => this.callHost(pluginName, 'player.seek', time);
+      api.next = () => this.callHost(pluginName, 'player.next');
+      api.prev = () => this.callHost(pluginName, 'player.prev');
     }
 
     if (this.hasPermission(pluginName, 'player:read')) {
-      api.getCurrentTime = () => this.callHost('player.getCurrentTime');
-      api.getDuration = () => this.callHost('player.getDuration');
-      api.isPlaying = () => this.callHost('player.isPlaying');
+      api.getCurrentTime = () => this.callHost(pluginName, 'player.getCurrentTime');
+      api.getDuration = () => this.callHost(pluginName, 'player.getDuration');
+      api.isPlaying = () => this.callHost(pluginName, 'player.isPlaying');
     }
 
     if (this.hasPermission(pluginName, 'library:read')) {
-      api.getTracks = () => this.callHost('library.getTracks');
-      api.getPlaylists = () => this.callHost('library.getPlaylists');
+      api.getTracks = () => this.callHost(pluginName, 'library.getTracks');
+      api.getPlaylists = () => this.callHost(pluginName, 'library.getPlaylists');
     }
 
     if (this.hasPermission(pluginName, 'ui:inject')) {
-      api.injectUI = (slot: string, html: string) => this.callHost('ui.inject', slot, html);
+      // For WASM, we pass the raw HTML string
+      api.injectUI = (slot: string, html: string, priority: number) =>
+        this.callHost(pluginName, 'ui.inject', slot, html, priority);
     }
 
     if (this.hasPermission(pluginName, 'storage:local')) {
-      api.storageGet = (key: string) => this.callHost('storage.get', pluginName, key);
-      api.storageSet = (key: string, value: string) => this.callHost('storage.set', pluginName, key, value);
+      api.storageGet = (key: string) => this.callHost(pluginName, 'storage.get', key);
+      api.storageSet = (key: string, value: string) => this.callHost(pluginName, 'storage.set', key, value);
     }
 
     // Log for ungated functions
-    api.log = (ptr: number, len: number) => {
-      // For WASM string handling, we'd need memory access
-      console.log(`[Plugin:${pluginName}] log called`);
+    api.log = (_ptr: number, _len: number) => {
+      // WASM string logging - would need memory access for full implementation
     };
 
     return api;
@@ -193,7 +223,19 @@ export class PluginRuntime {
   }
 
   // Host function call dispatcher - connects plugins to Audion APIs
-  private callHost(method: string, ...args: any[]): any {
+  private callHost(pluginName: string, method: string, ...args: any[]): any {
+    const plugin = this.plugins.get(pluginName);
+    if (!plugin) {
+      console.error(`[PluginRuntime] Plugin not found: ${pluginName}`);
+      return null;
+    }
+
+    // Rate limit API calls
+    if (!plugin.rateLimiters.api.tryConsume()) {
+      console.warn(`[PluginRuntime:${pluginName}] Rate limited`);
+      return null;
+    }
+
     switch (method) {
       // Player read APIs
       case 'player.getCurrentTrack':
@@ -239,16 +281,68 @@ export class PluginRuntime {
         }
         return false;
 
-      // Storage APIs (simple localStorage wrapper per plugin)
+      // Queue manipulation APIs
+      case 'player.addToQueue':
+        if (Array.isArray(args[0])) {
+          addToQueue(args[0]);
+          return true;
+        }
+        return false;
+
+      case 'player.removeFromQueue':
+        if (typeof args[0] === 'number') {
+          removeFromQueue(args[0]);
+          return true;
+        }
+        return false;
+
+      case 'player.reorderQueue':
+        if (typeof args[0] === 'number' && typeof args[1] === 'number') {
+          reorderQueue(args[0], args[1]);
+          return true;
+        }
+        return false;
+
+      case 'player.clearUpcoming':
+        clearUpcoming();
+        return true;
+
+      case 'player.clearUpcoming':
+        clearUpcoming();
+        return true;
+
+      // UI Injection APIs
+      case 'ui.inject':
+        // args: [slotName, html, priority]
+        if (typeof args[0] === 'string' && typeof args[1] === 'string') {
+          const slotName = args[0] as UISlotName;
+          const html = args[1];
+          const priority = typeof args[2] === 'number' ? args[2] : 50;
+
+          // Create a container element for the HTML
+          const element = document.createElement('div');
+          element.innerHTML = html;
+
+          uiSlotManager.addContent(slotName, {
+            pluginName,
+            element,
+            priority
+          });
+          return true;
+        }
+        return false;
+
+      // Storage APIs (using PluginStorage)
       case 'storage.get':
-        const getKey = `audion_plugin_${args[0]}_${args[1]}`;
-        const stored = localStorage.getItem(getKey);
-        return stored ? JSON.parse(stored) : null;
+        return plugin.storage.get(args[0]);
 
       case 'storage.set':
-        const setKey = `audion_plugin_${args[0]}_${args[1]}`;
-        localStorage.setItem(setKey, JSON.stringify(args[2]));
-        return true;
+        // Rate limit storage writes
+        if (!plugin.rateLimiters.storage.tryConsume()) {
+          console.warn(`[PluginRuntime:${pluginName}] Storage write rate limited`);
+          return false;
+        }
+        return plugin.storage.set(args[0], args[1]);
 
       default:
         console.warn(`[PluginRuntime] Unknown host method: ${method}`);
@@ -258,35 +352,96 @@ export class PluginRuntime {
 
   // Get API surface for JS plugins
   private getPluginApi(pluginName: string): Record<string, any> {
+    const plugin = this.plugins.get(pluginName);
+
     const api: Record<string, any> = {
       version: '1.0.0',
       pluginName
     };
 
+    // Event system (always available)
+    api.on = <K extends keyof import('./event-emitter').PluginEvents>(
+      event: K,
+      listener: EventListener
+    ) => {
+      if (!plugin) return;
+
+      pluginEvents.on(event, listener);
+
+      // Track listener for cleanup
+      if (!plugin.eventListeners.has(event as string)) {
+        plugin.eventListeners.set(event as string, []);
+      }
+      plugin.eventListeners.get(event as string)!.push(listener);
+    };
+
+    api.off = <K extends keyof import('./event-emitter').PluginEvents>(
+      event: K,
+      listener: EventListener
+    ) => {
+      if (!plugin) return;
+
+      pluginEvents.off(event, listener);
+
+      // Remove from tracked listeners
+      const listeners = plugin.eventListeners.get(event as string);
+      if (listeners) {
+        const index = listeners.indexOf(listener);
+        if (index > -1) listeners.splice(index, 1);
+      }
+    };
+
+    api.once = <K extends keyof import('./event-emitter').PluginEvents>(
+      event: K,
+      listener: EventListener
+    ) => {
+      pluginEvents.once(event, listener);
+    };
+
     if (this.hasPermission(pluginName, 'player:control')) {
       api.player = {
-        play: () => this.callHost('player.play'),
-        pause: () => this.callHost('player.pause'),
-        seek: (time: number) => this.callHost('player.seek', time),
-        next: () => this.callHost('player.next'),
-        prev: () => this.callHost('player.prev')
+        play: () => this.callHost(pluginName, 'player.play'),
+        pause: () => this.callHost(pluginName, 'player.pause'),
+        seek: (time: number) => this.callHost(pluginName, 'player.seek', time),
+        next: () => this.callHost(pluginName, 'player.next'),
+        prev: () => this.callHost(pluginName, 'player.prev'),
+        addToQueue: (tracks: any[]) => this.callHost(pluginName, 'player.addToQueue', tracks),
+        removeFromQueue: (index: number) => this.callHost(pluginName, 'player.removeFromQueue', index),
+        reorderQueue: (from: number, to: number) => this.callHost(pluginName, 'player.reorderQueue', from, to),
+        clearUpcoming: () => this.callHost(pluginName, 'player.clearUpcoming')
       };
     }
 
     if (this.hasPermission(pluginName, 'player:read')) {
       api.player = {
         ...api.player,
-        getCurrentTime: () => this.callHost('player.getCurrentTime'),
-        getDuration: () => this.callHost('player.getDuration'),
-        isPlaying: () => this.callHost('player.isPlaying'),
-        getCurrentTrack: () => this.callHost('player.getCurrentTrack')
+        getCurrentTime: () => this.callHost(pluginName, 'player.getCurrentTime'),
+        getDuration: () => this.callHost(pluginName, 'player.getDuration'),
+        isPlaying: () => this.callHost(pluginName, 'player.isPlaying'),
+        getCurrentTrack: () => this.callHost(pluginName, 'player.getCurrentTrack'),
+        getQueue: () => this.callHost(pluginName, 'player.getQueue')
       };
     }
 
     if (this.hasPermission(pluginName, 'storage:local')) {
       api.storage = {
-        get: (key: string) => this.callHost('storage.get', pluginName, key),
-        set: (key: string, value: any) => this.callHost('storage.set', pluginName, key, value)
+        get: (key: string) => this.callHost(pluginName, 'storage.get', key),
+        set: (key: string, value: any) => this.callHost(pluginName, 'storage.set', key, value)
+      };
+    }
+
+    if (this.hasPermission(pluginName, 'ui:inject')) {
+      api.ui = {
+        registerSlot: (slotName: UISlotName, element: HTMLElement, priority: number = 50) => {
+          uiSlotManager.addContent(slotName, {
+            pluginName,
+            element,
+            priority
+          });
+        },
+        unregisterSlot: (slotName: UISlotName) => {
+          uiSlotManager.removeContent(slotName, pluginName);
+        }
       };
     }
 
@@ -319,6 +474,17 @@ export class PluginRuntime {
   async unloadPlugin(name: string): Promise<void> {
     const plugin = this.plugins.get(name);
     if (!plugin) return;
+
+    // Remove all event listeners
+    plugin.eventListeners.forEach((listeners, event) => {
+      listeners.forEach(listener => {
+        pluginEvents.off(event as any, listener);
+      });
+    });
+    plugin.eventListeners.clear();
+
+    // Remove all UI slot content
+    uiSlotManager.removePluginContent(name);
 
     // Call destroy lifecycle hook
     if (plugin.manifest.type === 'wasm' && plugin.instance.destroy) {

@@ -8,3 +8,9 @@ node_modules
 !.env.example
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# IDE folders
+.vs/
+
+# Rust build artifacts
+src-tauri/target/

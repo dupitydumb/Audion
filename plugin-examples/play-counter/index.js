@@ -1,4 +1,4 @@
-// Play Counter Plugin
+// Play Counter Plugin (Event-Driven Version)
 // Tracks play counts for each song and displays them in the UI
 
 (function () {
@@ -16,19 +16,13 @@
         isVisible: true,
 
         init(api) {
-            console.log('[PlayCounter] Plugin initialized');
-            console.log('[PlayCounter] API received:', api);
+            console.log('[PlayCounter] Plugin initialized with event system');
             this.api = api;
 
             try {
                 this.loadCounts();
-                console.log('[PlayCounter] Counts loaded');
-
                 this.injectStyles();
-                console.log('[PlayCounter] About to create UI');
-
                 this.createUI();
-                console.log('[PlayCounter] UI creation completed');
             } catch (err) {
                 console.error('[PlayCounter] Init error:', err);
             }
@@ -38,26 +32,54 @@
             setTimeout(() => this.createPlayerBarButton(), 500);
             setTimeout(() => this.createPlayerBarButton(), 1500);
 
-            // Monitor track changes
-            this.checkInterval = setInterval(() => this.checkTrack(), 1000);
-            // Update UI periodically
-            this.uiInterval = setInterval(() => this.updateUI(), 500);
+            // Use event system instead of polling!
+            api.on('trackChange', (data) => this.handleTrackChange(data));
+            api.on('playStateChange', (data) => this.handlePlayStateChange(data));
+
+            console.log('[PlayCounter] Event listeners registered');
+        },
+
+        handleTrackChange(data) {
+            const { track, previousTrack } = data;
+
+            // Count previous track if played long enough
+            if (previousTrack && this.playStartTime) {
+                const playDuration = Date.now() - this.playStartTime;
+                if (playDuration >= this.MIN_PLAY_TIME) {
+                    this.incrementCount(previousTrack.id);
+                }
+            }
+
+            // Set up for new track
+            this.lastTrackId = track?.id || null;
+            const isPlaying = this.api?.player?.isPlaying?.();
+            this.playStartTime = (track && isPlaying) ? Date.now() : null;
+
+            // Update UI immediately
+            this.updateUI();
+        },
+
+        handlePlayStateChange(data) {
+            const { isPlaying } = data;
+
+            if (isPlaying && !this.playStartTime && this.lastTrackId) {
+                // Track resumed
+                this.playStartTime = Date.now();
+            } else if (!isPlaying && this.playStartTime) {
+                // Track paused
+                this.playStartTime = null;
+            }
         },
 
         injectStyles() {
-            try {
-                console.log('[PlayCounter] Creating style element...');
+            // Check if styles already exist
+            if (document.getElementById('play-counter-styles')) {
+                return;
+            }
 
-                // Check if styles already exist
-                if (document.getElementById('play-counter-styles')) {
-                    console.log('[PlayCounter] Styles already injected, skipping');
-                    return;
-                }
-
-                // Inject CSS for the play counter display
-                const style = document.createElement('style');
-                style.id = 'play-counter-styles';
-                style.textContent = `
+            const style = document.createElement('style');
+            style.id = 'play-counter-styles';
+            style.textContent = `
                 #play-counter-widget {
                     position: fixed;
                     bottom: 120px;
@@ -179,13 +201,6 @@
                     margin-bottom: 2px;
                 }
 
-                .play-counter-no-track {
-                    text-align: center;
-                    color: #6a6a6a;
-                    font-size: 12px;
-                    padding: 8px;
-                }
-
                 #play-counter-widget.minimized {
                     min-width: auto;
                     padding: 12px 16px;
@@ -230,29 +245,20 @@
                     color: #ffffff;
                 }
             `;
-                document.head.appendChild(style);
-                console.log('[PlayCounter] Styles injected successfully');
-            } catch (err) {
-                console.error('[PlayCounter] Style injection error:', err);
-            }
+            document.head.appendChild(style);
         },
 
         createUI() {
-            try {
-                console.log('[PlayCounter] Creating widget element...');
+            // Check if widget already exists
+            let widget = document.getElementById('play-counter-widget');
+            if (widget) {
+                this.uiElement = widget;
+                return;
+            }
 
-                // Check if widget already exists in DOM
-                let widget = document.getElementById('play-counter-widget');
-                if (widget) {
-                    console.log('[PlayCounter] Widget already exists, reusing it');
-                    this.uiElement = widget;
-                    return;
-                }
-
-                // Create the UI widget
-                widget = document.createElement('div');
-                widget.id = 'play-counter-widget';
-                widget.innerHTML = `
+            widget = document.createElement('div');
+            widget.id = 'play-counter-widget';
+            widget.innerHTML = `
                 <div class="play-counter-header">
                     <h3>Play Counter</h3>
                     <button class="play-counter-minimize-btn" id="pc-minimize-btn" title="Minimize">−</button>
@@ -275,62 +281,45 @@
                     </div>
                 </div>
             `;
-                console.log('[PlayCounter] Appending widget to body...');
-                document.body.appendChild(widget);
-                this.uiElement = widget;
+            document.body.appendChild(widget);
+            this.uiElement = widget;
 
-                // Add minimize button listener
-                const minimizeBtn = document.getElementById('pc-minimize-btn');
-                if (minimizeBtn) {
-                    minimizeBtn.addEventListener('click', () => this.toggleMinimize());
-                }
-
-                console.log('[PlayCounter] Widget appended, element:', this.uiElement);
-            } catch (err) {
-                console.error('[PlayCounter] UI creation error:', err);
+            // Add minimize button listener
+            const minimizeBtn = document.getElementById('pc-minimize-btn');
+            if (minimizeBtn) {
+                minimizeBtn.addEventListener('click', () => this.toggleMinimize());
             }
         },
 
         createPlayerBarButton() {
-            try {
-                // Check if button already exists
-                if (document.getElementById('pc-player-bar-btn')) {
-                    console.log('[PlayCounter] Player bar button already exists');
-                    return;
-                }
-
-                // Find the volume-controls section
-                const volumeControls = document.querySelector('.volume-controls');
-                if (!volumeControls) {
-                    console.log('[PlayCounter] Volume controls not found, will retry');
-                    return;
-                }
-
-                // Create toggle button
-                const button = document.createElement('button');
-                button.id = 'pc-player-bar-btn';
-                button.className = 'icon-btn active';
-                button.title = 'Toggle Play Counter';
-                button.innerHTML = `
-                    <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-                        <path d="M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z"/>
-                    </svg>
-                `;
-                button.addEventListener('click', () => this.toggleVisibility());
-
-                // Insert before the volume separator (after Queue and Lyrics buttons)
-                const separator = volumeControls.querySelector('.volume-separator');
-                if (separator) {
-                    volumeControls.insertBefore(button, separator);
-                } else {
-                    volumeControls.insertBefore(button, volumeControls.firstChild);
-                }
-                this.playerBarButton = button;
-
-                console.log('[PlayCounter] Player bar button created');
-            } catch (err) {
-                console.error('[PlayCounter] Player bar button creation error:', err);
+            // Check if button already exists
+            if (document.getElementById('pc-player-bar-btn')) {
+                return;
             }
+
+            const volumeControls = document.querySelector('.volume-controls');
+            if (!volumeControls) {
+                return; // Will retry
+            }
+
+            const button = document.createElement('button');
+            button.id = 'pc-player-bar-btn';
+            button.className = 'icon-btn active';
+            button.title = 'Toggle Play Counter';
+            button.innerHTML = `
+                <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+                    <path d="M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z"/>
+                </svg>
+            `;
+            button.addEventListener('click', () => this.toggleVisibility());
+
+            const separator = volumeControls.querySelector('.volume-separator');
+            if (separator) {
+                volumeControls.insertBefore(button, separator);
+            } else {
+                volumeControls.insertBefore(button, volumeControls.firstChild);
+            }
+            this.playerBarButton = button;
         },
 
         toggleMinimize() {
@@ -407,7 +396,7 @@
             try {
                 const saved = await this.api.storage.get('playCounts');
                 if (saved) {
-                    this.playCounts = JSON.parse(saved);
+                    this.playCounts = saved; // Already parsed by PluginStorage
                     console.log('[PlayCounter] Loaded counts:', Object.keys(this.playCounts).length);
                 }
             } catch (err) {
@@ -419,42 +408,9 @@
             if (!this.api?.storage?.set) return;
 
             try {
-                await this.api.storage.set('playCounts', JSON.stringify(this.playCounts));
+                await this.api.storage.set('playCounts', this.playCounts); // PluginStorage handles serialization
             } catch (err) {
                 console.error('[PlayCounter] Failed to save counts:', err);
-            }
-        },
-
-        async checkTrack() {
-            if (!this.api?.player?.getCurrentTrack) return;
-
-            try {
-                const track = this.api.player.getCurrentTrack();
-                const isPlaying = this.api.player.isPlaying?.();
-
-                if (!track) return;
-
-                // New track started
-                if (track.id !== this.lastTrackId) {
-                    // Count previous track if played long enough
-                    if (this.lastTrackId && this.playStartTime) {
-                        const playDuration = Date.now() - this.playStartTime;
-                        if (playDuration >= this.MIN_PLAY_TIME) {
-                            this.incrementCount(this.lastTrackId);
-                        }
-                    }
-
-                    this.lastTrackId = track.id;
-                    this.playStartTime = isPlaying ? Date.now() : null;
-                } else if (isPlaying && !this.playStartTime) {
-                    // Track resumed
-                    this.playStartTime = Date.now();
-                } else if (!isPlaying && this.playStartTime) {
-                    // Track paused
-                    this.playStartTime = null;
-                }
-            } catch (err) {
-                console.error('[PlayCounter] Error:', err);
             }
         },
 
@@ -462,17 +418,11 @@
             this.playCounts[trackId] = (this.playCounts[trackId] || 0) + 1;
             console.log(`[PlayCounter] Track ${trackId} played ${this.playCounts[trackId]} times`);
             this.saveCounts();
-            this.updateUI(); // Update UI immediately when count changes
+            this.updateUI();
         },
 
         getCount(trackId) {
             return this.playCounts[trackId] || 0;
-        },
-
-        getTopTracks(limit = 10) {
-            return Object.entries(this.playCounts)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, limit);
         },
 
         start() {
@@ -490,12 +440,7 @@
         },
 
         destroy() {
-            if (this.checkInterval) {
-                clearInterval(this.checkInterval);
-            }
-            if (this.uiInterval) {
-                clearInterval(this.uiInterval);
-            }
+            // No more intervals to clear! Events are auto-cleaned by runtime
             if (this.uiElement) {
                 this.uiElement.remove();
             }

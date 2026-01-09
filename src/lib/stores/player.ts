@@ -2,6 +2,10 @@
 import { writable, derived, get } from 'svelte/store';
 import type { Track } from '$lib/api/tauri';
 import { getAudioSrc } from '$lib/api/tauri';
+import { EventEmitter, type PluginEvents } from '$lib/plugins/event-emitter';
+
+// Plugin event emitter (global singleton for plugin system)
+export const pluginEvents = new EventEmitter<PluginEvents>();
 
 // Current track
 export const currentTrack = writable<Track | null>(null);
@@ -49,10 +53,23 @@ let animationFrameId: number | null = null;
 // High-frequency time update using requestAnimationFrame for smooth lyrics
 function startTimeSync(): void {
     if (animationFrameId !== null) return;
-    
+
+    let lastEventTime = 0;
     const updateTime = () => {
         if (audioElement && !audioElement.paused) {
-            currentTime.set(audioElement.currentTime);
+            const time = audioElement.currentTime;
+            currentTime.set(time);
+
+            // Emit timeUpdate event for plugins (throttled to 250ms)
+            const now = Date.now();
+            if (now - lastEventTime >= 250) {
+                pluginEvents.emit('timeUpdate', {
+                    currentTime: time,
+                    duration: audioElement.duration
+                });
+                lastEventTime = now;
+            }
+
             animationFrameId = requestAnimationFrame(updateTime);
         } else {
             animationFrameId = null;
@@ -88,17 +105,23 @@ export function setAudioElement(element: HTMLAudioElement): void {
     });
     audioElement.addEventListener('play', () => {
         isPlaying.set(true);
+        pluginEvents.emit('playStateChange', { isPlaying: true });
         startTimeSync();
     });
     audioElement.addEventListener('pause', () => {
         isPlaying.set(false);
+        pluginEvents.emit('playStateChange', { isPlaying: false });
         stopTimeSync();
     });
 }
 
 // Play a specific track
 export async function playTrack(track: Track): Promise<void> {
+    const previousTrack = get(currentTrack);
     currentTrack.set(track);
+
+    // Emit trackChange event for plugins
+    pluginEvents.emit('trackChange', { track, previousTrack });
 
     if (audioElement) {
         try {
@@ -116,6 +139,9 @@ export function playTracks(tracks: Track[], startIndex: number = 0): void {
     queue.set(tracks);
     queueIndex.set(startIndex);
     userQueueCount.set(0); // Reset user queue when starting fresh
+
+    // Emit queueChange event for plugins
+    pluginEvents.emit('queueChange', { queue: tracks, index: startIndex });
 
     if (tracks.length > 0 && startIndex < tracks.length) {
         playTrack(tracks[startIndex]);
@@ -171,7 +197,7 @@ export function nextTrack(): void {
 
     queueIndex.set(idx);
     playTrack(q[idx]);
-    
+
     // Decrement user queue count if we consumed a user-added track
     userQueueCount.update(c => Math.max(0, c - 1));
 }
@@ -252,13 +278,17 @@ export function addToQueue(tracks: Track[]): void {
     const userCount = get(userQueueCount);
     // Insert position: after current track + user-added tracks
     const insertPosition = currentIdx + 1 + userCount;
-    
+
     queue.update(q => {
         const newQueue = [...q];
         newQueue.splice(insertPosition, 0, ...tracks);
+
+        // Emit queueChange event for plugins
+        pluginEvents.emit('queueChange', { queue: newQueue, index: currentIdx });
+
         return newQueue;
     });
-    
+
     // Update user queue count
     userQueueCount.update(c => c + tracks.length);
 }
@@ -266,13 +296,13 @@ export function addToQueue(tracks: Track[]): void {
 // Remove track from queue by index
 export function removeFromQueue(index: number): void {
     const currentIdx = get(queueIndex);
-    
+
     queue.update(q => {
         const newQueue = [...q];
         newQueue.splice(index, 1);
         return newQueue;
     });
-    
+
     // Adjust current index if needed
     if (index < currentIdx) {
         queueIndex.update(i => i - 1);
@@ -282,14 +312,14 @@ export function removeFromQueue(index: number): void {
 // Reorder queue (move track from one position to another)
 export function reorderQueue(fromIndex: number, toIndex: number): void {
     const currentIdx = get(queueIndex);
-    
+
     queue.update(q => {
         const newQueue = [...q];
         const [removed] = newQueue.splice(fromIndex, 1);
         newQueue.splice(toIndex, 0, removed);
         return newQueue;
     });
-    
+
     // Adjust current index
     if (fromIndex === currentIdx) {
         queueIndex.set(toIndex);
@@ -312,7 +342,7 @@ export function playFromQueue(index: number): void {
     const q = get(queue);
     const currentIdx = get(queueIndex);
     const userCount = get(userQueueCount);
-    
+
     if (index >= 0 && index < q.length) {
         // Calculate how many user-queued tracks are being skipped
         const userQueueEnd = currentIdx + 1 + userCount;
@@ -325,7 +355,7 @@ export function playFromQueue(index: number): void {
             userQueueCount.set(0);
         }
         // If jumping backwards, keep user queue count as is
-        
+
         queueIndex.set(index);
         playTrack(q[index]);
     }

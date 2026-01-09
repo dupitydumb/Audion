@@ -19,15 +19,16 @@
         setAudioElement,
     } from "$lib/stores/player";
     import { lyricsVisible, toggleLyrics } from "$lib/stores/lyrics";
-    import { 
-        isFullScreen, 
-        toggleFullScreen, 
-        isQueueVisible, 
+    import {
+        isFullScreen,
+        toggleFullScreen,
+        isQueueVisible,
         toggleQueue,
         toggleMiniPlayer,
-        toggleSettings
+        toggleSettings,
     } from "$lib/stores/ui";
     import { formatDuration, getAlbumArtSrc, getAlbum } from "$lib/api/tauri";
+    import { uiSlotManager } from "$lib/plugins/ui-slots";
     import type { Album } from "$lib/api/tauri";
 
     export let audioElementRef: HTMLAudioElement | null = null;
@@ -38,6 +39,10 @@
     let volumeBarElement: HTMLDivElement;
     let isSeeking = false;
     let albumArt: string | null = null;
+
+    // Slot containers
+    let slotStart: HTMLDivElement;
+    let slotEnd: HTMLDivElement;
 
     // Expose audio element for visualizer
     $: audioElementRef = audioElement;
@@ -113,9 +118,22 @@
         window.addEventListener("mousemove", handleGlobalMouseMove);
         window.addEventListener("mouseup", handleGlobalMouseUp);
 
+        window.addEventListener("mousemove", handleGlobalMouseMove);
+        window.addEventListener("mouseup", handleGlobalMouseUp);
+
+        // Register UI slots
+        if (slotStart)
+            uiSlotManager.registerContainer("playerbar:left", slotStart);
+        if (slotEnd)
+            uiSlotManager.registerContainer("playerbar:right", slotEnd);
+
         return () => {
             window.removeEventListener("mousemove", handleGlobalMouseMove);
             window.removeEventListener("mouseup", handleGlobalMouseUp);
+
+            // Unregister slots
+            uiSlotManager.unregisterContainer("playerbar:left");
+            uiSlotManager.unregisterContainer("playerbar:right");
         };
     });
 </script>
@@ -158,6 +176,8 @@
                 <span>No track playing</span>
             </div>
         {/if}
+        <!-- Plugin slot: Left -->
+        <div class="plugin-slot" bind:this={slotStart}></div>
     </div>
 
     <!-- Playback controls -->
@@ -278,6 +298,8 @@
 
     <!-- Volume controls -->
     <div class="volume-controls">
+        <!-- Plugin slot: Right -->
+        <div class="plugin-slot" bind:this={slotEnd}></div>
         <button
             class="icon-btn"
             class:active={$isQueueVisible}
@@ -285,7 +307,9 @@
             title="Queue (Q)"
         >
             <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-                <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z" />
+                <path
+                    d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"
+                />
             </svg>
         </button>
         <button
@@ -394,7 +418,9 @@
             title="Mini Player (P)"
         >
             <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-                <path d="M19 11h-8v6h8v-6zm4 8V4.98C23 3.88 22.1 3 21 3H3c-1.1 0-2 .88-2 1.98V19c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H3V4.97h18v14.05z" />
+                <path
+                    d="M19 11h-8v6h8v-6zm4 8V4.98C23 3.88 22.1 3 21 3H3c-1.1 0-2 .88-2 1.98V19c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H3V4.97h18v14.05z"
+                />
             </svg>
         </button>
         <button
@@ -403,7 +429,9 @@
             title="Settings"
         >
             <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-                <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+                <path
+                    d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"
+                />
             </svg>
         </button>
     </div>
@@ -650,5 +678,11 @@
         width: 80px;
         flex-shrink: 1;
         min-width: 40px;
+    }
+
+    .plugin-slot {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
     }
 </style>

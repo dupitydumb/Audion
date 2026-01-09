@@ -58,10 +58,28 @@
   {#if notInTauri}
     <div class="loading-screen">
       <div class="logo">
-        <svg viewBox="0 0 24 24" fill="currentColor" width="48" height="48">
-          <path
-            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
-          />
+        <svg
+          viewBox="0 0 48 48"
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="4"
+          width="48"
+          height="48"
+        >
+          <path d="M5 42H10"></path><path d="M5 36H10"></path><path d="M5 30H10"
+          ></path><path d="M5 24H10"></path><path d="M16 42H21"></path><path
+            d="M16 36H21"
+          ></path><path d="M16 30H21"></path><path d="M16 24H21"></path><path
+            d="M16 18H21"
+          ></path><path d="M16 12H21"></path><path d="M16 6H21"></path><path
+            d="M27 42H32"
+          ></path><path d="M38 42H43"></path><path d="M27 36H32"></path><path
+            d="M38 36H43"
+          ></path><path d="M27 30H32"></path><path d="M38 30H43"></path><path
+            d="M38 24H43"
+          ></path><path d="M38 18H43"></path>
         </svg>
         <span>Audion</span>
       </div>
@@ -80,12 +98,30 @@
   {:else if isLoading}
     <div class="loading-screen">
       <div class="logo">
-        <svg viewBox="0 0 24 24" fill="currentColor" width="48" height="48">
-          <path
-            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
-          />
+        <svg
+          viewBox="0 0 48 48"
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="4"
+          width="48"
+          height="48"
+        >
+          <path d="M5 42H10"></path><path d="M5 36H10"></path><path d="M5 30H10"
+          ></path><path d="M5 24H10"></path><path d="M16 42H21"></path><path
+            d="M16 36H21"
+          ></path><path d="M16 30H21"></path><path d="M16 24H21"></path><path
+            d="M16 18H21"
+          ></path><path d="M16 12H21"></path><path d="M16 6H21"></path><path
+            d="M27 42H32"
+          ></path><path d="M38 42H43"></path><path d="M27 36H32"></path><path
+            d="M38 36H43"
+          ></path><path d="M27 30H32"></path><path d="M38 30H43"></path><path
+            d="M38 24H43"
+          ></path><path d="M38 18H43"></path>
         </svg>
-        <span>Rlist</span>
+        <span>Audion</span>
       </div>
       <div class="loading-spinner"></div>
       <p>Loading your music library...</p>

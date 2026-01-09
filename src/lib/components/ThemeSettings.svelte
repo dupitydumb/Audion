@@ -22,7 +22,10 @@
 
     function handleClickOutside(e: MouseEvent) {
         const target = e.target as HTMLElement;
-        if (!target.closest('.settings-panel') && !target.closest('.settings-trigger')) {
+        if (
+            !target.closest(".settings-panel") &&
+            !target.closest(".settings-trigger")
+        ) {
             toggleSettings();
         }
     }
@@ -31,28 +34,35 @@
 {#if $isSettingsOpen}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div 
-        class="settings-overlay" 
+    <div
+        class="settings-overlay"
         on:click={handleClickOutside}
         transition:fade={{ duration: 150 }}
     >
         <!-- svelte-ignore a11y_click_events_have_key_events -->
         <!-- svelte-ignore a11y_no_static_element_interactions -->
-        <div 
-            class="settings-panel" 
+        <div
+            class="settings-panel"
             transition:fly={{ x: 300, duration: 300 }}
             on:click|stopPropagation
         >
             <header class="settings-header">
                 <h2>Settings</h2>
-                <button 
-                    class="close-btn" 
+                <button
+                    class="close-btn"
                     on:click={toggleSettings}
                     title="Close settings"
                     aria-label="Close settings"
                 >
-                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                    <svg
+                        viewBox="0 0 24 24"
+                        width="20"
+                        height="20"
+                        fill="currentColor"
+                    >
+                        <path
+                            d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                        />
                     </svg>
                 </button>
             </header>
@@ -61,37 +71,58 @@
                 <!-- Theme Mode -->
                 <section class="settings-section">
                     <h3 class="section-title">Appearance</h3>
-                    
+
                     <div class="setting-item">
                         <span class="setting-label">Theme Mode</span>
                         <div class="theme-modes">
-                            <button 
-                                class="mode-btn" 
-                                class:active={$theme.mode === 'dark'}
-                                on:click={() => handleModeChange('dark')}
+                            <button
+                                class="mode-btn"
+                                class:active={$theme.mode === "dark"}
+                                on:click={() => handleModeChange("dark")}
                             >
-                                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                                    <path d="M9.37 5.51c-.18.64-.27 1.31-.27 1.99 0 4.08 3.32 7.4 7.4 7.4.68 0 1.35-.09 1.99-.27C17.45 17.19 14.93 19 12 19c-3.86 0-7-3.14-7-7 0-2.93 1.81-5.45 4.37-6.49zM12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/>
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    width="20"
+                                    height="20"
+                                    fill="currentColor"
+                                >
+                                    <path
+                                        d="M9.37 5.51c-.18.64-.27 1.31-.27 1.99 0 4.08 3.32 7.4 7.4 7.4.68 0 1.35-.09 1.99-.27C17.45 17.19 14.93 19 12 19c-3.86 0-7-3.14-7-7 0-2.93 1.81-5.45 4.37-6.49zM12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"
+                                    />
                                 </svg>
                                 <span>Dark</span>
                             </button>
-                            <button 
-                                class="mode-btn" 
-                                class:active={$theme.mode === 'light'}
-                                on:click={() => handleModeChange('light')}
+                            <button
+                                class="mode-btn"
+                                class:active={$theme.mode === "light"}
+                                on:click={() => handleModeChange("light")}
                             >
-                                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                                    <path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79 1.42-1.41zM4 10.5H1v2h3v-2zm9-9.95h-2V3.5h2V.55zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41 1.79-1.79zm-3.21 13.7l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM20 10.5v2h3v-2h-3zm-8-5c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm-1 16.95h2V19.5h-2v2.95zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41-1.79 1.8z"/>
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    width="20"
+                                    height="20"
+                                    fill="currentColor"
+                                >
+                                    <path
+                                        d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79 1.42-1.41zM4 10.5H1v2h3v-2zm9-9.95h-2V3.5h2V.55zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41 1.79-1.79zm-3.21 13.7l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM20 10.5v2h3v-2h-3zm-8-5c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm-1 16.95h2V19.5h-2v2.95zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41-1.79 1.8z"
+                                    />
                                 </svg>
                                 <span>Light</span>
                             </button>
-                            <button 
-                                class="mode-btn" 
-                                class:active={$theme.mode === 'system'}
-                                on:click={() => handleModeChange('system')}
+                            <button
+                                class="mode-btn"
+                                class:active={$theme.mode === "system"}
+                                on:click={() => handleModeChange("system")}
                             >
-                                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                                    <path d="M20 18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    width="20"
+                                    height="20"
+                                    fill="currentColor"
+                                >
+                                    <path
+                                        d="M20 18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"
+                                    />
                                 </svg>
                                 <span>System</span>
                             </button>
@@ -102,20 +133,29 @@
                 <!-- Accent Color -->
                 <section class="settings-section">
                     <h3 class="section-title">Accent Color</h3>
-                    
+
                     <div class="setting-item">
                         <div class="color-grid">
                             {#each presetAccents as preset}
-                                <button 
+                                <button
                                     class="color-swatch"
-                                    class:active={$theme.accentColor === preset.color}
+                                    class:active={$theme.accentColor ===
+                                        preset.color}
                                     style="--swatch-color: {preset.color}"
-                                    on:click={() => handleAccentChange(preset.color)}
+                                    on:click={() =>
+                                        handleAccentChange(preset.color)}
                                     title={preset.name}
                                 >
                                     {#if $theme.accentColor === preset.color}
-                                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                                        <svg
+                                            viewBox="0 0 24 24"
+                                            width="16"
+                                            height="16"
+                                            fill="currentColor"
+                                        >
+                                            <path
+                                                d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
+                                            />
                                         </svg>
                                     {/if}
                                 </button>
@@ -129,15 +169,24 @@
                             <span class="setting-label">Custom Colors</span>
                             <div class="color-grid small">
                                 {#each $theme.customAccentColors as color}
-                                    <button 
+                                    <button
                                         class="color-swatch small"
-                                        class:active={$theme.accentColor === color}
+                                        class:active={$theme.accentColor ===
+                                            color}
                                         style="--swatch-color: {color}"
-                                        on:click={() => handleAccentChange(color)}
+                                        on:click={() =>
+                                            handleAccentChange(color)}
                                     >
                                         {#if $theme.accentColor === color}
-                                            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
-                                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                                            <svg
+                                                viewBox="0 0 24 24"
+                                                width="12"
+                                                height="12"
+                                                fill="currentColor"
+                                            >
+                                                <path
+                                                    d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
+                                                />
                                             </svg>
                                         {/if}
                                     </button>
@@ -150,19 +199,22 @@
                     <div class="setting-item">
                         <span class="setting-label">Add Custom Color</span>
                         <div class="custom-color-input">
-                            <input 
-                                type="color" 
+                            <input
+                                type="color"
                                 bind:value={customColorInput}
                                 class="color-picker"
                             />
-                            <input 
-                                type="text" 
+                            <input
+                                type="text"
                                 bind:value={customColorInput}
                                 placeholder="#1DB954"
                                 class="color-text"
                                 maxlength="7"
                             />
-                            <button class="add-btn" on:click={handleCustomColorAdd}>
+                            <button
+                                class="add-btn"
+                                on:click={handleCustomColorAdd}
+                            >
                                 Add
                             </button>
                         </div>
@@ -174,13 +226,41 @@
                     <h3 class="section-title">About</h3>
                     <div class="about-info">
                         <div class="app-logo">
-                            <svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
-                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                            <svg
+                                viewBox="0 0 48 48"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="4"
+                                width="32"
+                                height="32"
+                            >
+                                <path d="M5 42H10"></path><path d="M5 36H10"
+                                ></path><path d="M5 30H10"></path><path
+                                    d="M5 24H10"
+                                ></path><path d="M16 42H21"></path><path
+                                    d="M16 36H21"
+                                ></path><path d="M16 30H21"></path><path
+                                    d="M16 24H21"
+                                ></path><path d="M16 18H21"></path><path
+                                    d="M16 12H21"
+                                ></path><path d="M16 6H21"></path><path
+                                    d="M27 42H32"
+                                ></path><path d="M38 42H43"></path><path
+                                    d="M27 36H32"
+                                ></path><path d="M38 36H43"></path><path
+                                    d="M27 30H32"
+                                ></path><path d="M38 30H43"></path><path
+                                    d="M38 24H43"
+                                ></path><path d="M38 18H43"></path>
                             </svg>
                             <span>Audion</span>
                         </div>
                         <p class="version">Version 1.0.0</p>
-                        <p class="copyright">A modern music player built with Tauri & Svelte</p>
+                        <p class="copyright">
+                            A modern music player built with Tauri & Svelte
+                        </p>
                     </div>
                 </section>
             </div>

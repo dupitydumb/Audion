@@ -62,8 +62,8 @@ function createPluginStore() {
                     onError: (name, err) => {
                         console.error(`[Plugin:${name}] Error:`, err);
                     },
-                    onLoad: (plugin) => {
-                        console.log(`[PluginStore] Loaded plugin: ${plugin.manifest.name}`);
+                    onLoad: (_plugin) => {
+                        // Plugin loaded successfully
                     }
                 });
 
@@ -84,7 +84,6 @@ function createPluginStore() {
                             runtime.grantPermissions(plugin.name, plugin.granted_permissions);
                             await runtime.loadPlugin(plugin.manifest);
                             runtime.enablePlugin(plugin.name);
-                            console.log(`[PluginStore] Auto-loaded enabled plugin: ${plugin.name}`);
                         } catch (err) {
                             console.error(`[PluginStore] Failed to load ${plugin.name}:`, err);
                         }
@@ -211,7 +210,6 @@ function createPluginStore() {
                         await runtime.loadPlugin(plugin.manifest);
                     }
                     runtime.enablePlugin(name);
-                    console.log(`[PluginStore] Enabled plugin: ${name}`);
                 }
 
                 update(s => ({
@@ -236,7 +234,6 @@ function createPluginStore() {
                 // Disable in runtime
                 if (runtime) {
                     runtime.disablePlugin(name);
-                    console.log(`[PluginStore] Disabled plugin: ${name}`);
                 }
 
                 update(s => ({

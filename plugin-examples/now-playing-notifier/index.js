@@ -1,4 +1,4 @@
-// Now Playing Notifier Plugin
+// Now Playing Notifier Plugin (Event-Driven Version)
 // Shows system notifications when track changes
 
 (function () {
@@ -6,39 +6,26 @@
 
     const NowPlayingNotifier = {
         name: 'Now Playing Notifier',
-        lastTrackId: null,
 
         init(api) {
-            console.log('[NowPlayingNotifier] Plugin initialized with API:', api);
+            console.log('[NowPlayingNotifier] Plugin initialized with event system');
             this.api = api;
 
-            // Check for track changes periodically
-            this.checkInterval = setInterval(() => this.checkTrack(), 1000);
+            // Use event system instead of polling!
+            api.on('trackChange', (data) => this.handleTrackChange(data));
+            console.log('[NowPlayingNotifier] Event listener registered');
         },
 
-        checkTrack() {
-            if (!this.api?.player?.getCurrentTrack) {
-                console.log('[NowPlayingNotifier] No getCurrentTrack API');
-                return;
-            }
+        handleTrackChange(data) {
+            const { track } = data;
 
-            try {
-                // API returns value directly (not a promise)
-                const track = this.api.player.getCurrentTrack();
-
-                if (track && track.id !== this.lastTrackId) {
-                    console.log('[NowPlayingNotifier] Track changed:', track.title);
-                    this.lastTrackId = track.id;
-                    this.showNotification(track);
-                }
-            } catch (err) {
-                console.error('[NowPlayingNotifier] Error:', err);
+            if (track) {
+                console.log('[NowPlayingNotifier] Track changed:', track.title);
+                this.showNotification(track);
             }
         },
 
         showNotification(track) {
-            console.log('[NowPlayingNotifier] Showing notification for:', track.title);
-
             if ('Notification' in window) {
                 if (Notification.permission === 'granted') {
                     new Notification('Now Playing', {
@@ -66,9 +53,7 @@
         },
 
         destroy() {
-            if (this.checkInterval) {
-                clearInterval(this.checkInterval);
-            }
+            // No more intervals! Events are auto-cleaned by runtime
             console.log('[NowPlayingNotifier] Plugin destroyed');
         }
     };

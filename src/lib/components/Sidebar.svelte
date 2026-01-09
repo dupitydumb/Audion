@@ -18,10 +18,15 @@
     } from "$lib/stores/view";
     import { selectMusicFolder, scanMusic } from "$lib/api/tauri";
     import { loadLibrary } from "$lib/stores/library";
+    import { uiSlotManager } from "$lib/plugins/ui-slots";
     import MenuBar from "./MenuBar.svelte";
 
     let isScanning = false;
     let scanError: string | null = null;
+
+    // Slot containers
+    let slotTop: HTMLDivElement;
+    let slotBottom: HTMLDivElement;
 
     async function handleAddFolder() {
         try {
@@ -59,6 +64,16 @@
 
     onMount(() => {
         loadPlaylists();
+
+        // Register UI slots
+        if (slotTop) uiSlotManager.registerContainer("sidebar:top", slotTop);
+        if (slotBottom)
+            uiSlotManager.registerContainer("sidebar:bottom", slotBottom);
+
+        return () => {
+            uiSlotManager.unregisterContainer("sidebar:top");
+            uiSlotManager.unregisterContainer("sidebar:bottom");
+        };
     });
 </script>
 
@@ -66,16 +81,35 @@
     <div class="sidebar-header">
         <MenuBar />
         <div class="logo">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
-                <path
-                    d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
-                />
+            <svg
+                viewBox="0 0 48 48"
+                fill="none"
+                stroke="currentColor"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="4"
+                width="32"
+                height="32"
+            >
+                <path d="M5 42H10"></path><path d="M5 36H10"></path><path
+                    d="M5 30H10"
+                ></path><path d="M5 24H10"></path><path d="M16 42H21"
+                ></path><path d="M16 36H21"></path><path d="M16 30H21"
+                ></path><path d="M16 24H21"></path><path d="M16 18H21"
+                ></path><path d="M16 12H21"></path><path d="M16 6H21"
+                ></path><path d="M27 42H32"></path><path d="M38 42H43"
+                ></path><path d="M27 36H32"></path><path d="M38 36H43"
+                ></path><path d="M27 30H32"></path><path d="M38 30H43"
+                ></path><path d="M38 24H43"></path><path d="M38 18H43"></path>
             </svg>
             <span class="logo-text">Audion</span>
         </div>
     </div>
 
     <nav class="sidebar-nav">
+        <!-- Plugin slot: Top -->
+        <div class="plugin-slot" bind:this={slotTop}></div>
+
         <section class="nav-section">
             <h3 class="nav-section-title">Library</h3>
             <ul class="nav-list">
@@ -220,6 +254,9 @@
     </nav>
 
     <div class="sidebar-footer">
+        <!-- Plugin slot: Bottom -->
+        <div class="plugin-slot" bind:this={slotBottom}></div>
+
         <button
             class="add-folder-btn"
             on:click={handleAddFolder}
@@ -407,6 +444,13 @@
         font-size: 0.75rem;
         color: var(--error-color);
         text-align: center;
+    }
+
+    .plugin-slot {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+        margin-bottom: var(--spacing-md);
     }
 
     .animate-spin {
