@@ -206,6 +206,9 @@
                         <span class="track-name truncate"
                             >{track.title || "Unknown Title"}</span
                         >
+                        {#if track.source_type && track.source_type !== "local"}
+                            <span class="quality-tag stream-tag">S</span>
+                        {/if}
                         {#if track.format}
                             <span
                                 class="quality-tag"
@@ -432,6 +435,16 @@
         color: var(--accent-primary);
         border-color: var(--accent-primary);
         background-color: rgba(29, 185, 84, 0.15);
+    }
+
+    .quality-tag.stream-tag {
+        color: var(--accent-primary);
+        border-color: var(--accent-primary);
+        background-color: color-mix(
+            in srgb,
+            var(--accent-primary),
+            transparent 85%
+        );
     }
 
     .track-artist {
