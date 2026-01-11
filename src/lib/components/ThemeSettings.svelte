@@ -202,40 +202,30 @@
             </div>
         </section>
 
-        <!-- Downloads -->
+        <!-- General -->
         <section class="settings-section">
-            <h3 class="section-title">Downloads</h3>
+            <h3 class="section-title">General</h3>
 
             <div class="setting-item">
-                <span class="setting-label">Save Location</span>
-                <div class="path-input-container">
-                    <input
-                        type="text"
-                        class="path-input"
-                        placeholder="Default: Browser Downloads"
-                        bind:value={downloadPath}
-                        on:blur={handleDownloadPathChange}
-                    />
+                <div class="toggle-container">
+                    <div class="toggle-info">
+                        <span class="setting-label">Show Discord Button</span>
+                        <p class="setting-hint">
+                            Show a link to the community Discord in the sidebar
+                        </p>
+                    </div>
                     <button
-                        class="browse-btn"
-                        on:click={browseDownloadLocation}
+                        class="toggle-btn"
+                        class:active={$appSettings.showDiscord}
+                        on:click={() =>
+                            appSettings.setShowDiscord(
+                                !$appSettings.showDiscord,
+                            )}
+                        aria-label="Toggle Discord Button"
                     >
-                        Browse
+                        <div class="toggle-handle"></div>
                     </button>
-                    {#if downloadPath}
-                        <button
-                            class="clear-btn"
-                            on:click={clearDownloadPath}
-                            title="Clear"
-                        >
-                            ✕
-                        </button>
-                    {/if}
                 </div>
-                <p class="setting-hint">
-                    Set a folder for Tidal downloads. Leave empty for browser
-                    downloads.
-                </p>
             </div>
         </section>
 

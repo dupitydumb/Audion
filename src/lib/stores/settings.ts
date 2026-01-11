@@ -5,6 +5,7 @@ export interface AppSettings {
     downloadLocation: string | null;
     autoAddToLibrary: boolean;
     developerMode: boolean;
+    showDiscord: boolean;
 }
 
 const SETTINGS_STORAGE_KEY = 'audion_settings';
@@ -14,6 +15,7 @@ const defaultSettings: AppSettings = {
     downloadLocation: null,
     autoAddToLibrary: false,
     developerMode: false,
+    showDiscord: true,
 };
 
 // Load settings from localStorage
@@ -69,6 +71,14 @@ function createSettingsStore() {
         setDeveloperMode(enabled: boolean) {
             update(state => {
                 const newState = { ...state, developerMode: enabled };
+                saveSettings(newState);
+                return newState;
+            });
+        },
+
+        setShowDiscord(enabled: boolean) {
+            update(state => {
+                const newState = { ...state, showDiscord: enabled };
                 saveSettings(newState);
                 return newState;
             });
