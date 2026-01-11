@@ -123,6 +123,48 @@ api.on('volumeChange', ({ volume }) => { ... });
 - `api.player.getDuration()`
 - `api.player.getQueue()`
 
+### Streaming & External Sources (`api.stream`)
+*Requires `player:control` permission.*
+
+Register resolvers for external music sources (e.g., Tidal, Spotify).
+
+```javascript
+// Register a resolver for 'my-service' tracks
+api.stream.registerResolver('my-service', async (externalId, options) => {
+    // Fetch and return the actual stream URL
+    const url = await fetchStreamUrl(externalId);
+    return url;
+});
+```
+
+### Library Management (`api.library`)
+*Requires `library:write` permission.*
+
+Add external tracks to the library or initiate downloads.
+
+```javascript
+// Add an external track to the library
+await api.library.addExternalTrack({
+    title: "Song Title",
+    artist: "Artist Name",
+    album: "Album Name",
+    cover_url: "https://example.com/cover.jpg",
+    source_type: "my-service", // Matches your resolver
+    external_id: "12345",
+    duration: 180 // seconds
+});
+
+// Download a track
+await api.library.downloadTrack({
+    url: "https://example.com/audio.mp3",
+    filename: "Song.mp3",
+    metadata: {
+        title: "Song",
+        artist: "Artist"
+    }
+});
+```
+
 ### UI Injection (`api.ui`)
 *Requires `ui:inject` permission.*
 

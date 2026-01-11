@@ -99,6 +99,46 @@
 <div class="plugin-view">
   <header class="view-header">
     <h1>Plugin Marketplace</h1>
+    <button
+      class="btn-secondary"
+      on:click={() => pluginStore.refreshMarketplace()}
+      disabled={$pluginStore.loading}
+      title="Force update from GitHub registry"
+    >
+      {#if $pluginStore.loading}
+        <svg
+          class="animate-spin"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          width="16"
+          height="16"
+          style="display: inline-block; margin-right: 4px;"
+        >
+          <circle cx="12" cy="12" r="10" stroke-width="4" opacity="0.25" />
+          <path
+            d="M12 2a10 10 0 0 1 10 10"
+            stroke-width="4"
+            stroke-linecap="round"
+          />
+        </svg>
+        Refreshing...
+      {:else}
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          width="16"
+          height="16"
+          style="display: inline-block; margin-right: 4px;"
+        >
+          <path
+            d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 0 1 9-9"
+          />
+        </svg>
+        Fetch Plugins
+      {/if}
+    </button>
   </header>
 
   {#if $pluginStore.error}

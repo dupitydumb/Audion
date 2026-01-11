@@ -76,7 +76,9 @@ export async function fetchCuratedRegistry(): Promise<MarketplacePlugin[]> {
   // Try remote registries
   for (const url of CURATED_REGISTRY_URLS) {
     try {
-      const response = await fetchWithTimeout(url);
+      // Append timestamp to prevent caching
+      const noCacheUrl = `${url}?t=${Date.now()}`;
+      const response = await fetchWithTimeout(noCacheUrl);
       if (!response.ok) continue;
 
       const data: RegistryData = await response.json();
