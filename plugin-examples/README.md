@@ -4,6 +4,8 @@ This folder contains example plugins demonstrating the Audion plugin system.
 
 ## Plugins
 
+For a complete guide on creating plugins, including API reference and permissions, see the [Plugin Development Guide](../PLUGINS.md).
+
 ### 1. Now Playing Notifier
 Shows system notifications when the track changes.
 - **Type:** JavaScript
