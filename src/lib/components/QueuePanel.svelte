@@ -14,12 +14,16 @@
     import { albums } from "$lib/stores/library";
     import { formatDuration, getAlbumArtSrc } from "$lib/api/tauri";
 
+    import type { Track } from "$lib/api/tauri";
+
     // Create album map for art lookup
     $: albumMap = new Map($albums.map((a) => [a.id, a]));
 
-    function getTrackArt(albumId: number | null): string | null {
-        if (!albumId) return null;
-        const album = albumMap.get(albumId);
+    function getTrackArt(track: Track): string | null {
+        if (!track) return null;
+        if (track.cover_url) return track.cover_url;
+        if (!track.album_id) return null;
+        const album = albumMap.get(track.album_id);
         return album ? getAlbumArtSrc(album.art_data) : null;
     }
 
@@ -80,9 +84,9 @@
                     <div class="now-playing">
                         <div class="queue-track current">
                             <div class="track-art">
-                                {#if getTrackArt($currentTrack.album_id)}
+                                {#if getTrackArt($currentTrack)}
                                     <img
-                                        src={getTrackArt($currentTrack.album_id)}
+                                        src={getTrackArt($currentTrack)}
                                         alt=""
                                         loading="lazy"
                                         decoding="async"
@@ -143,12 +147,13 @@
                             >
                                 <button
                                     class="track-btn"
-                                    on:click={() => handlePlayTrack(actualIndex)}
+                                    on:click={() =>
+                                        handlePlayTrack(actualIndex)}
                                 >
                                     <div class="track-art">
-                                        {#if getTrackArt(track.album_id)}
+                                        {#if getTrackArt(track)}
                                             <img
-                                                src={getTrackArt(track.album_id)}
+                                                src={getTrackArt(track)}
                                                 alt=""
                                                 loading="lazy"
                                                 decoding="async"
@@ -218,9 +223,9 @@
                                     on:click={() => handlePlayTrack(i)}
                                 >
                                     <div class="track-art">
-                                        {#if getTrackArt(track.album_id)}
+                                        {#if getTrackArt(track)}
                                             <img
-                                                src={getTrackArt(track.album_id)}
+                                                src={getTrackArt(track)}
                                                 alt=""
                                                 loading="lazy"
                                                 decoding="async"

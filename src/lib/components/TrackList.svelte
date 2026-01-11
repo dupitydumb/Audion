@@ -210,19 +210,25 @@
                             <span class="quality-tag stream-tag">S</span>
                         {/if}
                         {#if track.format}
+                            {@const formatUpper = track.format.toUpperCase()}
+                            {@const displayFormat =
+                                formatUpper.includes("HI_RES") ||
+                                formatUpper.includes("HIRES")
+                                    ? "HI-RES"
+                                    : formatUpper.includes("LOSSLESS")
+                                      ? "LOSSLESS"
+                                      : formatUpper.replace("MPEG", "MP3")}
                             <span
                                 class="quality-tag"
-                                class:high-quality={track.format
-                                    .toLowerCase()
-                                    .includes("flac") ||
-                                    track.format
-                                        .toLowerCase()
-                                        .includes("wav") ||
+                                class:high-quality={formatUpper.includes(
+                                    "FLAC",
+                                ) ||
+                                    formatUpper.includes("WAV") ||
+                                    formatUpper.includes("HI_RES") ||
+                                    formatUpper.includes("HIRES") ||
                                     (track.bitrate && track.bitrate >= 320)}
                             >
-                                {track.format
-                                    .replace("Mpeg", "MP3")
-                                    .toUpperCase()}
+                                {displayFormat}
                             </span>
                         {/if}
                     </div>

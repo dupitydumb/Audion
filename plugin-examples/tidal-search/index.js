@@ -1538,7 +1538,9 @@
                         cover_url: coverUrl,
                         source_type: 'tidal',
                         external_id: String(track.id),  // Used to fetch stream on play
-                        format: quality,
+                        format: (track.mediaMetadata?.tags?.includes('HIRES_LOSSLESS')) ? 'HI_RES_LOSSLESS' :
+                            (track.mediaMetadata?.tags?.includes('LOSSLESS')) ? 'LOSSLESS' :
+                                quality, // Fallback to selected quality
                         bitrate: null
                         // No stream_url - resolved on play for freshness
                     };
