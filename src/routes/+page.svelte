@@ -9,6 +9,8 @@
   import ContextMenu from "$lib/components/ContextMenu.svelte";
   import QueuePanel from "$lib/components/QueuePanel.svelte";
   import MiniPlayer from "$lib/components/MiniPlayer.svelte";
+  import KeyboardShortcuts from "$lib/components/KeyboardShortcuts.svelte";
+  import KeyboardShortcutsHelp from "$lib/components/KeyboardShortcutsHelp.svelte";
 
   import { loadLibrary, loadPlaylists } from "$lib/stores/library";
   import ToastContainer from "$lib/components/ToastContainer.svelte";
@@ -148,6 +150,8 @@
     <PlayerBar bind:audioElementRef={audioElement} hidden={$isMiniPlayer} />
     <MiniPlayer />
     <ToastContainer />
+    <KeyboardShortcuts />
+    <KeyboardShortcutsHelp />
   {/if}
 </div>
 
