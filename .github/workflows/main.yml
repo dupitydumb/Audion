@@ -2,7 +2,7 @@ name: Release Windows
 on:
   push:
     branches:
-      - main
+      - master
     paths:
       - "src-tauri/tauri.conf.json"
   workflow_dispatch:
