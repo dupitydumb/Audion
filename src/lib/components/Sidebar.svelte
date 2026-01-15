@@ -89,27 +89,7 @@
     <div class="sidebar-header">
         <MenuBar />
         <div class="logo">
-            <svg
-                viewBox="0 0 48 48"
-                fill="none"
-                stroke="currentColor"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                stroke-width="4"
-                width="32"
-                height="32"
-            >
-                <path d="M5 42H10"></path><path d="M5 36H10"></path><path
-                    d="M5 30H10"
-                ></path><path d="M5 24H10"></path><path d="M16 42H21"
-                ></path><path d="M16 36H21"></path><path d="M16 30H21"
-                ></path><path d="M16 24H21"></path><path d="M16 18H21"
-                ></path><path d="M16 12H21"></path><path d="M16 6H21"
-                ></path><path d="M27 42H32"></path><path d="M38 42H43"
-                ></path><path d="M27 36H32"></path><path d="M38 36H43"
-                ></path><path d="M27 30H32"></path><path d="M38 30H43"
-                ></path><path d="M38 24H43"></path><path d="M38 18H43"></path>
-            </svg>
+            <img src="/logo.png" alt="Audion Logo" width="32" height="32" />
             <span class="logo-text">Audion</span>
             {#if $updates.hasUpdate}
                 <div
