@@ -183,6 +183,63 @@
                 <h3 class="section-title">General</h3>
 
                 <div class="setting-item">
+                    <span class="setting-label">Window Start Mode</span>
+                    <div class="theme-modes">
+                        <button
+                            class="mode-btn"
+                            class:active={$appSettings.startMode === "normal"}
+                            on:click={() => appSettings.setStartMode("normal")}
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                width="24"
+                                height="24"
+                                fill="currentColor"
+                            >
+                                <path
+                                    d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"
+                                />
+                            </svg>
+                            <span>Normal</span>
+                        </button>
+                        <button
+                            class="mode-btn"
+                            class:active={$appSettings.startMode ===
+                                "maximized"}
+                            on:click={() =>
+                                appSettings.setStartMode("maximized")}
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                width="24"
+                                height="24"
+                                fill="currentColor"
+                            >
+                                <path d="M4 4h16v16H4V4zm2 4v10h12V8H6z" />
+                            </svg>
+                            <span>Maximized</span>
+                        </button>
+                        <button
+                            class="mode-btn"
+                            class:active={$appSettings.startMode ===
+                                "minimized"}
+                            on:click={() =>
+                                appSettings.setStartMode("minimized")}
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                width="24"
+                                height="24"
+                                fill="currentColor"
+                            >
+                                <path d="M6 19h12v2H6z" />
+                            </svg>
+                            <span>Minimized</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="setting-item">
                     <div class="toggle-container">
                         <div class="toggle-info">
                             <span class="setting-label"

@@ -12,3 +12,5 @@ pub use metadata::*;
 pub use network::*;
 pub use playlist::*;
 pub use plugin::*;
+pub mod window;
+pub use window::*;

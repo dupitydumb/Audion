@@ -35,9 +35,6 @@
   }
 
   onMount(async () => {
-    // Initialize theme
-    theme.initialize();
-
     // Initialize persisted state (volume, lyrics visibility, etc.)
     initializeFromPersistedState();
     setupAutoSave();

@@ -31,6 +31,22 @@ pub fn run() {
 
             app.manage(database);
 
+            // Handle window start mode
+            let window_config = commands::window::load_window_config(app.handle());
+            if let Some(window) = app.get_webview_window("main") {
+                match window_config.start_mode {
+                    commands::window::WindowStartMode::Maximized => {
+                        window.maximize().ok();
+                    }
+                    commands::window::WindowStartMode::Minimized => {
+                        window.minimize().ok();
+                    }
+                    commands::window::WindowStartMode::Normal => {
+                        // Default behavior, do nothing (windowed)
+                    }
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -75,6 +91,9 @@ pub fn run() {
             commands::update_plugin,
             // Network commands
             commands::proxy_fetch,
+            // Window commands
+            commands::window::get_window_start_mode,
+            commands::window::set_window_start_mode,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -24,6 +24,7 @@ import { RateLimiter, RATE_LIMITS } from './rate-limiter';
 import type { EventListener } from './event-emitter';
 import { uiSlotManager, type UISlotName } from './ui-slots';
 import { appSettings } from '$lib/stores/settings';
+import { theme } from '$lib/stores/theme';
 import { invoke } from '@tauri-apps/api/core';
 
 export interface WasmPluginExports {
@@ -639,6 +640,13 @@ export class PluginRuntime {
         }
       };
     }
+
+    // Theme API (Always exposed to allow un-theming)
+    api.theme = {
+      refresh: () => {
+        theme.initialize();
+      }
+    };
 
     return api;
   }

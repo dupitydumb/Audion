@@ -9,8 +9,15 @@
     // ═══════════════════════════════════════════════════════════════════════════
 
     const THEMES = {
-        default: {
-            name: 'Default (Spotify)',
+        native: {
+            name: 'Native (Follow App)',
+            icon: '💻', // Laptop icon
+            description: 'Use application Light/Dark mode settings',
+            vars: {},
+            customStyles: ''
+        },
+        classic: {
+            name: 'Classic Dark',
             icon: '🎵',
             description: 'The classic dark theme',
             vars: {
@@ -728,7 +735,7 @@
 
     const ThemeCustomizer = {
         name: 'Theme Customizer',
-        currentTheme: 'default',
+        currentTheme: 'native',
         uiElement: null,
         isOpen: false,
 
@@ -764,12 +771,16 @@
                 const savedTheme = await this.api.storage.get('selectedTheme');
                 console.log(`[ThemeCustomizer] Retrieved saved theme: "${savedTheme}"`);
 
-                if (savedTheme) {
-                    if (THEMES[savedTheme]) {
-                        console.log(`[ThemeCustomizer] Theme "${savedTheme}" found in definitions. Applying...`);
-                        this.applyTheme(savedTheme, false);
+                let themeToLoad = savedTheme;
+                // Migrate old 'default' to 'classic'
+                if (themeToLoad === 'default') themeToLoad = 'classic';
+
+                if (themeToLoad) {
+                    if (THEMES[themeToLoad]) {
+                        console.log(`[ThemeCustomizer] Theme "${themeToLoad}" found in definitions. Applying...`);
+                        this.applyTheme(themeToLoad, false);
                     } else {
-                        console.error(`[ThemeCustomizer] Theme "${savedTheme}" NOT found in definitions.`);
+                        console.error(`[ThemeCustomizer] Theme "${themeToLoad}" NOT found in definitions.`);
                         console.log('Available themes:', Object.keys(THEMES));
                     }
                 } else {
@@ -1082,28 +1093,53 @@
             });
         },
 
+        clearThemeOverrides() {
+            const root = document.documentElement;
+            // List of all vars used by themes (derived from classic theme)
+            const vars = [
+                '--bg-base', '--bg-elevated', '--bg-surface', '--bg-highlight', '--bg-press',
+                '--accent-primary', '--accent-hover', '--accent-subtle',
+                '--text-primary', '--text-secondary', '--text-subdued',
+                '--border-color', '--error-color',
+                '--shadow-sm', '--shadow-md', '--shadow-lg'
+            ];
+            vars.forEach(key => root.style.removeProperty(key));
+
+            // Remove custom styles
+            const existingCustom = document.getElementById('theme-custom-styles');
+            if (existingCustom) existingCustom.remove();
+        },
+
         applyTheme(themeId, save = true) {
             const theme = THEMES[themeId];
             if (!theme) return;
 
             console.log(`[ThemeCustomizer] Applying theme: ${theme.name}`);
 
-            // Remove previous custom theme styles
-            const existingCustom = document.getElementById('theme-custom-styles');
-            if (existingCustom) existingCustom.remove();
+            // Clear previous overrides first
+            this.clearThemeOverrides();
 
-            // Apply CSS variables
-            const root = document.documentElement;
-            Object.entries(theme.vars).forEach(([key, value]) => {
-                root.style.setProperty(key, value);
-            });
+            // If native, nothing more to do (overrides cleared)
+            if (themeId !== 'native') {
+                // Apply CSS variables
+                const root = document.documentElement;
+                Object.entries(theme.vars).forEach(([key, value]) => {
+                    root.style.setProperty(key, value);
+                });
 
-            // Inject custom theme styles
-            if (theme.customStyles) {
-                const customStyle = document.createElement('style');
-                customStyle.id = 'theme-custom-styles';
-                customStyle.textContent = theme.customStyles;
-                document.head.appendChild(customStyle);
+                // Inject custom theme styles
+                if (theme.customStyles) {
+                    const customStyle = document.createElement('style');
+                    customStyle.id = 'theme-custom-styles';
+                    customStyle.textContent = theme.customStyles;
+                    document.head.appendChild(customStyle);
+                }
+            } else {
+                // Trigger app theme refresh to restore native theme
+                if (this.api && this.api.theme && this.api.theme.refresh) {
+                    console.log('[ThemeCustomizer] Triggering app theme refresh...');
+                    this.api.theme.refresh();
+                }
             }
 
             this.currentTheme = themeId;
@@ -1136,7 +1172,8 @@
             document.getElementById('theme-custom-styles')?.remove();
 
             // Reset theme to default
-            this.applyTheme('default', false);
+            // Reset to native state (clear overrides)
+            this.clearThemeOverrides();
 
             console.log('[ThemeCustomizer] Plugin destroyed');
         }
