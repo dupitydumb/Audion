@@ -40,6 +40,10 @@ pub async fn scan_music(paths: Vec<String>, db: State<'_, Database>) -> Result<S
         }
     }
 
+    // Cleanup deleted tracks in these folders before scanning
+    let _ = queries::cleanup_deleted_tracks(&conn, &paths)
+        .map_err(|e| errors.push(format!("Failed to cleanup deleted tracks: {}", e)));
+
     for path in paths {
         let scan_result = scan_directory(&path);
         errors.extend(scan_result.errors);
