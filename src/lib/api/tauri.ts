@@ -135,6 +135,10 @@ export async function deleteTrack(trackId: number): Promise<boolean> {
     return await invoke('delete_track', { trackId });
 }
 
+export async function deleteAlbum(albumId: number): Promise<boolean> {
+    return await invoke('delete_album', { albumId });
+}
+
 // Playlist commands
 export async function createPlaylist(name: string): Promise<number> {
     return await invoke('create_playlist', { name });

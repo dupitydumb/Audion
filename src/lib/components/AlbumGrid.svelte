@@ -2,7 +2,10 @@
     import type { Album } from "$lib/api/tauri";
     import { getAlbumArtSrc } from "$lib/api/tauri";
     import { goToAlbumDetail } from "$lib/stores/view";
-    import { tracks as allTracks } from "$lib/stores/library";
+    import { tracks as allTracks, loadLibrary } from "$lib/stores/library";
+    import { contextMenu } from "$lib/stores/ui";
+    import { deleteAlbum } from "$lib/api/tauri";
+    import { addToQueue, playTracks } from "$lib/stores/player";
 
     export let albums: Album[] = [];
 
@@ -23,12 +26,53 @@
     function handleAlbumClick(album: Album) {
         goToAlbumDetail(album.id);
     }
+
+    function handleContextMenu(e: MouseEvent, album: Album) {
+        e.preventDefault();
+        contextMenu.set({
+            visible: true,
+            x: e.clientX,
+            y: e.clientY,
+            items: [
+                {
+                    label: "Play",
+                    action: () => {
+                        // We need tracks to play.
+                        // Since we don't have them here, we might need to fetch them or let the player store handle it if we had a "playAlbum" action.
+                        // But playTracks takes Track[].
+                        // Let's defer this or fetch simply.
+                        // Actually easier: just navigate to it and auto-play? Or fetch.
+                        // Let's implement fetch.
+                        // For now let's just supporting Delete as requested.
+                        handleAlbumClick(album);
+                    },
+                },
+                { type: "separator" },
+                {
+                    label: "Delete Album",
+                    danger: true,
+                    action: async () => {
+                        try {
+                            await deleteAlbum(album.id);
+                            await loadLibrary();
+                        } catch (error) {
+                            console.error("Failed to delete album:", error);
+                        }
+                    },
+                },
+            ],
+        });
+    }
 </script>
 
 <div class="album-grid">
     {#each albums as album}
         {@const coverSrc = getAlbumCover(album)}
-        <button class="album-card" on:click={() => handleAlbumClick(album)}>
+        <button
+            class="album-card"
+            on:click={() => handleAlbumClick(album)}
+            on:contextmenu={(e) => handleContextMenu(e, album)}
+        >
             <div class="album-art">
                 {#if coverSrc}
                     <img

@@ -47,6 +47,34 @@
 
     // Reload when albumId changes
     $: albumId, loadAlbumData();
+
+    import { contextMenu } from "$lib/stores/ui";
+    import { deleteAlbum } from "$lib/api/tauri";
+
+    function handleContextMenu(e: MouseEvent) {
+        if (!album) return;
+        e.preventDefault();
+        contextMenu.set({
+            visible: true,
+            x: e.clientX,
+            y: e.clientY,
+            items: [
+                {
+                    label: "Delete Album",
+                    danger: true,
+                    action: async () => {
+                        try {
+                            await deleteAlbum(album!.id);
+                            await loadLibrary(); // Refresh library
+                            goToAlbums(); // Go back to albums list
+                        } catch (error) {
+                            console.error("Failed to delete album:", error);
+                        }
+                    },
+                },
+            ],
+        });
+    }
 </script>
 
 <div class="album-detail">
@@ -56,8 +84,17 @@
             <span>Loading album...</span>
         </div>
     {:else if album}
-        <header class="album-header">
-            <button class="back-btn" on:click={goToAlbums}>
+        <header
+            class="album-header"
+            on:contextmenu={handleContextMenu}
+            role="region"
+            aria-label="Album Header"
+        >
+            <button
+                class="back-btn"
+                on:click={goToAlbums}
+                aria-label="Back to Albums"
+            >
                 <svg
                     viewBox="0 0 24 24"
                     fill="currentColor"

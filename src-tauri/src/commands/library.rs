@@ -189,7 +189,55 @@ pub async fn get_albums_by_artist(
 #[tauri::command]
 pub async fn delete_track(track_id: i64, db: State<'_, Database>) -> Result<bool, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    // Get track path first to delete file if it exists and is local
+    let track_path: Option<(String, Option<String>)> = conn
+        .query_row(
+            "SELECT path, source_type FROM tracks WHERE id = ?1",
+            [track_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .ok();
+
+    if let Some((path, source_type)) = track_path {
+        // Only delete file if it's a local track (soure_type is null or "local")
+        let is_local = source_type.is_none() || source_type.as_deref() == Some("local");
+
+        if is_local {
+            let path_obj = std::path::Path::new(&path);
+            if path_obj.exists() {
+                if let Err(e) = std::fs::remove_file(path_obj) {
+                    println!("Failed to delete file {}: {}", path, e);
+                    // Continue to delete from DB even if file deletion fails
+                }
+            }
+        }
+    }
+
     queries::delete_track(&conn, track_id).map_err(|e| format!("Failed to delete track: {}", e))
+}
+
+/// Delete an album and all its tracks
+#[tauri::command]
+pub async fn delete_album(album_id: i64, db: State<'_, Database>) -> Result<bool, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    // Get all tracks for this album to delete files
+    let tracks = queries::get_tracks_by_album(&conn, album_id).map_err(|e| e.to_string())?;
+
+    for track in tracks {
+        // Only delete file if it's a local track
+        let is_local = track.source_type.is_none() || track.source_type.as_deref() == Some("local");
+
+        if is_local {
+            let path_obj = std::path::Path::new(&track.path);
+            if path_obj.exists() {
+                let _ = std::fs::remove_file(path_obj);
+            }
+        }
+    }
+
+    queries::delete_album(&conn, album_id).map_err(|e| format!("Failed to delete album: {}", e))
 }
 
 /// Input for adding an external (streaming) track to the library

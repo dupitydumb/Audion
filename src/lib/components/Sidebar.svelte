@@ -20,9 +20,15 @@
     import {
         isSettingsOpen as isSettingsOpenUI,
         toggleSettings as toggleSettingsUI,
+        contextMenu,
     } from "$lib/stores/ui";
     import { appSettings } from "$lib/stores/settings";
-    import { selectMusicFolder, scanMusic } from "$lib/api/tauri";
+    import {
+        selectMusicFolder,
+        scanMusic,
+        deletePlaylist,
+        type Playlist,
+    } from "$lib/api/tauri";
     import { loadLibrary } from "$lib/stores/library";
     import { uiSlotManager } from "$lib/plugins/ui-slots";
     import MenuBar from "./MenuBar.svelte";
@@ -59,6 +65,35 @@
         } finally {
             isScanning = false;
         }
+    }
+
+    function handlePlaylistContextMenu(e: MouseEvent, playlist: Playlist) {
+        e.preventDefault();
+        contextMenu.set({
+            visible: true,
+            x: e.clientX,
+            y: e.clientY,
+            items: [
+                {
+                    label: "Delete Playlist",
+                    danger: true,
+                    action: async () => {
+                        try {
+                            await deletePlaylist(playlist.id);
+                            await loadPlaylists();
+                            if (
+                                $currentView.type === "playlist-detail" &&
+                                $currentView.id === playlist.id
+                            ) {
+                                goToTracks(); // Navigate away if deleted
+                            }
+                        } catch (error) {
+                            console.error("Failed to delete playlist:", error);
+                        }
+                    },
+                },
+            ],
+        });
     }
 
     function isActive(viewType: string): boolean {
@@ -212,6 +247,8 @@
                                 playlist.id !== undefined &&
                                 $currentView.id === playlist.id}
                             on:click={() => goToPlaylistDetail(playlist.id)}
+                            on:contextmenu={(e) =>
+                                handlePlaylistContextMenu(e, playlist)}
                         >
                             <svg
                                 viewBox="0 0 24 24"

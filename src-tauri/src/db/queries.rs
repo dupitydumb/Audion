@@ -145,6 +145,20 @@ fn get_or_create_album(
     Ok(conn.last_insert_rowid())
 }
 
+/// Delete an album and all its associated tracks
+pub fn delete_album(conn: &Connection, album_id: i64) -> Result<bool> {
+    // Transaction to ensure atomicity
+    conn.execute_batch(&format!(
+        "BEGIN;
+         DELETE FROM tracks WHERE album_id = {};
+         DELETE FROM albums WHERE id = {};
+         COMMIT;",
+        album_id, album_id
+    ))
+    .map(|_| true)
+    .map_err(|e| e)
+}
+
 pub fn get_all_tracks(conn: &Connection) -> Result<Vec<Track>> {
     let mut stmt = conn.prepare(
         "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id 
