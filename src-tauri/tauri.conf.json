@@ -22,13 +22,22 @@
         "maximized": false
       }
     ],
+    "linux": [
+      {
+        "title": "Audion",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "disableGpu": true
+      }
+    ],
     "security": {
       "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' asset: http://asset.localhost https://asset.localhost; connect-src * asset: http://asset.localhost https://asset.localhost; img-src 'self' data: asset: http://asset.localhost https://asset.localhost http: https:; media-src 'self' asset: http://asset.localhost https://asset.localhost file: blob: http: https:; style-src 'self' 'unsafe-inline'",
       "assetProtocol": {
         "enable": true,
-        "scope": [
-          "**"
-        ]
+        "scope": ["**"]
       }
     }
   },
