@@ -15,6 +15,7 @@ pub struct DownloadAudioInput {
     pub title: Option<String>,
     pub artist: Option<String>,
     pub album: Option<String>,
+    pub album_artist: Option<String>,
     pub track_number: Option<u32>,
     pub cover_url: Option<String>,
 }
@@ -144,6 +145,11 @@ async fn write_metadata_to_file(path: &Path, input: &DownloadAudioInput) -> Resu
     }
     if let Some(album) = &input.album {
         tag.set_album(album.clone());
+    }
+    if let Some(album_artist) = &input.album_artist {
+        // Fallback: insert album artist as a text item so it works across tag types
+        use lofty::ItemKey;
+        tag.insert_text(ItemKey::AlbumArtist, album_artist.clone());
     }
     if let Some(track_num) = input.track_number {
         tag.set_track(track_num);

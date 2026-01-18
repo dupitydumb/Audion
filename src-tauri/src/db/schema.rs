@@ -56,10 +56,11 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
             last_scanned TEXT DEFAULT CURRENT_TIMESTAMP
         );
 
-        -- Create indexes for faster queries (except content_hash which needs migration first)
+        -- Create indexes for faster queries
         CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
         CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);
         CREATE INDEX IF NOT EXISTS idx_tracks_album_id ON tracks(album_id);
+        CREATE INDEX IF NOT EXISTS idx_albums_artist ON albums(artist);
         ",
     )?;
 

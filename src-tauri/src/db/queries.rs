@@ -21,17 +21,23 @@ pub struct Track {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Artist {
+    pub name: String,
+    pub track_count: i32,
+    pub album_count: i32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Album {
     pub id: i64,
     pub name: String,
-    pub artist: Option<String>,
+    pub album_artist: Option<String>,
     pub art_data: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Artist {
+pub struct AlbumArtist {
     pub name: String,
-    pub track_count: i32,
     pub album_count: i32,
 }
 
@@ -49,6 +55,7 @@ pub struct TrackInsert {
     pub title: Option<String>,
     pub artist: Option<String>,
     pub album: Option<String>,
+    pub album_artist: Option<String>,
     pub track_number: Option<i32>,
     pub duration: Option<i32>,
     pub album_art: Option<String>,
@@ -81,11 +88,11 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
 
     // First, handle album if present
     let album_id = if let Some(album_name) = &track.album {
-        let artist = track.artist.as_deref();
+        let album_artist = track.album_artist.as_deref();
         Some(get_or_create_album(
             conn,
             album_name,
-            artist,
+            album_artist,
             track.album_art.as_deref(),
         )?)
     } else {
@@ -232,7 +239,7 @@ pub fn get_all_albums(conn: &Connection) -> Result<Vec<Album>> {
             Ok(Album {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                artist: row.get(2)?,
+                album_artist: row.get(2)?,
                 art_data: row.get(3)?,
             })
         })?
@@ -332,12 +339,33 @@ pub fn get_album_by_id(conn: &Connection, album_id: i64) -> Result<Option<Album>
             Ok(Album {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                artist: row.get(2)?,
+                album_artist: row.get(2)?,
                 art_data: row.get(3)?,
             })
         },
     )
     .optional()
+}
+
+pub fn get_all_album_artists(conn: &Connection) -> Result<Vec<AlbumArtist>> {
+    let mut stmt = conn.prepare(
+        "SELECT artist, COUNT(*) as album_count
+         FROM albums
+         WHERE artist IS NOT NULL
+         GROUP BY artist 
+         ORDER BY artist",
+    )?;
+
+    let album_artists = stmt
+        .query_map([], |row| {
+            Ok(AlbumArtist {
+                name: row.get(0)?,
+                album_count: row.get(1)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(album_artists)
 }
 
 // Playlist operations
