@@ -16,8 +16,17 @@
     import { playTracks, addToQueue } from "$lib/stores/player";
     import type { Writable } from "svelte/store";
 
+    import { confirm } from "$lib/stores/dialogs";
+
     async function handleDeletePlaylist(id: number, name: string) {
-        if (!confirm(`Delete playlist "${name}"?`)) return;
+        if (
+            !(await confirm(`Delete playlist "${name}"?`, {
+                title: "Delete Playlist",
+                confirmLabel: "Delete",
+                danger: true,
+            }))
+        )
+            return;
 
         try {
             await deletePlaylist(id);

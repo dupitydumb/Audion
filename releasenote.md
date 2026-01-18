@@ -1,6 +1,6 @@
 # Release Notes
 
-## 1.1.6 Hotfix
+## 1.1.7
 
 ### 🐛 Bug Fixes
 - empty album persisting without track
@@ -19,3 +19,6 @@
 - fix spotify converter only convert 30 song at the time
 - added download feature (need to reinstall tidal-serach)
 - add visual indicator for unavailable tracks
+- added downloaded visual indicator
+- change format for album and playlist total hour to HH:MM
+- fix playlist deleted before confirmation

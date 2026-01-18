@@ -7,6 +7,7 @@
         renamePlaylist,
         formatDuration,
     } from "$lib/api/tauri";
+    import { confirm } from "$lib/stores/dialogs";
     import { contextMenu } from "$lib/stores/ui";
     import { playTracks, addToQueue } from "$lib/stores/player";
     import { goToPlaylists } from "$lib/stores/view";
@@ -177,7 +178,14 @@
     }
 
     async function handleDelete() {
-        if (!confirm(`Delete playlist "${playlist?.name}"?`)) return;
+        if (
+            !(await confirm(`Delete playlist "${playlist?.name}"?`, {
+                title: "Delete Playlist",
+                confirmLabel: "Delete",
+                danger: true,
+            }))
+        )
+            return;
 
         try {
             await deletePlaylist(playlistId);

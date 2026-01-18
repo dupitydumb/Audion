@@ -2,6 +2,7 @@
     import { onMount } from "svelte";
     import { appSettings } from "$lib/stores/settings";
     import { theme } from "$lib/stores/theme";
+    import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
     import "../app.css";
 
     onMount(() => {
@@ -10,4 +11,5 @@
     });
 </script>
 
+<ConfirmDialog />
 <slot />
