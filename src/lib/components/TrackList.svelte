@@ -406,6 +406,21 @@
                             >{track.title || "Unknown Title"}</span
                         >
 
+                        {#if !track.source_type || track.source_type === "local" || track.local_src}
+                            <span class="downloaded-icon" title="Downloaded">
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="currentColor"
+                                    width="14"
+                                    height="14"
+                                >
+                                    <path
+                                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
+                                    />
+                                </svg>
+                            </span>
+                        {/if}
+
                         {#if track.format}
                             {@const formatUpper = track.format.toUpperCase()}
                             {@const displayFormat =
@@ -750,5 +765,13 @@
 
     .track-row.unavailable:hover {
         background-color: transparent;
+    }
+
+    .downloaded-icon {
+        color: var(--accent-primary);
+        display: flex;
+        align-items: center;
+        margin-left: var(--spacing-xs);
+        flex-shrink: 0;
     }
 </style>
