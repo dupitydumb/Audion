@@ -26,8 +26,6 @@ pub struct Library {
     pub album_artists: Vec<queries::AlbumArtist>,
     pub artists: Vec<queries::Artist>,
 }
-    
-    
 
 #[tauri::command]
 pub async fn scan_music(paths: Vec<String>, db: State<'_, Database>) -> Result<ScanResult, String> {
@@ -177,10 +175,9 @@ pub async fn get_albums_by_artist(
 
     let mut stmt = conn
         .prepare(
-            "SELECT DISTINCT a.id, a.name, a.album_artist, a.art_data 
+            "SELECT DISTINCT a.id, a.name, a.artist, a.art_data 
          FROM albums a
-         INNER JOIN tracks t ON t.album_id = a.id
-         WHERE t.album_artist = ?1
+         WHERE a.artist = ?1
          ORDER BY a.name",
         )
         .map_err(|e| e.to_string())?;

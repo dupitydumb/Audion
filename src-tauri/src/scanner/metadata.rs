@@ -39,12 +39,31 @@ fn generate_content_hash(
 }
 
 pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
+    // DEBUG: Write to file immediately when function is called
+    use std::fs::OpenOptions;
+    use std::io::Write;
+
+    let debug_path = format!("C:\\Users\\kavit\\debug_tags_{}.txt", std::process::id());
+
+    let mut debug_file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&debug_path)
+        .expect(&format!("Failed to create debug file at {}", debug_path));
+
     let path = Path::new(path);
+
+    writeln!(debug_file, "\n\n=== EXTRACT_METADATA CALLED ===").unwrap();
+    writeln!(debug_file, "Path: {:?}", path).unwrap();
 
     // Try to read the file
     let tagged_file = match Probe::open(path).and_then(|p| p.read()) {
-        Ok(file) => file,
+        Ok(file) => {
+            writeln!(debug_file, "Successfully opened file").unwrap();
+            file
+        }
         Err(e) => {
+            writeln!(debug_file, "Failed to read audio file: {}", e).unwrap();
             eprintln!("Failed to read audio file {:?}: {}", path, e);
             return Some(create_fallback_metadata(path));
         }
@@ -62,13 +81,35 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
 
     match tag {
         Some(tag) => {
+            writeln!(debug_file, "Found tags in file").unwrap();
+
             let title = tag
                 .title()
                 .map(|s| s.to_string())
                 .or_else(|| get_filename_without_ext(path));
             let artist = tag.artist().map(|s| s.to_string());
             let album = tag.album().map(|s| s.to_string());
+
+            // Try to get album artist using ItemKey
             let album_artist = tag.get_string(&ItemKey::AlbumArtist).map(|s| s.to_string());
+
+            writeln!(debug_file, "Title: {:?}", title).unwrap();
+            writeln!(debug_file, "Artist: {:?}", artist).unwrap();
+            writeln!(debug_file, "Album: {:?}", album).unwrap();
+            writeln!(
+                debug_file,
+                "Album Artist (via ItemKey::AlbumArtist): {:?}",
+                album_artist
+            )
+            .unwrap();
+            writeln!(debug_file, "\nAll tag items in file:").unwrap();
+
+            for item in tag.items() {
+                writeln!(debug_file, "  Key: {:?} = {:?}", item.key(), item.value()).unwrap();
+            }
+
+            writeln!(debug_file, "===========================\n").unwrap();
+
             let track_number = tag.track().map(|n| n as i32);
 
             // Extract album art

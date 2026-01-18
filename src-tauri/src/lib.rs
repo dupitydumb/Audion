@@ -29,6 +29,9 @@ pub fn run() {
             // Initialize database
             let database = Database::new(&app_dir).expect("Failed to initialize database");
 
+            // DEBUG: Print database location
+            println!("=== DATABASE LOCATION: {:?} ===", app_dir.join("rlist.db"));
+
             app.manage(database);
 
             // Handle window start mode

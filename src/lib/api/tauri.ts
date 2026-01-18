@@ -57,7 +57,7 @@ export interface Track {
 export interface Album {
     id: number;
     name: string;
-    artist: string | null;
+    album_artist: string | null;  // Changed from 'artist' to 'album_artist'
     art_data: string | null;
 }
 
