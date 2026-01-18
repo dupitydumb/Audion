@@ -17,3 +17,5 @@
 - autoplay feature keep playing random tracks from library when the queue ends
 - fix playlist view. playlist card taking full height when we only have 1 row of playlist
 - fix spotify converter only convert 30 song at the time
+- added download feature (need to reinstall tidal-serach)
+- add visual indicator for unavailable tracks

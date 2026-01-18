@@ -28,6 +28,7 @@
         needsDownloadLocation,
     } from "$lib/services/downloadService";
     import { addToast } from "$lib/stores/toast";
+    import { isOnline } from "$lib/stores/network";
 
     export let tracks: Track[] = [];
     export let title: string = "Tracks";
@@ -42,6 +43,10 @@
         if (!track.source_type || track.source_type === "local") return false;
         // Downloaded tracks are always available
         if (track.local_src) return false;
+
+        // If offline and not downloaded/local, it's unavailable
+        if (!$isOnline) return true;
+
         // Otherwise depends on plugin availability
         // Also check if we have a resolver for this source type
         if (!isTidalAvailable) return true;
