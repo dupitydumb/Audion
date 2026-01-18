@@ -23,8 +23,11 @@ pub struct ScanResult {
 pub struct Library {
     pub tracks: Vec<queries::Track>,
     pub albums: Vec<queries::Album>,
+    pub album_artists: Vec<queries::AlbumArtist>,
     pub artists: Vec<queries::Artist>,
 }
+    
+    
 
 #[tauri::command]
 pub async fn scan_music(paths: Vec<String>, db: State<'_, Database>) -> Result<ScanResult, String> {
@@ -127,11 +130,13 @@ pub async fn get_library(db: State<'_, Database>) -> Result<Library, String> {
 
     let tracks = queries::get_all_tracks(&conn).map_err(|e| e.to_string())?;
     let albums = queries::get_all_albums(&conn).map_err(|e| e.to_string())?;
+    let album_artists = queries::get_all_album_artists(&conn).map_err(|e| e.to_string())?;
     let artists = queries::get_all_artists(&conn).map_err(|e| e.to_string())?;
 
     Ok(Library {
         tracks,
         albums,
+        album_artists,
         artists,
     })
 }
@@ -165,27 +170,27 @@ pub async fn get_album(
 
 #[tauri::command]
 pub async fn get_albums_by_artist(
-    artist: String,
+    album_artist: String,
     db: State<'_, Database>,
 ) -> Result<Vec<queries::Album>, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     let mut stmt = conn
         .prepare(
-            "SELECT DISTINCT a.id, a.name, a.artist, a.art_data 
+            "SELECT DISTINCT a.id, a.name, a.album_artist, a.art_data 
          FROM albums a
          INNER JOIN tracks t ON t.album_id = a.id
-         WHERE t.artist = ?1
+         WHERE t.album_artist = ?1
          ORDER BY a.name",
         )
         .map_err(|e| e.to_string())?;
 
     let albums = stmt
-        .query_map([&artist], |row| {
+        .query_map([&album_artist], |row| {
             Ok(queries::Album {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                artist: row.get(2)?,
+                album_artist: row.get(2)?,
                 art_data: row.get(3)?,
             })
         })
@@ -257,6 +262,7 @@ pub struct ExternalTrackInput {
     pub title: String,
     pub artist: String,
     pub album: Option<String>,
+    pub album_artist: String,
     pub duration: Option<i32>,
     pub cover_url: Option<String>,
     pub source_type: String, // e.g., "tidal", "url"
@@ -302,6 +308,7 @@ pub async fn add_external_track(
         title: Some(track.title),
         artist: Some(track.artist),
         album: track.album,
+        album_artist: Some(track.album_artist),
         track_number: None,
         duration: track.duration,
         album_art: None, // External tracks use cover_url instead
