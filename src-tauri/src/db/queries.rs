@@ -17,6 +17,7 @@ pub struct Track {
     pub source_type: Option<String>,
     pub cover_url: Option<String>,
     pub external_id: Option<String>,
+    pub local_src: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,6 +45,7 @@ pub struct AlbumArtist {
 pub struct Playlist {
     pub id: i64,
     pub name: String,
+    pub cover_url: Option<String>,
     pub created_at: Option<String>,
 }
 
@@ -63,6 +65,7 @@ pub struct TrackInsert {
     pub cover_url: Option<String>,
     pub external_id: Option<String>,
     pub content_hash: Option<String>,
+    pub local_src: Option<String>,
 }
 
 // Track operations
@@ -97,8 +100,8 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
     };
 
     conn.execute(
-        "INSERT INTO tracks (path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, content_hash)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+        "INSERT INTO tracks (path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, content_hash, local_src)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
          ON CONFLICT(path) DO UPDATE SET
             title = excluded.title,
             artist = excluded.artist,
@@ -111,7 +114,8 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
             source_type = excluded.source_type,
             cover_url = excluded.cover_url,
             external_id = excluded.external_id,
-            content_hash = excluded.content_hash",
+            content_hash = excluded.content_hash,
+            local_src = excluded.local_src",
         params![
             track.path,
             track.title,
@@ -126,6 +130,7 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
             track.cover_url,
             track.external_id,
             track.content_hash,
+            track.local_src,
         ],
     )?;
 
@@ -144,12 +149,15 @@ fn get_or_create_album(
     artist: Option<&str>,
     art_data: Option<&str>,
 ) -> Result<i64> {
-    // Try to find existing album
-    let existing: Option<i64> = conn.query_row(
-        "SELECT id FROM albums WHERE name = ?1 AND (artist = ?2 OR (artist IS NULL AND ?2 IS NULL))",
-        params![name, artist],
-        |row| row.get(0),
-    ).ok();
+    // Match by album name only to avoid splitting albums when tracks have different artists
+    // This groups all tracks with the same album name under one album
+    let existing: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM albums WHERE name = ?1",
+            params![name],
+            |row| row.get(0),
+        )
+        .ok();
 
     if let Some(id) = existing {
         // Update art if we have new art data and existing doesn't have it
@@ -157,6 +165,13 @@ fn get_or_create_album(
             conn.execute(
                 "UPDATE albums SET art_data = ?1 WHERE id = ?2 AND art_data IS NULL",
                 params![art, id],
+            )?;
+        }
+        // Optionally update artist if not set yet
+        if let Some(album_artist) = artist {
+            conn.execute(
+                "UPDATE albums SET artist = ?1 WHERE id = ?2 AND artist IS NULL",
+                params![album_artist, id],
             )?;
         }
         return Ok(id);
@@ -187,7 +202,7 @@ pub fn delete_album(conn: &Connection, album_id: i64) -> Result<bool> {
 
 pub fn get_all_tracks(conn: &Connection) -> Result<Vec<Track>> {
     let mut stmt = conn.prepare(
-        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id 
+        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src 
          FROM tracks ORDER BY artist, album, track_number, title",
     )?;
 
@@ -207,6 +222,7 @@ pub fn get_all_tracks(conn: &Connection) -> Result<Vec<Track>> {
                 source_type: row.get(10)?,
                 cover_url: row.get(11)?,
                 external_id: row.get(12)?,
+                local_src: row.get(13)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -256,7 +272,7 @@ pub fn get_all_artists(conn: &Connection) -> Result<Vec<Artist>> {
 
 pub fn get_tracks_by_album(conn: &Connection, album_id: i64) -> Result<Vec<Track>> {
     let mut stmt = conn.prepare(
-        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id 
+        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src 
          FROM tracks WHERE album_id = ?1 ORDER BY track_number, title",
     )?;
 
@@ -276,6 +292,7 @@ pub fn get_tracks_by_album(conn: &Connection, album_id: i64) -> Result<Vec<Track
                 source_type: row.get(10)?,
                 cover_url: row.get(11)?,
                 external_id: row.get(12)?,
+                local_src: row.get(13)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -285,7 +302,7 @@ pub fn get_tracks_by_album(conn: &Connection, album_id: i64) -> Result<Vec<Track
 
 pub fn get_tracks_by_artist(conn: &Connection, artist: &str) -> Result<Vec<Track>> {
     let mut stmt = conn.prepare(
-        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id 
+        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src 
          FROM tracks WHERE artist = ?1 ORDER BY album, track_number, title",
     )?;
 
@@ -305,6 +322,7 @@ pub fn get_tracks_by_artist(conn: &Connection, artist: &str) -> Result<Vec<Track
                 source_type: row.get(10)?,
                 cover_url: row.get(11)?,
                 external_id: row.get(12)?,
+                local_src: row.get(13)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -312,6 +330,7 @@ pub fn get_tracks_by_artist(conn: &Connection, artist: &str) -> Result<Vec<Track
     Ok(tracks)
 }
 
+// ... get_album_by_id ...
 pub fn get_album_by_id(conn: &Connection, album_id: i64) -> Result<Option<Album>> {
     conn.query_row(
         "SELECT id, name, artist, art_data FROM albums WHERE id = ?1",
@@ -356,14 +375,16 @@ pub fn create_playlist(conn: &Connection, name: &str) -> Result<i64> {
 }
 
 pub fn get_all_playlists(conn: &Connection) -> Result<Vec<Playlist>> {
-    let mut stmt = conn.prepare("SELECT id, name, created_at FROM playlists ORDER BY name")?;
+    let mut stmt =
+        conn.prepare("SELECT id, name, cover_url, created_at FROM playlists ORDER BY name")?;
 
     let playlists = stmt
         .query_map([], |row| {
             Ok(Playlist {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                created_at: row.get(2)?,
+                cover_url: row.get(2)?,
+                created_at: row.get(3)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -373,7 +394,7 @@ pub fn get_all_playlists(conn: &Connection) -> Result<Vec<Playlist>> {
 
 pub fn get_playlist_tracks(conn: &Connection, playlist_id: i64) -> Result<Vec<Track>> {
     let mut stmt = conn.prepare(
-        "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.album_id, t.format, t.bitrate, t.source_type, t.cover_url, t.external_id 
+        "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.album_id, t.format, t.bitrate, t.source_type, t.cover_url, t.external_id, t.local_src 
          FROM tracks t
          INNER JOIN playlist_tracks pt ON t.id = pt.track_id
          WHERE pt.playlist_id = ?1
@@ -396,6 +417,7 @@ pub fn get_playlist_tracks(conn: &Connection, playlist_id: i64) -> Result<Vec<Tr
                 source_type: row.get(10)?,
                 cover_url: row.get(11)?,
                 external_id: row.get(12)?,
+                local_src: row.get(13)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -440,6 +462,18 @@ pub fn rename_playlist(conn: &Connection, playlist_id: i64, new_name: &str) -> R
     conn.execute(
         "UPDATE playlists SET name = ?1 WHERE id = ?2",
         params![new_name, playlist_id],
+    )?;
+    Ok(())
+}
+
+pub fn update_playlist_cover(
+    conn: &Connection,
+    playlist_id: i64,
+    cover_url: Option<&str>,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE playlists SET cover_url = ?1 WHERE id = ?2",
+        params![cover_url, playlist_id],
     )?;
     Ok(())
 }
@@ -514,4 +548,21 @@ pub fn cleanup_deleted_tracks(conn: &Connection, folder_paths: &[String]) -> Res
     }
 
     Ok(deleted_count)
+}
+
+/// Cleanup albums that have no tracks associated with them
+pub fn cleanup_empty_albums(conn: &Connection) -> Result<usize> {
+    let deleted = conn.execute(
+        "DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT album_id FROM tracks WHERE album_id IS NOT NULL)",
+        [],
+    )?;
+    Ok(deleted)
+}
+
+pub fn update_track_local_src(conn: &Connection, track_id: i64, local_src: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE tracks SET local_src = ?1 WHERE id = ?2",
+        params![local_src, track_id],
+    )?;
+    Ok(())
 }

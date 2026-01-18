@@ -8,6 +8,7 @@ export interface AppSettings {
     developerMode: boolean;
     showDiscord: boolean;
     startMode: 'normal' | 'maximized' | 'minimized';
+    autoplay: boolean;
 }
 
 const SETTINGS_STORAGE_KEY = 'audion_settings';
@@ -19,6 +20,7 @@ const defaultSettings: AppSettings = {
     developerMode: false,
     showDiscord: true,
     startMode: 'normal',
+    autoplay: false,
 };
 
 // Load settings from localStorage
@@ -82,6 +84,14 @@ function createSettingsStore() {
         setShowDiscord(enabled: boolean) {
             update(state => {
                 const newState = { ...state, showDiscord: enabled };
+                saveSettings(newState);
+                return newState;
+            });
+        },
+
+        setAutoplay(enabled: boolean) {
+            update(state => {
+                const newState = { ...state, autoplay: enabled };
                 saveSettings(newState);
                 return newState;
             });

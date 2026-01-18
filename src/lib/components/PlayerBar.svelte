@@ -41,6 +41,7 @@
     let isSeeking = false;
     let isVolumeChanging = false;
     let albumArt: string | null = null;
+    let imageLoadFailed = false;
 
     // Slot containers
     let slotStart: HTMLDivElement;
@@ -53,10 +54,13 @@
     $: if ($currentTrack?.cover_url) {
         // Streaming track with direct cover URL (e.g., Tidal)
         albumArt = $currentTrack.cover_url;
+        imageLoadFailed = false;
     } else if ($currentTrack?.album_id) {
         loadAlbumArt($currentTrack.album_id);
+        imageLoadFailed = false;
     } else {
         albumArt = null;
+        imageLoadFailed = false;
     }
 
     async function loadAlbumArt(albumId: number) {
@@ -155,8 +159,13 @@
     <div class="track-info">
         {#if $currentTrack}
             <div class="album-art">
-                {#if albumArt}
-                    <img src={albumArt} alt="Album art" decoding="async" />
+                {#if albumArt && !imageLoadFailed}
+                    <img
+                        src={albumArt}
+                        alt="Album art"
+                        decoding="async"
+                        on:error={() => (imageLoadFailed = true)}
+                    />
                 {:else}
                     <div class="album-art-placeholder">
                         <svg

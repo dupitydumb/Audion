@@ -10,6 +10,14 @@
     import { goToArtists, goToAlbumDetail } from "$lib/stores/view";
     import AlbumGrid from "./AlbumGrid.svelte";
     import TrackList from "./TrackList.svelte";
+    import {
+        downloadTracks,
+        hasDownloadableTracks,
+        needsDownloadLocation,
+        showDownloadResult,
+        type DownloadProgress,
+    } from "$lib/services/downloadService";
+    import { addToast } from "$lib/stores/toast";
 
     export let artistName: string;
 
@@ -52,6 +60,44 @@
 
     // Reload when artistName changes
     $: artistName, loadArtistData();
+
+    // Download state
+    let isDownloading = false;
+    let downloadProgress = "";
+
+    $: hasDownloadable = hasDownloadableTracks(tracks);
+
+    async function handleDownloadAll() {
+        if (isDownloading) return;
+
+        if (needsDownloadLocation()) {
+            addToast(
+                "Please configure a download location in Settings first",
+                "error",
+            );
+            return;
+        }
+
+        isDownloading = true;
+        downloadProgress = "Starting...";
+
+        try {
+            const result = await downloadTracks(
+                tracks,
+                (progress: DownloadProgress) => {
+                    downloadProgress = `${progress.current}/${progress.total}`;
+                },
+            );
+
+            showDownloadResult(result);
+        } catch (error) {
+            console.error("Download failed:", error);
+            addToast("Download failed unexpectedly", "error");
+        } finally {
+            isDownloading = false;
+            downloadProgress = "";
+        }
+    }
 </script>
 
 <div class="artist-detail">
@@ -104,6 +150,31 @@
                         </svg>
                         Play All
                     </button>
+
+                    {#if hasDownloadable}
+                        <button
+                            class="btn-secondary download-btn"
+                            on:click={handleDownloadAll}
+                            disabled={isDownloading}
+                        >
+                            {#if isDownloading}
+                                <div class="spinner-sm"></div>
+                                <span>{downloadProgress}</span>
+                            {:else}
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="currentColor"
+                                    width="24"
+                                    height="24"
+                                >
+                                    <path
+                                        d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"
+                                    />
+                                </svg>
+                                <span>Download All</span>
+                            {/if}
+                        </button>
+                    {/if}
                 </div>
             </div>
         </header>
@@ -295,5 +366,39 @@
     .artist-content {
         flex: 1;
         overflow-y: auto;
+    }
+
+    .btn-secondary {
+        background-color: transparent;
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        transition: all var(--transition-fast);
+        padding: var(--spacing-sm) var(--spacing-xl);
+        border-radius: var(--radius-full);
+        font-size: 1rem;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+        border-color: var(--text-primary);
+        transform: scale(1.05);
+    }
+
+    .btn-secondary:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+    }
+
+    .spinner-sm {
+        width: 16px;
+        height: 16px;
+        border: 2px solid var(--bg-highlight);
+        border-top-color: var(--text-primary);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
     }
 </style>

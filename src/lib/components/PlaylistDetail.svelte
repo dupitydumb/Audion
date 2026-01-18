@@ -7,6 +7,7 @@
         renamePlaylist,
         formatDuration,
     } from "$lib/api/tauri";
+    import { confirm } from "$lib/stores/dialogs";
     import { contextMenu } from "$lib/stores/ui";
     import { playTracks, addToQueue } from "$lib/stores/player";
     import { goToPlaylists } from "$lib/stores/view";
@@ -17,6 +18,15 @@
         setPlaylistCover,
         removePlaylistCover,
     } from "$lib/stores/playlistCovers";
+    import {
+        canDownload,
+        downloadTracks,
+        hasDownloadableTracks,
+        needsDownloadLocation,
+        showDownloadResult,
+        type DownloadProgress,
+    } from "$lib/services/downloadService";
+    import { addToast } from "$lib/stores/toast";
 
     export let playlistId: number;
 
@@ -75,6 +85,81 @@
     $: totalDuration = tracks.reduce((sum, t) => sum + (t.duration || 0), 0);
     $: playlist = $playlists.find((p) => p.id === playlistId) || null;
 
+    // Download state
+    let isDownloading = false;
+    let downloadProgress = "";
+
+    // Check if we have downloadable tracks that are NOT yet downloaded
+    $: downloadableTracks = tracks.filter((t) => {
+        // Must be downloadable (streaming source) AND not have a local_src yet
+        return hasDownloadableTracks([t]) && !t.local_src;
+    });
+
+    $: hasDownloadable = downloadableTracks.length > 0;
+
+    // Check if everything that CAN be downloaded IS downloaded
+    $: allDownloaded =
+        tracks.length > 0 &&
+        tracks.every((t) => {
+            // If it's local, it's downloaded.
+            if (!t.source_type || t.source_type === "local") return true;
+            // If it's streaming, it must have local_src
+            return !!t.local_src;
+        });
+
+    function formatBytes(bytes: number): string {
+        if (bytes === 0) return "0 B";
+        const k = 1024;
+        const sizes = ["B", "KB", "MB", "GB"];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+    }
+
+    async function handleDownloadAll() {
+        if (isDownloading) return;
+
+        if (needsDownloadLocation()) {
+            addToast(
+                "Please configure a download location in Settings first",
+                "error",
+            );
+            return;
+        }
+
+        isDownloading = true;
+        downloadProgress = "Starting...";
+
+        try {
+            const result = await downloadTracks(
+                tracks,
+                (progress: DownloadProgress) => {
+                    const current = progress.current;
+                    const total = progress.total;
+
+                    if (progress.bytesTotal) {
+                        const currentMB = formatBytes(
+                            progress.bytesCurrent || 0,
+                        );
+                        const totalMB = formatBytes(progress.bytesTotal);
+                        downloadProgress = `${current}/${total} (${currentMB}/${totalMB})`;
+                    } else {
+                        downloadProgress = `${current}/${total}`;
+                    }
+                },
+            );
+
+            showDownloadResult(result);
+            // Refresh playlist tracks to update local_src status
+            loadPlaylistData();
+        } catch (error) {
+            console.error("Download failed:", error);
+            addToast("Download failed unexpectedly", "error");
+        } finally {
+            isDownloading = false;
+            downloadProgress = "";
+        }
+    }
+
     async function loadPlaylistData() {
         loading = true;
         try {
@@ -93,7 +178,14 @@
     }
 
     async function handleDelete() {
-        if (!confirm(`Delete playlist "${playlist?.name}"?`)) return;
+        if (
+            !(await confirm(`Delete playlist "${playlist?.name}"?`, {
+                title: "Delete Playlist",
+                confirmLabel: "Delete",
+                danger: true,
+            }))
+        )
+            return;
 
         try {
             await deletePlaylist(playlistId);
@@ -246,6 +338,47 @@
                         </svg>
                         Play
                     </button>
+
+                    {#if hasDownloadable || allDownloaded}
+                        <button
+                            class="btn-secondary download-btn"
+                            on:click={handleDownloadAll}
+                            disabled={isDownloading ||
+                                (!hasDownloadable && !allDownloaded) ||
+                                allDownloaded}
+                            class:downloaded={allDownloaded}
+                        >
+                            {#if isDownloading}
+                                <div class="spinner-sm"></div>
+                                <span>{downloadProgress}</span>
+                            {:else if allDownloaded}
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="currentColor"
+                                    width="24"
+                                    height="24"
+                                >
+                                    <path
+                                        d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"
+                                    />
+                                </svg>
+                                <span>Downloaded</span>
+                            {:else}
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="currentColor"
+                                    width="24"
+                                    height="24"
+                                >
+                                    <path
+                                        d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"
+                                    />
+                                </svg>
+                                <span>Download</span>
+                            {/if}
+                        </button>
+                    {/if}
+
                     <button
                         class="btn-secondary"
                         on:click={() => coverInput?.click()}
@@ -508,5 +641,24 @@
 
     .empty-state p {
         font-size: 0.875rem;
+    }
+
+    .btn-secondary.downloaded {
+        border-color: var(--accent-primary);
+        color: var(--accent-primary);
+        cursor: default;
+    }
+
+    .btn-secondary.downloaded:hover {
+        transform: none;
+    }
+
+    .spinner-sm {
+        width: 16px;
+        height: 16px;
+        border: 2px solid var(--bg-highlight);
+        border-top-color: var(--text-primary);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
     }
 </style>

@@ -14,25 +14,55 @@
         addToQueue,
     } from "$lib/stores/player";
     import { contextMenu } from "$lib/stores/ui";
-    import { albums, playlists, loadPlaylists } from "$lib/stores/library";
+    import {
+        albums,
+        playlists,
+        loadPlaylists,
+        loadLibrary,
+    } from "$lib/stores/library";
     import { pluginStore } from "$lib/stores/plugin-store";
     import { goToAlbumDetail } from "$lib/stores/view";
+    import {
+        canDownload,
+        downloadTrack,
+        needsDownloadLocation,
+    } from "$lib/services/downloadService";
+    import { addToast } from "$lib/stores/toast";
+    import { isOnline } from "$lib/stores/network";
 
     export let tracks: Track[] = [];
     export let title: string = "Tracks";
     export let showAlbum: boolean = true;
+    export let isTidalAvailable: boolean = true;
 
-    // Filter out external tracks if their source plugin isn't enabled
-    $: filteredTracks = tracks.filter((track) => {
-        // Local tracks are always shown
-        if (!track.source_type || track.source_type === "local") {
-            return true;
-        }
-        // External tracks: check if a resolver is registered
+    // Track images that failed to load
+    let failedImages = new Set<string>();
+
+    function isTrackUnavailable(track: Track): boolean {
+        // Local tracks are always available
+        if (!track.source_type || track.source_type === "local") return false;
+        // Downloaded tracks are always available
+        if (track.local_src) return false;
+
+        // If offline and not downloaded/local, it's unavailable
+        if (!$isOnline) return true;
+
+        // Otherwise depends on plugin availability
+        // Also check if we have a resolver for this source type
+        if (!isTidalAvailable) return true;
+
         const runtime = pluginStore.getRuntime();
-        if (!runtime) return false;
-        return runtime.streamResolvers.has(track.source_type);
-    });
+        if (!runtime) return true;
+        return !runtime.streamResolvers.has(track.source_type);
+    }
+
+    // Filter out external tracks ONLY if we filter completely (old logic).
+    // New logic: show all but mark unavailable.
+    // However, the original filteredTracks logic was checking for resolver existence.
+    // We should probably keep showing them but maybe mark them?
+    // Let's modify filteredTracks to NOT filter based on resolvers,
+    // but relies on the CSS class for visual indication.
+    $: filteredTracks = tracks;
 
     // Create a map of album_id to album for quick lookup
     $: albumMap = new Map($albums.map((a) => [a.id, a]));
@@ -96,6 +126,8 @@
     }
 
     function handleTrackClick(index: number, track: Track) {
+        if (isTrackUnavailable(track)) return;
+
         // Find the actual index in the filtered/sorted list
         const trackIndex = sortedTracks.findIndex((t) => t.id === track.id);
         if (trackIndex !== -1) {
@@ -104,6 +136,8 @@
     }
 
     function handleTrackDoubleClick(index: number, track: Track) {
+        if (isTrackUnavailable(track)) return;
+
         const trackIndex = sortedTracks.findIndex((t) => t.id === track.id);
         if (trackIndex !== -1) {
             playTracks(sortedTracks, trackIndex);
@@ -113,6 +147,7 @@
     export let playlistId: number | null = null;
 
     async function handleContextMenu(e: MouseEvent, index: number) {
+        // Context menu still allowed for unavailable tracks? Probably yes (e.g. to delete)
         e.preventDefault();
         const track = sortedTracks[index];
 
@@ -133,6 +168,8 @@
             },
         }));
 
+        const isUnavailable = isTrackUnavailable(track);
+
         const menuItems: any[] = [
             {
                 label: "Play",
@@ -142,11 +179,41 @@
                     );
                     if (trackIndex !== -1) playTracks(sortedTracks, trackIndex);
                 },
+                disabled: isUnavailable,
             },
             { type: "separator" },
             {
                 label: "Add to Queue",
                 action: () => addToQueue([track]),
+                disabled: isUnavailable,
+            },
+            { type: "separator" },
+            {
+                label: "Download",
+                action: async () => {
+                    if (needsDownloadLocation()) {
+                        addToast(
+                            "Please configure a download location in Settings first",
+                            "error",
+                        );
+                        return;
+                    }
+
+                    addToast(`Downloading "${track.title}"...`, "info");
+                    try {
+                        await downloadTrack(track);
+                        addToast(`Downloaded "${track.title}"`, "success");
+                    } catch (error) {
+                        console.error("Failed to download track:", error);
+                        addToast(
+                            `Failed to download "${track.title}"`,
+                            "error",
+                        );
+                    }
+                },
+                disabled:
+                    !canDownload(track) ||
+                    (isUnavailable && !isTidalAvailable && !track.local_src), // Enable download if it's the only way to get it? No, if plugin off, can't download.
             },
             { type: "separator" },
             {
@@ -188,7 +255,9 @@
                 action: async () => {
                     try {
                         await deleteTrack(track.id);
-                        // Remove from local tracks array
+                        // Refresh library to update album list (removes empty albums)
+                        await loadLibrary();
+                        // Also remove from local tracks array for immediate UI feedback
                         tracks = tracks.filter((t) => t.id !== track.id);
                     } catch (error) {
                         console.error("Failed to delete track:", error);
@@ -208,6 +277,7 @@
 
 <div class="track-list">
     <header class="list-header" class:no-album={!showAlbum}>
+        <!-- ... existing header ... -->
         <button class="col-header col-num" on:click={() => toggleSort(null)}>
             {#if sortField === null}
                 <span class="sort-icon">#</span>
@@ -260,9 +330,11 @@
     <div class="list-body">
         {#each sortedTracks as track, index}
             {@const albumArt = getTrackAlbumArt(track)}
+            {@const unavailable = isTrackUnavailable(track)}
             <div
                 class="track-row"
                 class:playing={$currentTrack?.id === track.id}
+                class:unavailable
                 on:click={() => handleTrackClick(index, track)}
                 on:dblclick={() => handleTrackDoubleClick(index, track)}
                 on:contextmenu={(e) => handleContextMenu(e, index)}
@@ -290,13 +362,17 @@
                 </span>
                 <span class="col-cover">
                     <div class="cover-wrapper">
-                        {#if albumArt}
+                        {#if albumArt && !failedImages.has(albumArt)}
                             <img
                                 src={albumArt}
                                 alt="Album cover"
                                 class="cover-image"
                                 loading="lazy"
                                 decoding="async"
+                                on:error={() => {
+                                    failedImages.add(albumArt);
+                                    failedImages = failedImages;
+                                }}
                             />
                         {:else}
                             <div class="cover-placeholder">
@@ -329,9 +405,22 @@
                         <span class="track-name truncate"
                             >{track.title || "Unknown Title"}</span
                         >
-                        {#if track.source_type && track.source_type !== "local"}
-                            <span class="quality-tag stream-tag">S</span>
+
+                        {#if !track.source_type || track.source_type === "local" || track.local_src}
+                            <span class="downloaded-icon" title="Downloaded">
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="currentColor"
+                                    width="14"
+                                    height="14"
+                                >
+                                    <path
+                                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
+                                    />
+                                </svg>
+                            </span>
                         {/if}
+
                         {#if track.format}
                             {@const formatUpper = track.format.toUpperCase()}
                             {@const displayFormat =
@@ -616,16 +705,6 @@
         background-color: rgba(29, 185, 84, 0.15);
     }
 
-    .quality-tag.stream-tag {
-        color: var(--accent-primary);
-        border-color: var(--accent-primary);
-        background-color: color-mix(
-            in srgb,
-            var(--accent-primary),
-            transparent 85%
-        );
-    }
-
     .track-artist {
         font-size: 0.8125rem;
         color: var(--text-secondary);
@@ -677,5 +756,22 @@
 
     .empty-state p {
         font-size: 0.875rem;
+    }
+
+    .track-row.unavailable {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .track-row.unavailable:hover {
+        background-color: transparent;
+    }
+
+    .downloaded-icon {
+        color: var(--accent-primary);
+        display: flex;
+        align-items: center;
+        margin-left: var(--spacing-xs);
+        flex-shrink: 0;
     }
 </style>

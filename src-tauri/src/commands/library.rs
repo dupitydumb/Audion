@@ -94,6 +94,9 @@ pub async fn rescan_music(db: State<'_, Database>) -> Result<ScanResult, String>
     tracks_deleted = queries::cleanup_deleted_tracks(&conn, &folders)
         .map_err(|e| format!("Failed to cleanup deleted tracks: {}", e))?;
 
+    // Clean up empty albums after track cleanup
+    let _ = queries::cleanup_empty_albums(&conn);
+
     // Rescan all folders
     for path in folders {
         let scan_result = scan_directory(&path);
@@ -227,7 +230,13 @@ pub async fn delete_track(track_id: i64, db: State<'_, Database>) -> Result<bool
         }
     }
 
-    queries::delete_track(&conn, track_id).map_err(|e| format!("Failed to delete track: {}", e))
+    let result = queries::delete_track(&conn, track_id)
+        .map_err(|e| format!("Failed to delete track: {}", e))?;
+
+    // Clean up empty albums after track deletion
+    let _ = queries::cleanup_empty_albums(&conn);
+
+    Ok(result)
 }
 
 /// Delete an album and all its tracks
@@ -315,6 +324,7 @@ pub async fn add_external_track(
         cover_url: track.cover_url,
         external_id: Some(track.external_id),
         content_hash,
+        local_src: None,
     };
 
     queries::insert_or_update_track(&conn, &track_insert)

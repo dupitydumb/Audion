@@ -16,8 +16,17 @@
     import { playTracks, addToQueue } from "$lib/stores/player";
     import type { Writable } from "svelte/store";
 
+    import { confirm } from "$lib/stores/dialogs";
+
     async function handleDeletePlaylist(id: number, name: string) {
-        if (!confirm(`Delete playlist "${name}"?`)) return;
+        if (
+            !(await confirm(`Delete playlist "${name}"?`, {
+                title: "Delete Playlist",
+                confirmLabel: "Delete",
+                danger: true,
+            }))
+        )
+            return;
 
         try {
             await deletePlaylist(id);
@@ -334,9 +343,10 @@
         grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
         gap: var(--spacing-lg);
         padding: var(--spacing-md);
-        flex: 1;
+        flex: 1 1 auto;
         min-height: 0;
         overflow-y: auto;
+        align-content: start;
     }
 
     .playlist-card {

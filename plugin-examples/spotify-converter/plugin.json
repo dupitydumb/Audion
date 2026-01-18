@@ -1,6 +1,6 @@
 {
     "name": "Spotify Converter",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "author": "Audion Team",
     "description": "Convert Spotify playlists to Audion playlists using Tidal",
     "type": "js",

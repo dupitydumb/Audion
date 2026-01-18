@@ -460,6 +460,11 @@ export class PluginRuntime {
         if (typeof args[0] !== 'number' || typeof args[1] !== 'number') return false;
         return invoke('add_track_to_playlist', { playlistId: args[0], trackId: args[1] });
 
+      case 'library.updatePlaylistCover':
+        // args: [playlistId, coverUrl]
+        if (typeof args[0] !== 'number') return false;
+        return invoke('update_playlist_cover', { playlistId: args[0], coverUrl: args[1] || null });
+
       case 'settings.setDownloadLocation':
         // args: [path]
         try {
@@ -574,6 +579,7 @@ export class PluginRuntime {
       api.library.refresh = () => this.callHost(pluginName, 'library.refresh');
       api.library.createPlaylist = (name: string) => this.callHost(pluginName, 'library.createPlaylist', name);
       api.library.addTrackToPlaylist = (playlistId: number, trackId: number) => this.callHost(pluginName, 'library.addTrackToPlaylist', playlistId, trackId);
+      api.library.updatePlaylistCover = (playlistId: number, coverUrl: string | null) => this.callHost(pluginName, 'library.updatePlaylistCover', playlistId, coverUrl);
     }
 
     if (this.hasPermission(pluginName, 'library:read')) {

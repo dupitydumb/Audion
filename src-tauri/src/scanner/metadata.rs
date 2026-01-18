@@ -142,6 +142,7 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
                 cover_url: None,
                 external_id: None,
                 content_hash,
+                local_src: None,
             })
         }
         None => {
@@ -179,6 +180,7 @@ fn create_fallback_metadata(path: &Path) -> TrackInsert {
         cover_url: None,
         external_id: None,
         content_hash: None, // Will be set later with duration
+        local_src: None,
     }
 }
 

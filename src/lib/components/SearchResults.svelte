@@ -4,7 +4,11 @@
         searchQuery,
         clearSearch,
     } from "$lib/stores/search";
-    import { goToAlbumDetail, goToArtistDetail } from "$lib/stores/view";
+    import {
+        goToAlbumDetail,
+        goToArtistDetail,
+        goToPlaylistDetail,
+    } from "$lib/stores/view";
     import { playTracks, addToQueue } from "$lib/stores/player";
     import {
         getAlbumArtSrc,
@@ -67,6 +71,11 @@
     function handleArtistClick(artistName: string) {
         clearSearch();
         goToArtistDetail(artistName);
+    }
+
+    function handlePlaylistClick(playlistId: number) {
+        clearSearch();
+        goToPlaylistDetail(playlistId);
     }
 
     function getArtistInitial(name: string): string {
@@ -379,6 +388,41 @@
                 </div>
             </section>
         {/if}
+
+        <!-- Playlists Section -->
+        {#if $searchResults.playlists && $searchResults.playlists.length > 0}
+            <section class="result-section">
+                <h2 class="section-title">
+                    Playlists ({$searchResults.playlists.length})
+                </h2>
+                <div class="playlists-grid">
+                    {#each $searchResults.playlists.slice(0, 6) as playlist}
+                        <button
+                            class="playlist-card"
+                            on:click={() => handlePlaylistClick(playlist.id)}
+                        >
+                            <div class="playlist-icon">
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="currentColor"
+                                    width="32"
+                                    height="32"
+                                >
+                                    <path
+                                        d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"
+                                    />
+                                </svg>
+                            </div>
+                            <div class="playlist-info">
+                                <span class="playlist-name truncate"
+                                    >{playlist.name}</span
+                                >
+                            </div>
+                        </button>
+                    {/each}
+                </div>
+            </section>
+        {/if}
     {/if}
 </div>
 
@@ -604,5 +648,56 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+
+    /* Playlists Grid */
+    .playlists-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: var(--spacing-md);
+    }
+
+    .playlist-card {
+        background-color: var(--bg-elevated);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-md);
+        transition: background-color var(--transition-normal);
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--spacing-sm);
+    }
+
+    .playlist-card:hover {
+        background-color: var(--bg-surface);
+    }
+
+    .playlist-icon {
+        width: 60px;
+        height: 60px;
+        border-radius: var(--radius-sm);
+        background: linear-gradient(
+            135deg,
+            var(--accent-primary) 0%,
+            #2a2a2a 100%
+        );
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-primary);
+    }
+
+    .playlist-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        width: 100%;
+    }
+
+    .playlist-name {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--text-primary);
     }
 </style>

@@ -10,7 +10,12 @@
         initLyricsSync,
         destroyLyricsSync,
     } from "$lib/stores/lyrics";
-    import { currentTrack, currentTime } from "$lib/stores/player";
+    import {
+        currentTrack,
+        currentTime,
+        duration,
+        seek,
+    } from "$lib/stores/player";
 
     let lyricsContainer: HTMLDivElement;
     let lineElements: HTMLDivElement[] = [];
@@ -101,6 +106,15 @@
         });
     }
 
+    // Seek to a specific lyric line time
+    function handleLineClick(lineTime: number) {
+        const dur = $duration;
+        if (dur && dur > 0) {
+            const position = lineTime / dur;
+            seek(Math.max(0, Math.min(1, position)));
+        }
+    }
+
     onMount(() => {
         initLyricsSync();
         return () => destroyLyricsSync();
@@ -172,6 +186,11 @@
                             class:past={i < $activeLine}
                             class:word-sync={hasWordSync && isActiveLine}
                             bind:this={lineElements[i]}
+                            on:click={() => handleLineClick(line.time)}
+                            on:keydown={(e) =>
+                                e.key === "Enter" && handleLineClick(line.time)}
+                            role="button"
+                            tabindex="0"
                         >
                             {#if hasWordSync && line.words}
                                 {#each line.words as word, wordIdx}
@@ -363,7 +382,7 @@
         line-height: 1.5;
         color: var(--lyrics-inactive);
         transition: all 0.4s cubic-bezier(0.25, 0.1, 0.25, 1);
-        cursor: default;
+        cursor: pointer;
         filter: blur(0px);
     }
 

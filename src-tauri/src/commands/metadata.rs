@@ -1,9 +1,12 @@
 // Audio save and metadata commands
+use futures::StreamExt;
 use lofty::{Accessor, MimeType, Picture, PictureType, Probe, TagExt, TaggedFileExt};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
-use tauri::command;
+use tauri::{command, AppHandle, Emitter, State};
+
+use crate::db::{self, Database};
 
 #[derive(serde::Deserialize)]
 pub struct DownloadAudioInput {
@@ -17,34 +20,31 @@ pub struct DownloadAudioInput {
     pub cover_url: Option<String>,
 }
 
+#[derive(Clone, serde::Serialize)]
+struct DownloadProgress {
+    path: String,
+    current: u64,
+    total: u64,
+}
+
 #[command]
-pub async fn download_and_save_audio(input: DownloadAudioInput) -> Result<String, String> {
+pub async fn download_and_save_audio(
+    app: AppHandle,
+    input: DownloadAudioInput,
+) -> Result<String, String> {
     let path = Path::new(&input.path);
 
     // Debug: Log input values
     println!("[Metadata] Saving to path: {}", &input.path);
-    println!(
-        "[Metadata] Title: {:?}, Artist: {:?}, Album: {:?}",
-        &input.title, &input.artist, &input.album
-    );
-    println!("[Metadata] Cover URL: {:?}", &input.cover_url);
 
     // Ensure parent directory exists
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {}", e))?;
     }
 
-    // Download the audio file from URL
+    // Download the audio file from URL with progress
     println!("[Metadata] Downloading audio from URL...");
-    let audio_data = download_file(&input.url).await?;
-    println!("[Metadata] Downloaded {} bytes", audio_data.len());
-
-    // Write to file
-    let mut file = fs::File::create(path).map_err(|e| format!("Failed to create file: {}", e))?;
-    file.write_all(&audio_data)
-        .map_err(|e| format!("Failed to write file: {}", e))?;
-    drop(file);
-    println!("[Metadata] Audio file written to disk");
+    download_file_with_progress(&app, &input.url, &input.path).await?;
 
     // Try to write metadata (non-fatal if it fails)
     // AAC files with ID3 tags often fail to play in browsers, so we skip metadata for them
@@ -63,7 +63,11 @@ pub async fn download_and_save_audio(input: DownloadAudioInput) -> Result<String
     Ok(input.path)
 }
 
-async fn download_file(url: &str) -> Result<Vec<u8>, String> {
+async fn download_file_with_progress(
+    app: &AppHandle,
+    url: &str,
+    file_path: &str,
+) -> Result<(), String> {
     let response = reqwest::get(url)
         .await
         .map_err(|e| format!("Failed to download audio: {}", e))?;
@@ -75,12 +79,42 @@ async fn download_file(url: &str) -> Result<Vec<u8>, String> {
         ));
     }
 
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read audio: {}", e))?;
+    let total_size = response.content_length().unwrap_or(0);
+    let mut file =
+        fs::File::create(file_path).map_err(|e| format!("Failed to create file: {}", e))?;
+    let mut stream = response.bytes_stream();
+    let mut downloaded: u64 = 0;
 
-    Ok(bytes.to_vec())
+    while let Some(item) = stream.next().await {
+        let chunk = item.map_err(|e| format!("Error while downloading: {}", e))?;
+        file.write_all(&chunk)
+            .map_err(|e| format!("Error while writing to file: {}", e))?;
+
+        downloaded += chunk.len() as u64;
+
+        // Emit progress event
+        let _ = app.emit(
+            "download://progress",
+            DownloadProgress {
+                path: file_path.to_string(),
+                current: downloaded,
+                total: total_size,
+            },
+        );
+    }
+
+    Ok(())
+}
+
+#[command]
+pub async fn update_local_src(
+    state: State<'_, Database>,
+    track_id: i64,
+    local_src: String,
+) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    db::queries::update_track_local_src(&conn, track_id, &local_src)
+        .map_err(|e| format!("Failed to update local src: {}", e))
 }
 
 async fn write_metadata_to_file(path: &Path, input: &DownloadAudioInput) -> Result<(), String> {

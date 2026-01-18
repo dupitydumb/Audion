@@ -328,6 +328,16 @@
                 const playlistId = await this.api.library.createPlaylist(playlistData.title);
                 this.log(`Created playlist ID: ${playlistId}`, 'info');
 
+                // 2.5. Set playlist cover if available
+                if (playlistData.coverUrl) {
+                    try {
+                        await this.api.library.updatePlaylistCover(playlistId, playlistData.coverUrl);
+                        this.log('Set playlist cover from Spotify', 'success');
+                    } catch (coverErr) {
+                        this.log('Could not set playlist cover', 'warn');
+                    }
+                }
+
                 // 3. Process tracks
                 let processed = 0;
                 let successes = 0;
@@ -377,6 +387,9 @@
 
                 this.log(`Done! Imported ${successes} of ${playlistData.tracks.length} tracks.`, 'success');
 
+                // Clear input to prevent accidental re-import
+                urlInput.value = '';
+
                 if (this.api.library.refresh) {
                     this.api.library.refresh();
                 }
@@ -393,7 +406,17 @@
         },
 
         async fetchPlaylistData(url) {
-            let html = null;
+            // Extract playlist ID from URL
+            const playlistIdMatch = url.match(/playlist\/([a-zA-Z0-9]+)/);
+            if (!playlistIdMatch) {
+                throw new Error('Invalid Spotify playlist URL');
+            }
+            const playlistId = playlistIdMatch[1];
+            this.log(`Playlist ID: ${playlistId}`, 'info');
+
+            let tracks = [];
+            let title = 'Spotify Playlist';
+            let coverUrl = null;
 
             // List of proxies to try in order
             const proxies = [
@@ -402,266 +425,352 @@
                 (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`
             ];
 
-            // 1. Try Direct Fetch (unlikely to work for Spotify but good practice)
-            try {
-                const res = await fetch(url);
-                if (res.ok) {
-                    html = await res.text();
-                }
-            } catch (e) { /* ignore */ }
+            // Strategy 0: Try Spotify Embed API (returns ALL tracks, not just 30)
+            // The embed endpoint contains complete playlist data
+            const embedUrl = `https://open.spotify.com/embed/playlist/${playlistId}`;
+            this.log('Trying Spotify embed API for complete track list...', 'info');
 
-            // 2. Try Proxies
-            if (!html) {
-                for (const proxyFn of proxies) {
-                    const proxyUrl = proxyFn(url);
-                    this.log(`Trying proxy: ${new URL(proxyUrl).hostname}...`, 'info');
-                    try {
-                        const res = await fetch(proxyUrl);
-                        if (!res.ok) throw new Error(`Status ${res.status}`);
-                        html = await res.text();
-                        if (html) {
-                            this.log('Proxy fetch successful', 'success');
-                            break;
-                        }
-                    } catch (e) {
-                        console.warn(`Proxy failed: ${proxyUrl}`, e);
-                    }
-                }
-            }
+            for (const proxyFn of proxies) {
+                if (tracks.length > 0) break;
 
-            if (!html) {
-                throw new Error('Failed to fetch playlist data. All proxies failed.');
-            }
+                const proxyUrl = proxyFn(embedUrl);
+                try {
+                    const res = await fetch(proxyUrl);
+                    if (!res.ok) continue;
 
-            const parser = new DOMParser();
-            const doc = parser.parseFromString(html, 'text/html');
+                    const html = await res.text();
 
-            const title = doc.querySelector('meta[property="og:title"]')?.content || 'Spotify Playlist';
-            const tracks = [];
+                    // The embed page contains JSON data in script tags
+                    // Look for __NEXT_DATA__ or resource script
+                    const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>(.+?)<\/script>/s);
+                    if (nextDataMatch) {
+                        const data = JSON.parse(nextDataMatch[1]);
+                        // Navigate to playlist entity
+                        const props = data?.props?.pageProps;
+                        if (props?.state?.data?.entity) {
+                            const entity = props.state.data.entity;
+                            title = entity.name || title;
+                            coverUrl = entity.coverArt?.sources?.[0]?.url || null;
 
-            // Strategy 1: Look for JSON metadata (SpotifyEntity or initial-state)
-            try {
-                // Check for generic initial-state script (Common in React/Next.js apps like Spotify)
-                const stateScript = doc.getElementById('initial-state') || doc.getElementById('session'); // session sometimes has it
-
-                if (stateScript) {
-                    let jsonStr = stateScript.textContent;
-                    // Attempt base64 decode if it looks like base64 (no curly brace at start)
-                    if (jsonStr && !jsonStr.trim().startsWith('{')) {
-                        try {
-                            jsonStr = atob(jsonStr);
-                        } catch (e) { /* ignore, maybe not base64 */ }
-                    }
-
-                    if (jsonStr) {
-                        const data = JSON.parse(jsonStr);
-                        // Traverse potential paths for tracks
-                        // Path 1: entities relative
-                        // Path 2: queries
-
-                        // Helper to finding tracks in big object
-                        const findItems = (obj) => {
-                            if (!obj || typeof obj !== 'object') return;
-                            if (obj.items && Array.isArray(obj.items) && obj.items.length > 0) {
-                                const first = obj.items[0];
-                                if (first.track && first.track.artists) {
-                                    // Found it!
-                                    obj.items.forEach(item => {
-                                        if (item.track) {
-                                            tracks.push({
-                                                title: item.track.name,
-                                                artist: item.track.artists.map(a => a.name).join(', ')
-                                            });
-                                        }
-                                    });
-                                }
-                            }
-                            Object.values(obj).forEach(val => findItems(val));
-                        };
-
-                        findItems(data);
-                    }
-                }
-
-                if (tracks.length === 0) {
-                    // Fallback to searching scripts for "SpotifyEntity"
-                    const scripts = Array.from(doc.scripts);
-                    let resourceScript = scripts.find(s => s.textContent.includes('SpotifyEntity'));
-
-                    if (resourceScript) {
-                        const match = resourceScript.textContent.match(/SpotifyEntity\s*=\s*({.+?});/s);
-                        if (match && match[1]) {
-                            const data = JSON.parse(match[1]);
-                            if (data && data.tracks && data.tracks.items) {
-                                data.tracks.items.forEach(item => {
-                                    const t = item.track;
-                                    if (t) {
+                            // Extract tracks from trackList
+                            if (entity.trackList) {
+                                entity.trackList.forEach(item => {
+                                    if (item.title && item.subtitle) {
                                         tracks.push({
-                                            title: t.name,
-                                            artist: t.artists.map(a => a.name).join(', ')
+                                            title: item.title,
+                                            artist: item.subtitle
                                         });
                                     }
                                 });
                             }
                         }
                     }
-                }
-            } catch (e) { console.warn('JSON parse failed', e); }
 
-            // Strategy 1.5: Look for hydration data (modern Spotify)
-            // It looks like <script type="application/json" id="shared-data"> or similar
-            if (tracks.length === 0) {
-                // Try simple regex search on the whole HTML for track/artist patterns if DOM is messy.
-                // "name":"Track Name" ... "artists":[{"name":"Artist"}]
-                // This is risky but powerful for large blobs
+                    // Alternative: Look for embedded JSON with tracks
+                    if (tracks.length === 0) {
+                        const scriptMatch = html.match(/<script[^>]*>\s*window\.__REDUX_STATE__\s*=\s*(.+?)\s*<\/script>/s)
+                            || html.match(/"trackList":\s*(\[.+?\])/s);
+                        if (scriptMatch) {
+                            try {
+                                const jsonStr = scriptMatch[1];
+                                // Clean up JSON if needed
+                                const cleanJson = jsonStr.replace(/undefined/g, 'null');
+                                const trackData = JSON.parse(cleanJson);
+
+                                if (Array.isArray(trackData)) {
+                                    trackData.forEach(item => {
+                                        if (item.title) {
+                                            tracks.push({
+                                                title: item.title,
+                                                artist: item.subtitle || item.artist || 'Unknown'
+                                            });
+                                        }
+                                    });
+                                }
+                            } catch (e) { /* parse error, try next */ }
+                        }
+                    }
+
+                    if (tracks.length > 0) {
+                        this.log(`Embed API: Found ${tracks.length} tracks!`, 'success');
+                        break;
+                    }
+                } catch (e) {
+                    console.warn('Embed fetch failed:', e);
+                }
             }
 
-            // Strategy 2: User-provided DOM scraping logic (Adapted for static HTML)
+            // If embed didn't work, fall back to regular open.spotify.com page
             if (tracks.length === 0) {
-                this.log('Attempting user-provided scraper logic...', 'info');
+                this.log('Embed API failed, falling back to regular page...', 'warn');
 
-                // Get all track rows
-                const trackRows = doc.querySelectorAll('[data-testid="tracklist-row"], [data-testid="playlist-tracklist-row"]');
-                this.log(`Strategy 2: Found ${trackRows.length} track rows`, 'info');
+                let html = null;
 
-                trackRows.forEach((row, index) => {
-                    try {
-                        // Strategy 1: Look for title and artist in common containers
-                        let songTitle = row.querySelector('[data-testid="internal-track-link"] div')?.textContent ||
-                            row.querySelector('a[href*="/track/"] div')?.textContent;
-
-                        let artist = row.querySelector('a[href*="/artist/"]')?.textContent;
-
-                        // Strategy 2: Alternative selectors
-                        if (!songTitle) {
-                            songTitle = row.querySelector('.t_yrXoUO3qGsJS4Y6iXX')?.textContent ||
-                                row.querySelector('[dir="auto"]')?.textContent;
-                            // Fallback to direct link text if div lookup failed
-                            if (!songTitle) {
-                                songTitle = row.querySelector('a[href*="/track/"]')?.textContent;
-                            }
-                        }
-
-                        if (!artist) {
-                            const artistLinks = row.querySelectorAll('a[href*="/artist/"]');
-                            if (artistLinks.length > 0) {
-                                artist = Array.from(artistLinks).map(a => a.textContent).join(', ');
-                            }
-                        }
-
-                        if (songTitle) {
-                            tracks.push({
-                                title: songTitle.trim(),
-                                artist: artist ? artist.trim() : 'Unknown Artist'
-                            });
-                        }
-                    } catch (err) {
-                        console.warn(`Error parsing row ${index + 1}:`, err);
+                // 1. Try Direct Fetch (unlikely to work for Spotify but good practice)
+                try {
+                    const res = await fetch(url);
+                    if (res.ok) {
+                        html = await res.text();
                     }
-                });
-            }
+                } catch (e) { /* ignore */ }
 
-            // Strategy 3: Fallback simple link scraper (if the structured rows don't exist in static HTML)
-            if (tracks.length === 0) {
-                this.log('Strategy 2 failed (0 tracks). Falling back to smart link scraping.', 'warn');
-                const trackLinks = Array.from(doc.querySelectorAll('a[href*="/track/"]'));
-                this.log(`Strategy 3: Found ${trackLinks.length} track links`, 'info');
-
-                // DEBUG: Log first track's HTML structure
-                if (trackLinks.length > 0) {
-                    const firstLink = trackLinks[0];
-                    console.log('=== FIRST TRACK LINK DEBUG ===');
-                    console.log('Link text:', firstLink.textContent);
-                    console.log('Link HTML:', firstLink.outerHTML);
-                    console.log('Parent HTML:', firstLink.parentElement?.outerHTML);
-                    // Use closest div or fallback to parent's parent for context
-                    const container = firstLink.closest('div') || firstLink.parentElement?.parentElement;
-                    if (container) {
-                        console.log('Container HTML:', container.outerHTML.substring(0, 500));
-                    }
-                }
-
-                for (const link of trackLinks) {
-                    const trackTitle = link.textContent.trim();
-                    if (!trackTitle) continue;
-
-                    // Deduplicate based on title in this fallback pass
-                    if (tracks.find(t => t.title === trackTitle)) continue;
-
-                    let artistName = '';
-
-                    // Try to find artist in next sibling or parent's sibling (look ahead)
-                    let next = link.nextElementSibling;
-                    // Or check parent's next sibling if link is inside a div
-                    if (!next && link.parentElement.tagName === 'DIV') {
-                        next = link.parentElement.nextElementSibling;
-                    }
-
-                    // Look ahead a few elements for an artist link OR text span
-                    let lookAhead = 5;
-                    while (next && lookAhead > 0) {
-                        // 1. Check for Artist Link
-                        if (next.tagName === 'A' && next.href.includes('/artist/')) {
-                            artistName = next.textContent.trim();
-                            break;
-                        }
-
-                        // 2. Check for nested Artist Link
-                        if (next.querySelector) {
-                            const internalArtist = next.querySelector('a[href*="/artist/"]');
-                            if (internalArtist) {
-                                artistName = internalArtist.textContent.trim();
+                // 2. Try Proxies
+                if (!html) {
+                    for (const proxyFn of proxies) {
+                        const proxyUrl = proxyFn(url);
+                        this.log(`Trying proxy: ${new URL(proxyUrl).hostname}...`, 'info');
+                        try {
+                            const res = await fetch(proxyUrl);
+                            if (!res.ok) throw new Error(`Status ${res.status}`);
+                            html = await res.text();
+                            if (html) {
+                                this.log('Proxy fetch successful', 'success');
                                 break;
                             }
+                        } catch (e) {
+                            console.warn(`Proxy failed: ${proxyUrl}`, e);
+                        }
+                    }
+                }
 
-                            // 3. User Snippet Match: Check for Artist in SPAN (like "NIKI" case)
-                            // Structure: Track Link -> Div -> Span(Artist)
-                            // Or Track Link -> Span(Artist)
-                            const possibleArtistSpan = next.querySelector('span[class*="encore-text"], span[class*="text"]');
-                            if (possibleArtistSpan) {
-                                const t = possibleArtistSpan.textContent.trim();
-                                // Avoid confusing with duration (e.g. 3:45) or other metadata
-                                if (t && t.length > 1 && !t.includes(':') && t !== 'E') {
-                                    artistName = t;
-                                    // Don't break immediately, might be a better link further down? 
-                                    // Actually usually this comes right after title.
-                                    break;
+                if (!html) {
+                    throw new Error('Failed to fetch playlist data. All proxies failed.');
+                }
+
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+
+                title = doc.querySelector('meta[property="og:title"]')?.content || title;
+                // Extract playlist cover image from og:image meta tag
+                coverUrl = coverUrl || doc.querySelector('meta[property="og:image"]')?.content || null;
+
+                // Strategy 1: Look for JSON metadata (SpotifyEntity or initial-state)
+                try {
+                    // Check for generic initial-state script (Common in React/Next.js apps like Spotify)
+                    const stateScript = doc.getElementById('initial-state') || doc.getElementById('session'); // session sometimes has it
+
+                    if (stateScript) {
+                        let jsonStr = stateScript.textContent;
+                        // Attempt base64 decode if it looks like base64 (no curly brace at start)
+                        if (jsonStr && !jsonStr.trim().startsWith('{')) {
+                            try {
+                                jsonStr = atob(jsonStr);
+                            } catch (e) { /* ignore, maybe not base64 */ }
+                        }
+
+                        if (jsonStr) {
+                            const data = JSON.parse(jsonStr);
+                            // Traverse potential paths for tracks
+                            // Path 1: entities relative
+                            // Path 2: queries
+
+                            // Helper to finding tracks in big object
+                            const findItems = (obj) => {
+                                if (!obj || typeof obj !== 'object') return;
+                                if (obj.items && Array.isArray(obj.items) && obj.items.length > 0) {
+                                    const first = obj.items[0];
+                                    if (first.track && first.track.artists) {
+                                        // Found it!
+                                        obj.items.forEach(item => {
+                                            if (item.track) {
+                                                tracks.push({
+                                                    title: item.track.name,
+                                                    artist: item.track.artists.map(a => a.name).join(', ')
+                                                });
+                                            }
+                                        });
+                                    }
+                                }
+                                Object.values(obj).forEach(val => findItems(val));
+                            };
+
+                            findItems(data);
+                        }
+                    }
+
+                    if (tracks.length === 0) {
+                        // Fallback to searching scripts for "SpotifyEntity"
+                        const scripts = Array.from(doc.scripts);
+                        let resourceScript = scripts.find(s => s.textContent.includes('SpotifyEntity'));
+
+                        if (resourceScript) {
+                            const match = resourceScript.textContent.match(/SpotifyEntity\s*=\s*({.+?});/s);
+                            if (match && match[1]) {
+                                const data = JSON.parse(match[1]);
+                                if (data && data.tracks && data.tracks.items) {
+                                    data.tracks.items.forEach(item => {
+                                        const t = item.track;
+                                        if (t) {
+                                            tracks.push({
+                                                title: t.name,
+                                                artist: t.artists.map(a => a.name).join(', ')
+                                            });
+                                        }
+                                    });
                                 }
                             }
                         }
+                    }
+                } catch (e) { console.warn('JSON parse failed', e); }
 
-                        // 4. Check if NEXT element itself is the span (if layout is flat)
-                        if (next.tagName === 'SPAN' || next.tagName === 'DIV') {
-                            const t = next.textContent.trim();
-                            if (t && !t.includes(':') && t !== 'E' && t.length > 1 && !artistName) {
-                                // Weak guess, but better than empty
-                                // Only accept if we haven't found anything better
-                                // artistName = t; 
-                                // Let's rely on class match or structure above for now to avoid junk
+                // Strategy 1.5: Look for hydration data (modern Spotify)
+                // It looks like <script type="application/json" id="shared-data"> or similar
+                if (tracks.length === 0) {
+                    // Try simple regex search on the whole HTML for track/artist patterns if DOM is messy.
+                    // "name":"Track Name" ... "artists":[{"name":"Artist"}]
+                    // This is risky but powerful for large blobs
+                }
+
+                // Strategy 2: User-provided DOM scraping logic (Adapted for static HTML)
+                if (tracks.length === 0) {
+                    this.log('Attempting user-provided scraper logic...', 'info');
+
+                    // Get all track rows
+                    const trackRows = doc.querySelectorAll('[data-testid="tracklist-row"], [data-testid="playlist-tracklist-row"]');
+                    this.log(`Strategy 2: Found ${trackRows.length} track rows`, 'info');
+
+                    trackRows.forEach((row, index) => {
+                        try {
+                            // Strategy 1: Look for title and artist in common containers
+                            let songTitle = row.querySelector('[data-testid="internal-track-link"] div')?.textContent ||
+                                row.querySelector('a[href*="/track/"] div')?.textContent;
+
+                            let artist = row.querySelector('a[href*="/artist/"]')?.textContent;
+
+                            // Strategy 2: Alternative selectors
+                            if (!songTitle) {
+                                songTitle = row.querySelector('.t_yrXoUO3qGsJS4Y6iXX')?.textContent ||
+                                    row.querySelector('[dir="auto"]')?.textContent;
+                                // Fallback to direct link text if div lookup failed
+                                if (!songTitle) {
+                                    songTitle = row.querySelector('a[href*="/track/"]')?.textContent;
+                                }
                             }
-                        }
 
-                        next = next.nextElementSibling;
-                        lookAhead--;
+                            if (!artist) {
+                                const artistLinks = row.querySelectorAll('a[href*="/artist/"]');
+                                if (artistLinks.length > 0) {
+                                    artist = Array.from(artistLinks).map(a => a.textContent).join(', ');
+                                }
+                            }
+
+                            if (songTitle) {
+                                tracks.push({
+                                    title: songTitle.trim(),
+                                    artist: artist ? artist.trim() : 'Unknown Artist'
+                                });
+                            }
+                        } catch (err) {
+                            console.warn(`Error parsing row ${index + 1}:`, err);
+                        }
+                    });
+                }
+
+                // Strategy 3: Fallback simple link scraper (if the structured rows don't exist in static HTML)
+                if (tracks.length === 0) {
+                    this.log('Strategy 2 failed (0 tracks). Falling back to smart link scraping.', 'warn');
+                    const trackLinks = Array.from(doc.querySelectorAll('a[href*="/track/"]'));
+                    this.log(`Strategy 3: Found ${trackLinks.length} track links`, 'info');
+
+                    // DEBUG: Log first track's HTML structure
+                    if (trackLinks.length > 0) {
+                        const firstLink = trackLinks[0];
+                        console.log('=== FIRST TRACK LINK DEBUG ===');
+                        console.log('Link text:', firstLink.textContent);
+                        console.log('Link HTML:', firstLink.outerHTML);
+                        console.log('Parent HTML:', firstLink.parentElement?.outerHTML);
+                        // Use closest div or fallback to parent's parent for context
+                        const container = firstLink.closest('div') || firstLink.parentElement?.parentElement;
+                        if (container) {
+                            console.log('Container HTML:', container.outerHTML.substring(0, 500));
+                        }
                     }
 
-                    tracks.push({ title: trackTitle, artist: artistName });
+                    for (const link of trackLinks) {
+                        const trackTitle = link.textContent.trim();
+                        if (!trackTitle) continue;
+
+                        // Deduplicate based on title in this fallback pass
+                        if (tracks.find(t => t.title === trackTitle)) continue;
+
+                        let artistName = '';
+
+                        // Try to find artist in next sibling or parent's sibling (look ahead)
+                        let next = link.nextElementSibling;
+                        // Or check parent's next sibling if link is inside a div
+                        if (!next && link.parentElement.tagName === 'DIV') {
+                            next = link.parentElement.nextElementSibling;
+                        }
+
+                        // Look ahead a few elements for an artist link OR text span
+                        let lookAhead = 5;
+                        while (next && lookAhead > 0) {
+                            // 1. Check for Artist Link
+                            if (next.tagName === 'A' && next.href.includes('/artist/')) {
+                                artistName = next.textContent.trim();
+                                break;
+                            }
+
+                            // 2. Check for nested Artist Link
+                            if (next.querySelector) {
+                                const internalArtist = next.querySelector('a[href*="/artist/"]');
+                                if (internalArtist) {
+                                    artistName = internalArtist.textContent.trim();
+                                    break;
+                                }
+
+                                // 3. User Snippet Match: Check for Artist in SPAN (like "NIKI" case)
+                                // Structure: Track Link -> Div -> Span(Artist)
+                                // Or Track Link -> Span(Artist)
+                                const possibleArtistSpan = next.querySelector('span[class*="encore-text"], span[class*="text"]');
+                                if (possibleArtistSpan) {
+                                    const t = possibleArtistSpan.textContent.trim();
+                                    // Avoid confusing with duration (e.g. 3:45) or other metadata
+                                    if (t && t.length > 1 && !t.includes(':') && t !== 'E') {
+                                        artistName = t;
+                                        // Don't break immediately, might be a better link further down? 
+                                        // Actually usually this comes right after title.
+                                        break;
+                                    }
+                                }
+                            }
+
+                            // 4. Check if NEXT element itself is the span (if layout is flat)
+                            if (next.tagName === 'SPAN' || next.tagName === 'DIV') {
+                                const t = next.textContent.trim();
+                                if (t && !t.includes(':') && t !== 'E' && t.length > 1 && !artistName) {
+                                    // Weak guess, but better than empty
+                                    // Only accept if we haven't found anything better
+                                    // artistName = t; 
+                                    // Let's rely on class match or structure above for now to avoid junk
+                                }
+                            }
+
+                            next = next.nextElementSibling;
+                            lookAhead--;
+                        }
+
+                        tracks.push({ title: trackTitle, artist: artistName });
+                    }
                 }
-            }
 
-            if (tracks.length === 0) {
-                // Strategy 3: Meta description fallback
-                const description = doc.querySelector('meta[name="description"]')?.content;
-                // Format: "Listen on Spotify: Playlist containing Track 1 by Artist 1, Track 2 by Artist 2..."
-                // Only gets first few tracks, but better than crashing.
-                if (description) {
-                    // Try to match "Track by Artist"
+                if (tracks.length === 0) {
+                    // Strategy 3: Meta description fallback
+                    const description = doc.querySelector('meta[name="description"]')?.content;
+                    // Format: "Listen on Spotify: Playlist containing Track 1 by Artist 1, Track 2 by Artist 2..."
+                    // Only gets first few tracks, but better than crashing.
+                    if (description) {
+                        // Try to match "Track by Artist"
+                    }
+
+                    throw new Error('Could not extract tracks. Spotify might have changed their layout.');
                 }
+            } // End of fallback block (if tracks.length === 0)
 
-                throw new Error('Could not extract tracks. Spotify might have changed their layout.');
-            }
+            // Log track count and cover status
+            this.log(`Extracted ${tracks.length} tracks${coverUrl ? ' with cover' : ''}`, 'info');
 
-            return { title, tracks };
+            return { title, tracks, coverUrl };
         },
 
         async searchTidal(query) {

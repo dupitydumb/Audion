@@ -74,6 +74,7 @@ pub fn run() {
             commands::remove_track_from_playlist,
             commands::delete_playlist,
             commands::rename_playlist,
+            commands::update_playlist_cover,
             // Lyrics commands
             commands::save_lrc_file,
             commands::load_lrc_file,
@@ -81,6 +82,7 @@ pub fn run() {
             commands::musixmatch_request,
             // Metadata commands
             commands::download_and_save_audio,
+            commands::update_local_src,
             // Plugin commands
             commands::list_plugins,
             commands::install_plugin,

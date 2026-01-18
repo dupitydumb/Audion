@@ -10,18 +10,19 @@ on:
       platform:
         description: 'Platform to build'
         required: true
-        default: 'both'
+        default: 'all'
         type: choice
         options:
           - windows
           - linux
-          - both
+          - macos
+          - all
 permissions:
   contents: write
 jobs:
   release-windows:
     runs-on: windows-latest
-    if: ${{ github.event_name == 'push' || inputs.platform == 'windows' || inputs.platform == 'both' }}
+    if: ${{ github.event_name == 'push' || inputs.platform == 'windows' || inputs.platform == 'all' }}
     outputs:
       version: ${{ steps.version.outputs.version }}
       changelog: ${{ steps.changelog.outputs.content }}
@@ -207,8 +208,8 @@ jobs:
   release-linux:
     runs-on: ubuntu-latest
     needs: release-windows
-    # Allow running even if Windows was skipped (for linux-only builds)
-    if: ${{ always() && (github.event_name == 'push' || inputs.platform == 'linux' || inputs.platform == 'both') && (needs.release-windows.result == 'success' || needs.release-windows.result == 'skipped') }}
+    # Allow running even if Windows was skipped (for linux-only builds), or if Windows passed
+    if: ${{ always() && (github.event_name == 'push' || inputs.platform == 'linux' || inputs.platform == 'all') && (needs.release-windows.result == 'success' || needs.release-windows.result == 'skipped') }}
     steps:
       # 1. Checkout repository
       - name: Checkout repository
@@ -225,7 +226,7 @@ jobs:
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev xvfb
 
       # 4. Setup Node.js
       - name: Setup Node.js
@@ -250,7 +251,7 @@ jobs:
 
       # 8. Build Tauri app for Linux
       - name: Build Tauri app
-        run: npm run tauri build
+        run: xvfb-run npm run tauri build
 
       # 9. Verify build artifacts
       - name: Verify build artifacts
@@ -302,6 +303,102 @@ jobs:
                 \"fields\": [
                   {\"name\": \"📦 DEB Package\", \"value\": \"\`${DEB_NAME}\` (${DEB_SIZE})\", \"inline\": false},
                   {\"name\": \"📦 AppImage\", \"value\": \"\`${APPIMAGE_NAME}\` (${APPIMAGE_SIZE})\", \"inline\": false}
+                ],
+                \"url\": \"https://github.com/${{ github.repository }}/releases/tag/v${VERSION}\",
+                \"footer\": {\"text\": \"Released by ${{ github.actor }}\"}
+              }]
+            }" \
+            "$DISCORD_WEBHOOK_URL"
+
+  release-macos:
+    runs-on: macos-latest
+    needs: [release-windows, release-linux]
+    # Allow running if previous jobs succeeded or were skipped, and platform matches
+    if: ${{ always() && (github.event_name == 'push' || inputs.platform == 'macos' || inputs.platform == 'all') && (needs.release-windows.result == 'success' || needs.release-windows.result == 'skipped') }}
+    steps:
+      # 1. Checkout repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Read version from tauri.conf.json
+      - name: Read app version
+        id: version
+        run: |
+          VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      # 3. Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+
+      # 4. Setup Rust
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin aarch64-apple-darwin
+
+      # 5. Rust cache
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      # 6. Install frontend dependencies
+      - name: Install dependencies
+        run: npm install
+
+      # 7. Build Tauri app for macOS (Universal)
+      - name: Build Tauri app
+        run: npm run tauri build -- --target universal-apple-darwin
+
+      # 8. Upload macOS artifacts
+      - name: Upload macOS artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: v${{ steps.version.outputs.version }}
+          files: |
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 9. Send Discord notification for macOS
+      - name: Discord notification (macOS)
+        if: success()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then
+            echo "DISCORD_WEBHOOK_URL secret is not set. Skipping notification."
+            exit 0
+          fi
+
+          DMG_FILE=$(ls src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg 2>/dev/null | head -1)
+          APP_tar_FILE=$(ls src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz 2>/dev/null | head -1)
+
+          DMG_NAME=$(basename "$DMG_FILE" 2>/dev/null || echo "N/A")
+          APP_tar_NAME=$(basename "$APP_tar_FILE" 2>/dev/null || echo "N/A")
+
+          DMG_SIZE=$(du -h "$DMG_FILE" 2>/dev/null | cut -f1 || echo "N/A")
+          APP_tar_SIZE=$(du -h "$APP_tar_FILE" 2>/dev/null | cut -f1 || echo "N/A")
+
+          curl -H "Content-Type: application/json" \
+            -X POST \
+            -d "{
+              \"content\": \"@everyone\",
+              \"embeds\": [{
+                \"title\": \"🍎 macOS Release Added: v${VERSION}\",
+                \"description\": \"macOS builds have been added to the release!\",
+                \"color\": 15158332,
+                \"fields\": [
+                  {\"name\": \"📦 DMG Package\", \"value\": \"\`${DMG_NAME}\` (${DMG_SIZE})\", \"inline\": false},
+                  {\"name\": \"📦 App Bundle (tar.gz)\", \"value\": \"\`${APP_tar_NAME}\` (${APP_tar_SIZE})\", \"inline\": false}
                 ],
                 \"url\": \"https://github.com/${{ github.repository }}/releases/tag/v${VERSION}\",
                 \"footer\": {\"text\": \"Released by ${{ github.actor }}\"}

@@ -28,14 +28,19 @@
     let dragStartX = 0;
     let dragStartY = 0;
 
+    let imageLoadFailed = false;
+
     // Load album art - check cover_url first (for external/streaming tracks), then album art
     $: if ($currentTrack?.cover_url) {
         // Streaming track with direct cover URL (e.g., Tidal)
         albumArt = $currentTrack.cover_url;
+        imageLoadFailed = false;
     } else if ($currentTrack?.album_id) {
         loadAlbumArt($currentTrack.album_id);
+        imageLoadFailed = false;
     } else {
         albumArt = null;
+        imageLoadFailed = false;
     }
 
     async function loadAlbumArt(albumId: number) {
@@ -116,8 +121,13 @@
     >
         <!-- Album Art with expand -->
         <button class="album-art" on:click={handleExpand} title="Expand player">
-            {#if albumArt}
-                <img src={albumArt} alt="Album art" decoding="async" />
+            {#if albumArt && !imageLoadFailed}
+                <img
+                    src={albumArt}
+                    alt="Album art"
+                    decoding="async"
+                    on:error={() => (imageLoadFailed = true)}
+                />
             {:else}
                 <div class="art-placeholder">
                     <svg
@@ -136,10 +146,16 @@
 
         <!-- Track Info -->
         <div class="track-info">
-            <span class="track-title truncate">
+            <span
+                class="track-title truncate"
+                title={$currentTrack?.title || "No track playing"}
+            >
                 {$currentTrack?.title || "No track playing"}
             </span>
-            <span class="track-artist truncate">
+            <span
+                class="track-artist truncate"
+                title={$currentTrack?.artist || ""}
+            >
                 {$currentTrack?.artist || ""}
             </span>
         </div>

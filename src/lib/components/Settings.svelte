@@ -2,7 +2,7 @@
     import { theme, presetAccents, type ThemeMode } from "$lib/stores/theme";
     import { appSettings } from "$lib/stores/settings";
     import { updates } from "$lib/stores/updates";
-    import { resetDatabase } from "$lib/api/tauri";
+    import { resetDatabase, selectMusicFolder } from "$lib/api/tauri";
     import { loadLibrary } from "$lib/stores/library";
     import UpdatePopup from "./UpdatePopup.svelte";
 
@@ -62,6 +62,17 @@
         } catch (error) {
             resetError = `Failed to reset database: ${error}`;
             isResetting = false;
+        }
+    }
+
+    async function handleSetDownloadLocation() {
+        try {
+            const selected = await selectMusicFolder();
+            if (selected) {
+                appSettings.setDownloadLocation(selected);
+            }
+        } catch (error) {
+            console.error("Failed to select download location:", error);
         }
     }
 </script>
@@ -226,6 +237,28 @@
                 <h3 class="section-title">General</h3>
 
                 <div class="setting-item">
+                    <span class="setting-label">Download Location</span>
+                    <div class="path-selector">
+                        <div
+                            class="path-display"
+                            title={$appSettings.downloadLocation || "Not set"}
+                        >
+                            {$appSettings.downloadLocation ||
+                                "No download location set"}
+                        </div>
+                        <button
+                            class="selector-btn"
+                            on:click={handleSetDownloadLocation}
+                        >
+                            Change
+                        </button>
+                    </div>
+                    <p class="setting-hint">
+                        Where downloaded songs will be saved
+                    </p>
+                </div>
+
+                <div class="setting-item">
                     <span class="setting-label">Window Start Mode</span>
                     <div class="theme-modes">
                         <button
@@ -301,6 +334,27 @@
                                     !$appSettings.showDiscord,
                                 )}
                             aria-label="Toggle Discord Button"
+                        >
+                            <div class="toggle-handle"></div>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="setting-item">
+                    <div class="toggle-container">
+                        <div class="toggle-info">
+                            <span class="setting-label">Autoplay</span>
+                            <p class="setting-hint">
+                                Keep playing random tracks from your library
+                                when the queue ends
+                            </p>
+                        </div>
+                        <button
+                            class="toggle-btn"
+                            class:active={$appSettings.autoplay}
+                            on:click={() =>
+                                appSettings.setAutoplay(!$appSettings.autoplay)}
+                            aria-label="Toggle Autoplay"
                         >
                             <div class="toggle-handle"></div>
                         </button>
@@ -777,6 +831,43 @@
         cursor: pointer;
         display: block;
         transition: all 0.2s;
+    }
+
+    .path-selector {
+        display: flex;
+        gap: var(--spacing-sm);
+        align-items: center;
+    }
+
+    .path-display {
+        flex: 1;
+        padding: var(--spacing-sm) var(--spacing-md);
+        background-color: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-sm);
+        color: var(--text-primary);
+        font-family: monospace;
+        font-size: 0.8125rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .selector-btn {
+        padding: var(--spacing-sm) var(--spacing-md);
+        background-color: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        font-weight: 500;
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        transition: all var(--transition-fast);
+        white-space: nowrap;
+    }
+
+    .selector-btn:hover {
+        border-color: var(--text-primary);
+        background-color: var(--bg-highlight);
     }
 
     .update-btn:hover {
