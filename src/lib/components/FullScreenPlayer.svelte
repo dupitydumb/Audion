@@ -13,6 +13,15 @@
     duration,
     seek,
   } from "$lib/stores/player";
+
+  // Seek to a specific lyric line time
+  function handleLineClick(lineTime: number) {
+    const dur = $duration;
+    if (dur && dur > 0) {
+      const position = lineTime / dur;
+      seek(Math.max(0, Math.min(1, position)));
+    }
+  }
   import { lyricsData, activeLine } from "$lib/stores/lyrics";
   import { getAlbumArtSrc, getAlbum, formatDuration } from "$lib/api/tauri";
   import { onMount, tick } from "svelte";
@@ -291,7 +300,7 @@
               {@const distance = Math.abs(i - $activeLine)}
               {@const hasWordSync = line.words && line.words.length > 0}
               {@const isActiveLine = i === $activeLine}
-              <p
+              <div
                 class="lyric-line"
                 class:active={isActiveLine}
                 class:near={distance === 1}
@@ -299,6 +308,11 @@
                 class:far={distance >= 3}
                 class:passed={i < $activeLine}
                 class:word-sync={hasWordSync && isActiveLine}
+                on:click={() => handleLineClick(line.time)}
+                on:keydown={(e) =>
+                  e.key === "Enter" && handleLineClick(line.time)}
+                role="button"
+                tabindex="0"
               >
                 {#if hasWordSync && line.words}
                   {#each line.words as word, wordIdx}
@@ -321,7 +335,7 @@
                 {:else}
                   {line.text}
                 {/if}
-              </p>
+              </div>
             {/each}
           {:else}
             <div class="no-lyrics">
