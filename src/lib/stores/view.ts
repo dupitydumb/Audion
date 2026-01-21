@@ -1,5 +1,5 @@
 // View store - manages current view/navigation state
-import { writable, get } from 'svelte/store';
+import { writable, get, derived } from 'svelte/store';
 
 export type ViewType =
     | 'tracks'
@@ -20,14 +20,26 @@ export interface ViewState {
 
 const MAX_HISTORY = 50;
 const history: ViewState[] = [];
+// Internal writable to trigger updates for the derived store
+const historyUpdate = writable(0);
+
 let currentIndex = -1;
 let isNavigating = false;
 
 export const currentView = writable<ViewState>({ type: 'tracks' });
 
+export const navigationHistory = derived(historyUpdate, () => ({
+    canGoBack: currentIndex > 0,
+    canGoForward: currentIndex < history.length - 1
+}));
+
 // Initialize history with default view
 history.push({ type: 'tracks' });
 currentIndex = 0;
+
+function notifyHistoryUpdate() {
+    historyUpdate.set(Date.now());
+}
 
 // Subscribe to update history when view changes
 currentView.subscribe(view => {
@@ -53,6 +65,7 @@ currentView.subscribe(view => {
     } else {
         currentIndex++;
     }
+    notifyHistoryUpdate();
 });
 
 export function goBack(): void {
@@ -61,6 +74,7 @@ export function goBack(): void {
         isNavigating = true;
         currentView.set(history[currentIndex]);
         isNavigating = false;
+        notifyHistoryUpdate();
     }
 }
 
@@ -70,6 +84,7 @@ export function goForward(): void {
         isNavigating = true;
         currentView.set(history[currentIndex]);
         isNavigating = false;
+        notifyHistoryUpdate();
     }
 }
 

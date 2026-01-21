@@ -19,81 +19,12 @@
     import PluginManager from "./PluginManager.svelte";
     import Settings from "./Settings.svelte";
 
-    let searchInput = "";
-    let searchDebounceTimer: ReturnType<typeof setTimeout>;
-
-    function handleSearchInput(e: Event) {
-        const target = e.target as HTMLInputElement;
-        searchInput = target.value;
-
-        clearTimeout(searchDebounceTimer);
-        searchDebounceTimer = setTimeout(() => {
-            searchQuery.set(searchInput);
-        }, 200);
-    }
-
-    function handleClearSearch() {
-        searchInput = "";
-        clearSearch();
-    }
-
-    function handleKeydown(e: KeyboardEvent) {
-        if (e.key === "Escape") {
-            handleClearSearch();
-        }
-    }
-
     $: isSearching = $searchQuery.length > 0;
-    $: hideSearchBar = $currentView.type === 'settings' || $currentView.type === 'plugins';
     import GlobalShortcuts from "./GlobalShortcuts.svelte";
 </script>
 
 <main class="main-view">
     <GlobalShortcuts />
-    <!-- Search Bar -->
-    {#if !hideSearchBar}
-    <div class="search-bar">
-        <div class="search-input-wrapper">
-            <svg
-                class="search-icon"
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                width="20"
-                height="20"
-            >
-                <path
-                    d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
-                />
-            </svg>
-            <input
-                type="text"
-                class="search-input"
-                placeholder="Search tracks, albums, artists..."
-                bind:value={searchInput}
-                on:input={handleSearchInput}
-                on:keydown={handleKeydown}
-            />
-            {#if searchInput}
-                <button
-                    class="clear-search"
-                    on:click={handleClearSearch}
-                    title="Clear search"
-                >
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="18"
-                        height="18"
-                    >
-                        <path
-                            d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                        />
-                    </svg>
-                </button>
-            {/if}
-        </div>
-    </div>
-    {/if}
 
     {#if isSearching}
         <div class="view-container">
@@ -206,59 +137,5 @@
         justify-content: center;
         height: 100%;
         color: var(--text-subdued);
-    }
-
-    /* Search Bar */
-    .search-bar {
-        padding: var(--spacing-md);
-        padding-bottom: 0;
-        flex-shrink: 0;
-    }
-
-    .search-input-wrapper {
-        display: flex;
-        align-items: center;
-        gap: var(--spacing-sm);
-        background-color: var(--bg-elevated);
-        border-radius: var(--radius-full);
-        padding: var(--spacing-sm) var(--spacing-md);
-        max-width: 400px;
-        transition: background-color var(--transition-fast);
-    }
-
-    .search-input-wrapper:focus-within {
-        background-color: var(--bg-surface);
-    }
-
-    .search-icon {
-        color: var(--text-subdued);
-        flex-shrink: 0;
-    }
-
-    .search-input {
-        flex: 1;
-        background: none;
-        border: none;
-        outline: none;
-        color: var(--text-primary);
-        font-size: 0.875rem;
-        min-width: 0;
-    }
-
-    .search-input::placeholder {
-        color: var(--text-subdued);
-    }
-
-    .clear-search {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--text-subdued);
-        transition: color var(--transition-fast);
-        flex-shrink: 0;
-    }
-
-    .clear-search:hover {
-        color: var(--text-primary);
     }
 </style>

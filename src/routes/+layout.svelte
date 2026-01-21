@@ -20,7 +20,7 @@
 
 <style>
     .app-content {
-        padding-top: 32px; /* Height of TitleBar */
+        padding-top: 48px; /* Height of TitleBar */
         height: 100vh;
         width: 100%;
         overflow: hidden; /* Prevent body scroll if content handles it, otherwise auto */

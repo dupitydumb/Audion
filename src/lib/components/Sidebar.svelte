@@ -37,7 +37,7 @@
     import { setPlaylistCover } from "$lib/stores/playlistCovers";
     import { loadLibrary } from "$lib/stores/library";
     import { uiSlotManager } from "$lib/plugins/ui-slots";
-    import MenuBar from "./MenuBar.svelte";
+
     import { updates } from "$lib/stores/updates";
     import UpdatePopup from "./UpdatePopup.svelte";
 
@@ -224,7 +224,6 @@
 
 <aside class="sidebar">
     <div class="sidebar-header">
-        <MenuBar />
         <div class="logo">
             <img src="/logo.png" alt="Audion Logo" width="32" height="32" />
             <span class="logo-text">Audion</span>
