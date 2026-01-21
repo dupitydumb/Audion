@@ -29,7 +29,12 @@
         rescanMusic,
         deletePlaylist,
         type Playlist,
+        getPlaylistTracks,
+        renamePlaylist,
     } from "$lib/api/tauri";
+    import { confirm } from "$lib/stores/dialogs";
+    import { playTracks, addToQueue } from "$lib/stores/player";
+    import { setPlaylistCover } from "$lib/stores/playlistCovers";
     import { loadLibrary } from "$lib/stores/library";
     import { uiSlotManager } from "$lib/plugins/ui-slots";
     import MenuBar from "./MenuBar.svelte";
@@ -73,6 +78,52 @@
         }
     }
 
+    async function handlePlayPlaylist(id: number) {
+        try {
+            const tracks = await getPlaylistTracks(id);
+            if (tracks.length > 0) {
+                playTracks(tracks, 0);
+            }
+        } catch (error) {
+            console.error("Failed to play playlist:", error);
+        }
+    }
+
+    async function handleAddToQueue(id: number) {
+        try {
+            const tracks = await getPlaylistTracks(id);
+            if (tracks.length > 0) {
+                addToQueue(tracks);
+            }
+        } catch (error) {
+            console.error("Failed to add playlist to queue:", error);
+        }
+    }
+
+    async function handleDeletePlaylist(id: number, name: string) {
+        if (
+            !(await confirm(`Delete playlist "${name}"?`, {
+                title: "Delete Playlist",
+                confirmLabel: "Delete",
+                danger: true,
+            }))
+        )
+            return;
+
+        try {
+            await deletePlaylist(id);
+            await loadPlaylists();
+            if (
+                $currentView.type === "playlist-detail" &&
+                $currentView.id === id
+            ) {
+                goToTracks(); // Navigate away if deleted
+            }
+        } catch (error) {
+            console.error("Failed to delete playlist:", error);
+        }
+    }
+
     function handlePlaylistContextMenu(e: MouseEvent, playlist: Playlist) {
         e.preventDefault();
         contextMenu.set({
@@ -81,22 +132,67 @@
             y: e.clientY,
             items: [
                 {
-                    label: "Delete Playlist",
-                    danger: true,
+                    label: "Play",
+                    action: () => handlePlayPlaylist(playlist.id),
+                },
+                {
+                    label: "Add to Queue",
+                    action: () => handleAddToQueue(playlist.id),
+                },
+                { type: "separator" },
+                {
+                    label: "Rename",
                     action: async () => {
-                        try {
-                            await deletePlaylist(playlist.id);
-                            await loadPlaylists();
-                            if (
-                                $currentView.type === "playlist-detail" &&
-                                $currentView.id === playlist.id
-                            ) {
-                                goToTracks(); // Navigate away if deleted
+                        const newName = prompt(
+                            "Enter new name:",
+                            playlist.name,
+                        );
+                        if (
+                            newName &&
+                            newName.trim() &&
+                            newName !== playlist.name
+                        ) {
+                            try {
+                                await renamePlaylist(
+                                    playlist.id,
+                                    newName.trim(),
+                                );
+                                await loadPlaylists();
+                            } catch (error) {
+                                console.error(
+                                    "Failed to rename playlist:",
+                                    error,
+                                );
                             }
-                        } catch (error) {
-                            console.error("Failed to delete playlist:", error);
                         }
                     },
+                },
+                {
+                    label: "Change Cover",
+                    action: () => {
+                        const input = document.createElement("input");
+                        input.type = "file";
+                        input.accept = "image/*";
+                        input.onchange = (e) => {
+                            const file = (e.target as HTMLInputElement)
+                                .files?.[0];
+                            if (file) {
+                                const reader = new FileReader();
+                                reader.onload = () => {
+                                    const result = reader.result as string;
+                                    setPlaylistCover(playlist.id, result);
+                                };
+                                reader.readAsDataURL(file);
+                            }
+                        };
+                        input.click();
+                    },
+                },
+                { type: "separator" },
+                {
+                    label: "Delete Playlist",
+                    action: () =>
+                        handleDeletePlaylist(playlist.id, playlist.name),
                 },
             ],
         });

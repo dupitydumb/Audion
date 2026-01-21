@@ -3,8 +3,58 @@
     import { fade } from "svelte/transition";
     import { onMount } from "svelte";
 
+    import { tick } from "svelte";
+
     let menuElement: HTMLDivElement;
     let activeSubmenu: string | null = null;
+    let adjustedX = 0;
+    let adjustedY = 0;
+
+    // Reactively update position when menu becomes visible or coordinates change
+    $: if (
+        $contextMenu.visible &&
+        $contextMenu.x !== undefined &&
+        $contextMenu.y !== undefined
+    ) {
+        updatePosition();
+    }
+
+    async function updatePosition() {
+        // Wait for DOM to update so we can measure dimensions
+        await tick();
+
+        if (!menuElement) return;
+
+        const { x, y } = $contextMenu;
+        const { innerWidth, innerHeight } = window;
+        const rect = menuElement.getBoundingClientRect();
+
+        let newX = x;
+        let newY = y;
+
+        // Check right edge
+        if (x + rect.width > innerWidth) {
+            newX = innerWidth - rect.width - 8; // 8px padding
+        }
+
+        // Check bottom edge
+        if (y + rect.height > innerHeight) {
+            newY = innerHeight - rect.height - 8;
+        }
+
+        // Check left edge
+        if (newX < 8) {
+            newX = 8;
+        }
+
+        // Check top edge
+        if (newY < 8) {
+            newY = 8;
+        }
+
+        adjustedX = newX;
+        adjustedY = newY;
+    }
 
     // Close on click outside
     function handleClickOutside(event: MouseEvent) {
@@ -42,8 +92,12 @@
     });
 
     // Type guard for separator
-    function isSeparator(item: ContextMenuItem | { type: 'separator' }): item is { type: 'separator' } {
-        return 'type' in item && item.type === 'separator' && !('label' in item);
+    function isSeparator(
+        item: ContextMenuItem | { type: "separator" },
+    ): item is { type: "separator" } {
+        return (
+            "type" in item && item.type === "separator" && !("label" in item)
+        );
     }
 </script>
 
@@ -51,14 +105,14 @@
     <div
         class="context-menu"
         bind:this={menuElement}
-        style="top: {$contextMenu.y}px; left: {$contextMenu.x}px;"
+        style="top: {adjustedY}px; left: {adjustedX}px;"
         transition:fade={{ duration: 100 }}
     >
         {#each $contextMenu.items as item}
             {#if isSeparator(item)}
                 <div class="menu-separator"></div>
             {:else if item.submenu}
-                <div 
+                <div
                     class="menu-item has-submenu"
                     class:active={activeSubmenu === item.label}
                     on:mouseenter={() => handleSubmenuHover(item.label)}
@@ -66,17 +120,30 @@
                     tabindex="0"
                 >
                     <span>{item.label}</span>
-                    <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
-                        <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        width="14"
+                        height="14"
+                    >
+                        <path
+                            d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"
+                        />
                     </svg>
                     {#if activeSubmenu === item.label}
-                        <div class="submenu" transition:fade={{ duration: 100 }}>
+                        <div
+                            class="submenu"
+                            transition:fade={{ duration: 100 }}
+                        >
                             {#each item.submenu as subitem}
                                 <button
                                     class="menu-item"
                                     class:disabled={subitem.disabled}
                                     disabled={subitem.disabled}
-                                    on:click|stopPropagation={() => !subitem.disabled && subitem.action && handleItemClick(subitem.action)}
+                                    on:click|stopPropagation={() =>
+                                        !subitem.disabled &&
+                                        subitem.action &&
+                                        handleItemClick(subitem.action)}
                                 >
                                     {subitem.label}
                                 </button>
@@ -90,7 +157,10 @@
                     class:danger={item.danger}
                     class:disabled={item.disabled}
                     disabled={item.disabled}
-                    on:click|stopPropagation={() => !item.disabled && item.action && handleItemClick(item.action)}
+                    on:click|stopPropagation={() =>
+                        !item.disabled &&
+                        item.action &&
+                        handleItemClick(item.action)}
                 >
                     {item.label}
                 </button>
