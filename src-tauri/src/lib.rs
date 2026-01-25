@@ -4,6 +4,7 @@
 mod commands;
 mod db;
 mod scanner;
+mod discord;
 
 use db::Database;
 use std::path::PathBuf;
@@ -30,6 +31,9 @@ pub fn run() {
             let database = Database::new(&app_dir).expect("Failed to initialize database");
 
             app.manage(database);
+            
+            // Initialize Discord RPC state
+            app.manage(discord::DiscordState(std::sync::Mutex::new(None)));
 
             // Handle window start mode
             let window_config = commands::window::load_window_config(app.handle());
@@ -97,6 +101,12 @@ pub fn run() {
             // Window commands
             commands::window::get_window_start_mode,
             commands::window::set_window_start_mode,
+            // Discord RPC commands
+            discord::discord_connect,
+            discord::discord_update_presence,
+            discord::discord_clear_presence,
+            discord::discord_disconnect,
+            discord::discord_reconnect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

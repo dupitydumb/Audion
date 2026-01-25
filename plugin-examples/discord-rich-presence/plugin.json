@@ -1,0 +1,11 @@
+{
+    "name": "Discord Rich Presence",
+    "version": "1.0.0",
+    "description": "Show what you're listening to on Discord",
+    "author": "Manga-Knights",
+    "entry": "index.js",
+    "type": "js",
+    "permissions": [
+        "player:read"
+    ]
+}

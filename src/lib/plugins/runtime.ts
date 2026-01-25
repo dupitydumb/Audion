@@ -654,6 +654,58 @@ export class PluginRuntime {
       }
     };
 
+    // Discord Rich Presence API (always available)
+    api.discord = {
+      connect: async () => {
+        try {
+          return await invoke('discord_connect');
+        } catch (error) {
+          console.error('[PluginRuntime] Discord connect failed:', error);
+          throw error;
+        }
+      },
+      updatePresence: async (data: {
+        song_title: string;
+        artist: string;
+        album?: string | null;
+        cover_url?: string | null;
+        current_time?: number;
+        duration?: number;
+        is_playing: boolean;
+      }) => {
+        try {
+          return await invoke('discord_update_presence', { data });
+        } catch (error) {
+          console.error('[PluginRuntime] Discord update failed:', error);
+          throw error;
+        }
+      },
+      clearPresence: async () => {
+        try {
+          return await invoke('discord_clear_presence');
+        } catch (error) {
+          console.error('[PluginRuntime] Discord clear failed:', error);
+          throw error;
+        }
+      },
+      disconnect: async () => {
+        try {
+          return await invoke('discord_disconnect');
+        } catch (error) {
+          console.error('[PluginRuntime] Discord disconnect failed:', error);
+          throw error;
+        }
+      },
+      reconnect: async () => {
+        try {
+          return await invoke('discord_reconnect');
+        } catch (error) {
+          console.error('[PluginRuntime] Discord reconnect failed:', error);
+          throw error;
+        }
+      }
+    };
+
     return api;
   }
 
