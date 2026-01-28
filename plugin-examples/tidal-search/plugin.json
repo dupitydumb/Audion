@@ -1,6 +1,7 @@
 {
     "name": "Tidal Search",
-    "version": "1.0.1",
+    "safe_name": "tidal-search",
+    "version": "1.0.2",
     "author": "Audion Team",
     "description": "Search and browse tracks from the Tidal catalog",
     "type": "js",
@@ -21,5 +22,6 @@
         "streaming",
         "music"
     ],
-    "license": "MIT"
+    "license": "MIT",
+    "cross_plugin_access": []
 }

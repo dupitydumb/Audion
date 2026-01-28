@@ -29,34 +29,49 @@
     // Create album map for track art lookup
     $: albumMap = new Map($albums.map((a) => [a.id, a]));
 
-    // Get track art - check cover_url first (for external), then album art
+    // Get track art with proper priority
     function getTrackArt(track: {
-        album_id?: number | null;
+        track_cover?: string | null;
         cover_url?: string | null;
+        album_id?: number | null;
     }): string | null {
-        // External tracks use cover_url directly
-        if (track.cover_url) {
-            return track.cover_url;
+        // Priority 1: Track's embedded cover
+        if (track.track_cover) {
+        return getAlbumArtSrc(track.track_cover);
         }
-        // Local tracks get art from album
+        // Priority 2: External track cover URL
+        if (track.cover_url) {
+        return track.cover_url;
+        }
+        // Priority 3: Album art
         if (!track.album_id) return null;
         const album = albumMap.get(track.album_id);
         return album ? getAlbumArtSrc(album.art_data) : null;
     }
 
-    // Get album cover - check art_data first, then find track with cover_url
+    // Get album cover with proper priority
     function getAlbumCover(album: {
         id: number;
         art_data?: string | null;
     }): string | null {
+        // Priority 1: Album art_data
         if (album.art_data) {
-            return getAlbumArtSrc(album.art_data);
+        return getAlbumArtSrc(album.art_data);
         }
-        // Fallback: find a track with cover_url for this album
-        const albumTrack = $allTracks.find(
-            (t) => t.album_id === album.id && t.cover_url,
+
+        // Priority 2: First track's embedded cover
+        const trackWithCover = $allTracks.find(
+        (t) => t.album_id === album.id && t.track_cover,
         );
-        return albumTrack?.cover_url || null;
+        if (trackWithCover?.track_cover) {
+        return getAlbumArtSrc(trackWithCover.track_cover);
+        }
+
+        // Priority 3: First track's external cover_url
+        const trackWithUrl = $allTracks.find(
+        (t) => t.album_id === album.id && t.cover_url,
+        );
+        return trackWithUrl?.cover_url || null;
     }
 
     function handleTrackClick(index: number) {

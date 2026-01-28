@@ -1,6 +1,6 @@
 // Plugin registry and marketplace client
 import type { AudionPluginManifest } from './schema';
-import { validateManifest } from './schema';
+import { validateManifest, validateManifests } from './schema';
 
 export interface MarketplacePlugin {
   manifest: AudionPluginManifest;
@@ -19,9 +19,142 @@ export interface RegistryData {
   plugins: MarketplacePlugin[];
 }
 
-// Cache for fetched plugins
-const pluginCache = new Map<string, { data: MarketplacePlugin; timestamp: number }>();
+// Cache configuration
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const MAX_CACHE_SIZE = 100; // Maximum cached plugins
+const CACHE_CLEANUP_INTERVAL = 60 * 1000; // Clean every minute
+
+// cache with automatic cleanup
+class PluginCache {
+  private cache = new Map<string, { data: MarketplacePlugin; timestamp: number }>();
+  private cleanupTimer: ReturnType<typeof setTimeout> | null = null;
+
+  constructor() {
+    // Start periodic cleanup
+    this.startCleanup();
+  }
+
+  get(url: string): MarketplacePlugin | null {
+    const entry = this.cache.get(url);
+    if (!entry) return null;
+
+    // Check if expired
+    if (Date.now() - entry.timestamp > CACHE_TTL) {
+      this.cache.delete(url);
+      return null;
+    }
+
+    return entry.data;
+  }
+
+  set(url: string, data: MarketplacePlugin): void {
+    // Enforce size limit
+    if (this.cache.size >= MAX_CACHE_SIZE) {
+      this.evictOldest();
+    }
+
+    this.cache.set(url, { data, timestamp: Date.now() });
+  }
+
+  has(url: string): boolean {
+    const entry = this.cache.get(url);
+    if (!entry) return false;
+
+    // Check if expired
+    if (Date.now() - entry.timestamp > CACHE_TTL) {
+      this.cache.delete(url);
+      return false;
+    }
+
+    return true;
+  }
+
+  delete(url: string): boolean {
+    return this.cache.delete(url);
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+
+  size(): number {
+    return this.cache.size;
+  }
+
+  /**
+   * Remove expired entries
+   */
+  private cleanExpired(): void {
+    const now = Date.now();
+    const toDelete: string[] = [];
+
+    this.cache.forEach((entry, url) => {
+      if (now - entry.timestamp > CACHE_TTL) {
+        toDelete.push(url);
+      }
+    });
+
+    toDelete.forEach(url => this.cache.delete(url));
+
+    if (toDelete.length > 0) {
+      console.log(`[PluginCache] Cleaned ${toDelete.length} expired entries`);
+    }
+  }
+
+  /**
+   * Evict oldest entry to make room
+   */
+  private evictOldest(): void {
+    let oldestUrl: string | null = null;
+    let oldestTime = Date.now();
+
+    this.cache.forEach((entry, url) => {
+      if (entry.timestamp < oldestTime) {
+        oldestTime = entry.timestamp;
+        oldestUrl = url;
+      }
+    });
+
+    if (oldestUrl) {
+      this.cache.delete(oldestUrl);
+      console.log(`[PluginCache] Evicted oldest entry: ${oldestUrl}`);
+    }
+  }
+
+  /**
+   * Start periodic cleanup
+   */
+  private startCleanup(): void {
+    if (this.cleanupTimer) return;
+
+    this.cleanupTimer = setInterval(() => {
+      this.cleanExpired();
+    }, CACHE_CLEANUP_INTERVAL);
+  }
+
+  /**
+   * Stop periodic cleanup
+   */
+  stopCleanup(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getStats(): { size: number; maxSize: number; hitRate?: number } {
+    return {
+      size: this.cache.size,
+      maxSize: MAX_CACHE_SIZE
+    };
+  }
+}
+
+// Global cache instance
+const pluginCache = new PluginCache();
 
 // Curated registry URLs (with fallback)
 const CURATED_REGISTRY_URLS = [
@@ -66,7 +199,14 @@ export async function fetchCuratedRegistry(): Promise<MarketplacePlugin[]> {
       const response = await fetch(localRegistryPath);
       if (response.ok) {
         const data: RegistryData = await response.json();
-        return data.plugins.map(p => ({ ...p, curated: true }));
+
+        // Batch validate all manifests
+        const validManifests = validateManifests(data.plugins.map(p => p.manifest));
+
+        // Map back to plugins
+        return data.plugins
+          .filter(p => validManifests.includes(p.manifest as AudionPluginManifest))
+          .map(p => ({ ...p, curated: true }));
       }
     } catch (err) {
       console.warn('[Marketplace] Local registry failed:', err);
@@ -83,14 +223,18 @@ export async function fetchCuratedRegistry(): Promise<MarketplacePlugin[]> {
 
       const data: RegistryData = await response.json();
 
-      // Validate each plugin manifest
-      const validPlugins: MarketplacePlugin[] = [];
-      for (const plugin of data.plugins) {
-        if (validateManifest(plugin.manifest)) {
-          validPlugins.push({ ...plugin, curated: true });
-        } else {
-          console.warn(`[Marketplace] Invalid manifest for: ${(plugin.manifest as any)?.name || 'unknown'}`);
-        }
+      // Batch validate all manifests
+      const validManifests = validateManifests(data.plugins.map(p => p.manifest));
+
+      // Map back to plugins
+      const validPlugins = data.plugins
+        .filter(p => validManifests.includes(p.manifest as AudionPluginManifest))
+        .map(p => ({ ...p, curated: true }));
+
+      if (validPlugins.length < data.plugins.length) {
+        console.warn(
+          `[Marketplace] ${data.plugins.length - validPlugins.length} invalid manifests filtered out`
+        );
       }
 
       return validPlugins;
@@ -112,8 +256,8 @@ export async function fetchCommunityPlugin(manifestUrl: string): Promise<Marketp
 
   // Check cache
   const cached = pluginCache.get(manifestUrl);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return cached.data;
+  if (cached) {
+    return cached;
   }
 
   try {
@@ -127,6 +271,7 @@ export async function fetchCommunityPlugin(manifestUrl: string): Promise<Marketp
     // Validate manifest
     if (!validateManifest(manifest)) {
       console.warn(`[Marketplace] Invalid community manifest: ${manifestUrl}`);
+      // Don't cache invalid manifests
       return null;
     }
 
@@ -139,11 +284,12 @@ export async function fetchCommunityPlugin(manifestUrl: string): Promise<Marketp
     };
 
     // Cache the result
-    pluginCache.set(manifestUrl, { data: plugin, timestamp: Date.now() });
+    pluginCache.set(manifestUrl, plugin);
 
     return plugin;
   } catch (err) {
     console.error(`[Marketplace] Failed to fetch community plugin: ${manifestUrl}`, err);
+    // Don't cache errors
     return null;
   }
 }
@@ -195,9 +341,22 @@ export function filterByCategory(plugins: MarketplacePlugin[], category: string)
 // Clear plugin cache
 export function clearPluginCache(): void {
   pluginCache.clear();
+  console.log('[Marketplace] Plugin cache cleared');
 }
 
 // Get plugin by name from list
 export function getPluginByName(plugins: MarketplacePlugin[], name: string): MarketplacePlugin | undefined {
   return plugins.find(p => p.manifest.name === name);
+}
+
+// Cleanup marketplace resources (call on app shutdown)
+export function cleanupMarketplace(): void {
+  pluginCache.stopCleanup();
+  pluginCache.clear();
+  console.log('[Marketplace] Marketplace cleanup complete');
+}
+
+// Get cache statistics for debugging
+export function getCacheStats(): { size: number; maxSize: number } {
+  return pluginCache.getStats();
 }

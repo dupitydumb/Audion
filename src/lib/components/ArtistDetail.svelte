@@ -108,7 +108,7 @@
         </div>
     {:else}
         <header class="artist-header">
-            <button class="back-btn" on:click={goToArtists}>
+            <button class="back-btn" on:click={goToArtists} aria-label="Go back to artists">
                 <svg
                     viewBox="0 0 24 24"
                     fill="currentColor"

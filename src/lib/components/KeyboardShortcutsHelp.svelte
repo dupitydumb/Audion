@@ -20,6 +20,7 @@
         role="dialog"
         aria-modal="true"
         aria-label="Keyboard Shortcuts"
+        tabindex="-1"
     >
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div

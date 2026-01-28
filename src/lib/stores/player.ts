@@ -60,6 +60,13 @@ let sourceNode: MediaElementAudioSourceNode | null = null;
 let eqFilters: BiquadFilterNode[] = [];
 let eqConnected = false;
 
+// Cleanup tracking for memory leak prevention
+let cleanupListeners: (() => void) | null = null;
+let unsubscribeGainChange: (() => void) | null = null;
+let unsubscribeEnabledChange: (() => void) | null = null;
+let unsubscribeEqEnabledInSetAudio: (() => void) | null = null;
+let rafActive = false;
+
 // Get the AudioContext (for potential visualizer use)
 export function getAudioContext(): AudioContext | null {
     return audioContext;
@@ -115,14 +122,18 @@ function initializeEqualizer(audio: HTMLAudioElement): void {
             });
         }
 
-        // Register callbacks for equalizer changes
-        equalizer.onGainChange((bandIndex, gain) => {
+        // Clean up old listeners before registering new ones
+        if (unsubscribeGainChange) unsubscribeGainChange();
+        if (unsubscribeEnabledChange) unsubscribeEnabledChange();
+
+        // Register callbacks for equalizer changes and store unsubscribe functions
+        unsubscribeGainChange = equalizer.onGainChange((bandIndex, gain) => {
             if (eqFilters[bandIndex] && equalizer.getState().enabled) {
                 eqFilters[bandIndex].gain.value = gain;
             }
         });
 
-        equalizer.onEnabledChange((enabled) => {
+        unsubscribeEnabledChange = equalizer.onEnabledChange((enabled) => {
             const state = equalizer.getState();
             eqFilters.forEach((filter, i) => {
                 filter.gain.value = enabled ? state.bands[i].gain : 0;
@@ -145,50 +156,70 @@ function initializeEqualizer(audio: HTMLAudioElement): void {
     }
 }
 
-// High-frequency time update using requestAnimationFrame for smooth lyrics
+// High-frequency time update with safeguard against orphaned RAF
 function startTimeSync(): void {
     if (animationFrameId !== null) return;
 
+    rafActive = true;
     let lastEventTime = 0;
+
     const updateTime = () => {
-        if (audioElement && !audioElement.paused) {
-            const time = audioElement.currentTime;
-            currentTime.set(time);
-
-            // Emit timeUpdate event for plugins (throttled to 250ms)
-            const now = Date.now();
-            if (now - lastEventTime >= 250) {
-                pluginEvents.emit('timeUpdate', {
-                    currentTime: time,
-                    duration: audioElement.duration
-                });
-                lastEventTime = now;
-            }
-
-            animationFrameId = requestAnimationFrame(updateTime);
-        } else {
+        // Check rafActive flag to prevent orphaned RAF loops
+        if (!rafActive || !audioElement || audioElement.paused) {
             animationFrameId = null;
+            rafActive = false;
+            return;
         }
+
+        const time = audioElement.currentTime;
+        currentTime.set(time);
+
+        // Emit timeUpdate event for plugins (throttled to 250ms)
+        const now = Date.now();
+        if (now - lastEventTime >= 250) {
+            pluginEvents.emit('timeUpdate', {
+                currentTime: time,
+                duration: audioElement.duration
+            });
+            lastEventTime = now;
+        }
+
+        animationFrameId = requestAnimationFrame(updateTime);
     };
     animationFrameId = requestAnimationFrame(updateTime);
 }
 
 function stopTimeSync(): void {
+    rafActive = false;
     if (animationFrameId !== null) {
         cancelAnimationFrame(animationFrameId);
         animationFrameId = null;
     }
 }
 
+// setAudioElement with proper cleanup
 export function setAudioElement(element: HTMLAudioElement): void {
+    // Clean up old element listeners if replacing
+    if (audioElement && audioElement !== element && cleanupListeners) {
+        console.log('[Player] Cleaning up old audio element listeners');
+        cleanupListeners();
+        cleanupListeners = null;
+    }
+
+    // Clean up old EQ enabled listener from previous setAudioElement call
+    if (unsubscribeEqEnabledInSetAudio) {
+        unsubscribeEqEnabledInSetAudio();
+        unsubscribeEqEnabledInSetAudio = null;
+    }
+
     audioElement = element;
 
     // Sync volume (convert linear slider to logarithmic audio volume)
     const sliderVol = get(volume);
     audioElement.volume = sliderToAudioVolume(sliderVol);
 
-    // Listen for equalizer enable - only init when user enables it
-    equalizer.onEnabledChange((enabled) => {
+    // Store unsubscribe function for EQ enabled listener
+    unsubscribeEqEnabledInSetAudio = equalizer.onEnabledChange((enabled) => {
         if (enabled && !eqConnected && audioElement) {
             initializeEqualizer(audioElement);
             // Resume audio context if suspended (browser autoplay policy)
@@ -198,39 +229,189 @@ export function setAudioElement(element: HTMLAudioElement): void {
         }
     });
 
+    // Store initEQ listener reference for cleanup
+    let initEqListener: (() => void) | null = null;
+
     // If EQ is already enabled on load, init it on first play
     if (equalizer.getState().enabled) {
-        const initEQ = () => {
+        initEqListener = () => {
             initializeEqualizer(element);
             if (audioContext?.state === 'suspended') {
                 audioContext.resume();
             }
-            element.removeEventListener('play', initEQ);
+            element.removeEventListener('play', initEqListener!);
+            initEqListener = null;
         };
-        element.addEventListener('play', initEQ);
+        element.addEventListener('play', initEqListener);
     }
 
-    // Set up event listeners
-    audioElement.addEventListener('ended', handleTrackEnd);
-    audioElement.addEventListener('timeupdate', () => {
+    // cleanup function to remove initEQ listener
+    const originalCleanup = cleanupListeners;
+    cleanupListeners = () => {
+        if (originalCleanup) originalCleanup();
+        if (initEqListener) {
+            element.removeEventListener('play', initEqListener);
+            initEqListener = null;
+        }
+    };
+
+    // Define event handlers as named functions for proper cleanup
+    const handleEnded = () => handleTrackEnd();
+
+    const handleTimeUpdate = () => {
         // Fallback update (less frequent, for when RAF isn't running)
         if (animationFrameId === null) {
             currentTime.set(audioElement?.currentTime ?? 0);
         }
-    });
-    audioElement.addEventListener('durationchange', () => {
+    };
+
+    const handleDurationChange = () => {
         duration.set(audioElement?.duration ?? 0);
-    });
-    audioElement.addEventListener('play', () => {
+    };
+
+    const handleSeeked = (e: Event) => {
+        const target = e.target as HTMLAudioElement;
+        pluginEvents.emit('seeked', {
+            currentTime: target.currentTime,
+            duration: target.duration
+        });
+    };
+
+    const handlePlay = () => {
         isPlaying.set(true);
         pluginEvents.emit('playStateChange', { isPlaying: true });
         startTimeSync();
-    });
-    audioElement.addEventListener('pause', () => {
+    };
+
+    const handlePause = () => {
         isPlaying.set(false);
         pluginEvents.emit('playStateChange', { isPlaying: false });
         stopTimeSync();
+    };
+
+    // Set up event listeners
+    audioElement.addEventListener('ended', handleEnded);
+    audioElement.addEventListener('timeupdate', handleTimeUpdate);
+    audioElement.addEventListener('durationchange', handleDurationChange);
+    audioElement.addEventListener('seeked', handleSeeked);
+    audioElement.addEventListener('play', handlePlay);
+    audioElement.addEventListener('pause', handlePause);
+
+    // Store cleanup function for listeners
+    cleanupListeners = () => {
+        element.removeEventListener('ended', handleEnded);
+        element.removeEventListener('timeupdate', handleTimeUpdate);
+        element.removeEventListener('durationchange', handleDurationChange);
+        element.removeEventListener('seeked', handleSeeked);
+        element.removeEventListener('play', handlePlay);
+        element.removeEventListener('pause', handlePause);
+    };
+}
+
+// cleanup function for app unmount or hot reload
+export function cleanupPlayer(): void {
+    console.log('[Player] Cleaning up player resources');
+
+    // 1. Stop RAF with fail-safe
+    rafActive = false;
+    if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+    }
+
+    // 2. Clean audio element
+    if (audioElement) {
+        // Stop playback
+        audioElement.pause();
+
+        // Clear source to free memory
+        audioElement.src = '';
+        audioElement.load(); // Important: triggers resource cleanup
+
+        // Remove event listeners
+        if (cleanupListeners) {
+            cleanupListeners();
+            cleanupListeners = null;
+        }
+
+        audioElement = null;
+    }
+
+    // 3. Clean equalizer listeners
+    if (unsubscribeGainChange) {
+        unsubscribeGainChange();
+        unsubscribeGainChange = null;
+    }
+    if (unsubscribeEnabledChange) {
+        unsubscribeEnabledChange();
+        unsubscribeEnabledChange = null;
+    }
+    if (unsubscribeEqEnabledInSetAudio) {
+        unsubscribeEqEnabledInSetAudio();
+        unsubscribeEqEnabledInSetAudio = null;
+    }
+
+    // 4. Disconnect Web Audio nodes (but keep context for reuse)
+    if (sourceNode) {
+        try {
+            sourceNode.disconnect();
+        } catch (e) {
+            // Already disconnected, ignore
+        }
+    }
+
+    eqFilters.forEach(filter => {
+        try {
+            filter.disconnect();
+        } catch (e) {
+            // Already disconnected, ignore
+        }
     });
+
+    // 5. Suspend AudioContext (don't close - can be resumed)
+    if (audioContext && audioContext.state !== 'closed') {
+        if (audioContext.state === 'running') {
+            audioContext.suspend().then(() => {
+                console.log('[Player] AudioContext suspended');
+            }).catch(err => {
+                console.warn('[Player] AudioContext suspend error:', err);
+            });
+        }
+    }
+
+    // Reset connection state (but keep context for reuse)
+    sourceNode = null;
+    eqFilters = [];
+    eqConnected = false;
+
+    // 6. Clear plugin events (uses EventEmitter)
+    pluginEvents.removeAllListeners();
+
+    // 7. Reset stores to initial state
+    isPlaying.set(false);
+    currentTrack.set(null);
+    currentTime.set(0);
+    duration.set(0);
+
+    console.log('[Player] Cleanup complete');
+}
+
+// Full shutdown (for app close, not just pause)
+export function shutdownPlayer(): void {
+    console.log('[Player] Shutting down player (full cleanup)');
+
+    // First do regular cleanup
+    cleanupPlayer();
+
+    // Then close AudioContext permanently
+    if (audioContext && audioContext.state !== 'closed') {
+        audioContext.close().then(() => {
+            console.log('[Player] AudioContext closed');
+        }).catch(err => {
+            console.warn('[Player] AudioContext close error:', err);
+        });
+        audioContext = null;
+    }
 }
 
 // Play a specific track

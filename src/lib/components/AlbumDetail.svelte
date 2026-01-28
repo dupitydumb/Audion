@@ -199,13 +199,21 @@
             </button>
             <div class="album-cover">
                 {#if album.art_data}
+                    <!-- Priority 1: Album's own art -->
                     <img
                         src={getAlbumArtSrc(album.art_data)}
                         alt={album.name}
                         decoding="async"
                     />
+                {:else if tracks.length > 0 && tracks[0].track_cover}
+                    <!-- Priority 2: First track's embedded cover -->
+                    <img
+                        src={getAlbumArtSrc(tracks[0].track_cover)}
+                        alt={album.name}
+                        decoding="async"
+                    />
                 {:else if tracks.length > 0 && tracks[0].cover_url}
-                    <!-- Fallback: use first track's cover_url (for external tracks) -->
+                    <!-- Priority 3: First track's Tidal cover -->
                     <img
                         src={tracks[0].cover_url}
                         alt={album.name}
@@ -453,11 +461,12 @@
         padding: var(--spacing-sm) var(--spacing-xl);
     }
 
+    /* i'm not sure why this is being unused. but it might be imp and i might have broke something
     .album-tracks {
         flex: 1;
         overflow-y: auto;
     }
-
+    */
     .btn-secondary {
         background-color: transparent;
         border: 1px solid var(--border-color);

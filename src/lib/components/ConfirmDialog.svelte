@@ -24,6 +24,8 @@
 <svelte:window on:keydown={handleKeydown} />
 
 {#if $confirmDialogStore.visible}
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
         class="dialog-overlay"
         transition:fade={{ duration: 150 }}
@@ -36,6 +38,7 @@
             bind:this={dialogElement}
             role="dialog"
             aria-modal="true"
+            tabindex="-1"
         >
             <h3 class="dialog-title">{$confirmDialogStore.title}</h3>
             <p class="dialog-message">{$confirmDialogStore.message}</p>
@@ -51,7 +54,6 @@
                     class="btn-primary"
                     class:danger={$confirmDialogStore.danger}
                     on:click={() => closeConfirmDialog(true)}
-                    autofocus
                 >
                     {$confirmDialogStore.confirmLabel}
                 </button>

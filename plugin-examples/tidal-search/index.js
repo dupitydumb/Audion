@@ -2,95 +2,100 @@
 // Search and browse tracks from the Tidal catalog with full playback integration
 
 (function () {
-    // Import appSettings from Svelte store (native app settings)
-    let appSettings = null;
-    try {
-        // Dynamically require if possible (for Tauri context)
-        appSettings = window.__TAURI__ && window.appSettings ? window.appSettings : null;
-    } catch (e) {
-        appSettings = null;
-    }
-    'use strict';
+  // Import appSettings from Svelte store (native app settings)
+  let appSettings = null;
+  try {
+    // Dynamically require if possible (for Tauri context)
+    appSettings =
+      window.__TAURI__ && window.appSettings ? window.appSettings : null;
+  } catch (e) {
+    appSettings = null;
+  }
+  ("use strict");
 
-    const API_BASE = 'https://katze.qqdl.site';
+  const API_BASE = "https://katze.qqdl.site";
 
-    // ═══════════════════════════════════════════════════════════════════════════
-    // TIDAL SEARCH PLUGIN
-    // ═══════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TIDAL SEARCH PLUGIN
+  // ═══════════════════════════════════════════════════════════════════════════
 
-    const TidalSearch = {
-        name: 'Tidal Search',
-        api: null,
-        isOpen: false,
-        searchMode: 'track', // 'track' or 'artist'
-        searchMode: 'track', // 'track' or 'artist'
-        searchTimeout: null,
-        currentResults: [],
-        searchTimeout: null,
-        currentResults: [],
-        isPlaying: null, // Currently playing Tidal track ID
-        libraryTracks: new Set(), // Set of external_ids or Tidal IDs already in library
-        hasNewChanges: false, // Track if we've added new songs
+  const TidalSearch = {
+    name: "Tidal Search",
+    api: null,
+    isOpen: false,
+    searchMode: "track", // 'track' or 'artist'
+    searchMode: "track", // 'track' or 'artist'
+    searchTimeout: null,
+    currentResults: [],
+    searchTimeout: null,
+    currentResults: [],
+    isPlaying: null, // Currently playing Tidal track ID
+    libraryTracks: new Set(), // Set of external_ids or Tidal IDs already in library
+    hasNewChanges: false, // Track if we've added new songs
 
+    init(api) {
+      console.log("[TidalSearch] Initializing...");
+      this.api = api;
 
-        init(api) {
-            console.log('[TidalSearch] Initializing...');
-            this.api = api;
+      // Fetch library tracks to check for duplicates
+      this.fetchLibraryTracks();
 
-            // Fetch library tracks to check for duplicates
-            this.fetchLibraryTracks();
+      // Inject styles
+      this.injectStyles();
 
-            // Inject styles
-            this.injectStyles();
+      // Create UI
+      this.createSearchPanel();
+      this.createPlayerBarButton();
 
-            // Create UI
-            this.createSearchPanel();
-            this.createPlayerBarButton();
+      // Retry for late DOM loading
+      setTimeout(() => this.createPlayerBarButton(), 500);
+      setTimeout(() => this.createPlayerBarButton(), 1500);
 
-            // Retry for late DOM loading
-            setTimeout(() => this.createPlayerBarButton(), 500);
-            setTimeout(() => this.createPlayerBarButton(), 1500);
+      // Register stream resolver for saved Tidal tracks
+      // This is called by the player when playing a track with source_type='tidal'
+      if (api.stream && api.stream.registerResolver) {
+        api.stream.registerResolver("tidal", async (externalId, options) => {
+          console.log(
+            "[TidalSearch] Resolving stream for track ID:",
+            externalId,
+          );
+          try {
+            const quality = options?.quality || "LOSSLESS";
+            let streamData = await this.fetchStream(externalId, quality);
 
-            // Register stream resolver for saved Tidal tracks
-            // This is called by the player when playing a track with source_type='tidal'
-            if (api.stream && api.stream.registerResolver) {
-                api.stream.registerResolver('tidal', async (externalId, options) => {
-                    console.log('[TidalSearch] Resolving stream for track ID:', externalId);
-                    try {
-                        const quality = options?.quality || 'LOSSLESS';
-                        let streamData = await this.fetchStream(externalId, quality);
-
-                        // Handle MPD fallback
-                        if (streamData?.data?.manifestMimeType === 'application/dash+xml') {
-                            streamData = await this.fetchStream(externalId, 'LOSSLESS');
-                            if (streamData?.data?.manifestMimeType === 'application/dash+xml') {
-                                streamData = await this.fetchStream(externalId, 'HIGH');
-                            }
-                        }
-
-                        const streamUrl = this.decodeManifest(streamData.data);
-                        return streamUrl;
-                    } catch (err) {
-                        console.error('[TidalSearch] Failed to resolve stream:', err);
-                        return null;
-                    }
-                });
-                console.log('[TidalSearch] Registered stream resolver for tidal');
+            // Handle MPD fallback
+            if (streamData?.data?.manifestMimeType === "application/dash+xml") {
+              streamData = await this.fetchStream(externalId, "LOSSLESS");
+              if (
+                streamData?.data?.manifestMimeType === "application/dash+xml"
+              ) {
+                streamData = await this.fetchStream(externalId, "HIGH");
+              }
             }
 
-            console.log('[TidalSearch] Plugin ready!');
-        },
+            const streamUrl = this.decodeManifest(streamData.data);
+            return streamUrl;
+          } catch (err) {
+            console.error("[TidalSearch] Failed to resolve stream:", err);
+            return null;
+          }
+        });
+        console.log("[TidalSearch] Registered stream resolver for tidal");
+      }
 
-        // ═══════════════════════════════════════════════════════════════════════
-        // STYLES
-        // ═══════════════════════════════════════════════════════════════════════
+      console.log("[TidalSearch] Plugin ready!");
+    },
 
-        injectStyles() {
-            if (document.getElementById('tidal-search-styles')) return;
+    // ═══════════════════════════════════════════════════════════════════════
+    // STYLES
+    // ═══════════════════════════════════════════════════════════════════════
 
-            const style = document.createElement('style');
-            style.id = 'tidal-search-styles';
-            style.textContent = `
+    injectStyles() {
+      if (document.getElementById("tidal-search-styles")) return;
+
+      const style = document.createElement("style");
+      style.id = "tidal-search-styles";
+      style.textContent = `
                 /* Tidal Search Panel */
                 #tidal-search-panel {
 
@@ -649,40 +654,40 @@
                     background: var(--error-color, #f15e6c);
                 }
             `;
-            document.head.appendChild(style);
-        },
+      document.head.appendChild(style);
+    },
 
-        // ═══════════════════════════════════════════════════════════════════════
-        // UI CREATION
-        // ═══════════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════════
+    // UI CREATION
+    // ═══════════════════════════════════════════════════════════════════════
 
-        createSearchPanel() {
-            // Create overlay
-            const overlay = document.createElement('div');
-            overlay.id = 'tidal-search-overlay';
-            overlay.onclick = () => this.close();
-            document.body.appendChild(overlay);
+    createSearchPanel() {
+      // Create overlay
+      const overlay = document.createElement("div");
+      overlay.id = "tidal-search-overlay";
+      overlay.onclick = () => this.close();
+      document.body.appendChild(overlay);
 
-            // Create download progress bar
-            const progressBar = document.createElement('div');
-            progressBar.id = 'tidal-download-progress';
-            progressBar.className = 'tidal-download-progress hidden';
-            progressBar.innerHTML = `
+      // Create download progress bar
+      const progressBar = document.createElement("div");
+      progressBar.id = "tidal-download-progress";
+      progressBar.className = "tidal-download-progress hidden";
+      progressBar.innerHTML = `
                 <div class="tidal-download-progress-bar" style="width:100%;background:var(--bg-highlight, #3e3e3e);"></div>
                 <div class="tidal-download-progress-text"></div>
             `;
-            document.body.appendChild(progressBar);
+      document.body.appendChild(progressBar);
 
-            // Create toast container
-            const toastDef = document.createElement('div');
-            toastDef.id = 'tidal-toast';
-            toastDef.className = 'tidal-toast';
-            document.body.appendChild(toastDef);
+      // Create toast container
+      const toastDef = document.createElement("div");
+      toastDef.id = "tidal-toast";
+      toastDef.className = "tidal-toast";
+      document.body.appendChild(toastDef);
 
-            // Create panel
-            const panel = document.createElement('div');
-            panel.id = 'tidal-search-panel';
-            panel.innerHTML = `
+      // Create panel
+      const panel = document.createElement("div");
+      panel.id = "tidal-search-panel";
+      panel.innerHTML = `
                 <div class="tidal-search-header">
                     <h2>
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
@@ -721,303 +726,320 @@
                     </div>
                 </div>
             `;
-            document.body.appendChild(panel);
+      document.body.appendChild(panel);
 
-            // Event listeners
-            panel.querySelector('.tidal-close-btn').onclick = () => this.close();
+      // Event listeners
+      panel.querySelector(".tidal-close-btn").onclick = () => this.close();
 
-            const input = panel.querySelector('.tidal-search-input');
-            input.addEventListener('input', (e) => this.handleSearch(e.target.value));
-            input.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape') this.close();
-            });
+      const input = panel.querySelector(".tidal-search-input");
+      input.addEventListener("input", (e) => this.handleSearch(e.target.value));
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") this.close();
+      });
 
-            panel.querySelectorAll('.tidal-mode-btn').forEach(btn => {
-                btn.onclick = (e) => this.setSearchMode(e.target.dataset.mode);
-            });
+      panel.querySelectorAll(".tidal-mode-btn").forEach((btn) => {
+        btn.onclick = (e) => this.setSearchMode(e.target.dataset.mode);
+      });
 
-            // Prevent panel close when clicking inside
-            panel.onclick = (e) => e.stopPropagation();
-        },
+      // Prevent panel close when clicking inside
+      panel.onclick = (e) => e.stopPropagation();
+    },
 
-        createPlayerBarButton() {
-            if (document.getElementById('tidal-search-playerbar-btn')) return;
+    createPlayerBarButton() {
+      if (document.getElementById("tidal-search-playerbar-btn")) return;
 
-            const btn = document.createElement('button');
-            btn.id = 'tidal-search-playerbar-btn';
-            // Removed 'tidal-search-btn icon-btn' classes to fit in menu
-            btn.title = 'Tidal Search';
-            btn.innerHTML = `
+      const btn = document.createElement("button");
+      btn.id = "tidal-search-playerbar-btn";
+      // Removed 'tidal-search-btn icon-btn' classes to fit in menu
+      btn.title = "Tidal Search";
+      btn.innerHTML = `
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="11" cy="11" r="8"/>
                     <path d="M21 21l-4.35-4.35"/>
                 </svg>
                 <span>Tidal Search</span>
             `;
-            btn.onclick = () => this.toggle();
+      btn.onclick = () => this.toggle();
 
-            if (this.api && this.api.ui) {
-                this.api.ui.registerSlot('playerbar:menu', btn);
-            } else {
-                console.error('[TidalSearch] UI API not available');
-            }
-        },
+      if (this.api && this.api.ui) {
+        this.api.ui.registerSlot("playerbar:menu", btn);
+      } else {
+        console.error("[TidalSearch] UI API not available");
+      }
+    },
 
-        // ═══════════════════════════════════════════════════════════════════════
-        // TOAST NOTIFICATIONS
-        // ═══════════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════════
+    // TOAST NOTIFICATIONS
+    // ═══════════════════════════════════════════════════════════════════════
 
-        showToast(message, isError = false) {
-            const toast = document.getElementById('tidal-toast');
-            if (!toast) return;
+    showToast(message, isError = false) {
+      const toast = document.getElementById("tidal-toast");
+      if (!toast) return;
 
-            toast.textContent = message;
-            toast.className = 'tidal-toast show' + (isError ? ' error' : '');
+      toast.textContent = message;
+      toast.className = "tidal-toast show" + (isError ? " error" : "");
 
-            setTimeout(() => {
-                toast.classList.remove('show');
-            }, 3000);
-        },
+      setTimeout(() => {
+        toast.classList.remove("show");
+      }, 3000);
+    },
 
-        // ═══════════════════════════════════════════════════════════════════════
-        // PANEL CONTROL
-        // ═══════════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════════
+    // PANEL CONTROL
+    // ═══════════════════════════════════════════════════════════════════════
 
-        toggle() {
-            if (this.isOpen) {
-                this.close();
-            } else {
-                this.open();
-            }
-        },
+    toggle() {
+      if (this.isOpen) {
+        this.close();
+      } else {
+        this.open();
+      }
+    },
 
-        open() {
-            this.isOpen = true;
-            document.getElementById('tidal-search-overlay')?.classList.add('open');
-            document.getElementById('tidal-search-panel')?.classList.add('open');
-            document.getElementById('tidal-search-playerbar-btn')?.classList.add('active');
+    open() {
+      this.isOpen = true;
+      document.getElementById("tidal-search-overlay")?.classList.add("open");
+      document.getElementById("tidal-search-panel")?.classList.add("open");
+      document
+        .getElementById("tidal-search-playerbar-btn")
+        ?.classList.add("active");
 
-            // Focus input
-            setTimeout(() => {
-                document.querySelector('.tidal-search-input')?.focus();
-            }, 100);
+      // Focus input
+      setTimeout(() => {
+        document.querySelector(".tidal-search-input")?.focus();
+      }, 100);
 
-            // Refresh library tracks cache on open to capture any external changes
-            this.fetchLibraryTracks();
-        },
+      // Refresh library tracks cache on open to capture any external changes
+      this.fetchLibraryTracks();
+    },
 
-        close() {
-            this.isOpen = false;
-            document.getElementById('tidal-search-overlay')?.classList.remove('open');
-            document.getElementById('tidal-search-panel')?.classList.remove('open');
-            document.getElementById('tidal-search-playerbar-btn')?.classList.remove('active');
+    close() {
+      this.isOpen = false;
+      document.getElementById("tidal-search-overlay")?.classList.remove("open");
+      document.getElementById("tidal-search-panel")?.classList.remove("open");
+      document
+        .getElementById("tidal-search-playerbar-btn")
+        ?.classList.remove("active");
 
-            // Refresh library if we made changes
-            if (this.hasNewChanges) {
-                console.log('[TidalSearch] Refreshing library after changes');
-                this.api?.library?.refresh?.();
-                this.hasNewChanges = false;
-            }
-        },
+      // Refresh library if we made changes
+      if (this.hasNewChanges) {
+        console.log("[TidalSearch] Refreshing library after changes");
+        this.api?.library?.refresh?.();
+        this.hasNewChanges = false;
+      }
+    },
 
-        async fetchLibraryTracks() {
-            if (this.api?.library?.getTracks) {
-                try {
-                    const tracks = (await this.api.library.getTracks()) || [];
+    async fetchLibraryTracks() {
+      if (this.api?.library?.getTracks) {
+        try {
+          const tracks = (await this.api.library.getTracks()) || [];
 
-                    if (!Array.isArray(tracks)) {
-                        console.warn('[TidalSearch] Library tracks response is not an array:', tracks);
-                        this.libraryTracks = new Set();
-                        return;
-                    }
+          if (!Array.isArray(tracks)) {
+            console.warn(
+              "[TidalSearch] Library tracks response is not an array:",
+              tracks,
+            );
+            this.libraryTracks = new Set();
+            return;
+          }
 
-                    // Store Tidal IDs (external_id) for fast lookup
-                    // Filter for source_type='tidal' and store their IDs
-                    this.libraryTracks = new Set(
-                        tracks
-                            .filter(t => t && t.source_type === 'tidal')
-                            .map(t => t.external_id)
-                    );
-                    console.log(`[TidalSearch] Loaded ${this.libraryTracks.size} Tidal tracks from library`);
-                } catch (err) {
-                    console.error('[TidalSearch] Failed to fetch library tracks:', err);
-                }
-            }
-        },
+          // Store Tidal IDs (external_id) for fast lookup
+          // Filter for source_type='tidal' and store their IDs
+          this.libraryTracks = new Set(
+            tracks
+              .filter((t) => t && t.source_type === "tidal")
+              .map((t) => t.external_id),
+          );
+          console.log(
+            `[TidalSearch] Loaded ${this.libraryTracks.size} Tidal tracks from library`,
+          );
+        } catch (err) {
+          console.error("[TidalSearch] Failed to fetch library tracks:", err);
+        }
+      }
+    },
 
-        // ═══════════════════════════════════════════════════════════════════════
-        // SEARCH FUNCTIONALITY
-        // ═══════════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════════
+    // SEARCH FUNCTIONALITY
+    // ═══════════════════════════════════════════════════════════════════════
 
-        setSearchMode(mode) {
-            this.searchMode = mode;
+    setSearchMode(mode) {
+      this.searchMode = mode;
 
-            document.querySelectorAll('.tidal-mode-btn').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.mode === mode);
-            });
+      document.querySelectorAll(".tidal-mode-btn").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.mode === mode);
+      });
 
-            // Re-run search with new mode
-            const query = document.querySelector('.tidal-search-input')?.value;
-            if (query) {
-                this.performSearch(query);
-            }
-        },
+      // Re-run search with new mode
+      const query = document.querySelector(".tidal-search-input")?.value;
+      if (query) {
+        this.performSearch(query);
+      }
+    },
 
-        handleSearch(query) {
-            // Debounce search
-            clearTimeout(this.searchTimeout);
+    handleSearch(query) {
+      // Debounce search
+      clearTimeout(this.searchTimeout);
 
-            if (!query.trim()) {
-                this.showEmpty();
-                return;
-            }
+      if (!query.trim()) {
+        this.showEmpty();
+        return;
+      }
 
-            this.searchTimeout = setTimeout(() => {
-                this.performSearch(query.trim());
-            }, 300);
-        },
+      this.searchTimeout = setTimeout(() => {
+        this.performSearch(query.trim());
+      }, 300);
+    },
 
-        async performSearch(query) {
-            this.showLoading();
+    async performSearch(query) {
+      this.showLoading();
 
-            try {
-                const param = this.searchMode === 'track' ? 's' : 'a';
-                const url = `${API_BASE}/search/?${param}=${encodeURIComponent(query)}`;
+      try {
+        const param = this.searchMode === "track" ? "s" : "a";
+        const url = `${API_BASE}/search/?${param}=${encodeURIComponent(query)}`;
 
-                // Use CORS-free fetch via Tauri backend
-                const response = this.api.fetch
-                    ? await this.api.fetch(url)
-                    : await fetch(url);
+        // Use CORS-free fetch via Tauri backend
+        const response = this.api.fetch
+          ? await this.api.fetch(url)
+          : await fetch(url);
 
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
 
-                const data = await response.json();
-                this.currentResults = data;
+        const data = await response.json();
+        this.currentResults = data;
 
-                if (this.searchMode === 'track') {
-                    this.renderTrackResults(data);
-                } else {
-                    this.renderArtistResults(data);
-                }
-            } catch (err) {
-                console.error('[TidalSearch] Search error:', err);
-                this.showError(err.message);
-            }
-        },
+        if (this.searchMode === "track") {
+          this.renderTrackResults(data);
+        } else {
+          this.renderArtistResults(data);
+        }
+      } catch (err) {
+        console.error("[TidalSearch] Search error:", err);
+        this.showError(err.message);
+      }
+    },
 
-        // ═══════════════════════════════════════════════════════════════════════
-        // RENDERING
-        // ═══════════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════════
+    // RENDERING
+    // ═══════════════════════════════════════════════════════════════════════
 
-        showLoading() {
-            const container = document.querySelector('.tidal-results-container');
-            const info = document.querySelector('.tidal-results-info');
-            if (container) {
-                container.innerHTML = `
+    showLoading() {
+      const container = document.querySelector(".tidal-results-container");
+      const info = document.querySelector(".tidal-results-info");
+      if (container) {
+        container.innerHTML = `
                     <div class="tidal-loading">
                         <div class="tidal-spinner"></div>
                         <div>Searching Tidal...</div>
                     </div>
                 `;
-            }
-            if (info) info.style.display = 'none';
-        },
+      }
+      if (info) info.style.display = "none";
+    },
 
-        showEmpty() {
-            const container = document.querySelector('.tidal-results-container');
-            const info = document.querySelector('.tidal-results-info');
-            if (container) {
-                container.innerHTML = `
+    showEmpty() {
+      const container = document.querySelector(".tidal-results-container");
+      const info = document.querySelector(".tidal-results-info");
+      if (container) {
+        container.innerHTML = `
                     <div class="tidal-empty">
                         <div class="tidal-empty-icon">🔍</div>
                         <div>Search for tracks on Tidal</div>
                         <div style="font-size: 12px; margin-top: 8px; color: var(--text-subdued);">Click any track to play it</div>
                     </div>
                 `;
-            }
-            if (info) info.style.display = 'none';
-        },
+      }
+      if (info) info.style.display = "none";
+    },
 
-        showError(message) {
-            const container = document.querySelector('.tidal-results-container');
-            const info = document.querySelector('.tidal-results-info');
-            if (container) {
-                container.innerHTML = `
+    showError(message) {
+      const container = document.querySelector(".tidal-results-container");
+      const info = document.querySelector(".tidal-results-info");
+      if (container) {
+        container.innerHTML = `
                     <div class="tidal-error">
                         <div>⚠️ Failed to search: ${message}</div>
                         <div style="font-size: 12px; margin-top: 8px;">Please check your connection and try again</div>
                     </div>
                 `;
-            }
-            if (info) info.style.display = 'none';
-        },
+      }
+      if (info) info.style.display = "none";
+    },
 
-        renderTrackResults(data) {
-            const container = document.querySelector('.tidal-results-container');
-            const info = document.querySelector('.tidal-results-info');
+    renderTrackResults(data) {
+      const container = document.querySelector(".tidal-results-container");
+      const info = document.querySelector(".tidal-results-info");
 
-            const items = data?.data?.items || [];
-            const total = data?.data?.totalNumberOfItems || 0;
+      const items = data?.data?.items || [];
+      const total = data?.data?.totalNumberOfItems || 0;
 
-            if (info) {
-                info.querySelector('.tidal-results-count').textContent =
-                    `Found ${total.toLocaleString()} tracks (showing ${items.length})`;
-                info.style.display = 'flex';
-            }
+      if (info) {
+        info.querySelector(".tidal-results-count").textContent =
+          `Found ${total.toLocaleString()} tracks (showing ${items.length})`;
+        info.style.display = "flex";
+      }
 
-            if (items.length === 0) {
-                container.innerHTML = `
+      if (items.length === 0) {
+        container.innerHTML = `
                     <div class="tidal-empty">
                         <div class="tidal-empty-icon">😔</div>
                         <div>No tracks found</div>
                     </div>
                 `;
-                return;
-            }
+        return;
+      }
 
-            container.innerHTML = items.map(track => this.renderTrackItem(track)).join('');
+      container.innerHTML = items
+        .map((track) => this.renderTrackItem(track))
+        .join("");
 
-            // Add click handlers for play
-            container.querySelectorAll('.tidal-track-item').forEach((el, index) => {
-                el.onclick = (e) => {
-                    // Don't trigger if clicking on save button or link
-                    if (e.target.closest('.tidal-save-btn') || e.target.tagName === 'A') return;
-                    this.playTrack(items[index], el);
-                };
-            });
+      // Add click handlers for play
+      container.querySelectorAll(".tidal-track-item").forEach((el, index) => {
+        el.onclick = (e) => {
+          // Don't trigger if clicking on save button or link
+          if (e.target.closest(".tidal-save-btn") || e.target.tagName === "A")
+            return;
+          this.playTrack(items[index], el);
+        };
+      });
 
-            // Add click handlers for save buttons
-            container.querySelectorAll('.tidal-save-btn').forEach((btn, index) => {
-                btn.onclick = (e) => {
-                    e.stopPropagation();
-                    this.saveTrack(items[index], btn);
-                };
-            });
-        },
+      // Add click handlers for save buttons
+      container.querySelectorAll(".tidal-save-btn").forEach((btn, index) => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          this.saveTrack(items[index], btn);
+        };
+      });
+    },
 
-        renderTrackItem(track) {
-            const coverUrl = track.album?.cover
-                ? `https://resources.tidal.com/images/${track.album.cover.replace(/-/g, '/')}/160x160.jpg`
-                : '';
+    renderTrackItem(track) {
+      const coverUrl = track.album?.cover
+        ? `https://resources.tidal.com/images/${track.album.cover.replace(/-/g, "/")}/160x160.jpg`
+        : "";
 
-            const duration = this.formatDuration(track.duration);
-            const qualityBadge = this.getQualityBadge(track);
-            const artistName = track.artist?.name || track.artists?.[0]?.name || 'Unknown Artist';
-            const title = track.version ? `${track.title} (${track.version})` : track.title;
-            const isPlaying = this.isPlaying === track.id;
-            const isSaved = this.libraryTracks.has(String(track.id));
-            const explicitBadge = track.explicit ? '<span class="tidal-explicit-badge">E</span>' : '';
+      const duration = this.formatDuration(track.duration);
+      const qualityBadge = this.getQualityBadge(track);
+      const artistName =
+        track.artist?.name || track.artists?.[0]?.name || "Unknown Artist";
+      const title = track.version
+        ? `${track.title} (${track.version})`
+        : track.title;
+      const isPlaying = this.isPlaying === track.id;
+      const isSaved = this.libraryTracks.has(String(track.id));
+      const explicitBadge = track.explicit
+        ? '<span class="tidal-explicit-badge">E</span>'
+        : "";
 
-            // Heart icon path (outline vs filled)
-            // Filled heart for saved, Outline for not saved
-            const heartIcon = isSaved
-                ? `<path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>`
-                : `<path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"/>`;
+      // Heart icon path (outline vs filled)
+      // Filled heart for saved, Outline for not saved
+      const heartIcon = isSaved
+        ? `<path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>`
+        : `<path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"/>`;
 
-            return `
-                <div class="tidal-track-item ${isPlaying ? 'playing' : ''} ${isSaved ? 'saved' : ''}" data-id="${track.id}">
+      return `
+                <div class="tidal-track-item ${isPlaying ? "playing" : ""} ${isSaved ? "saved" : ""}" data-id="${track.id}">
                     <div class="tidal-track-cover-wrapper">
                         <img class="tidal-track-cover" src="${coverUrl}" alt="${this.escapeHtml(track.title)}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 48 48%22><rect fill=%22%23282828%22 width=%2248%22 height=%2248%22/><text x=%2224%22 y=%2230%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2220%22>🎵</text></svg>'">
                         <div class="tidal-play-overlay">
@@ -1027,13 +1049,13 @@
                     <div class="tidal-track-info">
                         <div class="tidal-track-title">${this.escapeHtml(title)} ${explicitBadge}</div>
                         <div class="tidal-track-artist">
-                            ${this.escapeHtml(artistName)} • ${this.escapeHtml(track.album?.title || '')}
+                            ${this.escapeHtml(artistName)} • ${this.escapeHtml(track.album?.title || "")}
                         </div>
                     </div>
                     <div class="tidal-track-meta">
                         ${qualityBadge}
                         <span class="tidal-track-duration">${duration}</span>
-                        <button class="tidal-save-btn ${isSaved ? 'saved' : ''}" data-track-id="${track.id}" title="${isSaved ? 'Already in library' : 'Save to library'}" ${isSaved ? 'disabled' : ''}>
+                        <button class="tidal-save-btn ${isSaved ? "saved" : ""}" data-track-id="${track.id}" title="${isSaved ? "Already in library" : "Save to library"}" ${isSaved ? "disabled" : ""}>
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                                 ${heartIcon}
                             </svg>
@@ -1041,47 +1063,49 @@
                     </div>
                 </div>
             `;
-        },
+    },
 
-        renderArtistResults(data) {
-            const container = document.querySelector('.tidal-results-container');
-            const info = document.querySelector('.tidal-results-info');
+    renderArtistResults(data) {
+      const container = document.querySelector(".tidal-results-container");
+      const info = document.querySelector(".tidal-results-info");
 
-            const artists = data?.data?.artists?.items || [];
-            const total = data?.data?.artists?.totalNumberOfItems || 0;
+      const artists = data?.data?.artists?.items || [];
+      const total = data?.data?.artists?.totalNumberOfItems || 0;
 
-            if (info) {
-                info.querySelector('.tidal-results-count').textContent =
-                    `Found ${total.toLocaleString()} artists (showing ${artists.length})`;
-                info.style.display = 'flex';
-            }
+      if (info) {
+        info.querySelector(".tidal-results-count").textContent =
+          `Found ${total.toLocaleString()} artists (showing ${artists.length})`;
+        info.style.display = "flex";
+      }
 
-            if (artists.length === 0) {
-                container.innerHTML = `
+      if (artists.length === 0) {
+        container.innerHTML = `
                     <div class="tidal-empty">
                         <div class="tidal-empty-icon">😔</div>
                         <div>No artists found</div>
                     </div>
                 `;
-                return;
-            }
+        return;
+      }
 
-            container.innerHTML = artists.map(artist => this.renderArtistItem(artist)).join('');
+      container.innerHTML = artists
+        .map((artist) => this.renderArtistItem(artist))
+        .join("");
 
-            // Add click handlers
-            container.querySelectorAll('.tidal-artist-item').forEach((el, index) => {
-                el.onclick = () => this.handleArtistClick(artists[index]);
-            });
-        },
+      // Add click handlers
+      container.querySelectorAll(".tidal-artist-item").forEach((el, index) => {
+        el.onclick = () => this.handleArtistClick(artists[index]);
+      });
+    },
 
-        renderArtistItem(artist) {
-            const pictureUrl = artist.picture
-                ? `https://resources.tidal.com/images/${artist.picture.replace(/-/g, '/')}/160x160.jpg`
-                : '';
+    renderArtistItem(artist) {
+      const pictureUrl = artist.picture
+        ? `https://resources.tidal.com/images/${artist.picture.replace(/-/g, "/")}/160x160.jpg`
+        : "";
 
-            const types = artist.artistTypes?.join(', ') || 'Artist';
+      const types = artist.artistTypes?.join(", ") || "Artist";
 
-            return `
+      return `
                 <div class="tidal-artist-item" data-id="${artist.id}">
                     <img class="tidal-artist-picture" src="${pictureUrl}" alt="${this.escapeHtml(artist.name)}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 56 56%22><circle fill=%22%23282828%22 cx=%2228%22 cy=%2228%22 r=%2228%22/><text x=%2228%22 y=%2234%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2224%22>👤</text></svg>'">
                     <div class="tidal-artist-info">
@@ -1094,354 +1118,423 @@
                     </div>
                 </div>
             `;
-        },
+    },
 
-        // ═══════════════════════════════════════════════════════════════════════
-        // PLAYBACK HANDLERS
-        // ═══════════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════════
+    // PLAYBACK HANDLERS
+    // ═══════════════════════════════════════════════════════════════════════
 
-        async playTrack(track, element) {
-            console.log('[TidalSearch] Playing track:', track.title);
+    async playTrack(track, element) {
+      console.log("[TidalSearch] Playing track:", track.title);
 
-            // Show loading state
-            if (element) {
-                element.classList.add('loading');
+      // Show loading state
+      if (element) {
+        element.classList.add("loading");
+      }
+
+      try {
+        // Get selected quality
+        let quality =
+          document.getElementById("tidal-quality")?.value || "LOSSLESS";
+
+        // Fetch stream
+        let streamData = await this.fetchStream(track.id, quality);
+
+        // Check if it's MPD (DASH) format - native audio can't play this
+        if (streamData?.data?.manifestMimeType === "application/dash+xml") {
+          console.log("[TidalSearch] MPD detected, falling back to LOSSLESS");
+          this.showToast("Hi-Res uses DASH, trying Lossless...");
+
+          // Try LOSSLESS instead
+          if (quality === "HI_RES_LOSSLESS") {
+            quality = "LOSSLESS";
+            streamData = await this.fetchStream(track.id, quality);
+          }
+
+          // If still MPD, try HIGH
+          if (streamData?.data?.manifestMimeType === "application/dash+xml") {
+            quality = "HIGH";
+            streamData = await this.fetchStream(track.id, quality);
+          }
+        }
+
+        if (!streamData?.data?.manifest) {
+          throw new Error("No manifest in response");
+        }
+
+        // Decode manifest to get stream URL
+        const streamUrl = this.decodeManifest(streamData.data);
+
+        if (!streamUrl) {
+          throw new Error("Could not extract stream URL");
+        }
+
+        console.log("[TidalSearch] Stream URL:", streamUrl);
+
+        // Get the audio element and play
+        const audioElement = document.querySelector("audio");
+        if (audioElement) {
+          // Update current playing track
+          this.isPlaying = track.id;
+
+          // Create Audion-compatible track object
+          const artistName =
+            track.artist?.name || track.artists?.[0]?.name || "Unknown Artist";
+          const coverUrl = track.album?.cover
+            ? `https://resources.tidal.com/images/${track.album.cover.replace(/-/g, "/")}/320x320.jpg`
+            : null;
+
+          const audionTrack = {
+            id: track.id,
+            path: streamUrl, // Use stream URL as path
+            title: track.title + (track.version ? ` (${track.version})` : ""),
+            artist: artistName,
+            album: track.album?.title || null,
+            duration: track.duration || null,
+            cover_url: coverUrl, // For Tidal album art
+            tidal_id: track.id, // Keep original Tidal ID
+            format: streamData?.data?.audioQuality || "LOSSLESS",
+            bitrate: streamData?.data?.sampleRate || null,
+          };
+
+          // Set track via API (triggers trackChange event for lyrics)
+          if (this.api?.player?.setTrack) {
+            this.api.player.setTrack(audionTrack);
+          }
+
+          // Set audio source and play
+          audioElement.src = streamUrl;
+
+          try {
+            await audioElement.play();
+          } catch (playErr) {
+            // Ignore AbortError (happens when quickly switching tracks)
+            if (playErr.name !== "AbortError") {
+              throw playErr;
             }
+          }
 
+          // Show toast notification
+          this.showToast(`▶ ${audionTrack.title} - ${artistName}`);
+
+          // Update track items to show playing state
+          document.querySelectorAll(".tidal-track-item").forEach((el) => {
+            el.classList.toggle(
+              "playing",
+              parseInt(el.dataset.id) === track.id,
+            );
+          });
+        } else {
+          throw new Error("Audio element not found");
+        }
+      } catch (err) {
+        console.error("[TidalSearch] Playback error:", err);
+        this.showToast(`Error: ${err.message}`, true);
+      } finally {
+        if (element) {
+          element.classList.remove("loading");
+        }
+      }
+    },
+
+    async fetchStream(trackId, quality) {
+      const url = `${API_BASE}/track/?id=${trackId}&quality=${quality}`;
+
+      // Use CORS-free fetch via Tauri backend
+      const response = this.api.fetch
+        ? await this.api.fetch(url)
+        : await fetch(url);
+
+      if (!response.ok) {
+        throw new Error(`Failed to get stream: HTTP ${response.status}`);
+      }
+      return await response.json();
+    },
+
+    // covers for RPC
+
+    async searchCoverForRPC(title, artist, trackId) {
+      try {
+        const query = `${title} ${artist}`;
+        const url = `${API_BASE}/search/?s=${encodeURIComponent(query)}`;
+
+        const response = this.api.fetch
+          ? await this.api.fetch(url)
+          : await fetch(url);
+
+        if (!response.ok) {
+          console.log("[TidalSearch] Cover search failed:", response.status);
+          return null;
+        }
+
+        const data = await response.json();
+        const items = data?.data?.items || [];
+
+        if (items.length > 0 && items[0].album?.cover) {
+          const coverUrl = `https://resources.tidal.com/images/${items[0].album.cover.replace(/-/g, "/")}/640x640.jpg`;
+
+          // Update database if we have a track ID
+          if (trackId && this.api.library?.updateTrackCoverUrl) {
             try {
-                // Get selected quality
-                let quality = document.getElementById('tidal-quality')?.value || 'LOSSLESS';
-
-                // Fetch stream
-                let streamData = await this.fetchStream(track.id, quality);
-
-                // Check if it's MPD (DASH) format - native audio can't play this
-                if (streamData?.data?.manifestMimeType === 'application/dash+xml') {
-                    console.log('[TidalSearch] MPD detected, falling back to LOSSLESS');
-                    this.showToast('Hi-Res uses DASH, trying Lossless...');
-
-                    // Try LOSSLESS instead
-                    if (quality === 'HI_RES_LOSSLESS') {
-                        quality = 'LOSSLESS';
-                        streamData = await this.fetchStream(track.id, quality);
-                    }
-
-                    // If still MPD, try HIGH
-                    if (streamData?.data?.manifestMimeType === 'application/dash+xml') {
-                        quality = 'HIGH';
-                        streamData = await this.fetchStream(track.id, quality);
-                    }
-                }
-
-                if (!streamData?.data?.manifest) {
-                    throw new Error('No manifest in response');
-                }
-
-                // Decode manifest to get stream URL
-                const streamUrl = this.decodeManifest(streamData.data);
-
-                if (!streamUrl) {
-                    throw new Error('Could not extract stream URL');
-                }
-
-                console.log('[TidalSearch] Stream URL:', streamUrl);
-
-                // Get the audio element and play
-                const audioElement = document.querySelector('audio');
-                if (audioElement) {
-                    // Update current playing track
-                    this.isPlaying = track.id;
-
-                    // Create Audion-compatible track object
-                    const artistName = track.artist?.name || track.artists?.[0]?.name || 'Unknown Artist';
-                    const coverUrl = track.album?.cover
-                        ? `https://resources.tidal.com/images/${track.album.cover.replace(/-/g, '/')}/320x320.jpg`
-                        : null;
-
-                    const audionTrack = {
-                        id: track.id,
-                        path: streamUrl,              // Use stream URL as path
-                        title: track.title + (track.version ? ` (${track.version})` : ''),
-                        artist: artistName,
-                        album: track.album?.title || null,
-                        duration: track.duration || null,
-                        cover_url: coverUrl,          // For Tidal album art
-                        tidal_id: track.id,           // Keep original Tidal ID
-                        format: streamData?.data?.audioQuality || 'LOSSLESS',
-                        bitrate: streamData?.data?.sampleRate || null
-                    };
-
-                    // Set track via API (triggers trackChange event for lyrics)
-                    if (this.api?.player?.setTrack) {
-                        this.api.player.setTrack(audionTrack);
-                    }
-
-                    // Set audio source and play
-                    audioElement.src = streamUrl;
-
-                    try {
-                        await audioElement.play();
-                    } catch (playErr) {
-                        // Ignore AbortError (happens when quickly switching tracks)
-                        if (playErr.name !== 'AbortError') {
-                            throw playErr;
-                        }
-                    }
-
-                    // Show toast notification
-                    this.showToast(`▶ ${audionTrack.title} - ${artistName}`);
-
-                    // Update track items to show playing state
-                    document.querySelectorAll('.tidal-track-item').forEach(el => {
-                        el.classList.toggle('playing', parseInt(el.dataset.id) === track.id);
-                    });
-                } else {
-                    throw new Error('Audio element not found');
-                }
+              await this.api.library.updateTrackCoverUrl(trackId, coverUrl);
+              console.log(
+                "[TidalSearch] Updated cover_url in database for track:",
+                trackId,
+              );
             } catch (err) {
-                console.error('[TidalSearch] Playback error:', err);
-                this.showToast(`Error: ${err.message}`, true);
-            } finally {
-                if (element) {
-                    element.classList.remove('loading');
-                }
+              console.log("[TidalSearch] Could not update database:", err);
             }
-        },
+          }
 
-        async fetchStream(trackId, quality) {
-            const url = `${API_BASE}/track/?id=${trackId}&quality=${quality}`;
+          return coverUrl;
+        }
+      } catch (error) {
+        console.log("[TidalSearch] Cover search error:", error);
+      }
 
-            // Use CORS-free fetch via Tauri backend
-            const response = this.api.fetch
-                ? await this.api.fetch(url)
-                : await fetch(url);
+      return null;
+    },
 
-            if (!response.ok) {
-                throw new Error(`Failed to get stream: HTTP ${response.status}`);
-            }
-            return await response.json();
-        },
+    // Complete saveTrack method - saves static data only, URL is resolved on play
 
-        // Complete saveTrack method - saves static data only, URL is resolved on play
+    async saveTrack(track, button) {
+      console.log("[TidalSearch] Adding track to library:", track.title);
 
-        async saveTrack(track, button) {
-            console.log('[TidalSearch] Adding track to library:', track.title);
+      // Show saving state
+      button.classList.add("saving");
 
-            // Show saving state
-            button.classList.add('saving');
+      try {
+        // Get quality selection for format info
+        const quality =
+          document.getElementById("tidal-quality")?.value || "LOSSLESS";
 
-            try {
-                // Get quality selection for format info
-                const quality = document.getElementById('tidal-quality')?.value || 'LOSSLESS';
+        // Get track metadata
+        const artistName =
+          track.artist?.name || track.artists?.[0]?.name || "Unknown Artist";
+        const title =
+          track.title + (track.version ? ` (${track.version})` : "");
+        const coverUrl = track.album?.cover
+          ? `https://resources.tidal.com/images/${track.album.cover.replace(/-/g, "/")}/640x640.jpg`
+          : null;
 
-                // Get track metadata
-                const artistName = track.artist?.name || track.artists?.[0]?.name || 'Unknown Artist';
-                const title = track.title + (track.version ? ` (${track.version})` : '');
-                const coverUrl = track.album?.cover
-                    ? `https://resources.tidal.com/images/${track.album.cover.replace(/-/g, '/')}/640x640.jpg`
-                    : null;
+        // Check if API is available
+        if (this.api?.library?.addExternalTrack) {
+          console.log(
+            "[TidalSearch] Saving static metadata (URL resolved on play)",
+          );
 
-                // Check if API is available
-                if (this.api?.library?.addExternalTrack) {
-                    console.log('[TidalSearch] Saving static metadata (URL resolved on play)');
+          // Add track to database with static metadata only
+          // Path will be "tidal://{id}" - stream URL fetched fresh on play
+          const trackData = {
+            title: title,
+            artist: artistName,
+            album: track.album?.title || null,
+            duration: track.duration || null,
+            cover_url: coverUrl,
+            source_type: "tidal",
+            external_id: String(track.id), // Used to fetch stream on play
+            format: track.mediaMetadata?.tags?.includes("HIRES_LOSSLESS")
+              ? "HI_RES_LOSSLESS"
+              : track.mediaMetadata?.tags?.includes("LOSSLESS")
+                ? "LOSSLESS"
+                : quality, // Fallback to selected quality
+            bitrate: null,
+            // No stream_url - resolved on play for freshness
+          };
 
-                    // Add track to database with static metadata only
-                    // Path will be "tidal://{id}" - stream URL fetched fresh on play
-                    const trackData = {
-                        title: title,
-                        artist: artistName,
-                        album: track.album?.title || null,
-                        duration: track.duration || null,
-                        cover_url: coverUrl,
-                        source_type: 'tidal',
-                        external_id: String(track.id),  // Used to fetch stream on play
-                        format: (track.mediaMetadata?.tags?.includes('HIRES_LOSSLESS')) ? 'HI_RES_LOSSLESS' :
-                            (track.mediaMetadata?.tags?.includes('LOSSLESS')) ? 'LOSSLESS' :
-                                quality, // Fallback to selected quality
-                        bitrate: null
-                        // No stream_url - resolved on play for freshness
-                    };
+          await this.api.library.addExternalTrack(trackData);
 
-                    await this.api.library.addExternalTrack(trackData);
+          // Mark as saved
+          button.classList.remove("saving");
+          button.classList.add("saved");
+          button.disabled = true;
+          button.title = "Saved to library";
 
-                    // Mark as saved
-                    button.classList.remove('saving');
-                    button.classList.add('saved');
-                    button.disabled = true;
-                    button.title = 'Saved to library';
-
-                    // Update icon to filled heart
-                    button.innerHTML = `
+          // Update icon to filled heart
+          button.innerHTML = `
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                             <path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
                         </svg>
                     `;
 
-                    this.showToast(`✓ Added to library: ${title}`);
-                    console.log('[TidalSearch] Track saved:', trackData);
+          this.showToast(`✓ Added to library: ${title}`);
+          console.log("[TidalSearch] Track saved:", trackData);
 
-                    // Add to local set so it shows as saved in future searches
-                    this.libraryTracks.add(String(track.id));
+          // Add to local set so it shows as saved in future searches
+          this.libraryTracks.add(String(track.id));
 
-                    // Flag that we need a refresh on close
-                    this.hasNewChanges = true;
-
-                } else {
-                    throw new Error('Library API not available');
-                }
-
-            } catch (err) {
-                console.error('[TidalSearch] Save error:', err);
-                button.classList.remove('saving');
-                this.showToast(`Error: ${err.message}`, true);
-            }
-        },
-
-        arrayBufferToBase64(buffer) {
-            // For large files, process in chunks to avoid stack overflow
-            const bytes = new Uint8Array(buffer);
-            const chunkSize = 8192;
-            let binary = '';
-
-            for (let i = 0; i < bytes.length; i += chunkSize) {
-                const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
-                binary += String.fromCharCode.apply(null, chunk);
-            }
-
-            return btoa(binary);
-        },
-
-        formatSize(bytes) {
-            if (bytes < 1024) return bytes + ' B';
-            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-        },
-
-        downloadViaBrowser(blob, filename) {
-            const downloadUrl = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = downloadUrl;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            URL.revokeObjectURL(downloadUrl);
-        },
-
-        decodeManifest(data) {
-            try {
-                const manifestMimeType = data.manifestMimeType;
-                const manifestB64 = data.manifest;
-
-                // Decode base64
-                const manifestStr = atob(manifestB64);
-
-                if (manifestMimeType === 'application/vnd.tidal.bts') {
-                    // JSON manifest for FLAC/AAC
-                    const manifest = JSON.parse(manifestStr);
-                    console.log('[TidalSearch] Decoded BTS manifest:', manifest);
-
-                    if (manifest.urls && manifest.urls.length > 0) {
-                        return manifest.urls[0];
-                    }
-                } else if (manifestMimeType === 'application/dash+xml') {
-                    // MPD manifest for Hi-Res - can't play directly
-                    console.warn('[TidalSearch] MPD manifest not supported by native audio');
-                    return null;
-                }
-
-                return null;
-            } catch (err) {
-                console.error('[TidalSearch] Manifest decode error:', err);
-                return null;
-            }
-        },
-
-        updateNowPlaying(track) {
-            // Update the player bar with Tidal track info
-            const artistName = track.artist?.name || track.artists?.[0]?.name || 'Unknown Artist';
-            const coverUrl = track.album?.cover
-                ? `https://resources.tidal.com/images/${track.album.cover.replace(/-/g, '/')}/160x160.jpg`
-                : null;
-
-            // Try to update the now playing display
-            const trackTitle = document.querySelector('.now-playing .track-title, .track-info .title');
-            const trackArtist = document.querySelector('.now-playing .track-artist, .track-info .artist');
-            const albumArt = document.querySelector('.now-playing .album-art img, .album-art img');
-
-            if (trackTitle) trackTitle.textContent = track.title;
-            if (trackArtist) trackArtist.textContent = artistName;
-            if (albumArt && coverUrl) albumArt.src = coverUrl;
-        },
-
-        handleArtistClick(artist) {
-            console.log('[TidalSearch] Artist clicked:', artist.name);
-            // Search for tracks by this artist
-            const input = document.querySelector('.tidal-search-input');
-            if (input) {
-                input.value = artist.name;
-                this.setSearchMode('track');
-                this.handleSearch(artist.name);
-            }
-        },
-
-        // ═══════════════════════════════════════════════════════════════════════
-        // UTILITIES
-        // ═══════════════════════════════════════════════════════════════════════
-
-        formatDuration(seconds) {
-            if (!seconds) return '--:--';
-            const mins = Math.floor(seconds / 60);
-            const secs = seconds % 60;
-            return `${mins}:${secs.toString().padStart(2, '0')}`;
-        },
-
-        getQualityBadge(track) {
-            const tags = track.mediaMetadata?.tags || [];
-
-            if (tags.includes('HIRES_LOSSLESS')) {
-                return '<span class="tidal-quality-badge hires">Hi-Res</span>';
-            } else if (tags.includes('LOSSLESS')) {
-                return '<span class="tidal-quality-badge lossless">Lossless</span>';
-            } else if (track.audioQuality === 'HIGH') {
-                return '<span class="tidal-quality-badge high">High</span>';
-            }
-            return '';
-        },
-
-        escapeHtml(text) {
-            if (!text) return '';
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        },
-
-        // ═══════════════════════════════════════════════════════════════════════
-        // LIFECYCLE
-        // ═══════════════════════════════════════════════════════════════════════
-
-        start() {
-            console.log('[TidalSearch] Plugin started');
-        },
-
-        stop() {
-            console.log('[TidalSearch] Plugin stopped');
-            this.close();
-        },
-
-        destroy() {
-            console.log('[TidalSearch] Plugin destroyed');
-
-            // Clean up DOM
-            document.getElementById('tidal-search-styles')?.remove();
-            document.getElementById('tidal-search-overlay')?.remove();
-            document.getElementById('tidal-search-panel')?.remove();
-            document.getElementById('tidal-search-playerbar-btn')?.remove();
-            document.getElementById('tidal-toast')?.remove();
+          // Flag that we need a refresh on close
+          this.hasNewChanges = true;
+        } else {
+          throw new Error("Library API not available");
         }
-    };
+      } catch (err) {
+        console.error("[TidalSearch] Save error:", err);
+        button.classList.remove("saving");
+        this.showToast(`Error: ${err.message}`, true);
+      }
+    },
 
-    // Register plugin globally
-    window.TidalSearch = TidalSearch;
-    window.AudionPlugin = TidalSearch;
+    arrayBufferToBase64(buffer) {
+      // For large files, process in chunks to avoid stack overflow
+      const bytes = new Uint8Array(buffer);
+      const chunkSize = 8192;
+      let binary = "";
+
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+        binary += String.fromCharCode.apply(null, chunk);
+      }
+
+      return btoa(binary);
+    },
+
+    formatSize(bytes) {
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+      return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+    },
+
+    downloadViaBrowser(blob, filename) {
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(downloadUrl);
+    },
+
+    decodeManifest(data) {
+      try {
+        const manifestMimeType = data.manifestMimeType;
+        const manifestB64 = data.manifest;
+
+        // Decode base64
+        const manifestStr = atob(manifestB64);
+
+        if (manifestMimeType === "application/vnd.tidal.bts") {
+          // JSON manifest for FLAC/AAC
+          const manifest = JSON.parse(manifestStr);
+          console.log("[TidalSearch] Decoded BTS manifest:", manifest);
+
+          if (manifest.urls && manifest.urls.length > 0) {
+            return manifest.urls[0];
+          }
+        } else if (manifestMimeType === "application/dash+xml") {
+          // MPD manifest for Hi-Res - can't play directly
+          console.warn(
+            "[TidalSearch] MPD manifest not supported by native audio",
+          );
+          return null;
+        }
+
+        return null;
+      } catch (err) {
+        console.error("[TidalSearch] Manifest decode error:", err);
+        return null;
+      }
+    },
+
+    updateNowPlaying(track) {
+      // Update the player bar with Tidal track info
+      const artistName =
+        track.artist?.name || track.artists?.[0]?.name || "Unknown Artist";
+      const coverUrl = track.album?.cover
+        ? `https://resources.tidal.com/images/${track.album.cover.replace(/-/g, "/")}/160x160.jpg`
+        : null;
+
+      // Try to update the now playing display
+      const trackTitle = document.querySelector(
+        ".now-playing .track-title, .track-info .title",
+      );
+      const trackArtist = document.querySelector(
+        ".now-playing .track-artist, .track-info .artist",
+      );
+      const albumArt = document.querySelector(
+        ".now-playing .album-art img, .album-art img",
+      );
+
+      if (trackTitle) trackTitle.textContent = track.title;
+      if (trackArtist) trackArtist.textContent = artistName;
+      if (albumArt && coverUrl) albumArt.src = coverUrl;
+    },
+
+    handleArtistClick(artist) {
+      console.log("[TidalSearch] Artist clicked:", artist.name);
+      // Search for tracks by this artist
+      const input = document.querySelector(".tidal-search-input");
+      if (input) {
+        input.value = artist.name;
+        this.setSearchMode("track");
+        this.handleSearch(artist.name);
+      }
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // UTILITIES
+    // ═══════════════════════════════════════════════════════════════════════
+
+    formatDuration(seconds) {
+      if (!seconds) return "--:--";
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${mins}:${secs.toString().padStart(2, "0")}`;
+    },
+
+    getQualityBadge(track) {
+      const tags = track.mediaMetadata?.tags || [];
+
+      if (tags.includes("HIRES_LOSSLESS")) {
+        return '<span class="tidal-quality-badge hires">Hi-Res</span>';
+      } else if (tags.includes("LOSSLESS")) {
+        return '<span class="tidal-quality-badge lossless">Lossless</span>';
+      } else if (track.audioQuality === "HIGH") {
+        return '<span class="tidal-quality-badge high">High</span>';
+      }
+      return "";
+    },
+
+    escapeHtml(text) {
+      if (!text) return "";
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // LIFECYCLE
+    // ═══════════════════════════════════════════════════════════════════════
+
+    start() {
+      console.log("[TidalSearch] Plugin started");
+    },
+
+    stop() {
+      console.log("[TidalSearch] Plugin stopped");
+      this.close();
+    },
+
+    destroy() {
+      console.log("[TidalSearch] Plugin destroyed");
+
+      // Clean up DOM
+      document.getElementById("tidal-search-styles")?.remove();
+      document.getElementById("tidal-search-overlay")?.remove();
+      document.getElementById("tidal-search-panel")?.remove();
+      document.getElementById("tidal-search-playerbar-btn")?.remove();
+      document.getElementById("tidal-toast")?.remove();
+    },
+  };
+
+  // Expose API for other plugins
+  window.TidalSearchAPI = {
+    searchCover: (title, artist, trackId) =>
+      TidalSearch.searchCoverForRPC(title, artist, trackId),
+  };
+
+  // Register plugin globally
+  window.TidalSearch = TidalSearch;
+  window.AudionPlugin = TidalSearch;
 })();

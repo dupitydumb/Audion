@@ -51,11 +51,16 @@
     $: audioElementRef = audioElement;
 
     // Reactive album art loading
-    $: if ($currentTrack?.cover_url) {
-        // Streaming track with direct cover URL (e.g., Tidal)
+    $: if ($currentTrack?.track_cover) {
+        // Priority 1: Track's embedded cover
+        albumArt = getAlbumArtSrc($currentTrack.track_cover);
+        imageLoadFailed = false;
+    } else if ($currentTrack?.cover_url) {
+        // Priority 2: Streaming/Tidal cover
         albumArt = $currentTrack.cover_url;
         imageLoadFailed = false;
     } else if ($currentTrack?.album_id) {
+        // Priority 3: Album art
         loadAlbumArt($currentTrack.album_id);
         imageLoadFailed = false;
     } else {

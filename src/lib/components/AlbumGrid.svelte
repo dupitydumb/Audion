@@ -5,25 +5,55 @@
     import { tracks as allTracks, loadLibrary } from "$lib/stores/library";
     import { contextMenu } from "$lib/stores/ui";
     import { deleteAlbum } from "$lib/api/tauri";
-    import { addToQueue, playTracks } from "$lib/stores/player";
+    import { onDestroy } from 'svelte';
+    import { getAlbumCoverFromTracks } from "$lib/stores/library";
 
     export let albums: Album[] = [];
 
-    // Track images that failed to load
+    // Track images that failed to load - with auto-limiting
     let failedImages = new Set<string>();
-
-    // Get album cover - use track's cover_url for external tracks (same as TrackList)
-    function getAlbumCover(album: Album): string | null {
-        // First check if album has embedded art
-        if (album.art_data) {
-            return getAlbumArtSrc(album.art_data);
+    const MAX_FAILED_IMAGES = 200; // Limit to prevent unbounded growth
+    
+    // Cache album covers permanently (until component unmounts)
+    // No TTL needed - album art doesn't change during session
+    const albumCoversCache = new Map<number, string | null>();
+    
+    // Cleanup only on component destroy
+    onDestroy(() => {
+        failedImages.clear();
+        albumCoversCache.clear();
+    });
+    
+    // Pre-compute all album covers when albums or tracks change
+    $: {
+        // Don't clear cache on updates - keep what we have
+        // Only compute covers for new albums
+        albums.forEach(album => {
+            if (!albumCoversCache.has(album.id)) {
+                albumCoversCache.set(album.id, computeAlbumCover(album));
+            }
+        });
+        
+        // Optional: Remove covers for albums that no longer exist
+        // (only if you're concerned about deleted albums)
+        const currentAlbumIds = new Set(albums.map(a => a.id));
+        for (const cachedId of albumCoversCache.keys()) {
+            if (!currentAlbumIds.has(cachedId)) {
+                albumCoversCache.delete(cachedId);
+            }
         }
+    }
 
-        // Fallback: find a track with cover_url for this album
-        const albumTrack = $allTracks.find(
-            (t) => t.album_id === album.id && t.cover_url,
-        );
-        return albumTrack?.cover_url || null;
+    // Compute album cover once per album
+    // Replace the computeAlbumCover function
+    function computeAlbumCover(album: Album): string | null {
+        // Use the optimized API from library store
+        return getAlbumCoverFromTracks(album.id);
+    }
+
+    // Get cached cover (instant lookup)
+    function getAlbumCover(album: Album): string | null {
+        return albumCoversCache.get(album.id) ?? null;
     }
 
     function handleAlbumClick(album: Album) {
@@ -57,6 +87,8 @@
                     action: async () => {
                         try {
                             await deleteAlbum(album.id);
+                            // Remove from cache immediately
+                            albumCoversCache.delete(album.id);
                             await loadLibrary();
                         } catch (error) {
                             console.error("Failed to delete album:", error);
@@ -66,10 +98,24 @@
             ],
         });
     }
+
+    // Handle image load error with size limiting
+    function handleImageError(coverSrc: string) {
+        // Limit failed images set size
+        if (failedImages.size >= MAX_FAILED_IMAGES) {
+            // Remove oldest half (FIFO)
+            const toKeep = Array.from(failedImages).slice(-MAX_FAILED_IMAGES / 2);
+            failedImages.clear();
+            toKeep.forEach(src => failedImages.add(src));
+        }
+        
+        failedImages.add(coverSrc);
+        failedImages = failedImages; // Trigger reactivity
+    }
 </script>
 
 <div class="album-grid">
-    {#each albums as album}
+    {#each albums as album (album.id)}
         {@const coverSrc = getAlbumCover(album)}
         <button
             class="album-card"
@@ -83,10 +129,7 @@
                         alt={album.name}
                         loading="lazy"
                         decoding="async"
-                        on:error={() => {
-                            failedImages.add(coverSrc);
-                            failedImages = failedImages;
-                        }}
+                        on:error={() => handleImageError(coverSrc)}
                     />
                 {:else}
                     <div class="album-art-placeholder">

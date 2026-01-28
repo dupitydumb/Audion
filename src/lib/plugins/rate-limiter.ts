@@ -11,6 +11,7 @@ export class RateLimiter {
     private tokens: number;
     private lastRefill: number;
     private config: Required<RateLimiterConfig>;
+    private consumedTotal: number = 0; // Track total consumed for stats
 
     constructor(config: RateLimiterConfig) {
         this.config = {
@@ -32,6 +33,7 @@ export class RateLimiter {
 
         if (this.tokens >= tokens) {
             this.tokens -= tokens;
+            this.consumedTotal += tokens;
             return true;
         }
 
@@ -59,11 +61,50 @@ export class RateLimiter {
     }
 
     /**
+     * Get time until next token is available (in milliseconds)
+     */
+    getTimeUntilNextToken(): number {
+        if (this.tokens >= 1) return 0;
+
+        const tokensNeeded = 1 - this.tokens;
+        return (tokensNeeded / this.config.refillRate) * 1000;
+    }
+
+    /**
      * Reset the rate limiter
      */
     reset(): void {
         this.tokens = this.config.initialTokens;
         this.lastRefill = Date.now();
+        this.consumedTotal = 0;
+    }
+
+    /**
+     * Get statistics about rate limiter usage
+     */
+    getStats(): {
+        currentTokens: number;
+        maxTokens: number;
+        refillRate: number;
+        totalConsumed: number;
+        percentAvailable: number;
+    } {
+        const current = this.getTokens();
+        return {
+            currentTokens: current,
+            maxTokens: this.config.maxTokens,
+            refillRate: this.config.refillRate,
+            totalConsumed: this.consumedTotal,
+            percentAvailable: (current / this.config.maxTokens) * 100
+        };
+    }
+
+    /**
+     * Check if tokens are available without consuming
+     */
+    hasTokens(tokens: number = 1): boolean {
+        this.refill();
+        return this.tokens >= tokens;
     }
 }
 

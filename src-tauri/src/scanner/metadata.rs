@@ -63,13 +63,19 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
             let artist = tag.artist().map(|s| s.to_string());
             let album = tag.album().map(|s| s.to_string());
             let track_number = tag.track().map(|n| n as i32);
-
-            // Extract album art
+        
+            // Extract album art (for the album)
             let album_art = tag
                 .pictures()
                 .first()
                 .map(|pic| STANDARD.encode(pic.data()));
-
+        
+            // Extract track cover (same as album art, but stored per-track)
+            let track_cover = tag
+                .pictures()
+                .first()
+                .map(|pic| STANDARD.encode(pic.data()));
+        
             // Generate content hash for duplicate detection
             let content_hash = Some(generate_content_hash(
                 title.as_deref(),
@@ -77,7 +83,7 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
                 album.as_deref(),
                 Some(duration),
             ));
-
+        
             Some(TrackInsert {
                 path: path.to_string_lossy().to_string(),
                 title,
@@ -86,6 +92,7 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
                 track_number,
                 duration: Some(duration),
                 album_art,
+                track_cover,
                 format,
                 bitrate,
                 source_type: None, // Local file
@@ -122,6 +129,7 @@ fn create_fallback_metadata(path: &Path) -> TrackInsert {
         track_number: None,
         duration: None,
         album_art: None,
+        track_cover: None,
         format: None,
         bitrate: None,
         source_type: None, // Local file

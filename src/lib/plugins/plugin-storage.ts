@@ -7,6 +7,9 @@ const DEFAULT_QUOTA_BYTES = 5 * 1024 * 1024; // 5MB
 export class PluginStorage {
     private pluginName: string;
     private quotaBytes: number;
+    private cachedUsage: number | null = null; // Cache usage to avoid expensive recalculations
+    private cacheTimestamp: number = 0;
+    private readonly CACHE_TTL = 5000; // 5 seconds
 
     constructor(pluginName: string, quotaBytes: number = DEFAULT_QUOTA_BYTES) {
         this.pluginName = pluginName;
@@ -27,7 +30,6 @@ export class PluginStorage {
         try {
             const storageKey = this.getKey(key);
             const value = localStorage.getItem(storageKey);
-            console.log(`[PluginStorage:${this.pluginName}] Getting ${key}:`, value);
             return value ? JSON.parse(value) : null;
         } catch (err) {
             console.error(`[PluginStorage:${this.pluginName}] Failed to get ${key}:`, err);
@@ -42,19 +44,22 @@ export class PluginStorage {
         try {
             const storageKey = this.getKey(key);
             const serialized = JSON.stringify(value);
-            console.log(`[PluginStorage:${this.pluginName}] Setting ${key} to ${serialized}`);
 
             // Check quota before writing
             if (!this.checkQuota(storageKey, serialized)) {
+                const usage = this.getUsedBytes();
                 console.error(
                     `[PluginStorage:${this.pluginName}] Quota exceeded. ` +
-                    `Used: ${this.getUsedBytes()} bytes, Limit: ${this.quotaBytes} bytes`
+                    `Used: ${usage} bytes, Limit: ${this.quotaBytes} bytes`
                 );
                 return false;
             }
 
             localStorage.setItem(storageKey, serialized);
-            console.log(`[PluginStorage:${this.pluginName}] Successfully saved ${key}`);
+
+            // Invalidate cache after write
+            this.invalidateCache();
+
             return true;
         } catch (err) {
             console.error(`[PluginStorage:${this.pluginName}] Failed to set ${key}:`, err);
@@ -65,15 +70,23 @@ export class PluginStorage {
     /**
      * Remove key from storage
      */
-    remove(key: string): void {
-        const storageKey = this.getKey(key);
-        localStorage.removeItem(storageKey);
+    remove(key: string): boolean {
+        try {
+            const storageKey = this.getKey(key);
+            localStorage.removeItem(storageKey);
+            this.invalidateCache();
+            return true;
+        } catch (err) {
+            console.error(`[PluginStorage:${this.pluginName}] Failed to remove ${key}:`, err);
+            return false;
+        }
     }
 
     /**
      * Clear all storage for this plugin
+     * Returns number of keys removed
      */
-    clear(): void {
+    async clear(): Promise<number> {
         const prefix = `${STORAGE_PREFIX}${this.pluginName}_`;
         const keysToRemove: string[] = [];
 
@@ -86,7 +99,21 @@ export class PluginStorage {
         }
 
         // Remove them
-        keysToRemove.forEach(key => localStorage.removeItem(key));
+        let removed = 0;
+        keysToRemove.forEach(key => {
+            try {
+                localStorage.removeItem(key);
+                removed++;
+            } catch (err) {
+                console.error(`[PluginStorage:${this.pluginName}] Failed to remove key ${key}:`, err);
+            }
+        });
+
+        // Invalidate cache
+        this.invalidateCache();
+
+        console.log(`[PluginStorage:${this.pluginName}] Cleared ${removed}/${keysToRemove.length} items`);
+        return removed;
     }
 
     /**
@@ -108,9 +135,25 @@ export class PluginStorage {
     }
 
     /**
-     * Get total bytes used by this plugin
+     * Check if a key exists
+     */
+    has(key: string): boolean {
+        const storageKey = this.getKey(key);
+        return localStorage.getItem(storageKey) !== null;
+    }
+
+    /**
+     * Get total bytes used by this plugin (with caching)
      */
     getUsedBytes(): number {
+        const now = Date.now();
+
+        // Return cached value if still valid
+        if (this.cachedUsage !== null && (now - this.cacheTimestamp) < this.CACHE_TTL) {
+            return this.cachedUsage;
+        }
+
+        // Recalculate
         const prefix = `${STORAGE_PREFIX}${this.pluginName}_`;
         let total = 0;
 
@@ -125,7 +168,19 @@ export class PluginStorage {
             }
         }
 
+        // Cache the result
+        this.cachedUsage = total;
+        this.cacheTimestamp = now;
+
         return total;
+    }
+
+    /**
+     * Invalidate usage cache
+     */
+    private invalidateCache(): void {
+        this.cachedUsage = null;
+        this.cacheTimestamp = 0;
     }
 
     /**
@@ -150,5 +205,61 @@ export class PluginStorage {
         const percentUsed = (used / this.quotaBytes) * 100;
 
         return { used, total: this.quotaBytes, available, percentUsed };
+    }
+
+    /**
+     * Batch set multiple keys (more efficient than multiple set() calls)
+     */
+    setBatch(entries: Record<string, any>): { success: number; failed: number } {
+        let success = 0;
+        let failed = 0;
+
+        Object.entries(entries).forEach(([key, value]) => {
+            if (this.set(key, value)) {
+                success++;
+            } else {
+                failed++;
+            }
+        });
+
+        return { success, failed };
+    }
+
+    /**
+     * Batch get multiple keys
+     */
+    getBatch<T = any>(keys: string[]): Record<string, T | null> {
+        const result: Record<string, T | null> = {};
+
+        keys.forEach(key => {
+            result[key] = this.get<T>(key);
+        });
+
+        return result;
+    }
+
+    /**
+     * Export all data for this plugin (for backup/migration)
+     */
+    exportData(): Record<string, any> {
+        const data: Record<string, any> = {};
+        const keys = this.keys();
+
+        keys.forEach(key => {
+            data[key] = this.get(key);
+        });
+
+        return data;
+    }
+
+    /**
+     * Import data (replaces existing data)
+     */
+    async importData(data: Record<string, any>): Promise<{ success: number; failed: number }> {
+        // Clear existing data first
+        await this.clear();
+
+        // Import new data
+        return this.setBatch(data);
     }
 }

@@ -50,6 +50,7 @@ export interface Track {
     format: string | null;
     bitrate: number | null;
     cover_url?: string | null;  // For streaming services (Tidal, etc.)
+    track_cover?: string | null; // Track's embedded cover (base64)
     source_type?: string | null;  // 'local', 'tidal', 'url'
     external_id?: string | null;  // Source-specific ID
     local_src?: string | null; // Local file path for offline playback

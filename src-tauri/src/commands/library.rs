@@ -313,7 +313,8 @@ pub async fn add_external_track(
         album: track.album,
         track_number: None,
         duration: track.duration,
-        album_art: None, // External tracks use cover_url instead
+        album_art: None,   // External tracks use cover_url instead
+        track_cover: None, // External tracks use cover_url instead
         format: track.format,
         bitrate: track.bitrate,
         source_type: Some(track.source_type),

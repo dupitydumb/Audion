@@ -28,6 +28,8 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
             cover_url TEXT,
             external_id TEXT,
             content_hash TEXT,
+            local_src TEXT,
+            track_cover TEXT,
             FOREIGN KEY (album_id) REFERENCES albums(id)
         );
 
@@ -74,6 +76,7 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
     let _ = conn.execute("ALTER TABLE tracks ADD COLUMN external_id TEXT", []);
     let _ = conn.execute("ALTER TABLE tracks ADD COLUMN content_hash TEXT", []);
     let _ = conn.execute("ALTER TABLE tracks ADD COLUMN local_src TEXT", []);
+    let _ = conn.execute("ALTER TABLE tracks ADD COLUMN track_cover TEXT", []); // NEW!
 
     // Create index for content_hash after migration ensures column exists
     let _ = conn.execute(

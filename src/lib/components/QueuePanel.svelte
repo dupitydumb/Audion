@@ -25,7 +25,11 @@
 
     function getTrackArt(track: Track): string | null {
         if (!track) return null;
+        // Priority 1: Track's embedded cover
+        if (track.track_cover) return getAlbumArtSrc(track.track_cover);
+        // Priority 2: Streaming cover URL
         if (track.cover_url) return track.cover_url;
+        // Priority 3: Album art
         if (!track.album_id) return null;
         const album = albumMap.get(track.album_id);
         return album ? getAlbumArtSrc(album.art_data) : null;

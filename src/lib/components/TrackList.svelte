@@ -1,60 +1,149 @@
 <script lang="ts">
-    import type { Track } from "$lib/api/tauri";
-    import {
-        formatDuration,
-        getAlbumArtSrc,
-        addTrackToPlaylist,
-        removeTrackFromPlaylist,
-        deleteTrack,
-    } from "$lib/api/tauri";
-    import {
-        playTracks,
-        currentTrack,
-        isPlaying,
-        addToQueue,
-    } from "$lib/stores/player";
-    import { contextMenu } from "$lib/stores/ui";
-    import {
-        albums,
-        playlists,
-        loadPlaylists,
-        loadLibrary,
-    } from "$lib/stores/library";
-    import { pluginStore } from "$lib/stores/plugin-store";
-    import { goToAlbumDetail } from "$lib/stores/view";
-    import {
-        canDownload,
-        downloadTrack,
-        needsDownloadLocation,
-    } from "$lib/services/downloadService";
-    import { addToast } from "$lib/stores/toast";
-    import { isOnline } from "$lib/stores/network";
+  import type { Track } from "$lib/api/tauri";
+  import {
+    formatDuration,
+    getAlbumArtSrc,
+    addTrackToPlaylist,
+    removeTrackFromPlaylist,
+    deleteTrack,
+  } from "$lib/api/tauri";
+  import {
+    playTracks,
+    currentTrack,
+    isPlaying,
+    addToQueue,
+  } from "$lib/stores/player";
+  import { contextMenu } from "$lib/stores/ui";
+  import {
+    albums,
+    playlists,
+    loadPlaylists,
+    loadLibrary,
+    getTrackAlbumCover,
+  } from "$lib/stores/library";
+  import { pluginStore } from "$lib/stores/plugin-store";
+  import { goToAlbumDetail } from "$lib/stores/view";
+  import {
+    canDownload,
+    downloadTrack,
+    needsDownloadLocation,
+  } from "$lib/services/downloadService";
+  import { addToast } from "$lib/stores/toast";
+  import { isOnline } from "$lib/stores/network";
+  import { onDestroy, onMount } from "svelte";
 
-    export let tracks: Track[] = [];
-    export let title: string = "Tracks";
-    export let showAlbum: boolean = true;
-    export let isTidalAvailable: boolean = true;
+  export let tracks: Track[] = [];
+  export let title: string = "Tracks";
+  export let showAlbum: boolean = true;
+  export let isTidalAvailable: boolean = true;
+  export let playlistId: number | null = null;
 
-    // Track images that failed to load
-    let failedImages = new Set<string>();
+  console.log(
+    "[TrackList] getTrackAlbumCover function:",
+    typeof getTrackAlbumCover,
+  );
 
-    function isTrackUnavailable(track: Track): boolean {
+  // Virtual scrolling configuration
+  const TRACK_ROW_HEIGHT = 56; // pixels (matches min-height in CSS)
+  const OVERSCAN = 5; // Extra rows to render above/below viewport
+
+  let containerHeight = 600; // Will be calculated from container
+  let scrollTop = 0;
+  let containerElement: HTMLDivElement;
+
+  // Calculate visible range
+  $: totalHeight = sortedTracks.length * TRACK_ROW_HEIGHT;
+  $: startIndex = Math.max(
+    0,
+    Math.floor(scrollTop / TRACK_ROW_HEIGHT) - OVERSCAN,
+  );
+  $: endIndex = Math.min(
+    sortedTracks.length,
+    Math.ceil((scrollTop + containerHeight) / TRACK_ROW_HEIGHT) + OVERSCAN,
+  );
+  $: visibleTracks = sortedTracks.slice(startIndex, endIndex);
+  $: offsetY = startIndex * TRACK_ROW_HEIGHT;
+
+  function handleScroll(e: Event) {
+    scrollTop = (e.target as HTMLElement).scrollTop;
+  }
+
+  // Measure container height on mount
+  onMount(() => {
+    if (containerElement) {
+      const updateHeight = () => {
+        containerHeight = containerElement.clientHeight;
+      };
+      updateHeight();
+
+      // Update on window resize
+      window.addEventListener("resize", updateHeight);
+      return () => window.removeEventListener("resize", updateHeight);
+    }
+  });
+
+  // Managed failed images with auto-limiting
+  let failedImages = new Set<string>();
+  const MAX_FAILED_IMAGES = 200;
+
+  // Cache for album art (prevents recalculation)
+  const trackAlbumArtCache = new Map<number, string | null>();
+
+  // Cache for album map (only recalculate when albums actually change)
+  let albumMap = new Map<number, any>();
+  let lastAlbumsLength = 0;
+
+  $: {
+    // Only rebuild albumMap if albums array actually changed
+    if ($albums.length !== lastAlbumsLength || $albums !== $albums) {
+      albumMap = new Map($albums.map((a) => [a.id, a]));
+      lastAlbumsLength = $albums.length;
+      // Clear album art cache when albums change
+      trackAlbumArtCache.clear();
+    }
+  }
+
+  // Cleanup on destroy
+  onDestroy(() => {
+    failedImages.clear();
+    trackAlbumArtCache.clear();
+    albumMap.clear();
+
+    if (cleanupInterval) {
+      clearInterval(cleanupInterval);
+    }
+  });
+
+  // Periodic cleanup of failed images
+  let cleanupInterval: number;
+  if (typeof window !== "undefined") {
+    cleanupInterval = window.setInterval(() => {
+      if (failedImages.size > MAX_FAILED_IMAGES) {
+        const toKeep = Array.from(failedImages).slice(-MAX_FAILED_IMAGES / 2);
+        failedImages.clear();
+        toKeep.forEach((src) => failedImages.add(src));
+        failedImages = failedImages;
+      }
+    }, 300000); // Every 5 minutes
+  }
+
+  function isTrackUnavailable(track: Track): boolean {
         // Local tracks are always available
-        if (!track.source_type || track.source_type === "local") return false;
+    if (!track.source_type || track.source_type === "local") return false;
         // Downloaded tracks are always available
-        if (track.local_src) return false;
+    if (track.local_src) return false;
 
         // If offline and not downloaded/local, it's unavailable
-        if (!$isOnline) return true;
+    if (!$isOnline) return true;
 
         // Otherwise depends on plugin availability
         // Also check if we have a resolver for this source type
-        if (!isTidalAvailable) return true;
+    if (!isTidalAvailable) return true;
 
-        const runtime = pluginStore.getRuntime();
-        if (!runtime) return true;
-        return !runtime.streamResolvers.has(track.source_type);
-    }
+    const runtime = pluginStore.getRuntime();
+    if (!runtime) return true;
+    return !runtime.streamResolvers.has(track.source_type);
+  }
 
     // Filter out external tracks ONLY if we filter completely (old logic).
     // New logic: show all but mark unavailable.
@@ -62,716 +151,787 @@
     // We should probably keep showing them but maybe mark them?
     // Let's modify filteredTracks to NOT filter based on resolvers,
     // but relies on the CSS class for visual indication.
-    $: filteredTracks = tracks;
+  $: filteredTracks = tracks;
 
     // Create a map of album_id to album for quick lookup
     $: albumMap = new Map($albums.map((a) => [a.id, a]));
 
-    // Sorting state
-    type SortField = "title" | "album" | "duration" | null;
-    let sortField: SortField = null;
-    let sortDirection: "asc" | "desc" = "asc";
+  // Sorting state
+  type SortField = "title" | "album" | "duration" | null;
+  let sortField: SortField = null;
+  let sortDirection: "asc" | "desc" = "asc";
 
-    function toggleSort(field: SortField) {
-        if (sortField === field) {
-            if (sortDirection === "asc") {
-                sortDirection = "desc";
-            } else {
-                sortField = null;
-                sortDirection = "asc";
-            }
-        } else {
-            sortField = field;
-            sortDirection = "asc";
-        }
+  function toggleSort(field: SortField) {
+    if (sortField === field) {
+      if (sortDirection === "asc") {
+        sortDirection = "desc";
+      } else {
+        sortField = null;
+        sortDirection = "asc";
+      }
+    } else {
+      sortField = field;
+      sortDirection = "asc";
     }
+  }
 
-    $: sortedTracks = (() => {
-        if (!sortField) return filteredTracks;
+  // Optimized sorting with memoization
+  let lastSortField: SortField = null;
+  let lastSortDirection: "asc" | "desc" = "asc";
+  let lastFilteredTracks: Track[] = [];
+  let cachedSortedTracks: Track[] = [];
 
-        return [...filteredTracks].sort((a, b) => {
-            let valA: any = "";
-            let valB: any = "";
+  $: {
+    // Only re-sort if sort params or tracks actually changed
+    if (
+      sortField !== lastSortField ||
+      sortDirection !== lastSortDirection ||
+      filteredTracks !== lastFilteredTracks
+    ) {
+      if (!sortField) {
+        cachedSortedTracks = filteredTracks;
+      } else {
+        cachedSortedTracks = [...filteredTracks].sort((a, b) => {
+          let valA: any = "";
+          let valB: any = "";
 
-            switch (sortField) {
-                case "title":
-                    valA = (a.title || "").toLowerCase();
-                    valB = (b.title || "").toLowerCase();
-                    break;
-                case "album":
-                    valA = (a.album || "").toLowerCase();
-                    valB = (b.album || "").toLowerCase();
-                    break;
-                case "duration":
-                    valA = a.duration || 0;
-                    valB = b.duration || 0;
-                    break;
-            }
+          switch (sortField) {
+            case "title":
+              valA = (a.title || "").toLowerCase();
+              valB = (b.title || "").toLowerCase();
+              break;
+            case "album":
+              valA = (a.album || "").toLowerCase();
+              valB = (b.album || "").toLowerCase();
+              break;
+            case "duration":
+              valA = a.duration || 0;
+              valB = b.duration || 0;
+              break;
+          }
 
-            if (valA < valB) return sortDirection === "asc" ? -1 : 1;
-            if (valA > valB) return sortDirection === "asc" ? 1 : -1;
-            return 0;
+          if (valA < valB) return sortDirection === "asc" ? -1 : 1;
+          if (valA > valB) return sortDirection === "asc" ? 1 : -1;
+          return 0;
         });
-    })();
+      }
 
-    function getTrackAlbumArt(track: Track): string | null {
-        // For external tracks (Tidal, etc.), use cover_url directly
-        if (track.cover_url) {
-            return track.cover_url;
-        }
-        // For local tracks, get art from album
-        if (!track.album_id) return null;
-        const album = albumMap.get(track.album_id);
-        return album ? getAlbumArtSrc(album.art_data) : null;
+      lastSortField = sortField;
+      lastSortDirection = sortDirection;
+      lastFilteredTracks = filteredTracks;
     }
+  }
 
-    function handleTrackClick(index: number, track: Track) {
-        if (isTrackUnavailable(track)) return;
+  $: sortedTracks = cachedSortedTracks;
 
-        // Find the actual index in the filtered/sorted list
-        const trackIndex = sortedTracks.findIndex((t) => t.id === track.id);
-        if (trackIndex !== -1) {
-            playTracks(sortedTracks, trackIndex);
-        }
+  // Cached album art lookup
+  function getTrackAlbumArt(track: Track): string | null {
+    // Check cache first
+    if (trackAlbumArtCache.has(track.id)) {
+      return trackAlbumArtCache.get(track.id) ?? null;
     }
+    const result = getTrackAlbumCover(track.id);
+    // Cache the result
+    trackAlbumArtCache.set(track.id, result);
+    return result;
+  }
 
-    function handleTrackDoubleClick(index: number, track: Track) {
-        if (isTrackUnavailable(track)) return;
+  function handleTrackClick(track: Track, actualIndex: number) {
+    if (isTrackUnavailable(track)) return;
 
-        const trackIndex = sortedTracks.findIndex((t) => t.id === track.id);
-        if (trackIndex !== -1) {
-            playTracks(sortedTracks, trackIndex);
-        }
+    const trackIndex = sortedTracks.findIndex((t) => t.id === track.id);
+    if (trackIndex !== -1) {
+      playTracks(sortedTracks, trackIndex);
     }
+  }
 
-    export let playlistId: number | null = null;
+  function handleTrackDoubleClick(track: Track, actualIndex: number) {
+    if (isTrackUnavailable(track)) return;
 
-    async function handleContextMenu(e: MouseEvent, index: number) {
-        // Context menu still allowed for unavailable tracks? Probably yes (e.g. to delete)
-        e.preventDefault();
-        const track = sortedTracks[index];
+    const trackIndex = sortedTracks.findIndex((t) => t.id === track.id);
+    if (trackIndex !== -1) {
+      playTracks(sortedTracks, trackIndex);
+    }
+  }
+
+  async function handleContextMenu(e: MouseEvent, track: Track) {
+    e.preventDefault();
 
         // Ensure playlists are loaded
-        if ($playlists.length === 0) {
-            await loadPlaylists();
-        }
+    if ($playlists.length === 0) {
+      await loadPlaylists();
+    }
 
         // Build playlist submenu items
-        const playlistItems = $playlists.map((playlist) => ({
-            label: playlist.name,
-            action: async () => {
-                try {
-                    await addTrackToPlaylist(playlist.id, track.id);
-                } catch (error) {
-                    console.error("Failed to add track to playlist:", error);
-                }
-            },
-        }));
+    const playlistItems = $playlists.map((playlist) => ({
+      label: playlist.name,
+      action: async () => {
+        try {
+          await addTrackToPlaylist(playlist.id, track.id);
+        } catch (error) {
+          console.error("Failed to add track to playlist:", error);
+        }
+      },
+    }));
 
-        const isUnavailable = isTrackUnavailable(track);
+    const isUnavailable = isTrackUnavailable(track);
 
-        const menuItems: any[] = [
-            {
-                label: "Play",
-                action: () => {
+    const menuItems: any[] = [
+      {
+        label: "Play",
+        action: () => {
                     const trackIndex = sortedTracks.findIndex(
                         (t) => t.id === track.id,
                     );
-                    if (trackIndex !== -1) playTracks(sortedTracks, trackIndex);
-                },
-                disabled: isUnavailable,
-            },
-            { type: "separator" },
-            {
-                label: "Add to Queue",
-                action: () => addToQueue([track]),
-                disabled: isUnavailable,
-            },
-            { type: "separator" },
-            {
-                label: "Download",
-                action: async () => {
-                    if (needsDownloadLocation()) {
-                        addToast(
-                            "Please configure a download location in Settings first",
-                            "error",
-                        );
-                        return;
-                    }
+          if (trackIndex !== -1) playTracks(sortedTracks, trackIndex);
+        },
+        disabled: isUnavailable,
+      },
+      { type: "separator" },
+      {
+        label: "Add to Queue",
+        action: () => addToQueue([track]),
+        disabled: isUnavailable,
+      },
+      { type: "separator" },
+      {
+        label: "Download",
+        action: async () => {
+          if (needsDownloadLocation()) {
+            addToast(
+              "Please configure a download location in Settings first",
+              "error",
+            );
+            return;
+          }
 
-                    addToast(`Downloading "${track.title}"...`, "info");
-                    try {
-                        await downloadTrack(track);
-                        addToast(`Downloaded "${track.title}"`, "success");
-                    } catch (error) {
-                        console.error("Failed to download track:", error);
+          addToast(`Downloading "${track.title}"...`, "info");
+          try {
+            await downloadTrack(track);
+            addToast(`Downloaded "${track.title}"`, "success");
+          } catch (error) {
+            console.error("Failed to download track:", error);
                         addToast(
                             `Failed to download "${track.title}"`,
                             "error",
                         );
-                    }
-                },
-                disabled:
-                    !canDownload(track) ||
+          }
+        },
+        disabled:
+          !canDownload(track) ||
                     (isUnavailable && !isTidalAvailable && !track.local_src), // Enable download if it's the only way to get it? No, if plugin off, can't download.
-            },
-            { type: "separator" },
-            {
-                label: "Add to Playlist",
-                submenu:
-                    playlistItems.length > 0
-                        ? playlistItems
-                        : [
-                              {
-                                  label: "No playlists",
-                                  action: () => {},
-                                  disabled: true,
-                              },
-                          ],
-            },
-        ];
+      },
+      { type: "separator" },
+      {
+        label: "Add to Playlist",
+        submenu:
+          playlistItems.length > 0
+            ? playlistItems
+            : [
+                {
+                  label: "No playlists",
+                  action: () => {},
+                  disabled: true,
+                },
+              ],
+      },
+    ];
 
-        if (playlistId) {
-            menuItems.push({
-                label: "Remove from Playlist",
-                action: async () => {
-                    try {
-                        await removeTrackFromPlaylist(playlistId, track.id);
-                        tracks = tracks.filter((t) => t.id !== track.id);
-                    } catch (error) {
+    if (playlistId) {
+      menuItems.push({
+        label: "Remove from Playlist",
+        action: async () => {
+          try {
+            await removeTrackFromPlaylist(playlistId, track.id);
+            tracks = tracks.filter((t) => t.id !== track.id);
+          } catch (error) {
                         console.error(
                             "Failed to remove track from playlist:",
                             error,
                         );
-                    }
-                },
-            });
-        }
-
-        menuItems.push(
-            { type: "separator" },
-            {
-                label: "Delete from Library",
-                action: async () => {
-                    try {
-                        await deleteTrack(track.id);
-                        // Refresh library to update album list (removes empty albums)
-                        await loadLibrary();
-                        // Also remove from local tracks array for immediate UI feedback
-                        tracks = tracks.filter((t) => t.id !== track.id);
-                    } catch (error) {
-                        console.error("Failed to delete track:", error);
-                    }
-                },
-            },
-        );
-
-        contextMenu.set({
-            visible: true,
-            x: e.clientX,
-            y: e.clientY,
-            items: menuItems,
-        });
+          }
+        },
+      });
     }
+
+    menuItems.push(
+      { type: "separator" },
+      {
+        label: "Delete from Library",
+        action: async () => {
+          try {
+            await deleteTrack(track.id);
+            // Clear from cache
+            trackAlbumArtCache.delete(track.id);
+            await loadLibrary();
+                        // Also remove from local tracks array for immediate UI feedback
+            tracks = tracks.filter((t) => t.id !== track.id);
+          } catch (error) {
+            console.error("Failed to delete track:", error);
+          }
+        },
+      },
+    );
+
+    contextMenu.set({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      items: menuItems,
+    });
+  }
+
+  function handleImageError(albumArt: string) {
+    if (failedImages.size >= MAX_FAILED_IMAGES) {
+      const toKeep = Array.from(failedImages).slice(-MAX_FAILED_IMAGES / 2);
+      failedImages.clear();
+      toKeep.forEach((src) => failedImages.add(src));
+    }
+
+    failedImages.add(albumArt);
+    failedImages = failedImages;
+  }
 </script>
 
 <div class="track-list">
-    <header class="list-header" class:no-album={!showAlbum}>
-        <!-- ... existing header ... -->
-        <button class="col-header col-num" on:click={() => toggleSort(null)}>
-            {#if sortField === null}
-                <span class="sort-icon">#</span>
-            {:else}
-                #
-            {/if}
-        </button>
-        <span class="col-header col-cover"></span>
+  <!-- Header stays fixed -->
+  <header class="list-header" class:no-album={!showAlbum}>
+    <button class="col-header col-num" on:click={() => toggleSort(null)}>
+      {#if sortField === null}
+        <span class="sort-icon">#</span>
+      {:else}
+        #
+      {/if}
+    </button>
+    <span class="col-header col-cover"></span>
         <button
             class="col-header col-title"
             on:click={() => toggleSort("title")}
         >
-            Title
-            {#if sortField === "title"}
+      Title
+      {#if sortField === "title"}
                 <span class="sort-icon"
                     >{sortDirection === "asc" ? "▲" : "▼"}</span
                 >
-            {/if}
-        </button>
-        {#if showAlbum}
+      {/if}
+    </button>
+    {#if showAlbum}
             <button
                 class="col-header col-album"
                 on:click={() => toggleSort("album")}
             >
-                Album
-                {#if sortField === "album"}
+        Album
+        {#if sortField === "album"}
                     <span class="sort-icon"
                         >{sortDirection === "asc" ? "▲" : "▼"}</span
                     >
-                {/if}
-            </button>
         {/if}
-        <button
-            class="col-header col-duration"
-            on:click={() => toggleSort("duration")}
-        >
-            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                <path
-                    d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"
-                />
-            </svg>
-            {#if sortField === "duration"}
+      </button>
+    {/if}
+    <button
+      class="col-header col-duration"
+      on:click={() => toggleSort("duration")}
+    >
+      <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+        <path
+          d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"
+        />
+      </svg>
+      {#if sortField === "duration"}
                 <span class="sort-icon"
                     >{sortDirection === "asc" ? "▲" : "▼"}</span
                 >
-            {/if}
-        </button>
-    </header>
+      {/if}
+    </button>
+  </header>
 
-    <div class="list-body">
-        {#each sortedTracks as track, index}
+  <!-- Virtualized scrolling container -->
+  {#if sortedTracks.length > 0}
+    <div
+      class="list-body"
+      class:no-album={!showAlbum}
+      on:scroll={handleScroll}
+      bind:this={containerElement}
+    >
+      <!-- Spacer to maintain scroll height -->
+      <div class="virtual-spacer" style="height: {totalHeight}px;">
+        <!-- Visible tracks container -->
+        <div
+          class="virtual-content"
+          style="transform: translateY({offsetY}px);"
+        >
+          {#each visibleTracks as track, index (track.id)}
+            {@const actualIndex = startIndex + index}
             {@const albumArt = getTrackAlbumArt(track)}
             {@const unavailable = isTrackUnavailable(track)}
             <div
-                class="track-row"
-                class:playing={$currentTrack?.id === track.id}
-                class:unavailable
-                on:click={() => handleTrackClick(index, track)}
-                on:dblclick={() => handleTrackDoubleClick(index, track)}
-                on:contextmenu={(e) => handleContextMenu(e, index)}
-                on:keydown={(e) =>
-                    e.key === "Enter" && handleTrackClick(index, track)}
-                role="button"
-                tabindex="0"
+              class="track-row"
+              class:playing={$currentTrack?.id === track.id}
+              class:unavailable
+              on:click={() => handleTrackClick(track, actualIndex)}
+              on:dblclick={() => handleTrackDoubleClick(track, actualIndex)}
+              on:contextmenu={(e) => handleContextMenu(e, track)}
+              on:keydown={(e) =>
+                e.key === "Enter" && handleTrackClick(track, actualIndex)}
+              role="button"
+              tabindex="0"
             >
-                <span class="col-num">
-                    {#if $currentTrack?.id === track.id && $isPlaying}
-                        <svg
-                            class="playing-icon"
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="14"
-                            height="14"
-                        >
-                            <path
-                                d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                            />
-                        </svg>
-                    {:else}
-                        {index + 1}
-                    {/if}
-                </span>
-                <span class="col-cover">
-                    <div class="cover-wrapper">
-                        {#if albumArt && !failedImages.has(albumArt)}
-                            <img
-                                src={albumArt}
-                                alt="Album cover"
-                                class="cover-image"
-                                loading="lazy"
-                                decoding="async"
-                                on:error={() => {
-                                    failedImages.add(albumArt);
-                                    failedImages = failedImages;
-                                }}
-                            />
-                        {:else}
-                            <div class="cover-placeholder">
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="16"
-                                    height="16"
-                                >
-                                    <path
-                                        d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                                    />
-                                </svg>
-                            </div>
-                        {/if}
-                        <div class="cover-play-overlay">
-                            <svg
-                                viewBox="0 0 24 24"
-                                fill="currentColor"
-                                width="18"
-                                height="18"
-                            >
-                                <path d="M8 5v14l11-7z" />
-                            </svg>
-                        </div>
+              <span class="col-num">
+                {#if $currentTrack?.id === track.id && $isPlaying}
+                  <svg
+                    class="playing-icon"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    width="14"
+                    height="14"
+                  >
+                    <path
+                      d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
+                    />
+                  </svg>
+                {:else}
+                  {actualIndex + 1}
+                {/if}
+              </span>
+              <span class="col-cover">
+                <div class="cover-wrapper">
+                  {#if albumArt && !failedImages.has(albumArt)}
+                    <img
+                      src={albumArt}
+                      alt="Album cover"
+                      class="cover-image"
+                      loading="lazy"
+                      decoding="async"
+                      on:error={() => handleImageError(albumArt)}
+                    />
+                  {:else}
+                    <div class="cover-placeholder">
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        width="16"
+                        height="16"
+                      >
+                        <path
+                          d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
+                        />
+                      </svg>
                     </div>
-                </span>
-                <span class="col-title">
-                    <div class="title-row">
-                        <span class="track-name truncate"
-                            >{track.title || "Unknown Title"}</span
-                        >
+                  {/if}
+                  <div class="cover-play-overlay">
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      width="18"
+                      height="18"
+                    >
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </div>
+                </div>
+              </span>
+              <span class="col-title">
+                <div class="title-row">
+                  <span class="track-name truncate"
+                    >{track.title || "Unknown Title"}</span
+                  >
 
-                        {#if !track.source_type || track.source_type === "local" || track.local_src}
-                            <span class="downloaded-icon" title="Downloaded">
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="14"
-                                    height="14"
-                                >
-                                    <path
-                                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
-                                    />
-                                </svg>
-                            </span>
-                        {/if}
+                  {#if !track.source_type || track.source_type === "local" || track.local_src}
+                    <span class="downloaded-icon" title="Downloaded">
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        width="14"
+                        height="14"
+                      >
+                        <path
+                          d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
+                        />
+                      </svg>
+                    </span>
+                  {/if}
 
-                        {#if track.format}
-                            {@const formatUpper = track.format.toUpperCase()}
-                            {@const displayFormat =
-                                formatUpper.includes("HI_RES") ||
-                                formatUpper.includes("HIRES")
-                                    ? "HI-RES"
-                                    : formatUpper.includes("LOSSLESS")
-                                      ? "LOSSLESS"
-                                      : formatUpper.replace("MPEG", "MP3")}
-                            <span
-                                class="quality-tag"
+                  {#if track.format}
+                    {@const formatUpper = track.format.toUpperCase()}
+                    {@const displayFormat =
+                      formatUpper.includes("HI_RES") ||
+                      formatUpper.includes("HIRES")
+                        ? "HI-RES"
+                        : formatUpper.includes("LOSSLESS")
+                          ? "LOSSLESS"
+                          : formatUpper.replace("MPEG", "MP3")}
+                    <span
+                      class="quality-tag"
                                 class:high-quality={formatUpper.includes(
                                     "FLAC",
                                 ) ||
-                                    formatUpper.includes("WAV") ||
-                                    formatUpper.includes("HI_RES") ||
-                                    formatUpper.includes("HIRES") ||
-                                    (track.bitrate && track.bitrate >= 320)}
-                            >
-                                {displayFormat}
-                            </span>
-                        {/if}
-                    </div>
-                    <span class="track-artist truncate"
-                        >{track.artist || "Unknown Artist"}</span
+                        formatUpper.includes("WAV") ||
+                        formatUpper.includes("HI_RES") ||
+                        formatUpper.includes("HIRES") ||
+                        (track.bitrate && track.bitrate >= 320)}
                     >
-                </span>
-                {#if showAlbum}
-                    <button
-                        class="col-album truncate"
-                        on:click|stopPropagation={() => {
-                            if (track.album_id) {
-                                goToAlbumDetail(track.album_id);
-                            }
-                        }}
-                        disabled={!track.album_id}>{track.album || "-"}</button
-                    >
-                {/if}
-                <span class="col-duration"
-                    >{formatDuration(track.duration)}</span
+                      {displayFormat}
+                    </span>
+                  {/if}
+                </div>
+                <span class="track-artist truncate"
+                  >{track.artist || "Unknown Artist"}</span
                 >
+              </span>
+              {#if showAlbum}
+                <button
+                  class="col-album truncate"
+                  on:click|stopPropagation={() => {
+                    if (track.album_id) {
+                      goToAlbumDetail(track.album_id);
+                    }
+                  }}
+                  disabled={!track.album_id}>{track.album || "-"}</button
+                >
+              {/if}
+              <span class="col-duration">{formatDuration(track.duration)}</span>
             </div>
-        {:else}
-            <div class="empty-state">
+          {/each}
+        </div>
+      </div>
+    </div>
+  {:else}
+    <div class="list-body">
+      <div class="empty-state">
                 <svg
                     viewBox="0 0 24 24"
                     fill="currentColor"
                     width="48"
                     height="48"
                 >
-                    <path
-                        d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                    />
-                </svg>
-                <h3>No tracks found</h3>
-                <p>Add a music folder to get started</p>
-            </div>
-        {/each}
+          <path
+            d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
+          />
+        </svg>
+        <h3>No tracks found</h3>
+        <p>Add a music folder to get started</p>
+      </div>
     </div>
+  {/if}
 </div>
 
 <style>
-    .track-list {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-    }
+  .track-list {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+  }
 
-    .list-header {
-        display: grid;
-        grid-template-columns: 40px 48px 1fr 1fr 80px;
-        gap: var(--spacing-md);
-        padding: var(--spacing-sm) var(--spacing-md);
-        padding-left: var(--spacing-lg);
-        border-bottom: 1px solid var(--border-color);
-        font-size: 0.75rem;
-        font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 0.1em;
-        color: var(--text-subdued);
-        position: sticky;
-        top: 0;
-        background-color: var(--bg-base);
-        background-color: var(--bg-base);
-        z-index: 1;
-    }
+  .list-header {
+    display: grid;
+    grid-template-columns: 40px 48px 1fr 1fr 80px;
+    gap: var(--spacing-md);
+    padding: var(--spacing-sm) var(--spacing-md);
+    padding-left: var(--spacing-lg);
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.75rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-subdued);
+    background-color: var(--bg-base);
+    z-index: 10;
+    flex-shrink: 0;
+  }
 
-    .col-header {
-        background: none;
-        border: none;
-        padding: 0;
-        font: inherit;
-        color: inherit;
-        text-transform: inherit;
-        letter-spacing: inherit;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        transition: color var(--transition-fast);
-        user-select: none;
-    }
+  .list-header.no-album {
+    grid-template-columns: 40px 48px 1fr 80px;
+  }
 
-    .col-header:hover {
-        color: var(--text-primary);
-    }
+  .col-header {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    color: inherit;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: color var(--transition-fast);
+    user-select: none;
+  }
 
-    .col-header.col-num {
-        justify-content: center;
-    }
+  .col-header:hover {
+    color: var(--text-primary);
+  }
 
-    .col-header.col-title {
-        justify-content: flex-start;
-    }
+  .col-header.col-num {
+    justify-content: center;
+  }
 
-    .col-header.col-album {
-        justify-content: flex-start;
-    }
+  .col-header.col-title {
+    justify-content: flex-start;
+  }
 
-    .col-header.col-duration {
-        justify-content: flex-end;
-    }
+  .col-header.col-album {
+    justify-content: flex-start;
+  }
 
-    .sort-icon {
-        color: var(--accent-primary);
-        font-size: 0.75rem;
-    }
+  .col-header.col-duration {
+    justify-content: flex-end;
+  }
 
-    .list-header.no-album {
-        grid-template-columns: 40px 48px 1fr 80px;
-    }
+  .sort-icon {
+    color: var(--accent-primary);
+    font-size: 0.75rem;
+  }
 
-    .list-body {
-        flex: 1;
-        overflow-y: auto;
-    }
+  .list-body {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
+  }
 
-    .track-row {
-        display: grid;
-        grid-template-columns: 40px 48px 1fr 1fr 80px;
-        gap: var(--spacing-md);
-        padding: var(--spacing-sm) var(--spacing-md);
-        padding-left: var(--spacing-lg);
-        align-items: center;
-        border-radius: var(--radius-md);
-        transition: all var(--transition-fast);
-        width: 100%;
-        text-align: left;
-        min-height: 56px;
-    }
+  /* Virtual scrolling structure */
+  .virtual-spacer {
+    position: relative;
+    width: 100%;
+  }
 
-    .track-row:hover {
-        background-color: rgba(255, 255, 255, 0.1);
-        cursor: pointer;
-    }
+  .virtual-content {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    will-change: transform;
+  }
 
-    .track-row.playing {
-        background-color: var(--bg-surface);
-    }
+  .track-row {
+    display: grid;
+    grid-template-columns: 40px 48px 1fr 1fr 80px;
+    gap: var(--spacing-md);
+    padding: var(--spacing-sm) var(--spacing-md);
+    padding-left: var(--spacing-lg);
+    align-items: center;
+    border-radius: var(--radius-md);
+    transition: background-color var(--transition-fast);
+    width: 100%;
+    text-align: left;
+    height: 56px; /* Fixed height for virtual scrolling */
+    box-sizing: border-box;
+  }
 
-    .track-row.playing .track-name {
-        color: var(--accent-primary);
-    }
+  .list-body.no-album .track-row {
+    grid-template-columns: 40px 48px 1fr 80px;
+  }
 
-    .col-num {
-        text-align: center;
-        color: var(--text-subdued);
-        font-size: 0.875rem;
-    }
+  .track-row:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    cursor: pointer;
+  }
 
-    .track-row:hover .col-num:not(:has(.playing-icon)) {
-        color: var(--text-primary);
-    }
+  .track-row.playing {
+    background-color: var(--bg-surface);
+  }
 
-    .col-cover {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
+  .track-row.playing .track-name {
+    color: var(--accent-primary);
+  }
 
-    .cover-image {
-        width: 40px;
-        height: 40px;
-        border-radius: var(--radius-sm);
-        object-fit: cover;
-    }
+  .col-num {
+    text-align: center;
+    color: var(--text-subdued);
+    font-size: 0.875rem;
+  }
 
-    .cover-placeholder {
-        width: 40px;
-        height: 40px;
-        border-radius: var(--radius-sm);
-        background-color: var(--bg-highlight);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--text-subdued);
-    }
+  .track-row:hover .col-num:not(:has(.playing-icon)) {
+    color: var(--text-primary);
+  }
 
-    .cover-wrapper {
-        position: relative;
-        width: 40px;
-        height: 40px;
-    }
+  .col-cover {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
 
-    .cover-play-overlay {
-        position: absolute;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background-color: rgba(0, 0, 0, 0.6);
-        border-radius: var(--radius-sm);
-        opacity: 0;
-        transition: opacity var(--transition-fast);
-        color: var(--text-primary);
-    }
+  .cover-image {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-sm);
+    object-fit: cover;
+  }
 
-    .track-row:hover .cover-play-overlay {
-        opacity: 1;
-    }
+  .cover-placeholder {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-highlight);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-subdued);
+  }
 
-    .track-row.playing .cover-play-overlay {
-        opacity: 0;
-    }
+  .cover-wrapper {
+    position: relative;
+    width: 40px;
+    height: 40px;
+  }
 
-    .playing-icon {
-        color: var(--accent-primary);
-        animation: pulse 1.5s ease-in-out infinite;
-    }
+  .cover-play-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.6);
+    border-radius: var(--radius-sm);
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+    color: var(--text-primary);
+  }
 
-    @keyframes pulse {
-        0%,
-        100% {
-            opacity: 1;
-        }
-        50% {
-            opacity: 0.5;
-        }
-    }
+  .track-row:hover .cover-play-overlay {
+    opacity: 1;
+  }
 
-    .col-title {
-        display: flex;
-        flex-direction: column;
-        min-width: 0;
-        justify-content: center;
-    }
+  .track-row.playing .cover-play-overlay {
+    opacity: 0;
+  }
 
-    .title-row {
-        display: flex;
-        align-items: center;
-        gap: var(--spacing-sm);
-        min-width: 0;
-    }
+  .playing-icon {
+    color: var(--accent-primary);
+    animation: pulse 1.5s ease-in-out infinite;
+  }
 
-    .track-name {
-        font-size: 0.9375rem;
-        font-weight: 500;
-        color: var(--text-primary);
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 1;
     }
+    50% {
+      opacity: 0.5;
+    }
+  }
 
-    .quality-tag {
-        font-size: 0.6rem;
-        font-weight: 700;
-        padding: 2px 6px;
-        border-radius: var(--radius-sm);
-        background-color: var(--bg-highlight);
-        color: var(--text-secondary);
-        border: 1px solid var(--border-color);
-        white-space: nowrap;
-        flex-shrink: 0;
-        opacity: 0.7;
-        transition: opacity var(--transition-fast);
-    }
+  .col-title {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    justify-content: center;
+  }
 
-    .track-row:hover .quality-tag {
-        opacity: 1;
-    }
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    min-width: 0;
+  }
 
-    .quality-tag.high-quality {
-        color: var(--accent-primary);
-        border-color: var(--accent-primary);
-        background-color: rgba(29, 185, 84, 0.15);
-    }
+  .track-name {
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--text-primary);
+  }
 
-    .track-artist {
-        font-size: 0.8125rem;
-        color: var(--text-secondary);
-    }
+  .quality-tag {
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    background-color: var(--bg-highlight);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    white-space: nowrap;
+    flex-shrink: 0;
+    opacity: 0.7;
+    transition: opacity var(--transition-fast);
+  }
 
-    .track-artist:hover {
-        color: var(--text-primary);
-        text-decoration: underline;
-        cursor: pointer;
-    }
+  .track-row:hover .quality-tag {
+    opacity: 1;
+  }
 
-    .col-album {
-        font-size: 0.875rem;
-        color: var(--text-secondary);
-        text-align: left;
-    }
+  .quality-tag.high-quality {
+    color: var(--accent-primary);
+    border-color: var(--accent-primary);
+    background-color: rgba(29, 185, 84, 0.15);
+  }
 
-    .col-album:hover {
-        color: var(--text-primary);
-        text-decoration: underline;
-        cursor: pointer;
-    }
+  .track-artist {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
 
-    .col-duration {
-        text-align: right;
-        font-size: 0.875rem;
-        color: var(--text-subdued);
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-    }
+  .track-artist:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
+    cursor: pointer;
+  }
 
-    .empty-state {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: var(--spacing-xl);
-        color: var(--text-subdued);
-        text-align: center;
-        gap: var(--spacing-sm);
-    }
+  .col-album {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    text-align: left;
+  }
 
-    .empty-state h3 {
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: var(--text-primary);
-    }
+  .col-album:hover:not(:disabled) {
+    color: var(--text-primary);
+    text-decoration: underline;
+    cursor: pointer;
+  }
 
-    .empty-state p {
-        font-size: 0.875rem;
-    }
+  .col-duration {
+    text-align: right;
+    font-size: 0.875rem;
+    color: var(--text-subdued);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+  }
 
-    .track-row.unavailable {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-xl);
+    color: var(--text-subdued);
+    text-align: center;
+    gap: var(--spacing-sm);
+    height: 100%;
+  }
 
-    .track-row.unavailable:hover {
-        background-color: transparent;
-    }
+  .empty-state h3 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
 
-    .downloaded-icon {
-        color: var(--accent-primary);
-        display: flex;
-        align-items: center;
-        margin-left: var(--spacing-xs);
-        flex-shrink: 0;
-    }
+  .empty-state p {
+    font-size: 0.875rem;
+  }
+
+  .track-row.unavailable {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .track-row.unavailable:hover {
+    background-color: transparent;
+  }
+
+  .downloaded-icon {
+    color: var(--accent-primary);
+    display: flex;
+    align-items: center;
+    margin-left: var(--spacing-xs);
+    flex-shrink: 0;
+  }
+
+  .truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 </style>

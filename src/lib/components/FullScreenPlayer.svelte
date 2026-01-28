@@ -94,18 +94,22 @@
   }
 
   // Load album art
-  // Load album art
-  $: if ($currentTrack) {
-    if ($currentTrack.cover_url) {
-      albumArt = $currentTrack.cover_url;
-    } else if ($currentTrack.album_id) {
-      loadAlbumArt($currentTrack.album_id);
-    } else {
-      albumArt = null;
-    }
+$: if ($currentTrack) {
+  if ($currentTrack.track_cover) {
+    // Priority 1: Track's own embedded cover
+    albumArt = getAlbumArtSrc($currentTrack.track_cover);
+  } else if ($currentTrack.cover_url) {
+    // Priority 2: Tidal/streaming cover
+    albumArt = $currentTrack.cover_url;
+  } else if ($currentTrack.album_id) {
+    // Priority 3: Album art
+    loadAlbumArt($currentTrack.album_id);
   } else {
     albumArt = null;
   }
+} else {
+  albumArt = null;
+}
 
   async function loadAlbumArt(albumId: number) {
     try {
@@ -180,7 +184,7 @@
     ></div>
     <div class="backdrop-layer"></div>
 
-    <button class="close-btn" on:click={toggleFullScreen}>
+    <button class="close-btn" on:click={toggleFullScreen} aria-label="Close FullScreen">
       <svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
         <path
           d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"
@@ -247,7 +251,7 @@
           </div>
 
           <div class="buttons">
-            <button class="icon-btn large" on:click={previousTrack}>
+            <button class="icon-btn large" on:click={previousTrack} aria-label="Previous">
               <svg
                 viewBox="0 0 24 24"
                 fill="currentColor"
@@ -278,7 +282,7 @@
                 </svg>
               {/if}
             </button>
-            <button class="icon-btn large" on:click={nextTrack}>
+            <button class="icon-btn large" on:click={nextTrack} aria-label="Next">
               <svg
                 viewBox="0 0 24 24"
                 fill="currentColor"

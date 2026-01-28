@@ -116,6 +116,17 @@ pub async fn update_local_src(
         .map_err(|e| format!("Failed to update local src: {}", e))
 }
 
+#[command]
+pub async fn update_track_cover_url(
+    state: State<'_, Database>,
+    track_id: i64,
+    cover_url: Option<String>,
+) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    db::queries::update_track_cover_url(&conn, track_id, cover_url.as_deref())
+        .map_err(|e| format!("Failed to update cover URL: {}", e))
+}
+
 async fn write_metadata_to_file(path: &Path, input: &DownloadAudioInput) -> Result<(), String> {
     // Read the file for metadata
     let mut tagged_file = Probe::open(path)

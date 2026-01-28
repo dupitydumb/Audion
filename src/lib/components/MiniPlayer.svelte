@@ -30,12 +30,17 @@
 
     let imageLoadFailed = false;
 
-    // Load album art - check cover_url first (for external/streaming tracks), then album art
-    $: if ($currentTrack?.cover_url) {
-        // Streaming track with direct cover URL (e.g., Tidal)
+    // Load album art - check track_cover first, then cover_url, then album art
+    $: if ($currentTrack?.track_cover) {
+        // Priority 1: Track's embedded cover
+        albumArt = getAlbumArtSrc($currentTrack.track_cover);
+        imageLoadFailed = false;
+    } else if ($currentTrack?.cover_url) {
+        // Priority 2: Streaming track cover URL
         albumArt = $currentTrack.cover_url;
         imageLoadFailed = false;
     } else if ($currentTrack?.album_id) {
+        // Priority 3: Album art
         loadAlbumArt($currentTrack.album_id);
         imageLoadFailed = false;
     } else {

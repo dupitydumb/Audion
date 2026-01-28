@@ -279,7 +279,7 @@
             class="playlist-header"
             on:contextmenu={handleHeaderContextMenu}
         >
-            <button class="back-btn" on:click={goToPlaylists}>
+            <button class="back-btn" on:click={goToPlaylists} aria-label="Back">
                 <svg
                     viewBox="0 0 24 24"
                     fill="currentColor"

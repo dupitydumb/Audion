@@ -97,20 +97,26 @@ function saveState(state: EqualizerState): void {
 function createEqualizerStore() {
     const { subscribe, set, update } = writable<EqualizerState>(loadState());
 
-    // Internal callback for when filters need updating
-    let onGainChange: ((bandIndex: number, gain: number) => void) | null = null;
-    let onEnabledChange: ((enabled: boolean) => void) | null = null;
+    // Internal callbacks for when filters need updating
+    let gainChangeCallbacks: Set<(bandIndex: number, gain: number) => void> = new Set();
+    let enabledChangeCallbacks: Set<(enabled: boolean) => void> = new Set();
 
     return {
         subscribe,
 
-        // Register callbacks for audio system integration
-        onGainChange(callback: (bandIndex: number, gain: number) => void) {
-            onGainChange = callback;
+        // Register callbacks for audio system integration - returns unsubscribe function
+        onGainChange(callback: (bandIndex: number, gain: number) => void): () => void {
+            gainChangeCallbacks.add(callback);
+            return () => {
+                gainChangeCallbacks.delete(callback);
+            };
         },
 
-        onEnabledChange(callback: (enabled: boolean) => void) {
-            onEnabledChange = callback;
+        onEnabledChange(callback: (enabled: boolean) => void): () => void {
+            enabledChangeCallbacks.add(callback);
+            return () => {
+                enabledChangeCallbacks.delete(callback);
+            };
         },
 
         // Toggle equalizer on/off
@@ -118,7 +124,7 @@ function createEqualizerStore() {
             update(state => {
                 const newState = { ...state, enabled };
                 saveState(newState);
-                onEnabledChange?.(enabled);
+                enabledChangeCallbacks.forEach(cb => cb(enabled));
                 return newState;
             });
         },
@@ -143,7 +149,7 @@ function createEqualizerStore() {
 
                 // Notify audio system
                 if (state.enabled) {
-                    onGainChange?.(bandIndex, gain);
+                    gainChangeCallbacks.forEach(cb => cb(bandIndex, gain));
                 }
 
                 return newState;
@@ -169,9 +175,9 @@ function createEqualizerStore() {
                 saveState(newState);
 
                 // Notify audio system for all bands
-                if (state.enabled && onGainChange) {
+                if (state.enabled) {
                     bands.forEach((band, i) => {
-                        onGainChange!(i, band.gain);
+                        gainChangeCallbacks.forEach(cb => cb(i, band.gain));
                     });
                 }
 

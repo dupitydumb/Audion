@@ -112,6 +112,23 @@ export class UISlotManager {
     getContainer(slotName: UISlotName): HTMLElement | undefined {
         return this.containers.get(slotName);
     }
+
+    /**
+ * Get all slot names that have content
+ */
+    getAllSlots(): UISlotName[] {
+        return Array.from(this.slots.keys());
+    }
+
+    /**
+     * Clear all slots and containers (for complete cleanup)
+     */
+    clearAll(): void {
+        this.slots.clear();
+        this.containers.forEach(container => {
+            container.innerHTML = '';
+        });
+    }
 }
 
 // Global singleton

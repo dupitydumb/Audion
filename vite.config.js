@@ -1,7 +1,6 @@
 import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
@@ -17,12 +16,17 @@ export default defineConfig(async () => ({
     port: 1420,
     strictPort: true,
     host: host || false,
+    // removed limits for dev testing
+    proxy: {},
+    fs: {
+      strict: false,
+    },
     hmr: host
       ? {
-        protocol: "ws",
-        host,
-        port: 1421,
-      }
+          protocol: "ws",
+          host,
+          port: 1421,
+        }
       : undefined,
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
@@ -30,6 +34,6 @@ export default defineConfig(async () => ({
     },
   },
   define: {
-    '__APP_VERSION__': JSON.stringify(process.env.npm_package_version),
+    __APP_VERSION__: JSON.stringify(process.env.npm_package_version),
   },
 }));
