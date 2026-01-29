@@ -23,6 +23,7 @@
     "core:window:allow-outer-position",
     "opener:default",
     "dialog:default",
+    "notification:default",
     "fs:default",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",

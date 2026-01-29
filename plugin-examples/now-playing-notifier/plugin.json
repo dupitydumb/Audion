@@ -1,6 +1,6 @@
 {
     "name": "Now Playing Notifier",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "author": "Audion Team",
     "description": "Shows system notifications when track changes",
     "type": "js",
@@ -12,7 +12,8 @@
     "category": "utility",
     "tags": [
         "notification",
-        "now-playing"
+        "now-playing",
+        "ui:inject"
     ],
     "license": "MIT"
 }

@@ -17,6 +17,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             // Get app data directory and create database
             let app_dir = app
@@ -99,6 +100,7 @@ pub fn run() {
             commands::get_plugin_dir,
             commands::check_plugin_updates,
             commands::update_plugin,
+            commands::save_notification_image, // currently ignored by windows
             // Network commands
             commands::proxy_fetch,
             // Window commands

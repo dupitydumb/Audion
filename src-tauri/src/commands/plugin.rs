@@ -789,3 +789,57 @@ pub async fn update_plugin(name: String, plugin_dir: String) -> Result<PluginInf
         granted_permissions,
     })
 }
+
+// windows currently ignore images
+#[tauri::command]
+pub fn save_notification_image(data_uri: String) -> Result<String, String> {
+    // Parse the data URI
+    // Format: data:image/jpeg;base64,<base64_data>
+    let parts: Vec<&str> = data_uri.split(',').collect();
+    if parts.len() != 2 {
+        return Err("Invalid data URI format".to_string());
+    }
+
+    let header = parts[0];
+    let base64_data = parts[1];
+
+    // Extract image type (jpeg, png, etc.)
+    let image_ext = if header.contains("jpeg") || header.contains("jpg") {
+        "jpg"
+    } else if header.contains("png") {
+        "png"
+    } else if header.contains("gif") {
+        "gif"
+    } else {
+        "jpg" // default
+    };
+
+    // Decode base64
+    let image_data = general_purpose::STANDARD
+        .decode(base64_data)
+        .map_err(|e| format!("Failed to decode base64: {}", e))?;
+
+    // Get temp directory
+    let temp_dir = std::env::temp_dir();
+
+    // Create a unique filename
+    let filename = format!(
+        "audion_notification_{}.{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis(),
+        image_ext
+    );
+
+    let temp_path = temp_dir.join(filename);
+
+    // Write to file
+    fs::write(&temp_path, image_data).map_err(|e| format!("Failed to write file: {}", e))?;
+
+    // Return the absolute path as string
+    temp_path
+        .to_str()
+        .ok_or_else(|| "Failed to convert path to string".to_string())
+        .map(|s| s.to_string())
+}
