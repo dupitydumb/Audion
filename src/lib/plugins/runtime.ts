@@ -1,7 +1,8 @@
 // Plugin loader for JS and WASM plugins
 import type { AudionPluginManifest } from './schema';
-import { PLUGIN_PERMISSIONS } from './schema';
+import { PLUGIN_PERMISSIONS, type CrossPluginAccess } from './schema';
 import { get } from 'svelte/store';
+import { convertFileSrc } from '@tauri-apps/api/core';
 import {
   currentTrack,
   isPlaying,
@@ -26,6 +27,88 @@ import { uiSlotManager, type UISlotName } from './ui-slots';
 import { appSettings } from '$lib/stores/settings';
 import { theme } from '$lib/stores/theme';
 import { invoke } from '@tauri-apps/api/core';
+
+// Cross-Plugin Permission Manager
+class PluginPermissionManager {
+  private pluginDir: string;
+  private permissionCache: Map<string, CrossPluginAccess[]> = new Map();
+
+  constructor(pluginDir: string) {
+    this.pluginDir = pluginDir;
+  }
+
+  // Check if caller can access target plugin's method
+  async checkAccess(
+    callerPlugin: string,
+    targetPlugin: string,
+    method: string
+  ): Promise<boolean> {
+    try {
+      // Check cache first
+      const cached = this.permissionCache.get(callerPlugin);
+      if (cached) {
+        return cached.some(
+          (access) =>
+            access.plugin === targetPlugin && access.methods.includes(method)
+        );
+      }
+
+      // Load from backend - backend handles safe name conversion internally
+      // and returns display names in cross_plugin_access (e.g., "Tidal Search")
+      const permissions = await invoke<CrossPluginAccess[]>(
+        'get_cross_plugin_permissions',
+        {
+          pluginName: callerPlugin,
+          pluginDir: this.pluginDir,
+        }
+      );
+
+      this.permissionCache.set(callerPlugin, permissions);
+
+      // Compare using display names (both callerPlugin and targetPlugin are display names)
+      return permissions.some(
+        (access) =>
+          access.plugin === targetPlugin && access.methods.includes(method)
+      );
+    } catch (error) {
+      console.error(
+        `[PluginPermissionManager] Failed to check access for "${callerPlugin}" -> "${targetPlugin}.${method}":`,
+        error
+      );
+      return false;
+    }
+  }
+
+  // Clear cache for a specific plugin (call when plugin is reloaded)
+  clearCache(pluginName?: string) {
+    if (pluginName) {
+      this.permissionCache.delete(pluginName);
+    } else {
+      this.permissionCache.clear();
+    }
+  }
+
+  // Validate access and throw error if denied
+  async validateAccess(
+    callerPlugin: string,
+    targetPlugin: string,
+    method: string
+  ): Promise<void> {
+    const hasAccess = await this.checkAccess(
+      callerPlugin,
+      targetPlugin,
+      method
+    );
+
+    if (!hasAccess) {
+      throw new Error(
+        `Permission denied: Plugin "${callerPlugin}" is not authorized to call "${targetPlugin}.${method}". ` +
+        `Add this to your plugin.json:\n` +
+        `"cross_plugin_access": [{"plugin": "${targetPlugin}", "methods": ["${method}"]}]`
+      );
+    }
+  }
+}
 
 export interface WasmPluginExports {
   init?: () => void;
@@ -67,8 +150,36 @@ export class PluginRuntime {
   // Resolver takes (external_id, options?) and returns Promise<string | null> (stream URL)
   streamResolvers: Map<string, (externalId: string, options?: any) => Promise<string | null>> = new Map();
 
+  // permission manager
+  permissionManager: PluginPermissionManager;
+
   constructor(config: PluginRuntimeConfig) {
     this.config = config;
+    this.permissionManager = new PluginPermissionManager(config.pluginDir);
+  }
+
+  // Helper: Get safe folder name from manifest (prefers explicit safe_name)
+  private getSafeName(manifest: AudionPluginManifest): string {
+    return manifest.safe_name || manifest.name.replace(/\s+/g, '-').toLowerCase();
+  }
+
+  // Helper: Get plugin script URL for browser loading (converts filesystem path to asset URL)
+  private getPluginScriptUrl(manifest: AudionPluginManifest): string {
+    const safeName = this.getSafeName(manifest);
+    const filePath = `${this.config.pluginDir}/${safeName}/${manifest.entry}`;
+    return convertFileSrc(filePath);
+  }
+
+  // Helper: Get plugin WASM URL for browser loading (converts filesystem path to asset URL)
+  private getPluginWasmUrl(manifest: AudionPluginManifest): string {
+    const safeName = this.getSafeName(manifest);
+    const filePath = `${this.config.pluginDir}/${safeName}/${manifest.entry}`;
+    return convertFileSrc(filePath);
+  }
+
+  // Helper: Get raw plugin directory path for backend operations (NO conversion)
+  private getPluginDirPath(): string {
+    return this.config.pluginDir;
   }
 
   // Create rate limiters for a plugin
@@ -98,13 +209,12 @@ export class PluginRuntime {
   }
 
   // Load a JS plugin via script tag
-  // Load a JS plugin via script tag
   private async loadJsPlugin(manifest: AudionPluginManifest): Promise<LoadedPlugin> {
     return new Promise((resolve, reject) => {
       const script = document.createElement('script');
-      // Use safe folder name (lowercase with dashes, matching Rust backend)
-      const safeName = manifest.name.replace(/\s+/g, '-').toLowerCase();
-      script.src = `${this.config.pluginDir}/${safeName}/${manifest.entry}`;
+
+      // Use helper to get browser-loadable URL (handles path conversion internally)
+      script.src = this.getPluginScriptUrl(manifest);
       script.async = true;
       script.id = `plugin-${manifest.name}`;
 
@@ -145,9 +255,8 @@ export class PluginRuntime {
 
   // Load a WASM plugin
   private async loadWasmPlugin(manifest: AudionPluginManifest): Promise<LoadedPlugin> {
-    // Use safe folder name (lowercase with dashes, matching Rust backend)
-    const safeName = manifest.name.replace(/\s+/g, '-').toLowerCase();
-    const wasmUrl = `${this.config.pluginDir}/${safeName}/${manifest.entry}`;
+    // Use helper to get browser-loadable URL (handles path conversion internally)
+    const wasmUrl = this.getPluginWasmUrl(manifest);
 
     try {
       const response = await fetch(wasmUrl);
@@ -470,7 +579,7 @@ export class PluginRuntime {
       case 'library.updateTrackCoverUrl':
         // args: [trackId, coverUrl]
         if (typeof args[0] !== 'number') return false;
-        return invoke('update_track_cover_url', { trackId: args[0], coverUrl: args[1] || null });  
+        return invoke('update_track_cover_url', { trackId: args[0], coverUrl: args[1] || null });
 
       case 'settings.setDownloadLocation':
         // args: [path]
@@ -736,18 +845,29 @@ export class PluginRuntime {
     console.log(`[PluginRuntime] Unloading plugin: ${name}`);
 
     try {
-      // 1. Call destroy lifecycle hook FIRST
+      // 1. Call destroy lifecycle hook FIRST (with type-specific error handling)
       if (plugin.manifest.type === 'wasm' && plugin.instance?.destroy) {
         try {
           plugin.instance.destroy();
         } catch (err) {
-          console.error(`[PluginRuntime] Error in plugin destroy hook:`, err);
+          console.error(`[PluginRuntime] Error in WASM plugin destroy hook:`, err);
         }
-      } else if (plugin.manifest.type === 'js' && plugin.instance?.destroy) {
-        try {
-          plugin.instance.destroy();
-        } catch (err) {
-          console.error(`[PluginRuntime] Error in plugin destroy hook:`, err);
+      } else if (plugin.manifest.type === 'js') {
+        // Call stop() first for JS plugins if available
+        if (plugin.instance?.stop) {
+          try {
+            plugin.instance.stop();
+          } catch (err) {
+            console.error(`[PluginRuntime] Error in JS plugin stop hook:`, err);
+          }
+        }
+        // Then call destroy()
+        if (plugin.instance?.destroy) {
+          try {
+            plugin.instance.destroy();
+          } catch (err) {
+            console.error(`[PluginRuntime] Error in JS plugin destroy hook:`, err);
+          }
         }
       }
 
@@ -761,7 +881,7 @@ export class PluginRuntime {
         console.error(`[PluginRuntime] Error removing UI content:`, err);
       }
 
-      // 4. Clear all storage for this plugin (NOW ASYNC)
+      // 4. Clear all storage for this plugin (ASYNC)
       try {
         const removedCount = await plugin.storage.clear();
         console.log(`[PluginRuntime] Cleared ${removedCount} storage items for ${name}`);
@@ -808,6 +928,9 @@ export class PluginRuntime {
 
       // 10. Remove from plugins map
       this.plugins.delete(name);
+
+      // 11. Clear permission cache (for cross-plugin permissions)
+      this.permissionManager.clearCache(name);
 
       console.log(`[PluginRuntime] Successfully unloaded plugin: ${name}`);
     } catch (err) {
@@ -919,4 +1042,13 @@ export class PluginRuntime {
       return null;
     }
   }
+}
+
+// Expose permission manager globally for plugins to use
+export function getGlobalPermissionManager(): PluginPermissionManager | null {
+  return (window as any).__PLUGIN_PERMISSION_MANAGER__ || null;
+}
+
+export function setGlobalPermissionManager(manager: PluginPermissionManager): void {
+  (window as any).__PLUGIN_PERMISSION_MANAGER__ = manager;
 }

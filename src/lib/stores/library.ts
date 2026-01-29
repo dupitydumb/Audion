@@ -184,9 +184,6 @@ export const artistCount = writable(0);
 /**
  * Strip heavy data from track (remove base64 album art)
  */
-/**
- * Strip heavy data from track (remove base64 album art)
- */
 function stripTrackHeavyData(track: Track): TrackMetadata {
     const { track_cover, ...metadata } = track;
     return metadata;
@@ -225,6 +222,138 @@ function reconstructAlbum(metadata: AlbumMetadata): Album {
         ...metadata,
         art_data,
     } as Album;
+}
+
+// DATA ACCESS APIS (for components)
+/**
+ * Get full track with heavy data (for playback)
+ * @param trackId - The track ID
+ * @param preferBase64 - If true, converts blob URLs back to base64 data URIs (for plugins/exports)
+ */
+export async function getFullTrack(trackId: number, preferBase64: boolean = false): Promise<Track | null> {
+    // Check full cache first (but only if not requesting base64)
+    if (!preferBase64) {
+        const cached = fullTrackCache.get(trackId);
+        if (cached) return cached;
+    }
+
+    // Reconstruct from metadata + caches
+    const metadata = trackMetadataCache.get(trackId);
+    if (!metadata) return null;
+
+    let track = reconstructTrack(metadata);
+
+    // Convert blob URL to base64 data URI if requested
+    if (preferBase64 && track.track_cover && track.track_cover.startsWith('blob:')) {
+        try {
+            const response = await fetch(track.track_cover);
+            const blob = await response.blob();
+            const dataUri = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+            });
+            track = { ...track, track_cover: dataUri };
+        } catch (error) {
+            console.error('[Library] Failed to convert blob URL to data URI:', error);
+            // Keep the blob URL as fallback
+        }
+    }
+
+    // Only cache if not base64 version (to avoid caching duplicates)
+    if (!preferBase64) {
+        fullTrackCache.set(trackId, track);
+    }
+
+    return track;
+}
+
+/**
+ * Get full album with art data
+ */
+export function getFullAlbum(albumId: number): Album | null {
+    // Check full cache first
+    const cached = fullAlbumCache.get(albumId);
+    if (cached) return cached;
+
+    // Reconstruct from metadata + art cache
+    const metadata = albumMetadataCache.get(albumId);
+    if (!metadata) return null;
+
+    const album = reconstructAlbum(metadata);
+    fullAlbumCache.set(albumId, album);
+    return album;
+}
+
+/**
+ * Get track cover art (for TrackList)
+ */
+export function getTrackCover(trackId: number): string | null {
+    return trackCoverCache.get(trackId) || null;
+}
+
+/**
+ * Get album art (for AlbumGrid)
+ */
+export function getAlbumArt(albumId: number): string | null {
+    return albumArtCache.get(albumId) || null;
+}
+
+/**
+ * Get album cover for a track (follows priority: track_cover → cover_url → album art)
+ */
+export function getTrackAlbumCover(trackId: number): string | null {
+    const metadata = trackMetadataCache.get(trackId);
+    if (!metadata) return null;
+
+    // Priority 1: Track's embedded cover
+    const trackCover = trackCoverCache.get(trackId);
+    if (trackCover) return trackCover;
+
+    // Priority 2: External cover URL
+    if (metadata.cover_url) return metadata.cover_url;
+
+    // Priority 3: Album art
+    if (metadata.album_id) {
+        const albumArt = albumArtCache.get(metadata.album_id);
+        if (albumArt) return albumArt;
+    }
+
+    return null;
+}
+
+/**
+ * Get first track's cover for an album (for AlbumGrid)
+ */
+export function getAlbumCoverFromTracks(albumId: number): string | null {
+    // Check album art first
+    const albumArt = albumArtCache.get(albumId);
+    if (albumArt) return albumArt;
+
+    // Get tracks in this album
+    const trackIds = albumToTracksMap.get(albumId);
+    if (!trackIds || trackIds.length === 0) return null;
+
+    // Find first track with cover
+    for (const trackId of trackIds) {
+        const cover = getTrackAlbumCover(trackId);
+        if (cover) return cover;
+    }
+
+    return null;
+}
+
+/**
+ * Batch get tracks (for player queue, etc.)
+ * @param trackIds - Array of track IDs
+ * @param preferBase64 - If true, returns tracks with base64 data URIs instead of blob URLs
+ */
+export async function getFullTracks(trackIds: number[], preferBase64: boolean = false): Promise<Track[]> {
+    const tracks = await Promise.all(
+        trackIds.map(id => getFullTrack(id, preferBase64))
+    );
+    return tracks.filter((t): t is Track => t !== null);
 }
 
 // LOADING FUNCTIONS
@@ -314,108 +443,6 @@ export async function loadLibrary(): Promise<void> {
     } finally {
         isLoading.set(false);
     }
-}
-
-// DATA ACCESS APIS (for components)
-/**
- * Get full track with heavy data (for playback)
- */
-export function getFullTrack(trackId: number): Track | null {
-    // Check full cache first
-    const cached = fullTrackCache.get(trackId);
-    if (cached) return cached;
-
-    // Reconstruct from metadata + caches
-    const metadata = trackMetadataCache.get(trackId);
-    if (!metadata) return null;
-
-    const track = reconstructTrack(metadata);
-    fullTrackCache.set(trackId, track);
-    return track;
-}
-
-/**
- * Get full album with art data
- */
-export function getFullAlbum(albumId: number): Album | null {
-    // Check full cache first
-    const cached = fullAlbumCache.get(albumId);
-    if (cached) return cached;
-
-    // Reconstruct from metadata + art cache
-    const metadata = albumMetadataCache.get(albumId);
-    if (!metadata) return null;
-
-    const album = reconstructAlbum(metadata);
-    fullAlbumCache.set(albumId, album);
-    return album;
-}
-
-/**
- * Get track cover art (for TrackList)
- */
-export function getTrackCover(trackId: number): string | null {
-    return trackCoverCache.get(trackId) || null;
-}
-
-/**
- * Get album art (for AlbumGrid)
- */
-export function getAlbumArt(albumId: number): string | null {
-    return albumArtCache.get(albumId) || null;
-}
-
-/**
- * Get album cover for a track (follows priority: track_cover → cover_url → album art)
- */
-export function getTrackAlbumCover(trackId: number): string | null {
-    const metadata = trackMetadataCache.get(trackId);
-    if (!metadata) return null;
-
-    // Priority 1: Track's embedded cover
-    const trackCover = trackCoverCache.get(trackId);
-    if (trackCover) return trackCover;
-
-    // Priority 2: External cover URL
-    if (metadata.cover_url) return metadata.cover_url;
-
-    // Priority 3: Album art
-    if (metadata.album_id) {
-        const albumArt = albumArtCache.get(metadata.album_id);
-        if (albumArt) return albumArt;
-    }
-
-    return null;
-}
-
-/**
- * Get first track's cover for an album (for AlbumGrid)
- */
-export function getAlbumCoverFromTracks(albumId: number): string | null {
-    // Check album art first
-    const albumArt = albumArtCache.get(albumId);
-    if (albumArt) return albumArt;
-
-    // Get tracks in this album
-    const trackIds = albumToTracksMap.get(albumId);
-    if (!trackIds || trackIds.length === 0) return null;
-
-    // Find first track with cover
-    for (const trackId of trackIds) {
-        const cover = getTrackAlbumCover(trackId);
-        if (cover) return cover;
-    }
-
-    return null;
-}
-
-/**
- * Batch get tracks (for player queue, etc.)
- */
-export function getFullTracks(trackIds: number[]): Track[] {
-    return trackIds
-        .map(id => getFullTrack(id))
-        .filter((t): t is Track => t !== null);
 }
 
 // PLAYLISTS

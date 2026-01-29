@@ -1,10 +1,10 @@
 // Player store - manages audio playback state
 import { writable, derived, get } from 'svelte/store';
 import type { Track } from '$lib/api/tauri';
-import { getAudioSrc } from '$lib/api/tauri';
+import { getAudioSrc, getAlbumArtSrc } from '$lib/api/tauri';
 import { addToast } from '$lib/stores/toast';
 import { EventEmitter, type PluginEvents } from '$lib/plugins/event-emitter';
-import { tracks as libraryTracks } from '$lib/stores/library';
+import { tracks as libraryTracks, getFullTrack } from '$lib/stores/library';
 import { appSettings } from '$lib/stores/settings';
 import { equalizer, EQ_FREQUENCIES } from '$lib/stores/equalizer';
 
@@ -171,20 +171,20 @@ function startTimeSync(): void {
             return;
         }
 
-        const time = audioElement.currentTime;
-        currentTime.set(time);
+            const time = audioElement.currentTime;
+            currentTime.set(time);
 
-        // Emit timeUpdate event for plugins (throttled to 250ms)
-        const now = Date.now();
-        if (now - lastEventTime >= 250) {
-            pluginEvents.emit('timeUpdate', {
-                currentTime: time,
-                duration: audioElement.duration
-            });
-            lastEventTime = now;
-        }
+            // Emit timeUpdate event for plugins (throttled to 250ms)
+            const now = Date.now();
+            if (now - lastEventTime >= 250) {
+                pluginEvents.emit('timeUpdate', {
+                    currentTime: time,
+                    duration: audioElement.duration
+                });
+                lastEventTime = now;
+            }
 
-        animationFrameId = requestAnimationFrame(updateTime);
+            animationFrameId = requestAnimationFrame(updateTime);
     };
     animationFrameId = requestAnimationFrame(updateTime);
 }
@@ -419,8 +419,13 @@ export async function playTrack(track: Track): Promise<void> {
     const previousTrack = get(currentTrack);
     currentTrack.set(track);
 
-    // Emit trackChange event for plugins
-    pluginEvents.emit('trackChange', { track, previousTrack });
+    // Get full track with base64 data URI for plugins
+    // This reconstructs track_cover from cache and converts blob URL to data URI
+    const fullTrack = await getFullTrack(track.id, true);
+    const trackForPlugins = fullTrack || track;
+
+    // Emit trackChange event for plugins with proper data URI format
+    pluginEvents.emit('trackChange', { track: trackForPlugins, previousTrack });
 
     if (audioElement) {
         try {

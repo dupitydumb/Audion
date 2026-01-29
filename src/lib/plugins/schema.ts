@@ -10,8 +10,15 @@ const validationCache = new WeakMap<object, boolean>();
 // Maximum number of validation errors to log per manifest
 const MAX_VALIDATION_ERRORS = 3;
 
+// Cross-plugin access control structure
+export interface CrossPluginAccess {
+  plugin: string;
+  methods: string[];
+}
+
 export interface AudionPluginManifest {
   name: string;
+  safe_name?: string; // Explicit safe folder name (optional, falls back to name conversion)
   version: string;
   author: string;
   description?: string;
@@ -20,6 +27,7 @@ export interface AudionPluginManifest {
   type: PluginType;
   entry: string; // JS: entry .js file, WASM: entry .wasm file
   permissions: string[];
+  cross_plugin_access?: CrossPluginAccess[];
   ui_slots?: string[]; // UI injection points
   icon?: string;
   homepage?: string;
@@ -86,6 +94,9 @@ export function validateManifest(manifest: unknown): manifest is AudionPluginMan
   }
 
   // Optional field types
+  if (m.safe_name !== undefined && typeof m.safe_name !== 'string') {
+    errors.push('safe_name must be a string');
+  }
   if (m.description !== undefined && typeof m.description !== 'string') {
     errors.push('Description must be a string');
   }
@@ -115,6 +126,21 @@ export function validateManifest(manifest: unknown): manifest is AudionPluginMan
   }
   if (m.tags !== undefined && !Array.isArray(m.tags)) {
     errors.push('Tags must be an array');
+  }
+  if (m.cross_plugin_access !== undefined) {
+    if (!Array.isArray(m.cross_plugin_access)) {
+      errors.push('cross_plugin_access must be an array');
+    } else {
+      // Validate structure of each item
+      for (const access of m.cross_plugin_access) {
+        if (typeof access !== 'object' || access === null ||
+          typeof access.plugin !== 'string' ||
+          !Array.isArray(access.methods)) {
+          errors.push('Invalid cross_plugin_access item structure (must have plugin: string, methods: string[])');
+          break;
+        }
+      }
+    }
   }
 
   const isValid = errors.length === 0;

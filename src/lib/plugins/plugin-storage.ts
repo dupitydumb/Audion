@@ -206,9 +206,6 @@ export class PluginStorage {
 
         return { used, total: this.quotaBytes, available, percentUsed };
     }
-<<<<<<< Updated upstream
-}
-=======
 
     /**
      * Batch set multiple keys (more efficient than multiple set() calls)
@@ -271,4 +268,3 @@ export class PluginStorage {
         return this.setBatch(data);
     }
 }
->>>>>>> Stashed changes
