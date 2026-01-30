@@ -7,13 +7,13 @@
     "entry": "index.js",
     "permissions": [
         "player:read",
-        "system:notify"
+        "system:notify",
+        "ui:inject"
     ],
     "category": "utility",
     "tags": [
         "notification",
-        "now-playing",
-        "ui:inject"
+        "now-playing"
     ],
     "license": "MIT"
 }
