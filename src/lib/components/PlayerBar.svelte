@@ -592,7 +592,7 @@
         align-items: center;
         gap: var(--spacing-xs);
         min-width: 0;
-        overflow: hidden;
+        overflow: visible;
     }
 
     .controls-buttons {
@@ -605,6 +605,7 @@
     .play-btn {
         width: 40px;
         height: 40px;
+        position: relative;
         border-radius: var(--radius-full);
         background-color: var(--text-primary);
         color: var(--bg-base);
@@ -613,11 +614,13 @@
         justify-content: center;
         transition: all var(--transition-fast);
         flex-shrink: 0;
+        z-index: 10;
     }
 
     .play-btn:hover {
         transform: scale(1.08);
         background-color: var(--accent-hover);
+        z-index: 100;
     }
 
     .icon-btn {
