@@ -1,5 +1,5 @@
 // Audio metadata extraction using lofty
-use lofty::{Accessor, AudioFile, Probe, TaggedFileExt};
+use lofty::{Accessor, AudioFile, ItemKey, Probe, TaggedFileExt};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
@@ -61,7 +61,19 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
                 .or_else(|| get_filename_without_ext(path));
             let artist = tag.artist().map(|s| s.to_string());
             let album = tag.album().map(|s| s.to_string());
-            let track_number = tag.track().map(|n| n as i32);
+            
+            // Extract track number, handling both simple numbers and "X/Y" format
+            let track_number = tag.track().map(|n| n as i32)
+                .or_else(|| {
+                    // If tag.track() fails, try to parse track number from text
+                    tag.get_string(&ItemKey::TrackNumber)
+                        .and_then(|s| {
+                            // Handle "1/19" format - take only the first number
+                            s.split('/')
+                                .next()
+                                .and_then(|num| num.trim().parse::<i32>().ok())
+                        })
+                });
         
             // Extract album art as raw bytes (NOT base64)
             let album_art = tag
