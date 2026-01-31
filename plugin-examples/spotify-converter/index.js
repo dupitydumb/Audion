@@ -3,161 +3,6 @@
     // SPOTIFY CONVERTER PLUGIN - API VERSION
     // ═══════════════════════════════════════════════════════════════════════════
 
-    /**
-     * SpotifyClient: Handles token fetching and API requests using Client Credentials Flow.
-     * Uses 'api.fetch' to bypass CORS limitations.
-     */
-    class SpotifyClient {
-        static instance = null;
-
-        constructor(api) {
-            if (SpotifyClient.instance) return SpotifyClient.instance;
-
-            this.api = api;
-            this.clientId = null;
-            this.clientSecret = null;
-            this.accessToken = null;
-            this.tokenExpiry = null;
-
-            SpotifyClient.instance = this;
-        }
-
-        static getInstance(api) {
-            if (!SpotifyClient.instance) {
-                if (!api) throw new Error("SpotifyClient needs api in first init");
-                new SpotifyClient(api);
-            }
-            return SpotifyClient.instance;
-        }
-
-        setCredentials(clientId, clientSecret) {
-            this.clientId = clientId;
-            this.clientSecret = clientSecret;
-            // Clear existing token to force refresh with new credentials
-            this.accessToken = null;
-            this.tokenExpiry = null;
-        }
-
-        /**
-         * Strategy 1: Client Credentials Flow
-         */
-        async getClientCredentialsToken() {
-            if (!this.clientId || !this.clientSecret) return null;
-
-            try {
-                // Base64 encode credentials
-                const credentials = btoa(`${this.clientId}:${this.clientSecret}`);
-
-                const response = await this.api.fetch('https://accounts.spotify.com/api/token', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Basic ${credentials}`,
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    },
-                    body: 'grant_type=client_credentials'
-                });
-
-                if (!response.ok) throw new Error(`Client Creds fetch failed: ${response.status}`);
-
-                const data = await response.json();
-
-                if (data.access_token) {
-                    this.accessToken = data.access_token;
-                    // Token expires in seconds, convert to milliseconds
-                    this.tokenExpiry = Date.now() + (data.expires_in * 1000);
-                    return this.accessToken;
-                }
-            } catch (error) {
-                console.warn('SpotifyClient: Client Credentials flow failed', error);
-            }
-            return null;
-        }
-
-        /**
-         * Strategy 2: Web Token Flow (Fallback)
-         */
-        async getWebToken() {
-            try {
-                const response = await this.api.fetch('https://open.spotify.com/get_access_token?reason=transport&productType=web_player', {
-                    headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-                    }
-                });
-
-                if (!response.ok) throw new Error(`Web token fetch failed: ${response.status}`);
-
-                const data = await response.json();
-                if (data.accessToken) {
-                    this.accessToken = data.accessToken;
-                    this.tokenExpiry = data.accessTokenExpirationTimestampMs;
-                    return this.accessToken;
-                }
-            } catch (error) {
-                console.warn('SpotifyClient: Web Token flow failed', error);
-            }
-            return null;
-        }
-
-        isTokenExpired() {
-            if (!this.tokenExpiry) return true;
-            // Refresh 1 minute before expiry
-            return Date.now() > (this.tokenExpiry - 60000);
-        }
-
-        async ensureValidToken() {
-            if (!this.accessToken || this.isTokenExpired()) {
-                // Try Client Credentials first
-                let token = await this.getClientCredentialsToken();
-
-                // Fallback to Web Token
-                if (!token) {
-                    console.log('SpotifyClient: Falling back to Web Token strategy');
-                    token = await this.getWebToken();
-                }
-
-                if (!token) {
-                    throw new Error('Unable to acquire Spotify token. Please check your credentials or try again later.');
-                }
-            }
-            return this.accessToken;
-        }
-
-        async get(url, params = {}) {
-            await this.ensureValidToken();
-
-            const urlObj = new URL(url);
-            Object.keys(params).forEach(key =>
-                urlObj.searchParams.append(key, params[key])
-            );
-
-            const res = await this.api.fetch(urlObj.toString(), {
-                headers: {
-                    'Authorization': `Bearer ${this.accessToken}`
-                }
-            });
-
-            if (!res.ok) {
-                if (res.status === 401) {
-                    // Token expired, refresh and retry
-                    this.accessToken = null;
-                    await this.ensureValidToken();
-
-                    const retryRes = await this.api.fetch(urlObj.toString(), {
-                        headers: { 'Authorization': `Bearer ${this.accessToken}` }
-                    });
-
-                    if (!retryRes.ok) {
-                        throw new Error(`Spotify API Error: ${retryRes.status}`);
-                    }
-                    return await retryRes.json();
-                }
-                throw new Error(`Spotify API Error: ${res.status}`);
-            }
-
-            return await res.json();
-        }
-    }
-
     // ═══════════════════════════════════════════════════════════════════════════
     // PLUGIN LOGIC
     // ═══════════════════════════════════════════════════════════════════════════
@@ -165,11 +10,6 @@
     const SpotifyConverter = {
         name: 'Spotify Converter',
         api: null,
-        client: null,
-
-        // ADD THESE CREDENTIALS
-        SPOTIFY_CLIENT_ID: 'YOUR_CLIENT_ID_HERE',
-        SPOTIFY_CLIENT_SECRET: 'YOUR_CLIENT_SECRET_HERE',
 
         isOpen: false,
         isConverting: false,
@@ -177,27 +17,11 @@
 
         // API endpoints
         TIDAL_API_BASE: 'https://katze.qqdl.site',
-        SPOTIFY_API_BASE: 'https://api.spotify.com/v1',
+        NEW_SPOTIFY_API_BASE: 'https://spotify-api-6y41.vercel.app/api/playlist',
 
         async init(api) {
             console.log('[SpotifyConverter] Initializing...');
             this.api = api;
-            this.client = SpotifyClient.getInstance(api);
-
-            // Load saved credentials
-            try {
-                if (this.api.storage && this.api.storage.get) {
-                    const savedClientId = await this.api.storage.get('spotify_client_id');
-                    const savedClientSecret = await this.api.storage.get('spotify_client_secret');
-
-                    if (savedClientId && savedClientSecret) {
-                        this.client.setCredentials(savedClientId, savedClientSecret);
-                        console.log('[SpotifyConverter] Loaded saved credentials');
-                    }
-                }
-            } catch (e) {
-                console.warn('Failed to load credentials', e);
-            }
 
             this.injectStyles();
             this.createModal();
@@ -401,32 +225,8 @@
                         Spotify to Audion
                     </h2>
                     <div style="display:flex; gap:8px;">
-                        <button class="sc-btn help" id="sc-help-btn">Need Help?</button>
                         <button class="sc-close-btn" id="sc-close-btn">✕</button>
                     </div>
-                </div>
-
-                <div class="sc-help-box" id="sc-help-content">
-                    <strong>How to get credentials:</strong>
-                    <ul>
-                        <li>Go to <a href="#" onclick="window.open('https://developer.spotify.com/dashboard')">Spotify Developer Dashboard</a></li>
-                        <li>Log in and create an app</li>
-                        <li>Copy the Client ID and Client Secret</li>
-                    </ul>
-                    <hr style="border:0; border-top:1px solid #444; margin:10px 0;">
-                    <strong>Alternative:</strong><br>
-                    Join our <a href="#" onclick="window.open('https://discord.gg/audion')">Discord Server</a> to apply for a shared API key.
-                </div>
-
-                <div class="sc-input-group">
-                    <label>Spotify Client ID (Optional)</label>
-                    <input type="text" id="sc-client-id" class="sc-input" placeholder="Enter Client ID from Developer Dashboard">
-                </div>
-
-                <div class="sc-input-group">
-                    <label>Spotify Client Secret (Optional)</label>
-                    <input type="password" id="sc-client-secret" class="sc-input" placeholder="Enter Client Secret">
-                    <div class="sc-details">Leave empty to use web scraping (less reliable).</div>
                 </div>
 
                 <div class="sc-input-group">
@@ -449,41 +249,13 @@
             `;
             document.body.appendChild(modal);
 
-            // Populate Inputs if credentials exist
-            if (this.client.clientId) document.getElementById('sc-client-id').value = this.client.clientId;
-            if (this.client.clientSecret) document.getElementById('sc-client-secret').value = this.client.clientSecret;
-
             // Events
             modal.querySelector('#sc-close-btn').onclick = () => this.close();
             modal.querySelector('#sc-convert-btn').onclick = () => this.startConversion();
             modal.querySelector('#sc-stop-btn').onclick = () => { this.stopConversion = true; };
-
-            // Help toggle
-            modal.querySelector('#sc-help-btn').onclick = () => {
-                const helpBox = document.getElementById('sc-help-content');
-                helpBox.classList.toggle('visible');
-            };
-
-            // Auto-save credentials on change
-            modal.querySelector('#sc-client-id').onchange = (e) => this.saveCredentials();
-            modal.querySelector('#sc-client-secret').onchange = (e) => this.saveCredentials();
         },
 
-        async saveCredentials() {
-            const cid = document.getElementById('sc-client-id').value.trim();
-            const sec = document.getElementById('sc-client-secret').value.trim();
 
-            this.client.setCredentials(cid, sec);
-
-            try {
-                if (this.api.storage && this.api.storage.set) {
-                    await this.api.storage.set('spotify_client_id', cid);
-                    await this.api.storage.set('spotify_client_secret', sec);
-                }
-            } catch (e) {
-                console.warn('Failed to save credentials', e);
-            }
-        },
 
         createMenuButton() {
             const btn = document.createElement('button');
@@ -505,51 +277,36 @@
         // ═══════════════════════════════════════════════════════════════════════
 
         async fetchPlaylistFromAPI(playlistId) {
-            // Get playlist details
-            const data = await this.client.get(`${this.SPOTIFY_API_BASE}/playlists/${playlistId}`);
+            this.log(`Fetching playlist from new API...`, 'info');
+            const response = await this.api.fetch(`${this.NEW_SPOTIFY_API_BASE}/${playlistId}`);
 
-            const tracks = [];
-            // Add first batch
-            data.tracks.items.forEach(item => this.parseTrackItem(item, tracks));
-
-            // Fetch remaining pages
-            let nextUrl = data.tracks.next;
-
-            // Safety limit prevents infinite loops on massive playlists
-            const MAX_TRACKS = 5000;
-
-            while (nextUrl && !this.stopConversion && tracks.length < MAX_TRACKS) {
-                this.log(`Fetching more tracks (${tracks.length} so far)...`, 'info');
-
-                // Use client.get() ensuring valid token
-                const nextData = await this.client.get(nextUrl);
-
-                nextData.items.forEach(item => this.parseTrackItem(item, tracks));
-
-                nextUrl = nextData.next;
-                // Small delay to be nice to API
-                await new Promise(r => setTimeout(r, 50));
+            if (!response.ok) {
+                throw new Error(`Failed to fetch playlist data: ${response.status}`);
             }
 
+            const json = await response.json();
+            if (!json.success || !json.data) {
+                throw new Error('Invalid response from Spotify API');
+            }
+
+            const data = json.data;
+            const tracks = data.tracks.map(t => ({
+                title: t.name,
+                artist: t.artists.join(', '),
+                album: t.album,
+                duration_ms: t.duration_ms,
+                // New API doesn't seem to provide ISRC in the example, but let's keep the field
+                isrc: null
+            }));
+
             return {
-                title: data.name,
-                description: data.description,
+                title: 'Spotify Import', // The new API doesn't seem to return playlist name in the example
+                description: `Imported with ${tracks.length} tracks`,
                 tracks: tracks
             };
         },
 
-        parseTrackItem(item, list) {
-            if (item.track && !item.track.is_local) {
-                const t = item.track;
-                list.push({
-                    title: t.name,
-                    artist: t.artists.map(a => a.name).join(', '),
-                    album: t.album.name,
-                    isrc: t.external_ids?.isrc,
-                    duration_ms: t.duration_ms
-                });
-            }
-        },
+
 
         // ═══════════════════════════════════════════════════════════════════════
         // MAIN LOGIC
@@ -629,20 +386,9 @@
             this.log('Starting conversion...');
 
             try {
-                // 1. Fetch playlist data using the new Client
-                this.log('Connecting to Spotify...', 'info');
-
-                // Ensure we have a token first
-                try {
-                    await this.client.ensureValidToken();
-                } catch (e) {
-                    this.log('Failed to get Spotify Token. Please login to Spotify Web Player in your browser.', 'error');
-                    throw e;
-                }
-
                 this.log('Fetching playlist...', 'info');
                 const playlistData = await this.fetchPlaylistFromAPI(playlistId);
-                this.log(`Found: "${playlistData.title}" with ${playlistData.tracks.length} tracks`, 'success');
+                this.log(`Found ${playlistData.tracks.length} tracks`, 'success');
 
                 // 2. Pre-fetch library map for fast dup-checking
                 this.log('Checking existing library...', 'info');

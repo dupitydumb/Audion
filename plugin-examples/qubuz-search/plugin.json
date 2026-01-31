@@ -1,0 +1,29 @@
+{
+    "name": "Qubuz Search",
+    "version": "1.0.0",
+    "author": "Audion Team",
+    "description": "Search and browse tracks from the Qubuz catalog",
+    "repo": "",
+    "manifest_url": null,
+    "type": "js",
+    "entry": "index.js",
+    "permissions": [
+        "network:fetch",
+        "ui:inject",
+        "player:control",
+        "library:write",
+        "library:read",
+        "settings:write",
+        "library:downloadTrack"
+    ],
+    "ui_slots": null,
+    "icon": null,
+    "category": "library",
+    "tags": [
+        "search",
+        "qubuz",
+        "streaming",
+        "music"
+    ],
+    "license": "MIT"
+}
