@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' asset: http://asset.localhost https://asset.localhost; connect-src * asset: http://asset.localhost https://asset.localhost; img-src 'self' data: blob: asset: http://asset.localhost https://asset.localhost http: https:; media-src 'self' asset: http://asset.localhost https://asset.localhost file: blob: http: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com",
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' blob: asset: http://asset.localhost https://asset.localhost; connect-src * asset: http://asset.localhost https://asset.localhost; img-src 'self' data: blob: asset: http://asset.localhost https://asset.localhost http: https:; media-src 'self' asset: http://asset.localhost https://asset.localhost file: blob: http: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com",
       "assetProtocol": {
         "enable": true,
         "scope": [
