@@ -35,12 +35,14 @@
   import { addToast } from "$lib/stores/toast";
   import { isOnline } from "$lib/stores/network";
   import { onDestroy, onMount } from "svelte";
+  import { multiSelect } from "$lib/stores/multiselect";
 
   export let tracks: Track[] = [];
   export let title: string = "Tracks";
   export let showAlbum: boolean = true;
   export let isTidalAvailable: boolean = true;
   export let playlistId: number | null = null;
+  export let multiSelectMode: boolean = false;
 
   // Virtual scrolling configuration
   const TRACK_ROW_HEIGHT = 56; // pixels (matches min-height in CSS)
@@ -345,6 +347,13 @@
     if (!row) return;
 
     const trackId = parseInt(row.getAttribute('data-track-id') || '0');
+    
+    // In multi-select mode, clicking toggles selection
+    if (multiSelectMode) {
+      multiSelect.toggleTrack(trackId);
+      return;
+    }
+
     const trackIndex = trackIndexMap.get(trackId);
     
     if (trackIndex === undefined) return;
@@ -631,8 +640,27 @@
     class="list-header"
     class:no-album={!showAlbum}
     class:with-drag={playlistId !== null}
+    class:multiselect={multiSelectMode}
   >
-    {#if playlistId !== null}
+    {#if multiSelectMode}
+      <div class="col-header col-checkbox">
+        <input
+          type="checkbox"
+          on:change={(e) => {
+            if (e.currentTarget.checked) {
+              multiSelect.selectAll(sortedTracks.map(t => t.id));
+            } else {
+              multiSelect.clearSelections();
+            }
+          }}
+          checked={$multiSelect.selectedTrackIds.size > 0 && 
+                   $multiSelect.selectedTrackIds.size === sortedTracks.length}
+          indeterminate={$multiSelect.selectedTrackIds.size > 0 && 
+                        $multiSelect.selectedTrackIds.size < sortedTracks.length}
+        />
+      </div>
+    {/if}
+    {#if playlistId !== null && !multiSelectMode}
       <span class="col-header col-drag"></span>
     {/if}
     <button class="col-header col-num" on:click={() => toggleSort(null)}>
@@ -678,7 +706,8 @@
     <div
       class="list-body"
       class:no-album={!showAlbum}
-      class:with-drag={playlistId !== null}
+      class:with-drag={playlistId !== null && !multiSelectMode}
+      class:multiselect={multiSelectMode}
       on:scroll={handleScroll}
       on:click={handleBodyClick}
       on:dblclick={handleBodyDoubleClick}
@@ -695,18 +724,37 @@
         >
           {#each visibleTracksWithMetadata as { track, albumArt, unavailable }, index (track.id)}
             {@const actualIndex = virtualScrollState.startIndex + index}
+            {@const isSelected = $multiSelect.selectedTrackIds.has(track.id)}
             <div
               class="track-row"
               class:playing={playingTrackId === track.id}
               class:unavailable
               class:dragging={draggedIndex === actualIndex}
               class:drag-over={dragOverIndex === actualIndex}
+              class:selected={multiSelectMode && isSelected}
               data-track-id={track.id}
               data-track-index={actualIndex}
               role="button"
               tabindex="0"
             >
-              {#if playlistId !== null}
+              {#if multiSelectMode}
+                <div 
+                  class="col-checkbox" 
+                  on:click|stopPropagation={() => multiSelect.toggleTrack(track.id)}
+                  role="checkbox"
+                  aria-checked={isSelected}
+                  tabindex="0"
+                >
+                  <div class="custom-checkbox" class:checked={isSelected}>
+                    {#if isSelected}
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                      </svg>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+              {#if playlistId !== null && !multiSelectMode}
                 <div
                   class="drag-handle"
                   on:pointerdown={(e) => handlePointerDown(e, actualIndex)}
@@ -986,6 +1034,22 @@
     grid-template-columns: 32px 40px 48px 1fr 80px;
   }
 
+  .list-body.multiselect .track-row {
+    grid-template-columns: 40px 40px 48px 1fr 1fr 80px;
+  }
+
+  .list-body.multiselect.no-album .track-row {
+    grid-template-columns: 40px 40px 48px 1fr 80px;
+  }
+
+  .track-row.selected {
+    background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.12);
+  }
+
+  .track-row.selected:hover {
+    background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.18);
+  }
+
   .track-row:hover {
     background-color: rgba(255, 255, 255, 0.1);
     cursor: pointer;
@@ -1235,5 +1299,53 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .col-checkbox {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .custom-checkbox {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+    background-color: transparent;
+    position: relative;
+  }
+
+  .custom-checkbox:hover {
+    border-color: var(--accent-primary);
+    background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.1);
+  }
+
+  .custom-checkbox.checked {
+    background-color: var(--accent-primary);
+    border-color: var(--accent-primary);
+  }
+
+  .custom-checkbox svg {
+    color: var(--bg-base);
+  }
+
+  .col-header.col-checkbox {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .list-header.multiselect {
+    grid-template-columns: 40px 40px 48px 1fr 1fr 80px;
+  }
+
+  .list-header.multiselect.no-album {
+    grid-template-columns: 40px 40px 48px 1fr 80px;
   }
 </style>

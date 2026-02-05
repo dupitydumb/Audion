@@ -10,7 +10,7 @@
     import { confirm } from "$lib/stores/dialogs";
     import { contextMenu } from "$lib/stores/ui";
     import { playTracks, addToQueue } from "$lib/stores/player";
-    import { goToPlaylists } from "$lib/stores/view";
+    import { goToPlaylists, goToTracksMultiSelect } from "$lib/stores/view";
     import { loadPlaylists, playlists } from "$lib/stores/library";
     import TrackList from "./TrackList.svelte";
     import {
@@ -200,6 +200,10 @@
         if (tracks.length > 0) {
             playTracks(tracks, 0);
         }
+    }
+
+    function handleAddSongs() {
+        goToTracksMultiSelect(playlistId);
     }
 
     async function handleDelete() {
@@ -394,6 +398,21 @@
                         Play
                     </button>
 
+                    <button
+                        class="btn-primary add-songs-btn"
+                        on:click={handleAddSongs}
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            width="24"
+                            height="24"
+                        >
+                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                        </svg>
+                        Add Songs
+                    </button>
+
                     {#if hasDownloadable || allDownloaded}
                         <button
                             class="btn-secondary download-btn"
@@ -548,11 +567,12 @@
     .back-btn {
         position: absolute;
         top: var(--spacing-md);
-        left: var(--spacing-md);
-        width: 32px;
-        height: 32px;
+        right: var(--spacing-md);
+        width: 40px;
+        height: 40px;
         border-radius: var(--radius-full);
         background-color: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(8px);
         color: var(--text-primary);
         display: flex;
         align-items: center;
@@ -733,7 +753,8 @@
         gap: var(--spacing-sm);
     }
 
-    .play-all-btn {
+    .play-all-btn,
+    .add-songs-btn {
         font-size: 1rem;
         padding: var(--spacing-sm) var(--spacing-xl);
     }

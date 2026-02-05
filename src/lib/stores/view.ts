@@ -3,6 +3,7 @@ import { writable, get, derived } from 'svelte/store';
 
 export type ViewType =
     | 'tracks'
+    | 'tracks-multiselect'
     | 'albums'
     | 'album-detail'
     | 'artists'
@@ -127,4 +128,8 @@ export function goToPlugins(): void {
 
 export function goToSettings(): void {
     currentView.set({ type: 'settings' });
+}
+
+export function goToTracksMultiSelect(playlistId: number): void {
+    currentView.set({ type: 'tracks-multiselect', id: playlistId });
 }

@@ -11,6 +11,7 @@
     import ArtistDetail from "./ArtistDetail.svelte";
     import PlaylistView from "./PlaylistView.svelte";
     import PlaylistDetail from "./PlaylistDetail.svelte";
+    import MultiSelectTrackView from "./MultiSelectTrackView.svelte";
     import SearchResults from "./SearchResults.svelte";
 
     import PluginManager from "./PluginManager.svelte";
@@ -47,6 +48,10 @@
             <TrackList tracks={$tracks} showAlbum={true} />
         </div>
     </div>
+    {:else if $currentView.type === "tracks-multiselect" && $currentView.id}
+        <div class="view-container no-padding">
+            <MultiSelectTrackView playlistId={$currentView.id} />
+        </div>
     {:else if $currentView.type === "albums"}
         <div class="view-container">
             <header class="view-header">
