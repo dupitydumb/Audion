@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { Artist } from "$lib/api/tauri";
     import { goToArtistDetail } from "$lib/stores/view";
+    import { currentArtistName, isPlaying } from "$lib/stores/player";
 
     export let artists: Artist[] = [];
 
@@ -11,11 +12,25 @@
     function getArtistInitial(name: string): string {
         return name.charAt(0).toUpperCase();
     }
+
+    // Check if an artist is currently playing
+    function isArtistPlaying(artistName: string): boolean {
+        return $currentArtistName === artistName;
+    }
 </script>
 
 <div class="artist-grid">
     {#each artists as artist}
-        <button class="artist-card" on:click={() => handleArtistClick(artist)}>
+        <button 
+            class="artist-card"
+            class:now-playing={isArtistPlaying(artist.name)}
+            on:click={() => handleArtistClick(artist)}
+        >
+            {#if isArtistPlaying(artist.name)}
+                <div class="now-playing-badge">
+                    Now Playing
+                </div>
+            {/if}
             <div class="artist-avatar">
                 <span class="artist-initial"
                     >{getArtistInitial(artist.name)}</span
@@ -59,10 +74,41 @@
         flex-direction: column;
         align-items: center;
         gap: var(--spacing-md);
+        position: relative;
     }
 
     .artist-card:hover {
         background-color: var(--bg-surface);
+    }
+
+    .artist-card.now-playing {
+        background-color: var(--accent-subtle);
+    }
+
+    .artist-card.now-playing:hover {
+        background-color: var(--accent-subtle);
+        opacity: 0.95;
+    }
+
+    .now-playing-badge {
+        position: absolute;
+        top: var(--spacing-sm);
+        left: 50%;
+        transform: translateX(-50%);
+        background-color: var(--accent-primary);
+        color: var(--bg-base);
+        padding: 4px 8px;
+        border-radius: var(--radius-sm);
+        font-size: 0.75rem;
+        font-weight: 600;
+        opacity: 0;
+        transition: opacity var(--transition-fast);
+        pointer-events: none;
+        z-index: 2;
+    }
+
+    .artist-card:hover .now-playing-badge {
+        opacity: 1;
     }
 
     .artist-avatar {
@@ -78,6 +124,10 @@
         align-items: center;
         justify-content: center;
         box-shadow: var(--shadow-md);
+    }
+
+    .artist-card.now-playing .artist-avatar {
+        box-shadow: 0 0 0 3px var(--accent-primary);
     }
 
     .artist-initial {
@@ -99,9 +149,18 @@
         color: var(--text-primary);
     }
 
+    .artist-card.now-playing .artist-name {
+        color: var(--accent-primary);
+    }
+
     .artist-meta {
         font-size: 0.8125rem;
         color: var(--text-secondary);
+    }
+
+    .artist-card.now-playing .artist-meta {
+        color: var(--accent-primary);
+        opacity: 0.8;
     }
 
     .empty-state {
@@ -124,5 +183,11 @@
 
     .empty-state p {
         font-size: 0.875rem;
+    }
+
+    .truncate {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 </style>

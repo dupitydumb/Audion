@@ -3,7 +3,8 @@
     import { goToAlbumDetail } from "$lib/stores/view";
     import { loadLibrary, getAlbumCoverFromTracks, loadMoreAlbums } from "$lib/stores/library";
     import { contextMenu } from "$lib/stores/ui";
-    import { deleteAlbum } from "$lib/api/tauri";
+    import { deleteAlbum, getTracksByAlbum } from "$lib/api/tauri";
+    import { playTracks, currentAlbumId, isPlaying } from "$lib/stores/player";
     import { onDestroy, onMount } from 'svelte';
 
     export let albums: Album[] = [];
@@ -19,12 +20,16 @@
     let scrollTop = 0;
     let containerElement: HTMLDivElement;
 
-    // Cache Strucutres
+    // Extract store values
+    $: currentAlbumIdValue = $currentAlbumId;
+    $: isPlayingValue = $isPlaying;
+
+    // Cache Structures
     let failedImages = new Set<string>();
     const MAX_FAILED_IMAGES = 200;
-    
+
     //  library.ts handles this with LRU cache
-    
+
     // Build album index map for O(1) lookups (like TrackList)
     let albumIndexMap = new Map<number, number>();
     $: {
@@ -33,8 +38,13 @@
         );
     }
 
+    // Helper function that accepts parameters 
+    function isAlbumPlaying(albumId: number, currentId: number | null, playing: boolean): boolean {
+        return currentId === albumId && playing;
+    }
+
     // Cover
-        function getAlbumCover(album: Album): string | null {
+    function getAlbumCover(album: Album): string | null {
         return getAlbumCoverFromTracks(album.id);
     }
 
@@ -83,12 +93,14 @@
         coverSrc: string | null;
     };
 
+    let visibleAlbumsWithMetadata: AlbumWithMetadata[] = [];
+
     $: visibleAlbumsWithMetadata = virtualScrollState.visibleAlbums.map(
         (album) => ({
             album,
             coverSrc: getAlbumCover(album),
         }),
-    ) as AlbumWithMetadata[];
+    );
 
     // Event Handlers
     function handleScroll(e: Event) {
@@ -96,8 +108,43 @@
     }
 
     // Event delegation - container
-    function handleBodyClick(e: MouseEvent) {
-        const card = (e.target as HTMLElement).closest('.album-card');
+    async function handleBodyClick(e: MouseEvent) {
+        const target = e.target as HTMLElement;
+        
+        // Check if play button was clicked
+        const playButton = target.closest('.play-button');
+        if (playButton) {
+            e.stopPropagation();
+            const card = playButton.closest('.album-card');
+            if (!card) return;
+
+            const albumId = parseInt(card.getAttribute('data-album-id') || '0');
+            if (!albumId) return;
+
+            // Don't restart if already playing
+            if (isAlbumPlaying(albumId, currentAlbumIdValue, isPlayingValue)) {
+                return;
+            }
+
+            // Load tracks and play
+            try {
+                const tracks = await getTracksByAlbum(albumId);
+                if (tracks.length > 0) {
+                    const album = albums.find(a => a.id === albumId);
+                    playTracks(tracks, 0, {
+                        type: 'album',
+                        albumId: albumId,
+                        displayName: album?.name ?? 'Album'
+                    });
+                }
+            } catch (error) {
+                console.error('Failed to load tracks for album:', error);
+            }
+            return;
+        }
+
+        // Otherwise, navigate to album detail
+        const card = target.closest('.album-card');
         if (!card) return;
 
         const albumId = parseInt(card.getAttribute('data-album-id') || '0');
@@ -128,8 +175,19 @@
             items: [
                 {
                     label: "Play",
-                    action: () => {
-                        goToAlbumDetail(album.id);
+                    action: async () => {
+                        try {
+                            const tracks = await getTracksByAlbum(album.id);
+                            if (tracks.length > 0) {
+                                playTracks(tracks, 0, {
+                                    type: 'album',
+                                    albumId: album.id,
+                                    displayName: album.name
+                                });
+                            }
+                        } catch (error) {
+                            console.error('Failed to load tracks for album:', error);
+                        }
                     },
                 },
                 { type: "separator" },
@@ -292,37 +350,50 @@ $: {
                     grid-template-columns: repeat({virtualScrollState.columns}, minmax(180px, 1fr));
                 "
             >
-                {#each visibleAlbumsWithMetadata as { album, coverSrc } (album.id)}
-                    <div
-                        class="album-card"
-                        data-album-id={album.id}
-                        role="button"
-                        tabindex="0"
-                    >
-                        <div class="album-art">
-                            {#if coverSrc && !failedImages.has(coverSrc)}
-                                <img
-                                    src={coverSrc}
-                                    alt={album.name}
-                                    decoding="async"
-                                    on:error={handleImageError}
-                                />
-                            {:else}
-                                <div class="album-art-placeholder">
-                                    <svg
-                                        viewBox="0 0 24 24"
-                                        fill="currentColor"
-                                        width="48"
-                                        height="48"
-                                        aria-hidden="true"
-                                    >
-                                        <path
-                                            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
-                                        />
-                                    </svg>
+            {#each visibleAlbumsWithMetadata as { album, coverSrc } (album.id)}
+                <div
+                    class="album-card"
+                    class:now-playing={isAlbumPlaying(album.id, currentAlbumIdValue, isPlayingValue)}
+                    data-album-id={album.id}
+                    role="button"
+                    tabindex="0"
+                >
+                    <div class="album-art">
+                        {#if coverSrc && !failedImages.has(coverSrc)}
+                            <img
+                                src={coverSrc}
+                                alt={album.name}
+                                decoding="async"
+                                on:error={handleImageError}
+                            />
+                        {:else}
+                            <div class="album-art-placeholder">
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="currentColor"
+                                    width="48"
+                                    height="48"
+                                    aria-hidden="true"
+                                >
+                                    <path
+                                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
+                                    />
+                                </svg>
+                            </div>
+                        {/if}
+                        {#if isAlbumPlaying(album.id, currentAlbumIdValue, isPlayingValue)}
+                            <div class="now-playing-badge">
+                                Now Playing
+                            </div>
+                        {/if}
+                        <div class="play-overlay">
+                            {#if isAlbumPlaying(album.id, currentAlbumIdValue, isPlayingValue)}
+                                <div class="playing-indicator">
+                                    <span class="bar"></span>
+                                    <span class="bar"></span>
+                                    <span class="bar"></span>
                                 </div>
-                            {/if}
-                            <div class="play-overlay">
+                            {:else}
                                 <div class="play-button">
                                     <svg
                                         viewBox="0 0 24 24"
@@ -334,16 +405,17 @@ $: {
                                         <path d="M8 5v14l11-7z" />
                                     </svg>
                                 </div>
-                            </div>
-                        </div>
-                        <div class="album-info">
-                            <span class="album-name truncate">{album.name}</span>
-                            <span class="album-artist truncate"
-                                >{album.artist || "Unknown Artist"}</span
-                            >
+                            {/if}
                         </div>
                     </div>
-                {/each}
+                    <div class="album-info">
+                        <span class="album-name truncate">{album.name}</span>
+                        <span class="album-artist truncate"
+                            >{album.artist || "Unknown Artist"}</span
+                        >
+                    </div>
+                </div>
+            {/each}
             </div>
         </div>
     </div>
@@ -402,6 +474,15 @@ $: {
         background-color: var(--bg-surface);
     }
 
+    .album-card.now-playing {
+        background-color: var(--accent-subtle);
+    }
+
+    .album-card.now-playing:hover {
+        background-color: var(--accent-subtle);
+        opacity: 0.95;
+    }
+
     .album-art {
         position: relative;
         width: 100%;
@@ -436,6 +517,20 @@ $: {
         );
     }
 
+    .now-playing-badge {
+        position: absolute;
+        top: var(--spacing-sm);
+        left: var(--spacing-sm);
+        background-color: var(--accent-primary);
+        color: var(--bg-base);
+        padding: 4px 8px;
+        border-radius: var(--radius-sm);
+        font-size: 0.75rem;
+        font-weight: 600;
+        pointer-events: none;
+        z-index: 2;
+    }
+
     .play-overlay {
         position: absolute;
         inset: 0;
@@ -453,6 +548,11 @@ $: {
         pointer-events: auto;
     }
 
+    .album-card.now-playing .play-overlay {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
     .play-button {
         width: 48px;
         height: 48px;
@@ -463,13 +563,81 @@ $: {
         align-items: center;
         justify-content: center;
         transform: translateY(8px);
-        transition: transform var(--transition-fast);
+        transition: transform var(--transition-fast), scale var(--transition-fast);
         box-shadow: var(--shadow-lg);
-        will-change: transform;
+        will-change: transform, scale;
+        cursor: pointer;
+        position: relative;
+    }
+
+    .play-button::after {
+        content: 'Play album';
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 4px 8px;
+        background-color: var(--bg-surface);
+        color: var(--text-primary);
+        font-size: 0.75rem;
+        border-radius: var(--radius-sm);
+        white-space: nowrap;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity var(--transition-fast);
+        box-shadow: var(--shadow-md);
+        z-index: 1000;
+    }
+
+    .play-button:hover::after {
+        opacity: 1;
     }
 
     .album-card:hover .play-button {
         transform: translateY(0);
+    }
+
+    .play-button:hover {
+        transform: translateY(0) scale(1.05);
+    }
+
+    .playing-indicator {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        width: 48px;
+        height: 48px;
+        background-color: var(--accent-primary);
+        border-radius: var(--radius-full);
+        box-shadow: var(--shadow-lg);
+    }
+
+    .playing-indicator .bar {
+        width: 4px;
+        height: 16px;
+        background-color: var(--bg-base);
+        border-radius: 2px;
+        animation: equalizer 0.8s ease-in-out infinite;
+    }
+
+    .playing-indicator .bar:nth-child(2) {
+        animation-delay: 0.2s;
+    }
+
+    .playing-indicator .bar:nth-child(3) {
+        animation-delay: 0.4s;
+    }
+
+    @keyframes equalizer {
+        0%,
+        100% {
+            height: 6px;
+        }
+        50% {
+            height: 20px;
+        }
+
     }
 
     .album-info {
@@ -489,6 +657,11 @@ $: {
     .album-artist {
         font-size: 0.8125rem;
         color: var(--text-secondary);
+    }
+
+    .album-card.now-playing .album-name,
+    .album-card.now-playing .album-artist {
+        color: var(--accent-primary);
     }
 
     .empty-state {

@@ -46,7 +46,11 @@
 
     function handlePlayAll() {
         if (tracks.length > 0) {
-            playTracks(tracks, 0);
+            playTracks(tracks, 0, {
+                type: 'artist',
+                artistName: artistName,
+                displayName: artistName
+            });
         }
     }
 
@@ -200,7 +204,11 @@
             {#if activeTab === "albums"}
                 <AlbumGrid {albums} />
             {:else}
-                <TrackList {tracks} showAlbum={true} />
+            <TrackList 
+            {tracks} 
+            showAlbum={true}
+            playbackContext={{ type: 'artist', artistName, displayName: artistName }}
+        />
             {/if}
         </div>
     {/if}

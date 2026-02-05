@@ -198,7 +198,11 @@
 
     function handlePlayAll() {
         if (tracks.length > 0) {
-            playTracks(tracks, 0);
+            playTracks(tracks, 0, {
+                type: 'playlist',
+                playlistId: playlistId,
+                displayName: playlist?.name ?? 'Playlist'
+            });
         }
     }
 
@@ -309,15 +313,15 @@
             on:contextmenu={handleHeaderContextMenu}
         >
         <button class="back-btn" on:click={goToPlaylists} title="Close">
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
+            <svg
+                viewBox="0 0 24 24"
+                fill="currentColor"
                 width="20"
                 height="20"
-                >
+            >
                 <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                </svg>
-            </button>
+            </svg>
+        </button>
             <div 
                 class="playlist-cover"
                 on:mouseenter={() => coverHovered = true}
@@ -491,7 +495,11 @@
 
         <div class="playlist-tracks">
             {#if tracks.length > 0}
-                <TrackList bind:tracks showAlbum={true} {playlistId} />
+            <TrackList 
+                {tracks}  
+                showAlbum={false}
+                playbackContext={{ type: 'playlist', playlistId, displayName: playlist?.name }}
+            />
             {:else}
                 <div class="empty-state">
                     <svg

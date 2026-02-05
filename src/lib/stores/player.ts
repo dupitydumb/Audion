@@ -11,6 +11,54 @@ import { equalizer, EQ_FREQUENCIES } from '$lib/stores/equalizer';
 // Plugin event emitter (global singleton for plugin system)
 export const pluginEvents = new EventEmitter<PluginEvents>();
 
+// Playback Context Tracking
+// source from which tracks are being played.
+export interface PlaybackContext {
+    
+    type: 'playlist' | 'album' | 'artist';
+
+    /** For playlists: playlist ID */
+    playlistId?: number;
+
+    /** For albums: album ID */
+    albumId?: number;
+
+    /** For artists: artist name */
+    artistName?: string;
+
+    /** Display name for UI */
+    displayName?: string;
+}
+
+/**
+ * The current playback context - what source is playing
+ */
+export const playbackContext = writable<PlaybackContext | null>(null);
+
+/**
+ * Current playlist ID (if playing from a playlist)
+ */
+export const currentPlaylistId = derived(
+    playbackContext,
+    ($ctx) => ($ctx?.type === 'playlist' ? $ctx.playlistId ?? null : null)
+);
+
+/**
+ * Current album ID (if playing from an album)
+ */
+export const currentAlbumId = derived(
+    playbackContext,
+    ($ctx) => ($ctx?.type === 'album' ? $ctx.albumId ?? null : null)
+);
+
+/**
+ * Current artist name (if playing from an artist)
+ */
+export const currentArtistName = derived(
+    playbackContext,
+    ($ctx) => ($ctx?.type === 'artist' ? $ctx.artistName ?? null : null)
+);
+
 // Current track
 export const currentTrack = writable<Track | null>(null);
 
@@ -525,7 +573,11 @@ function shuffleArray<T>(array: T[]): T[] {
 }
 
 // Play a list of tracks starting at index
-export function playTracks(tracks: Track[], startIndex: number = 0): void {
+export function playTracks(
+    tracks: Track[],
+    startIndex: number = 0,
+    context?: PlaybackContext
+): void {
     const currentQueue = get(queue);
 
     // Check if the new tracks are effectively the same as the current queue
@@ -555,6 +607,9 @@ export function playTracks(tracks: Track[], startIndex: number = 0): void {
 
     queueIndex.set(startIndex);
     userQueueCount.set(0); // Reset user queue when starting fresh context
+
+    // Set playback context
+    playbackContext.set(context ?? null);
 
     // Shuffle Logic
     if (get(shuffle)) {
@@ -1031,4 +1086,28 @@ export function playFromQueue(index: number): void {
             }
         }
     }
+}
+
+/**
+ * Helper to check if a specific playlist is currently playing
+ */
+export function isPlaylistPlaying(playlistId: number): boolean {
+    const ctx = get(playbackContext);
+    return ctx?.type === 'playlist' && ctx.playlistId === playlistId;
+}
+
+/**
+ * Helper to check if a specific album is currently playing
+ */
+export function isAlbumPlaying(albumId: number): boolean {
+    const ctx = get(playbackContext);
+    return ctx?.type === 'album' && ctx.albumId === albumId;
+}
+
+/**
+ * Helper to check if a specific artist is currently playing
+ */
+export function isArtistPlaying(artistName: string): boolean {
+    const ctx = get(playbackContext);
+    return ctx?.type === 'artist' && ctx.artistName === artistName;
 }

@@ -15,6 +15,7 @@
     currentTrack,
     isPlaying,
     addToQueue,
+    type PlaybackContext,
   } from "$lib/stores/player";
   import { contextMenu } from "$lib/stores/ui";
   import {
@@ -41,6 +42,7 @@
   export let title: string = "Tracks";
   export let showAlbum: boolean = true;
   export let isTidalAvailable: boolean = true;
+  export let playbackContext: PlaybackContext | undefined = undefined;
   export let playlistId: number | null = null;
   export let multiSelectMode: boolean = false;
 
@@ -361,7 +363,7 @@
     const track = sortedTracks[trackIndex];
     if (!track || isTrackUnavailable(track)) return;
 
-    playTracks(sortedTracks, trackIndex);
+    playTracks(sortedTracks, trackIndex, playbackContext);
   }
 
   function handleBodyDoubleClick(e: MouseEvent) {
@@ -376,7 +378,7 @@
     const track = sortedTracks[trackIndex];
     if (!track || isTrackUnavailable(track)) return;
 
-    playTracks(sortedTracks, trackIndex);
+    playTracks(sortedTracks, trackIndex, playbackContext);
   }
 
   async function handleBodyContextMenu(e: MouseEvent) {
@@ -410,7 +412,7 @@
       {
         label: "Play",
         action: () => {
-          if (trackIndex !== undefined) playTracks(sortedTracks, trackIndex);
+          if (trackIndex !== undefined) playTracks(sortedTracks, trackIndex, playbackContext);
         },
         disabled: isUnavailable,
       },
