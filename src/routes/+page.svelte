@@ -106,8 +106,6 @@
     <ToastContainer />
     <KeyboardShortcuts />
     <KeyboardShortcutsHelp />
-    <KeyboardShortcuts />
-    <KeyboardShortcutsHelp />
 
     {#if $pluginStore.pendingUpdates.length > 0}
       <PluginUpdateDialog on:close={() => pluginStore.clearPendingUpdates()} />
