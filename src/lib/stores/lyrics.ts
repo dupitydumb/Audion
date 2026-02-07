@@ -172,3 +172,82 @@ export const lyricsStore = {
         }
     }
 };
+
+// ============================================================================
+// Public API for external use (plugins, integrations, etc.)
+// ============================================================================
+
+/**
+ * Get all lyrics for a specific music file
+ * @param musicPath - Path to the music file
+ * @returns Array of lyric lines with timing data, or null if no lyrics found
+ */
+export async function getLyrics(musicPath: string): Promise<LyricLine[] | null> {
+    try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const result = await invoke<LyricLine[] | null>('get_lyrics', { musicPath });
+        return result;
+    } catch (error) {
+        console.error('Failed to get lyrics:', error);
+        return null;
+    }
+}
+
+/**
+ * Get the current active lyric line for a specific music file at a given time
+ * @param musicPath - Path to the music file
+ * @param currentTime - Current playback time in seconds
+ * @returns Current lyric line with index and timing data, or null if no active line
+ */
+export async function getCurrentLyric(
+    musicPath: string,
+    currentTime: number
+): Promise<{ line: LyricLine; index: number } | null> {
+    try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        const result = await invoke<{ index: number; time: number; text: string; words?: LyricLine['words'] } | null>(
+            'get_current_lyric',
+            { musicPath, currentTime }
+        );
+
+        if (!result) return null;
+
+        return {
+            index: result.index,
+            line: {
+                time: result.time,
+                text: result.text,
+                words: result.words
+            }
+        };
+    } catch (error) {
+        console.error('Failed to get current lyric:', error);
+        return null;
+    }
+}
+
+/**
+ * Get all lyrics for the currently playing track
+ * Convenience method that automatically uses the current track
+ * @returns Array of lyric lines, or null if no track is playing or no lyrics found
+ */
+export async function getCurrentTrackLyrics(): Promise<LyricLine[] | null> {
+    const track = get(currentTrack);
+    if (!track) return null;
+
+    return getLyrics(track.path);
+}
+
+/**
+ * Get the active lyric line for the currently playing track
+ * Convenience method that automatically uses current track and playback time
+ * @returns Current lyric line with index, or null if no track is playing or no active line
+ */
+export async function getCurrentTrackActiveLyric(): Promise<{ line: LyricLine; index: number } | null> {
+    const track = get(currentTrack);
+    const time = get(currentTime);
+
+    if (!track) return null;
+
+    return getCurrentLyric(track.path, time);
+}

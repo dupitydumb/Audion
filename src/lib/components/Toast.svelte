@@ -104,19 +104,19 @@
     }
 
     .toast.error {
-        border-left: 4px solid var(--accent-error, #ff4c4c);
+        border-left: 4px solid var(--accent-error);
     }
 
     .toast.success {
-        border-left: 4px solid var(--accent-success, #4caf50);
+        border-left: 4px solid var(--accent-success);
     }
 
     .toast.warning {
-        border-left: 4px solid var(--accent-warning, #ffae42);
+        border-left: 4px solid var(--accent-warning);
     }
 
     .toast.info {
-        border-left: 4px solid var(--accent-primary, #646cff);
+        border-left: 4px solid var(--accent-info);
     }
 
     .content {
@@ -146,16 +146,16 @@
     }
 
     .icon.error {
-        color: var(--accent-error, #ff4c4c);
+        color: var(--accent-error);
     }
     .icon.success {
-        color: var(--accent-success, #4caf50);
+        color: var(--accent-success);
     }
     .icon.warning {
-        color: var(--accent-warning, #ffae42);
+        color: var(--accent-warning);
     }
     .icon.info {
-        color: var(--accent-primary, #646cff);
+        color: var(--accent-info);
     }
 
     .close-btn {

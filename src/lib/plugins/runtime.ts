@@ -903,6 +903,50 @@ export class PluginRuntime {
       }
     };
 
+    // Lyrics API (always available)
+    api.lyrics = {
+      // Get all lyrics for the currently playing track
+      getCurrentTrackLyrics: async () => {
+        try {
+          const { getCurrentTrackLyrics } = await import('$lib/stores/lyrics');
+          return await getCurrentTrackLyrics();
+        } catch (error) {
+          console.error('[PluginRuntime] Failed to get current track lyrics:', error);
+          return null;
+        }
+      },
+      // Get the active lyric line for the currently playing track
+      getCurrentTrackActiveLyric: async () => {
+        try {
+          const { getCurrentTrackActiveLyric } = await import('$lib/stores/lyrics');
+          return await getCurrentTrackActiveLyric();
+        } catch (error) {
+          console.error('[PluginRuntime] Failed to get current active lyric:', error);
+          return null;
+        }
+      },
+      // Get lyrics for a specific track path
+      getLyrics: async (musicPath: string) => {
+        try {
+          const { getLyrics } = await import('$lib/stores/lyrics');
+          return await getLyrics(musicPath);
+        } catch (error) {
+          console.error('[PluginRuntime] Failed to get lyrics:', error);
+          return null;
+        }
+      },
+      // Get active lyric for a specific track at a specific time
+      getCurrentLyric: async (musicPath: string, currentTime: number) => {
+        try {
+          const { getCurrentLyric } = await import('$lib/stores/lyrics');
+          return await getCurrentLyric(musicPath, currentTime);
+        } catch (error) {
+          console.error('[PluginRuntime] Failed to get current lyric:', error);
+          return null;
+        }
+      }
+    };
+
     // Request API - allows inter-plugin communication
     api.request = async <T = any>(requestName: string, data: any): Promise<T> => {
       try {

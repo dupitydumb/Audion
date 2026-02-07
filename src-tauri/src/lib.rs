@@ -98,6 +98,8 @@ pub fn run() {
             commands::load_lrc_file,
             commands::delete_lrc_file,
             commands::musixmatch_request,
+            commands::get_lyrics,
+            commands::get_current_lyric,
             // Metadata commands
             commands::download_and_save_audio,
             commands::update_local_src,

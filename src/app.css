@@ -19,6 +19,12 @@
 
   --border-color: #404040;
   --error-color: #f15e6c;
+  
+  /* Toast/notification colors - can be customized per theme */
+  --accent-error: #f15e6c;
+  --accent-success: #1DB954;
+  --accent-warning: #ffae42;
+  --accent-info: #1DB954;
 
   /* Sizing */
   --sidebar-width: 280px;
