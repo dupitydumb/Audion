@@ -24,7 +24,6 @@
     "opener:default",
     "dialog:default",
     "notification:default",
-    "fs:default",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
     "global-shortcut:allow-unregister-all",
@@ -34,7 +33,16 @@
       "identifier": "fs:allow-read-file",
       "allow": [
         {
-          "path": "**"
+          "path": "$AUDIO/**"
+        },
+        {
+          "path": "$APPDATA/audion/**"
+        },
+        {
+          "path": "$MUSIC/**"
+        },
+        {
+          "path": "$HOME/Music/**"
         }
       ]
     },
@@ -42,7 +50,16 @@
       "identifier": "fs:scope",
       "allow": [
         {
-          "path": "**"
+          "path": "$AUDIO/**"
+        },
+        {
+          "path": "$APPDATA/audion/**"
+        },
+        {
+          "path": "$MUSIC/**"
+        },
+        {
+          "path": "$HOME/Music/**"
         }
       ]
     }

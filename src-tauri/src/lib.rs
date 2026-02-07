@@ -1,10 +1,11 @@
-// Rlist - Local Spotify-style Music Player
+// Audion - Local Spotify-style Music Player
 // Main library entry point
 
 mod commands;
 mod db;
 mod discord;
 mod scanner;
+mod security;
 mod utils;
 
 use db::Database;
@@ -13,6 +14,9 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize security audit logging
+    security::init_logger();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())

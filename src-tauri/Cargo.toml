@@ -55,4 +55,11 @@ sha2 = "0.10"
 rayon = "1.10" 
 
  # Thread-safe channels
-crossbeam = "0.8"   
+crossbeam = "0.8"
+
+# Move files to trash instead of permanent deletion (security)
+trash = "5"
+
+# Logging for audit trail
+log = "0.4"
+env_logger = "0.11"   

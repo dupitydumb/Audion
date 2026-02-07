@@ -4,6 +4,7 @@ use rusqlite::{Connection, Result};
 use std::fs;
 use std::path::PathBuf;
 use std::collections::HashSet;
+use crate::security;
 
 /// Image format detection
 #[derive(Debug, Clone, Copy)]
@@ -191,11 +192,14 @@ pub fn get_album_art_file_path(conn: &Connection, album_id: i64) -> Result<Optio
     Ok(None)
 }
 
-/// Delete cover file for a track
+/// Delete cover file for a track (uses secure deletion with logging)
 pub fn delete_track_cover_file(track_cover_path: Option<&str>) -> Result<(), String> {
     if let Some(path) = track_cover_path {
         let path_obj = std::path::Path::new(path);
         if path_obj.exists() {
+            // Cover files are in app data directory, use direct deletion
+            // (secure deletion is for music files in user directories)
+            log::debug!("[AUDIT] Deleting track cover file: {:?}", path_obj);
             fs::remove_file(path_obj)
                 .map_err(|e| format!("Failed to delete cover file: {}", e))?;
         }
@@ -203,11 +207,13 @@ pub fn delete_track_cover_file(track_cover_path: Option<&str>) -> Result<(), Str
     Ok(())
 }
 
-/// Delete album art file
+/// Delete album art file (uses logging for audit trail)
 pub fn delete_album_art_file(art_path: Option<&str>) -> Result<(), String> {
     if let Some(path) = art_path {
         let path_obj = std::path::Path::new(path);
         if path_obj.exists() {
+            // Album art files are in app data directory, use direct deletion
+            log::debug!("[AUDIT] Deleting album art file: {:?}", path_obj);
             fs::remove_file(path_obj)
                 .map_err(|e| format!("Failed to delete album art file: {}", e))?;
         }

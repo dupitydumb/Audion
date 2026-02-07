@@ -1,6 +1,7 @@
 // Library-related Tauri commands
 use crate::db::{queries, Database};
 use crate::scanner::{cover_storage, extract_metadata, scan_directory};
+use crate::security;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use tauri::Emitter;
@@ -582,7 +583,7 @@ pub async fn get_albums_by_artist(
     Ok(albums)
 }
 
-/// Delete a track from the library
+/// Delete a track from the library (moves file to trash for safety)
 #[tauri::command]
 pub async fn delete_track(track_id: i64, db: State<'_, Database>) -> Result<bool, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
@@ -602,11 +603,10 @@ pub async fn delete_track(track_id: i64, db: State<'_, Database>) -> Result<bool
 
         if is_local {
             let path_obj = std::path::Path::new(&path);
-            if path_obj.exists() {
-                if let Err(e) = std::fs::remove_file(path_obj) {
-                    println!("Failed to delete file {}: {}", path, e);
-                    // Continue to delete from DB even if file deletion fails
-                }
+            // Use secure deletion (moves to trash with path validation)
+            if let Err(e) = security::safe_delete_file(path_obj) {
+                log::error!("[AUDIT] Failed to delete track file {}: {}", path, e);
+                // Continue to delete from DB even if file deletion fails
             }
         }
 
@@ -620,10 +620,11 @@ pub async fn delete_track(track_id: i64, db: State<'_, Database>) -> Result<bool
     // Clean up empty albums after track deletion
     let _ = queries::cleanup_empty_albums(&conn);
 
+    log::info!("[AUDIT] Track {} deleted from library", track_id);
     Ok(result)
 }
 
-/// Delete an album and all its tracks
+/// Delete an album and all its tracks (moves files to trash for safety)
 #[tauri::command]
 pub async fn delete_album(album_id: i64, db: State<'_, Database>) -> Result<bool, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
@@ -641,14 +642,18 @@ pub async fn delete_album(album_id: i64, db: State<'_, Database>) -> Result<bool
     // Get all tracks for this album to delete files
     let tracks = queries::get_tracks_by_album(&conn, album_id).map_err(|e| e.to_string())?;
 
+    log::info!("[AUDIT] Deleting album {} with {} tracks", album_id, tracks.len());
+
     for track in tracks {
         // Only delete file if it's a local track
         let is_local = track.source_type.is_none() || track.source_type.as_deref() == Some("local");
 
         if is_local {
             let path_obj = std::path::Path::new(&track.path);
-            if path_obj.exists() {
-                let _ = std::fs::remove_file(path_obj);
+            // Use secure deletion (moves to trash with path validation)
+            if let Err(e) = security::safe_delete_file(path_obj) {
+                log::error!("[AUDIT] Failed to delete track file {}: {}", track.path, e);
+                // Continue with other tracks
             }
         }
 
@@ -659,7 +664,10 @@ pub async fn delete_album(album_id: i64, db: State<'_, Database>) -> Result<bool
     // Delete album art file
     let _ = cover_storage::delete_album_art_file(art_path.as_deref());
 
-    queries::delete_album(&conn, album_id).map_err(|e| format!("Failed to delete album: {}", e))
+    let result = queries::delete_album(&conn, album_id).map_err(|e| format!("Failed to delete album: {}", e))?;
+    
+    log::info!("[AUDIT] Album {} deleted from library", album_id);
+    result
 }
 
 /// Input for adding an external (streaming) track to the library
