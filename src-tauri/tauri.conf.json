@@ -17,6 +17,8 @@
         "height": 800,
         "minWidth": 900,
         "minHeight": 600,
+        "backgroundColor": "#121212",
+        "visible": true,
         "decorations": false,
         "resizable": true,
         "maximized": false

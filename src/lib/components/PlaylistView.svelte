@@ -13,7 +13,7 @@
         removePlaylistCover,
     } from "$lib/stores/playlistCovers";
     import { contextMenu } from "$lib/stores/ui";
-    import { playTracks, addToQueue } from "$lib/stores/player";
+    import { playTracks, addToQueue, currentPlaylistId, isPlaying } from "$lib/stores/player";
     import type { Writable } from "svelte/store";
 
     import { confirm } from "$lib/stores/dialogs";
@@ -37,10 +37,20 @@
     }
 
     async function handlePlayPlaylist(id: number) {
+        // Don't restart if already playing
+        if (isPlaylistPlaying(id)) {
+            return;
+        }
+
         try {
             const tracks = await getPlaylistTracks(id);
             if (tracks.length > 0) {
-                playTracks(tracks, 0);
+                const playlist = $playlists.find(p => p.id === id);
+                playTracks(tracks, 0, {
+                    type: 'playlist',
+                    playlistId: id,
+                    displayName: playlist?.name ?? 'Playlist'
+                });
             }
         } catch (error) {
             console.error("Failed to play playlist:", error);
@@ -206,6 +216,27 @@
         if (custom) return custom;
         return generateSvgCover(playlist.name || "Playlist", 512);
     }
+
+    // Handle clicks - differentiate between card and play button
+    function handleCardClick(e: MouseEvent, playlistId: number) {
+        const target = e.target as HTMLElement;
+        
+        // Check if play button was clicked
+        const playButton = target.closest('.play-button');
+        if (playButton) {
+            e.stopPropagation();
+            handlePlayPlaylist(playlistId);
+            return;
+        }
+
+        // Otherwise navigate to playlist detail
+        goToPlaylistDetail(playlistId);
+    }
+
+    // Check if a playlist is currently playing
+    function isPlaylistPlaying(playlistId: number): boolean {
+        return $currentPlaylistId === playlistId && $isPlaying;
+    }
 </script>
 
 <div class="playlist-view">
@@ -252,10 +283,14 @@
 
     <div class="playlist-grid">
         {#each $playlists as playlist}
-            <button
+            <div
                 class="playlist-card"
-                on:click={() => goToPlaylistDetail(playlist.id)}
-                on:contextmenu={(e) => handleContextMenu(e, playlist)}
+                class:now-playing={isPlaylistPlaying(playlist.id)}
+                on:click={(e) => handleCardClick(e, playlist.id)}
+                on:contextmenu={(e) =>
+                    handleContextMenu(e, { id: playlist.id, name: playlist.name })}
+                role="button"
+                tabindex="0"
             >
                 <div class="playlist-cover">
                     <img
@@ -267,12 +302,38 @@
                         loading="lazy"
                         decoding="async"
                     />
+                    {#if isPlaylistPlaying(playlist.id)}
+                        <div class="now-playing-badge">
+                            Now Playing
+                        </div>
+                    {/if}
+                    <div class="play-overlay">
+                        {#if isPlaylistPlaying(playlist.id)}
+                            <div class="playing-indicator">
+                                <span class="bar"></span>
+                                <span class="bar"></span>
+                                <span class="bar"></span>
+                            </div>
+                        {:else}
+                            <div class="play-button">
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="currentColor"
+                                    width="24"
+                                    height="24"
+                                    aria-hidden="true"
+                                >
+                                    <path d="M8 5v14l11-7z" />
+                                </svg>
+                            </div>
+                        {/if}
+                    </div>
                 </div>
                 <div class="playlist-info">
                     <span class="playlist-name truncate">{playlist.name}</span>
                     <span class="playlist-type">Playlist</span>
                 </div>
-            </button>
+            </div>
         {:else}
             <div class="empty-state">
                 <svg
@@ -355,10 +416,22 @@
         padding: var(--spacing-md);
         transition: background-color var(--transition-normal);
         text-align: left;
+        cursor: pointer;
+        border: none;
+        width: 100%;
     }
 
     .playlist-card:hover {
         background-color: var(--bg-surface);
+    }
+
+    .playlist-card.now-playing {
+        background-color: var(--accent-subtle);
+    }
+
+    .playlist-card.now-playing:hover {
+        background-color: var(--accent-subtle);
+        opacity: 0.95;
     }
 
     .playlist-cover {
@@ -370,6 +443,7 @@
         background-color: var(--bg-surface);
         margin-bottom: var(--spacing-md);
         box-shadow: var(--shadow-md);
+        isolation: isolate;
     }
 
     .playlist-cover img {
@@ -377,6 +451,128 @@
         height: 100%;
         object-fit: cover;
         display: block;
+    }
+
+    .now-playing-badge {
+        position: absolute;
+        top: var(--spacing-sm);
+        left: var(--spacing-sm);
+        background-color: var(--accent-primary);
+        color: var(--bg-base);
+        padding: 4px 8px;
+        border-radius: var(--radius-sm);
+        font-size: 0.75rem;
+        font-weight: 600;
+        pointer-events: none;
+        z-index: 2;
+    }
+
+    .play-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: opacity var(--transition-fast);
+        pointer-events: none;
+    }
+
+    .playlist-card:hover .play-overlay {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .playlist-card.now-playing .play-overlay {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .play-button {
+        width: 48px;
+        height: 48px;
+        border-radius: var(--radius-full);
+        background-color: var(--accent-primary);
+        color: var(--bg-base);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transform: translateY(8px);
+        transition: transform var(--transition-fast), scale var(--transition-fast);
+        box-shadow: var(--shadow-lg);
+        will-change: transform, scale;
+        cursor: pointer;
+        position: relative;
+    }
+
+    .play-button::after {
+        content: 'Play playlist';
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 4px 8px;
+        background-color: var(--bg-surface);
+        color: var(--text-primary);
+        font-size: 0.75rem;
+        border-radius: var(--radius-sm);
+        white-space: nowrap;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity var(--transition-fast);
+        box-shadow: var(--shadow-md);
+        z-index: 1000;
+    }
+
+    .play-button:hover::after {
+        opacity: 1;
+    }
+
+    .playlist-card:hover .play-button {
+        transform: translateY(0);
+    }
+
+    .play-button:hover {
+        transform: translateY(0) scale(1.05);
+    }
+
+    .playing-indicator {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        width: 48px;
+        height: 48px;
+        background-color: var(--accent-primary);
+        border-radius: var(--radius-full);
+        box-shadow: var(--shadow-lg);
+    }
+
+    .playing-indicator .bar {
+        width: 4px;
+        height: 16px;
+        background-color: var(--bg-base);
+        border-radius: 2px;
+        animation: equalizer 0.8s ease-in-out infinite;
+    }
+
+    .playing-indicator .bar:nth-child(2) {
+        animation-delay: 0.2s;
+    }
+
+    .playing-indicator .bar:nth-child(3) {
+        animation-delay: 0.4s;
+    }
+
+    @keyframes equalizer {
+        0%,
+        100% {
+            height: 6px;
+        }
+        50% {
+            height: 20px;
+        }
     }
 
     .playlist-info {
@@ -391,9 +587,18 @@
         color: var(--text-primary);
     }
 
+    .playlist-card.now-playing .playlist-name {
+        color: var(--accent-primary);
+    }
+
     .playlist-type {
         font-size: 0.8125rem;
         color: var(--text-secondary);
+    }
+
+    .playlist-card.now-playing .playlist-type {
+        color: var(--accent-primary);
+        opacity: 0.8;
     }
 
     .empty-state {
@@ -416,5 +621,11 @@
 
     .empty-state p {
         font-size: 0.875rem;
+    }
+
+    .truncate {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 </style>

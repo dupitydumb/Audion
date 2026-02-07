@@ -7,9 +7,31 @@
     resetDatabase,
     selectMusicFolder,
     syncCoverPathsFromFiles,
+    mergeDuplicateCovers, 
+    type MergeCoverResult
   } from "$lib/api/tauri";
   import { loadLibrary } from "$lib/stores/library";
   import UpdatePopup from "./UpdatePopup.svelte";
+  import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+  import { onMount, onDestroy } from 'svelte';
+
+  interface MigrationProgressUpdate {
+    current: number;
+    total: number;
+    current_batch: number;
+    batch_size: number;
+    estimated_time_remaining_ms: number;
+    tracks_migrated: number;
+    albums_migrated: number;
+  }
+
+  interface MergeProgressUpdate {
+    current_album: number;
+    total_albums: number;
+    covers_merged: number;
+    space_saved_bytes: number;
+    estimated_time_remaining_ms: number;
+  }
 
   let customColorInput = "#1DB954";
   let showUpdatePopup = false;
@@ -24,6 +46,44 @@
   let isSyncingCovers = false;
   let syncMessage = "";
   let syncSuccess = false;
+  let syncProgress: MigrationProgressUpdate | null = null;
+  let syncPercentage = 0;
+
+  // Cover merge state
+  let isMergingCovers = false;
+  let mergeMessage = "";
+  let mergeSuccess = false;
+  let mergeProgress: MergeProgressUpdate | null = null;
+  let mergePercentage = 0;
+
+  // Event listeners
+  let unlistenSync: UnlistenFn | null = null;
+  let unlistenMerge: UnlistenFn | null = null;
+
+  onMount(async () => {
+    // Listen for migration events (used by sync)
+    unlistenSync = await listen('migration-batch-ready', (event) => {
+      const data = event.payload as { progress: MigrationProgressUpdate };
+      syncProgress = data.progress;
+      if (syncProgress && syncProgress.total > 0) {
+        syncPercentage = Math.round((syncProgress.current / syncProgress.total) * 100);
+      }
+    });
+
+    // Listen for merge events
+    unlistenMerge = await listen('merge-batch-ready', (event) => {
+      const data = event.payload as { progress: MergeProgressUpdate };
+      mergeProgress = data.progress;
+      if (mergeProgress && mergeProgress.total_albums > 0) {
+        mergePercentage = Math.round((mergeProgress.current_album / mergeProgress.total_albums) * 100);
+      }
+    });
+  });
+
+  onDestroy(() => {
+    if (unlistenSync) unlistenSync();
+    if (unlistenMerge) unlistenMerge();
+  });
 
   function handleModeChange(mode: ThemeMode) {
     theme.setMode(mode);
@@ -90,6 +150,8 @@
     isSyncingCovers = true;
     syncMessage = "";
     syncSuccess = false;
+    syncProgress = null;
+    syncPercentage = 0;
 
     try {
       console.log("[Settings] Starting cover sync...");
@@ -97,7 +159,14 @@
 
       console.log("[Settings] Sync result:", result);
 
-      if (result.errors.length === 0) {
+      // Reset progress
+      syncProgress = null;
+      syncPercentage = 0;
+
+      if (result.tracks_migrated === 0 && result.albums_migrated === 0 && result.errors.length === 0) {
+        syncSuccess = true;
+        syncMessage = `✓ No cover files found to sync.`;
+      } else if (result.errors.length === 0) {
         syncSuccess = true;
         syncMessage = ` Successfully synced ${result.tracks_migrated} track covers and ${result.albums_migrated} album covers`;
 
@@ -114,6 +183,8 @@
       syncSuccess = false;
       syncMessage = `Failed to sync covers: ${error}`;
       console.error("[Settings] Sync failed:", error);
+      syncProgress = null;
+      syncPercentage = 0;
     } finally {
       isSyncingCovers = false;
 
@@ -122,6 +193,76 @@
         syncMessage = "";
       }, 5000);
     }
+  }
+
+  async function handleMergeDuplicateCovers() {
+    isMergingCovers = true;
+    mergeMessage = "";
+    mergeSuccess = false;
+    mergeProgress = null;
+    mergePercentage = 0;
+
+    try {
+      console.log("[Settings] Starting cover merge...");
+      const result = await mergeDuplicateCovers();
+
+      console.log("[Settings] Merge result:", result);
+
+      // Reset progress
+      mergeProgress = null;
+      mergePercentage = 0;
+
+      if (result.covers_merged === 0 && result.errors.length === 0) {
+        mergeSuccess = true;
+        mergeMessage = `✓ No duplicate covers found. All album covers are unique.`;
+      } else if (result.errors.length === 0) {
+        mergeSuccess = true;
+        const spaceSavedMB = (result.space_saved_bytes / (1024 * 1024)).toFixed(2);
+        mergeMessage = `✓ Successfully merged ${result.covers_merged} duplicate covers across ${result.albums_processed} albums. Saved ${spaceSavedMB} MB of disk space.`;
+
+        // Reload library to refresh cover references
+        console.log("[Settings] Reloading library...");
+        await loadLibrary();
+        console.log("[Settings] Library reloaded");
+      } else {
+        mergeSuccess = false;
+        const spaceSavedMB = (result.space_saved_bytes / (1024 * 1024)).toFixed(2);
+        mergeMessage = `⚠ Merged ${result.covers_merged} covers (saved ${spaceSavedMB} MB) with ${result.errors.length} errors. Check console.`;
+        console.error("[Settings] Merge errors:", result.errors);
+      }
+    } catch (error) {
+      mergeSuccess = false;
+      mergeMessage = `✗ Failed to merge covers: ${error}`;
+      console.error("[Settings] Merge failed:", error);
+      mergeProgress = null;
+      mergePercentage = 0;
+    } finally {
+      isMergingCovers = false;
+
+      // Clear message after 8 seconds
+      setTimeout(() => {
+        mergeMessage = "";
+      }, 8000);
+    }
+  }
+
+  function formatTime(ms: number): string {
+    if (!ms || ms === 0) return '';
+    
+    const seconds = Math.floor(ms / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}m ${remainingSeconds}s`;
+  }
+
+  function formatBytes(bytes: number): string {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   }
 </script>
 
@@ -394,7 +535,8 @@
       <!-- Cover Management -->
       <section class="settings-section">
         <h3 class="section-title">Cover Management</h3>
-
+      
+        <!-- Sync Cover Files -->
         <div class="setting-item">
           <div class="danger-item">
             <div class="danger-info">
@@ -417,6 +559,40 @@
               {/if}
             </button>
           </div>
+          
+          <!-- Sync Progress Bar -->
+          {#if isSyncingCovers && syncProgress}
+            <div class="progress-container">
+              <div class="progress-header">
+                <div class="progress-info">
+                  <span class="progress-text">
+                    {syncProgress.current.toLocaleString()} of {syncProgress.total.toLocaleString()} items
+                  </span>
+                  {#if syncProgress.estimated_time_remaining_ms}
+                    <span class="progress-separator">·</span>
+                    <span class="progress-eta">
+                      {formatTime(syncProgress.estimated_time_remaining_ms)} remaining
+                    </span>
+                  {/if}
+                </div>
+                <div class="progress-percentage">{syncPercentage}%</div>
+              </div>
+              <div class="progress-bar-container">
+                <div class="progress-bar-fill" style="width: {syncPercentage}%"></div>
+              </div>
+              <div class="progress-stats">
+                <span class="stat-item">
+                  <span class="stat-label">Tracks:</span>
+                  <span class="stat-value">{syncProgress.tracks_migrated}</span>
+                </span>
+                <span class="stat-item">
+                  <span class="stat-label">Albums:</span>
+                  <span class="stat-value">{syncProgress.albums_migrated}</span>
+                </span>
+              </div>
+            </div>
+          {/if}
+
           {#if syncMessage}
             <p
               class="sync-message"
@@ -424,6 +600,72 @@
               class:error={!syncSuccess}
             >
               {syncMessage}
+            </p>
+          {/if}
+        </div>
+      
+        <!-- Merge Duplicate Covers -->
+        <div class="setting-item">
+          <div class="danger-item">
+            <div class="danger-info">
+              <span class="setting-label">Merge Duplicate Covers</span>
+              <p class="setting-hint">
+                Find and merge identical album covers to save disk space and improve performance
+              </p>
+            </div>
+            <button
+              class="selector-btn"
+              on:click={handleMergeDuplicateCovers}
+              disabled={isMergingCovers}
+            >
+              {#if isMergingCovers}
+                Merging...
+              {:else}
+                Merge Duplicates
+              {/if}
+            </button>
+          </div>
+          
+          <!-- Merge Progress Bar -->
+          {#if isMergingCovers && mergeProgress}
+            <div class="progress-container">
+              <div class="progress-header">
+                <div class="progress-info">
+                  <span class="progress-text">
+                    {mergeProgress.current_album.toLocaleString()} of {mergeProgress.total_albums.toLocaleString()} albums
+                  </span>
+                  {#if mergeProgress.estimated_time_remaining_ms}
+                    <span class="progress-separator">·</span>
+                    <span class="progress-eta">
+                      {formatTime(mergeProgress.estimated_time_remaining_ms)} remaining
+                    </span>
+                  {/if}
+                </div>
+                <div class="progress-percentage">{mergePercentage}%</div>
+              </div>
+              <div class="progress-bar-container">
+                <div class="progress-bar-fill" style="width: {mergePercentage}%"></div>
+              </div>
+              <div class="progress-stats">
+                <span class="stat-item">
+                  <span class="stat-label">Covers Merged:</span>
+                  <span class="stat-value">{mergeProgress.covers_merged}</span>
+                </span>
+                <span class="stat-item">
+                  <span class="stat-label">Space Saved:</span>
+                  <span class="stat-value">{formatBytes(mergeProgress.space_saved_bytes)}</span>
+                </span>
+              </div>
+            </div>
+          {/if}
+
+          {#if mergeMessage}
+            <p
+              class="sync-message"
+              class:success={mergeSuccess}
+              class:error={!mergeSuccess}
+            >
+              {mergeMessage}
             </p>
           {/if}
         </div>
@@ -1448,5 +1690,88 @@
     background-color: rgba(220, 53, 69, 0.1);
     color: #dc3545;
     border: 1px solid rgba(220, 53, 69, 0.3);
+  }
+
+  /* Progress Bar Styles */
+  .progress-container {
+    margin-top: var(--spacing-md);
+    padding: var(--spacing-md);
+    background-color: var(--bg-base);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+  }
+
+  .progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .progress-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
+
+  .progress-text {
+    font-weight: 500;
+    color: var(--text-primary);
+  }
+
+  .progress-separator {
+    color: var(--text-subdued);
+  }
+
+  .progress-eta {
+    color: var(--accent-primary);
+    font-weight: 500;
+  }
+
+  .progress-percentage {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--accent-primary);
+  }
+
+  .progress-bar-container {
+    height: 6px;
+    background-color: var(--bg-surface);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(
+      90deg,
+      var(--accent-primary),
+      var(--accent-light, #1ed760)
+    );
+    transition: width 0.3s ease;
+    border-radius: 3px;
+  }
+
+  .progress-stats {
+    display: flex;
+    gap: var(--spacing-lg);
+    font-size: 0.75rem;
+  }
+
+  .stat-item {
+    display: flex;
+    gap: 4px;
+  }
+
+  .stat-label {
+    color: var(--text-subdued);
+  }
+
+  .stat-value {
+    color: var(--text-primary);
+    font-weight: 600;
   }
 </style>

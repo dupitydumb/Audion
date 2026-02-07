@@ -62,6 +62,7 @@ pub fn run() {
             commands::rescan_music,
             commands::get_library,
             commands::get_tracks_paginated,
+            commands::get_albums_paginated,
             commands::search_library,
             commands::get_tracks_by_album,
             commands::get_tracks_by_artist,
@@ -81,6 +82,7 @@ pub fn run() {
             commands::covers::preload_covers,
             commands::covers::cleanup_orphaned_cover_files,
             commands::covers::clear_base64_covers,
+            commands::covers::merge_duplicate_covers,
             // Playlist commands
             commands::create_playlist,
             commands::get_playlists,

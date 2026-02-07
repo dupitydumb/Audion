@@ -63,6 +63,11 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
             last_scanned TEXT DEFAULT CURRENT_TIMESTAMP
         );
 
+        -- Composite index
+        -- This single index covers: ORDER BY artist, album, track_number, title
+        CREATE INDEX IF NOT EXISTS idx_tracks_sort ON tracks(artist, album, track_number, title);
+        
+
         -- Create indexes for faster queries (except content_hash which needs migration first)
         CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
         CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);

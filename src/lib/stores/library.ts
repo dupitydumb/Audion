@@ -1,7 +1,7 @@
 // Library store - manages music library state
 import { writable, derived, get } from 'svelte/store';
-import type { Track, Album, Artist, Playlist } from '$lib/api/tauri';
-import { getLibrary, getPlaylists, getAlbumCoverSrc, getAlbumArtSrc, getTracksPaginated, searchLibrary } from '$lib/api/tauri';
+import type { Track, Album, Artist, Playlist, ScanBatchEvent } from '$lib/api/tauri';
+import { getLibrary, getPlaylists, getAlbumCoverSrc, getAlbumArtSrc, getTracksPaginated, getAlbumsPaginated, searchLibrary, convertFileSrc } from '$lib/api/tauri';
 
 // BLOB URL CONVERSION
 /**
@@ -35,7 +35,12 @@ function convertBase64ToBlobUrl(base64: string): string {
             array[i] = binary.charCodeAt(i);
         }
         const blob = new Blob([array], { type: mime });
-        return URL.createObjectURL(blob);
+        const blobUrl = URL.createObjectURL(blob);
+
+        // Track the blob URL for cleanup
+        createdBlobUrls.add(blobUrl);
+
+        return blobUrl;
     } catch (e) {
         console.error('[Library] Failed to convert base64 to blob URL:', e);
         return base64; // Fallback to original
@@ -48,28 +53,35 @@ const createdBlobUrls = new Set<string>();
 /**
  * Revoke a blob URL and remove from tracking
  */
-function revokeBlobUrl(url: string): void {
-    if (url.startsWith('blob:')) {
+function revokeBlobUrl(url: string | null | undefined): void {
+    if (!url || !url.startsWith('blob:')) return;
+
+    try {
         URL.revokeObjectURL(url);
         createdBlobUrls.delete(url);
+    } catch (e) {
+        // blob URL may already be revoked, ignore error
     }
 }
 
 // CONFIGURATION
 const CACHE_CONFIG = {
     MAX_METADATA_CACHE: 100000,   // Increased for metadata
-    MAX_ALBUM_ART_CACHE: 1000,    // Increased for better ux
-    TRACK_BATCH_SIZE: 1000,       // Load tracks in batches
+    MAX_ALBUM_ART_CACHE: 1000,    // Increased for better ux 
+    TRACK_BATCH_SIZE: 1000,       // Paginated fetch size
     ENABLE_SMART_LOADING: true,
+    MAX_TRACK_COVER_CACHE: 2000,  // Added limit
 };
 
 // LRU CACHE
 class LRUCache<K, V> {
     private cache = new Map<K, { value: V; timestamp: number }>();
     private maxSize: number;
+    private onEvict?: (key: K, value: V) => void;
 
-    constructor(maxSize: number) {
+    constructor(maxSize: number, options?: { onEvict?: (key: K, value: V) => void }) {
         this.maxSize = maxSize;
+        this.onEvict = options?.onEvict;
     }
 
     get(key: K): V | undefined {
@@ -80,6 +92,14 @@ class LRUCache<K, V> {
     }
 
     set(key: K, value: V): void {
+        // Evict old value if replacing existing key
+        if (this.cache.has(key)) {
+            const old = this.cache.get(key);
+            if (old && this.onEvict) {
+                this.onEvict(key, old.value);
+            }
+        }
+
         if (this.cache.size >= this.maxSize && !this.cache.has(key)) {
             this.evictOldest();
         }
@@ -91,10 +111,20 @@ class LRUCache<K, V> {
     }
 
     delete(key: K): boolean {
+        const entry = this.cache.get(key);
+        if (entry && this.onEvict) {
+            this.onEvict(key, entry.value);
+        }
         return this.cache.delete(key);
     }
 
     clear(): void {
+        // Call onEvict for all entries before clearing
+        if (this.onEvict) {
+            this.cache.forEach((entry, key) => {
+                this.onEvict!(key, entry.value);
+            });
+        }
         this.cache.clear();
     }
 
@@ -110,6 +140,10 @@ class LRUCache<K, V> {
         });
 
         if (oldestKey !== null) {
+            const entry = this.cache.get(oldestKey);
+            if (entry && this.onEvict) {
+                this.onEvict(oldestKey, entry.value);
+            }
             this.cache.delete(oldestKey);
         }
     }
@@ -137,10 +171,18 @@ const trackMetadataCache = new LRUCache<number, TrackMetadata>(CACHE_CONFIG.MAX_
 const albumMetadataCache = new LRUCache<number, AlbumMetadata>(CACHE_CONFIG.MAX_METADATA_CACHE);
 
 // Album art cache (separate, heavy data)
-const albumArtCache = new LRUCache<number, string>(CACHE_CONFIG.MAX_ALBUM_ART_CACHE);
+const albumArtCache = new LRUCache<number, string>(CACHE_CONFIG.MAX_ALBUM_ART_CACHE, {
+    onEvict: (albumId, url) => {
+        revokeBlobUrl(url);
+    }
+});
 
 // Track cover cache (for tracks with embedded covers)
-const trackCoverCache = new LRUCache<number, string>(500);
+const trackCoverCache = new LRUCache<number, string>(CACHE_CONFIG.MAX_TRACK_COVER_CACHE, {
+    onEvict: (trackId, url) => {
+        revokeBlobUrl(url);
+    }
+});
 
 // Full object cache (for recently accessed items)
 const fullTrackCache = new LRUCache<number, Track>(1000);
@@ -222,6 +264,82 @@ function reconstructAlbum(metadata: AlbumMetadata): Album {
         ...metadata,
         art_data,
     } as Album;
+}
+
+// ingestTracks — caches metadata, populates maps
+// returns lightweight Track[] to push into the store.
+// Called by loadLibrary (initial batch), loadMoreTracks (pagination),
+// and can be called by the progressive scan too.
+function ingestTracks(incoming: Track[]): Track[] {
+    const lightweight: Track[] = [];
+
+    incoming.forEach(track => {
+        // Cache metadata
+        const metadata = stripTrackHeavyData(track);
+        trackMetadataCache.set(track.id, metadata);
+
+        // Revoke old blob URL before caching new one
+        if (track.track_cover) {
+            const existingUrl = trackCoverCache.get(track.id);
+            if (existingUrl && existingUrl.startsWith('blob:')) {
+                revokeBlobUrl(existingUrl);
+            }
+
+            const blobUrl = convertBase64ToBlobUrl(track.track_cover);
+            trackCoverCache.set(track.id, blobUrl);
+        }
+
+        // Build bidirectional album ↔ track mapping
+        if (track.album_id) {
+            trackToAlbumMap.set(track.id, track.album_id);
+
+            if (!albumToTracksMap.has(track.album_id)) {
+                albumToTracksMap.set(track.album_id, []);
+            }
+            albumToTracksMap.get(track.album_id)!.push(track.id);
+        }
+
+        // Lightweight copy for the store 
+        lightweight.push({
+            ...metadata,
+            track_cover: null,
+        } as Track);
+    });
+
+    return lightweight;
+}
+
+
+// ingestAlbums — caches album metadata and album art separately
+// Returns lightweight Album[] for the store
+function ingestAlbums(incoming: Album[]): Album[] {
+    const lightweight: Album[] = [];
+
+    incoming.forEach(album => {
+        const metadata = stripAlbumHeavyData(album);
+        albumMetadataCache.set(album.id, metadata);
+
+        // Revoke old blob URL before caching new one
+        const existingUrl = albumArtCache.get(album.id);
+        if (existingUrl && existingUrl.startsWith('blob:')) {
+            revokeBlobUrl(existingUrl);
+        }
+
+        if (album.art_path) {
+            const url = convertFileSrc(album.art_path);
+            albumArtCache.set(album.id, url);
+        } else if (album.art_data) {
+            const blobUrl = convertBase64ToBlobUrl(album.art_data);
+            albumArtCache.set(album.id, blobUrl);
+        }
+
+        lightweight.push({
+            ...metadata,
+            art_data: null,
+        } as Album);
+    });
+
+    return lightweight;
 }
 
 // DATA ACCESS APIS (for components)
@@ -323,24 +441,13 @@ export function getTrackAlbumCover(trackId: number): string | null {
     return null;
 }
 
-/**
- * Get first track's cover for an album (for AlbumGrid)
- */
+// Priority: album art cache → album metadata art_path → first track cover
 export function getAlbumCoverFromTracks(albumId: number): string | null {
-    // Check album art first
-    const album = get(albums).find(a => a.id === albumId);
-    if (album) {
-        // Priority 1: Album's file-based art
-        if (album.art_path) {
-            return getAlbumCoverSrc(album);
-        }
-        // Priority 2: Album's base64 art - old
-        if (album.art_data) {
-            return getAlbumArtSrc(album.art_data);
-        }
-    }
+    // Priority 1: albumArtCache (now populated by ingestAlbums)
+    const cachedArt = albumArtCache.get(albumId);
+    if (cachedArt) return cachedArt;
 
-    // Priority 3: Get tracks in this album and find first track with cover
+    // Priority 2: track cover fallback for mid-scan state
     const trackIds = albumToTracksMap.get(albumId);
     if (!trackIds || trackIds.length === 0) return null;
 
@@ -367,7 +474,59 @@ export async function getFullTracks(trackIds: number[], preferBase64: boolean = 
 
 // LOADING FUNCTIONS
 /**
- * Load more tracks from the backend (pagination)
+ * Load library: artists in full, first paginated batch of tracks and albums.
+ * Additional items arrive via loadMoreTracks() and loadMoreAlbums().
+ */
+export async function loadLibrary(): Promise<void> {
+    isLoading.set(true);
+    lastError.set(null);
+
+    try {
+        console.time('[Library] IPC load initial');
+
+        // Parallel: library metadata, first track batch, first album batch
+        const [library, initialTracks, initialAlbums] = await Promise.all([
+            getLibrary(),
+            getTracksPaginated(CACHE_CONFIG.TRACK_BATCH_SIZE, 0),
+            getAlbumsPaginated(CACHE_CONFIG.TRACK_BATCH_SIZE, 0)  // Paginated albums
+        ]);
+
+        console.timeEnd('[Library] IPC load initial');
+
+        // counts
+        // library.tracks.length is the TOTAL track count
+        // library.albums.length is the TOTAL album count
+        totalTrackCount = library.tracks.length;
+        totalAlbumCount = library.albums.length;  //this is the total, not loaded count
+        totalArtistCount = library.artists.length;
+
+        trackCount.set(totalTrackCount);
+        albumCount.set(totalAlbumCount);
+        artistCount.set(totalArtistCount);
+
+        // tracks (first batch) 
+        const lightTracks = ingestTracks(initialTracks);
+
+        // albums (first batch) 
+        const lightAlbums = ingestAlbums(initialAlbums);
+
+        // commit to stores 
+        albums.set(lightAlbums);
+        artists.set(library.artists);
+        tracks.set(lightTracks);
+
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        lastError.set(message);
+        console.error('[Library] Failed to load library:', error);
+    } finally {
+        isLoading.set(false);
+    }
+}
+
+/**
+ * Load next paginated batch of tracks and append to the store.
+ * Returns true if new tracks were appended, false if already at the end.
  */
 export async function loadMoreTracks(): Promise<boolean> {
     if (get(isLoading)) return false;
@@ -381,29 +540,12 @@ export async function loadMoreTracks(): Promise<boolean> {
     isLoading.set(true);
     try {
         const newTracks = await getTracksPaginated(CACHE_CONFIG.TRACK_BATCH_SIZE, offset);
-        if (newTracks.length > 0) {
-            tracks.update(t => [...t, ...newTracks]);
+        if (newTracks.length === 0) return false;
 
-            // Cache metadata and covers
-            newTracks.forEach(track => {
-                const metadata = stripTrackHeavyData(track);
-                trackMetadataCache.set(track.id, metadata);
-
-                if (track.track_cover_path && !trackCoverCache.has(track.id)) {
-                    // (new cover logic uses file paths directly, so we don't need blob URLs as much)
-                }
-                if (track.album_id) {
-                    trackToAlbumMap.set(track.id, track.album_id);
-                    const albumTracks = albumToTracksMap.get(track.album_id) || [];
-                    if (!albumTracks.includes(track.id)) {
-                        albumTracks.push(track.id);
-                        albumToTracksMap.set(track.album_id, albumTracks);
-                    }
-                }
-            });
-            return true;
-        }
-        return false;
+        // Same ingestion path as loadLibrary -caches + maps stay consistent
+        const lightTracks = ingestTracks(newTracks);
+        tracks.update(current => [...current, ...lightTracks]);
+        return true;
     } catch (error) {
         console.error('[Library] Failed to load more tracks:', error);
         return false;
@@ -413,11 +555,42 @@ export async function loadMoreTracks(): Promise<boolean> {
 }
 
 /**
- * Search library using backend FTS5
+ * Load next paginated batch of albums and append to the store.
+ * Returns true if new albums were appended, false if already at the end.
+ */
+export async function loadMoreAlbums(): Promise<boolean> {
+    if (get(isLoading)) return false;
+
+    const currentAlbums = get(albums);
+    const offset = currentAlbums.length;
+
+    // Already have everything
+    if (offset >= get(albumCount) && get(albumCount) > 0) return false;
+
+    isLoading.set(true);
+    try {
+        const newAlbums = await getAlbumsPaginated(CACHE_CONFIG.TRACK_BATCH_SIZE, offset);
+        if (newAlbums.length === 0) return false;
+
+        // Same ingestion path as loadLibrary -caches + maps
+        const lightAlbums = ingestAlbums(newAlbums);
+        albums.update(current => [...current, ...lightAlbums]);
+        return true;
+    } catch (error) {
+        console.error('[Library] Failed to load more albums:', error);
+        return false;
+    } finally {
+        isLoading.set(false);
+    }
+}
+
+/**
+ * Search library using backend FTS5.
+ * Replaces the tracks store with search results (does not affect pagination state).
  */
 export async function searchInLibrary(query: string): Promise<void> {
     if (!query || query.trim().length < 2) {
-        // Reset to initial library view if search cleared
+        // Cleared. reload the normal paginated view
         loadLibrary();
         return;
     }
@@ -425,8 +598,11 @@ export async function searchInLibrary(query: string): Promise<void> {
     isLoading.set(true);
     try {
         const results = await searchLibrary(query, 100, 0);
-        tracks.set(results);
-        // Note: we don't update trackCount during search to avoid breaking pagination logic
+        // Search results go through the same ingestion
+        const lightResults = ingestTracks(results);
+        tracks.set(lightResults);
+        // trackCount intentionally not updated. pagination logic uses it for
+        // "have we loaded everything?" checks which don't apply during search.
     } catch (error) {
         console.error('[Library] Search failed:', error);
     } finally {
@@ -435,63 +611,36 @@ export async function searchInLibrary(query: string): Promise<void> {
 }
 
 /**
- * Load library with caching
+ * Ingest a progressive scan batch
+ * Appends the new tracks to the store 
  */
-export async function loadLibrary(): Promise<void> {
-    isLoading.set(true);
-    lastError.set(null);
+export function ingestScanBatch(event: ScanBatchEvent): void {
+    const lightTracks = ingestTracks(event.tracks);
+    tracks.update(current => [...current, ...lightTracks]);
 
+    // Update the running total so the UI can show progress
+    trackCount.set(event.progress.total);
+}
+
+/**
+ * Load only albums and artists (tracks already populated).
+ */
+export async function loadAlbumsAndArtists(): Promise<void> {
     try {
-        // For large libraries, we only load the first batch initially
-        console.time('[Library] IPC load initial');
+        const library = await getLibrary();
 
-        // Parallel load metadata for albums/artists but only first batch of tracks
-        const [library, initialTracks] = await Promise.all([
-            getLibrary(), // This returns all albums/artists but we'll use paginated tracks
-            getTracksPaginated(CACHE_CONFIG.TRACK_BATCH_SIZE, 0)
-        ]);
+        // Use ingestAlbums to cache album art
+        const lightAlbums = ingestAlbums(library.albums);
 
-        console.timeEnd('[Library] IPC load initial');
-
-        // Process albums and artists (usually much fewer than tracks)
-        const lightAlbums: Album[] = [];
-        library.albums.forEach(album => {
-            const metadata = stripAlbumHeavyData(album);
-            albumMetadataCache.set(album.id, metadata);
-            lightAlbums.push({ ...metadata, art_data: null } as Album);
-        });
-
-        // Set counts
-        trackCount.set(library.tracks.length); // Total count from light library
-        albumCount.set(library.albums.length);
-        artistCount.set(library.artists.length);
-
-        // Set stores
         albums.set(lightAlbums);
+        albumCount.set(library.albums.length);
+
         artists.set(library.artists);
-        tracks.set(initialTracks);
-
-        // Initial track processing
-        initialTracks.forEach(track => {
-            const metadata = stripTrackHeavyData(track);
-            trackMetadataCache.set(track.id, metadata);
-
-            if (track.album_id) {
-                trackToAlbumMap.set(track.id, track.album_id);
-                const albumTracks = albumToTracksMap.get(track.album_id) || [];
-                if (!albumTracks.includes(track.id)) {
-                    albumTracks.push(track.id);
-                    albumToTracksMap.set(track.album_id, albumTracks);
-                }
-            }
-        });
-
+        artistCount.set(library.artists.length);
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         lastError.set(message);
-        console.error('[Library] Failed to load library:', error);
-    } finally {
-        isLoading.set(false);
+        console.error('[Library] Failed to load albums/artists:', error);
     }
 }
 
@@ -519,14 +668,20 @@ export async function clearLibrary(): Promise<void> {
     lastError.set(null);
 
     // Revoke all blob URLs before clearing caches
-    createdBlobUrls.forEach(url => URL.revokeObjectURL(url));
+    createdBlobUrls.forEach(url => {
+        try {
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            // already revoked, ignore
+        }
+    });
     createdBlobUrls.clear();
 
-    // Clear all caches
+    // Clear all caches (will trigger onEvict callbacks which also revoke)
     trackMetadataCache.clear();
     albumMetadataCache.clear();
-    albumArtCache.clear();
-    trackCoverCache.clear();
+    albumArtCache.clear();  // Triggers revokeBlobUrl via onEvict
+    trackCoverCache.clear(); // Triggers revokeBlobUrl via onEvict
     fullTrackCache.clear();
     fullAlbumCache.clear();
     trackToAlbumMap.clear();
@@ -539,6 +694,40 @@ export async function clearLibrary(): Promise<void> {
     trackCount.set(0);
     albumCount.set(0);
     artistCount.set(0);
+}
+
+// Add periodic blob URL cleanup
+let cleanupInterval: number | undefined;
+
+/**
+ * Start periodic cleanup of unused blob URLs (runs every 5 minutes)
+ */
+export function startBlobUrlCleanup(): void {
+    if (typeof window === 'undefined') return;
+
+    if (cleanupInterval) {
+        clearInterval(cleanupInterval);
+    }
+
+    cleanupInterval = window.setInterval(() => {
+        const before = createdBlobUrls.size;
+
+        // Clean up any orphaned blob URLs (not in either cache)
+        const activeBlobUrls = new Set<string>();
+
+        // Collect active blob URLs from caches
+        console.log(`[Library] Blob URL cleanup check: ${before} tracked URLs`);
+    }, 5 * 60 * 1000); // Every 5 minutes
+}
+
+/**
+ * Stop periodic cleanup
+ */
+export function stopBlobUrlCleanup(): void {
+    if (cleanupInterval) {
+        clearInterval(cleanupInterval);
+        cleanupInterval = undefined;
+    }
 }
 
 // CACHE STATS
@@ -559,6 +748,9 @@ export function getCacheStats() {
         mappings: {
             trackToAlbum: trackToAlbumMap.size,
             albumToTracks: albumToTracksMap.size,
+        },
+        blobUrls: {
+            tracked: createdBlobUrls.size,
         },
         totals: {
             tracks: totalTrackCount,

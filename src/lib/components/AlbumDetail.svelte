@@ -129,8 +129,12 @@
     }
 
     function handlePlayAll() {
-        if (tracks.length > 0) {
-            playTracks(tracks, 0);
+        if (tracks.length > 0 && album) {
+            playTracks(tracks, 0, {
+                type: 'album',
+                albumId: album.id,
+                displayName: album.name
+            });
         }
     }
 
@@ -293,7 +297,12 @@
         </header>
 
         <section class="track-list-section">
-            <TrackList {tracks} {isTidalAvailable} showAlbum={false} />
+            <TrackList 
+                {tracks} 
+                {isTidalAvailable} 
+                showAlbum={false}
+                playbackContext={{ type: 'album', albumId, displayName: album?.name }}
+            />
         </section>
     {:else}
         <div class="not-found">

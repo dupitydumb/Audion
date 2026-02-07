@@ -47,3 +47,12 @@ futures = "0.3"
 # Error handling
 thiserror = "1"
 tokio = { version = "1.49.0", features = ["full"] }
+
+# Hash Compare
+sha2 = "0.10"
+
+# Parallel processing
+rayon = "1.10" 
+
+ # Thread-safe channels
+crossbeam = "0.8"   

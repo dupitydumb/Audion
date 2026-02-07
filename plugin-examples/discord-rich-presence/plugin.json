@@ -1,13 +1,15 @@
 {
     "name": "Discord Rich Presence",
     "safe_name": "discord-rich-presence",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "author": "Manga-Knights",
     "description": "Show what you're listening to on Discord",
     "type": "js",
     "entry": "index.js",
     "permissions": [
-        "player:read"
+        "player:read",
+        "ui:inject",
+        "storage:local"
     ],
     "cross_plugin_access": [
         {

@@ -3,6 +3,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use rusqlite::{Connection, Result};
 use std::fs;
 use std::path::PathBuf;
+use std::collections::HashSet;
 
 /// Image format detection
 #[derive(Debug, Clone, Copy)]
@@ -218,7 +219,40 @@ pub fn delete_album_art_file(art_path: Option<&str>) -> Result<(), String> {
 pub fn cleanup_orphaned_covers(conn: &Connection) -> Result<usize, String> {
     let mut deleted_count = 0;
     
-    // Clean up track covers
+    // 1: Load all valid IDs from database
+    
+    // Get all track IDs at once
+    let track_ids: HashSet<i64> = {
+        let mut stmt = conn
+            .prepare("SELECT id FROM tracks")
+            .map_err(|e| format!("Failed to prepare track IDs query: {}", e))?;
+        
+        let ids = stmt
+            .query_map([], |row| row.get(0))
+            .map_err(|e| format!("Failed to query track IDs: {}", e))?
+            .collect::<std::result::Result<HashSet<i64>, _>>()
+            .map_err(|e| format!("Failed to collect track IDs: {}", e))?;
+        
+        ids
+    };
+    
+    // Get all album IDs at once
+    let album_ids: HashSet<i64> = {
+        let mut stmt = conn
+            .prepare("SELECT id FROM albums")
+            .map_err(|e| format!("Failed to prepare album IDs query: {}", e))?;
+        
+        let ids = stmt
+            .query_map([], |row| row.get(0))
+            .map_err(|e| format!("Failed to query album IDs: {}", e))?
+            .collect::<std::result::Result<HashSet<i64>, _>>()
+            .map_err(|e| format!("Failed to collect album IDs: {}", e))?;
+        
+        ids
+    };
+    
+    // 2: Clean up track covers
+
     let tracks_dir = get_tracks_covers_directory()?;
     if tracks_dir.exists() {
         for entry in fs::read_dir(&tracks_dir)
@@ -231,18 +265,12 @@ pub fn cleanup_orphaned_covers(conn: &Connection) -> Result<usize, String> {
                 // Extract track_id from filename (e.g., "123.jpg" -> 123)
                 if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                     if let Ok(track_id) = stem.parse::<i64>() {
-                        // Check if track exists in database
-                        let exists: bool = conn
-                            .query_row(
-                                "SELECT COUNT(*) > 0 FROM tracks WHERE id = ?1",
-                                [track_id],
-                                |row| row.get(0),
-                            )
-                            .unwrap_or(false);
-                        
-                        if !exists {
+                        // Check against in-memory HashSet
+                        if !track_ids.contains(&track_id) {
                             // Track doesn't exist, delete the cover file
-                            if fs::remove_file(&path).is_ok() {
+                            if let Err(e) = fs::remove_file(&path) {
+                                eprintln!("Failed to delete orphaned track cover {:?}: {}", path, e);
+                            } else {
                                 deleted_count += 1;
                             }
                         }
@@ -252,7 +280,8 @@ pub fn cleanup_orphaned_covers(conn: &Connection) -> Result<usize, String> {
         }
     }
     
-    // Clean up album art
+    // 3: Clean up album art
+    
     let albums_dir = get_albums_covers_directory()?;
     if albums_dir.exists() {
         for entry in fs::read_dir(&albums_dir)
@@ -262,21 +291,15 @@ pub fn cleanup_orphaned_covers(conn: &Connection) -> Result<usize, String> {
             let path = entry.path();
             
             if path.is_file() {
-                // Extract album_id from filename
+                // Extract album_id from filename (e.g., "456.jpg" -> 456)
                 if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                     if let Ok(album_id) = stem.parse::<i64>() {
-                        // Check if album exists in database
-                        let exists: bool = conn
-                            .query_row(
-                                "SELECT COUNT(*) > 0 FROM albums WHERE id = ?1",
-                                [album_id],
-                                |row| row.get(0),
-                            )
-                            .unwrap_or(false);
-                        
-                        if !exists {
+                        // Check against in-memory HashSet
+                        if !album_ids.contains(&album_id) {
                             // Album doesn't exist, delete the art file
-                            if fs::remove_file(&path).is_ok() {
+                            if let Err(e) = fs::remove_file(&path) {
+                                eprintln!("Failed to delete orphaned album art {:?}: {}", path, e);
+                            } else {
                                 deleted_count += 1;
                             }
                         }

@@ -903,6 +903,30 @@ export class PluginRuntime {
       }
     };
 
+    // Request API - allows inter-plugin communication
+    api.request = async <T = any>(requestName: string, data: any): Promise<T> => {
+      try {
+        // Check if a handler is registered for this request
+        if (!pluginEvents.hasRequestHandler(requestName)) {
+          throw new Error(`No handler registered for request: ${requestName}`);
+        }
+
+        console.log(`[PluginRuntime:${pluginName}] Making request: ${requestName}`);
+        return await pluginEvents.request<T>(requestName, data);
+      } catch (error) {
+        console.error(`[PluginRuntime:${pluginName}] Request '${requestName}' failed:`, error);
+        throw error;
+      }
+    };
+
+    // Allow plugins to handle requests from other plugins
+    // Plugins register handlers that other plugins can call via api.request()
+    api.handleRequest = (requestName: string, handler: (data: any) => Promise<any>) => {
+      pluginEvents.handleRequest(requestName, handler);
+      console.log(`[PluginRuntime:${pluginName}] Registered handler for request: '${requestName}'`);
+    };
+
+
     return api;
   }
 

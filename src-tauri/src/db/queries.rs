@@ -68,7 +68,7 @@ pub struct TrackInsert {
 }
 
 // Track operations
-pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<i64> {
+pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<(i64, bool)> {
     // Check if a track with the same content_hash already exists (skip duplicates)
     if let Some(ref hash) = track.content_hash {
         let existing: Option<i64> = conn
@@ -81,9 +81,18 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
 
         if existing.is_some() {
             // Duplicate detected - skip this track
-            return Ok(0);
+            return Ok((0, false));  // Return tuple
         }
     }
+
+    // Check if track already exists by path
+    let existing_id: Option<i64> = conn
+        .query_row(
+            "SELECT id FROM tracks WHERE path = ?1",
+            params![track.path],
+            |row| row.get(0),
+        )
+        .ok();
 
     // First, handle album if present
     let album_id = if let Some(album_name) = &track.album {
@@ -98,42 +107,68 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
         None
     };
 
-    conn.execute(
-        "INSERT INTO tracks (path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, content_hash, local_src)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
-         ON CONFLICT(path) DO UPDATE SET
-            title = excluded.title,
-            artist = excluded.artist,
-            album = excluded.album,
-            track_number = excluded.track_number,
-            duration = excluded.duration,
-            album_id = excluded.album_id,
-            format = excluded.format,
-            bitrate = excluded.bitrate,
-            source_type = excluded.source_type,
-            cover_url = excluded.cover_url,
-            external_id = excluded.external_id,
-            content_hash = excluded.content_hash,
-            local_src = excluded.local_src",
-        params![
-            track.path,
-            track.title,
-            track.artist,
-            track.album,
-            track.track_number,
-            track.duration,
-            album_id,
-            track.format,
-            track.bitrate,
-            track.source_type,
-            track.cover_url,
-            track.external_id,
-            track.content_hash,
-            track.local_src,
-        ],
-    )?;
+    if let Some(track_id) = existing_id {
+        // update existing track
+        conn.execute(
+            "UPDATE tracks SET
+                title = ?1,
+                artist = ?2,
+                album = ?3,
+                track_number = ?4,
+                duration = ?5,
+                album_id = ?6,
+                format = ?7,
+                bitrate = ?8,
+                source_type = ?9,
+                cover_url = ?10,
+                external_id = ?11,
+                content_hash = ?12,
+                local_src = ?13
+             WHERE id = ?14",
+            params![
+                track.title,
+                track.artist,
+                track.album,
+                track.track_number,
+                track.duration,
+                album_id,
+                track.format,
+                track.bitrate,
+                track.source_type,
+                track.cover_url,
+                track.external_id,
+                track.content_hash,
+                track.local_src,
+                track_id,  // Use existing ID
+            ],
+        )?;
+        
+        Ok((track_id, false))  // Return (existing_id, was_new = false)
+    } else {
+        // insert new track
+        conn.execute(
+            "INSERT INTO tracks (path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, content_hash, local_src)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+            params![
+                track.path,
+                track.title,
+                track.artist,
+                track.album,
+                track.track_number,
+                track.duration,
+                album_id,
+                track.format,
+                track.bitrate,
+                track.source_type,
+                track.cover_url,
+                track.external_id,
+                track.content_hash,
+                track.local_src,
+            ],
+        )?;
 
-    Ok(conn.last_insert_rowid())
+        Ok((conn.last_insert_rowid(), true))  // Return (new_id, was_new = true)
+    }
 }
 
 /// Delete a track from the database by ID
@@ -179,13 +214,16 @@ fn get_or_create_album(
 
 /// Delete an album and all its associated tracks
 pub fn delete_album(conn: &Connection, album_id: i64) -> Result<bool> {
-    // We execute these as separate statements to avoid issues with manual transaction blocks.
-    // SQLite will handle atomicity if not already in a transaction, or join the existing one.
-    // Parameters are used to prevent SQL injection and handle types correctly.
+    // Delete tracks first (foreign key relationship)
     conn.execute("DELETE FROM tracks WHERE album_id = ?1", params![album_id])?;
+    
+    // Then delete the album
     let deleted = conn.execute("DELETE FROM albums WHERE id = ?1", params![album_id])?;
+    
     Ok(deleted > 0)
 }
+
+// FTS5 SEARCH FUNCTIONS
 
 /// Initialize FTS5 virtual table for searching
 pub fn init_fts(conn: &Connection) -> Result<()> {
@@ -578,6 +616,40 @@ pub fn get_all_albums_with_paths(conn: &Connection) -> Result<Vec<Album>> {
     println!(
         "[DB] get_all_albums_with_paths: Fetched {} albums in {:?}",
         albums.len(),
+        total_time
+    );
+
+    Ok(albums)
+}
+
+/// Get paginated albums
+pub fn get_albums_paginated(conn: &Connection, limit: i32, offset: i32) -> Result<Vec<Album>> {
+    let query_start = Instant::now();
+
+    let mut stmt = conn.prepare(
+        "SELECT id, name, artist, art_path FROM albums 
+         ORDER BY artist, name
+         LIMIT ?1 OFFSET ?2"
+    )?;
+
+    let albums = stmt
+        .query_map(params![limit, offset], |row| {
+            Ok(Album {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                artist: row.get(2)?,
+                art_data: None,
+                art_path: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+
+    let total_time = query_start.elapsed();
+    println!(
+        "[DB] get_albums_paginated: Fetched {} albums (limit: {}, offset: {}) in {:?}",
+        albums.len(),
+        limit,
+        offset,
         total_time
     );
 

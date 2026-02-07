@@ -15,6 +15,7 @@
     currentTrack,
     isPlaying,
     addToQueue,
+    type PlaybackContext,
   } from "$lib/stores/player";
   import { contextMenu } from "$lib/stores/ui";
   import {
@@ -35,17 +36,15 @@
   import { addToast } from "$lib/stores/toast";
   import { isOnline } from "$lib/stores/network";
   import { onDestroy, onMount } from "svelte";
+  import { multiSelect } from "$lib/stores/multiselect";
 
   export let tracks: Track[] = [];
   export let title: string = "Tracks";
   export let showAlbum: boolean = true;
   export let isTidalAvailable: boolean = true;
+  export let playbackContext: PlaybackContext | undefined = undefined;
   export let playlistId: number | null = null;
-
-  console.log(
-    "[TrackList] getTrackAlbumCover function:",
-    typeof getTrackAlbumCover,
-  );
+  export let multiSelectMode: boolean = false;
 
   // Virtual scrolling configuration
   const TRACK_ROW_HEIGHT = 56; // pixels (matches min-height in CSS)
@@ -55,113 +54,64 @@
   let scrollTop = 0;
   let containerElement: HTMLDivElement;
 
-  // Calculate visible range
-  $: totalHeight = sortedTracks.length * TRACK_ROW_HEIGHT;
-  $: startIndex = Math.max(
-    0,
-    Math.floor(scrollTop / TRACK_ROW_HEIGHT) - OVERSCAN,
-  );
-  $: endIndex = Math.min(
-    sortedTracks.length,
-    Math.ceil((scrollTop + containerHeight) / TRACK_ROW_HEIGHT) + OVERSCAN,
-  );
-  $: visibleTracks = sortedTracks.slice(startIndex, endIndex);
-  $: offsetY = startIndex * TRACK_ROW_HEIGHT;
-
-  // Infinite scroll: load more when reaching the end of loaded tracks
-  $: {
-    if (endIndex >= sortedTracks.length - 10 && sortedTracks.length > 0) {
-      loadMoreTracks();
-    }
-  }
-
-  function handleScroll(e: Event) {
-    scrollTop = (e.target as HTMLElement).scrollTop;
-  }
-
-  // Measure container height on mount
-  onMount(() => {
-    if (containerElement) {
-      const updateHeight = () => {
-        containerHeight = containerElement.clientHeight;
-      };
-      updateHeight();
-
-      // Update on window resize
-      window.addEventListener("resize", updateHeight);
-      return () => window.removeEventListener("resize", updateHeight);
-    }
-  });
-
-  // Managed failed images with auto-limiting
+  // Cache structures
   let failedImages = new Set<string>();
   const MAX_FAILED_IMAGES = 200;
-
-  // Cache for album art (prevents recalculation)
   const trackAlbumArtCache = new Map<number, string | null>();
-
-  // Cache for album map (only recalculate when albums actually change)
   let albumMap = new Map<number, any>();
-  let lastAlbumsLength = 0;
 
+  // 1: Track albums by reference, not just length
+  let lastAlbumsRef = $albums;
   $: {
-    // Only rebuild albumMap if albums array actually changed
-    if ($albums.length !== lastAlbumsLength || $albums !== $albums) {
+    if ($albums !== lastAlbumsRef) {
       albumMap = new Map($albums.map((a) => [a.id, a]));
-      lastAlbumsLength = $albums.length;
-      // Clear album art cache when albums change
+      lastAlbumsRef = $albums;
       trackAlbumArtCache.clear();
     }
   }
 
-  // Cleanup on destroy
-  onDestroy(() => {
-    failedImages.clear();
-    trackAlbumArtCache.clear();
-    albumMap.clear();
+  // 2: Pre-compute playing track ID
+  $: playingTrackId = $currentTrack?.id ?? null;
 
-    if (cleanupInterval) {
-      clearInterval(cleanupInterval);
-    }
-  });
-
-  // Periodic cleanup of failed images
-  let cleanupInterval: number;
-  if (typeof window !== "undefined") {
-    cleanupInterval = window.setInterval(() => {
-      if (failedImages.size > MAX_FAILED_IMAGES) {
-        const toKeep = Array.from(failedImages).slice(-MAX_FAILED_IMAGES / 2);
-        failedImages.clear();
-        toKeep.forEach((src) => failedImages.add(src));
-        failedImages = failedImages;
-      }
-    }, 300000); // Every 5 minutes
-  }
+  // 3: Memoize availability check results
+  const availabilityCache = new Map<number, boolean>();
 
   function isTrackUnavailable(track: Track): boolean {
+    // Check cache first
+    if (availabilityCache.has(track.id)) {
+      return availabilityCache.get(track.id)!;
+    }
+
+    let unavailable = false;
+
     // Local tracks are always available
-    if (!track.source_type || track.source_type === "local") return false;
-    // Downloaded tracks are always available
-    if (track.local_src) return false;
+    if (!track.source_type || track.source_type === "local") {
+      unavailable = false;
+    } else if (track.local_src) {
+      unavailable = false;
+    } else if (!$isOnline) {
+      unavailable = true;
+    } else if (!isTidalAvailable) {
+      unavailable = true;
+    } else {
+      const runtime = pluginStore.getRuntime();
+      unavailable = !runtime || !runtime.streamResolvers.has(track.source_type);
+    }
 
-    // If offline and not downloaded/local, it's unavailable
-    if (!$isOnline) return true;
-
-    // Otherwise depends on plugin availability
-    // Also check if we have a resolver for this source type
-    if (!isTidalAvailable) return true;
-
-    const runtime = pluginStore.getRuntime();
-    if (!runtime) return true;
-    return !runtime.streamResolvers.has(track.source_type);
+    availabilityCache.set(track.id, unavailable);
+    return unavailable;
   }
 
-  // Filter out external tracks ONLY if we filter completely (old logic).
-  // New logic: show all but mark unavailable.
-  // However, the original filteredTracks logic was checking for resolver existence.
-  // We should probably keep showing them but maybe mark them?
-  // Let's modify filteredTracks to NOT filter based on resolvers,
-  // but relies on the CSS class for visual indication.
+  // Clear availability cache when dependencies change (including plugin store)
+  $: runtime = pluginStore.getRuntime();
+  $: {
+    // Watch all relevant dependencies
+    const _ = runtime;
+    if ($isOnline !== undefined || isTidalAvailable !== undefined) {
+      availabilityCache.clear();
+    }
+  }
+
   $: filteredTracks = tracks;
 
   // Sorting state
@@ -232,6 +182,137 @@
 
   $: sortedTracks = cachedSortedTracks;
 
+  // 4: Build track index map
+  let trackIndexMap = new Map<number, number>();
+  $: {
+    trackIndexMap = new Map(
+      sortedTracks.map((track, index) => [track.id, index])
+    );
+  }
+
+  // Batch virtual scroll calculations
+  let virtualScrollState = {
+    totalHeight: 0,
+    startIndex: 0,
+    endIndex: 0,
+    offsetY: 0,
+    visibleTracks: [] as Track[],
+  };
+
+  $: {
+    const totalHeight = sortedTracks.length * TRACK_ROW_HEIGHT;
+    const startIndex = Math.max(
+      0,
+      Math.floor(scrollTop / TRACK_ROW_HEIGHT) - OVERSCAN,
+    );
+    const endIndex = Math.min(
+      sortedTracks.length,
+      Math.ceil((scrollTop + containerHeight) / TRACK_ROW_HEIGHT) + OVERSCAN,
+    );
+    const visibleTracks = sortedTracks.slice(startIndex, endIndex);
+    const offsetY = startIndex * TRACK_ROW_HEIGHT;
+
+    virtualScrollState = {
+      totalHeight,
+      startIndex,
+      endIndex,
+      offsetY,
+      visibleTracks,
+    };
+  }
+
+  // Infinite scroll: when virtual scroll nears the bottom of loaded tracks,
+  // fetch the next paginated batch from the backend.
+  $: {
+    if (
+      virtualScrollState.endIndex >= sortedTracks.length - 10 &&
+      sortedTracks.length > 0
+    ) {
+      loadMoreTracks();
+    }
+  }
+
+  // 5: Pre-compute album art and availability for visible tracks
+  type TrackWithMetadata = {
+    track: Track;
+    albumArt: string | null;
+    unavailable: boolean;
+  };
+
+  $: visibleTracksWithMetadata = virtualScrollState.visibleTracks.map(
+    (track) => ({
+      track,
+      albumArt: getTrackAlbumArt(track),
+      unavailable: isTrackUnavailable(track),
+    }),
+  ) as TrackWithMetadata[];
+
+  function handleScroll(e: Event) {
+    scrollTop = (e.target as HTMLElement).scrollTop;
+  }
+
+  // Measure container height on mount
+  onMount(() => {
+    // 5: Load playlists once on mount to avoid race conditions
+    if ($playlists.length === 0) {
+      loadPlaylists(); 
+    }
+
+    if (containerElement) {
+      const updateHeight = () => {
+        containerHeight = containerElement.clientHeight;
+      };
+      updateHeight();
+
+      window.addEventListener("resize", updateHeight);
+      return () => {
+        window.removeEventListener("resize", updateHeight);
+      };
+    }
+  });
+
+  // Cleanup for drag listeners to prevent memory leaks
+  let cleanupDragListeners: (() => void) | null = null;
+
+  // Cleanup on destroy
+  onDestroy(() => {
+    failedImages.clear();
+    trackAlbumArtCache.clear();
+    albumMap.clear();
+    availabilityCache.clear();
+
+    if (cleanupInterval) {
+      clearInterval(cleanupInterval);
+    }
+
+    // Clean up drag listeners if component unmounts during drag
+    if (cleanupDragListeners) {
+      cleanupDragListeners();
+    }
+  });
+
+  // 6: cleanup interval
+  let cleanupInterval: number | undefined;
+
+  function startCleanupInterval() {
+    if (cleanupInterval || typeof window === "undefined") return;
+
+    cleanupInterval = window.setInterval(() => {
+      if (failedImages.size > MAX_FAILED_IMAGES) {
+        const toKeep = Array.from(failedImages).slice(-MAX_FAILED_IMAGES / 2);
+        failedImages.clear();
+        toKeep.forEach((src) => failedImages.add(src));
+        failedImages = failedImages;
+      }
+
+      // Stop interval if no failed images
+      if (failedImages.size === 0 && cleanupInterval) {
+        clearInterval(cleanupInterval);
+        cleanupInterval = undefined;
+      }
+    }, 300000);
+  }
+
   // Cached album art lookup
   function getTrackAlbumArt(track: Track): string | null {
     // Check cache first
@@ -262,33 +343,58 @@
     return result;
   }
 
-  function handleTrackClick(track: Track, actualIndex: number) {
-    if (isTrackUnavailable(track)) return;
+  // Event delegation
+  function handleBodyClick(e: MouseEvent) {
+    const row = (e.target as HTMLElement).closest('.track-row');
+    if (!row) return;
 
-    const trackIndex = sortedTracks.findIndex((t) => t.id === track.id);
-    if (trackIndex !== -1) {
-      playTracks(sortedTracks, trackIndex);
+    const trackId = parseInt(row.getAttribute('data-track-id') || '0');
+    
+    // In multi-select mode, clicking toggles selection
+    if (multiSelectMode) {
+      multiSelect.toggleTrack(trackId);
+      return;
     }
+
+    const trackIndex = trackIndexMap.get(trackId);
+    
+    if (trackIndex === undefined) return;
+    
+    const track = sortedTracks[trackIndex];
+    if (!track || isTrackUnavailable(track)) return;
+
+    playTracks(sortedTracks, trackIndex, playbackContext);
   }
 
-  function handleTrackDoubleClick(track: Track, actualIndex: number) {
-    if (isTrackUnavailable(track)) return;
+  function handleBodyDoubleClick(e: MouseEvent) {
+    const row = (e.target as HTMLElement).closest('.track-row');
+    if (!row) return;
 
-    const trackIndex = sortedTracks.findIndex((t) => t.id === track.id);
-    if (trackIndex !== -1) {
-      playTracks(sortedTracks, trackIndex);
-    }
+    const trackId = parseInt(row.getAttribute('data-track-id') || '0');
+    const trackIndex = trackIndexMap.get(trackId);
+    
+    if (trackIndex === undefined) return;
+    
+    const track = sortedTracks[trackIndex];
+    if (!track || isTrackUnavailable(track)) return;
+
+    playTracks(sortedTracks, trackIndex, playbackContext);
   }
 
-  async function handleContextMenu(e: MouseEvent, track: Track) {
+  async function handleBodyContextMenu(e: MouseEvent) {
+    const row = (e.target as HTMLElement).closest('.track-row');
+    if (!row) return;
+
     e.preventDefault();
 
-    // Ensure playlists are loaded
-    if ($playlists.length === 0) {
-      await loadPlaylists();
-    }
+    const trackId = parseInt(row.getAttribute('data-track-id') || '0');
+    const trackIndex = trackIndexMap.get(trackId);
+    
+    if (trackIndex === undefined) return;
+    
+    const track = sortedTracks[trackIndex];
+    if (!track) return;
 
-    // Build playlist submenu items
     const playlistItems = $playlists.map((playlist) => ({
       label: playlist.name,
       action: async () => {
@@ -306,8 +412,7 @@
       {
         label: "Play",
         action: () => {
-          const trackIndex = sortedTracks.findIndex((t) => t.id === track.id);
-          if (trackIndex !== -1) playTracks(sortedTracks, trackIndex);
+          if (trackIndex !== undefined) playTracks(sortedTracks, trackIndex, playbackContext);
         },
         disabled: isUnavailable,
       },
@@ -340,7 +445,7 @@
         },
         disabled:
           !canDownload(track) ||
-          (isUnavailable && !isTidalAvailable && !track.local_src), // Enable download if it's the only way to get it? No, if plugin off, can't download.
+                    (isUnavailable && !isTidalAvailable && !track.local_src),
       },
       { type: "separator" },
       {
@@ -381,6 +486,7 @@
             await deleteTrack(track.id);
             // Clear from cache
             trackAlbumArtCache.delete(track.id);
+            availabilityCache.delete(track.id);
             await loadLibrary();
             // Also remove from local tracks array for immediate UI feedback
             tracks = tracks.filter((t) => t.id !== track.id);
@@ -408,6 +514,9 @@
 
     failedImages.add(albumArt);
     failedImages = failedImages;
+
+    // Start cleanup interval if needed
+    startCleanupInterval();
   }
 
   // Drag and drop for playlist reordering (only enabled when playlistId is set)
@@ -431,6 +540,12 @@
     // Add global listeners
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
+
+    // Store cleanup function for memory leak prevention
+    cleanupDragListeners = () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
   }
 
   function handlePointerMove(e: PointerEvent) {
@@ -468,15 +583,6 @@
       draggedIndex !== dragOverIndex &&
       playlistId
     ) {
-      console.log(
-        "Reorder playlist:",
-        playlistId,
-        "from:",
-        draggedIndex,
-        "to:",
-        dragOverIndex,
-      );
-
       try {
         // Update backend
         await reorderPlaylistTracks(playlistId, draggedIndex, dragOverIndex);
@@ -500,8 +606,33 @@
     isDragging = false;
     draggedIndex = null;
     dragOverIndex = null;
-    window.removeEventListener("pointermove", handlePointerMove);
-    window.removeEventListener("pointerup", handlePointerUp);
+    
+    // Clean up and clear the cleanup function
+    if (cleanupDragListeners) {
+      cleanupDragListeners();
+      cleanupDragListeners = null;
+    }
+  }
+
+  // Helper to handle album click from event delegation
+  function handleAlbumClick(e: MouseEvent) {
+    const albumButton = (e.target as HTMLElement).closest('.col-album');
+    if (!albumButton) return;
+
+    e.stopPropagation();
+
+    const row = albumButton.closest('.track-row');
+    if (!row) return;
+
+    const trackId = parseInt(row.getAttribute('data-track-id') || '0');
+    const trackIndex = trackIndexMap.get(trackId);
+    
+    if (trackIndex === undefined) return;
+    
+    const track = sortedTracks[trackIndex];
+    if (track && track.album_id) {
+      goToAlbumDetail(track.album_id);
+    }
   }
 </script>
 
@@ -511,8 +642,27 @@
     class="list-header"
     class:no-album={!showAlbum}
     class:with-drag={playlistId !== null}
+    class:multiselect={multiSelectMode}
   >
-    {#if playlistId !== null}
+    {#if multiSelectMode}
+      <div class="col-header col-checkbox">
+        <input
+          type="checkbox"
+          on:change={(e) => {
+            if (e.currentTarget.checked) {
+              multiSelect.selectAll(sortedTracks.map(t => t.id));
+            } else {
+              multiSelect.clearSelections();
+            }
+          }}
+          checked={$multiSelect.selectedTrackIds.size > 0 && 
+                   $multiSelect.selectedTrackIds.size === sortedTracks.length}
+          indeterminate={$multiSelect.selectedTrackIds.size > 0 && 
+                        $multiSelect.selectedTrackIds.size < sortedTracks.length}
+        />
+      </div>
+    {/if}
+    {#if playlistId !== null && !multiSelectMode}
       <span class="col-header col-drag"></span>
     {/if}
     <button class="col-header col-num" on:click={() => toggleSort(null)}>
@@ -554,40 +704,59 @@
 
   <!-- Virtualized scrolling container -->
   {#if sortedTracks.length > 0}
+    <!-- Event delegation - handlers on container instead of each row -->
     <div
       class="list-body"
       class:no-album={!showAlbum}
-      class:with-drag={playlistId !== null}
+      class:with-drag={playlistId !== null && !multiSelectMode}
+      class:multiselect={multiSelectMode}
       on:scroll={handleScroll}
+      on:click={handleBodyClick}
+      on:dblclick={handleBodyDoubleClick}
+      on:contextmenu={handleBodyContextMenu}
       bind:this={containerElement}
     >
-      <!-- Spacer to maintain scroll height -->
-      <div class="virtual-spacer" style="height: {totalHeight}px;">
-        <!-- Visible tracks container -->
+      <div
+        class="virtual-spacer"
+        style="height: {virtualScrollState.totalHeight}px;"
+      >
         <div
           class="virtual-content"
-          style="transform: translateY({offsetY}px);"
+          style="transform: translateY({virtualScrollState.offsetY}px);"
         >
-          {#each visibleTracks as track, index (track.id)}
-            {@const actualIndex = startIndex + index}
-            {@const albumArt = getTrackAlbumArt(track)}
-            {@const unavailable = isTrackUnavailable(track)}
+          {#each visibleTracksWithMetadata as { track, albumArt, unavailable }, index (track.id)}
+            {@const actualIndex = virtualScrollState.startIndex + index}
+            {@const isSelected = $multiSelect.selectedTrackIds.has(track.id)}
             <div
               class="track-row"
-              class:playing={$currentTrack?.id === track.id}
+              class:playing={playingTrackId === track.id}
               class:unavailable
               class:dragging={draggedIndex === actualIndex}
               class:drag-over={dragOverIndex === actualIndex}
+              class:selected={multiSelectMode && isSelected}
+              data-track-id={track.id}
               data-track-index={actualIndex}
-              on:click={() => handleTrackClick(track, actualIndex)}
-              on:dblclick={() => handleTrackDoubleClick(track, actualIndex)}
-              on:contextmenu={(e) => handleContextMenu(e, track)}
-              on:keydown={(e) =>
-                e.key === "Enter" && handleTrackClick(track, actualIndex)}
               role="button"
               tabindex="0"
             >
-              {#if playlistId !== null}
+              {#if multiSelectMode}
+                <div 
+                  class="col-checkbox" 
+                  on:click|stopPropagation={() => multiSelect.toggleTrack(track.id)}
+                  role="checkbox"
+                  aria-checked={isSelected}
+                  tabindex="0"
+                >
+                  <div class="custom-checkbox" class:checked={isSelected}>
+                    {#if isSelected}
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                      </svg>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+              {#if playlistId !== null && !multiSelectMode}
                 <div
                   class="drag-handle"
                   on:pointerdown={(e) => handlePointerDown(e, actualIndex)}
@@ -610,7 +779,7 @@
                 </div>
               {/if}
               <span class="col-num">
-                {#if $currentTrack?.id === track.id && $isPlaying}
+                {#if playingTrackId === track.id && $isPlaying}
                   <svg
                     class="playing-icon"
                     viewBox="0 0 24 24"
@@ -712,11 +881,7 @@
               {#if showAlbum}
                 <button
                   class="col-album truncate"
-                  on:click|stopPropagation={() => {
-                    if (track.album_id) {
-                      goToAlbumDetail(track.album_id);
-                    }
-                  }}
+                  on:click={handleAlbumClick}
                   disabled={!track.album_id}>{track.album || "-"}</button
                 >
               {/if}
@@ -869,6 +1034,22 @@
 
   .list-body.no-album.with-drag .track-row {
     grid-template-columns: 32px 40px 48px 1fr 80px;
+  }
+
+  .list-body.multiselect .track-row {
+    grid-template-columns: 40px 40px 48px 1fr 1fr 80px;
+  }
+
+  .list-body.multiselect.no-album .track-row {
+    grid-template-columns: 40px 40px 48px 1fr 80px;
+  }
+
+  .track-row.selected {
+    background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.12);
+  }
+
+  .track-row.selected:hover {
+    background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.18);
   }
 
   .track-row:hover {
@@ -1120,5 +1301,53 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .col-checkbox {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .custom-checkbox {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+    background-color: transparent;
+    position: relative;
+  }
+
+  .custom-checkbox:hover {
+    border-color: var(--accent-primary);
+    background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.1);
+  }
+
+  .custom-checkbox.checked {
+    background-color: var(--accent-primary);
+    border-color: var(--accent-primary);
+  }
+
+  .custom-checkbox svg {
+    color: var(--bg-base);
+  }
+
+  .col-header.col-checkbox {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .list-header.multiselect {
+    grid-template-columns: 40px 40px 48px 1fr 1fr 80px;
+  }
+
+  .list-header.multiselect.no-album {
+    grid-template-columns: 40px 40px 48px 1fr 80px;
   }
 </style>

@@ -9,6 +9,7 @@ export function isTauri(): boolean {
 let invokeFunc: typeof import('@tauri-apps/api/core').invoke | null = null;
 let openFunc: typeof import('@tauri-apps/plugin-dialog').open | null = null;
 let convertFileSrcFunc: typeof import('@tauri-apps/api/core').convertFileSrc | null = null;
+let listenFunc: typeof import('@tauri-apps/api/event').listen | null = null;
 
 async function ensureTauriLoaded() {
     if (!isTauri()) {
@@ -23,6 +24,10 @@ async function ensureTauriLoaded() {
         const dialog = await import('@tauri-apps/plugin-dialog');
         openFunc = dialog.open;
     }
+    if (!listenFunc) {
+        const event = await import('@tauri-apps/api/event');
+        listenFunc = event.listen;
+    }
 }
 
 async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -30,11 +35,19 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     return invokeFunc!(cmd, args);
 }
 
-function convertFileSrc(filePath: string): string {
+export function convertFileSrc(filePath: string): string {
     if (!convertFileSrcFunc) {
         throw new Error('Tauri not loaded');
     }
     return convertFileSrcFunc(filePath);
+}
+
+// Event listener helper — used by the progressive scan pipeline
+// to receive scan-batch-ready and scan-complete events
+export async function listen<T>(event: string, handler: (event: { payload: T }) => void): Promise<() => void> {
+    await ensureTauriLoaded();
+    const unlisten = await listenFunc!(event, handler);
+    return unlisten;
 }
 
 // Types
@@ -90,11 +103,34 @@ export interface ScanResult {
     errors: string[];
 }
 
+// Progressive scan types
+export interface ScanProgress {
+    current: number;
+    total: number;
+    current_batch: number;
+    batch_size: number;
+    estimated_time_remaining_ms: number;
+    tracks_added: number;      
+    tracks_updated: number;
+}
+
+export interface ScanBatchEvent {
+    tracks: Track[];
+    progress: ScanProgress;
+}
+
 export interface MigrationProgress {
     total: number;
     processed: number;
     tracks_migrated: number;
     albums_migrated: number;
+    errors: string[];
+}
+
+export interface MergeCoverResult {
+    covers_merged: number;
+    space_saved_bytes: number;
+    albums_processed: number;
     errors: string[];
 }
 
@@ -117,6 +153,10 @@ export async function getLibrary(): Promise<Library> {
 
 export async function getTracksPaginated(limit: number, offset: number): Promise<Track[]> {
     return await invoke('get_tracks_paginated', { limit, offset });
+}
+
+export async function getAlbumsPaginated(limit: number, offset: number): Promise<Album[]> {
+    return await invoke<Album[]>("get_albums_paginated", { limit, offset });
 }
 
 export async function searchLibrary(query: string, limit: number, offset: number): Promise<Track[]> {
@@ -280,6 +320,10 @@ export function getAlbumArtSrc(artDataOrPath: string | null, isPath: boolean = f
     }
     // Default to JPEG
     return `data:image/jpeg;base64,${artDataOrPath}`;
+}
+
+export async function mergeDuplicateCovers(): Promise<MergeCoverResult> {
+    return await invoke('merge_duplicate_covers');
 }
 
 

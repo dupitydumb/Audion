@@ -3,15 +3,33 @@ use crate::db::{queries, Database};
 use crate::scanner::{cover_storage, extract_metadata, scan_directory};
 use serde::{Deserialize, Serialize};
 use tauri::State;
+use tauri::Emitter;
+use std::time::Instant;
+use crossbeam::channel::{bounded, Sender, Receiver};
+use rayon::prelude::*;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-#[derive(Debug, Serialize, Deserialize)]
+/// Emitted per-batch during progressive rescan so the frontend can render
+/// tracks as they arrive, without waiting for the full scan to complete.
+#[derive(Debug, Serialize, Clone)]
+pub struct ScanBatchEvent {
+    pub tracks: Vec<queries::Track>,
+    pub progress: ScanProgress,
+}
+
+#[derive(Debug, Serialize, Clone)]
 pub struct ScanProgress {
     pub current: usize,
     pub total: usize,
-    pub current_file: String,
+    pub current_batch: usize,
+    pub batch_size: usize,
+    pub estimated_time_remaining_ms: u64,
+    pub tracks_added: usize,     
+    pub tracks_updated: usize,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ScanResult {
     pub tracks_added: usize,
     pub tracks_updated: usize,
@@ -26,9 +44,39 @@ pub struct Library {
     pub artists: Vec<queries::Artist>,
 }
 
+/// Adaptive batch sizing for rescan_music
+fn calculate_batch_size(
+    tracks_processed: usize,
+    _total_tracks: usize,
+    queue_depth: usize,
+) -> usize {
+    if tracks_processed == 0 {
+        return 20; // instant first batch
+    }
+
+    let base_size = if tracks_processed < 500 {
+        25 + (tracks_processed / 20)          // 25 → 50
+    } else if tracks_processed < 2000 {
+        50 + ((tracks_processed - 500) / 30)  // 50 → 100
+    } else {
+        100 + ((tracks_processed - 2000) / 200).min(50) // 100 → 150
+    };
+
+    let adjusted = if queue_depth > base_size * 3 {
+        (base_size as f32 * 1.5) as usize   // back-pressure: bigger batches
+    } else if queue_depth < base_size / 2 {
+        (base_size as f32 * 0.8) as usize   // draining fast: smaller for smoother UI
+    } else {
+        base_size
+    };
+
+    adjusted.clamp(20, 200)
+}
+
 #[tauri::command]
 pub async fn scan_music(paths: Vec<String>, db: State<'_, Database>) -> Result<ScanResult, String> {
     let mut tracks_added = 0;
+    let mut tracks_updated = 0;
     let mut errors = Vec::new();
 
     // Use spawn_blocking for the file system scanning and metadata extraction
@@ -50,9 +98,12 @@ pub async fn scan_music(paths: Vec<String>, db: State<'_, Database>) -> Result<S
             for file_path in scan_result.audio_files {
                 if let Some(track_data) = extract_metadata(&file_path) {
                     match queries::insert_or_update_track(&conn, &track_data) {
-                        Ok(track_id) => {
+                        Ok((track_id, was_new)) => {
                             if track_id > 0 {
-                                // Save covers... (truncated for brevity but logic should remain)
+                                // Track the operation type
+                                let result = if was_new { 1 } else { 0 };
+                                
+                                // Save track cover if present
                                 if let Some(ref cover_bytes) = track_data.track_cover {
                                     let _ = cover_storage::save_track_cover(track_id, cover_bytes)
                                         .map(|p| {
@@ -63,10 +114,40 @@ pub async fn scan_music(paths: Vec<String>, db: State<'_, Database>) -> Result<S
                                             );
                                         });
                                 }
-                                if let Some(ref art_bytes) = track_data.album_art {
-                                    // (album art logic...)
+                                
+                                // Save album art if present and album doesn't have one
+                                if let Some(album_id) = track_data.album.as_ref().and_then(|_| {
+                                    conn.query_row(
+                                        "SELECT album_id FROM tracks WHERE id = ?1",
+                                        [track_id],
+                                        |row| row.get::<_, Option<i64>>(0),
+                                    )
+                                    .ok()
+                                    .flatten()
+                                }) {
+                                    if let Some(ref art_bytes) = track_data.album_art {
+                                        let has_art: bool = conn
+                                            .query_row(
+                                                "SELECT art_path IS NOT NULL FROM albums WHERE id = ?1",
+                                                [album_id],
+                                                |row| row.get(0),
+                                            )
+                                            .unwrap_or(false);
+
+                                        if !has_art {
+                                            let _ = cover_storage::save_album_art(album_id, art_bytes)
+                                                .map(|p| {
+                                                    let _ = queries::update_album_art_path(
+                                                        &conn,
+                                                        album_id,
+                                                        Some(&p),
+                                                    );
+                                                });
+                                        }
+                                    }
                                 }
-                                let _ = tx_clone.blocking_send(Ok(1));
+                                
+                                let _ = tx_clone.blocking_send(Ok((result, 0)));
                             }
                         }
                         Err(e) => {
@@ -83,154 +164,300 @@ pub async fn scan_music(paths: Vec<String>, db: State<'_, Database>) -> Result<S
 
     while let Some(res) = rx.recv().await {
         match res {
-            Ok(count) => tracks_added += count,
+            Ok((added, updated)) => {
+                tracks_added += added;
+                tracks_updated += updated;
+            }
             Err(e) => errors.push(e),
         }
     }
 
+    // Cleanup after scan
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let tracks_deleted = queries::cleanup_deleted_tracks(&conn, &paths)
+        .unwrap_or_else(|e| {
+            errors.push(format!("Failed to cleanup deleted tracks: {}", e));
+            0
+        });
+    let _ = queries::cleanup_empty_albums(&conn);
+
     Ok(ScanResult {
         tracks_added,
-        tracks_updated: 0,
-        tracks_deleted: 0,
+        tracks_updated,
+        tracks_deleted,
         errors,
     })
 }
 
+/// Add a music folder with path validation
 #[tauri::command]
 pub async fn add_folder(path: String, db: State<'_, Database>) -> Result<(), String> {
     let path_buf = std::path::PathBuf::from(&path);
-    if !path_buf.exists() || !path_buf.is_dir() {
-        return Err("Invalid path: Not a directory or does not exist".to_string());
+    
+    // Validate path exists and is a directory
+    if !path_buf.exists() {
+        return Err("Invalid path: Does not exist".to_string());
+    }
+    
+    if !path_buf.is_dir() {
+        return Err("Invalid path: Not a directory".to_string());
     }
 
     // Canonicalize path to prevent traversal/obfuscation
     let canonical_path = path_buf
         .canonicalize()
         .map_err(|e| format!("Failed to resolve path: {}", e))?;
+    
     let path_str = canonical_path.to_string_lossy().to_string();
 
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     queries::add_music_folder(&conn, &path_str)
         .map_err(|e| format!("Failed to add folder: {}", e))?;
+    
     Ok(())
 }
 
 #[tauri::command]
-pub async fn rescan_music(db: State<'_, Database>) -> Result<ScanResult, String> {
-    let mut tracks_added = 0;
-    let mut tracks_deleted = 0;
-    let mut errors = Vec::new();
+pub async fn rescan_music(
+    window: tauri::Window,
+    db: State<'_, Database>,
+) -> Result<ScanResult, String> {
+    let total_start = Instant::now();
 
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    // 1: Cleanup
+    let (folders, tracks_deleted) = {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     // Get all scanned folders
-    let folders = queries::get_music_folders(&conn).map_err(|e| e.to_string())?;
+        let folders = queries::get_music_folders(&conn).map_err(|e| e.to_string())?;
 
-    // Clean up deleted tracks first
-    tracks_deleted = queries::cleanup_deleted_tracks(&conn, &folders)
-        .map_err(|e| format!("Failed to cleanup deleted tracks: {}", e))?;
+        let tracks_deleted = queries::cleanup_deleted_tracks(&conn, &folders)
+            .map_err(|e| format!("Failed to cleanup deleted tracks: {}", e))?;
 
     // Clean up empty albums after track cleanup
-    let _ = queries::cleanup_empty_albums(&conn);
+        let _ = queries::cleanup_empty_albums(&conn);
 
-    // Clean up orphaned cover files
-    let _ = cover_storage::cleanup_orphaned_covers(&conn);
+        (folders, tracks_deleted)
+    }; // conn dropped here
 
-    // Rescan all folders
-    for path in folders {
-        let scan_result = scan_directory(&path);
-        errors.extend(scan_result.errors);
+    // 2: Directory walk
+    let mut all_files = Vec::new();
+    let mut scan_errors = Vec::new();
 
-        for file_path in scan_result.audio_files {
-            if let Some(track_data) = extract_metadata(&file_path) {
-                match queries::insert_or_update_track(&conn, &track_data) {
-                    Ok(track_id) => {
-                        if track_id > 0 {
+    for folder in &folders {
+        let result = scan_directory(folder);
+        all_files.extend(result.audio_files);
+        scan_errors.extend(result.errors);
+    }
+
+    let total_files = all_files.len();
+
+    if total_files == 0 {
+        return Ok(ScanResult {
+            tracks_added: 0,
+            tracks_updated: 0,
+            tracks_deleted,
+            errors: scan_errors,
+        });
+    }
+
+    // 3: Parallel metadata extraction
+    let (tx, rx): (Sender<queries::TrackInsert>, Receiver<queries::TrackInsert>) = bounded(500);
+    let extracted_count = Arc::new(AtomicUsize::new(0));
+    let extracted_count_clone = extracted_count.clone();
+
+    std::thread::spawn(move || {
+        all_files.par_iter().for_each(|file_path| {
+            if let Some(track_data) = extract_metadata(file_path) {
+                let _ = tx.send(track_data);
+                extracted_count_clone.fetch_add(1, Ordering::Relaxed);
+            }
+        });
+    });
+
+    // 4: Batch assembly + DB writes + frontend updates
+    let window_clone = window.clone();
+    let db_conn = Arc::clone(&db.conn);
+    let folders_clone = folders.clone();
+    let total_start_clone = total_start;
+
+    let batch_result = tauri::async_runtime::spawn_blocking(move || {
+        let mut tracks_added = 0usize;
+        let mut tracks_updated = 0usize;
+        let mut batches_sent = 0usize;
+        let mut tracks_sent = 0usize;
+        let mut errors = Vec::new();
+        let mut pending = Vec::new();
+
+        let mut conn = db_conn.lock().unwrap();
+
+        loop {
+            // Collect one batch from the channel
+            let queue_depth = rx.len();
+            let batch_size = calculate_batch_size(tracks_sent, total_files, queue_depth);
+
+            while pending.len() < batch_size {
+                match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+                    Ok(track_data) => pending.push(track_data),
+                    Err(_) => {
+                        // If extraction is done, stop waiting
+                        if extracted_count.load(Ordering::Relaxed) >= total_files {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if pending.is_empty() {
+                break; // nothing left anywhere
+            }
+
+            // Single transaction for the whole batch
+            let tx_db = conn.transaction().unwrap();
+            let mut batch_tracks = Vec::new();
+
+            for track_data in &pending {
+                match queries::insert_or_update_track(&tx_db, track_data) {
+                    Ok((track_id, was_new)) if track_id > 0 => {
+                        if was_new {
                             tracks_added += 1;
+                        } else {
+                            tracks_updated += 1;
+                        }
 
-                            // Save track cover to file if present
-                            if let Some(ref cover_bytes) = track_data.track_cover {
-                                match cover_storage::save_track_cover(track_id, cover_bytes) {
-                                    Ok(path) => {
-                                        if let Err(e) = queries::update_track_cover_path(
-                                            &conn,
-                                            track_id,
-                                            Some(&path),
-                                        ) {
-                                            errors.push(format!(
-                                                "Failed to update cover path for track {}: {}",
-                                                track_id, e
-                                            ));
-                                        }
-                                    }
-                                    Err(e) => {
-                                        errors.push(format!(
-                                            "Failed to save cover for track {}: {}",
-                                            track_id, e
-                                        ));
-                                    }
-                                }
+                        // Save track cover
+                        let cover_path = track_data.track_cover.as_ref()
+                            .and_then(|bytes| cover_storage::save_track_cover(track_id, bytes).ok());
+
+                        if let Some(ref path) = cover_path {
+                            if let Err(e) = queries::update_track_cover_path(&tx_db, track_id, Some(path)) {
+                                errors.push(format!("Cover path update failed for track {}: {}", track_id, e));
                             }
+                        }
 
-                            // Save album art to file if present
-                            if let Some(album_id) = track_data.album.as_ref().and_then(|_| {
-                                conn.query_row(
-                                    "SELECT album_id FROM tracks WHERE id = ?1",
-                                    [track_id],
-                                    |row| row.get::<_, Option<i64>>(0),
-                                )
-                                .ok()
-                                .flatten()
-                            }) {
-                                if let Some(ref art_bytes) = track_data.album_art {
-                                    let has_art: bool = conn
-                                        .query_row(
-                                            "SELECT art_path IS NOT NULL FROM albums WHERE id = ?1",
-                                            [album_id],
-                                            |row| row.get(0),
-                                        )
-                                        .unwrap_or(false);
+                        // Save album art (only if the album doesn't have one yet)
+                        if let Some(album_id) = track_data.album.as_ref().and_then(|_| {
+                            tx_db.query_row(
+                                "SELECT album_id FROM tracks WHERE id = ?1",
+                                [track_id],
+                                |row| row.get::<_, Option<i64>>(0),
+                            ).ok().flatten()
+                        }) {
+                            if let Some(ref art_bytes) = track_data.album_art {
+                                let has_art: bool = tx_db
+                                    .query_row(
+                                        "SELECT art_path IS NOT NULL FROM albums WHERE id = ?1",
+                                        [album_id],
+                                        |row| row.get(0),
+                                    )
+                                    .unwrap_or(false);
 
-                                    if !has_art {
-                                        match cover_storage::save_album_art(album_id, art_bytes) {
-                                            Ok(path) => {
-                                                if let Err(e) = queries::update_album_art_path(
-                                                    &conn,
-                                                    album_id,
-                                                    Some(&path),
-                                                ) {
-                                                    errors.push(format!(
-                                                        "Failed to update art path for album {}: {}",
-                                                        album_id, e
-                                                    ));
-                                                }
-                                            }
-                                            Err(e) => {
-                                                errors.push(format!(
-                                                    "Failed to save art for album {}: {}",
-                                                    album_id, e
-                                                ));
+                                if !has_art {
+                                    match cover_storage::save_album_art(album_id, art_bytes) {
+                                        Ok(art_path) => {
+                                            if let Err(e) = queries::update_album_art_path(&tx_db, album_id, Some(&art_path)) {
+                                                errors.push(format!("Art path update failed for album {}: {}", album_id, e));
                                             }
                                         }
+                                        Err(e) => errors.push(format!("Album art save failed for album {}: {}", album_id, e)),
                                     }
                                 }
                             }
                         }
+
+                        // Build Track struct for frontend
+                        let album_id = tx_db.query_row(
+                            "SELECT album_id FROM tracks WHERE id = ?1",
+                            [track_id],
+                            |row| row.get::<_, Option<i64>>(0),
+                        ).ok().flatten();
+
+                        batch_tracks.push(queries::Track {
+                            id: track_id,
+                            path: track_data.path.clone(),
+                            title: track_data.title.clone(),
+                            artist: track_data.artist.clone(),
+                            album: track_data.album.clone(),
+                            track_number: track_data.track_number,
+                            duration: track_data.duration,
+                            album_id,
+                            format: track_data.format.clone(),
+                            bitrate: track_data.bitrate,
+                            source_type: track_data.source_type.clone(),
+                            cover_url: track_data.cover_url.clone(),
+                            external_id: track_data.external_id.clone(),
+                            local_src: track_data.local_src.clone(),
+                            track_cover: None,
+                            track_cover_path: cover_path,
+                        });
                     }
-                    Err(e) => errors.push(format!("Failed to insert {}: {}", file_path, e)),
+                    Ok(_) => {}
+                    Err(e) => errors.push(format!("Insert failed for {}: {}", track_data.path, e)),
                 }
+            }
+
+            tx_db.commit().unwrap();
+
+            // Emit batch to frontend
+            tracks_sent += batch_tracks.len();
+            batches_sent += 1;
+
+            let elapsed_ms = total_start_clone.elapsed().as_millis() as u64;
+            let avg_ms_per_track = if tracks_sent > 0 { elapsed_ms / tracks_sent as u64 } else { 0 };
+            let eta_ms = total_files.saturating_sub(tracks_sent) as u64 * avg_ms_per_track;
+
+            let _ = window_clone.emit("scan-batch-ready", ScanBatchEvent {
+                tracks: batch_tracks,
+                progress: ScanProgress {
+                    current: tracks_sent,
+                    total: total_files,
+                    current_batch: batches_sent,
+                    batch_size: pending.len(),
+                    estimated_time_remaining_ms: eta_ms,
+                    tracks_added,
+                    tracks_updated,
+                },
+            });
+
+            pending.clear();
+
+            if tracks_sent >= total_files {
+                break;
             }
         }
 
-        // Update last scanned time
-        if let Err(e) = queries::update_folder_last_scanned(&conn, &path) {
-            errors.push(format!("Failed to update scan time for {}: {}", path, e));
+        // Update folder timestamps
+        for folder in &folders_clone {
+            if let Err(e) = queries::update_folder_last_scanned(&conn, folder) {
+                errors.push(format!("Scan time update failed for {}: {}", folder, e));
+            }
         }
-    }
+
+        (tracks_added, tracks_updated, batches_sent, errors)
+    }).await.map_err(|e| e.to_string())?;
+
+    let (tracks_added, tracks_updated, _batches_sent, mut errors) = batch_result;
+    errors.extend(scan_errors);
+
+    // Emit completion event
+    let _ = window.emit("scan-complete", ScanResult {
+        tracks_added,
+        tracks_updated,
+        tracks_deleted,
+        errors: errors.clone(),
+    });
+
+    // Background orphan cleanup (non-blocking)
+    let db_conn_cleanup = Arc::clone(&db.conn);
+    tauri::async_runtime::spawn(async move {
+        if let Ok(conn) = db_conn_cleanup.lock() {
+            let _ = cover_storage::cleanup_orphaned_covers(&conn);
+        }
+    });
 
     Ok(ScanResult {
         tracks_added,
-        tracks_updated: 0, // TODO: Distinguish between insert and update
+        tracks_updated,
         tracks_deleted,
         errors,
     })
@@ -252,11 +479,15 @@ pub async fn get_library(db: State<'_, Database>) -> Result<Library, String> {
     // Fetch artists
     let artists = queries::get_all_artists(&conn).map_err(|e| e.to_string())?;
 
-    Ok(Library {
-        tracks,
-        albums,
-        artists,
-    })
+    // Background orphan cleanup
+    let db_conn_cleanup = db.conn.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Ok(conn) = db_conn_cleanup.lock() {
+            let _ = cover_storage::cleanup_orphaned_covers(&conn);
+        }
+    });
+
+    Ok(Library { tracks, albums, artists })
 }
 
 #[tauri::command]
@@ -267,6 +498,16 @@ pub async fn get_tracks_paginated(
 ) -> Result<Vec<queries::Track>, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     queries::get_tracks_paginated(&conn, limit, offset).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_albums_paginated(
+    limit: i32,
+    offset: i32,
+    db: State<'_, Database>,
+) -> Result<Vec<queries::Album>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    queries::get_albums_paginated(&conn, limit, offset).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -317,10 +558,10 @@ pub async fn get_albums_by_artist(
     let mut stmt = conn
         .prepare(
             "SELECT DISTINCT a.id, a.name, a.artist, a.art_data, a.art_path 
-         FROM albums a
-         INNER JOIN tracks t ON t.album_id = a.id
-         WHERE t.artist = ?1
-         ORDER BY a.name",
+             FROM albums a
+             INNER JOIN tracks t ON t.album_id = a.id
+             WHERE t.artist = ?1
+             ORDER BY a.name",
         )
         .map_err(|e| e.to_string())?;
 
@@ -486,6 +727,7 @@ pub async fn add_external_track(
     };
 
     queries::insert_or_update_track(&conn, &track_insert)
+        .map(|(track_id, _was_new)| track_id)
         .map_err(|e| format!("Failed to add external track: {}", e))
 }
 

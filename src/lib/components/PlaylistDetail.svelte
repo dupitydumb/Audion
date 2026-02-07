@@ -10,7 +10,7 @@
     import { confirm } from "$lib/stores/dialogs";
     import { contextMenu } from "$lib/stores/ui";
     import { playTracks, addToQueue } from "$lib/stores/player";
-    import { goToPlaylists } from "$lib/stores/view";
+    import { goToPlaylists, goToTracksMultiSelect } from "$lib/stores/view";
     import { loadPlaylists, playlists } from "$lib/stores/library";
     import TrackList from "./TrackList.svelte";
     import {
@@ -198,8 +198,16 @@
 
     function handlePlayAll() {
         if (tracks.length > 0) {
-            playTracks(tracks, 0);
+            playTracks(tracks, 0, {
+                type: 'playlist',
+                playlistId: playlistId,
+                displayName: playlist?.name ?? 'Playlist'
+            });
         }
+    }
+
+    function handleAddSongs() {
+        goToTracksMultiSelect(playlistId);
     }
 
     async function handleDelete() {
@@ -304,18 +312,16 @@
             class="playlist-header"
             on:contextmenu={handleHeaderContextMenu}
         >
-            <button class="back-btn" on:click={goToPlaylists} aria-label="Back">
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="24"
-                    height="24"
-                >
-                    <path
-                        d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"
-                    />
-                </svg>
-            </button>
+        <button class="back-btn" on:click={goToPlaylists} title="Close">
+            <svg
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                width="20"
+                height="20"
+            >
+                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+            </svg>
+        </button>
             <div 
                 class="playlist-cover"
                 on:mouseenter={() => coverHovered = true}
@@ -396,6 +402,21 @@
                         Play
                     </button>
 
+                    <button
+                        class="btn-primary add-songs-btn"
+                        on:click={handleAddSongs}
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            width="24"
+                            height="24"
+                        >
+                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                        </svg>
+                        Add Songs
+                    </button>
+
                     {#if hasDownloadable || allDownloaded}
                         <button
                             class="btn-secondary download-btn"
@@ -474,7 +495,11 @@
 
         <div class="playlist-tracks">
             {#if tracks.length > 0}
-                <TrackList bind:tracks showAlbum={true} {playlistId} />
+            <TrackList 
+                {tracks}  
+                showAlbum={false}
+                playbackContext={{ type: 'playlist', playlistId, displayName: playlist?.name }}
+            />
             {:else}
                 <div class="empty-state">
                     <svg
@@ -550,21 +575,52 @@
     .back-btn {
         position: absolute;
         top: var(--spacing-md);
-        left: var(--spacing-md);
-        width: 32px;
-        height: 32px;
+        right: var(--spacing-md);
+        width: 40px;
+        height: 40px;
         border-radius: var(--radius-full);
         background-color: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(8px);
         color: var(--text-primary);
         display: flex;
         align-items: center;
         justify-content: center;
         transition: all var(--transition-fast);
+        z-index: 10;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .back-btn::after {
+        content: attr(title);
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 6px 12px;
+        background-color: var(--bg-surface);
+        color: var(--text-primary);
+        font-size: 0.75rem;
+        border-radius: var(--radius-sm);
+        white-space: nowrap;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity var(--transition-fast);
+        margin-bottom: 8px;
+        box-shadow: var(--shadow-md);
+    }
+
+    .back-btn:hover::after {
+        opacity: 1;
     }
 
     .back-btn:hover {
-        background-color: rgba(0, 0, 0, 0.7);
-        transform: scale(1.1);
+        background-color: rgba(220, 38, 38, 0.9);
+        border-color: rgba(220, 38, 38, 0.4);
+        transform: scale(1.05);
+    }
+
+    .back-btn:active {
+        transform: scale(0.95);
     }
 
     .playlist-cover {
@@ -705,7 +761,8 @@
         gap: var(--spacing-sm);
     }
 
-    .play-all-btn {
+    .play-all-btn,
+    .add-songs-btn {
         font-size: 1rem;
         padding: var(--spacing-sm) var(--spacing-xl);
     }

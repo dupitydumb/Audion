@@ -6,6 +6,7 @@
   import { migrateCoversToFiles } from "$lib/api/tauri";
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
+  import ProgressiveScanStatus from "$lib/components/ProgressiveScanStatus.svelte";
   import "../app.css";
 
   let handleVisibilityChange: (() => void) | null = null;
@@ -16,8 +17,14 @@
     appSettings.initialize();
     theme.initialize();
 
+    const migrationStart = performance.now();
+
     // Run cover migration if needed
     await runCoverMigration();
+
+    console.log(
+      `  [LAYOUT] Cover migration: ${(performance.now() - migrationStart).toFixed(2)}ms`,
+    );
 
     // handle page visibility
     handleVisibilityChange = () => {
@@ -116,6 +123,7 @@
 
 <TitleBar />
 <ConfirmDialog />
+<ProgressiveScanStatus />
 
 {#if showMigrationBanner}
   <div class="migration-banner">

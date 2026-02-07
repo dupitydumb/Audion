@@ -1,11 +1,8 @@
 <script lang="ts">
     import { currentView } from "$lib/stores/view";
     import { tracks, albums, artists } from "$lib/stores/library";
-    import {
-        searchQuery,
-        searchResults,
-        clearSearch,
-    } from "$lib/stores/search";
+    import { isScanning } from "$lib/stores/progressiveScan";  // we Only need isScanning flag
+    import { searchQuery, searchResults, clearSearch } from "$lib/stores/search";
 
     import TrackList from "./TrackList.svelte";
     import AlbumGrid from "./AlbumGrid.svelte";
@@ -14,6 +11,7 @@
     import ArtistDetail from "./ArtistDetail.svelte";
     import PlaylistView from "./PlaylistView.svelte";
     import PlaylistDetail from "./PlaylistDetail.svelte";
+    import MultiSelectTrackView from "./MultiSelectTrackView.svelte";
     import SearchResults from "./SearchResults.svelte";
 
     import PluginManager from "./PluginManager.svelte";
@@ -39,10 +37,20 @@
         <div class="view-container">
             <header class="view-header">
                 <h1>All Tracks</h1>
+                {#if $isScanning}
+                    <div class="scan-status">
+                        Scanning... {$tracks.length} tracks found
+                    </div>
+                {/if}
             </header>
-            <div class="view-content">
-                <TrackList tracks={$tracks} showAlbum={true} />
-            </div>
+
+        <div class="view-content">
+            <TrackList tracks={$tracks} showAlbum={true} />
+        </div>
+    </div>
+    {:else if $currentView.type === "tracks-multiselect" && $currentView.id}
+        <div class="view-container no-padding">
+            <MultiSelectTrackView playlistId={$currentView.id} />
         </div>
     {:else if $currentView.type === "albums"}
         <div class="view-container">
@@ -137,5 +145,11 @@
         justify-content: center;
         height: 100%;
         color: var(--text-subdued);
+    }
+
+    .scan-status {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-top: var(--spacing-xs);
     }
 </style>

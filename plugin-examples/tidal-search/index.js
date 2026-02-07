@@ -83,6 +83,20 @@
         console.log("[TidalSearch] Registered stream resolver for tidal");
       }
 
+      // Register the searchCover request handler (for new request API)
+      if (api.handleRequest) {
+        api.handleRequest("searchCover", async (data) => {
+          const { title, artist, trackId, requester } = data;
+          console.log(
+            `[TidalSearch] Cover search requested by: ${requester || "unknown"}`,
+          );
+
+          // Call the existing searchCoverForRPC method
+          return await this.searchCoverForRPC(title, artist, trackId);
+        });
+        console.log("[TidalSearch] Registered 'searchCover' request handler");
+      }
+
       console.log("[TidalSearch] Plugin ready!");
     },
 
@@ -1554,7 +1568,6 @@
       // Permission granted - execute the method
       return TidalSearch.searchCoverForRPC(title, artist, trackId);
     },
-
   };
 
   // Register plugin
