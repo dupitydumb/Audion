@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.provider.Settings
 import android.util.Log
 import androidx.core.app.ActivityCompat
@@ -93,6 +94,71 @@ class PermissionsPlugin(private val activity: Activity) : Plugin(activity) {
             Manifest.permission.READ_MEDIA_AUDIO
         } else {
             Manifest.permission.READ_EXTERNAL_STORAGE
+        }
+    }
+
+    @Command
+    fun checkStoragePermission(invoke: Invoke) {
+        val result = JSObject()
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // For Android 11+, check if we can write to Downloads directory
+                // We don't need MANAGE_EXTERNAL_STORAGE for the Downloads directory
+                val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                val canWrite = downloadsDir?.canWrite() ?: false
+                result.put("granted", canWrite)
+                result.put("type", "downloads_access")
+                Log.d(TAG, "checkStoragePermission: downloads directory writable=$canWrite")
+            } else {
+                val permission = Manifest.permission.WRITE_EXTERNAL_STORAGE
+                val granted = ContextCompat.checkSelfPermission(activity, permission) == PackageManager.PERMISSION_GRANTED
+                result.put("granted", granted)
+                result.put("permission", permission)
+                Log.d(TAG, "checkStoragePermission: write_external_storage=$granted")
+            }
+            invoke.resolve(result)
+        } catch (e: Exception) {
+            Log.e(TAG, "checkStoragePermission failed", e)
+            invoke.reject("check_storage_permission_failed")
+        }
+    }
+
+    @Command
+    fun requestStoragePermission(invoke: Invoke) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                // For Android 11+, we don't need to request special permission for Downloads
+                // The directory should be accessible via scoped storage
+                val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+                val canWrite = downloadsDir?.canWrite() ?: false
+                val result = JSObject()
+                result.put("granted", canWrite)
+                result.put("status", "checked")
+                invoke.resolve(result)
+                Log.d(TAG, "requestStoragePermission: downloads directory writable=$canWrite")
+            } else {
+                val permission = Manifest.permission.WRITE_EXTERNAL_STORAGE
+                if (ContextCompat.checkSelfPermission(activity, permission) == PackageManager.PERMISSION_GRANTED) {
+                    val result = JSObject()
+                    result.put("granted", true)
+                    invoke.resolve(result)
+                    return
+                }
+
+                ActivityCompat.requestPermissions(
+                    activity,
+                    arrayOf(permission),
+                    PERMISSION_REQUEST_CODE
+                )
+
+                val result = JSObject()
+                result.put("status", "requesting")
+                invoke.resolve(result)
+                Log.d(TAG, "requestStoragePermission: requesting WRITE_EXTERNAL_STORAGE")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "requestStoragePermission failed", e)
+            invoke.reject("request_storage_permission_failed: ${e.message}")
         }
     }
 }

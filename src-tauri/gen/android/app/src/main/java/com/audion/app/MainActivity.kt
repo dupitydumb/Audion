@@ -1,6 +1,7 @@
 package com.audion.app
 
 import android.os.Bundle
+import android.webkit.WebView
 import androidx.activity.enableEdgeToEdge
 
 class MainActivity : TauriActivity() {
@@ -9,8 +10,14 @@ class MainActivity : TauriActivity() {
     super.onCreate(savedInstanceState)
   }
 
-  override fun onPluginsLoaded() {
-    // Register custom permissions plugin for audio file access
-    registerPlugin(PermissionsPlugin::class.java)
+  override fun onWebViewCreate(webView: WebView) {
+    super.onWebViewCreate(webView)
+    try {
+      // Load the PermissionsPlugin into the PluginManager so JS can call plugin:permissions|...
+      pluginManager.load(webView, "permissions", PermissionsPlugin(this), "permissions")
+    } catch (e: Exception) {
+      // Fallback: log but don't crash
+      android.util.Log.e("MainActivity", "Failed to load PermissionsPlugin", e)
+    }
   }
 }

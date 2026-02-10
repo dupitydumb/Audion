@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="${applicationId}">
     <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Storage: read music files (API 33+ uses granular media permissions) -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
     <!-- Storage: legacy read permission for API 32 and below -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
+    <!-- Legacy write permission for API 32 and below -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
     <!-- Background playback: foreground service to keep audio alive -->
@@ -22,7 +27,8 @@
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:theme="@style/Theme.audion"
-        android:usesCleartextTraffic="${usesCleartextTraffic}">
+        android:usesCleartextTraffic="${usesCleartextTraffic}"
+        android:requestLegacyExternalStorage="true">
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode"
             android:launchMode="singleTask"

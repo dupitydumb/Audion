@@ -383,6 +383,26 @@ export async function selectMusicFolder(): Promise<string | null> {
     return selected as string | null;
 }
 
+// Ensure the correct path for downloaded files
+export async function getDownloadPath(): Promise<string> {
+    try {
+        if (!isTauri()) {
+            throw new Error('Not running in Tauri environment');
+        }
+
+        // Get the default download directory from Tauri
+        const downloadPath = await invoke<string>('get_download_path');
+        if (!downloadPath) {
+            throw new Error('Failed to retrieve download path');
+        }
+
+        return downloadPath;
+    } catch (error) {
+        console.error('Error retrieving download path:', error);
+        throw new Error('Unable to determine download path. Please check your configuration.');
+    }
+}
+
 // Initialize player - load Tauri APIs
 export async function initializePlayer(): Promise<void> {
     await ensureTauriLoaded();
@@ -489,4 +509,115 @@ export async function ensureAudioPermission(): Promise<boolean> {
     console.log('[Permissions] Audio permission status after request:', status.status);
     
     return status.status === 'granted';
+}
+
+// Check if storage permission is granted on Android
+export async function checkStoragePermission(): Promise<{ status: 'granted' | 'prompt' | 'prompt-with-rationale' | 'requesting'; permission?: string }> {
+    if (!isAndroid() || !isTauri()) {
+        return { status: 'granted' }; // Not on Android, permission not needed
+    }
+    
+    try {
+        await ensureTauriLoaded();
+        return await invokeFunc!('plugin:permissions|check_storage_permission');
+    } catch (error) {
+        console.error('[Permissions] Failed to check storage permission:', error);
+        // Assume granted if plugin not available (older builds)
+        return { status: 'granted' };
+    }
+}
+
+// Request storage permission on Android
+export async function requestStoragePermission(): Promise<{ status: 'granted' | 'opened' | 'requesting' }> {
+    if (!isAndroid() || !isTauri()) {
+        return { status: 'granted' }; // Not on Android, permission not needed
+    }
+    
+    try {
+        await ensureTauriLoaded();
+        return await invokeFunc!('plugin:permissions|request_storage_permission');
+    } catch (error) {
+        console.error('[Permissions] Failed to request storage permission:', error);
+        return { status: 'requesting' };
+    }
+}
+
+// Check and request storage permission with retry logic
+export async function ensureStoragePermission(): Promise<boolean> {
+    if (!isAndroid() || !isTauri()) {
+        return true; // Not on Android, permission not needed
+    }
+    
+    // First check current status
+    const status = await checkStoragePermission();
+    console.log('[Permissions] Current storage permission status:', status);
+    
+    if (status.status === 'granted') {
+        return true;
+    }
+    
+    // Request permission
+    const req = await requestStoragePermission();
+    console.log('[Permissions] Storage permission request result:', req);
+    
+    // For Android 11+, the check is immediate
+    if (req.status === 'checked' || req.granted === true) {
+        return req.granted === true;
+    }
+    
+    // For older Android, wait a bit for the system dialog and re-check
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Re-check status after request
+    const recheck = await checkStoragePermission();
+    console.log('[Permissions] Storage permission status after request:', recheck);
+    
+    return recheck.status === 'granted';
+}
+
+// Updated downloadTrack function to ensure permission request is triggered
+export async function downloadTrack(trackId: number): Promise<void> {
+    try {
+        if (!isTauri()) {
+            throw new Error('Not running in Tauri environment');
+        }
+
+        // Ensure storage permissions are granted on Android
+        if (isAndroid()) {
+            console.log('Checking storage permissions...');
+            // Use the permissions plugin on mobile
+            const storageStatus = await invokeFunc!('plugin:permissions|check_storage_permission');
+            console.log('Storage permission status:', storageStatus);
+
+            const granted = storageStatus && storageStatus.granted === true;
+            if (!granted) {
+                console.log('Requesting storage permission...');
+                const req = await invokeFunc!('plugin:permissions|request_storage_permission');
+                console.log('Storage permission request result:', req);
+
+                // After requesting, re-check
+                const recheck = await invokeFunc!('plugin:permissions|check_storage_permission');
+                if (!recheck || recheck.granted !== true) {
+                    throw new Error('Storage permission not granted. Cannot proceed with download.');
+                }
+            }
+        }
+
+        // Get the download path
+        const downloadPath = await getDownloadPath();
+        console.log(`Download path: ${downloadPath}`);
+
+        // Attempt to download the track
+        await invoke('download_track', { trackId, downloadPath });
+        console.log(`Track ${trackId} downloaded successfully to ${downloadPath}.`);
+    } catch (error) {
+        console.error(`Failed to download track ${trackId}:`, error);
+
+        // Display a user-friendly error message
+        if (isAndroid()) {
+            alert('Failed to download track. Please check your storage permissions and try again.');
+        } else {
+            alert('Failed to download track.');
+        }
+    }
 }

@@ -51,7 +51,16 @@ export function hasDownloadableTracks(tracks: Track[]): boolean {
  * Get the download location from settings
  */
 export function getDownloadLocation(): string | null {
-    return get(appSettings).downloadLocation;
+    const location = get(appSettings).downloadLocation;
+    if (location) return location;
+
+    // Detect mobile platform
+    const isMobile = typeof navigator !== 'undefined' && /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+    if (isMobile) {
+        // Use the public Downloads directory for better compatibility
+        return '/storage/emulated/0/Download'; // Android public Downloads directory
+    }
+    return null;
 }
 
 /**
@@ -83,6 +92,18 @@ function generateFilename(track: Track): string {
  * Download a single track
  */
 export async function downloadTrack(track: Track): Promise<string> {
+
+    // On Android, ensure we have storage permission before proceeding
+    const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
+    if (isAndroid) {
+        // Dynamically import permission helpers to avoid SSR issues
+        const { ensureStoragePermission } = await import('$lib/api/tauri');
+        const granted = await ensureStoragePermission();
+        if (!granted) {
+            throw new Error('Storage permission is required to download files. Please grant permission in app settings.');
+        }
+    }
+
     const downloadLocation = getDownloadLocation();
     if (!downloadLocation) {
         throw new Error('No download location configured. Please set one in Settings.');
@@ -253,9 +274,21 @@ export function showDownloadResult(result: DownloadResult): void {
         );
     }
 
-    if (result.failed.length > 0) {
+    if (result.failed.length === 1) {
+        const { track, error } = result.failed[0];
+        let userMessage = error;
+        if (/Failed to create (file|directory)/i.test(error)) {
+            userMessage = 'Cannot create file or folder. Please check storage permissions and available space.';
+        } else if (/permission/i.test(error)) {
+            userMessage = 'Permission denied. Please grant storage access in app settings.';
+        }
         addToast(
-            `Failed to download ${result.failed.length} track${result.failed.length > 1 ? 's' : ''}`,
+            `Failed to download "${track.title}". ${userMessage}`,
+            'error'
+        );
+    } else if (result.failed.length > 1) {
+        addToast(
+            `Failed to download ${result.failed.length} tracks. See logs for details.`,
             'error'
         );
     }
