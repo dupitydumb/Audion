@@ -32,18 +32,13 @@ Audion is a privacy-focused music player that brings the Spotify experience to y
 <summary>Click to view screenshots</summary>
 
 <p align="center">
-  <img src="promotional/mainpage.png" alt="Main Player" width="100%">
-  <br><em>Clean, modern interface</em>
-</p>
-
-<p align="center">
-  <img src="promotional/mainwithlyrics.png" alt="Lyrics Panel" width="100%">
-  <br><em>Real-time synced lyrics</em>
-</p>
-
-<p align="center">
-  <img src="promotional/fullscreen.png" alt="Fullscreen Mode" width="100%">
+  <img width="1343" height="795" alt="image" src="https://github.com/user-attachments/assets/f4d0f1d4-8147-4d81-b010-502da196b432"/>
   <br><em>Immersive full-screen player</em>
+</p>
+
+<p align="center">
+  <img width="1345" height="793" alt="image" src="https://github.com/user-attachments/assets/00c79e80-48a2-4142-8530-27357195c3b3" />
+  <br><em>Real-time synced lyrics</em>
 </p>
 
 </details>
