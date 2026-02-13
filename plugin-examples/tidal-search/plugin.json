@@ -23,5 +23,6 @@
         "music"
     ],
     "license": "MIT",
-    "cross_plugin_access": []
+    "cross_plugin_access": [],
+    "repository": "https://github.com/dupitydumb/tidal-search"
 }

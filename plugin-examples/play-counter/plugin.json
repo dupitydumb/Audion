@@ -16,5 +16,6 @@
         "play-count",
         "analytics"
     ],
-    "license": "MIT"
+    "license": "MIT",
+    "repository": "https://github.com/dupitydumb/play-counter"
 }

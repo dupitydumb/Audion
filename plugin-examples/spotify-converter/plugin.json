@@ -19,5 +19,6 @@
         "playlist",
         "tidal"
     ],
-    "license": "MIT"
+    "license": "MIT",
+    "repository": "https://github.com/dupitydumb/spotify-converter"
 }

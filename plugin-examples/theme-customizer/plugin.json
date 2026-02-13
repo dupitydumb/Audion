@@ -17,5 +17,6 @@
         "colors",
         "ui"
     ],
-    "license": "MIT"
+    "license": "MIT",
+    "repository": "https://github.com/dupitydumb/theme-customizer"
 }

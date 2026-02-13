@@ -80,21 +80,6 @@ fn get_safe_name_from_manifest(manifest: &PluginManifest) -> String {
         .unwrap_or_else(|| to_safe_name(&manifest.name))
 }
 
-// Validate that safe_name matches actual folder structure
-fn validate_safe_name(manifest: &PluginManifest, actual_folder: &str) -> Result<(), String> {
-    let expected_safe_name = get_safe_name_from_manifest(manifest);
-
-    if expected_safe_name != actual_folder {
-        return Err(format!(
-            "Plugin manifest safe_name mismatch: expected folder '{}' but found '{}'. \
-            Update plugin.json to set \"safe_name\": \"{}\"",
-            expected_safe_name, actual_folder, actual_folder
-        ));
-    }
-
-    Ok(())
-}
-
 fn get_state_file_path(plugin_dir: &str) -> PathBuf {
     PathBuf::from(plugin_dir).join("plugin_state.json")
 }
@@ -124,6 +109,54 @@ fn read_plugin_manifest(plugin_path: &PathBuf) -> Option<PluginManifest> {
     }
 }
 
+// Helper to find a plugin's path by its name
+// Tries:
+// 1. Standard safe name
+// 2. Safe name with "-main" suffix
+// 3. Scan all directories for matching manifest name
+fn resolve_plugin_path(plugin_dir: &str, plugin_name: &str) -> Option<(PathBuf, String)> {
+    let dir = PathBuf::from(plugin_dir);
+    let safe_name = to_safe_name(plugin_name);
+
+    // 1. Try exact safe name
+    let path1 = dir.join(&safe_name);
+    if let Some(manifest) = read_plugin_manifest(&path1) {
+        if manifest.name == plugin_name {
+            return Some((path1, safe_name));
+        }
+    }
+
+    // 2. Try safe name + "-main" suffix
+    let suffix_name = format!("{}-main", safe_name);
+    let path2 = dir.join(&suffix_name);
+    if let Some(manifest) = read_plugin_manifest(&path2) {
+        if manifest.name == plugin_name {
+            return Some((path2, suffix_name));
+        }
+    }
+
+    // 3. Scan all subdirectories
+    if let Ok(entries) = fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if let Some(manifest) = read_plugin_manifest(&path) {
+                    if manifest.name == plugin_name {
+                        let folder_name = path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or_default()
+                            .to_string();
+                        return Some((path, folder_name));
+                    }
+                }
+            }
+        }
+    }
+
+    None
+}
+
 #[tauri::command]
 pub fn list_plugins(plugin_dir: String) -> Vec<PluginInfo> {
     let mut plugins = Vec::new();
@@ -135,14 +168,7 @@ pub fn list_plugins(plugin_dir: String) -> Vec<PluginInfo> {
             let path = entry.path();
             if path.is_dir() {
                 if let Some(manifest) = read_plugin_manifest(&path) {
-                    // Validate that manifest matches folder structure
-                    if let Some(folder_name) = path.file_name().and_then(|n| n.to_str()) {
-                        if let Err(e) = validate_safe_name(&manifest, folder_name) {
-                            eprintln!("Warning: {}", e);
-                            // Continue anyway to allow users to see misconfigured plugins
-                        }
-                    }
-
+                    // No need to strict validate folder name anymore, just list it.
                     let name = manifest.name.clone();
                     let state = states.plugins.get(&name);
 
@@ -165,31 +191,12 @@ pub fn list_plugins(plugin_dir: String) -> Vec<PluginInfo> {
 pub fn enable_plugin(name: String, plugin_dir: String) -> Result<bool, String> {
     let mut states = load_plugin_states(&plugin_dir);
 
-    // First try to read manifest to get proper safe_name
-    // Fall back to conversion if manifest not found
-    let safe_name = {
-        let fallback_safe_name = to_safe_name(&name);
-        let plugin_path = PathBuf::from(&plugin_dir).join(&fallback_safe_name);
-
-        if let Some(manifest) = read_plugin_manifest(&plugin_path) {
-            get_safe_name_from_manifest(&manifest)
-        } else {
-            fallback_safe_name
-        }
-    };
-
-    let plugin_path = PathBuf::from(&plugin_dir).join(&safe_name);
+    // Use resolve_plugin_path to find the real path
+    let (plugin_path, _folder_name) = resolve_plugin_path(&plugin_dir, &name)
+        .ok_or_else(|| format!("Plugin not found: {}", name))?;
 
     // Read manifest to get requested permissions
     let manifest = read_plugin_manifest(&plugin_path);
-
-    // Validate but allow enabling anyway (just warn)
-    if let Some(ref m) = manifest {
-        if let Err(e) = validate_safe_name(m, &safe_name) {
-            eprintln!("Warning: {}", e);
-            // Continue anyway - user explicitly wants to enable
-        }
-    }
 
     if let Some(state) = states.plugins.get_mut(&name) {
         state.enabled = true;
@@ -230,7 +237,7 @@ pub fn enable_plugin(name: String, plugin_dir: String) -> Result<bool, String> {
             save_plugin_states(&plugin_dir, &states)?;
             Ok(true)
         } else {
-            Err(format!("Plugin not found: {}", name))
+            Err(format!("Plugin manifest not found"))
         }
     }
 }
@@ -317,8 +324,8 @@ pub async fn install_plugin(repo_url: String, plugin_dir: String) -> Result<Plug
     let safe_name = get_safe_name_from_manifest(&manifest);
     let plugin_path = PathBuf::from(&plugin_dir).join(&safe_name);
 
-    // Validate that the manifest is consistent (defensive check for new installs)
-    validate_safe_name(&manifest, &safe_name)?;
+    // When installing new, we enforce the standard naming convention
+    // validate_safe_name(&manifest, &safe_name)?;
 
     fs::create_dir_all(&plugin_path).map_err(|e| format!("Failed to create plugin dir: {}", e))?;
 
@@ -387,23 +394,9 @@ pub async fn install_plugin(repo_url: String, plugin_dir: String) -> Result<Plug
 
 #[tauri::command]
 pub fn uninstall_plugin(name: String, plugin_dir: String) -> Result<bool, String> {
-    // Try to get safe name, but don't validate
-    let safe_name = {
-        let fallback_safe_name = to_safe_name(&name);
-        let plugin_path = PathBuf::from(&plugin_dir).join(&fallback_safe_name);
-
-        if let Some(manifest) = read_plugin_manifest(&plugin_path) {
-            get_safe_name_from_manifest(&manifest)
-        } else {
-            fallback_safe_name
-        }
-    };
-
-    let plugin_path = PathBuf::from(&plugin_dir).join(&safe_name);
-
-    if !plugin_path.exists() {
-        return Err(format!("Plugin not found: {}", name));
-    }
+    // Resolve path using our robust helper
+    let (plugin_path, _) = resolve_plugin_path(&plugin_dir, &name)
+        .ok_or_else(|| format!("Plugin not found: {}", name))?;
 
     // Remove plugin directory
     fs::remove_dir_all(&plugin_path).map_err(|e| format!("Failed to remove plugin: {}", e))?;
@@ -418,7 +411,7 @@ pub fn uninstall_plugin(name: String, plugin_dir: String) -> Result<bool, String
 
 #[tauri::command]
 pub fn get_plugin_permissions(name: String, plugin_dir: String) -> Option<Vec<String>> {
-    let plugin_path = PathBuf::from(plugin_dir).join(&name);
+    let (plugin_path, _) = resolve_plugin_path(&plugin_dir, &name)?;
     read_plugin_manifest(&plugin_path).map(|m| m.permissions)
 }
 
@@ -452,12 +445,12 @@ pub fn check_cross_plugin_permission(
     method: String,
     plugin_dir: String,
 ) -> Result<bool, String> {
-    // Get caller plugin's manifest using safe name
-    let safe_caller_name = to_safe_name(&caller_plugin);
-    let caller_path = PathBuf::from(&plugin_dir).join(&safe_caller_name);
+    // Get caller plugin's manifest using resolve_plugin_path
+    let (caller_path, _) = resolve_plugin_path(&plugin_dir, &caller_plugin)
+        .ok_or_else(|| format!("Caller plugin not found: {}", caller_plugin))?;
 
     let manifest = read_plugin_manifest(&caller_path)
-        .ok_or_else(|| format!("Caller plugin not found: {}", caller_plugin))?;
+        .ok_or_else(|| format!("Caller plugin manifest not found"))?;
 
     // Check if caller has permission for this target plugin + method
     // The manifest contains display names in cross_plugin_access, so compare directly
@@ -476,12 +469,12 @@ pub fn get_cross_plugin_permissions(
     plugin_name: String,
     plugin_dir: String,
 ) -> Result<Vec<CrossPluginAccess>, String> {
-    // First try with fallback safe name to locate the plugin
-    let fallback_safe_name = to_safe_name(&plugin_name);
-    let plugin_path = PathBuf::from(&plugin_dir).join(&fallback_safe_name);
-
-    let manifest = read_plugin_manifest(&plugin_path)
+    // Resolve path using robust helper
+    let (plugin_path, _) = resolve_plugin_path(&plugin_dir, &plugin_name)
         .ok_or_else(|| format!("Plugin not found: {}", plugin_name))?;
+
+    let manifest =
+        read_plugin_manifest(&plugin_path).ok_or_else(|| format!("Plugin manifest not found"))?;
 
     // Return cross_plugin_access as-is (contains display names like "Tidal Search")
     Ok(manifest.cross_plugin_access)
@@ -630,19 +623,12 @@ pub async fn check_plugin_updates(plugin_dir: String) -> Result<Vec<PluginUpdate
 
 #[tauri::command]
 pub async fn update_plugin(name: String, plugin_dir: String) -> Result<PluginInfo, String> {
-    // Get the current plugin's manifest to retrieve repo URL and preserve state
-    let fallback_safe_name = to_safe_name(&name);
-    let plugin_path = PathBuf::from(&plugin_dir).join(&fallback_safe_name);
+    // Get the current plugin's path using resolve_plugin_path
+    let (plugin_path, _) = resolve_plugin_path(&plugin_dir, &name)
+        .ok_or_else(|| format!("Plugin not found: {}", name))?;
 
     let manifest =
-        read_plugin_manifest(&plugin_path).ok_or_else(|| format!("Plugin not found: {}", name))?;
-
-    let safe_name = get_safe_name_from_manifest(&manifest);
-
-    // Validate before updating
-    validate_safe_name(&manifest, &safe_name)?;
-
-    let plugin_path = PathBuf::from(&plugin_dir).join(&safe_name);
+        read_plugin_manifest(&plugin_path).ok_or_else(|| format!("Plugin manifest not found"))?;
 
     let repo_url = manifest
         .repo
@@ -653,10 +639,13 @@ pub async fn update_plugin(name: String, plugin_dir: String) -> Result<PluginInf
     let current_state = states.plugins.get(&name).cloned();
 
     // Remove the old plugin files (but keep state)
+    // NOTE: This will delete the arbitrary folder it was in.
+    // The re-install below will use the safe name. This effectively "standardizes"
+    // the folder name on update, which is desirable.
     fs::remove_dir_all(&plugin_path)
         .map_err(|e| format!("Failed to remove old plugin files: {}", e))?;
 
-    // Reinstall from repo (reuse install_plugin logic)
+    // Reinstall from repo (reuse install_plugin logic parts)
     let parts: Vec<&str> = repo_url.trim_end_matches('/').split('/').collect();
     if parts.len() < 2 {
         return Err("Invalid repository URL".to_string());
@@ -712,12 +701,11 @@ pub async fn update_plugin(name: String, plugin_dir: String) -> Result<PluginInf
     // Inject repo URL into manifest for future update checks
     new_manifest.repo = Some(repo_url.clone());
 
-    // Validate the new manifest
+    // Get safe name from manifest (prefers explicit safe_name field)
     let new_safe_name = get_safe_name_from_manifest(&new_manifest);
-    validate_safe_name(&new_manifest, &new_safe_name)?;
-
-    // Create plugin directory
+    // When updating, we revert to standard naming
     let new_plugin_path = PathBuf::from(&plugin_dir).join(&new_safe_name);
+
     fs::create_dir_all(&new_plugin_path)
         .map_err(|e| format!("Failed to create plugin dir: {}", e))?;
 

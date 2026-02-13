@@ -24,5 +24,6 @@
         "discord",
         "rich-presence"
     ],
-    "license": "MIT"
+    "license": "MIT",
+    "repository": "https://github.com/dupitydumb/discord-rich-presence"
 }

@@ -15,5 +15,6 @@
         "notification",
         "now-playing"
     ],
-    "license": "MIT"
+    "license": "MIT",
+    "repository": "https://github.com/dupitydumb/now-playing-notifier"
 }

@@ -41,3 +41,6 @@ src-tauri/gen/
 # Vite HMR timestamps
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Plugin examples
+plugin-examples/

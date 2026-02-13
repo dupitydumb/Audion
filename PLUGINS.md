@@ -37,7 +37,8 @@ The manifest defines your plugin's metadata and requested permissions.
   "permissions": [
     "player:read",
     "ui:inject"
-  ]
+  ],
+  "repository": "https://github.com/username/my-plugin.git"
 }
 ```
 
@@ -249,3 +250,18 @@ Plugins can inject their own `<style>` tags or use inline styles. Audion provide
 ## Publishing
 
 Currently, plugins are installed manually by placing them in the `plugins` directory. A marketplace feature is planned for future releases.
+
+## Repository Synchronization
+
+If you are developing plugins within the `plugin-examples` directory of the main Audion repository but want to maintain separate git repositories for each plugin, you can use the built-in synchronization script.
+
+1.  **Configure `plugin.json`**: Ensure your plugin's `plugin.json` has a `repository` field with the remote git URL.
+    ```json
+    "repository": "https://github.com/username/my-plugin.git"
+    ```
+2.  **Run Sync Command**: From the root of the Audion repository, run:
+    ```bash
+    npm run sync-plugins
+    ```
+
+This script will iterate through all folders in `plugin-examples`, check for a `repository` field, and use `git subtree push` to sync changes to the specified remote's `main` branch.
