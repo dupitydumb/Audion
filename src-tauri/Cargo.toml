@@ -23,7 +23,6 @@ tauri-plugin-os = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-notification = "2"
-tauri-plugin-os = "2"
 
 # dirs for cross-platform app data paths
 dirs = "5"
@@ -44,7 +43,12 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 base64 = "0.22"
 
 # HTTP client for API requests
-reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "stream", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = [
+    "json",
+    "cookies",
+    "stream",
+    "rustls-tls",
+] }
 futures = "0.3"
 
 # Error handling
@@ -55,9 +59,9 @@ tokio = { version = "1.49.0", features = ["full"] }
 sha2 = "0.10"
 
 # Parallel processing
-rayon = "1.10" 
+rayon = "1.10"
 
- # Thread-safe channels
+# Thread-safe channels
 crossbeam = "0.8"
 
 # Move files to trash instead of permanent deletion (security, desktop only)
