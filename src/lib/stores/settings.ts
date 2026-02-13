@@ -9,6 +9,9 @@ export interface AppSettings {
     showDiscord: boolean;
     startMode: 'normal' | 'maximized' | 'minimized';
     autoplay: boolean;
+    // Audio backend preference: 'auto' uses native on Linux, HTML5 elsewhere
+    // 'native' forces rodio, 'html5' forces WebView audio
+    audioBackend: 'auto' | 'native' | 'html5';
 }
 
 const SETTINGS_STORAGE_KEY = 'audion_settings';
@@ -21,6 +24,7 @@ const defaultSettings: AppSettings = {
     showDiscord: true,
     startMode: 'normal',
     autoplay: false,
+    audioBackend: 'auto',
 };
 
 // Load settings from localStorage
@@ -92,6 +96,14 @@ function createSettingsStore() {
         setAutoplay(enabled: boolean) {
             update(state => {
                 const newState = { ...state, autoplay: enabled };
+                saveSettings(newState);
+                return newState;
+            });
+        },
+
+        setAudioBackend(backend: 'auto' | 'native' | 'html5') {
+            update(state => {
+                const newState = { ...state, audioBackend: backend };
                 saveSettings(newState);
                 return newState;
             });

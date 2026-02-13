@@ -136,40 +136,71 @@ export async function linuxAudioIsFinished(): Promise<boolean> {
 // HELPER: Check if native audio backend should be used
 // =============================================================================
 
-let useNativeAudioBackend: boolean | null = null;
+let nativeAudioAvailable: boolean | null = null;
 
 /**
- * Check if we should use the native audio backend.
- *
- * This returns true when:
- * 1. Running on Linux (always has native audio), OR
- * 2. Running on any platform where native_audio_available command exists
- *    (i.e., built with --features native-audio)
- *
- * The check tries to call the native_audio_available command first.
- * If it fails (command doesn't exist), we fall back to platform detection.
+ * Check if native audio backend is available (compiled into the app).
+ * This doesn't check user preference, just availability.
  */
-export async function shouldUseNativeAudio(): Promise<boolean> {
-    if (useNativeAudioBackend !== null) {
-        return useNativeAudioBackend;
+export async function isNativeAudioAvailable(): Promise<boolean> {
+    if (nativeAudioAvailable !== null) {
+        return nativeAudioAvailable;
     }
 
     if (!isTauri()) {
-        useNativeAudioBackend = false;
+        nativeAudioAvailable = false;
         return false;
     }
 
     try {
-        // Try to call the native audio check command
-        // If this succeeds, the backend was compiled with native audio support
         const available = await invoke<boolean>('native_audio_available');
-        useNativeAudioBackend = available;
+        nativeAudioAvailable = available;
         console.log(`[AUDIO] Native audio backend: ${available ? 'available' : 'not available'}`);
-        return useNativeAudioBackend;
+        return nativeAudioAvailable;
     } catch (e) {
-        // Command doesn't exist, so native audio is not compiled
-        console.log('[AUDIO] Native audio backend not available (using HTML5 Audio)');
-        useNativeAudioBackend = false;
+        console.log('[AUDIO] Native audio backend not available');
+        nativeAudioAvailable = false;
         return false;
     }
+}
+
+/**
+ * Check if we should use the native audio backend.
+ *
+ * This considers:
+ * 1. Whether native audio is available (compiled in)
+ * 2. User preference from settings (auto/native/html5)
+ * 3. Platform (Linux defaults to native in 'auto' mode)
+ */
+export async function shouldUseNativeAudio(): Promise<boolean> {
+    const available = await isNativeAudioAvailable();
+    if (!available) {
+        return false;
+    }
+
+    // Check user preference from localStorage
+    try {
+        const stored = localStorage.getItem('audion_settings');
+        if (stored) {
+            const settings = JSON.parse(stored);
+            const backend = settings.audioBackend || 'auto';
+
+            if (backend === 'native') {
+                console.log('[AUDIO] User preference: native');
+                return true;
+            }
+            if (backend === 'html5') {
+                console.log('[AUDIO] User preference: html5');
+                return false;
+            }
+            // 'auto' falls through to platform detection
+        }
+    } catch (e) {
+        // Ignore parse errors, use auto behavior
+    }
+
+    // Auto mode: use native on Linux, HTML5 elsewhere
+    const onLinux = await isLinux();
+    console.log(`[AUDIO] Auto mode: ${onLinux ? 'native (Linux)' : 'html5'}`);
+    return onLinux;
 }

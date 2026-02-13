@@ -7,13 +7,17 @@
     resetDatabase,
     selectMusicFolder,
     syncCoverPathsFromFiles,
-    mergeDuplicateCovers, 
+    mergeDuplicateCovers,
     type MergeCoverResult
   } from "$lib/api/tauri";
   import { loadLibrary } from "$lib/stores/library";
   import UpdatePopup from "./UpdatePopup.svelte";
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { onMount, onDestroy } from 'svelte';
+  import { isNativeAudioAvailable } from "$lib/services/linux-audio";
+
+  // Check if native audio backend is available (compiled with rodio)
+  let nativeAudioAvailable = false;
 
   interface MigrationProgressUpdate {
     current: number;
@@ -61,6 +65,9 @@
   let unlistenMerge: UnlistenFn | null = null;
 
   onMount(async () => {
+    // Check if native audio is available (compiled with rodio support)
+    nativeAudioAvailable = await isNativeAudioAvailable().catch(() => false);
+
     // Listen for migration events (used by sync)
     unlistenSync = await listen('migration-batch-ready', (event) => {
       const data = event.payload as { progress: MigrationProgressUpdate };
@@ -531,6 +538,30 @@
           </div>
         </div>
       </section>
+
+      <!-- Audio Backend (only shown if native audio is available) -->
+      {#if nativeAudioAvailable}
+      <section class="settings-section">
+        <h3 class="section-title">Audio</h3>
+
+        <div class="setting-item">
+          <span class="setting-label">Audio Backend</span>
+          <div class="preset-selector">
+            <select
+              class="preset-select"
+              value={$appSettings.audioBackend}
+              on:change={(e) => appSettings.setAudioBackend(e.currentTarget.value as 'auto' | 'native' | 'html5')}
+            >
+              <option value="native">Native (rodio)</option>
+              <option value="html5">WebView</option>
+            </select>
+          </div>
+          <p class="setting-hint">
+            Native uses rodio for direct system audio. WebView uses the browser engine.
+          </p>
+        </div>
+      </section>
+      {/if}
 
       <!-- Cover Management -->
       <section class="settings-section">
