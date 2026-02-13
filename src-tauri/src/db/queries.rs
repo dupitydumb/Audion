@@ -983,3 +983,15 @@ pub fn update_track_cover_url(
     )?;
     Ok(())
 }
+
+pub fn update_local_src(
+    conn: &Connection,
+    track_id: i64,
+    local_src: Option<&str>,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE tracks SET local_src = ?1 WHERE id = ?2",
+        params![local_src, track_id],
+    )?;
+    Ok(())
+}
