@@ -3,7 +3,7 @@
   import { appSettings } from "$lib/stores/settings";
   import { theme } from "$lib/stores/theme";
   import { cleanupPlayer } from "$lib/stores/player";
-  import { migrateCoversToFiles, isAndroid, isTauri, ensureAudioPermission, openAppSettings } from "$lib/api/tauri";
+  import { migrateCoversToFiles, isAndroid, isTauri, ensureAudioPermission, openAppSettings, initPlatformDetection } from "$lib/api/tauri";
   import { initMobileDetection, isMobile } from '$lib/stores/mobile';
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
@@ -17,6 +17,9 @@
   let permissionDenied = false;
 
   onMount(async () => {
+    // Detect platform early for Linux-specific fixes (asset:// -> file://)
+    await initPlatformDetection();
+
     appSettings.initialize();
     theme.initialize();
     initMobileDetection();

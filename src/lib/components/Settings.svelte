@@ -7,13 +7,17 @@
     resetDatabase,
     selectMusicFolder,
     syncCoverPathsFromFiles,
-    mergeDuplicateCovers, 
+    mergeDuplicateCovers,
     type MergeCoverResult
   } from "$lib/api/tauri";
   import { loadLibrary } from "$lib/stores/library";
   import UpdatePopup from "./UpdatePopup.svelte";
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import { onMount, onDestroy } from 'svelte';
+  import { isNativeAudioAvailable } from "$lib/services/linux-audio";
+
+  // Check if native audio backend is available (compiled with rodio)
+  let nativeAudioAvailable = false;
 
   interface MigrationProgressUpdate {
     current: number;
@@ -61,6 +65,9 @@
   let unlistenMerge: UnlistenFn | null = null;
 
   onMount(async () => {
+    // Check if native audio is available (compiled with rodio support)
+    nativeAudioAvailable = await isNativeAudioAvailable().catch(() => false);
+
     // Listen for migration events (used by sync)
     unlistenSync = await listen('migration-batch-ready', (event) => {
       const data = event.payload as { progress: MigrationProgressUpdate };
@@ -531,6 +538,28 @@
           </div>
         </div>
       </section>
+
+      <!-- Audio Backend (only shown if native audio is available) -->
+      {#if nativeAudioAvailable}
+      <section class="settings-section">
+        <h3 class="section-title">Audio</h3>
+
+        <div class="setting-item">
+          <span class="setting-label">Audio Backend</span>
+          <div class="preset-selector">
+            <select
+              class="preset-select"
+              value={$appSettings.audioBackend}
+              on:change={(e) => appSettings.setAudioBackend(e.currentTarget.value as 'auto' | 'native' | 'html5')}
+            >
+              <option value="auto">Auto</option>
+              <option value="native">Native (rodio)</option>
+              <option value="html5">WebView</option>
+            </select>
+          </div>
+        </div>
+      </section>
+      {/if}
 
       <!-- Cover Management -->
       <section class="settings-section">
@@ -1510,6 +1539,12 @@
     font-size: 0.875rem;
     cursor: pointer;
     max-width: 200px;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23b3b3b3' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right var(--spacing-sm) center;
+    padding-right: calc(var(--spacing-md) + 16px);
   }
 
   .preset-select:focus {

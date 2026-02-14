@@ -29,6 +29,11 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
+          "$HOME/.local/share/com.audion.app/**",
+          "$HOME/.local/share/**",
+          "$APPDATA/**",
+          "$AUDIO/**",
+          "$MUSIC/**",
           "**"
         ]
       }

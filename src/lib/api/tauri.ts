@@ -10,6 +10,39 @@ export function isAndroid(): boolean {
     return typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
 }
 
+// =============================================================================
+// LINUX PLATFORM DETECTION
+// =============================================================================
+// WebKitGTK on Linux has issues with asset:// protocol for media playback.
+// We detect Linux and use file:// URLs instead for audio sources.
+// =============================================================================
+let isLinuxPlatform: boolean | null = null;
+
+async function detectLinux(): Promise<boolean> {
+    if (isLinuxPlatform !== null) return isLinuxPlatform;
+
+    if (!isTauri()) {
+        isLinuxPlatform = false;
+        return false;
+    }
+
+    try {
+        const { platform } = await import('@tauri-apps/plugin-os');
+        const os = await platform();
+        isLinuxPlatform = os === 'linux';
+    } catch {
+        // Fallback to navigator.platform
+        isLinuxPlatform = typeof navigator !== 'undefined' &&
+                          navigator.platform.toLowerCase().includes('linux');
+    }
+    return isLinuxPlatform;
+}
+
+// Initialize platform detection early - call this on app startup
+export async function initPlatformDetection(): Promise<void> {
+    await detectLinux();
+}
+
 // Dynamic imports to avoid SSR issues
 let invokeFunc: typeof import('@tauri-apps/api/core').invoke | null = null;
 let openFunc: typeof import('@tauri-apps/plugin-dialog').open | null = null;
@@ -40,6 +73,8 @@ async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T
     return invokeFunc!(cmd, args);
 }
 
+// Convert file path to asset:// URL for WebView
+// Note: For audio on Linux, use getAudioSrc() which returns file:// URLs
 export function convertFileSrc(filePath: string): string {
     if (!convertFileSrcFunc) {
         throw new Error('Tauri not loaded');
@@ -408,9 +443,17 @@ export async function initializePlayer(): Promise<void> {
     await ensureTauriLoaded();
 }
 
-// Convert local file path to asset URL for playback
+// Convert local file path to URL for playback
+// On Linux, WebKitGTK doesn't handle asset:// for media, so we use file:// instead
 export async function getAudioSrc(filePath: string): Promise<string> {
     await ensureTauriLoaded();
+
+    // Linux fix: use file:// protocol instead of asset:// for WebKitGTK compatibility
+    const onLinux = await detectLinux();
+    if (onLinux) {
+        return `file://${filePath}`;
+    }
+
     return convertFileSrcFunc!(filePath);
 }
 

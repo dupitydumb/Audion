@@ -8,6 +8,31 @@ import { tracks as libraryTracks, getFullTrack, getAlbumCoverFromTracks } from '
 import { appSettings } from '$lib/stores/settings';
 import { equalizer, EQ_FREQUENCIES } from '$lib/stores/equalizer';
 
+// =============================================================================
+// LINUX NATIVE AUDIO BACKEND
+// =============================================================================
+// On Linux, WebKitGTK has issues with the asset:// protocol for media playback.
+// We detect Linux at startup and route audio commands to the native Rust backend.
+// Windows and macOS continue to use the HTML5 Audio element.
+// =============================================================================
+import {
+    shouldUseNativeAudio,
+    linuxAudioPlay,
+    linuxAudioPause,
+    linuxAudioResume,
+    linuxAudioStop,
+    linuxAudioSetVolume,
+    linuxAudioSeek,
+    linuxAudioGetState,
+    linuxAudioIsFinished,
+    type LinuxPlaybackState
+} from '$lib/services/linux-audio';
+
+// Flag to track if we should use native audio (set on init)
+let useNativeAudio = false;
+// Interval for polling playback state on Linux
+let linuxStatePoller: ReturnType<typeof setInterval> | null = null;
+
 // Plugin event emitter (global singleton for plugin system)
 export const pluginEvents = new EventEmitter<PluginEvents>();
 
@@ -246,8 +271,58 @@ function stopTimeSync(): void {
     }
 }
 
+// =============================================================================
+// AUDIO ELEMENT SETUP
+// =============================================================================
+// On initialization, we detect the platform and set up the appropriate backend.
+// On Linux, we use native audio via rodio; elsewhere we use HTML5 Audio.
+// =============================================================================
+export async function initAudioBackend(): Promise<void> {
+    useNativeAudio = await shouldUseNativeAudio();
+    if (useNativeAudio) {
+        console.log('[Player] Using native audio backend (Linux/rodio)');
+        startLinuxStatePoller();
+    } else {
+        console.log('[Player] Using HTML5 Audio backend');
+    }
+}
+
+// Poll the native backend for state changes (position, finished, etc.)
+function startLinuxStatePoller(): void {
+    if (linuxStatePoller) return;
+
+    linuxStatePoller = setInterval(async () => {
+        if (!useNativeAudio) return;
+
+        try {
+            // Get current state from native backend
+            const state = await linuxAudioGetState();
+
+            // Update position and duration for seekbar
+            currentTime.set(state.position);
+            if (state.duration > 0) {
+                duration.set(state.duration);
+            }
+
+            // Check if track finished
+            if (state.is_playing === false && get(isPlaying)) {
+                const finished = await linuxAudioIsFinished();
+                if (finished) {
+                    handleTrackEnd();
+                }
+            }
+        } catch (e) {
+            // Ignore polling errors
+        }
+    }, 250); // Poll more frequently for smoother seekbar
+}
+
 // setAudioElement with proper cleanup
 export function setAudioElement(element: HTMLAudioElement): void {
+    // Initialize native audio detection on first call
+    if (useNativeAudio === false) {
+        initAudioBackend();
+    }
     // Clean up old element listeners if replacing
     if (audioElement && audioElement !== element && cleanupListeners) {
         console.log('[Player] Cleaning up old audio element listeners');
@@ -622,6 +697,52 @@ export async function playTrack(track: Track): Promise<void> {
     const trackForPlugins = fullTrack || track;
     pluginEvents.emit('trackChange', { track: trackForPlugins, previousTrack });
 
+    // =========================================================================
+    // NATIVE AUDIO BACKEND (Linux)
+    // =========================================================================
+    // On Linux, we bypass the HTML5 Audio element entirely and use rodio.
+    // This avoids WebKitGTK's issues with the asset:// protocol.
+    // =========================================================================
+    if (useNativeAudio) {
+        try {
+            // For local files, use the path directly (no conversion needed)
+            // rodio reads the file directly from disk
+            let audioPath = track.local_src || track.path;
+
+            // External sources (plugins) still need URL resolution
+            if (track.source_type && track.source_type !== 'local' && !track.local_src) {
+                // Native backend doesn't support streaming URLs yet
+                // Fall back to error for now
+                addToast(`Native backend doesn't support streaming: "${track.title}"`, 'error');
+                return;
+            }
+
+            if (sessionId !== currentSessionId) return;
+
+            // Play via native backend
+            await linuxAudioPlay(audioPath);
+
+            // Sync volume with native backend
+            const vol = sliderToAudioVolume(get(volume));
+            await linuxAudioSetVolume(vol);
+
+            isPlaying.set(true);
+            startTimeSync();
+
+            // Update Media Session for system integration
+            updateMediaSessionMetadata(track);
+
+            console.log('[Player] Native playback started:', track.title);
+        } catch (err) {
+            console.error('[Player] Native playback failed:', err);
+            addToast(`Playback failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
+        }
+        return;
+    }
+
+    // =========================================================================
+    // HTML5 AUDIO BACKEND (Windows/macOS)
+    // =========================================================================
     if (audioElement) {
         try {
             let src: string | undefined;
@@ -796,7 +917,26 @@ export function playTracks(
 }
 
 // Play/Pause toggle
-export function togglePlay(): void {
+export async function togglePlay(): Promise<void> {
+    // Native backend (Linux)
+    if (useNativeAudio) {
+        try {
+            if (get(isPlaying)) {
+                await linuxAudioPause();
+                isPlaying.set(false);
+                stopTimeSync();
+            } else {
+                await linuxAudioResume();
+                isPlaying.set(true);
+                startTimeSync();
+            }
+        } catch (err) {
+            console.error('[Player] Toggle failed:', err);
+        }
+        return;
+    }
+
+    // HTML5 Audio backend (Windows/macOS)
     if (!audioElement) return;
 
     if (audioElement.paused) {
@@ -925,7 +1065,7 @@ function playRandomFromLibrary(): void {
 }
 
 // Previous track
-export function previousTrack(): void {
+export async function previousTrack(): Promise<void> {
     const q = get(queue);
     const shuf = get(shuffle);
     let idx = get(queueIndex);
@@ -933,7 +1073,19 @@ export function previousTrack(): void {
     if (q.length === 0) return;
 
     // If more than 3 seconds in, restart current track
-    if (audioElement && audioElement.currentTime > 3) {
+    // Native backend (Linux)
+    if (useNativeAudio) {
+        try {
+            const state = await linuxAudioGetState();
+            if (state.position > 3) {
+                await linuxAudioSeek(0);
+                return;
+            }
+        } catch (err) {
+            console.error('[Player] Get state failed:', err);
+        }
+    } else if (audioElement && audioElement.currentTime > 3) {
+        // HTML5 Audio backend
         audioElement.currentTime = 0;
         return;
     }
@@ -962,7 +1114,18 @@ export function previousTrack(): void {
 }
 
 // Seek to position (0-1)
-export function seek(position: number): void {
+export async function seek(position: number): Promise<void> {
+    // Native backend (Linux)
+    if (useNativeAudio) {
+        try {
+            await linuxAudioSeek(position);
+        } catch (err) {
+            console.error('[Player] Seek failed:', err);
+        }
+        return;
+    }
+
+    // HTML5 Audio backend
     if (!audioElement) return;
     const dur = audioElement.duration;
     if (dur && isFinite(dur)) {
@@ -971,8 +1134,20 @@ export function seek(position: number): void {
 }
 
 // Set volume (slider value 0-1, will be converted to logarithmic for audio)
-export function setVolume(sliderValue: number): void {
+export async function setVolume(sliderValue: number): Promise<void> {
     volume.set(sliderValue);
+
+    // Native backend (Linux)
+    if (useNativeAudio) {
+        try {
+            await linuxAudioSetVolume(sliderToAudioVolume(sliderValue));
+        } catch (err) {
+            console.error('[Player] Volume set failed:', err);
+        }
+        return;
+    }
+
+    // HTML5 Audio backend
     if (audioElement) {
         // Apply logarithmic curve for natural-feeling volume
         audioElement.volume = sliderToAudioVolume(sliderValue);
