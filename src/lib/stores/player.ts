@@ -369,6 +369,13 @@ export function setAudioElement(element: HTMLAudioElement): void {
         
         const track = get(currentTrack);
         if (track) {
+            // If decode error on a downloaded file, try streaming instead
+            if (error?.code === MediaError.MEDIA_ERR_DECODE && track.local_src && track.source_type && track.source_type !== 'local') {
+                console.log('[Player] Local file decode failed, retrying with streaming');
+                playTrack(track, true); // Skip local_src
+                return;
+            }
+            
             addToast(`Cannot play "${track.title}": ${errorMessage}`, 'error');
         }
     };
@@ -607,7 +614,7 @@ function updateMediaSessionPosition(): void {
 }
 
 // Play a specific track
-export async function playTrack(track: Track): Promise<void> {
+export async function playTrack(track: Track, skipLocalSrc = false): Promise<void> {
     const previousTrack = get(currentTrack);
     const sessionId = ++currentSessionId;
 
@@ -626,8 +633,8 @@ export async function playTrack(track: Track): Promise<void> {
         try {
             let src: string | undefined;
 
-            // Check for local cached version first
-            if (track.local_src) {
+            // Check for local cached version first (unless skipping)
+            if (track.local_src && !skipLocalSrc) {
                 try {
                     src = await getAudioSrc(track.local_src);
                 } catch (err) {
