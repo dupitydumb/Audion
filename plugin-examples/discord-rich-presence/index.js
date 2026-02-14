@@ -9,16 +9,20 @@
     defaultSettings: {
       enabled: true,
       showProgress: true,
-      updateInterval: 10000,
+      updateInterval: 15000,
       detailsLeft: "track_title",
       detailsRight: "none",
       detailsCustomLeft: "",
       detailsCustomRight: "",
       stateLeft: "artist",
-      stateRight: "album",
+      stateRight: "none",
       stateCustomLeft: "",
       stateCustomRight: "",
       useTidalCovers: true,
+      activityTimeoutEnabled: true,
+      activityTimeoutTime: 600000,
+      statusDisplayType: 0,
+      showPauseIcon: true,
     },
 
     settings: null,
@@ -28,12 +32,17 @@
     duration: 0,
     isPlaying: false,
     updateTimeout: null,
+    activityClearTimeout: null,
     coverCache: new Map(),
     MAX_COVER_CACHE_SIZE: 100,
     isSettingsOpen: false,
     api: null,
     tempSettings: null,
     connectionStatusInterval: null,
+    lastProgressUpdate: 0,
+    lastTrackId: null,
+    lastPlayingState: null,
+    lastTime: 0,
 
     async init(api) {
       this.api = api;
@@ -107,16 +116,18 @@
     },
 
     async applySettings() {
-      const wasEnabled = this.settings.enabled;
       this.settings = { ...this.tempSettings };
 
-      if (this.settings.enabled && !this.isConnected) {
+      const needsReconnect = !this.isConnected && this.settings.enabled;
+      const needsDisconnect = this.isConnected && !this.settings.enabled;
+
+      if (needsReconnect) {
         await this.connect();
-      } else if (!this.settings.enabled && this.isConnected) {
+      } else if (needsDisconnect) {
         await this.clearPresence();
         await this.disconnect();
       } else if (this.isConnected && this.settings.enabled) {
-        await this.updatePresence();
+        await this.updatePresence(true);
       }
 
       await this.saveSettings();
@@ -709,13 +720,20 @@
               <div>
                 <div class="drpc-setting-label">Show Progress Bar</div>
                 <div class="drpc-setting-desc">Display playback progress in Discord</div>
-                <div class="drpc-warning-badge">
-                  <span>⚠</span>
-                  Discord shows a stopwatch even when disabled
-                </div>
               </div>
               <label class="drpc-toggle">
                 <input type="checkbox" id="drpc-show-progress" ${this.settings.showProgress ? "checked" : ""}>
+                <span class="drpc-toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="drpc-setting-item">
+              <div>
+                <div class="drpc-setting-label">Show Pause Icon</div>
+                <div class="drpc-setting-desc">Display (paused) on album art when paused</div>
+              </div>
+              <label class="drpc-toggle">
+                <input type="checkbox" id="drpc-show-pause-icon" ${this.settings.showPauseIcon ? "checked" : ""}>
                 <span class="drpc-toggle-slider"></span>
               </label>
             </div>
@@ -730,6 +748,60 @@
                 <span class="drpc-toggle-slider"></span>
               </label>
             </div>
+
+            <div class="drpc-input-group">
+              <label>Status Display Type</label>
+              <select id="drpc-status-display" class="drpc-select">
+                <option value="0">Application Name (Audion)</option>
+                <option value="1">Artist Name</option>
+                <option value="2">Song Title</option>
+              </select>
+              <div class="drpc-info-box">
+                <div class="drpc-info-text">
+                  Controls what appears in your Discord status text (visible in member list).
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="drpc-section">
+            <div class="drpc-section-title">Activity Timeout</div>
+            
+            <div class="drpc-setting-item">
+              <div>
+                <div class="drpc-setting-label">Clear When Paused</div>
+                <div class="drpc-setting-desc">Auto-clear presence after inactivity</div>
+              </div>
+              <label class="drpc-toggle">
+                <input type="checkbox" id="drpc-timeout-enabled" ${this.settings.activityTimeoutEnabled ? "checked" : ""}>
+                <span class="drpc-toggle-slider"></span>
+              </label>
+            </div>
+
+            <div class="drpc-setting-item">
+              <div style="width: 100%;">
+                <div class="drpc-range-wrapper">
+                  <div class="drpc-range-value">
+                    <span>Timeout Duration</span>
+                    <span id="drpc-timeout-display">${this.settings.activityTimeoutTime / 60000} min</span>
+                  </div>
+                  <input
+                    type="range"
+                    id="drpc-timeout-time"
+                    class="drpc-range"
+                    min="1"
+                    max="30"
+                    step="1"
+                    value="${this.settings.activityTimeoutTime / 60000}"
+                  >
+                </div>
+                <div class="drpc-info-box">
+                  <div class="drpc-info-text">
+                    Presence will clear automatically if music is paused for this long.
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           <div class="drpc-section">
@@ -738,14 +810,14 @@
               <div style="width: 100%;">
                 <div class="drpc-range-wrapper">
                   <div class="drpc-range-value">
-                    <span>Minimum Update Interval</span>
+                    <span>Throttle Interval</span>
                     <span id="drpc-interval-display">${this.settings.updateInterval / 1000}s</span>
                   </div>
                   <input
                     type="range"
                     id="drpc-update-interval"
                     class="drpc-range"
-                    min="6"
+                    min="10"
                     max="30"
                     step="1"
                     value="${this.settings.updateInterval / 1000}"
@@ -753,7 +825,7 @@
                 </div>
                 <div class="drpc-info-box">
                   <div class="drpc-info-text">
-                    Lower values = more frequent updates. Minimum is 6 seconds (Discord's rate limit is 5s).
+                    Normal playback updates throttled to this interval. Song changes, pauses, and seeks update immediately.
                   </div>
                 </div>
               </div>
@@ -848,6 +920,7 @@
 
       document.body.appendChild(modal);
 
+      // Event listeners
       modal
         .querySelector(".drpc-close-btn")
         .addEventListener("click", () => this.closeSettings());
@@ -867,8 +940,34 @@
           this.updatePreview();
         });
 
+      modal
+        .querySelector("#drpc-show-pause-icon")
+        .addEventListener("change", (e) => {
+          this.tempSettings.showPauseIcon = e.target.checked;
+        });
+
       modal.querySelector("#drpc-use-tidal").addEventListener("change", (e) => {
         this.tempSettings.useTidalCovers = e.target.checked;
+      });
+
+      modal
+        .querySelector("#drpc-timeout-enabled")
+        .addEventListener("change", (e) => {
+          this.tempSettings.activityTimeoutEnabled = e.target.checked;
+        });
+
+      const timeoutSlider = modal.querySelector("#drpc-timeout-time");
+      const timeoutDisplay = modal.querySelector("#drpc-timeout-display");
+      timeoutSlider.addEventListener("input", (e) => {
+        const minutes = parseInt(e.target.value);
+        timeoutDisplay.textContent = `${minutes} min`;
+        this.tempSettings.activityTimeoutTime = minutes * 60000;
+      });
+
+      const statusDisplay = modal.querySelector("#drpc-status-display");
+      statusDisplay.value = this.settings.statusDisplayType.toString();
+      statusDisplay.addEventListener("change", (e) => {
+        this.tempSettings.statusDisplayType = parseInt(e.target.value);
       });
 
       const intervalSlider = modal.querySelector("#drpc-update-interval");
@@ -1121,8 +1220,21 @@
       modal.querySelector("#drpc-enabled").checked = this.tempSettings.enabled;
       modal.querySelector("#drpc-show-progress").checked =
         this.tempSettings.showProgress;
+      modal.querySelector("#drpc-show-pause-icon").checked =
+        this.tempSettings.showPauseIcon;
       modal.querySelector("#drpc-use-tidal").checked =
         this.tempSettings.useTidalCovers;
+      modal.querySelector("#drpc-timeout-enabled").checked =
+        this.tempSettings.activityTimeoutEnabled;
+
+      modal.querySelector("#drpc-timeout-time").value =
+        this.tempSettings.activityTimeoutTime / 60000;
+      modal.querySelector("#drpc-timeout-display").textContent =
+        `${this.tempSettings.activityTimeoutTime / 60000} min`;
+
+      modal.querySelector("#drpc-status-display").value =
+        this.tempSettings.statusDisplayType.toString();
+
       modal.querySelector("#drpc-update-interval").value =
         this.tempSettings.updateInterval / 1000;
       modal.querySelector("#drpc-interval-display").textContent =
@@ -1184,7 +1296,7 @@
         this.isConnected = true;
 
         if (this.currentTrack) {
-          this.updatePresence();
+          this.updatePresence(true);
         }
       } catch (error) {
         console.error("[Discord RPC] Connection failed:", error);
@@ -1223,13 +1335,36 @@
         this.currentTime = 0;
       }
 
-      this.updatePresence();
+      if (this.activityClearTimeout) {
+        clearTimeout(this.activityClearTimeout);
+        this.activityClearTimeout = null;
+      }
+
+      this.updatePresence(true);
     },
 
     handlePlaybackState(data) {
       const { isPlaying } = data;
+      console.log("[Discord RPC] handlePlaybackState called:", {
+        isPlaying,
+        wasPlaying: this.isPlaying,
+      });
+
       this.isPlaying = isPlaying;
-      this.updatePresence();
+
+      if (this.activityClearTimeout) {
+        clearTimeout(this.activityClearTimeout);
+        this.activityClearTimeout = null;
+      }
+
+      console.log(
+        "[Discord RPC] About to call updatePresence with forceUpdate=true",
+      );
+      this.updatePresence(true);
+
+      if (!isPlaying && this.settings.activityTimeoutEnabled) {
+        this.setActivityTimeout();
+      }
     },
 
     handleTimeUpdate(data) {
@@ -1245,19 +1380,66 @@
       this.currentTime = currentTime || 0;
       this.duration = duration || this.duration;
 
-      this.updatePresence();
+      this.updatePresence(true);
     },
 
     scheduleUpdate() {
-      if (this.updateTimeout) return;
+      const now = Date.now();
 
-      this.updateTimeout = setTimeout(() => {
+      const songChanged = this.currentTrack?.id !== this.lastTrackId;
+      const pauseChanged = this.isPlaying !== this.lastPlayingState;
+      const seeked = Math.abs(this.currentTime - this.lastTime) > 2;
+
+      if (songChanged || pauseChanged || seeked) {
+        // Force update for important changes
+        if (this.updateTimeout) {
+          clearTimeout(this.updateTimeout);
+          this.updateTimeout = null;
+        }
+        this.updatePresence(true);
+        this.lastProgressUpdate = now;
+        this.lastTime = this.currentTime;
+        return;
+      }
+
+      if (now - this.lastProgressUpdate > this.settings.updateInterval) {
+        if (this.updateTimeout) {
+          clearTimeout(this.updateTimeout);
+          this.updateTimeout = null;
+        }
         this.updatePresence();
-        this.updateTimeout = null;
-      }, this.settings.updateInterval);
+        this.lastProgressUpdate = now;
+        this.lastTime = this.currentTime;
+      } else if (!this.updateTimeout) {
+        const delay =
+          this.settings.updateInterval - (now - this.lastProgressUpdate);
+        this.updateTimeout = setTimeout(() => {
+          this.updatePresence();
+          this.updateTimeout = null;
+          this.lastProgressUpdate = Date.now();
+          this.lastTime = this.currentTime;
+        }, delay);
+      }
     },
 
-    async updatePresence() {
+    setActivityTimeout() {
+      if (this.activityClearTimeout) {
+        clearTimeout(this.activityClearTimeout);
+        this.activityClearTimeout = null;
+      }
+
+      if (
+        !this.isPlaying &&
+        this.settings.activityTimeoutEnabled &&
+        this.settings.activityTimeoutTime > 0
+      ) {
+        this.activityClearTimeout = setTimeout(() => {
+          this.clearPresence();
+        }, this.settings.activityTimeoutTime);
+      }
+    },
+
+    async updatePresence(forceUpdate = false) {
       if (!this.settings.enabled || !this.isConnected) return;
 
       if (!this.currentTrack) {
@@ -1279,34 +1461,34 @@
         this.duration = this.api.player.getDuration();
       } catch (error) {}
 
-      if (!this.isPlaying) {
-        await this.clearPresence();
-        return;
-      }
+      this.lastTrackId = this.currentTrack?.id;
+      this.lastPlayingState = this.isPlaying;
 
-      const listeningText = this.currentTrack?.artist
-        ? `Listening to ${this.currentTrack.artist}`
-        : "";
+      let stateText = this.formatState();
+      if (!this.isPlaying) {
+        stateText = "(Paused)";
+      }
 
       const presenceData = {
         song_title: this.formatDetails(),
-        artist: this.formatState(),
+        artist: stateText,
         album: null,
         cover_url: await this.getCoverUrl(),
-        current_time: this.settings.showProgress
-          ? Math.floor(this.currentTime)
-          : 0,
-        duration: this.settings.showProgress ? Math.floor(this.duration) : 0,
+        
+        current_time: Math.floor(this.currentTime * 1000),
+        duration: Math.floor(this.duration * 1000),
         is_playing: this.isPlaying,
-        listening_text: listeningText,
+        show_pause_icon: this.settings.showPauseIcon,
+        status_display_type: this.settings.statusDisplayType,
       };
+
+      console.log("[Discord RPC] Sending presence data:", presenceData);
 
       try {
         await this.api.discord.updatePresence(presenceData);
       } catch (error) {
         console.error("[Discord RPC] Update failed:", error);
         this.isConnected = false;
-
         setTimeout(() => this.connect(), 2000);
       }
     },
@@ -1332,11 +1514,23 @@
     },
 
     async getCoverUrl() {
-      if (!this.settings.useTidalCovers) return null;
+      // If Tidal fetching is disabled, only use local covers
+      if (!this.settings.useTidalCovers) {
+        const coverUrl = this.currentTrack?.cover_url;
+        if (typeof coverUrl === "string" && coverUrl.trim() !== "") {
+          try {
+            const url = new URL(coverUrl);
+            if (url.protocol === "http:" || url.protocol === "https:") {
+              return coverUrl;
+            }
+          } catch {}
+        }
+        return null;
+      }
 
+      // Try local cover first
       const coverUrl = this.currentTrack?.cover_url;
-
-      if (typeof coverUrl === "string") {
+      if (typeof coverUrl === "string" && coverUrl.trim() !== "") {
         try {
           const url = new URL(coverUrl);
           if (url.protocol === "http:" || url.protocol === "https:") {
@@ -1345,6 +1539,7 @@
         } catch {}
       }
 
+      // Local cover invalid or missing - fetch from Tidal
       if (this.currentTrack?.title && this.currentTrack?.artist) {
         const cacheKey = `${this.currentTrack.artist}-${this.currentTrack.title}`;
 
@@ -1352,6 +1547,9 @@
           return this.coverCache.get(cacheKey);
         }
 
+        console.log(
+          "[Discord RPC] No valid local cover, fetching from Tidal...",
+        );
         const foundCover = await this.searchCoverFromTidal();
         if (foundCover) {
           this.coverCache.set(cacheKey, foundCover);
@@ -1408,6 +1606,11 @@
         clearTimeout(this.updateTimeout);
         this.updateTimeout = null;
       }
+
+      if (this.activityClearTimeout) {
+        clearTimeout(this.activityClearTimeout);
+        this.activityClearTimeout = null;
+      }
     },
 
     destroy() {
@@ -1415,6 +1618,10 @@
 
       if (this.updateTimeout) {
         clearTimeout(this.updateTimeout);
+      }
+
+      if (this.activityClearTimeout) {
+        clearTimeout(this.activityClearTimeout);
       }
 
       if (this.connectionStatusInterval) {
