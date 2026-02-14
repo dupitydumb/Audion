@@ -36,23 +36,44 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
     let path = Path::new(path);
 
     // Try to read the file
-    let tagged_file = match Probe::open(path) {
-        Ok(probe) => match probe.guess_file_type() {
-            Ok(probe_with_type) => match probe_with_type.read() {
-                Ok(file) => file,
-                Err(e) => {
-                    eprintln!("Failed to read audio file {:?}: {}", path, e);
+    // Try to read the file with default options first
+    let tagged_file_result = Probe::open(path).and_then(|probe| probe.read());
+
+    let tagged_file = match tagged_file_result {
+        Ok(file) => file,
+        Err(e) => {
+            // Check if it's a FLAC file that failed
+            if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                if ext.to_lowercase() == "flac" {
+                    eprintln!(
+                        "[Scanner] Lofty failed for FLAC {:?}: {}. Trying metaflac fallback...",
+                        path, e
+                    );
+                    return extract_flac_metadata_fallback(path, None);
+                }
+            }
+
+            // Try relaxed parsing as a general fallback
+            match Probe::open(path) {
+                Ok(mut probe) => {
+                    // Configure allowed tag types to be more permissive if possible,
+                    // but lofty's read() is already quite permissive.
+                    // We can try to explicitly specific options if the API allows,
+                    // but for now we'll rely on the specific FLAC fallback.
+                    eprintln!(
+                        "[Scanner] Failed to read audio file {:?}: {}. Returning fallback.",
+                        path, e
+                    );
                     return Some(create_fallback_metadata(path));
                 }
-            },
-            Err(e) => {
-                eprintln!("Failed to guess file type {:?}: {}", path, e);
-                return Some(create_fallback_metadata(path));
+                Err(e) => {
+                    eprintln!(
+                        "[Scanner] Failed to open audio file {:?}: {}. Returning fallback.",
+                        path, e
+                    );
+                    return Some(create_fallback_metadata(path));
+                }
             }
-        },
-        Err(e) => {
-            eprintln!("Failed to open audio file {:?}: {}", path, e);
-            return Some(create_fallback_metadata(path));
         }
     };
 
@@ -76,11 +97,9 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
             let album = tag.album().map(|s| s.to_string());
 
             // Extract track number, handling both simple numbers and "X/Y" format
-            let track_number = tag.track().map(|n| n as i32)
-                .or_else(|| {
+            let track_number = tag.track().map(|n| n as i32).or_else(|| {
                 // If tag.track() fails, try to parse track number from text
-                    tag.get_string(&ItemKey::TrackNumber)
-                        .and_then(|s| {
+                tag.get_string(&ItemKey::TrackNumber).and_then(|s| {
                     // Handle "1/19" format - take only the first number
                     s.split('/')
                         .next()
@@ -89,16 +108,10 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
             });
 
             // Extract album art as raw bytes (NOT base64)
-            let album_art = tag
-                .pictures()
-                .first()
-                .map(|pic| pic.data().to_vec());
+            let album_art = tag.pictures().first().map(|pic| pic.data().to_vec());
 
             // Extract track cover as raw bytes (same as album art, but stored per-track)
-            let track_cover = tag
-                .pictures()
-                .first()
-                .map(|pic| pic.data().to_vec());
+            let track_cover = tag.pictures().first().map(|pic| pic.data().to_vec());
 
             // Generate content hash for duplicate detection
             let content_hash = Some(generate_content_hash(
@@ -168,6 +181,80 @@ fn get_filename_without_ext(path: &Path) -> Option<String> {
     path.file_stem()
         .and_then(|s| s.to_str())
         .map(|s| s.to_string())
+}
+
+fn extract_flac_metadata_fallback(path: &Path, _duration_hint: Option<i32>) -> Option<TrackInsert> {
+    use metaflac::Tag;
+
+    // We still need the format
+    let format = Some("Flac".to_string());
+
+    match Tag::read_from_path(path) {
+        Ok(tag) => {
+            let vorbis = tag.vorbis_comments();
+
+            let title = vorbis
+                .and_then(|v| v.title().map(|s| s[0].clone()))
+                .or_else(|| get_filename_without_ext(path));
+            let artist = vorbis.and_then(|v| v.artist().map(|s| s[0].clone()));
+            let album = vorbis.and_then(|v| v.album().map(|s| s[0].clone()));
+            let track_number = vorbis.and_then(|v| v.track().map(|n| n as i32));
+
+            // Extract picture
+            let album_art = tag.pictures().next().map(|p| p.data.clone());
+
+            // Calculate duration from StreamInfo
+            let duration = tag
+                .get_streaminfo()
+                .map(|si| {
+                    if si.sample_rate > 0 {
+                        (si.total_samples / si.sample_rate as u64) as i32
+                    } else {
+                        0
+                    }
+                })
+                .or(_duration_hint);
+
+            // Generate content hash
+            let content_hash = Some(generate_content_hash(
+                title.as_deref(),
+                artist.as_deref(),
+                album.as_deref(),
+                duration,
+            ));
+
+            Some(TrackInsert {
+                path: path.to_string_lossy().to_string(),
+                title,
+                artist,
+                album,
+                track_number,
+                duration,
+                album_art: album_art.clone(),
+                track_cover: album_art, // Use same art for track cover
+                format,
+                bitrate: None, // Hard to get bitrate without decoding
+                source_type: None,
+                cover_url: None,
+                external_id: None,
+                content_hash,
+                local_src: None,
+            })
+        }
+        Err(e) => {
+            eprintln!("[Scanner] Metaflac also failed for {:?}: {}", path, e);
+            let mut track = create_fallback_metadata(path);
+            track.duration = _duration_hint; // Use hint if available (probably None)
+            track.format = format;
+            track.content_hash = Some(generate_content_hash(
+                track.title.as_deref(),
+                track.artist.as_deref(),
+                track.album.as_deref(),
+                track.duration,
+            ));
+            Some(track)
+        }
+    }
 }
 
 #[cfg(test)]
