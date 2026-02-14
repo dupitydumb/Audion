@@ -67,6 +67,7 @@ crossbeam = "0.8"
 log = "0.4"
 env_logger = "0.11"
 metaflac = "0.2.8"
+tauri-plugin-window-state = "2.4.1"
 
 [target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
 # Discord RPC (desktop only - uses local IPC sockets)

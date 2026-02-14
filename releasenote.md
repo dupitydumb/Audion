@@ -8,3 +8,4 @@
 - Implemented disc seperation in album detail.
 - Add metaflac to write and read metadata from flac files.
 - Remember queue state, last played track and position.
+- Remember last window position.

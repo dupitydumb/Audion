@@ -24,7 +24,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_os::init());
+        .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build());
 
     // Global shortcuts are desktop-only (not available on Android/iOS)
     #[cfg(desktop)]
@@ -32,7 +33,8 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
     }
 
-    builder.setup(|app| {
+    builder
+        .setup(|app| {
             // Get app data directory and create database
             let app_dir = app
                 .path()
