@@ -32,6 +32,7 @@ walkdir = "2"
 
 # Audio metadata extraction
 lofty = "0.22.4"
+ratio-metadata = "0.1"  # Add version as needed
 
 # Metadata Writing
 mp4ameta = "0.11"
@@ -65,6 +66,7 @@ crossbeam = "0.8"
 # Logging for audit trail
 log = "0.4"
 env_logger = "0.11"
+metaflac = "0.2.8"
 
 [target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
 # Discord RPC (desktop only - uses local IPC sockets)

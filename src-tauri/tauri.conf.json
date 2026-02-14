@@ -46,7 +46,7 @@
       "icons/icon.ico"
     ],
     "android": {
-      "minSdkVersion": 21
+      "minSdkVersion": 24
     }
   },
   "plugins": {}
