@@ -163,16 +163,17 @@
           background: var(--bg-elevated);
           border: 1px solid var(--border-color);
           border-radius: 16px;
-          padding: 24px;
           width: 550px;
           max-width: 90vw;
           max-height: 85vh;
-          overflow-y: auto;
           z-index: 10001;
           box-shadow: var(--shadow-lg);
           opacity: 0;
           visibility: hidden;
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
         }
         #drpc-modal.open {
           opacity: 1;
@@ -185,6 +186,16 @@
           align-items: center;
           justify-content: space-between;
           margin-bottom: 20px;
+          flex-shrink: 0;
+          padding: 24px 24px 0 24px;
+        }
+        
+        .drpc-modal-body {
+          flex: 1;
+          min-height: 0;
+          overflow-y: auto;
+          padding: 0 24px 24px 24px;
+          overscroll-behavior-y: contain;
         }
         .drpc-header h2 {
           margin: 0;
@@ -696,7 +707,8 @@
           <button class="drpc-close-btn">×</button>
         </div>
 
-        <div class="drpc-status">
+        <div class="drpc-modal-body">
+          <div class="drpc-status">
           <div class="drpc-status-dot"></div>
           <span class="drpc-status-text">Checking connection...</span>
         </div>
@@ -916,6 +928,7 @@
           <button class="drpc-btn drpc-btn-secondary" id="drpc-reset-btn">Reset Defaults</button>
           <button class="drpc-btn drpc-btn-primary" id="drpc-save-btn">Save Settings</button>
         </div>
+      </div>
       `;
 
       document.body.appendChild(modal);

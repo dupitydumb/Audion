@@ -363,7 +363,7 @@
     if (!row) return;
 
     const trackId = parseInt(row.getAttribute('data-track-id') || '0');
-    
+
     // In multi-select mode, clicking toggles selection
     if (multiSelectMode) {
       multiSelect.toggleTrack(trackId);
@@ -373,7 +373,7 @@
     const trackIndex = trackIndexMap.get(trackId);
     
     if (trackIndex === undefined) return;
-    
+
     const track = sortedTracks[trackIndex];
     if (!track || isTrackUnavailable(track)) return;
 
@@ -388,7 +388,7 @@
     const trackIndex = trackIndexMap.get(trackId);
     
     if (trackIndex === undefined) return;
-    
+
     const track = sortedTracks[trackIndex];
     if (!track || isTrackUnavailable(track)) return;
 
@@ -405,7 +405,7 @@
     const trackIndex = trackIndexMap.get(trackId);
     
     if (trackIndex === undefined) return;
-    
+
     const track = sortedTracks[trackIndex];
     if (!track) return;
 
@@ -466,7 +466,7 @@
         label: "Add to Playlist",
         submenu:
           playlistItems.length > 0
-            ? playlistItems
+          ? playlistItems
             : [
                 {
                   label: "No playlists",
@@ -620,7 +620,7 @@
     isDragging = false;
     draggedIndex = null;
     dragOverIndex = null;
-    
+
     // Clean up and clear the cleanup function
     if (cleanupDragListeners) {
       cleanupDragListeners();
@@ -747,7 +747,7 @@
     const trackIndex = trackIndexMap.get(trackId);
     
     if (trackIndex === undefined) return;
-    
+
     const track = sortedTracks[trackIndex];
     if (track && track.album_id) {
       goToAlbumDetail(track.album_id);
@@ -774,9 +774,9 @@
               multiSelect.clearSelections();
             }
           }}
-          checked={$multiSelect.selectedTrackIds.size > 0 && 
+          checked={$multiSelect.selectedTrackIds.size > 0 &&
                    $multiSelect.selectedTrackIds.size === sortedTracks.length}
-          indeterminate={$multiSelect.selectedTrackIds.size > 0 && 
+          indeterminate={$multiSelect.selectedTrackIds.size > 0 &&
                         $multiSelect.selectedTrackIds.size < sortedTracks.length}
         />
       </div>
@@ -865,8 +865,8 @@
               tabindex="0"
             >
               {#if multiSelectMode}
-                <div 
-                  class="col-checkbox" 
+                <div
+                  class="col-checkbox"
                   on:click|stopPropagation={() => multiSelect.toggleTrack(track.id)}
                   role="checkbox"
                   aria-checked={isSelected}
@@ -1124,6 +1124,7 @@
     overflow-y: auto;
     overflow-x: hidden;
     position: relative;
+    overscroll-behavior-y: contain;
   }
 
   /* Virtual scrolling structure */
@@ -1594,33 +1595,11 @@
       50% { height: 100%; }
     }
 
-    /* Title in album view — bold, prominent */
-    .list-body.mobile-album .track-name {
-      font-size: 0.9375rem;
-      font-weight: 600;
-      color: var(--text-primary);
-    }
-
-    .list-body.mobile-album .track-artist {
-      font-size: 0.75rem;
-      color: var(--text-secondary);
-    }
-
-    /* Duration compact */
-    .list-body.mobile-album .col-duration {
-      font-size: 0.75rem;
-      color: var(--text-subdued);
-    }
-
-    /* Drag variant for album */
-    .list-body.mobile-album.with-drag .track-row {
-      grid-template-columns: 28px 32px 1fr 48px;
-    }
-
-    /* Multiselect variant for album */
-    .list-body.mobile-album.multiselect .track-row {
-      grid-template-columns: 36px 32px 1fr 48px;
-    }
+    .list-body.mobile-album .track-name   { font-size: 0.9375rem; font-weight: 600; }
+    .list-body.mobile-album .track-artist { font-size: 0.75rem; color: var(--text-secondary); }
+    .list-body.mobile-album .col-duration { font-size: 0.75rem; }
+    .list-body.mobile-album.with-drag .track-row    { grid-template-columns: 28px 32px 1fr 48px; }
+    .list-body.mobile-album.multiselect .track-row  { grid-template-columns: 36px 32px 1fr 48px; }
 
     /* ─────────────────────────────────────────────────
        PLAYLIST VIEW — Cover art + info, Spotify-style
@@ -1650,34 +1629,11 @@
       border-radius: var(--radius-sm);
     }
 
-    /* Title + Artist stacked */
-    .list-body.mobile-playlist .track-name {
-      font-size: 0.9375rem;
-      font-weight: 600;
-      color: var(--text-primary);
-    }
-
-    .list-body.mobile-playlist .track-artist {
-      font-size: 0.75rem;
-      color: var(--text-secondary);
-      margin-top: 2px;
-    }
-
-    /* Duration compact */
-    .list-body.mobile-playlist .col-duration {
-      font-size: 0.75rem;
-      color: var(--text-subdued);
-    }
-
-    /* Drag variant for playlist */
-    .list-body.mobile-playlist.with-drag .track-row {
-      grid-template-columns: 28px 48px 1fr 48px;
-    }
-
-    /* Multiselect variant for playlist */
-    .list-body.mobile-playlist.multiselect .track-row {
-      grid-template-columns: 36px 48px 1fr 48px;
-    }
+    .list-body.mobile-playlist .track-name   { font-size: 0.9375rem; font-weight: 600; }
+    .list-body.mobile-playlist .track-artist { font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px; }
+    .list-body.mobile-playlist .col-duration { font-size: 0.75rem; }
+    .list-body.mobile-playlist.with-drag .track-row   { grid-template-columns: 28px 48px 1fr 48px; }
+    .list-body.mobile-playlist.multiselect .track-row { grid-template-columns: 36px 48px 1fr 48px; }
 
     /* ─────────────────────────────────────────────────
        LIBRARY VIEW — Full info with cover + album context
@@ -1707,29 +1663,10 @@
       border-radius: var(--radius-sm);
     }
 
-    /* Title + Artist stacked */
-    .list-body.mobile-library .track-name {
-      font-size: 0.9375rem;
-      font-weight: 600;
-      color: var(--text-primary);
-    }
-
-    .list-body.mobile-library .track-artist {
-      font-size: 0.75rem;
-      color: var(--text-secondary);
-      margin-top: 2px;
-    }
-
-    /* Duration compact */
-    .list-body.mobile-library .col-duration {
-      font-size: 0.75rem;
-      color: var(--text-subdued);
-    }
-
-    /* Drag variant for library */
-    .list-body.mobile-library.with-drag .track-row {
-      grid-template-columns: 28px 48px 1fr 48px;
-    }
+    .list-body.mobile-library .track-name   { font-size: 0.9375rem; font-weight: 600; }
+    .list-body.mobile-library .track-artist { font-size: 0.75rem; color: var(--text-secondary); margin-top: 2px; }
+    .list-body.mobile-library .col-duration { font-size: 0.75rem; }
+    .list-body.mobile-library.with-drag .track-row { grid-template-columns: 28px 48px 1fr 48px; }
 
     /* Multiselect variant for library */
     .list-body.mobile-library.multiselect .track-row,

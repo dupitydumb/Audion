@@ -214,6 +214,7 @@
         padding: var(--spacing-lg);
         overflow-y: auto;
         color: var(--text-secondary);
+        overscroll-behavior-y: contain;
     }
 
     .release-notes {

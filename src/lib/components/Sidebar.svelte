@@ -645,6 +645,7 @@
     .sidebar-nav {
         flex: 1;
         overflow-y: auto;
+        overscroll-behavior-y: contain;
         padding: var(--spacing-md);
     }
 

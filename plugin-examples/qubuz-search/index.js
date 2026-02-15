@@ -131,7 +131,7 @@
         .qobuz-tab.active { background: var(--bg-highlight, #2a2a2a); color: var(--text-primary, #fff); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
 
         /* Content */
-        .qobuz-content { flex: 1; overflow-y: auto; padding: 0; position: relative; background: var(--bg-base, #121212); }
+        .qobuz-content { flex: 1; overflow-y: auto; padding: 0; position: relative; background: var(--bg-base, #121212); overscroll-behavior-y: contain;}
         .qobuz-content::-webkit-scrollbar { width: 8px; }
         .qobuz-content::-webkit-scrollbar-thumb { background: var(--bg-highlight, #333); border-radius: 4px; }
 

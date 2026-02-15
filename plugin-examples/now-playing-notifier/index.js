@@ -106,16 +106,17 @@
           background: var(--bg-elevated);
           border: 1px solid var(--border-color);
           border-radius: 16px;
-          padding: 24px;
           width: 550px;
           max-width: 90vw;
           max-height: 85vh;
-          overflow-y: auto;
           z-index: 10001;
           box-shadow: var(--shadow-lg);
           opacity: 0;
           visibility: hidden;
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
         }
         #npn-modal.open {
           opacity: 1;
@@ -129,6 +130,8 @@
           align-items: center;
           justify-content: space-between;
           margin-bottom: 20px;
+          flex-shrink: 0;
+          padding: 24px 24px 0 24px;
         }
         .npn-header h2 {
           margin: 0;
@@ -137,6 +140,13 @@
           display: flex;
           align-items: center;
           gap: 10px;
+        }
+        .npn-modal-body {
+          flex: 1;
+          min-height: 0;
+          overflow-y: auto;
+          padding: 0 24px 24px 24px;
+          overscroll-behavior-y: contain;
         }
         .npn-icon {
           color: var(--accent-primary);
@@ -450,17 +460,19 @@
       const modal = document.createElement("div");
       modal.id = "npn-modal";
       modal.innerHTML = `
-        <div class="npn-header">
-          <h2>
-            <svg class="npn-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-            </svg>
-            Notification Settings
-          </h2>
-          <button class="npn-close-btn" id="npn-close-btn">✕</button>
-        </div>
+      <div class="npn-header">
+        <h2>
+          <svg class="npn-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+          Notification Settings
+        </h2>
+        <button class="npn-close-btn" id="npn-close-btn">✕</button>
+      </div>
 
+      <!-- scrollable content -->
+      <div class="npn-modal-body">
         <!-- Enable/Disable Toggle -->
         <div class="npn-toggle-section">
           <div class="npn-toggle-label">
@@ -616,6 +628,7 @@
           <button class="npn-btn secondary" id="npn-cancel-btn">Cancel</button>
           <button class="npn-btn" id="npn-save-btn">Save Settings</button>
         </div>
+      </div>
       `;
       document.body.appendChild(modal);
 

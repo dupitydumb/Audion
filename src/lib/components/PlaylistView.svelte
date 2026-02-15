@@ -10,13 +10,31 @@
     import {
         playlistCovers,
         setPlaylistCover,
-        removePlaylistCover,
     } from "$lib/stores/playlistCovers";
     import { contextMenu } from "$lib/stores/ui";
-    import { playTracks, addToQueue, currentPlaylistId, isPlaying } from "$lib/stores/player";
+    import { playTracks, addToQueue, currentPlaylistId, isPlaying, togglePlay } from "$lib/stores/player";
     import type { Writable } from "svelte/store";
-
     import { confirm } from "$lib/stores/dialogs";
+    import VirtualizedGrid from "./Virtualizedgrid.svelte";
+
+    type Playlist = { id: number; name: string };
+
+    // playlistCovers
+    const typedPlaylistCovers: Writable<Record<string, string>> = playlistCovers;
+
+    // Extract store values
+    $: playingPlaylistId = $currentPlaylistId;
+    $: playing = $isPlaying;
+    
+    // Determine if this playlist is the current one and paused
+    function isPlaylistPaused(id: number): boolean {
+        return playingPlaylistId === id && !playing;
+    }
+
+    function handlePauseClick(e: MouseEvent) {
+        e.stopPropagation();
+        togglePlay();
+    }
 
     async function handleDeletePlaylist(id: number, name: string) {
         if (
@@ -37,8 +55,14 @@
     }
 
     async function handlePlayPlaylist(id: number) {
+        // If paused, resume playback
+        if (isPlaylistPaused(id)) {
+            togglePlay();
+            return;
+        }
+
         // Don't restart if already playing
-        if (isPlaylistPlaying(id)) {
+        if (playingPlaylistId === id && playing) {
             return;
         }
 
@@ -68,12 +92,22 @@
         }
     }
 
-    function handleContextMenu(
-        e: MouseEvent,
-        playlist: { id: number; name: string },
-    ) {
-        e.preventDefault();
+    async function handlePlaylistClick(playlist: Playlist, e: MouseEvent) {
+        const target = e.target as HTMLElement;
+        
+        // Check if play button was clicked
+        const playButton = target.closest('.play-button');
+        if (playButton) {
+            e.stopPropagation();
+            await handlePlayPlaylist(playlist.id);
+            return;
+        }
 
+        // Otherwise navigate to playlist detail
+        goToPlaylistDetail(playlist.id);
+    }
+
+    async function handlePlaylistContextMenu(playlist: Playlist, e: MouseEvent) {
         contextMenu.set({
             visible: true,
             x: e.clientX,
@@ -91,26 +125,13 @@
                 {
                     label: "Rename",
                     action: async () => {
-                        const newName = prompt(
-                            "Enter new name:",
-                            playlist.name,
-                        );
-                        if (
-                            newName &&
-                            newName.trim() &&
-                            newName !== playlist.name
-                        ) {
+                        const newName = prompt("Enter new name:", playlist.name);
+                        if (newName && newName.trim() && newName !== playlist.name) {
                             try {
-                                await renamePlaylist(
-                                    playlist.id,
-                                    newName.trim(),
-                                );
+                                await renamePlaylist(playlist.id, newName.trim());
                                 await loadPlaylists();
                             } catch (error) {
-                                console.error(
-                                    "Failed to rename playlist:",
-                                    error,
-                                );
+                                console.error("Failed to rename playlist:", error);
                             }
                         }
                     },
@@ -127,8 +148,7 @@
                         input.type = "file";
                         input.accept = "image/*";
                         input.onchange = (e) => {
-                            const file = (e.target as HTMLInputElement)
-                                .files?.[0];
+                            const file = (e.target as HTMLInputElement).files?.[0];
                             if (file) {
                                 const reader = new FileReader();
                                 reader.onload = () => {
@@ -144,17 +164,51 @@
                 { type: "separator" },
                 {
                     label: "Delete Playlist",
-                    action: () =>
-                        handleDeletePlaylist(playlist.id, playlist.name),
+                    action: () => handleDeletePlaylist(playlist.id, playlist.name),
                 },
             ],
         });
     }
 
-    // Explicitly type playlistCovers as a Writable<Record<string, string>>
-    const typedPlaylistCovers: Writable<Record<string, string>> =
-        playlistCovers;
+    function initialsFromName(name: string) {
+        if (!name) return "PL";
+        const parts = name.trim().split(/\s+/);
+        const picked = parts.slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "");
+        return picked.join("") || name.slice(0, 2).toUpperCase();
+    }
 
+    function hashToColor(str: string) {
+        let h = 0;
+        for (let i = 0; i < str.length; i++)
+            h = (h << 5) - h + str.charCodeAt(i);
+        const hue = Math.abs(h) % 360;
+        return `hsl(${hue} 30% 30%)`;
+    }
+
+    function generateSvgCover(name: string, size = 512) {
+        const initials = initialsFromName(name);
+        const bg = hashToColor(name || "playlist");
+        const svg =
+            `<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' viewBox='0 0 ${size} ${size}'>` +
+            `<rect width='100%' height='100%' fill='${bg}'/>` +
+            `<text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='Inter, system-ui, sans-serif' font-size='${Math.floor(size / 3)}' fill='white' font-weight='700'>${initials}</text>` +
+            `</svg>`;
+        return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+    }
+
+    function getCoverSrc(playlist: Playlist) {
+        const custom = $typedPlaylistCovers && $typedPlaylistCovers[playlist.id];
+        if (custom) return custom;
+        return generateSvgCover(playlist.name || "Playlist", 512);
+    }
+
+    // Handle image error - fallback to generated cover
+    function handleImageError(e: Event, playlist: Playlist) {
+        const img = e.target as HTMLImageElement;
+        img.src = generateSvgCover(playlist.name || "Playlist", 512);
+    }
+
+    // Create playlist form
     let newPlaylistName = "";
     let isCreating = false;
     let showCreateForm = false;
@@ -184,59 +238,11 @@
         }
     }
 
-    function initialsFromName(name: string) {
-        if (!name) return "PL";
-        const parts = name.trim().split(/\s+/);
-        const picked = parts.slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "");
-        return picked.join("") || name.slice(0, 2).toUpperCase();
-    }
-
-    function hashToColor(str: string) {
-        let h = 0;
-        for (let i = 0; i < str.length; i++)
-            h = (h << 5) - h + str.charCodeAt(i);
-        const hue = Math.abs(h) % 360;
-        return `hsl(${hue} 30% 30%)`;
-    }
-
-    function generateSvgCover(name: string, size = 512) {
-        const initials = initialsFromName(name);
-        const bg = hashToColor(name || "playlist");
-        const svg =
-            `<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' viewBox='0 0 ${size} ${size}'>` +
-            `<rect width='100%' height='100%' fill='${bg}'/>` +
-            `<text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='Inter, system-ui, sans-serif' font-size='${Math.floor(size / 3)}' fill='white' font-weight='700'>${initials}</text>` +
-            `</svg>`;
-        return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
-    }
-
-    function getCoverSrc(playlist: { id: string; name: string }) {
-        const custom =
-            $typedPlaylistCovers && $typedPlaylistCovers[playlist.id];
-        if (custom) return custom;
-        return generateSvgCover(playlist.name || "Playlist", 512);
-    }
-
-    // Handle clicks - differentiate between card and play button
-    function handleCardClick(e: MouseEvent, playlistId: number) {
-        const target = e.target as HTMLElement;
-        
-        // Check if play button was clicked
-        const playButton = target.closest('.play-button');
-        if (playButton) {
-            e.stopPropagation();
-            handlePlayPlaylist(playlistId);
-            return;
-        }
-
-        // Otherwise navigate to playlist detail
-        goToPlaylistDetail(playlistId);
-    }
-
-    // Check if a playlist is currently playing
-    function isPlaylistPlaying(playlistId: number): boolean {
-        return $currentPlaylistId === playlistId && $isPlaying;
-    }
+    const emptyState = {
+        icon: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/></svg>`,
+        title: "No playlists yet",
+        description: "Create your first playlist to organize your music"
+    };
 </script>
 
 <div class="playlist-view">
@@ -281,76 +287,77 @@
         </div>
     {/if}
 
-    <div class="playlist-grid">
-        {#each $playlists as playlist}
-            <div
-                class="playlist-card"
-                class:now-playing={isPlaylistPlaying(playlist.id)}
-                on:click={(e) => handleCardClick(e, playlist.id)}
-                on:contextmenu={(e) =>
-                    handleContextMenu(e, { id: playlist.id, name: playlist.name })}
-                role="button"
-                tabindex="0"
-            >
-                <div class="playlist-cover">
-                    <img
-                        src={getCoverSrc({
-                            id: String(playlist.id),
-                            name: playlist.name,
-                        })}
-                        alt="Playlist cover"
-                        loading="lazy"
-                        decoding="async"
-                    />
-                    {#if isPlaylistPlaying(playlist.id)}
-                        <div class="now-playing-badge">
-                            Now Playing
+    <VirtualizedGrid
+        items={$playlists}
+        onItemClick={handlePlaylistClick}
+        onItemContextMenu={handlePlaylistContextMenu}
+        emptyStateConfig={emptyState}
+        let:item={playlist}
+    >
+        <div
+            class="playlist-card"
+            class:now-playing={playingPlaylistId === playlist.id && playing}
+            class:paused={isPlaylistPaused(playlist.id)}
+        >
+            <div class="playlist-cover">
+                <img
+                    src={getCoverSrc(playlist)}
+                    alt="Playlist cover"
+                    loading="lazy"
+                    decoding="async"
+                    on:error={(e) => handleImageError(e, playlist)}
+                />
+                {#if playingPlaylistId === playlist.id && playing}
+                    <div class="now-playing-badge">
+                        Now Playing
+                    </div>
+                {:else if isPlaylistPaused(playlist.id)}
+                    <div class="now-playing-badge paused-badge">
+                        Paused
+                    </div>
+                {/if}
+                
+                {#if playingPlaylistId === playlist.id && playing}
+                    <div class="playing-indicator-container">
+                        <div class="playing-indicator">
+                            <span class="bar"></span>
+                            <span class="bar"></span>
+                            <span class="bar"></span>
+                        </div>
+                        <button 
+                            class="pause-button-overlay"
+                            on:click={handlePauseClick}
+                            aria-label="Pause"
+                        >
+                            <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+                                <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+                            </svg>
+                        </button>
+                    </div>
+                {/if}
+                <!-- Darkening overlay when hovering the playlist cover -->
+                <div class="playlist-cover-overlay" class:is-playing={playingPlaylistId === playlist.id && playing}>
+                    {#if !(playingPlaylistId === playlist.id && playing)}
+                        <div class="play-button">
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="currentColor"
+                                width="24"
+                                height="24"
+                                aria-hidden="true"
+                            >
+                                <path d="M8 5v14l11-7z" />
+                            </svg>
                         </div>
                     {/if}
-                    <div class="play-overlay">
-                        {#if isPlaylistPlaying(playlist.id)}
-                            <div class="playing-indicator">
-                                <span class="bar"></span>
-                                <span class="bar"></span>
-                                <span class="bar"></span>
-                            </div>
-                        {:else}
-                            <div class="play-button">
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="24"
-                                    height="24"
-                                    aria-hidden="true"
-                                >
-                                    <path d="M8 5v14l11-7z" />
-                                </svg>
-                            </div>
-                        {/if}
-                    </div>
-                </div>
-                <div class="playlist-info">
-                    <span class="playlist-name truncate">{playlist.name}</span>
-                    <span class="playlist-type">Playlist</span>
                 </div>
             </div>
-        {:else}
-            <div class="empty-state">
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="48"
-                    height="48"
-                >
-                    <path
-                        d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"
-                    />
-                </svg>
-                <h3>No playlists yet</h3>
-                <p>Create your first playlist to organize your music</p>
+            <div class="playlist-info">
+                <span class="playlist-name truncate">{playlist.name}</span>
+                <span class="playlist-type">Playlist</span>
             </div>
-        {/each}
-    </div>
+        </div>
+    </VirtualizedGrid>
 </div>
 
 <style>
@@ -358,9 +365,8 @@
         display: flex;
         flex-direction: column;
         height: 100%;
-        min-height: 0;
         padding: var(--spacing-md);
-        overflow: hidden;
+        padding-bottom: 0;
     }
 
     .view-header {
@@ -399,26 +405,18 @@
         border-color: var(--accent-primary);
     }
 
-    .playlist-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: var(--spacing-lg);
-        padding: var(--spacing-md);
-        flex: 1 1 auto;
-        min-height: 0;
-        overflow-y: auto;
-        align-content: start;
-    }
-
     .playlist-card {
         background-color: var(--bg-elevated);
         border-radius: var(--radius-md);
         padding: var(--spacing-md);
         transition: background-color var(--transition-normal);
         text-align: left;
-        cursor: pointer;
-        border: none;
         width: 100%;
+        height: 100%;
+        box-sizing: border-box;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
     }
 
     .playlist-card:hover {
@@ -434,6 +432,16 @@
         opacity: 0.95;
     }
 
+    /* Paused state*/
+    .playlist-card.paused {
+        background-color: var(--accent-subtle);
+    }
+
+    .playlist-card.paused:hover {
+        background-color: var(--accent-subtle);
+        opacity: 0.95;
+    }
+
     .playlist-cover {
         position: relative;
         width: 100%;
@@ -444,6 +452,8 @@
         margin-bottom: var(--spacing-md);
         box-shadow: var(--shadow-md);
         isolation: isolate;
+        flex-shrink: 0;
+        max-height: calc(100% - 60px);
     }
 
     .playlist-cover img {
@@ -467,7 +477,11 @@
         z-index: 2;
     }
 
-    .play-overlay {
+    .now-playing-badge.paused-badge {
+        background-color: var(--text-secondary);
+    }
+
+    .playlist-cover-overlay {
         position: absolute;
         inset: 0;
         background: rgba(0, 0, 0, 0.5);
@@ -479,14 +493,120 @@
         pointer-events: none;
     }
 
-    .playlist-card:hover .play-overlay {
+    /* overlay when hovering the playlist-cover */
+    .playlist-cover:hover .playlist-cover-overlay {
         opacity: 1;
         pointer-events: auto;
     }
 
-    .playlist-card.now-playing .play-overlay {
+    .playlist-cover-overlay.is-playing {
+        opacity: 0;
+        background: transparent;
+    }
+
+    .playlist-cover:hover .playlist-cover-overlay.is-playing {
         opacity: 1;
+        background: rgba(0, 0, 0, 0.5);
+    }
+
+    /* Playing indicator*/
+    .playing-indicator-container {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 3;
         pointer-events: auto;
+    }
+
+    .playing-indicator {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        width: 48px;
+        height: 48px;
+        background-color: var(--accent-primary);
+        border-radius: var(--radius-full);
+        box-shadow: var(--shadow-lg);
+        cursor: pointer;
+        transition: transform var(--transition-fast);
+        position: relative;
+    }
+
+    .playing-indicator:hover {
+        transform: scale(1.05);
+    }
+
+    .playing-indicator .bar {
+        width: 4px;
+        height: 16px;
+        background-color: var(--bg-base);
+        border-radius: 2px;
+        animation: equalizer 0.8s ease-in-out infinite;
+    }
+
+    .playing-indicator .bar:nth-child(2) {
+        animation-delay: 0.2s;
+    }
+
+    .playing-indicator .bar:nth-child(3) {
+        animation-delay: 0.4s;
+    }
+
+    @keyframes equalizer {
+        0%,
+        100% {
+            height: 6px;
+        }
+        50% {
+            height: 20px;
+        }
+    }
+
+    /* Pause button overlay*/
+    .pause-button-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background-color: var(--accent-primary);
+        border-radius: var(--radius-full);
+        opacity: 0;
+        transition: opacity var(--transition-fast);
+        color: var(--bg-base);
+        border: none;
+        padding: 0;
+        cursor: pointer;
+    }
+
+    /* tooltip for pause button */
+    .pause-button-overlay::after {
+        content: "Pause";
+        position: absolute;
+        bottom: calc(100% + 8px);
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 4px 8px;
+        background-color: var(--bg-surface);
+        color: var(--text-primary);
+        font-size: 0.75rem;
+        border-radius: var(--radius-sm);
+        white-space: nowrap;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity var(--transition-fast);
+        box-shadow: var(--shadow-md);
+        z-index: 1000;
+    }
+
+    .playing-indicator-container:hover .pause-button-overlay {
+        opacity: 1;
+    }
+
+    .pause-button-overlay:hover::after {
+        opacity: 1;
     }
 
     .play-button {
@@ -524,6 +644,10 @@
         box-shadow: var(--shadow-md);
         z-index: 1000;
     }
+    
+    .playlist-card.paused .play-button::after {
+        content: "Resume playlist";
+    }
 
     .play-button:hover::after {
         opacity: 1;
@@ -535,44 +659,6 @@
 
     .play-button:hover {
         transform: translateY(0) scale(1.05);
-    }
-
-    .playing-indicator {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 4px;
-        width: 48px;
-        height: 48px;
-        background-color: var(--accent-primary);
-        border-radius: var(--radius-full);
-        box-shadow: var(--shadow-lg);
-    }
-
-    .playing-indicator .bar {
-        width: 4px;
-        height: 16px;
-        background-color: var(--bg-base);
-        border-radius: 2px;
-        animation: equalizer 0.8s ease-in-out infinite;
-    }
-
-    .playing-indicator .bar:nth-child(2) {
-        animation-delay: 0.2s;
-    }
-
-    .playing-indicator .bar:nth-child(3) {
-        animation-delay: 0.4s;
-    }
-
-    @keyframes equalizer {
-        0%,
-        100% {
-            height: 6px;
-        }
-        50% {
-            height: 20px;
-        }
     }
 
     .playlist-info {
@@ -591,6 +677,10 @@
         color: var(--accent-primary);
     }
 
+    .playlist-card.paused .playlist-name {
+        color: var(--accent-primary);
+    }
+
     .playlist-type {
         font-size: 0.8125rem;
         color: var(--text-secondary);
@@ -601,26 +691,9 @@
         opacity: 0.8;
     }
 
-    .empty-state {
-        grid-column: 1 / -1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: var(--spacing-xl);
-        color: var(--text-subdued);
-        text-align: center;
-        gap: var(--spacing-sm);
-    }
-
-    .empty-state h3 {
-        font-size: 1.25rem;
-        font-weight: 600;
-        color: var(--text-primary);
-    }
-
-    .empty-state p {
-        font-size: 0.875rem;
+    .playlist-card.paused .playlist-type {
+        color: var(--accent-primary);
+        opacity: 0.8;
     }
 
     .truncate {
@@ -631,12 +704,6 @@
 
     /* ── Mobile ── */
     @media (max-width: 768px) {
-        .playlist-grid {
-            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-            gap: var(--spacing-md);
-            padding: var(--spacing-sm);
-        }
-
         .playlist-card {
             padding: var(--spacing-sm);
         }
@@ -655,6 +722,11 @@
 
         .play-overlay {
             display: none;
+        }
+
+        .now-playing-badge {
+            font-size: 0.625rem;
+            padding: 2px 6px;
         }
     }
 </style>

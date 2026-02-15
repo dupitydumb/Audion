@@ -153,6 +153,7 @@
         padding: var(--spacing-lg);
         overflow-y: auto;
         max-height: 60vh;
+        overscroll-behavior-y: contain
     }
 
     .description {

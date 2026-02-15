@@ -947,6 +947,7 @@
     padding: var(--spacing-md);
     padding-bottom: calc(var(--player-height) + var(--spacing-lg));
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
   }
 
   @media (max-width: 768px) {

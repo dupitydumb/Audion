@@ -307,6 +307,7 @@
                     overflow-y: auto;
                     max-height: 450px;
                     padding-right: 8px;
+                    overscroll-behavior-y: contain;
                 }
 
                 .tidal-results-container::-webkit-scrollbar {

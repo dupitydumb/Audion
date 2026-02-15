@@ -951,6 +951,7 @@
                     border-right: 1px solid var(--border-color);
                     padding: 20px;
                     overflow-y: auto;
+                    overscroll-behavior-y: contain
                 }
 
                 .mock-sidebar-logo {
@@ -1015,6 +1016,7 @@
                     flex: 1;
                     padding: 32px;
                     overflow-y: auto;
+                    overscroll-behavior-y: contain
                 }
 
                 .mock-track-list {
@@ -1271,6 +1273,7 @@
                     flex: 0 0 580px;
                     padding: 16px;
                     overflow-y: auto;
+                    overscroll-behavior-y: contain
                     background: var(--bg-elevated);
                     border-right: 1px solid var(--border-color);
                 }
@@ -1451,6 +1454,7 @@
                     flex: 1;
                     padding: 24px;
                     overflow-y: auto;
+                    overscroll-behavior-y: contain
                     background: var(--bg-base);
                     position: relative;
                 }
@@ -1534,6 +1538,7 @@
                 .theme-details-body {
                     flex: 1;
                     overflow-y: auto;
+                    overscroll-behavior-y: contain
                 }
 
                 .theme-palette-section {
@@ -1712,6 +1717,7 @@
                     flex-direction: column;
                     gap: 32px;
                     overflow-y: auto;
+                    overscroll-behavior-y: contain
                     flex: 1;
                     padding-right: 8px;
                 }
@@ -1843,6 +1849,7 @@
                     .theme-picker-body {
                         flex-direction: column;
                         overflow-y: auto;
+                        overscroll-behavior-y: contain
                     }
                     .theme-list-section {
                         flex: none;
