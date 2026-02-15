@@ -147,6 +147,17 @@
         }
     }
 
+    function handleVolumeScroll(e: WheelEvent) {
+        e.preventDefault();
+        if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+        const step = 0.05;
+        if (e.deltaY < 0) {
+            setVolume(Math.min(1, $volume + step));
+        } else if (e.deltaY > 0) {
+            setVolume(Math.max(0, $volume - step));
+        }
+    }
+
     function getRepeatIcon(mode: "none" | "one" | "all"): string {
         if (mode === "one") return "1";
         return "";
@@ -498,6 +509,7 @@
             bind:this={volumeBarElement}
             on:mousedown={handleVolumeStart}
             on:keydown={handleVolumeKey}
+            on:wheel={handleVolumeScroll}
             role="slider"
             aria-label="Volume"
             aria-valuenow={Math.round($volume * 100)}
