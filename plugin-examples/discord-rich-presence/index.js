@@ -10,18 +10,26 @@
       enabled: true,
       showProgress: true,
       updateInterval: 15000,
-      detailsLeft: "track_title",
-      detailsRight: "none",
-      detailsCustomLeft: "",
-      detailsCustomRight: "",
-      stateLeft: "artist",
-      stateRight: "none",
-      stateCustomLeft: "",
-      stateCustomRight: "",
+      line1Left: "track_title",
+      line1Right: "none",
+      line1CustomLeft: "",
+      line1CustomRight: "",
+      line2Left: "artist",
+      line2Right: "none",
+      line2CustomLeft: "",
+      line2CustomRight: "",
+      line3Left: "album",
+      line3Right: "none",
+      line3CustomLeft: "",
+      line3CustomRight: "",
+      appNameLeft: "none",
+      appNameRight: "none",
+      appNameCustomLeft: "",
+      appNameCustomRight: "",
+      statusDisplayType: "details",
       useTidalCovers: true,
       activityTimeoutEnabled: true,
       activityTimeoutTime: 600000,
-      statusDisplayType: 0,
       showPauseIcon: true,
     },
 
@@ -43,10 +51,16 @@
     lastTrackId: null,
     lastPlayingState: null,
     lastTime: 0,
+    previewCoverUrl: null,
+    previewCoverLoading: false,
+    lastPreviewTrackId: null,
 
     async init(api) {
       this.api = api;
       this.settings = { ...this.defaultSettings };
+
+      // Initialize lastProgressUpdate to prevent massive initial time delta
+      this.lastProgressUpdate = Date.now();
 
       await this.loadSettings();
 
@@ -105,8 +119,7 @@
       const statusText = document.querySelector(".drpc-status-text");
       if (statusText) {
         const originalText = statusText.textContent;
-        statusText.textContent =
-          "Storage unavailable - settings won't persist";
+        statusText.textContent = "Storage unavailable - settings won't persist";
         statusText.style.color = "#ffc107";
         setTimeout(() => {
           statusText.textContent = originalText;
@@ -547,6 +560,29 @@
           justify-content: center;
           color: white;
           font-size: 32px;
+          position: relative;
+        }
+        
+        .drpc-discord-image img {
+          width: 100%;
+          height: 100%;
+          border-radius: 8px;
+          object-fit: cover;
+        }
+        
+        .drpc-discord-image.loading::after {
+          content: "";
+          position: absolute;
+          width: 24px;
+          height: 24px;
+          border: 3px solid rgba(255, 255, 255, 0.3);
+          border-top-color: white;
+          border-radius: 50%;
+          animation: drpc-spin 0.8s linear infinite;
+        }
+        
+        @keyframes drpc-spin {
+          to { transform: rotate(360deg); }
         }
         
         .drpc-discord-info {
@@ -577,7 +613,7 @@
           text-overflow: ellipsis;
         }
 
-        .drpc-discord-state-mirror {
+        .drpc-discord-large-text {
           font-size: 13px;
           color: #b5bac1;
           white-space: nowrap;
@@ -741,8 +777,8 @@
 
             <div class="drpc-setting-item">
               <div>
-                <div class="drpc-setting-label">Show Pause Icon</div>
-                <div class="drpc-setting-desc">Display (paused) on album art when paused</div>
+                <div class="drpc-setting-label">Show Pause Text</div>
+                <div class="drpc-setting-desc">Display (Paused) on album art when paused</div>
               </div>
               <label class="drpc-toggle">
                 <input type="checkbox" id="drpc-show-pause-icon" ${this.settings.showPauseIcon ? "checked" : ""}>
@@ -759,20 +795,6 @@
                 <input type="checkbox" id="drpc-use-tidal" ${this.settings.useTidalCovers ? "checked" : ""}>
                 <span class="drpc-toggle-slider"></span>
               </label>
-            </div>
-
-            <div class="drpc-input-group">
-              <label>Status Display Type</label>
-              <select id="drpc-status-display" class="drpc-select">
-                <option value="0">Application Name (Audion)</option>
-                <option value="1">Artist Name</option>
-                <option value="2">Song Title</option>
-              </select>
-              <div class="drpc-info-box">
-                <div class="drpc-info-text">
-                  Controls what appears in your Discord status text (visible in member list).
-                </div>
-              </div>
             </div>
           </div>
 
@@ -848,9 +870,23 @@
             <div class="drpc-section-title">Display Format</div>
             
             <div class="drpc-input-group">
-              <label>Details (First Line)</label>
+              <label>Status Display (Member List)</label>
+              <select id="drpc-status-display-type" class="drpc-select">
+                <option value="name">App Name</option>
+                <option value="details">Line 1 (Details)</option>
+                <option value="state">Line 2 (State)</option>
+              </select>
+              <div class="drpc-info-box">
+                <div class="drpc-info-text">
+                  Controls which field appears in your Discord status text (visible in member list).
+                </div>
+              </div>
+            </div>
+
+            <div class="drpc-input-group">
+              <label>App Name</label>
               <div class="drpc-compound-format">
-                <select id="drpc-details-left" class="drpc-select drpc-compound-select">
+                <select id="drpc-app-name-left" class="drpc-select drpc-compound-select">
                   <option value="none">None</option>
                   <option value="track_title">Track Title</option>
                   <option value="artist">Artist</option>
@@ -858,7 +894,7 @@
                   <option value="custom">Custom</option>
                 </select>
                 <span class="drpc-compound-divider">•</span>
-                <select id="drpc-details-right" class="drpc-select drpc-compound-select">
+                <select id="drpc-app-name-right" class="drpc-select drpc-compound-select">
                   <option value="none">None</option>
                   <option value="track_title">Track Title</option>
                   <option value="artist">Artist</option>
@@ -868,14 +904,54 @@
               </div>
               <input
                 type="text"
-                id="drpc-details-custom-left"
+                id="drpc-app-name-custom-left"
                 class="drpc-input"
                 placeholder="Custom left text..."
                 style="display: none;"
               >
               <input
                 type="text"
-                id="drpc-details-custom-right"
+                id="drpc-app-name-custom-right"
+                class="drpc-input"
+                placeholder="Custom right text..."
+                style="display: none;"
+              >
+              <div class="drpc-info-box">
+                <div class="drpc-info-text">
+                  Overrides the default "Audion" app name. Leave both as "None" to use "Audion".
+                </div>
+              </div>
+            </div>
+
+            <div class="drpc-input-group">
+              <label>Line 1 (Details)</label>
+              <div class="drpc-compound-format">
+                <select id="drpc-line1-left" class="drpc-select drpc-compound-select">
+                  <option value="none">None</option>
+                  <option value="track_title">Track Title</option>
+                  <option value="artist">Artist</option>
+                  <option value="album">Album</option>
+                  <option value="custom">Custom</option>
+                </select>
+                <span class="drpc-compound-divider">•</span>
+                <select id="drpc-line1-right" class="drpc-select drpc-compound-select">
+                  <option value="none">None</option>
+                  <option value="track_title">Track Title</option>
+                  <option value="artist">Artist</option>
+                  <option value="album">Album</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <input
+                type="text"
+                id="drpc-line1-custom-left"
+                class="drpc-input"
+                placeholder="Custom left text..."
+                style="display: none;"
+              >
+              <input
+                type="text"
+                id="drpc-line1-custom-right"
                 class="drpc-input"
                 placeholder="Custom right text..."
                 style="display: none;"
@@ -883,9 +959,9 @@
             </div>
 
             <div class="drpc-input-group">
-              <label>State (Second Line)</label>
+              <label>Line 2 (State)</label>
               <div class="drpc-compound-format">
-                <select id="drpc-state-left" class="drpc-select drpc-compound-select">
+                <select id="drpc-line2-left" class="drpc-select drpc-compound-select">
                   <option value="none">None</option>
                   <option value="track_title">Track Title</option>
                   <option value="artist">Artist</option>
@@ -893,7 +969,7 @@
                   <option value="custom">Custom</option>
                 </select>
                 <span class="drpc-compound-divider">•</span>
-                <select id="drpc-state-right" class="drpc-select drpc-compound-select">
+                <select id="drpc-line2-right" class="drpc-select drpc-compound-select">
                   <option value="none">None</option>
                   <option value="track_title">Track Title</option>
                   <option value="artist">Artist</option>
@@ -903,14 +979,49 @@
               </div>
               <input
                 type="text"
-                id="drpc-state-custom-left"
+                id="drpc-line2-custom-left"
                 class="drpc-input"
                 placeholder="Custom left text..."
                 style="display: none;"
               >
               <input
                 type="text"
-                id="drpc-state-custom-right"
+                id="drpc-line2-custom-right"
+                class="drpc-input"
+                placeholder="Custom right text..."
+                style="display: none;"
+              >
+            </div>
+
+            <div class="drpc-input-group">
+              <label>Line 3 (Album Art Hover Text)</label>
+              <div class="drpc-compound-format">
+                <select id="drpc-line3-left" class="drpc-select drpc-compound-select">
+                  <option value="none">None</option>
+                  <option value="track_title">Track Title</option>
+                  <option value="artist">Artist</option>
+                  <option value="album">Album</option>
+                  <option value="custom">Custom</option>
+                </select>
+                <span class="drpc-compound-divider">•</span>
+                <select id="drpc-line3-right" class="drpc-select drpc-compound-select">
+                  <option value="none">None</option>
+                  <option value="track_title">Track Title</option>
+                  <option value="artist">Artist</option>
+                  <option value="album">Album</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <input
+                type="text"
+                id="drpc-line3-custom-left"
+                class="drpc-input"
+                placeholder="Custom left text..."
+                style="display: none;"
+              >
+              <input
+                type="text"
+                id="drpc-line3-custom-right"
                 class="drpc-input"
                 placeholder="Custom right text..."
                 style="display: none;"
@@ -928,7 +1039,7 @@
           <button class="drpc-btn drpc-btn-secondary" id="drpc-reset-btn">Reset Defaults</button>
           <button class="drpc-btn drpc-btn-primary" id="drpc-save-btn">Save Settings</button>
         </div>
-      </div>
+      </div>  
       `;
 
       document.body.appendChild(modal);
@@ -977,12 +1088,6 @@
         this.tempSettings.activityTimeoutTime = minutes * 60000;
       });
 
-      const statusDisplay = modal.querySelector("#drpc-status-display");
-      statusDisplay.value = this.settings.statusDisplayType.toString();
-      statusDisplay.addEventListener("change", (e) => {
-        this.tempSettings.statusDisplayType = parseInt(e.target.value);
-      });
-
       const intervalSlider = modal.querySelector("#drpc-update-interval");
       const intervalDisplay = modal.querySelector("#drpc-interval-display");
       intervalSlider.addEventListener("input", (e) => {
@@ -991,78 +1096,162 @@
         this.tempSettings.updateInterval = seconds * 1000;
       });
 
-      const detailsLeft = modal.querySelector("#drpc-details-left");
-      const detailsRight = modal.querySelector("#drpc-details-right");
-      const stateLeft = modal.querySelector("#drpc-state-left");
-      const stateRight = modal.querySelector("#drpc-state-right");
-
-      detailsLeft.value = this.settings.detailsLeft;
-      detailsRight.value = this.settings.detailsRight;
-      stateLeft.value = this.settings.stateLeft;
-      stateRight.value = this.settings.stateRight;
-
-      const detailsCustomLeft = modal.querySelector(
-        "#drpc-details-custom-left",
+      // Status Display Type
+      const statusDisplayType = modal.querySelector(
+        "#drpc-status-display-type",
       );
-      const detailsCustomRight = modal.querySelector(
-        "#drpc-details-custom-right",
+      statusDisplayType.value = this.settings.statusDisplayType;
+      statusDisplayType.addEventListener("change", (e) => {
+        this.tempSettings.statusDisplayType = e.target.value;
+        this.updatePreview();
+      });
+
+      // App Name selects
+      const appNameLeft = modal.querySelector("#drpc-app-name-left");
+      const appNameRight = modal.querySelector("#drpc-app-name-right");
+      const appNameCustomLeft = modal.querySelector(
+        "#drpc-app-name-custom-left",
       );
-      const stateCustomLeft = modal.querySelector("#drpc-state-custom-left");
-      const stateCustomRight = modal.querySelector("#drpc-state-custom-right");
+      const appNameCustomRight = modal.querySelector(
+        "#drpc-app-name-custom-right",
+      );
+
+      appNameLeft.value = this.settings.appNameLeft;
+      appNameRight.value = this.settings.appNameRight;
+      appNameCustomLeft.value = this.settings.appNameCustomLeft;
+      appNameCustomRight.value = this.settings.appNameCustomRight;
+
+      // Line 1 selects
+      const line1Left = modal.querySelector("#drpc-line1-left");
+      const line1Right = modal.querySelector("#drpc-line1-right");
+      const line1CustomLeft = modal.querySelector("#drpc-line1-custom-left");
+      const line1CustomRight = modal.querySelector("#drpc-line1-custom-right");
+
+      line1Left.value = this.settings.line1Left;
+      line1Right.value = this.settings.line1Right;
+      line1CustomLeft.value = this.settings.line1CustomLeft;
+      line1CustomRight.value = this.settings.line1CustomRight;
+
+      // Line 2 selects
+      const line2Left = modal.querySelector("#drpc-line2-left");
+      const line2Right = modal.querySelector("#drpc-line2-right");
+      const line2CustomLeft = modal.querySelector("#drpc-line2-custom-left");
+      const line2CustomRight = modal.querySelector("#drpc-line2-custom-right");
+
+      line2Left.value = this.settings.line2Left;
+      line2Right.value = this.settings.line2Right;
+      line2CustomLeft.value = this.settings.line2CustomLeft;
+      line2CustomRight.value = this.settings.line2CustomRight;
+
+      // Line 3 selects
+      const line3Left = modal.querySelector("#drpc-line3-left");
+      const line3Right = modal.querySelector("#drpc-line3-right");
+      const line3CustomLeft = modal.querySelector("#drpc-line3-custom-left");
+      const line3CustomRight = modal.querySelector("#drpc-line3-custom-right");
+
+      line3Left.value = this.settings.line3Left;
+      line3Right.value = this.settings.line3Right;
+      line3CustomLeft.value = this.settings.line3CustomLeft;
+      line3CustomRight.value = this.settings.line3CustomRight;
 
       const updateCustomInputs = () => {
-        detailsCustomLeft.style.display =
-          detailsLeft.value === "custom" ? "block" : "none";
-        detailsCustomRight.style.display =
-          detailsRight.value === "custom" ? "block" : "none";
-        stateCustomLeft.style.display =
-          stateLeft.value === "custom" ? "block" : "none";
-        stateCustomRight.style.display =
-          stateRight.value === "custom" ? "block" : "none";
+        appNameCustomLeft.style.display =
+          appNameLeft.value === "custom" ? "block" : "none";
+        appNameCustomRight.style.display =
+          appNameRight.value === "custom" ? "block" : "none";
+        line1CustomLeft.style.display =
+          line1Left.value === "custom" ? "block" : "none";
+        line1CustomRight.style.display =
+          line1Right.value === "custom" ? "block" : "none";
+        line2CustomLeft.style.display =
+          line2Left.value === "custom" ? "block" : "none";
+        line2CustomRight.style.display =
+          line2Right.value === "custom" ? "block" : "none";
+        line3CustomLeft.style.display =
+          line3Left.value === "custom" ? "block" : "none";
+        line3CustomRight.style.display =
+          line3Right.value === "custom" ? "block" : "none";
       };
 
       updateCustomInputs();
 
-      detailsLeft.addEventListener("change", (e) => {
-        this.tempSettings.detailsLeft = e.target.value;
+      // App Name event listeners
+      appNameLeft.addEventListener("change", (e) => {
+        this.tempSettings.appNameLeft = e.target.value;
         updateCustomInputs();
         this.updatePreview();
       });
-      detailsRight.addEventListener("change", (e) => {
-        this.tempSettings.detailsRight = e.target.value;
+      appNameRight.addEventListener("change", (e) => {
+        this.tempSettings.appNameRight = e.target.value;
         updateCustomInputs();
         this.updatePreview();
       });
-      stateLeft.addEventListener("change", (e) => {
-        this.tempSettings.stateLeft = e.target.value;
-        updateCustomInputs();
+      appNameCustomLeft.addEventListener("input", (e) => {
+        this.tempSettings.appNameCustomLeft = e.target.value;
         this.updatePreview();
       });
-      stateRight.addEventListener("change", (e) => {
-        this.tempSettings.stateRight = e.target.value;
-        updateCustomInputs();
+      appNameCustomRight.addEventListener("input", (e) => {
+        this.tempSettings.appNameCustomRight = e.target.value;
         this.updatePreview();
       });
 
-      detailsCustomLeft.value = this.settings.detailsCustomLeft;
-      detailsCustomRight.value = this.settings.detailsCustomRight;
-      stateCustomLeft.value = this.settings.stateCustomLeft;
-      stateCustomRight.value = this.settings.stateCustomRight;
+      // Line 1 event listeners
+      line1Left.addEventListener("change", (e) => {
+        this.tempSettings.line1Left = e.target.value;
+        updateCustomInputs();
+        this.updatePreview();
+      });
+      line1Right.addEventListener("change", (e) => {
+        this.tempSettings.line1Right = e.target.value;
+        updateCustomInputs();
+        this.updatePreview();
+      });
+      line1CustomLeft.addEventListener("input", (e) => {
+        this.tempSettings.line1CustomLeft = e.target.value;
+        this.updatePreview();
+      });
+      line1CustomRight.addEventListener("input", (e) => {
+        this.tempSettings.line1CustomRight = e.target.value;
+        this.updatePreview();
+      });
 
-      detailsCustomLeft.addEventListener("input", (e) => {
-        this.tempSettings.detailsCustomLeft = e.target.value;
+      // Line 2 event listeners
+      line2Left.addEventListener("change", (e) => {
+        this.tempSettings.line2Left = e.target.value;
+        updateCustomInputs();
         this.updatePreview();
       });
-      detailsCustomRight.addEventListener("input", (e) => {
-        this.tempSettings.detailsCustomRight = e.target.value;
+      line2Right.addEventListener("change", (e) => {
+        this.tempSettings.line2Right = e.target.value;
+        updateCustomInputs();
         this.updatePreview();
       });
-      stateCustomLeft.addEventListener("input", (e) => {
-        this.tempSettings.stateCustomLeft = e.target.value;
+      line2CustomLeft.addEventListener("input", (e) => {
+        this.tempSettings.line2CustomLeft = e.target.value;
         this.updatePreview();
       });
-      stateCustomRight.addEventListener("input", (e) => {
-        this.tempSettings.stateCustomRight = e.target.value;
+      line2CustomRight.addEventListener("input", (e) => {
+        this.tempSettings.line2CustomRight = e.target.value;
+        this.updatePreview();
+      });
+
+      // Line 3 event listeners
+      line3Left.addEventListener("change", (e) => {
+        this.tempSettings.line3Left = e.target.value;
+        updateCustomInputs();
+        this.updatePreview();
+      });
+      line3Right.addEventListener("change", (e) => {
+        this.tempSettings.line3Right = e.target.value;
+        updateCustomInputs();
+        this.updatePreview();
+      });
+      line3CustomLeft.addEventListener("input", (e) => {
+        this.tempSettings.line3CustomLeft = e.target.value;
+        this.updatePreview();
+      });
+      line3CustomRight.addEventListener("input", (e) => {
+        this.tempSettings.line3CustomRight = e.target.value;
         this.updatePreview();
       });
 
@@ -1117,6 +1306,11 @@
       overlay.classList.remove("open");
 
       this.stopConnectionStatusPolling();
+
+      // Clean up preview state to prevent memory leaks
+      this.previewCoverUrl = null;
+      this.lastPreviewTrackId = null;
+      this.previewCoverLoading = false;
     },
 
     startConnectionStatusPolling() {
@@ -1160,11 +1354,26 @@
       }
     },
 
-    updatePreview() {
+    async updatePreview() {
+      if (!this.isSettingsOpen) return;
+
       const previewContent = document.querySelector(".drpc-preview-content");
       if (!previewContent) return;
 
       const settings = this.tempSettings || this.settings;
+
+      // Get real track data or fallback to mock
+      let track = null;
+      try {
+        track = this.api?.player?.getCurrentTrack?.() || this.currentTrack;
+      } catch (e) {
+        // Ignore errors
+      }
+
+      // If track changed, reset cover loading state
+      if (track?.id && track.id !== this.lastPreviewTrackId) {
+        this.lastPreviewTrackId = track.id;
+      }
 
       const mockTrack = {
         title: "Song Title",
@@ -1172,38 +1381,109 @@
         album: "Album Name",
       };
 
-      const detailsText = this.buildCompoundFormat(
-        settings.detailsLeft,
-        settings.detailsRight,
-        settings.detailsCustomLeft,
-        settings.detailsCustomRight,
-        mockTrack,
+      // Build formats with real data, fallback
+      const buildFormatWithFallback = (
+        leftType,
+        rightType,
+        leftCustom,
+        rightCustom,
+      ) => {
+        const parts = [];
+
+        // Left side
+        if (leftType === "custom" && leftCustom) {
+          parts.push(leftCustom);
+        } else if (leftType === "track_title") {
+          parts.push(track?.title || mockTrack.title);
+        } else if (leftType === "artist") {
+          parts.push(track?.artist || mockTrack.artist);
+        } else if (leftType === "album") {
+          parts.push(track?.album || mockTrack.album);
+        }
+
+        // Right side
+        if (rightType === "custom" && rightCustom) {
+          parts.push(rightCustom);
+        } else if (rightType === "track_title") {
+          parts.push(track?.title || mockTrack.title);
+        } else if (rightType === "artist") {
+          parts.push(track?.artist || mockTrack.artist);
+        } else if (rightType === "album") {
+          parts.push(track?.album || mockTrack.album);
+        }
+
+        return parts.filter(Boolean).join(" • ");
+      };
+
+      const appNameText = buildFormatWithFallback(
+        settings.appNameLeft,
+        settings.appNameRight,
+        settings.appNameCustomLeft,
+        settings.appNameCustomRight,
       );
 
-      const stateText = this.buildCompoundFormat(
-        settings.stateLeft,
-        settings.stateRight,
-        settings.stateCustomLeft,
-        settings.stateCustomRight,
-        mockTrack,
+      const line1Text = buildFormatWithFallback(
+        settings.line1Left,
+        settings.line1Right,
+        settings.line1CustomLeft,
+        settings.line1CustomRight,
       );
+
+      const line2Text = buildFormatWithFallback(
+        settings.line2Left,
+        settings.line2Right,
+        settings.line2CustomLeft,
+        settings.line2CustomRight,
+      );
+
+      const line3Text = buildFormatWithFallback(
+        settings.line3Left,
+        settings.line3Right,
+        settings.line3CustomLeft,
+        settings.line3CustomRight,
+      );
+
+      // Determine what shows in "Listening to X"
+      const listeningToText = appNameText || "Audion";
+
+      // Use emoji as fallback
+      let coverHtml = '<div class="drpc-discord-image">🎵</div>';
+
+      if (settings.useTidalCovers && track?.title) {
+        const coverKey = `${track.artist || ""}-${track.title}`;
+
+        if (this.coverCache.has(coverKey)) {
+          const cachedCover = this.coverCache.get(coverKey);
+          if (cachedCover) {
+            coverHtml = `<div class="drpc-discord-image"><img src="${cachedCover}" alt="Album Cover"></div>`;
+          } else {
+            coverHtml = '<div class="drpc-discord-image">🎵</div>';
+          }
+        } else if (!this.previewCoverLoading) {
+          coverHtml = '<div class="drpc-discord-image loading">🎵</div>';
+          this.previewCoverLoading = true;
+          this.fetchPreviewCover(track, coverKey);
+        } else {
+          coverHtml = '<div class="drpc-discord-image loading">🎵</div>';
+        }
+      }
 
       previewContent.innerHTML = `
           <div class="drpc-discord-card">
-          <div class="drpc-discord-app">Listening to ${mockTrack.artist}</div>
+          <div class="drpc-discord-app">Listening to ${listeningToText}</div>
           <div class="drpc-discord-menu">⋯</div>
           
           <div class="drpc-discord-main">
-            <div class="drpc-discord-image">🎵</div>
+            ${coverHtml}
             <div class="drpc-discord-info">
               <div class="drpc-discord-details">
-                ${detailsText || '<span style="opacity: 0.5">(empty)</span>'}
+                ${line1Text || '<span style="opacity: 0.5">(empty)</span>'}
               </div>
               <div class="drpc-discord-state">
-                ${stateText || '<span style="opacity: 0.5">(empty)</span>'}
+                ${line2Text || '<span style="opacity: 0.5">(empty)</span>'}
               </div>
-              <div class="drpc-discord-state-mirror">
-                ${detailsText || '<span style="opacity: 0.5">(empty)</span>'}
+              <div class="drpc-discord-large-text">
+                ${line3Text || '<span style="opacity: 0.5">(empty)</span>'}
               </div>
               
               ${
@@ -1226,6 +1506,41 @@
       `;
     },
 
+    async fetchPreviewCover(track, cacheKey) {
+      try {
+        if (!this.isSettingsOpen) {
+          this.previewCoverLoading = false;
+          return;
+        }
+
+        const coverUrl = await this.searchCoverFromTidal(
+          track.title,
+          track.artist || "",
+        );
+
+        if (!this.isSettingsOpen) {
+          this.previewCoverLoading = false;
+          return;
+        }
+
+        this.coverCache.set(cacheKey, coverUrl);
+        this.pruneCache();
+        this.previewCoverUrl = coverUrl;
+
+        console.log(
+          `[Discord RPC Preview] Tidal cover ${coverUrl ? "found" : "not found"} for "${track.title}"`,
+        );
+      } catch (error) {
+        console.error("[Discord RPC Preview] Cover fetch error:", error);
+        this.coverCache.set(cacheKey, null);
+      } finally {
+        this.previewCoverLoading = false;
+        if (this.isSettingsOpen) {
+          this.updatePreview();
+        }
+      }
+    },
+
     resetSettings() {
       this.tempSettings = { ...this.defaultSettings };
 
@@ -1245,27 +1560,39 @@
       modal.querySelector("#drpc-timeout-display").textContent =
         `${this.tempSettings.activityTimeoutTime / 60000} min`;
 
-      modal.querySelector("#drpc-status-display").value =
-        this.tempSettings.statusDisplayType.toString();
-
       modal.querySelector("#drpc-update-interval").value =
         this.tempSettings.updateInterval / 1000;
       modal.querySelector("#drpc-interval-display").textContent =
         `${this.tempSettings.updateInterval / 1000}s`;
 
-      modal.querySelector("#drpc-details-left").value =
-        this.tempSettings.detailsLeft;
-      modal.querySelector("#drpc-details-right").value =
-        this.tempSettings.detailsRight;
-      modal.querySelector("#drpc-state-left").value =
-        this.tempSettings.stateLeft;
-      modal.querySelector("#drpc-state-right").value =
-        this.tempSettings.stateRight;
+      modal.querySelector("#drpc-status-display-type").value =
+        this.tempSettings.statusDisplayType;
 
-      modal.querySelector("#drpc-details-custom-left").value = "";
-      modal.querySelector("#drpc-details-custom-right").value = "";
-      modal.querySelector("#drpc-state-custom-left").value = "";
-      modal.querySelector("#drpc-state-custom-right").value = "";
+      modal.querySelector("#drpc-app-name-left").value =
+        this.tempSettings.appNameLeft;
+      modal.querySelector("#drpc-app-name-right").value =
+        this.tempSettings.appNameRight;
+      modal.querySelector("#drpc-line1-left").value =
+        this.tempSettings.line1Left;
+      modal.querySelector("#drpc-line1-right").value =
+        this.tempSettings.line1Right;
+      modal.querySelector("#drpc-line2-left").value =
+        this.tempSettings.line2Left;
+      modal.querySelector("#drpc-line2-right").value =
+        this.tempSettings.line2Right;
+      modal.querySelector("#drpc-line3-left").value =
+        this.tempSettings.line3Left;
+      modal.querySelector("#drpc-line3-right").value =
+        this.tempSettings.line3Right;
+
+      modal.querySelector("#drpc-app-name-custom-left").value = "";
+      modal.querySelector("#drpc-app-name-custom-right").value = "";
+      modal.querySelector("#drpc-line1-custom-left").value = "";
+      modal.querySelector("#drpc-line1-custom-right").value = "";
+      modal.querySelector("#drpc-line2-custom-left").value = "";
+      modal.querySelector("#drpc-line2-custom-right").value = "";
+      modal.querySelector("#drpc-line3-custom-left").value = "";
+      modal.querySelector("#drpc-line3-custom-right").value = "";
 
       modal
         .querySelector(".drpc-settings-container")
@@ -1338,6 +1665,11 @@
       const { track } = data;
       if (!track) return;
 
+      // Only update if the track actually changed
+      if (this.currentTrack && this.currentTrack.id === track.id) {
+        return;
+      }
+
       this.currentTrack = track;
       this.duration = track.duration || 0;
 
@@ -1354,14 +1686,20 @@
       }
 
       this.updatePresence(true);
+
+      // Update preview if settings modal is open
+      if (this.isSettingsOpen) {
+        this.updatePreview();
+      }
     },
 
     handlePlaybackState(data) {
       const { isPlaying } = data;
-      console.log("[Discord RPC] handlePlaybackState called:", {
-        isPlaying,
-        wasPlaying: this.isPlaying,
-      });
+
+      // Only update if the state actually changed
+      if (this.isPlaying === isPlaying) {
+        return;
+      }
 
       this.isPlaying = isPlaying;
 
@@ -1370,9 +1708,6 @@
         this.activityClearTimeout = null;
       }
 
-      console.log(
-        "[Discord RPC] About to call updatePresence with forceUpdate=true",
-      );
       this.updatePresence(true);
 
       if (!isPlaying && this.settings.activityTimeoutEnabled) {
@@ -1401,36 +1736,37 @@
 
       const songChanged = this.currentTrack?.id !== this.lastTrackId;
       const pauseChanged = this.isPlaying !== this.lastPlayingState;
-      const seeked = Math.abs(this.currentTime - this.lastTime) > 2;
+      const timeDiff = Math.abs(this.currentTime - this.lastTime);
+      const seeked = timeDiff > 2;
 
+      // Immediate update for important changes
       if (songChanged || pauseChanged || seeked) {
-        // Force update for important changes
         if (this.updateTimeout) {
           clearTimeout(this.updateTimeout);
           this.updateTimeout = null;
         }
         this.updatePresence(true);
-        this.lastProgressUpdate = now;
         this.lastTime = this.currentTime;
         return;
       }
 
-      if (now - this.lastProgressUpdate > this.settings.updateInterval) {
+      // Update lastTime
+      this.lastTime = this.currentTime;
+
+      // For normal progress updates, check if interval has passed
+      const timeSinceLastUpdate = now - this.lastProgressUpdate;
+
+      if (timeSinceLastUpdate >= this.settings.updateInterval) {
         if (this.updateTimeout) {
           clearTimeout(this.updateTimeout);
           this.updateTimeout = null;
         }
         this.updatePresence();
-        this.lastProgressUpdate = now;
-        this.lastTime = this.currentTime;
       } else if (!this.updateTimeout) {
-        const delay =
-          this.settings.updateInterval - (now - this.lastProgressUpdate);
+        const delay = this.settings.updateInterval - timeSinceLastUpdate;
         this.updateTimeout = setTimeout(() => {
           this.updatePresence();
           this.updateTimeout = null;
-          this.lastProgressUpdate = Date.now();
-          this.lastTime = this.currentTime;
         }, delay);
       }
     },
@@ -1455,6 +1791,17 @@
     async updatePresence(forceUpdate = false) {
       if (!this.settings.enabled || !this.isConnected) return;
 
+      // Throttle updates (non-forced)
+      if (!forceUpdate) {
+        const now = Date.now();
+        const timeSinceLastUpdate = now - this.lastProgressUpdate;
+
+        if (timeSinceLastUpdate < this.settings.updateInterval) {
+          return;
+        }
+      }
+
+      // Get current track info
       if (!this.currentTrack) {
         try {
           this.currentTrack = this.api.player.getCurrentTrack();
@@ -1474,56 +1821,65 @@
         this.duration = this.api.player.getDuration();
       } catch (error) {}
 
+      // Update tracking variables
       this.lastTrackId = this.currentTrack?.id;
       this.lastPlayingState = this.isPlaying;
 
-      let stateText = this.formatState();
-      if (!this.isPlaying) {
-        stateText = "(Paused)";
-      }
+      const line1 = this.buildCompoundFormat(
+        this.settings.line1Left,
+        this.settings.line1Right,
+        this.settings.line1CustomLeft,
+        this.settings.line1CustomRight,
+        this.currentTrack,
+      );
+
+      const line2 = this.buildCompoundFormat(
+        this.settings.line2Left,
+        this.settings.line2Right,
+        this.settings.line2CustomLeft,
+        this.settings.line2CustomRight,
+        this.currentTrack,
+      );
+
+      const line3 = this.buildCompoundFormat(
+        this.settings.line3Left,
+        this.settings.line3Right,
+        this.settings.line3CustomLeft,
+        this.settings.line3CustomRight,
+        this.currentTrack,
+      );
+
+      const appName = this.buildCompoundFormat(
+        this.settings.appNameLeft,
+        this.settings.appNameRight,
+        this.settings.appNameCustomLeft,
+        this.settings.appNameCustomRight,
+        this.currentTrack,
+      );
 
       const presenceData = {
-        song_title: this.formatDetails(),
-        artist: stateText,
-        album: null,
+        line1: line1 || "Unknown",
+        line2: line2 || "Unknown",
+        line3: line3 || null,
+        app_name: appName || null,
+        status_display_type: this.settings.statusDisplayType,
         cover_url: await this.getCoverUrl(),
-        
         current_time: Math.floor(this.currentTime * 1000),
         duration: Math.floor(this.duration * 1000),
         is_playing: this.isPlaying,
         show_pause_icon: this.settings.showPauseIcon,
-        status_display_type: this.settings.statusDisplayType,
       };
 
       console.log("[Discord RPC] Sending presence data:", presenceData);
 
       try {
         await this.api.discord.updatePresence(presenceData);
+        this.lastProgressUpdate = Date.now();
       } catch (error) {
         console.error("[Discord RPC] Update failed:", error);
         this.isConnected = false;
         setTimeout(() => this.connect(), 2000);
       }
-    },
-
-    formatDetails() {
-      return this.buildCompoundFormat(
-        this.settings.detailsLeft,
-        this.settings.detailsRight,
-        this.settings.detailsCustomLeft,
-        this.settings.detailsCustomRight,
-        this.currentTrack,
-      );
-    },
-
-    formatState() {
-      return this.buildCompoundFormat(
-        this.settings.stateLeft,
-        this.settings.stateRight,
-        this.settings.stateCustomLeft,
-        this.settings.stateCustomRight,
-        this.currentTrack,
-      );
     },
 
     async getCoverUrl() {
@@ -1553,36 +1909,53 @@
       }
 
       // Local cover invalid or missing - fetch from Tidal
-      if (this.currentTrack?.title && this.currentTrack?.artist) {
-        const cacheKey = `${this.currentTrack.artist}-${this.currentTrack.title}`;
+      if (this.currentTrack?.title) {
+        const artist = this.currentTrack.artist || "";
+        const cacheKey = `${artist}-${this.currentTrack.title}`;
 
         if (this.coverCache.has(cacheKey)) {
-          return this.coverCache.get(cacheKey);
+          const cached = this.coverCache.get(cacheKey);
+          return cached;
         }
 
         console.log(
-          "[Discord RPC] No valid local cover, fetching from Tidal...",
+          `[Discord RPC] No valid local cover for "${this.currentTrack.title}"${artist ? ` by ${artist}` : ""}, fetching from Tidal...`,
         );
         const foundCover = await this.searchCoverFromTidal();
+
+        this.coverCache.set(cacheKey, foundCover);
+        this.pruneCache();
+
         if (foundCover) {
-          this.coverCache.set(cacheKey, foundCover);
-          this.pruneCache();
+          console.log(`[Discord RPC] Found Tidal cover: ${foundCover}`);
           return foundCover;
+        } else {
+          console.log(
+            `[Discord RPC] No Tidal cover found for "${this.currentTrack.title}"${artist ? ` by ${artist}` : ""}`,
+          );
         }
       }
 
       return null;
     },
 
-    async searchCoverFromTidal() {
+    async searchCoverFromTidal(title = null, artist = null) {
       if (!this.api?.request) return null;
 
       try {
+        const searchTitle = title || this.currentTrack?.title;
+        const searchArtist =
+          artist !== null ? artist : this.currentTrack?.artist || "";
+
+        if (!searchTitle) return null;
+
         const coverUrl = await this.api.request("searchCover", {
-          title: this.currentTrack.title,
-          artist: this.currentTrack.artist,
-          trackId: this.currentTrack?.id || null,
-          requester: "Discord Rich Presence",
+          title: searchTitle,
+          artist: searchArtist,
+          trackId: !title ? this.currentTrack?.id || null : null,
+          requester: title
+            ? "Discord Rich Presence Preview"
+            : "Discord Rich Presence",
         });
 
         return coverUrl;

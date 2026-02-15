@@ -42,18 +42,17 @@ fn sanitize_text(input: &str, fallback: &str) -> String {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PresenceData {
-    pub song_title: String,
-    pub artist: String,
-    pub album: Option<String>,
-    pub large_text: Option<String>,
+    pub line1: String,
+    pub line2: String,
+    pub line3: Option<String>,
+    pub app_name: Option<String>,
+    pub status_display_type: String,
     pub cover_url: Option<String>,
     pub current_time: Option<u64>,
     pub duration: Option<u64>,
     pub is_playing: bool,
     #[serde(default)]
     pub show_pause_icon: bool,
-    #[serde(default)]
-    pub status_display_text: String,
 }
 
 #[tauri::command]
@@ -92,39 +91,41 @@ pub fn discord_update_presence(
         .map_err(|e| format!("Failed to acquire lock: {}", e))?;
 
     if let Some(client) = client_guard.as_mut() {
-        let details_text = sanitize_text(&data.song_title, "Unknown Track");
-
-        let state_text = if let Some(album) = &data.album {
-            format!(
-                "{} • {}",
-                sanitize_text(&data.artist, "Unknown Artist"),
-                sanitize_text(album, "Unknown Album")
-            )
-        } else {
-            sanitize_text(&data.artist, "Unknown Artist")
-        };
-
-        let has_custom_status = !data.status_display_text.trim().is_empty();
-        let custom_status_text = if has_custom_status {
-            sanitize_text(&data.status_display_text, "Audion")
-        } else {
-            String::new()
-        };
+        let line1_text = sanitize_text(&data.line1, "Unknown");
+        let line2_text = sanitize_text(&data.line2, "Unknown");
 
         let mut activity = activity::Activity::new()
-            .details(&details_text)
-            .state(&state_text)
+            .details(&line1_text)
+            .state(&line2_text)
             .activity_type(activity::ActivityType::Listening);
 
-        if has_custom_status {
-            activity = activity
-                .name(&custom_status_text)
-                .status_display_type(activity::StatusDisplayType::Name);
+        // Set app name if provided
+        let app_name_value = if let Some(app_name) = &data.app_name {
+            let app_name_trimmed = app_name.trim();
+            if !app_name_trimmed.is_empty() {
+                Some(sanitize_text(app_name_trimmed, "Audion"))
+            } else {
+                None
+            }
         } else {
-            activity = activity
-                .status_display_type(activity::StatusDisplayType::Name);
+            None
+        };
+
+        if let Some(ref app_name_str) = app_name_value {
+            activity = activity.name(app_name_str);
         }
 
+        // Set status display type
+        let status_type_str = data.status_display_type.to_lowercase();
+        let status_type = match status_type_str.as_str() {
+            "name" => activity::StatusDisplayType::Name,
+            "details" => activity::StatusDisplayType::Details,
+            "state" => activity::StatusDisplayType::State,
+            _ => activity::StatusDisplayType::Name,
+        };
+        activity = activity.status_display_type(status_type);
+
+        // Set timestamps
         let current_ms = data.current_time.unwrap_or(0) as i64;
         let duration_ms = data.duration.unwrap_or(0) as i64;
 
@@ -148,21 +149,18 @@ pub fn discord_update_presence(
             }
         }
 
+        // Set assets
         let mut assets = activity::Assets::new();
         let mut large_is_audion_logo = false;
 
-        let large_text_content = if let Some(large_text) = &data.large_text {
-            if !large_text.trim().is_empty() {
-                sanitize_text(large_text, "Unknown")
-            } else if let Some(album) = &data.album {
-                sanitize_text(album, "Unknown Album")
+        let large_text_content = if let Some(line3) = &data.line3 {
+            if !line3.trim().is_empty() {
+                sanitize_text(line3, "Unknown")
             } else {
-                sanitize_text(&data.song_title, "Unknown Track")
+                sanitize_text(&data.line1, "Unknown")
             }
-        } else if let Some(album) = &data.album {
-            sanitize_text(album, "Unknown Album")
         } else {
-            sanitize_text(&data.song_title, "Unknown Track")
+            sanitize_text(&data.line1, "Unknown")
         };
 
         if let Some(cover) = &data.cover_url {
@@ -179,7 +177,7 @@ pub fn discord_update_presence(
                     .large_text(&large_text_content);
                 large_is_audion_logo = true;
             }
-        }else {
+        } else {
             // Cover failed → fallback
             assets = assets
                 .large_image("audion_logo")
@@ -193,7 +191,6 @@ pub fn discord_update_presence(
         }
 
         activity = activity.assets(assets);
-
 
         // Add download button with icon
         activity = activity.buttons(vec![activity::Button::new(
