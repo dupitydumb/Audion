@@ -1,7 +1,7 @@
 {
     "name": "Discord Rich Presence",
     "safe_name": "discord-rich-presence",
-    "version": "2.0.0",
+    "version": "2.1.1",
     "author": "Manga-Knights",
     "description": "Show what you're listening to on Discord",
     "type": "js",
@@ -24,5 +24,6 @@
         "discord",
         "rich-presence"
     ],
-    "license": "MIT"
+    "license": "MIT",
+    "repository": "https://github.com/dupitydumb/discord-rich-presence"
 }
