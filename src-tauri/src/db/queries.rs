@@ -960,10 +960,14 @@ pub fn cleanup_empty_albums(conn: &Connection) -> Result<usize> {
     Ok(deleted)
 }
 
-pub fn update_track_local_src(conn: &Connection, track_id: i64, local_src: &str) -> Result<()> {
+pub fn update_track_after_download(
+    conn: &Connection, 
+    track_id: i64, 
+    local_path: &str
+) -> Result<()> {
     conn.execute(
-        "UPDATE tracks SET local_src = ?1 WHERE id = ?2",
-        params![local_src, track_id],
+        "UPDATE tracks SET path = ?1, local_src = ?1, source_type = 'local' WHERE id = ?2",
+        params![local_path, track_id],
     )?;
     Ok(())
 }

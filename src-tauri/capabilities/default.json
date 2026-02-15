@@ -2,7 +2,11 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "desktop-default",
   "description": "Capability for the main window on desktop",
-  "platforms": ["linux", "macOS", "windows"],
+  "platforms": [
+    "linux",
+    "macOS",
+    "windows"
+  ],
   "windows": [
     "main"
   ],

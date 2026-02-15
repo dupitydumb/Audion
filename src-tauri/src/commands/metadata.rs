@@ -1,9 +1,14 @@
 // Audio save and metadata commands
 use futures::StreamExt;
-use lofty::{Accessor, MimeType, Picture, PictureType, Probe, TagExt, TaggedFileExt};
+use lofty::prelude::*;
+use lofty::probe::Probe;
+use lofty::picture::{MimeType, Picture, PictureType};
+use lofty::tag::Tag;
+use lofty::config::WriteOptions;
+use mp4ameta::{Tag as Mp4Tag, Img};
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tauri::{command, AppHandle, Emitter, State};
 
 use crate::db::{self, Database};
@@ -59,21 +64,110 @@ pub async fn download_and_save_audio(
     println!("[Metadata] Downloading audio from URL...");
     download_file_with_progress(&app, &input.url, &input.path).await?;
 
-    // Try to write metadata (non-fatal if it fails)
-    // AAC files with ID3 tags often fail to play in browsers, so we skip metadata for them
-    let is_aac = path
-        .extension()
-        .map_or(false, |ext| ext.eq_ignore_ascii_case("aac"));
-    if !is_aac {
-        match write_metadata_to_file(path, &input).await {
-            Ok(()) => println!("[Metadata] Successfully wrote metadata to file"),
-            Err(e) => eprintln!("[Metadata] Warning: Could not write metadata: {}", e),
+    // Probe the actual file type
+    let actual_file_type = Probe::open(path)
+        .ok()
+        .and_then(|p| p.guess_file_type().ok())
+        .and_then(|p| p.file_type());
+
+    println!("[Metadata] Detected file type: {:?}", actual_file_type);
+
+    // Correct the file extension to match the actual container, and rename on disk.
+    let final_path = match actual_file_type {
+        Some(ft) => {
+            let corrected = correct_extension(path, ft);
+            if corrected != path {
+                println!(
+                    "[Metadata] Correcting extension: .{} -> .{}",
+                    path.extension().and_then(|e| e.to_str()).unwrap_or(""),
+                    corrected.extension().and_then(|e| e.to_str()).unwrap_or("")
+                );
+                fs::rename(path, &corrected)
+                    .map_err(|e| format!("Failed to rename file to correct extension: {}", e))?;
+                
+                // Emit progress event after rename so frontend can match on the correct filename
+                let _ = app.emit(
+                    "download://progress",
+                    DownloadProgress {
+                        path: corrected.to_string_lossy().to_string(),
+                        current: 0,
+                        total: 0,
+                    },
+                );
+            }
+            corrected
         }
-    } else {
-        println!("[Metadata] Skipping metadata for AAC file");
+        None => {
+            eprintln!("[Metadata] Warning: Could not detect file type, skipping metadata");
+            return Ok(input.path);
+        }
+    };
+
+    // Normalize path
+    let final_path_str = final_path
+        .canonicalize()
+        .unwrap_or(final_path.clone())
+        .to_string_lossy()
+        .to_string()
+        .replace(r"\\?\", ""); // Remove Windows extended-length prefix
+
+    // Try to write metadata (non-fatal if it fails)
+    // Write metadata acording to type
+    match actual_file_type {
+        Some(lofty::file::FileType::Mp4) => {
+            match write_m4a_metadata(&final_path, &input).await {
+                Ok(()) => println!("[Metadata] Successfully wrote M4A metadata"),
+                Err(e) => eprintln!("[Metadata] Warning: Could not write M4A metadata: {}", e),
+            }
+        }
+        Some(lofty::file::FileType::Aac) => {
+            // Raw aac streams do not support  metadata – skip
+            println!("[Metadata] File is raw AAC, skipping metadata");
+        }
+        Some(_) => {
+            // mp3, wav, opus, flac – handled by lofty
+            match write_metadata_to_file(&final_path, &input).await {
+                Ok(()) => println!("[Metadata] Successfully wrote metadata to file"),
+                Err(e) => eprintln!("[Metadata] Warning: Could not write metadata: {}", e),
+            }
+        }
+        None => {
+            
+        }
     }
 
-    Ok(input.path)
+    Ok(final_path_str)
+}
+
+/// Rename a file's extension to match its actual detected container type.
+/// Returns the original path unchanged if the extension is already correct
+/// or if the file type has no known preferred extension.
+fn correct_extension(path: &Path, file_type: lofty::file::FileType) -> PathBuf {
+    let correct_ext = match file_type {
+        lofty::file::FileType::Flac    => "flac",
+        lofty::file::FileType::Mpeg    => "mp3",
+        lofty::file::FileType::Aac     => "aac",
+        lofty::file::FileType::Mp4     => "m4a",
+        lofty::file::FileType::Vorbis  => "ogg",
+        lofty::file::FileType::Opus    => "opus",
+        lofty::file::FileType::Wav     => "wav",
+        lofty::file::FileType::Aiff    => "aiff",
+        lofty::file::FileType::Ape     => "ape",
+        lofty::file::FileType::Speex   => "spx",
+        _                              => return path.to_path_buf(),
+    };
+
+    let current_ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    if current_ext == correct_ext {
+        path.to_path_buf()
+    } else {
+        path.with_extension(correct_ext)
+    }
 }
 
 async fn download_file_with_progress(
@@ -120,14 +214,14 @@ async fn download_file_with_progress(
 }
 
 #[command]
-pub async fn update_local_src(
+pub async fn update_track_after_download(
     state: State<'_, Database>,
     track_id: i64,
-    local_src: String,
+    local_path: String,
 ) -> Result<(), String> {
     let conn = state.conn.lock().unwrap();
-    db::queries::update_track_local_src(&conn, track_id, &local_src)
-        .map_err(|e| format!("Failed to update local src: {}", e))
+    db::queries::update_track_after_download(&conn, track_id, &local_path)
+        .map_err(|e| format!("Failed to update track after download: {}", e))
 }
 
 #[command]
@@ -144,16 +238,17 @@ pub async fn update_track_cover_url(
 async fn write_metadata_to_file(path: &Path, input: &DownloadAudioInput) -> Result<(), String> {
     // Read the file for metadata
     let mut tagged_file = Probe::open(path)
-        .map_err(|e| format!("Failed to open file for metadata: {}", e))?
-        .read()
-        .map_err(|e| format!("Failed to read file for metadata: {}", e))?;
+        .ok()
+        .and_then(|p| p.guess_file_type().ok())
+        .and_then(|p| p.read().ok())
+        .ok_or("Failed to read file for metadata")?;
 
     // Get or create primary tag
     let tag = match tagged_file.primary_tag_mut() {
         Some(tag) => tag,
         None => {
             let tag_type = tagged_file.primary_tag_type();
-            tagged_file.insert_tag(lofty::Tag::new(tag_type));
+            tagged_file.insert_tag(Tag::new(tag_type));
             tagged_file
                 .primary_tag_mut()
                 .ok_or("Failed to create tag")?
@@ -187,15 +282,13 @@ async fn write_metadata_to_file(path: &Path, input: &DownloadAudioInput) -> Resu
                     );
                     tag.push_picture(picture);
                 }
-                Err(e) => {
-                    eprintln!("Failed to download cover: {}", e);
-                }
+                Err(e) => eprintln!("[Metadata] Failed to download cover: {}", e),
             }
         }
     }
 
     // Save the metadata
-    tag.save_to_path(path)
+    tag.save_to_path(path, WriteOptions::default())
         .map_err(|e| format!("Failed to save metadata: {}", e))?;
 
     Ok(())
@@ -212,4 +305,56 @@ async fn download_cover(url: &str) -> Result<Vec<u8>, String> {
         .map_err(|e| format!("Failed to read cover: {}", e))?;
 
     Ok(bytes.to_vec())
+}
+
+async fn write_m4a_metadata(path: &Path, input: &DownloadAudioInput) -> Result<(), String> {
+    // imp: do NOT fall back to Mp4Tag::default() on failure.
+    // Writing a bare default tag onto an existing MP4 file will corrupt it
+    // because the default tag has no knowledge of the file's existing atom structure.
+    // If read fails, the file is not a valid mp4 container
+    let mut tag = Mp4Tag::read_from_path(path).map_err(|e| {
+        format!(
+            "Failed to read M4A container (file may not be a valid M4A/MP4): {}",
+            e
+        )
+    })?;
+
+    if let Some(title) = &input.title {
+        tag.set_title(title);
+    }
+    if let Some(artist) = &input.artist {
+        tag.set_artist(artist);
+    }
+    if let Some(album) = &input.album {
+        tag.set_album(album);
+    }
+    if let Some(track_num) = input.track_number {
+        tag.set_track_number(track_num as u16);
+    }
+
+    if let Some(cover_url) = &input.cover_url {
+        if !cover_url.is_empty() {
+            match download_cover(cover_url).await {
+                Ok(cover_data) => {
+                    // Detect image format by magic bytes
+                    let img = if cover_data.starts_with(&[0xFF, 0xD8, 0xFF]) {
+                        Img::jpeg(cover_data)
+                    } else if cover_data.starts_with(b"\x89PNG\r\n\x1a\n") {
+                        Img::png(cover_data)
+                    } else {
+                        println!("[Metadata] Unknown image format, defaulting to JPEG");
+                        Img::jpeg(cover_data)
+                    };
+                    tag.set_artwork(img);
+                    println!("[Metadata] Added cover art to M4A file");
+                }
+                Err(e) => eprintln!("[Metadata] Failed to download M4A cover: {}", e),
+            }
+        }
+    }
+
+    tag.write_to_path(path)
+        .map_err(|e| format!("Failed to save M4A metadata: {}", e))?;
+
+    Ok(())
 }

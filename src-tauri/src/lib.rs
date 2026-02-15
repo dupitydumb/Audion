@@ -19,6 +19,7 @@ pub fn run() {
     security::init_logger();
 
     let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
@@ -126,7 +127,7 @@ pub fn run() {
                     commands::get_current_lyric,
                     // Metadata commands
                     commands::download_and_save_audio,
-                    commands::update_local_src,
+                    commands::update_track_after_download,
                     commands::update_track_cover_url,
                     // Plugin commands
                     commands::list_plugins,

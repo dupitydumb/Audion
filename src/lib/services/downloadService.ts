@@ -1,6 +1,7 @@
 // Download service for streaming tracks
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { join } from '@tauri-apps/api/path';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { get } from 'svelte/store';
 import { appSettings } from '$lib/stores/settings';
 import { pluginStore } from '$lib/stores/plugin-store';
@@ -19,6 +20,17 @@ export interface DownloadProgress {
 export interface DownloadResult {
     success: string[];
     failed: { track: Track; error: string }[];
+}
+
+interface DownloadTrackOptions {
+    /**
+     * If true, downloadTrack will set up its own progress listener.
+     * If false, caller has already set up a listener.
+     * Default: true
+     */
+    setupListener?: boolean;
+
+    onProgress?: (bytesCurrent: number, bytesTotal: number) => void;
 }
 
 /**
@@ -71,7 +83,9 @@ export function needsDownloadLocation(): boolean {
 }
 
 /**
- * Generate a safe filename from track metadata
+ * Generate a safe filename from track metadata.
+ * Uses .m4a as the requested extension — Rust will detect the actual container
+ * type after download, rename the file on disk if needed, and return the corrected path.
  */
 function generateFilename(track: Track): string {
     const sanitize = (str: string | null | undefined): string => {
@@ -89,14 +103,23 @@ function generateFilename(track: Track): string {
 }
 
 /**
- * Download a single track
+ * Download a single track.
+ *
+ * Returns the final canonicalized path as confirmed by Rust, which may differ
+ * in extension from the requested path(e.g. the stream is actually flac).
+ * 
+ * @param track - The track to download
+ * @param options - download options including listener setup control
  */
-export async function downloadTrack(track: Track): Promise<string> {
+export async function downloadTrack(
+    track: Track,
+    options: DownloadTrackOptions = {}
+): Promise<string> {
+    const { setupListener = true, onProgress } = options;
 
     // On Android, ensure we have storage permission before proceeding
     const isAndroid = typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
     if (isAndroid) {
-        // Dynamically import permission helpers to avoid SSR issues
         const { ensureStoragePermission } = await import('$lib/api/tauri');
         const granted = await ensureStoragePermission();
         if (!granted) {
@@ -124,25 +147,29 @@ export async function downloadTrack(track: Track): Promise<string> {
         throw new Error(`Failed to resolve stream URL for "${track.title}"`);
     }
 
-    const filename = generateFilename(track);
-    const fullPath = `${downloadLocation}/${filename}`;
+    // Use Tauri path API for cross-platform path handling
+    const requestedPath = await join(downloadLocation, generateFilename(track));
 
-    // Set up progress listener
-    // We'll use a unique ID for the event or filter by path if possible, 
-    // but for now we'll listen to the global event and filter by path
-    const unlisten = await listen<any>('download://progress', (event) => {
-        if (event.payload.path === fullPath) {
-            // Dispatch a custom event or update a store if we had one for individual track progress
-            // For now, this is mainly for the batch downloader to pick up
-        }
-    });
+    let unlisten: UnlistenFn | null = null;
+
+    // Only set up listener if requested
+    if (setupListener && onProgress) {
+        // We match on the filename stem rather than full path to handle extension corrections
+        const stem = generateFilename(track).replace(/\.[^.]+$/, '');
+        unlisten = await listen<any>('download://progress', (event) => {
+            if (event.payload.path.includes(stem)) {
+                onProgress(event.payload.current, event.payload.total);
+            }
+        });
+    }
 
     try {
-        // Call Rust download command
-        await invoke<string>('download_and_save_audio', {
+        // Rust returns the final canonicalized path, which might be different
+        // from the requested path if the file extension was corrected
+        const actualPath = await invoke<string>('download_and_save_audio', {
             input: {
                 url: streamUrl,
-                path: fullPath,
+                path: requestedPath,
                 title: track.title || null,
                 artist: track.artist || null,
                 album: track.album || null,
@@ -151,23 +178,27 @@ export async function downloadTrack(track: Track): Promise<string> {
             }
         });
 
-        // Update track with local source
-        track.local_src = fullPath;
+        // Update the in-memory track to reflect its new local state
+        track.local_src = actualPath;
+        track.path = actualPath;
+        track.source_type = 'local';
 
-        // Persist local_src to database
+        // Persist to database using the actual final path
         try {
-            await invoke('update_local_src', {
+            await invoke('update_track_after_download', {
                 trackId: track.id,
-                localSrc: fullPath
+                localPath: actualPath
             });
         } catch (err) {
-            console.error('Failed to persist local_src to database:', err);
-            // Non-fatal error, but good to know
+            console.error('Failed to update track in database:', err);
         }
 
-        return fullPath;
+        return actualPath;
     } finally {
-        unlisten();
+        // Clean up listener if we created one
+        if (unlisten) {
+            unlisten();
+        }
     }
 }
 
@@ -194,60 +225,49 @@ export async function downloadTracks(
         failed: []
     };
 
-    // Listen for progress events
-    const unlisten = await listen<any>('download://progress', (event) => {
-        const { current, total } = event.payload;
-        // Find which track is currently being downloaded based on index or state
-        // Since we download sequentially, we can use the loop context if we were inside it,
-        // but the listener is outside.
-        // However, we can pass the progress data up.
-        // For smoother UI, we might want to sum up totals, but for now let's show per-track progress.
-        // We'll handle the UI update in the loop.
-    });
+    for (let i = 0; i < downloadableTracks.length; i++) {
+        const track = downloadableTracks[i];
 
-    try {
-        for (let i = 0; i < downloadableTracks.length; i++) {
-            const track = downloadableTracks[i];
+        // We match on the filename stem 
+        const stem = generateFilename(track).replace(/\.[^.]+$/, '');
 
-            // Create a specific listener for this track's download
-            const trackUnlisten = await listen<any>('download://progress', (event) => {
-                // Check if the path matches (we'd need to know the path ahead of time)
-                const filename = generateFilename(track);
-                // Normalize paths for comparison if needed, but usually exact match works
-                if (event.payload.path.includes(filename)) {
-                    onProgress?.({
-                        current: i + 1,
-                        total: downloadableTracks.length,
-                        currentTrack: track,
-                        bytesCurrent: event.payload.current,
-                        bytesTotal: event.payload.total
-                    });
-                }
-            });
-
-            onProgress?.({
-                current: i + 1,
-                total: downloadableTracks.length,
-                currentTrack: track,
-                bytesCurrent: 0,
-                bytesTotal: 0
-            });
-
-            try {
-                const savedPath = await downloadTrack(track);
-                result.success.push(savedPath);
-            } catch (error) {
-                result.failed.push({
-                    track,
-                    error: error instanceof Error ? error.message : String(error)
+        const trackUnlisten = await listen<any>('download://progress', (event) => {
+            if (event.payload.path.includes(stem)) {
+                onProgress?.({
+                    current: i + 1,
+                    total: downloadableTracks.length,
+                    currentTrack: track,
+                    bytesCurrent: event.payload.current,
+                    bytesTotal: event.payload.total
                 });
-                console.error(`Failed to download "${track.title}":`, error);
-            } finally {
-                trackUnlisten();
             }
+        });
+
+        // Emit an initial zero-progress event so the UI shows the track
+        // immediately when its download begins
+        onProgress?.({
+            current: i + 1,
+            total: downloadableTracks.length,
+            currentTrack: track,
+            bytesCurrent: 0,
+            bytesTotal: 0
+        });
+
+        try {
+            // Tell downloadTrack NOT to set up its own listener since we already have one
+            // This prevents duplicate listeners and memory leaks
+            const savedPath = await downloadTrack(track, { setupListener: false });
+            result.success.push(savedPath);
+        } catch (error) {
+            result.failed.push({
+                track,
+                error: error instanceof Error ? error.message : String(error)
+            });
+            console.error(`Failed to download "${track.title}":`, error);
+        } finally {
+            // Always cleanup the listener, even on error
+            trackUnlisten();
         }
-    } finally {
-        unlisten();
     }
 
     // Rescan library to pick up new files

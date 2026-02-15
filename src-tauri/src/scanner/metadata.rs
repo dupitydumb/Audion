@@ -1,5 +1,6 @@
 // Audio metadata extraction using lofty
-use lofty::{Accessor, AudioFile, ItemKey, Probe, TaggedFileExt};
+use lofty::prelude::*;
+use lofty::probe::Probe;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
@@ -35,10 +36,22 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
     let path = Path::new(path);
 
     // Try to read the file
-    let tagged_file = match Probe::open(path).and_then(|p| p.read()) {
-        Ok(file) => file,
+    let tagged_file = match Probe::open(path) {
+        Ok(probe) => match probe.guess_file_type() {
+            Ok(probe_with_type) => match probe_with_type.read() {
+                Ok(file) => file,
+                Err(e) => {
+                    eprintln!("Failed to read audio file {:?}: {}", path, e);
+                    return Some(create_fallback_metadata(path));
+                }
+            },
+            Err(e) => {
+                eprintln!("Failed to guess file type {:?}: {}", path, e);
+                return Some(create_fallback_metadata(path));
+            }
+        },
         Err(e) => {
-            eprintln!("Failed to read audio file {:?}: {}", path, e);
+            eprintln!("Failed to open audio file {:?}: {}", path, e);
             return Some(create_fallback_metadata(path));
         }
     };
@@ -61,32 +74,32 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
                 .or_else(|| get_filename_without_ext(path));
             let artist = tag.artist().map(|s| s.to_string());
             let album = tag.album().map(|s| s.to_string());
-            
+
             // Extract track number, handling both simple numbers and "X/Y" format
             let track_number = tag.track().map(|n| n as i32)
                 .or_else(|| {
-                    // If tag.track() fails, try to parse track number from text
+                // If tag.track() fails, try to parse track number from text
                     tag.get_string(&ItemKey::TrackNumber)
                         .and_then(|s| {
-                            // Handle "1/19" format - take only the first number
-                            s.split('/')
-                                .next()
-                                .and_then(|num| num.trim().parse::<i32>().ok())
-                        })
-                });
-        
+                    // Handle "1/19" format - take only the first number
+                    s.split('/')
+                        .next()
+                        .and_then(|num| num.trim().parse::<i32>().ok())
+                })
+            });
+
             // Extract album art as raw bytes (NOT base64)
             let album_art = tag
                 .pictures()
                 .first()
                 .map(|pic| pic.data().to_vec());
-        
+
             // Extract track cover as raw bytes (same as album art, but stored per-track)
             let track_cover = tag
                 .pictures()
                 .first()
                 .map(|pic| pic.data().to_vec());
-        
+
             // Generate content hash for duplicate detection
             let content_hash = Some(generate_content_hash(
                 title.as_deref(),
@@ -94,7 +107,7 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
                 album.as_deref(),
                 Some(duration),
             ));
-        
+
             Some(TrackInsert {
                 path: path.to_string_lossy().to_string(),
                 title,

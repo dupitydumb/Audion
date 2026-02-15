@@ -1,7 +1,10 @@
 {
   "identifier": "mobile-default",
   "description": "Capability for the main window on mobile",
-  "platforms": ["android", "iOS"],
+  "platforms": [
+    "android",
+    "iOS"
+  ],
   "windows": [
     "main"
   ],
