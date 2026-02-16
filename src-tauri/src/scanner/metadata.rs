@@ -96,6 +96,11 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
             let artist = tag.artist().map(|s| s.to_string());
             let album = tag.album().map(|s| s.to_string());
 
+            // Extract album artist
+            let album_artist = tag.get_string(&ItemKey::AlbumArtist)
+                .map(|s| s.to_string())
+                .or_else(|| artist.clone()); // Fallback to track artist if no album artist
+
             // Extract track number, handling both simple numbers and "X/Y" format
             let track_number = tag.track().map(|n| n as i32).or_else(|| {
                 // If tag.track() fails, try to parse track number from text
@@ -136,6 +141,7 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
                 title,
                 artist,
                 album,
+                album_artist,
                 track_number,
                 disc_number,
                 duration: Some(duration),
@@ -174,6 +180,7 @@ fn create_fallback_metadata(path: &Path) -> TrackInsert {
         title: get_filename_without_ext(path),
         artist: None,
         album: None,
+        album_artist: None,
         track_number: None,
         disc_number: None,
         duration: None,
@@ -210,6 +217,12 @@ fn extract_flac_metadata_fallback(path: &Path, _duration_hint: Option<i32>) -> O
                 .or_else(|| get_filename_without_ext(path));
             let artist = vorbis.and_then(|v| v.artist().map(|s| s[0].clone()));
             let album = vorbis.and_then(|v| v.album().map(|s| s[0].clone()));
+
+            // Extract album artist, fallback to track artist
+            let album_artist = vorbis
+                .and_then(|v| v.get("ALBUMARTIST").and_then(|s| s.iter().next().map(|s| s.clone())))
+                .or_else(|| artist.clone());
+
             // Extract track number,  "X/Y" fallback
             let track_number = vorbis
                 .and_then(|v| v.track().map(|n| n as i32))
@@ -264,6 +277,7 @@ fn extract_flac_metadata_fallback(path: &Path, _duration_hint: Option<i32>) -> O
                 title,
                 artist,
                 album,
+                album_artist,
                 track_number,
                 disc_number,
                 duration,

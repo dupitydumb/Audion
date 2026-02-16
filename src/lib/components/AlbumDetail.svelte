@@ -260,7 +260,7 @@
                 <h1 class="album-title">{album.name}</h1>
                 <div class="album-meta">
                     <span class="album-artist"
-                        >{album.artist || "Unknown Artist"}</span
+                        >{album.album_artist || "Unknown Artist"}</span
                     >
                     <span class="separator">•</span>
                     <span>{tracks.length} songs</span>

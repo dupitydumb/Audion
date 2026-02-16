@@ -31,7 +31,7 @@ export const searchResults = derived(
 
         const matchedAlbums = $albums.filter(album =>
             album.name.toLowerCase().includes(query) ||
-            album.artist?.toLowerCase().includes(query)
+            album.album_artist?.toLowerCase().includes(query)
         );
 
         const matchedArtists = $artists.filter(artist =>

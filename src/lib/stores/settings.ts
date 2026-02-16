@@ -2,9 +2,12 @@
 import { writable, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 
+export type AlbumMatchingMode = 'name_only' | 'name_and_artist';
+
 export interface AppSettings {
     downloadLocation: string | null;
     autoAddToLibrary: boolean;
+    albumMatchingMode: AlbumMatchingMode;
     developerMode: boolean;
     showDiscord: boolean;
     startMode: 'normal' | 'maximized' | 'minimized';
@@ -17,6 +20,7 @@ const SETTINGS_STORAGE_KEY = 'audion_settings';
 const defaultSettings: AppSettings = {
     downloadLocation: null,
     autoAddToLibrary: false,
+    albumMatchingMode: 'name_only',
     developerMode: false,
     showDiscord: true,
     startMode: 'normal',
@@ -110,8 +114,23 @@ function createSettingsStore() {
             return get({ subscribe }).downloadLocation;
         },
 
+        setAlbumMatchingMode: async (mode: AlbumMatchingMode) => {
+            try {
+                await invoke('set_album_matching_mode', { mode });
+                update((s) => {
+                    const newSettings = { ...s, albumMatchingMode: mode };
+                    saveSettings(newSettings);
+                    return newSettings;
+                });
+            } catch (error) {
+                console.error('Failed to set album matching mode:', error);
+                throw error;
+            }
+        },
+
         async initialize() {
             const state = loadSettings();
+            console.log('[Settings] Loaded from localStorage:', state.albumMatchingMode);
 
             // Fetch backend-managed settings
             try {
@@ -121,6 +140,15 @@ function createSettingsStore() {
                 console.error('[Settings] Failed to fetch start mode:', error);
             }
 
+            try {
+                const albumMatchingMode = await invoke('get_album_matching_mode') as AlbumMatchingMode;
+                console.log('[Settings] Got from backend:', albumMatchingMode);
+                state.albumMatchingMode = albumMatchingMode;
+            } catch (error) {
+                console.error('[Settings] Failed to fetch album matching mode:', error);
+            }
+
+            console.log('[Settings] Final state being set:', state.albumMatchingMode);
             set(state);
         }
     };

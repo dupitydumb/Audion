@@ -220,7 +220,7 @@
                             </div>
                         </div>
                         <span class="card-title truncate-text">{album.name}</span>
-                        <span class="card-subtitle truncate-text">{album.artist || 'Various Artists'}</span>
+                        <span class="card-subtitle truncate-text">{album.album_artist || 'Various Artists'}</span>
                     </button>
                 {/each}
             </div>

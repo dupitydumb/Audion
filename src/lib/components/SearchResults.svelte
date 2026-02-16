@@ -418,7 +418,7 @@
                                     >{album.name}</span
                                 >
                                 <span class="album-artist truncate"
-                                    >{album.artist || "Unknown Artist"}</span
+                                    >{album.album_artist || "Unknown Artist"}</span
                                 >
                             </div>
                         </button>

@@ -64,6 +64,12 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
             last_scanned TEXT DEFAULT CURRENT_TIMESTAMP
         );
 
+        -- Settings table
+        CREATE TABLE IF NOT EXISTS settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
         -- Composite index
         -- This single index covers: ORDER BY artist, album, track_number, title
         CREATE INDEX IF NOT EXISTS idx_tracks_sort ON tracks(artist, album, track_number, title);
@@ -89,6 +95,16 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
     let _ = conn.execute("ALTER TABLE tracks ADD COLUMN local_src TEXT", []);
     let _ = conn.execute("ALTER TABLE tracks ADD COLUMN track_cover TEXT", []);
     let _ = conn.execute("ALTER TABLE tracks ADD COLUMN disc_number INTEGER", []);
+    let _ = conn.execute("ALTER TABLE tracks ADD COLUMN album_artist TEXT", []);
+
+    let _ = conn.execute("ALTER TABLE albums ADD COLUMN album_artist TEXT", []);
+
+    // Copy existing artist data to album_artist column if it exists
+    let _ = conn.execute(
+        "UPDATE albums SET album_artist = artist WHERE album_artist IS NULL",
+        [],
+    );    
+
 
     // Add path columns for file-based cover storage
     let _ = conn.execute("ALTER TABLE tracks ADD COLUMN track_cover_path TEXT", []);
