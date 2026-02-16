@@ -12,6 +12,7 @@
     initPlatformDetection,
   } from "$lib/api/tauri";
   import { initMobileDetection, isMobile } from "$lib/stores/mobile";
+  import { loadLikedTracks } from "$lib/stores/liked";
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
   import ProgressiveScanStatus from "$lib/components/ProgressiveScanStatus.svelte";
@@ -31,6 +32,9 @@
     theme.initialize();
     initMobileDetection();
     await initAudioBackend();
+
+    // Load liked tracks from database
+    loadLikedTracks();
 
     // Check Android audio permission first
     if (isAndroid() && isTauri()) {

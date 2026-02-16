@@ -64,6 +64,28 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
             last_scanned TEXT DEFAULT CURRENT_TIMESTAMP
         );
 
+        -- Liked tracks table
+        CREATE TABLE IF NOT EXISTS liked_tracks (
+            track_id INTEGER PRIMARY KEY,
+            liked_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
+        );
+
+        -- Play history table (one row per play event)
+        CREATE TABLE IF NOT EXISTS play_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            track_id INTEGER NOT NULL,
+            album_id INTEGER,
+            played_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            duration_played INTEGER DEFAULT 0,
+            FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE
+        );
+
+        -- Play history indexes for fast aggregation
+        CREATE INDEX IF NOT EXISTS idx_play_history_track ON play_history(track_id);
+        CREATE INDEX IF NOT EXISTS idx_play_history_album ON play_history(album_id);
+        CREATE INDEX IF NOT EXISTS idx_play_history_time ON play_history(played_at);
+
         -- Composite index
         -- This single index covers: ORDER BY artist, album, track_number, title
         CREATE INDEX IF NOT EXISTS idx_tracks_sort ON tracks(artist, album, track_number, title);

@@ -11,6 +11,7 @@ export type ViewType =
     | 'artist-detail'
     | 'playlists'
     | 'playlist-detail'
+    | 'liked-songs'
     | 'plugins'
     | 'settings';
 
@@ -137,4 +138,8 @@ export function goToSettings(): void {
 
 export function goToTracksMultiSelect(playlistId: number): void {
     currentView.set({ type: 'tracks-multiselect', id: playlistId });
+}
+
+export function goToLikedSongs(): void {
+    currentView.set({ type: 'liked-songs' });
 }

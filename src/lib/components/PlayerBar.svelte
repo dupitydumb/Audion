@@ -37,6 +37,11 @@
     import { goToArtistDetail } from "$lib/stores/view";
     import { isMobile } from "$lib/stores/mobile";
     import type { Album } from "$lib/api/tauri";
+    import { likedTrackIds, toggleLike } from "$lib/stores/liked";
+
+    $: isCurrentLiked = $currentTrack
+        ? $likedTrackIds.has($currentTrack.id)
+        : false;
 
     export let hidden: boolean = false;
 
@@ -269,6 +274,36 @@
                     </div>
                 {/if}
 
+                <!-- Like button (mobile) -->
+                {#if $currentTrack}
+                    <button
+                        class="mini-like-btn"
+                        class:liked={isCurrentLiked}
+                        on:click|stopPropagation={() =>
+                            $currentTrack && toggleLike($currentTrack.id)}
+                        title={isCurrentLiked
+                            ? "Remove from Liked Songs"
+                            : "Add to Liked Songs"}
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            width="20"
+                            height="20"
+                            fill={isCurrentLiked
+                                ? "var(--accent-color, #1db954)"
+                                : "none"}
+                            stroke={isCurrentLiked
+                                ? "var(--accent-color, #1db954)"
+                                : "currentColor"}
+                            stroke-width="2"
+                        >
+                            <path
+                                d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
+                            />
+                        </svg>
+                    </button>
+                {/if}
+
                 <!-- Right: Controls (stop propagation so taps don't open fullscreen) -->
                 <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
                 <div
@@ -362,6 +397,34 @@
                         }}>{$currentTrack.artist || "Unknown Artist"}</span
                     >
                 </div>
+
+                <!-- Like button (desktop) -->
+                <button
+                    class="like-btn"
+                    class:liked={isCurrentLiked}
+                    on:click|stopPropagation={() =>
+                        $currentTrack && toggleLike($currentTrack.id)}
+                    title={isCurrentLiked
+                        ? "Remove from Liked Songs"
+                        : "Add to Liked Songs"}
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        width="16"
+                        height="16"
+                        fill={isCurrentLiked
+                            ? "var(--accent-color, #1db954)"
+                            : "none"}
+                        stroke={isCurrentLiked
+                            ? "var(--accent-color, #1db954)"
+                            : "currentColor"}
+                        stroke-width="2"
+                    >
+                        <path
+                            d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
+                        />
+                    </svg>
+                </button>
             {:else}
                 <div class="no-track">
                     <span>No track playing</span>
@@ -733,6 +796,57 @@
     .no-track {
         color: var(--text-subdued);
         font-size: 0.875rem;
+    }
+
+    /* Like button (desktop) */
+    .like-btn {
+        background: none;
+        border: none;
+        color: var(--text-subdued);
+        cursor: pointer;
+        padding: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: all 0.2s ease;
+        flex-shrink: 0;
+        margin-left: 8px;
+    }
+
+    .like-btn:hover {
+        color: var(--text-primary);
+        transform: scale(1.15);
+    }
+
+    .like-btn.liked {
+        color: var(--accent-color, #1db954);
+    }
+
+    .like-btn.liked:hover {
+        transform: scale(1.15);
+    }
+
+    /* Like button (mobile mini-player) */
+    .mini-like-btn {
+        background: none;
+        border: none;
+        color: var(--text-subdued);
+        cursor: pointer;
+        padding: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        transition: all 0.2s ease;
+    }
+
+    .mini-like-btn:hover {
+        color: var(--text-primary);
+    }
+
+    .mini-like-btn.liked {
+        color: var(--accent-color, #1db954);
     }
 
     /* Playback controls */

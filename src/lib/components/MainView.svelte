@@ -20,6 +20,8 @@
     } from "$lib/stores/search";
     import { isMobile } from "$lib/stores/mobile";
     import MobileHome from "./MobileHome.svelte";
+    import DesktopHome from "./DesktopHome.svelte";
+    import LikedSongs from "./LikedSongs.svelte";
 
     import TrackList from "./TrackList.svelte";
     import AlbumGrid from "./AlbumGrid.svelte";
@@ -643,7 +645,15 @@
         </div>
     {:else if $currentView.type === "home"}
         <div class="view-container no-padding">
-            <MobileHome />
+            {#if $isMobile}
+                <MobileHome />
+            {:else}
+                <DesktopHome />
+            {/if}
+        </div>
+    {:else if $currentView.type === "liked-songs"}
+        <div class="view-container no-padding">
+            <LikedSongs />
         </div>
     {:else}
         <div class="view-container">

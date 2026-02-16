@@ -143,6 +143,16 @@ pub fn run() {
                     commands::rename_playlist,
                     commands::update_playlist_cover,
                     commands::reorder_playlist_tracks,
+                    // Activity commands (liked tracks + play history)
+                    commands::like_track,
+                    commands::unlike_track,
+                    commands::is_track_liked,
+                    commands::get_liked_track_ids,
+                    commands::get_liked_tracks,
+                    commands::record_play,
+                    commands::get_top_tracks,
+                    commands::get_top_albums,
+                    commands::get_recently_played,
                     // Lyrics commands
                     commands::save_lrc_file,
                     commands::load_lrc_file,
@@ -244,6 +254,16 @@ pub fn run() {
                     commands::rename_playlist,
                     commands::update_playlist_cover,
                     commands::reorder_playlist_tracks,
+                    // Activity commands (liked tracks + play history)
+                    commands::like_track,
+                    commands::unlike_track,
+                    commands::is_track_liked,
+                    commands::get_liked_track_ids,
+                    commands::get_liked_tracks,
+                    commands::record_play,
+                    commands::get_top_tracks,
+                    commands::get_top_albums,
+                    commands::get_recently_played,
                     // Lyrics commands
                     commands::save_lrc_file,
                     commands::load_lrc_file,

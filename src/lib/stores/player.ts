@@ -8,6 +8,7 @@ import { tracks as libraryTracks, getFullTrack, getAlbumCoverFromTracks } from '
 import { appSettings } from '$lib/stores/settings';
 import { equalizer, EQ_FREQUENCIES } from '$lib/stores/equalizer';
 import { pluginStore } from '$lib/stores/plugin-store';
+import { recordTrackPlay } from '$lib/stores/activity';
 
 // =============================================================================
 // NATIVE AUDIO BACKEND
@@ -201,6 +202,9 @@ export function audioVolumeToSlider(audioVolume: number): number {
 
 // Playback session tracking
 let currentSessionId = 0;
+
+// Track play start time for accurate duration recording
+let playStartTime: number = 0;
 
 // Current time and duration
 export const currentTime = writable(0);
@@ -422,8 +426,17 @@ function updateMediaSessionPosition(): void {
 
 // Play a specific track
 export async function playTrack(track: Track, skipLocalSrc = false, startTime = 0): Promise<void> {
-    const previousTrack = get(currentTrack);
+    const previousTrackObj = get(currentTrack);
     const sessionId = ++currentSessionId;
+
+    // Record play for the previous track (if any)
+    if (previousTrackObj && playStartTime > 0) {
+        const durationPlayed = Math.floor((Date.now() - playStartTime) / 1000);
+        if (durationPlayed > 5) { // Only record if played for more than 5 seconds
+            recordTrackPlay(previousTrackObj.id, previousTrackObj.album_id ?? null, durationPlayed);
+        }
+    }
+    playStartTime = Date.now();
 
     currentTrack.set(track);
 
@@ -434,7 +447,7 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
     if (sessionId !== currentSessionId) return;
 
     const trackForPlugins = fullTrack || track;
-    pluginEvents.emit('trackChange', { track: trackForPlugins, previousTrack });
+    pluginEvents.emit('trackChange', { track: trackForPlugins, previousTrack: previousTrackObj });
 
     try {
         let audioPath = track.local_src || track.path;
@@ -877,6 +890,15 @@ export function cycleRepeat(): void {
 
 // Handle track end
 function handleTrackEnd(): void {
+    // Record play for the track that just ended
+    const track = get(currentTrack);
+    if (track && playStartTime > 0) {
+        const durationPlayed = Math.floor((Date.now() - playStartTime) / 1000);
+        if (durationPlayed > 5) {
+            recordTrackPlay(track.id, track.album_id ?? null, durationPlayed);
+        }
+        playStartTime = 0; // Reset so playTrack doesn't double-record
+    }
     nextTrack();
 }
 

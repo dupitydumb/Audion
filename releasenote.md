@@ -1,20 +1,15 @@
-## Release Note - 1.1.11
+## Release Note - 1.1.12
 
 ### Bug Fixes
-- Fixed download and metadata writing functionality with cover art support.
-
+- Fix Discord Rich Presence functionality.
 
 ### Features
-- Implemented disc seperation in album detail.
-- Add metaflac to write and read metadata from flac files.
-- Remember queue state, last played track and position.
-- Remember last window position.
-- Add Import Lyrics
-- Drag & Drop music files to import.
-- Add warning when deleting files in drive.
-- Add VirtualizedGrid to improve performance.
+- Add support for multiple audio backends.
+- Track song stats
+- Added homepage
+- Added Liked page
 
 ### Contributors
-- @iiDriisTN
 - @SmileofHaven
 - @Manga-Knights
+- @vicrodh

@@ -33,7 +33,7 @@ async function detectLinux(): Promise<boolean> {
     } catch {
         // Fallback to navigator.platform
         isLinuxPlatform = typeof navigator !== 'undefined' &&
-                          navigator.platform.toLowerCase().includes('linux');
+            navigator.platform.toLowerCase().includes('linux');
     }
     return isLinuxPlatform;
 }
@@ -413,6 +413,55 @@ export async function renamePlaylist(playlistId: number, newName: string): Promi
 
 export async function reorderPlaylistTracks(playlistId: number, fromIndex: number, toIndex: number): Promise<void> {
     return await invoke('reorder_playlist_tracks', { playlistId, fromIndex, toIndex });
+}
+
+
+// Activity commands (liked tracks + play history)
+
+export interface TrackWithCount {
+    track: Track;
+    play_count: number;
+}
+
+export interface AlbumWithCount {
+    album: Album;
+    play_count: number;
+}
+
+export async function likeTrack(trackId: number): Promise<void> {
+    return await invoke('like_track', { trackId });
+}
+
+export async function unlikeTrack(trackId: number): Promise<void> {
+    return await invoke('unlike_track', { trackId });
+}
+
+export async function isTrackLiked(trackId: number): Promise<boolean> {
+    return await invoke('is_track_liked', { trackId });
+}
+
+export async function getLikedTrackIds(): Promise<number[]> {
+    return await invoke('get_liked_track_ids');
+}
+
+export async function getLikedTracks(): Promise<Track[]> {
+    return await invoke('get_liked_tracks');
+}
+
+export async function recordPlay(trackId: number, albumId: number | null, durationPlayed: number): Promise<void> {
+    return await invoke('record_play', { trackId, albumId, durationPlayed });
+}
+
+export async function getTopTracks(limit: number): Promise<TrackWithCount[]> {
+    return await invoke('get_top_tracks', { limit });
+}
+
+export async function getTopAlbums(limit: number): Promise<AlbumWithCount[]> {
+    return await invoke('get_top_albums', { limit });
+}
+
+export async function getRecentlyPlayed(limit: number): Promise<Track[]> {
+    return await invoke('get_recently_played', { limit });
 }
 
 

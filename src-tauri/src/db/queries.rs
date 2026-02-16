@@ -1004,3 +1004,210 @@ pub fn update_local_src(conn: &Connection, track_id: i64, local_src: Option<&str
     )?;
     Ok(())
 }
+
+// ============================================================================
+// Liked Tracks operations
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackWithCount {
+    pub track: Track,
+    pub play_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlbumWithCount {
+    pub album: Album,
+    pub play_count: i64,
+}
+
+pub fn like_track(conn: &Connection, track_id: i64) -> Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO liked_tracks (track_id) VALUES (?1)",
+        params![track_id],
+    )?;
+    Ok(())
+}
+
+pub fn unlike_track(conn: &Connection, track_id: i64) -> Result<()> {
+    conn.execute(
+        "DELETE FROM liked_tracks WHERE track_id = ?1",
+        params![track_id],
+    )?;
+    Ok(())
+}
+
+pub fn is_track_liked(conn: &Connection, track_id: i64) -> Result<bool> {
+    let count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM liked_tracks WHERE track_id = ?1",
+        params![track_id],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
+
+pub fn get_liked_track_ids(conn: &Connection) -> Result<Vec<i64>> {
+    let mut stmt = conn.prepare("SELECT track_id FROM liked_tracks ORDER BY liked_at DESC")?;
+    let ids = stmt
+        .query_map([], |row| row.get(0))?
+        .collect::<Result<Vec<_>>>()?;
+    Ok(ids)
+}
+
+pub fn get_liked_tracks(conn: &Connection) -> Result<Vec<Track>> {
+    let mut stmt = conn.prepare(
+        "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.album_id, t.format, t.bitrate, t.source_type, t.cover_url, t.external_id, t.local_src, t.track_cover_path, t.disc_number
+         FROM tracks t
+         INNER JOIN liked_tracks lt ON t.id = lt.track_id
+         ORDER BY lt.liked_at DESC",
+    )?;
+
+    let tracks = stmt
+        .query_map([], |row| {
+            Ok(Track {
+                id: row.get(0)?,
+                path: row.get(1)?,
+                title: row.get(2)?,
+                artist: row.get(3)?,
+                album: row.get(4)?,
+                track_number: row.get(5)?,
+                duration: row.get(6)?,
+                album_id: row.get(7)?,
+                format: row.get(8)?,
+                bitrate: row.get(9)?,
+                source_type: row.get(10)?,
+                cover_url: row.get(11)?,
+                external_id: row.get(12)?,
+                local_src: row.get(13)?,
+                track_cover: None,
+                track_cover_path: row.get(14)?,
+                disc_number: row.get(15)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(tracks)
+}
+
+// ============================================================================
+// Play History operations
+// ============================================================================
+
+pub fn record_play(
+    conn: &Connection,
+    track_id: i64,
+    album_id: Option<i64>,
+    duration_played: i64,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO play_history (track_id, album_id, duration_played) VALUES (?1, ?2, ?3)",
+        params![track_id, album_id, duration_played],
+    )?;
+    Ok(())
+}
+
+pub fn get_top_tracks(conn: &Connection, limit: i32) -> Result<Vec<TrackWithCount>> {
+    let mut stmt = conn.prepare(
+        "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.album_id, t.format, t.bitrate, t.source_type, t.cover_url, t.external_id, t.local_src, t.track_cover_path, t.disc_number, COUNT(ph.id) as play_count
+         FROM tracks t
+         INNER JOIN play_history ph ON t.id = ph.track_id
+         GROUP BY t.id
+         ORDER BY play_count DESC
+         LIMIT ?1",
+    )?;
+
+    let results = stmt
+        .query_map(params![limit], |row| {
+            Ok(TrackWithCount {
+                track: Track {
+                    id: row.get(0)?,
+                    path: row.get(1)?,
+                    title: row.get(2)?,
+                    artist: row.get(3)?,
+                    album: row.get(4)?,
+                    track_number: row.get(5)?,
+                    duration: row.get(6)?,
+                    album_id: row.get(7)?,
+                    format: row.get(8)?,
+                    bitrate: row.get(9)?,
+                    source_type: row.get(10)?,
+                    cover_url: row.get(11)?,
+                    external_id: row.get(12)?,
+                    local_src: row.get(13)?,
+                    track_cover: None,
+                    track_cover_path: row.get(14)?,
+                    disc_number: row.get(15)?,
+                },
+                play_count: row.get(16)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(results)
+}
+
+pub fn get_top_albums(conn: &Connection, limit: i32) -> Result<Vec<AlbumWithCount>> {
+    let mut stmt = conn.prepare(
+        "SELECT a.id, a.name, a.artist, a.art_data, a.art_path, COUNT(ph.id) as play_count
+         FROM albums a
+         INNER JOIN play_history ph ON a.id = ph.album_id
+         WHERE ph.album_id IS NOT NULL
+         GROUP BY a.id
+         ORDER BY play_count DESC
+         LIMIT ?1",
+    )?;
+
+    let results = stmt
+        .query_map(params![limit], |row| {
+            Ok(AlbumWithCount {
+                album: Album {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    artist: row.get(2)?,
+                    art_data: row.get(3)?,
+                    art_path: row.get(4)?,
+                },
+                play_count: row.get(5)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(results)
+}
+
+pub fn get_recently_played(conn: &Connection, limit: i32) -> Result<Vec<Track>> {
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.album_id, t.format, t.bitrate, t.source_type, t.cover_url, t.external_id, t.local_src, t.track_cover_path, t.disc_number, MAX(ph.played_at) as last_played
+         FROM tracks t
+         INNER JOIN play_history ph ON t.id = ph.track_id
+         GROUP BY t.id
+         ORDER BY last_played DESC
+         LIMIT ?1",
+    )?;
+
+    let tracks = stmt
+        .query_map(params![limit], |row| {
+            Ok(Track {
+                id: row.get(0)?,
+                path: row.get(1)?,
+                title: row.get(2)?,
+                artist: row.get(3)?,
+                album: row.get(4)?,
+                track_number: row.get(5)?,
+                duration: row.get(6)?,
+                album_id: row.get(7)?,
+                format: row.get(8)?,
+                bitrate: row.get(9)?,
+                source_type: row.get(10)?,
+                cover_url: row.get(11)?,
+                external_id: row.get(12)?,
+                local_src: row.get(13)?,
+                track_cover: None,
+                track_cover_path: row.get(14)?,
+                disc_number: row.get(15)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(tracks)
+}

@@ -10,6 +10,7 @@
     } from "$lib/stores/library";
     import {
         currentView,
+        goToHome,
         goToTracks,
         goToAlbums,
         goToArtists,
@@ -17,6 +18,7 @@
         goToPlaylistDetail,
         goToPlugins,
         goToSettings,
+        goToLikedSongs,
     } from "$lib/stores/view";
     import {
         isSettingsOpen as isSettingsOpenUI,
@@ -24,6 +26,7 @@
         contextMenu,
     } from "$lib/stores/ui";
     import { appSettings } from "$lib/stores/settings";
+    import { likedCount } from "$lib/stores/liked";
     import {
         selectMusicFolder,
         addFolder,
@@ -35,20 +38,26 @@
     } from "$lib/api/tauri";
     import { progressiveScan } from "$lib/stores/progressiveScan";
     import { confirm } from "$lib/stores/dialogs";
-    import { playTracks, addToQueue, currentTrack, isPlaying, queue } from "$lib/stores/player";
+    import {
+        playTracks,
+        addToQueue,
+        currentTrack,
+        isPlaying,
+        queue,
+    } from "$lib/stores/player";
     import { setPlaylistCover } from "$lib/stores/playlistCovers";
     import { uiSlotManager } from "$lib/plugins/ui-slots";
 
     import { updates } from "$lib/stores/updates";
     import UpdatePopup from "./UpdatePopup.svelte";
 
-    import { currentPlaylistId } from '$lib/stores/player';
+    import { currentPlaylistId } from "$lib/stores/player";
 
     const dispatch = createEventDispatcher();
 
     function navigateAndClose(fn: () => void) {
         fn();
-        dispatch('navigate');
+        dispatch("navigate");
     }
 
     let isScanning = false;
@@ -70,7 +79,11 @@
     $: isPlayingValue = $isPlaying;
 
     // Helper function to check if a playlist is currently playing
-    function isPlaylistPlaying(playlistId: number, currentId: number | null, playing: boolean): boolean {
+    function isPlaylistPlaying(
+        playlistId: number,
+        currentId: number | null,
+        playing: boolean,
+    ): boolean {
         return currentId === playlistId && playing;
     }
 
@@ -82,7 +95,10 @@
                 const tracks = await getPlaylistTracks(playlist.id);
                 counts.set(playlist.id, tracks.length);
             } catch (error) {
-                console.error(`Failed to get track count for playlist ${playlist.id}:`, error);
+                console.error(
+                    `Failed to get track count for playlist ${playlist.id}:`,
+                    error,
+                );
                 counts.set(playlist.id, 0);
             }
         }
@@ -113,7 +129,9 @@
                     console.warn("Scan errors:", result.errors);
                 }
 
-                console.log(`Scan complete: ${result.tracks_added} added, ${result.tracks_updated} updated, ${result.tracks_deleted} deleted`);
+                console.log(
+                    `Scan complete: ${result.tracks_added} added, ${result.tracks_updated} updated, ${result.tracks_deleted} deleted`,
+                );
 
                 // Tracks already loaded progressively — just fetch albums/artists
                 await loadAlbumsAndArtists();
@@ -121,15 +139,19 @@
 
                 // success toast
                 const parts = [];
-                if (result.tracks_added > 0) parts.push(`${result.tracks_added} added`);
-                if (result.tracks_updated > 0) parts.push(`${result.tracks_updated} updated`);
-                if (result.tracks_deleted > 0) parts.push(`${result.tracks_deleted} deleted`);
-                
-                const message = parts.length > 0 
-                    ? `Library scan complete: ${parts.join(', ')}`
-                    : 'Library scan complete';
-                
-                addToast(message, 'success', 4000);
+                if (result.tracks_added > 0)
+                    parts.push(`${result.tracks_added} added`);
+                if (result.tracks_updated > 0)
+                    parts.push(`${result.tracks_updated} updated`);
+                if (result.tracks_deleted > 0)
+                    parts.push(`${result.tracks_deleted} deleted`);
+
+                const message =
+                    parts.length > 0
+                        ? `Library scan complete: ${parts.join(", ")}`
+                        : "Library scan complete";
+
+                addToast(message, "success", 4000);
             }
         } catch (error) {
             scanError = error instanceof Error ? error.message : String(error);
@@ -145,11 +167,11 @@
         try {
             const tracks = await getPlaylistTracks(id);
             if (tracks.length > 0) {
-                const playlist = $playlists.find(p => p.id === id);
+                const playlist = $playlists.find((p) => p.id === id);
                 playTracks(tracks, 0, {
-                    type: 'playlist',
+                    type: "playlist",
                     playlistId: id,
-                    displayName: playlist?.name ?? 'Playlist'
+                    displayName: playlist?.name ?? "Playlist",
                 });
             }
         } catch (error) {
@@ -321,6 +343,43 @@
                 <li>
                     <button
                         class="nav-item"
+                        class:active={isActive("home")}
+                        on:click={() => navigateAndClose(goToHome)}
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            width="24"
+                            height="24"
+                        >
+                            <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
+                        </svg>
+                        <span>Home</span>
+                    </button>
+                </li>
+                <li>
+                    <button
+                        class="nav-item"
+                        class:active={isActive("liked-songs")}
+                        on:click={() => navigateAndClose(goToLikedSongs)}
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            width="24"
+                            height="24"
+                        >
+                            <path
+                                d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
+                            />
+                        </svg>
+                        <span>Liked Songs</span>
+                        <span class="nav-count">{$likedCount}</span>
+                    </button>
+                </li>
+                <li>
+                    <button
+                        class="nav-item"
                         class:active={isActive("tracks")}
                         on:click={() => navigateAndClose(goToTracks)}
                     >
@@ -410,13 +469,22 @@
                     <li>
                         <button
                             class="nav-item playlist-item"
-                            class:active={$currentView.type === "playlist-detail" &&
+                            class:active={$currentView.type ===
+                                "playlist-detail" &&
                                 $currentView.id !== undefined &&
                                 playlist.id !== undefined &&
                                 $currentView.id === playlist.id}
-                            class:playing={isPlaylistPlaying(playlist.id, currentPlaylistIdValue, isPlayingValue)}
-                            on:click={() => navigateAndClose(() => goToPlaylistDetail(playlist.id))}
-                            on:contextmenu={(e) => handlePlaylistContextMenu(e, playlist)}
+                            class:playing={isPlaylistPlaying(
+                                playlist.id,
+                                currentPlaylistIdValue,
+                                isPlayingValue,
+                            )}
+                            on:click={() =>
+                                navigateAndClose(() =>
+                                    goToPlaylistDetail(playlist.id),
+                                )}
+                            on:contextmenu={(e) =>
+                                handlePlaylistContextMenu(e, playlist)}
                         >
                             {#if isPlaylistPlaying(playlist.id, currentPlaylistIdValue, isPlayingValue)}
                                 <div class="playing-indicator">
@@ -438,7 +506,11 @@
                             {/if}
                             <span class="truncate">{playlist.name}</span>
                             {#if playlistTrackCounts.has(playlist.id)}
-                                <span class="nav-count">{playlistTrackCounts.get(playlist.id)}</span>
+                                <span class="nav-count"
+                                    >{playlistTrackCounts.get(
+                                        playlist.id,
+                                    )}</span
+                                >
                             {/if}
                         </button>
                     </li>
