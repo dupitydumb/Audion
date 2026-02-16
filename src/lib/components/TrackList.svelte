@@ -15,7 +15,6 @@
     currentTrack,
     isPlaying,
     addToQueue,
-    isStreaming,
     type PlaybackContext,
   } from "$lib/stores/player";
   import { contextMenu } from "$lib/stores/ui";
@@ -44,6 +43,7 @@
   export let tracks: Track[] = [];
   export let title: string = "Tracks";
   export let showAlbum: boolean = true;
+  export let isTidalAvailable: boolean = true;
   export let playbackContext: PlaybackContext | undefined = undefined;
   export let playlistId: number | null = null;
   export let multiSelectMode: boolean = false;
@@ -78,12 +78,11 @@
 
   // Mobile view mode: determines layout on small screens
   // 'album' = numbered list, no covers | 'playlist' = covers + info | 'library' = covers + full info
-  $: mobileViewMode =
-    !showAlbum && playbackContext?.type === "album"
-      ? "album"
-      : playbackContext?.type === "playlist"
-        ? "playlist"
-        : "library";
+  $: mobileViewMode = (!showAlbum && playbackContext?.type === 'album')
+      ? 'album'
+      : (playbackContext?.type === 'playlist')
+        ? 'playlist'
+        : 'library';
 
   // 3: Memoize availability check results
   const availabilityCache = new Map<number, boolean>();
@@ -95,50 +94,33 @@
     }
 
     let unavailable = false;
-    const streaming = isStreaming(track);
 
-    if (streaming) {
-      if (!$isOnline) {
-        unavailable = true;
-      } else {
-        const runtime = pluginStore.getRuntime();
-        // Streaming tracks are available if they have a registered resolver
-        unavailable =
-          !runtime || !runtime.streamResolvers.has(track.source_type || "");
-      }
-    } else {
-      // Local tracks are always available (or already handled by Rodio)
+    // Local tracks are always available
+    if (!track.source_type || track.source_type === "local") {
       unavailable = false;
+    } else if (track.local_src) {
+      unavailable = false;
+    } else if (!$isOnline) {
+      unavailable = true;
+    } else if (!isTidalAvailable) {
+      unavailable = true;
+    } else {
+      const runtime = pluginStore.getRuntime();
+      unavailable = !runtime || !runtime.streamResolvers.has(track.source_type);
     }
 
     availabilityCache.set(track.id, unavailable);
     return unavailable;
   }
 
-  // 5: Pre-compute album art and availability for visible tracks
-  type TrackMeta = {
-    track: Track;
-    albumArt: string | null;
-    unavailable: boolean;
-  };
-
-  let visibleTracksWithMetadata: TrackMeta[] = [];
+  // Clear availability cache when dependencies change (including plugin store)
+  $: runtime = pluginStore.getRuntime();
   $: {
-    // Watch relevant dependencies for availability and art
-    const _ = $pluginStore;
-    const __ = $isOnline;
-    const ___ = virtualScrollState.visibleTracks;
-
-    // Clear availability cache on state changes
-    availabilityCache.clear();
-
-    visibleTracksWithMetadata = virtualScrollState.visibleTracks.map(
-      (track) => ({
-        track,
-        albumArt: getTrackAlbumArt(track),
-        unavailable: isTrackUnavailable(track),
-      }),
-    ) as TrackMeta[];
+    // Watch all relevant dependencies
+    const _ = runtime;
+    if ($isOnline !== undefined || isTidalAvailable !== undefined) {
+      availabilityCache.clear();
+    }
   }
 
   $: filteredTracks = tracks;
@@ -215,7 +197,7 @@
   let trackIndexMap = new Map<number, number>();
   $: {
     trackIndexMap = new Map(
-      sortedTracks.map((track, index) => [track.id, index]),
+      sortedTracks.map((track, index) => [track.id, index])
     );
   }
 
@@ -261,6 +243,21 @@
     }
   }
 
+  // 5: Pre-compute album art and availability for visible tracks
+  type TrackWithMetadata = {
+    track: Track;
+    albumArt: string | null;
+    unavailable: boolean;
+  };
+
+  $: visibleTracksWithMetadata = virtualScrollState.visibleTracks.map(
+    (track) => ({
+      track,
+      albumArt: getTrackAlbumArt(track),
+      unavailable: isTrackUnavailable(track),
+    }),
+  ) as TrackWithMetadata[];
+
   function handleScroll(e: Event) {
     scrollTop = (e.target as HTMLElement).scrollTop;
   }
@@ -269,7 +266,7 @@
   onMount(() => {
     // 5: Load playlists once on mount to avoid race conditions
     if ($playlists.length === 0) {
-      loadPlaylists();
+      loadPlaylists(); 
     }
 
     if (containerElement) {
@@ -364,10 +361,10 @@
 
   // Event delegation
   function handleBodyClick(e: MouseEvent) {
-    const row = (e.target as HTMLElement).closest(".track-row");
+    const row = (e.target as HTMLElement).closest('.track-row');
     if (!row) return;
 
-    const trackId = parseInt(row.getAttribute("data-track-id") || "0");
+    const trackId = parseInt(row.getAttribute('data-track-id') || '0');
 
     // In multi-select mode, clicking toggles selection
     if (multiSelectMode) {
@@ -376,7 +373,7 @@
     }
 
     const trackIndex = trackIndexMap.get(trackId);
-
+    
     if (trackIndex === undefined) return;
 
     const track = sortedTracks[trackIndex];
@@ -396,12 +393,12 @@
   }
 
   function handleBodyDoubleClick(e: MouseEvent) {
-    const row = (e.target as HTMLElement).closest(".track-row");
+    const row = (e.target as HTMLElement).closest('.track-row');
     if (!row) return;
 
-    const trackId = parseInt(row.getAttribute("data-track-id") || "0");
+    const trackId = parseInt(row.getAttribute('data-track-id') || '0');
     const trackIndex = trackIndexMap.get(trackId);
-
+    
     if (trackIndex === undefined) return;
 
     const track = sortedTracks[trackIndex];
@@ -420,14 +417,14 @@
   }
 
   async function handleBodyContextMenu(e: MouseEvent) {
-    const row = (e.target as HTMLElement).closest(".track-row");
+    const row = (e.target as HTMLElement).closest('.track-row');
     if (!row) return;
 
     e.preventDefault();
 
-    const trackId = parseInt(row.getAttribute("data-track-id") || "0");
+    const trackId = parseInt(row.getAttribute('data-track-id') || '0');
     const trackIndex = trackIndexMap.get(trackId);
-
+    
     if (trackIndex === undefined) return;
 
     const track = sortedTracks[trackIndex];
@@ -462,7 +459,7 @@
               }
             }
             playTracks(sortedTracks, trackIndex, playbackContext);
-          }
+          }  
         },
         disabled: isUnavailable,
       },
@@ -493,14 +490,16 @@
             addToast(`Failed to download "${track.title}"`, "error");
           }
         },
-        disabled: !canDownload(track) || (isUnavailable && !track.local_src),
+        disabled:
+          !canDownload(track) ||
+                    (isUnavailable && !isTidalAvailable && !track.local_src),
       },
       { type: "separator" },
       {
         label: "Add to Playlist",
         submenu:
           playlistItems.length > 0
-            ? playlistItems
+          ? playlistItems
             : [
                 {
                   label: "No playlists",
@@ -688,7 +687,7 @@
   function handleSwipeTouchStart(e: TouchEvent) {
     if (!$isMobile || multiSelectMode) return;
     // Don't swipe on drag handles
-    if ((e.target as HTMLElement).closest(".drag-handle")) return;
+    if ((e.target as HTMLElement).closest('.drag-handle')) return;
 
     const touch = e.touches[0];
     swipeStartX = touch.clientX;
@@ -696,10 +695,10 @@
     swipeDeltaX = 0;
     swipeCommitted = false;
 
-    const row = (e.target as HTMLElement).closest(".track-row") as HTMLElement;
+    const row = (e.target as HTMLElement).closest('.track-row') as HTMLElement;
     if (row) {
       swipingRow = row;
-      swipeTrackId = parseInt(row.getAttribute("data-track-id") || "0");
+      swipeTrackId = parseInt(row.getAttribute('data-track-id') || '0');
     }
   }
 
@@ -712,8 +711,8 @@
 
     // If vertical movement is dominant, cancel swipe (allow scroll)
     if (Math.abs(dy) > Math.abs(dx) && Math.abs(dx) < 15) {
-      swipingRow.style.transform = "";
-      swipingRow.style.transition = "";
+      swipingRow.style.transform = '';
+      swipingRow.style.transition = '';
       swipingRow = null;
       return;
     }
@@ -721,7 +720,7 @@
     // Only right-swipe
     if (dx < 0) {
       swipeDeltaX = 0;
-      swipingRow.style.transform = "";
+      swipingRow.style.transform = '';
       return;
     }
 
@@ -729,14 +728,14 @@
     e.preventDefault();
 
     swipeDeltaX = Math.min(dx, SWIPE_MAX);
-    swipingRow.style.transition = "none";
+    swipingRow.style.transition = 'none';
     swipingRow.style.transform = `translateX(${swipeDeltaX}px)`;
 
     // Visual feedback: change bg when past threshold
     if (swipeDeltaX >= SWIPE_THRESHOLD) {
-      swipingRow.classList.add("swipe-queue-ready");
+      swipingRow.classList.add('swipe-queue-ready');
     } else {
-      swipingRow.classList.remove("swipe-queue-ready");
+      swipingRow.classList.remove('swipe-queue-ready');
     }
   }
 
@@ -748,8 +747,8 @@
 
     if (swipeDeltaX >= SWIPE_THRESHOLD && trackId) {
       swipeCommitted = true;
-      row.classList.add("swipe-queue-added");
-      row.classList.remove("swipe-queue-ready");
+      row.classList.add('swipe-queue-added');
+      row.classList.remove('swipe-queue-ready');
 
       // Find track and add to queue
       const trackIndex = trackIndexMap.get(trackId);
@@ -757,21 +756,21 @@
         const track = sortedTracks[trackIndex];
         if (track) {
           addToQueue([track]);
-          addToast(`Added "${track.title}" to queue`, "success");
+          addToast(`Added "${track.title}" to queue`, 'success');
         }
       }
 
       // Animate back after short delay
       swipeResetTimer = setTimeout(() => {
-        row.style.transition = "transform 0.25s ease";
-        row.style.transform = "";
-        row.classList.remove("swipe-queue-added");
+        row.style.transition = 'transform 0.25s ease';
+        row.style.transform = '';
+        row.classList.remove('swipe-queue-added');
       }, 400);
     } else {
       // Snap back
-      row.style.transition = "transform 0.25s ease";
-      row.style.transform = "";
-      row.classList.remove("swipe-queue-ready");
+      row.style.transition = 'transform 0.25s ease';
+      row.style.transform = '';
+      row.classList.remove('swipe-queue-ready');
     }
 
     swipingRow = null;
@@ -781,17 +780,17 @@
 
   // Helper to handle album click from event delegation
   function handleAlbumClick(e: MouseEvent) {
-    const albumButton = (e.target as HTMLElement).closest(".col-album");
+    const albumButton = (e.target as HTMLElement).closest('.col-album');
     if (!albumButton) return;
 
     e.stopPropagation();
 
-    const row = albumButton.closest(".track-row");
+    const row = albumButton.closest('.track-row');
     if (!row) return;
 
-    const trackId = parseInt(row.getAttribute("data-track-id") || "0");
+    const trackId = parseInt(row.getAttribute('data-track-id') || '0');
     const trackIndex = trackIndexMap.get(trackId);
-
+    
     if (trackIndex === undefined) return;
 
     const track = sortedTracks[trackIndex];
@@ -815,15 +814,15 @@
           type="checkbox"
           on:change={(e) => {
             if (e.currentTarget.checked) {
-              multiSelect.selectAll(sortedTracks.map((t) => t.id));
+              multiSelect.selectAll(sortedTracks.map(t => t.id));
             } else {
               multiSelect.clearSelections();
             }
           }}
           checked={$multiSelect.selectedTrackIds.size > 0 &&
-            $multiSelect.selectedTrackIds.size === sortedTracks.length}
+                   $multiSelect.selectedTrackIds.size === sortedTracks.length}
           indeterminate={$multiSelect.selectedTrackIds.size > 0 &&
-            $multiSelect.selectedTrackIds.size < sortedTracks.length}
+                        $multiSelect.selectedTrackIds.size < sortedTracks.length}
         />
       </div>
     {/if}
@@ -875,9 +874,9 @@
       class:no-album={!showAlbum}
       class:with-drag={playlistId !== null && !multiSelectMode}
       class:multiselect={multiSelectMode}
-      class:mobile-album={mobileViewMode === "album"}
-      class:mobile-playlist={mobileViewMode === "playlist"}
-      class:mobile-library={mobileViewMode === "library"}
+      class:mobile-album={mobileViewMode === 'album'}
+      class:mobile-playlist={mobileViewMode === 'playlist'}
+      class:mobile-library={mobileViewMode === 'library'}
       on:scroll={handleScroll}
       on:click={handleBodyClick}
       on:dblclick={handleBodyDoubleClick}
@@ -913,23 +912,15 @@
               {#if multiSelectMode}
                 <div
                   class="col-checkbox"
-                  on:click|stopPropagation={() =>
-                    multiSelect.toggleTrack(track.id)}
+                  on:click|stopPropagation={() => multiSelect.toggleTrack(track.id)}
                   role="checkbox"
                   aria-checked={isSelected}
                   tabindex="0"
                 >
                   <div class="custom-checkbox" class:checked={isSelected}>
                     {#if isSelected}
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="14"
-                        height="14"
-                      >
-                        <path
-                          d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
-                        />
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                        <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
                       </svg>
                     {/if}
                   </div>
@@ -1178,6 +1169,7 @@
     overflow-y: auto;
     overflow-x: hidden;
     position: relative;
+    overscroll-behavior-y: contain;
   }
 
   /* Virtual scrolling structure */
