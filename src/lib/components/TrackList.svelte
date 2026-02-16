@@ -15,6 +15,7 @@
     currentTrack,
     isPlaying,
     addToQueue,
+    isStreaming,
     type PlaybackContext,
   } from "$lib/stores/player";
   import { contextMenu } from "$lib/stores/ui";
@@ -43,7 +44,6 @@
   export let tracks: Track[] = [];
   export let title: string = "Tracks";
   export let showAlbum: boolean = true;
-  export let isTidalAvailable: boolean = true;
   export let playbackContext: PlaybackContext | undefined = undefined;
   export let playlistId: number | null = null;
   export let multiSelectMode: boolean = false;
@@ -95,33 +95,50 @@
     }
 
     let unavailable = false;
+    const streaming = isStreaming(track);
 
-    // Local tracks are always available
-    if (!track.source_type || track.source_type === "local") {
-      unavailable = false;
-    } else if (track.local_src) {
-      unavailable = false;
-    } else if (!$isOnline) {
-      unavailable = true;
-    } else if (!isTidalAvailable) {
-      unavailable = true;
+    if (streaming) {
+      if (!$isOnline) {
+        unavailable = true;
+      } else {
+        const runtime = pluginStore.getRuntime();
+        // Streaming tracks are available if they have a registered resolver
+        unavailable =
+          !runtime || !runtime.streamResolvers.has(track.source_type || "");
+      }
     } else {
-      const runtime = pluginStore.getRuntime();
-      unavailable = !runtime || !runtime.streamResolvers.has(track.source_type);
+      // Local tracks are always available (or already handled by Rodio)
+      unavailable = false;
     }
 
     availabilityCache.set(track.id, unavailable);
     return unavailable;
   }
 
-  // Clear availability cache when dependencies change (including plugin store)
-  $: runtime = pluginStore.getRuntime();
+  // 5: Pre-compute album art and availability for visible tracks
+  type TrackWithMetadata = {
+    track: Track;
+    albumArt: string | null;
+    unavailable: boolean;
+  };
+
+  let visibleTracksWithMetadata: TrackWithMetadata[] = [];
   $: {
-    // Watch all relevant dependencies
-    const _ = runtime;
-    if ($isOnline !== undefined || isTidalAvailable !== undefined) {
-      availabilityCache.clear();
-    }
+    // Watch relevant dependencies for availability and art
+    const _ = $pluginStore;
+    const __ = $isOnline;
+    const ___ = virtualScrollState.visibleTracks;
+
+    // Clear availability cache on state changes
+    availabilityCache.clear();
+
+    visibleTracksWithMetadata = virtualScrollState.visibleTracks.map(
+      (track) => ({
+        track,
+        albumArt: getTrackAlbumArt(track),
+        unavailable: isTrackUnavailable(track),
+      }),
+    ) as TrackWithMetadata[];
   }
 
   $: filteredTracks = tracks;
@@ -243,21 +260,6 @@
       loadMoreTracks();
     }
   }
-
-  // 5: Pre-compute album art and availability for visible tracks
-  type TrackWithMetadata = {
-    track: Track;
-    albumArt: string | null;
-    unavailable: boolean;
-  };
-
-  $: visibleTracksWithMetadata = virtualScrollState.visibleTracks.map(
-    (track) => ({
-      track,
-      albumArt: getTrackAlbumArt(track),
-      unavailable: isTrackUnavailable(track),
-    }),
-  ) as TrackWithMetadata[];
 
   function handleScroll(e: Event) {
     scrollTop = (e.target as HTMLElement).scrollTop;
@@ -491,9 +493,7 @@
             addToast(`Failed to download "${track.title}"`, "error");
           }
         },
-        disabled:
-          !canDownload(track) ||
-          (isUnavailable && !isTidalAvailable && !track.local_src),
+        disabled: !canDownload(track) || (isUnavailable && !track.local_src),
       },
       { type: "separator" },
       {

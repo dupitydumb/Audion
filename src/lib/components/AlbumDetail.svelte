@@ -347,7 +347,6 @@
                         </div>
                         <TrackList
                             tracks={group.tracks}
-                            {isTidalAvailable}
                             showAlbum={false}
                             playbackContext={{
                                 type: "album",
@@ -361,7 +360,6 @@
             {:else}
                 <TrackList
                     {tracks}
-                    {isTidalAvailable}
                     showAlbum={false}
                     playbackContext={{
                         type: "album",
