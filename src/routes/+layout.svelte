@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import { get } from "svelte/store";
   import { appSettings } from "$lib/stores/settings";
   import { theme } from "$lib/stores/theme";
   import { cleanupPlayer, initAudioBackend } from "$lib/stores/player";
@@ -12,7 +13,11 @@
     initPlatformDetection,
   } from "$lib/api/tauri";
   import { initMobileDetection, isMobile } from "$lib/stores/mobile";
+  import { mobileSearchOpen } from "$lib/stores/mobile";
+  import { initAndroidNotification } from "$lib/services/android-notification";
   import { loadLikedTracks } from "$lib/stores/liked";
+  import { goBack, navigationHistory } from "$lib/stores/view";
+  import { isFullScreen, isQueueVisible, contextMenu } from "$lib/stores/ui";
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
   import ProgressiveScanStatus from "$lib/components/ProgressiveScanStatus.svelte";
@@ -23,6 +28,56 @@
   let showMigrationBanner = false;
   let showPermissionBanner = false;
   let permissionDenied = false;
+
+  // =========================================================================
+  // ANDROID BACK BUTTON HANDLER
+  // =========================================================================
+  // Called from native Android (MainActivity.kt) via evaluateJavascript().
+  // Dismisses overlays first, then navigates back through view history.
+  // Returns true if handled, false if at root (so native side can minimize).
+  // =========================================================================
+  function setupAndroidBackHandler() {
+    (window as any).__audionHandleBack = (): boolean => {
+      // 1. Close context menu if open
+      const ctx = get(contextMenu);
+      if (ctx.visible) {
+        contextMenu.set({ ...ctx, visible: false });
+        return true;
+      }
+
+      // 2. Close full-screen player
+      if (get(isFullScreen)) {
+        isFullScreen.set(false);
+        return true;
+      }
+
+      // 3. Close queue panel
+      if (get(isQueueVisible)) {
+        isQueueVisible.set(false);
+        return true;
+      }
+
+      // 4. Close mobile search
+      if (get(mobileSearchOpen)) {
+        mobileSearchOpen.set(false);
+        return true;
+      }
+
+      // 5. Navigate back through view history
+      const nav = get(navigationHistory);
+      if (nav.canGoBack) {
+        goBack();
+        return true;
+      }
+
+      // 6. At root — return false so native side minimizes the app
+      return false;
+    };
+  }
+
+  function cleanupAndroidBackHandler() {
+    delete (window as any).__audionHandleBack;
+  }
 
   onMount(async () => {
     // Detect platform early for Linux-specific fixes (asset:// -> file://)
@@ -36,9 +91,11 @@
     // Load liked tracks from database
     loadLikedTracks();
 
-    // Check Android audio permission first
+    // Initialize Android-specific features
     if (isAndroid() && isTauri()) {
+      setupAndroidBackHandler();
       await checkAndroidPermissions();
+      initAndroidNotification();
     }
 
     const migrationStart = performance.now();
@@ -154,6 +211,9 @@
     if (handleVisibilityChange) {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     }
+
+    // Cleanup Android back handler
+    cleanupAndroidBackHandler();
 
     // Cleanup player resources
     cleanupPlayer();
