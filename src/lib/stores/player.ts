@@ -7,6 +7,7 @@ import { EventEmitter, type PluginEvents } from '$lib/plugins/event-emitter';
 import { tracks as libraryTracks, getFullTrack, getAlbumCoverFromTracks } from '$lib/stores/library';
 import { appSettings } from '$lib/stores/settings';
 import { equalizer, EQ_FREQUENCIES } from '$lib/stores/equalizer';
+import { pluginStore } from '$lib/stores/plugin-store';
 
 // =============================================================================
 // NATIVE AUDIO BACKEND
@@ -28,8 +29,93 @@ import {
     type NativePlaybackState
 } from '$lib/services/native-audio';
 
-// Interval for polling playback state
+// Interval for polling native playback state
 let nativeStatePoller: ReturnType<typeof setInterval> | null = null;
+
+// HTML5 Audio element for streaming (initialized lazily)
+let html5Audio: HTMLAudioElement | null = null;
+
+function getHtml5Audio(): HTMLAudioElement {
+    if (!html5Audio && typeof window !== 'undefined') {
+        html5Audio = new Audio();
+        setupHtml5AudioListeners(html5Audio);
+    }
+    return html5Audio!;
+}
+
+function setupHtml5AudioListeners(audio: HTMLAudioElement): void {
+    audio.addEventListener('timeupdate', () => {
+        const track = get(currentTrack);
+        if (track && isStreaming(track)) {
+            currentTime.set(audio.currentTime);
+        }
+    });
+
+    audio.addEventListener('durationchange', () => {
+        const track = get(currentTrack);
+        if (track && isStreaming(track)) {
+            if (audio.duration && !isNaN(audio.duration)) {
+                duration.set(audio.duration);
+            }
+        }
+    });
+
+    audio.addEventListener('play', () => {
+        const track = get(currentTrack);
+        if (track && isStreaming(track)) {
+            isPlaying.set(true);
+            updateMediaSessionPlaybackState('playing');
+        }
+    });
+
+    audio.addEventListener('pause', () => {
+        const track = get(currentTrack);
+        if (track && isStreaming(track)) {
+            isPlaying.set(false);
+            updateMediaSessionPlaybackState('paused');
+        }
+    });
+
+    audio.addEventListener('ended', () => {
+        const track = get(currentTrack);
+        if (track && isStreaming(track)) {
+            handleTrackEnd();
+        }
+    });
+
+    audio.addEventListener('error', (e) => {
+        const track = get(currentTrack);
+        if (track && isStreaming(track)) {
+            console.error('[Player] HTML5 audio error:', audio.error);
+            addToast(`Streaming playback failed: ${audio.error?.message || 'Unknown error'}`, 'error');
+        }
+    });
+}
+
+/**
+ * Detect if a track needs HTML5 streaming or native local playback
+ */
+export function isStreaming(track: Track): boolean {
+    // 1. Explicitly local sources (by type or path)
+    if (track.source_type === 'local' || track.local_src) return false;
+
+    if (track.path) {
+        // Tauri local protocols are always local
+        if (track.path.startsWith('file://') || track.path.startsWith('asset://') || track.path.startsWith('tauri://')) {
+            return false;
+        }
+        // Explicitly streaming protocols
+        if (track.path.startsWith('http://') || track.path.startsWith('https://')) {
+            return true;
+        }
+    }
+
+    // 3. Known external source types (Tidal, etc.)
+    if (track.source_type && track.source_type !== 'local') return true;
+
+    // 4. Default to local for anything else (safer for absolute paths)
+    return false;
+}
 
 // Plugin event emitter (global singleton for plugin system)
 export const pluginEvents = new EventEmitter<PluginEvents>();
@@ -126,9 +212,13 @@ export const repeat = writable<'none' | 'one' | 'all'>('none');
 
 // Subscribe to EQ changes to update native backend
 equalizer.subscribe((state) => {
-    nativeAudioSetEq(state).catch(err => {
-        console.error('[EQ] Failed to apply settings:', err);
-    });
+    const track = get(currentTrack);
+    // EQ only works on native backend for now
+    if (track && !isStreaming(track)) {
+        nativeAudioSetEq(state).catch(err => {
+            console.error('[EQ] Failed to apply settings:', err);
+        });
+    }
 });
 
 // =============================================================================
@@ -145,6 +235,10 @@ function startStatePoller(): void {
 
     nativeStatePoller = setInterval(async () => {
         try {
+            // If playing via HTML5, skip native polling
+            const track = get(currentTrack);
+            if (track && isStreaming(track)) return;
+
             const state = await nativeAudioGetState();
 
             currentTime.set(state.position);
@@ -184,15 +278,17 @@ function stopStatePoller(): void {
     }
 }
 
-export function setAudioElement(element: HTMLAudioElement): void {
-    console.log('[Player] HTML5 audio element received (ignored by native backend)');
-}
-
 // cleanup function for app unmount or hot reload
 export function cleanupPlayer(): void {
     console.log('[Player] Cleaning up player resources');
     stopStatePoller();
     nativeAudioStop().catch(console.error);
+
+    // Cleanup HTML5
+    if (html5Audio) {
+        html5Audio.pause();
+        html5Audio.src = '';
+    }
 
     // Reset stores
     isPlaying.set(false);
@@ -342,42 +438,65 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
 
     try {
         let audioPath = track.local_src || track.path;
+        const streaming = isStreaming(track);
 
-        // External sources (plugins) need resolution and potentially downloading
-        // For now, if it's external and not yet local, we attempt to download or fail
-        if (track.source_type && track.source_type !== 'local' && !track.local_src) {
-            const { pluginStore } = await import('./plugin-store');
-            const runtime = pluginStore.getRuntime();
-            if (runtime && track.external_id) {
-                // Native backend needs a local file path.
-                // We should resolve the stream URL but native rodio needs a file or stream.
-                // For now, wetoast that streaming is not supported locally.
-                addToast(`Native backend doesn't support streaming: "${track.title}"`, 'error');
-                return;
+        // Prep the backends
+        if (streaming) {
+            // Stop native audio
+            await nativeAudioStop().catch(() => { });
+
+            // Resolve custom schemes (like tidal://) to HTTP URLs
+            if (audioPath.includes('://') && !audioPath.startsWith('http')) {
+                const runtime = pluginStore.getRuntime();
+                if (runtime) {
+                    const sourceType = track.source_type;
+                    const externalId = track.external_id;
+                    if (sourceType && externalId) {
+                        console.log(`[Player] Resolving custom scheme: ${audioPath}`);
+                        const resolved = await runtime.resolveStreamUrl(sourceType, externalId);
+                        if (resolved) {
+                            audioPath = resolved;
+                        } else {
+                            throw new Error(`Failed to resolve stream URL for ${sourceType}`);
+                        }
+                    }
+                }
             }
+
+            // Start HTML5
+            const audio = getHtml5Audio();
+            audio.src = audioPath;
+            audio.volume = sliderToAudioVolume(get(volume));
+            await audio.play();
+
+            console.log('[Player] HTML5 streaming started:', track.title);
+        } else {
+            // Stop HTML5 audio
+            if (html5Audio) {
+                html5Audio.pause();
+                html5Audio.src = '';
+            }
+
+            // Play via native backend
+            await nativeAudioPlay(audioPath);
+
+            // Sync volume
+            const vol = sliderToAudioVolume(get(volume));
+            await nativeAudioSetVolume(vol);
+
+            console.log('[Player] Native playback started:', track.title);
         }
-
-        if (sessionId !== currentSessionId) return;
-
-        // Play via native backend
-        await nativeAudioPlay(audioPath);
-
-        // Sync volume
-        const vol = sliderToAudioVolume(get(volume));
-        await nativeAudioSetVolume(vol);
 
         currentTime.set(0);
         duration.set(track.duration || 0);
-
         isPlaying.set(true);
 
         // Update Media Session
         updateMediaSessionMetadata(track);
         updateMediaSessionPlaybackState('playing');
 
-        console.log('[Player] Native playback started:', track.title);
     } catch (err) {
-        console.error('[Player] Native playback failed:', err);
+        console.error('[Player] Playback failed:', err);
         addToast(`Playback failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
     }
 }
@@ -477,15 +596,25 @@ export function playTracks(
 
 export async function togglePlay(): Promise<void> {
     try {
+        const track = get(currentTrack);
+        const streaming = track ? isStreaming(track) : false;
+
         if (get(isPlaying)) {
-            await nativeAudioPause();
+            if (streaming) {
+                getHtml5Audio().pause();
+            } else {
+                await nativeAudioPause();
+            }
             isPlaying.set(false);
             updateMediaSessionPlaybackState('paused');
         } else {
-            const track = get(currentTrack);
             if (track && (get(currentTime) === 0 || get(currentTime) >= get(duration))) {
                 // Restart if at end
                 await playTrack(track);
+            } else if (streaming) {
+                await getHtml5Audio().play();
+                isPlaying.set(true);
+                updateMediaSessionPlaybackState('playing');
             } else {
                 await nativeAudioResume();
                 isPlaying.set(true);
@@ -518,7 +647,13 @@ export function nextTrack(): void {
 
     if (rep === 'one') {
         // Repeat current track
-        nativeAudioSeek(0).catch(console.error);
+        const track = get(currentTrack);
+        if (track && isStreaming(track)) {
+            getHtml5Audio().currentTime = 0;
+            getHtml5Audio().play();
+        } else {
+            nativeAudioSeek(0).catch(console.error);
+        }
         return;
     }
 
@@ -619,13 +754,27 @@ export async function previousTrack(): Promise<void> {
 
     // If more than 3 seconds in, restart current track
     try {
-        const state = await nativeAudioGetState();
-        if (state.position > 3) {
-            await nativeAudioSeek(0);
+        const track = get(currentTrack);
+        const streaming = track ? isStreaming(track) : false;
+        let pos = 0;
+
+        if (streaming) {
+            pos = getHtml5Audio().currentTime;
+        } else {
+            const state = await nativeAudioGetState();
+            pos = state.position;
+        }
+
+        if (pos > 3) {
+            if (streaming) {
+                getHtml5Audio().currentTime = 0;
+            } else {
+                await nativeAudioSeek(0);
+            }
             return;
         }
     } catch (err) {
-        console.error('[Player] Get state failed:', err);
+        console.error('[Player] Restart track failed:', err);
     }
 
     if (shuf) {
@@ -653,8 +802,18 @@ export async function previousTrack(): Promise<void> {
 
 // Seek to position (0-1)
 export async function seek(position: number): Promise<void> {
+    const track = get(currentTrack);
+    const streaming = track ? isStreaming(track) : false;
+
     try {
-        await nativeAudioSeek(position);
+        if (streaming) {
+            const audio = getHtml5Audio();
+            if (audio.duration) {
+                audio.currentTime = position * audio.duration;
+            }
+        } else {
+            await nativeAudioSeek(position);
+        }
     } catch (err) {
         console.error('[Player] Seek failed:', err);
     }
@@ -663,8 +822,15 @@ export async function seek(position: number): Promise<void> {
 // Set volume (slider value 0-1, will be converted to logarithmic for audio)
 export async function setVolume(sliderValue: number): Promise<void> {
     volume.set(sliderValue);
+    const vol = sliderToAudioVolume(sliderValue);
+
     try {
-        await nativeAudioSetVolume(sliderToAudioVolume(sliderValue));
+        // Update HTML5 volume
+        if (html5Audio) {
+            html5Audio.volume = vol;
+        }
+        // Update native volume
+        await nativeAudioSetVolume(vol);
     } catch (err) {
         console.error('[Player] Volume set failed:', err);
     }
