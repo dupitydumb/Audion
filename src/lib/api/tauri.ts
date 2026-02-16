@@ -62,6 +62,7 @@ export interface Track {
     title: string | null;
     artist: string | null;
     album: string | null;
+    album_artist: string | null;
     track_number: number | null;
     duration: number | null;
     album_id: number | null;
@@ -79,7 +80,7 @@ export interface Track {
 export interface Album {
     id: number;
     name: string;
-    artist: string | null;
+    album_artist: string | null;
     art_data: string | null; // old - base64 album art
     art_path?: string | null; // File path to album art
 }
@@ -187,6 +188,10 @@ export async function getAlbum(albumId: number): Promise<Album | null> {
 
 export async function getAlbumsByArtist(artist: string): Promise<Album[]> {
     return await invoke('get_albums_by_artist', { artist });
+}
+
+export async function setAlbumMatchingMode(mode: 'name_only' | 'name_and_artist'): Promise<void> {
+    return await invoke('set_album_matching_mode', { mode });
 }
 
 export interface ExternalTrackInput {

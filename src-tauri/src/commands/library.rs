@@ -108,6 +108,9 @@ async fn handle_track_import(
 ) -> Result<queries::Track, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
+    // Get current album matching mode
+    let album_mode = queries::get_album_matching_mode(&conn);
+
     // Check duplicate by content_hash
     if let Some(ref hash) = track_data.content_hash {
         let exists: Option<i64> = conn
@@ -122,7 +125,7 @@ async fn handle_track_import(
         }
     }
 
-    let (track_id, _was_new) = crate::db::queries::insert_or_update_track(&conn, &track_data)
+    let (track_id, _was_new) = crate::db::queries::insert_or_update_track(&conn, &track_data, album_mode)
         .map_err(|e| format!("DB error: {e}"))?;
 
     if track_id == 0 {
@@ -179,6 +182,7 @@ async fn handle_track_import(
         title: track_data.title.clone(),
         artist: track_data.artist.clone(),
         album: track_data.album.clone(),
+        album_artist: track_data.album_artist.clone(),
         track_number: track_data.track_number,
         duration: track_data.duration,
         album_id,
@@ -251,12 +255,14 @@ pub async fn scan_music(paths: Vec<String>, db: State<'_, Database>) -> Result<S
             let scan_result = scan_directory(&path_clone);
             let conn = db_clone.conn.lock().unwrap();
 
+            let album_mode = queries::get_album_matching_mode(&conn);
+
             // Add folder to database
             let _ = queries::add_music_folder(&conn, &path_clone);
 
             for file_path in scan_result.audio_files {
                 if let Some(track_data) = extract_metadata(&file_path) {
-                    match queries::insert_or_update_track(&conn, &track_data) {
+                    match queries::insert_or_update_track(&conn, &track_data, album_mode) {
                         Ok((track_id, was_new)) => {
                             if track_id > 0 {
                                 // Track the operation type
@@ -449,6 +455,7 @@ pub async fn rescan_music(
         let mut pending = Vec::new();
 
         let mut conn = db_conn.lock().unwrap();
+        let album_mode = queries::get_album_matching_mode(&conn);
 
         loop {
             // Collect one batch from the channel
@@ -476,7 +483,7 @@ pub async fn rescan_music(
             let mut batch_tracks = Vec::new();
 
             for track_data in &pending {
-                match queries::insert_or_update_track(&tx_db, track_data) {
+                match queries::insert_or_update_track(&tx_db, track_data, album_mode) {
                     Ok((track_id, was_new)) if track_id > 0 => {
                         if was_new {
                             tracks_added += 1;
@@ -559,6 +566,7 @@ pub async fn rescan_music(
                             title: track_data.title.clone(),
                             artist: track_data.artist.clone(),
                             album: track_data.album.clone(),
+                            album_artist: track_data.album_artist.clone(),
                             track_number: track_data.track_number,
                             duration: track_data.duration,
                             album_id,
@@ -629,6 +637,13 @@ pub async fn rescan_music(
 
     let (tracks_added, tracks_updated, _batches_sent, mut errors) = batch_result;
     errors.extend(scan_errors);
+
+    let conn_cleanup = Arc::clone(&db.conn);
+    if let Ok(conn) = conn_cleanup.lock() {
+        let cleanup_start = std::time::Instant::now();
+        let _ = queries::cleanup_empty_albums(&conn);
+        println!("[TIMING] cleanup_empty_albums (start) took {:?}", cleanup_start.elapsed());
+    }
 
     // Emit completion event
     let _ = window.emit(
@@ -709,6 +724,22 @@ pub async fn get_albums_paginated(
 }
 
 #[tauri::command]
+pub async fn set_album_matching_mode(
+    mode: String,
+    db: State<'_, Database>,
+) -> Result<(), String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    
+    let matching_mode = match mode.as_str() {
+        "name_and_artist" => queries::AlbumMatchingMode::NameAndArtist,
+        _ => queries::AlbumMatchingMode::NameOnly,
+    };
+    
+    queries::set_album_matching_mode(&conn, matching_mode)
+        .map_err(|e| format!("Failed to set album matching mode: {}", e))
+}
+
+#[tauri::command]
 pub async fn search_library(
     query: String,
     limit: i32,
@@ -755,10 +786,10 @@ pub async fn get_albums_by_artist(
 
     let mut stmt = conn
         .prepare(
-            "SELECT DISTINCT a.id, a.name, a.artist, a.art_data, a.art_path 
+            "SELECT DISTINCT a.id, a.name, a.album_artist, a.art_data, a.art_path 
              FROM albums a
              INNER JOIN tracks t ON t.album_id = a.id
-             WHERE t.artist = ?1
+             WHERE t.album_artist = ?1
              ORDER BY a.name",
         )
         .map_err(|e| e.to_string())?;
@@ -768,7 +799,7 @@ pub async fn get_albums_by_artist(
             Ok(queries::Album {
                 id: row.get(0)?,
                 name: row.get(1)?,
-                artist: row.get(2)?,
+                album_artist: row.get(2)?,
                 art_data: row.get(3)?,
                 art_path: row.get(4)?,
             })
@@ -900,6 +931,8 @@ pub async fn add_external_track(
 
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
+    let album_mode = queries::get_album_matching_mode(&conn);
+
     // Use stream_url as path if provided, otherwise construct from source_type://external_id
     let path = track
         .stream_url
@@ -918,11 +951,15 @@ pub async fn add_external_track(
     combined.hash(&mut hasher);
     let content_hash = Some(format!("{:016x}", hasher.finish()));
 
+    // Clone artist once to use for both fields
+    let artist_value = Some(track.artist);
+
     let track_insert = queries::TrackInsert {
         path,
         title: Some(track.title),
-        artist: Some(track.artist),
+        artist: artist_value.clone(),           
         album: track.album,
+        album_artist: artist_value,            
         track_number: None,
         disc_number: None,
         duration: track.duration,
@@ -937,7 +974,7 @@ pub async fn add_external_track(
         local_src: None,
     };
 
-    queries::insert_or_update_track(&conn, &track_insert)
+    queries::insert_or_update_track(&conn, &track_insert, album_mode)
         .map(|(track_id, _was_new)| track_id)
         .map_err(|e| format!("Failed to add external track: {}", e))
 }

@@ -95,6 +95,7 @@ pub fn run() {
                     commands::get_tracks_by_artist,
                     commands::get_album,
                     commands::get_albums_by_artist,
+                    commands::set_album_matching_mode,
                     commands::add_external_track,
                     commands::delete_track,
                     commands::delete_album,

@@ -224,7 +224,7 @@
         </div>
         <div class="album-info">
             <span class="album-name truncate">{album.name}</span>
-            <span class="album-artist truncate">{album.artist || "Unknown Artist"}</span>
+            <span class="album-artist truncate">{album.album_artist || "Unknown Artist"}</span>
         </div>
     </div>
 </VirtualizedGrid>

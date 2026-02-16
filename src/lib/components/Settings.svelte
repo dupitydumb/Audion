@@ -9,12 +9,16 @@
     syncCoverPathsFromFiles,
     mergeDuplicateCovers,
     type MergeCoverResult,
+    rescanMusic
   } from "$lib/api/tauri";
-  import { loadLibrary } from "$lib/stores/library";
+  import { loadLibrary, loadAlbumsAndArtists, loadPlaylists } from "$lib/stores/library";
   import UpdatePopup from "./UpdatePopup.svelte";
   import { confirm } from "$lib/stores/dialogs";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { onMount, onDestroy } from "svelte";
+  import { progressiveScan } from "$lib/stores/progressiveScan";
+  import { addToast } from "$lib/stores/toast";
+
 
   interface MigrationProgressUpdate {
     current: number;
@@ -56,6 +60,12 @@
   let mergeSuccess = false;
   let mergeProgress: MergeProgressUpdate | null = null;
   let mergePercentage = 0;
+
+  // album match mode
+  let pendingAlbumMatchingMode: string | null = null;
+  let isRescanning = false;
+  let rescanMessage = "";
+  let rescanSuccess = false;
 
   // Event listeners
   let unlistenSync: UnlistenFn | null = null;
@@ -104,6 +114,55 @@
       theme.setAccentColor(customColorInput);
     }
   }
+
+  function handleAlbumModeChange(mode: string) {
+    // Only mark as pending if it's different from current saved setting
+    if (mode !== $appSettings.albumMatchingMode) {
+      pendingAlbumMatchingMode = mode;
+    } else {
+      pendingAlbumMatchingMode = null;
+    }
+  }
+
+  async function handleApplyAndRescan() {
+    if (!pendingAlbumMatchingMode) return;
+
+    isRescanning = true;
+    rescanMessage = "";
+
+    try {
+        // Save the setting first
+        await appSettings.setAlbumMatchingMode(pendingAlbumMatchingMode as any);
+
+        await progressiveScan.startScan(true);
+
+        const result = await rescanMusic();
+
+        // Reload
+        await loadAlbumsAndArtists();
+        await loadPlaylists();
+
+        rescanSuccess = true;
+        rescanMessage = "✓ Rescan complete. Library re-grouped.";
+        pendingAlbumMatchingMode = null;
+
+        const parts = [];
+        if (result.tracks_added > 0) parts.push(`${result.tracks_added} added`);
+        if (result.tracks_updated > 0) parts.push(`${result.tracks_updated} updated`);
+        if (result.tracks_deleted > 0) parts.push(`${result.tracks_deleted} deleted`);
+
+        addToast(parts.length > 0 ? `Rescan complete: ${parts.join(", ")}` : "Rescan complete", "success", 4000);
+
+        setTimeout(() => { rescanMessage = ""; }, 5000);
+    } catch (error) {
+        rescanSuccess = false;
+        rescanMessage = `✗ Failed: ${error}`;
+        addToast("Failed to rescan library", "error");
+    } finally {
+        isRescanning = false;
+        progressiveScan.reset();
+    }
+}
 
   async function openResetModal() {
     const confirmed = await confirm(
@@ -555,6 +614,93 @@
           </div>
         </div>
       </section>
+
+      <!-- Library Organization -->
+      <section class="settings-section">
+        <h3 class="section-title">Library Organization</h3>
+
+        <div class="setting-item">
+          <span class="setting-label">Album Grouping</span>
+          <div class="theme-modes">
+            <button
+              class="mode-btn"
+              class:active={($appSettings.albumMatchingMode === "name_only" && !pendingAlbumMatchingMode) || pendingAlbumMatchingMode === "name_only"}
+              on:click={() => handleAlbumModeChange("name_only")}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="currentColor"
+              >
+                <path
+                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-5-9h10v2H7z"
+                />
+              </svg>
+              <span>By Name Only</span>
+            </button>
+            <button
+              class="mode-btn"
+              class:active={($appSettings.albumMatchingMode === "name_and_artist" && !pendingAlbumMatchingMode) || pendingAlbumMatchingMode === "name_and_artist"}
+              on:click={() => handleAlbumModeChange("name_and_artist")}
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="currentColor"
+              >
+                <path
+                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm1-13h-2v4H7v2h4v4h2v-4h4v-2h-4V7z"
+                />
+              </svg>
+              <span>By Name + Artist</span>
+            </button>
+          </div>
+          {#if pendingAlbumMatchingMode}
+            <div class="pending-rescan">
+              <p class="setting-hint pending-hint">
+                ⚠ Changing this requires a library rescan to take effect.
+              </p>
+              <div class="pending-actions">
+                <button
+                  class="cancel-pending-btn"
+                  on:click={() => pendingAlbumMatchingMode = null}
+                  disabled={isRescanning}
+                >
+                  Cancel
+                </button>
+                <button
+                  class="apply-rescan-btn"
+                  on:click={handleApplyAndRescan}
+                  disabled={isRescanning}
+                >
+                  {#if isRescanning}
+                    Rescanning...
+                  {:else}
+                    Apply & Rescan
+                  {/if}
+                </button>
+              </div>
+            </div>
+          {/if}
+      
+          {#if rescanMessage}
+            <p class="sync-message" class:success={rescanSuccess} class:error={!rescanSuccess}>
+              {rescanMessage}
+            </p>
+          {/if}
+      
+          <p class="setting-hint">
+            {#if (pendingAlbumMatchingMode ?? $appSettings.albumMatchingMode) === "name_only"}
+              Albums with the same name are grouped together, even if by different artists.
+            {:else}
+              "Greatest Hits" by different artists will appear as separate albums.
+            {/if}
+          </p>
+        </div>
+      </section>
+    
 
       <!-- Cover Management -->
       <section class="settings-section">
@@ -1152,6 +1298,61 @@
     outline: none;
     border-color: var(--accent-primary);
   }
+
+  .pending-rescan {
+  margin-top: var(--spacing-sm);
+  padding: var(--spacing-md);
+  background-color: rgba(255, 193, 7, 0.1);
+  border: 1px solid rgba(255, 193, 7, 0.4);
+  border-radius: var(--radius-sm);
+}
+
+.pending-hint {
+  color: #ffc107;
+  margin: 0 0 var(--spacing-sm) 0;
+}
+
+.pending-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.cancel-pending-btn {
+  padding: var(--spacing-xs) var(--spacing-md);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.cancel-pending-btn:hover:not(:disabled) {
+  background-color: var(--bg-highlight);
+}
+
+.apply-rescan-btn {
+  padding: var(--spacing-xs) var(--spacing-md);
+  background-color: var(--accent-primary);
+  color: var(--bg-base);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.apply-rescan-btn:hover:not(:disabled) {
+  background-color: var(--accent-hover);
+}
+
+.apply-rescan-btn:disabled,
+.cancel-pending-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
   .add-btn {
     padding: var(--spacing-sm) var(--spacing-md);
