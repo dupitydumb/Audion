@@ -10,18 +10,11 @@ mod security;
 mod utils;
 
 // =============================================================================
-// NATIVE AUDIO BACKEND (rodio)
+// NATIVE AUDIO BACKEND
 // =============================================================================
-// On Linux, WebKitGTK has issues with the asset:// protocol for media playback.
 // We provide a native audio backend using rodio that bypasses the WebView.
-//
-// By default this is only enabled on Linux. On Windows/Mac, you can enable it
-// by building with: cargo build --features native-audio
-//
-// This might be useful if you want more control over audio playback or if you
-// run into WebView audio issues on those platforms too.
+// This is now the default backend for all platforms.
 // =============================================================================
-#[cfg(any(target_os = "linux", feature = "native-audio"))]
 mod audio;
 
 use db::Database;
@@ -75,13 +68,11 @@ pub fn run() {
             // NATIVE AUDIO BACKEND INITIALIZATION
             // =============================================================================
             // Initialize the native audio backend.
-            // Enabled by default on Linux, or on any platform with --features native-audio.
-            // The frontend checks the platform and decides which backend to use.
+            // This is now the default backend for all platforms.
             // =============================================================================
-            #[cfg(any(target_os = "linux", feature = "native-audio"))]
             {
                 log::info!("[AUDIO] Initializing native audio backend (rodio)...");
-                app.manage(audio::LinuxAudioState::new());
+                app.manage(audio::PlaybackStateSync::new());
             }
 
             // Handle window start mode (desktop only)
@@ -111,7 +102,7 @@ pub fn run() {
             // =============================================================================
             // This block is used on Linux (always) or when native-audio feature is enabled.
             // =============================================================================
-            #[cfg(all(desktop, any(target_os = "linux", feature = "native-audio")))]
+            #[cfg(desktop)]
             {
                 tauri::generate_handler![
                     // Library commands
@@ -197,108 +188,18 @@ pub fn run() {
                     // NATIVE AUDIO COMMANDS
                     // =========================================================================
                     // These commands control the native audio backend (rodio).
-                    // On Linux this is always available. On Win/Mac, only with native-audio feature.
+                    // Now available on all platforms.
                     // =========================================================================
-                    audio::linux_audio_play,
-                    audio::linux_audio_pause,
-                    audio::linux_audio_resume,
-                    audio::linux_audio_stop,
-                    audio::linux_audio_set_volume,
-                    audio::linux_audio_seek,
-                    audio::linux_audio_get_state,
-                    audio::linux_audio_is_finished,
+                    audio::audio_play,
+                    audio::audio_pause,
+                    audio::audio_resume,
+                    audio::audio_stop,
+                    audio::audio_set_volume,
+                    audio::audio_seek,
+                    audio::audio_get_state,
+                    audio::audio_is_finished,
+                    audio::audio_set_eq,
                     audio::native_audio_available,
-                ]
-            }
-            // =============================================================================
-            // DESKTOP WITHOUT NATIVE AUDIO: Standard commands (HTML5 Audio)
-            // =============================================================================
-            // This block is used on Windows/Mac when native-audio feature is NOT enabled.
-            // =============================================================================
-            #[cfg(all(desktop, not(any(target_os = "linux", feature = "native-audio"))))]
-            {
-                tauri::generate_handler![
-                    // Library commands
-                    commands::scan_music,
-                    commands::add_folder,
-                    commands::rescan_music,
-                    commands::get_default_music_dirs,
-                    commands::get_library,
-                    commands::get_tracks_paginated,
-                    commands::get_albums_paginated,
-                    commands::search_library,
-                    commands::get_tracks_by_album,
-                    commands::get_tracks_by_artist,
-                    commands::get_album,
-                    commands::get_albums_by_artist,
-                    commands::add_external_track,
-                    commands::delete_track,
-                    commands::delete_album,
-                    commands::reset_database,
-                    commands::sync_cover_paths_from_files,
-                    // Cover Management commands
-                    commands::covers::migrate_covers_to_files,
-                    commands::covers::get_track_cover_path,
-                    commands::covers::get_batch_cover_paths,
-                    commands::covers::get_album_art_path,
-                    commands::covers::get_cover_as_asset_url,
-                    commands::covers::preload_covers,
-                    commands::covers::cleanup_orphaned_cover_files,
-                    commands::covers::clear_base64_covers,
-                    commands::covers::merge_duplicate_covers,
-                    // Playlist commands
-                    commands::create_playlist,
-                    commands::get_playlists,
-                    commands::get_playlist_tracks,
-                    commands::add_track_to_playlist,
-                    commands::remove_track_from_playlist,
-                    commands::delete_playlist,
-                    commands::rename_playlist,
-                    commands::update_playlist_cover,
-                    commands::reorder_playlist_tracks,
-                    // Lyrics commands
-                    commands::save_lrc_file,
-                    commands::load_lrc_file,
-                    commands::delete_lrc_file,
-                    commands::musixmatch_request,
-                    commands::get_lyrics,
-                    commands::get_current_lyric,
-                    // Metadata commands
-                    commands::download_and_save_audio,
-                    commands::update_track_after_download,
-                    commands::update_track_cover_url,
-                    commands::import_audio_file,
-                    commands::import_audio_bytes,
-                    // Plugin commands
-                    commands::list_plugins,
-                    commands::install_plugin,
-                    commands::uninstall_plugin,
-                    commands::enable_plugin,
-                    commands::disable_plugin,
-                    commands::get_plugin_permissions,
-                    commands::grant_permissions,
-                    commands::check_cross_plugin_permission,
-                    commands::get_cross_plugin_permissions,
-                    commands::revoke_permissions,
-                    commands::get_plugin_dir,
-                    commands::check_plugin_updates,
-                    commands::update_plugin,
-                    commands::save_notification_image,
-                    commands::plugin_save_data,
-                    commands::plugin_get_data,
-                    commands::plugin_list_keys,
-                    commands::plugin_clear_data,
-                    // Network commands
-                    commands::proxy_fetch,
-                    // Window commands
-                    commands::window::get_window_start_mode,
-                    commands::window::set_window_start_mode,
-                    // Discord RPC commands (desktop only)
-                    discord::discord_connect,
-                    discord::discord_update_presence,
-                    discord::discord_clear_presence,
-                    discord::discord_disconnect,
-                    discord::discord_reconnect,
                 ]
             }
             #[cfg(mobile)]

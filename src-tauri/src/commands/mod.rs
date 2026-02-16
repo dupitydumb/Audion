@@ -1,11 +1,11 @@
 // Tauri IPC commands
+pub mod covers;
 pub mod library;
 pub mod lyrics;
 pub mod metadata;
 pub mod network;
 pub mod playlist;
 pub mod plugin;
-pub mod covers;
 
 pub use library::*;
 pub use lyrics::*;
@@ -15,5 +15,3 @@ pub use playlist::*;
 pub use plugin::*;
 pub mod window;
 pub use covers::*;
-pub use library::import_audio_file;
-pub use library::import_audio_bytes;

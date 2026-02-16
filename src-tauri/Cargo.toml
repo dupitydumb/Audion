@@ -91,16 +91,11 @@ trash = "5"
 tauri-plugin-global-shortcut = "2"
 
 # =============================================================================
-# LINUX NATIVE AUDIO BACKEND
+# NATIVE AUDIO BACKEND
 # =============================================================================
-# On Linux, WebKitGTK has issues with the asset:// protocol for media playback.
-# We use rodio to provide native audio playback that bypasses the WebView.
-# This is compiled by default on Linux. On Windows/Mac, enable with --features native-audio
+# We use rodio to provide native audio playback that bypasses the WebView
+# for better performance and reliability across all platforms.
 # =============================================================================
-[target.'cfg(target_os = "linux")'.dependencies]
-# Audio format support:
-# - vorbis: OGG Vorbis via lewton (symphonia-vorbis lacks OGG demuxer)
-# - symphonia-*: FLAC, MP3, WAV, AAC, MP4 via symphonia
 rodio = { version = "0.19", default-features = false, features = [
     "vorbis",
     "symphonia-flac",
@@ -109,14 +104,3 @@ rodio = { version = "0.19", default-features = false, features = [
     "symphonia-aac",
     "symphonia-isomp4"
 ] }
-
-# Optional: Native audio on Windows/Mac (use cargo build --features native-audio)
-[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
-rodio = { version = "0.19", default-features = false, features = [
-    "vorbis",
-    "symphonia-flac",
-    "symphonia-mp3",
-    "symphonia-wav",
-    "symphonia-aac",
-    "symphonia-isomp4"
-], optional = true }

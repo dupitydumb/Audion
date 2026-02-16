@@ -44,3 +44,6 @@ vite.config.ts.timestamp-*
 
 # Plugin examples
 plugin-examples/
+
+#Skills
+.agents/

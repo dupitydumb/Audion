@@ -2,9 +2,16 @@
   import { onMount, onDestroy } from "svelte";
   import { appSettings } from "$lib/stores/settings";
   import { theme } from "$lib/stores/theme";
-  import { cleanupPlayer } from "$lib/stores/player";
-  import { migrateCoversToFiles, isAndroid, isTauri, ensureAudioPermission, openAppSettings, initPlatformDetection } from "$lib/api/tauri";
-  import { initMobileDetection, isMobile } from '$lib/stores/mobile';
+  import { cleanupPlayer, initAudioBackend } from "$lib/stores/player";
+  import {
+    migrateCoversToFiles,
+    isAndroid,
+    isTauri,
+    ensureAudioPermission,
+    openAppSettings,
+    initPlatformDetection,
+  } from "$lib/api/tauri";
+  import { initMobileDetection, isMobile } from "$lib/stores/mobile";
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
   import ProgressiveScanStatus from "$lib/components/ProgressiveScanStatus.svelte";
@@ -23,6 +30,7 @@
     appSettings.initialize();
     theme.initialize();
     initMobileDetection();
+    await initAudioBackend();
 
     // Check Android audio permission first
     if (isAndroid() && isTauri()) {
@@ -52,7 +60,7 @@
   async function checkAndroidPermissions() {
     console.log("[PERMISSIONS] Checking Android audio permissions...");
     const granted = await ensureAudioPermission();
-    
+
     if (!granted) {
       console.warn("[PERMISSIONS] Audio permission not granted");
       showPermissionBanner = true;

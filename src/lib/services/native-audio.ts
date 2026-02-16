@@ -1,23 +1,17 @@
 // =============================================================================
-// LINUX NATIVE AUDIO SERVICE
+// NATIVE AUDIO SERVICE
 // =============================================================================
-// This service provides an abstraction layer for audio playback on Linux.
+// This service provides an abstraction layer for audio playback using
+// a native backend implemented in Rust (rodio).
 //
 // WHY THIS EXISTS:
-// WebKitGTK (the WebView engine on Linux) has issues with the asset:// protocol
-// for media playback. Instead of trying to work around WebView bugs, we use
-// a native audio backend implemented in Rust (rodio).
-//
-// HOW IT WORKS:
-// 1. On app start, we detect if we're running on Linux
-// 2. If on Linux, audio commands are routed to the Rust backend via Tauri invoke
-// 3. The Rust backend uses rodio to play audio through the system default device
-// 4. On Windows/Mac, the existing HTML5 Audio element continues to work
+// Using a native backend provides better performance, consistent behavior
+// across platforms, and avoids WebView-specific audio quirks.
 //
 // DESIGN DECISIONS:
 // - Simple play/pause/stop/seek interface matching the existing player store
-// - Position tracking is done via polling since rodio doesn't emit events
-// - Volume is controlled through the Rust backend, not the WebView
+// - Position tracking is done via polling/events from the Rust backend
+// - Volume is controlled through the Rust backend
 // =============================================================================
 
 import { invoke } from '@tauri-apps/api/core';
@@ -50,17 +44,12 @@ export async function isLinux(): Promise<boolean> {
     } catch (e) {
         // Fallback: check navigator.platform
         isLinuxPlatform = typeof navigator !== 'undefined' &&
-                          navigator.platform.toLowerCase().includes('linux');
+            navigator.platform.toLowerCase().includes('linux');
         return isLinuxPlatform;
     }
 }
 
-// =============================================================================
-// PLAYBACK STATE TYPE
-// =============================================================================
-// This matches the Rust PlaybackState struct
-
-export interface LinuxPlaybackState {
+export interface NativePlaybackState {
     is_playing: boolean;
     position: number;  // seconds
     duration: number;  // seconds
@@ -68,68 +57,79 @@ export interface LinuxPlaybackState {
     current_path: string;
 }
 
-// =============================================================================
-// AUDIO CONTROL FUNCTIONS
-// =============================================================================
-// These functions call the Rust backend via Tauri invoke.
-// They are only called on Linux - the player store handles the platform check.
+export interface EqBand {
+    frequency: number;
+    gain: number;
+}
+
+export interface EqSettings {
+    enabled: boolean;
+    bands: EqBand[];
+}
 
 /**
  * Play an audio file using the native backend
  * @param path - Absolute path to the audio file
  */
-export async function linuxAudioPlay(path: string): Promise<void> {
+export async function nativeAudioPlay(path: string): Promise<void> {
     console.log('[AUDIO] Native play:', path);
-    await invoke('linux_audio_play', { path });
+    await invoke('audio_play', { path });
 }
 
 /**
  * Pause playback
  */
-export async function linuxAudioPause(): Promise<void> {
-    await invoke('linux_audio_pause');
+export async function nativeAudioPause(): Promise<void> {
+    await invoke('audio_pause');
 }
 
 /**
  * Resume playback
  */
-export async function linuxAudioResume(): Promise<void> {
-    await invoke('linux_audio_resume');
+export async function nativeAudioResume(): Promise<void> {
+    await invoke('audio_resume');
 }
 
 /**
  * Stop playback completely
  */
-export async function linuxAudioStop(): Promise<void> {
-    await invoke('linux_audio_stop');
+export async function nativeAudioStop(): Promise<void> {
+    await invoke('audio_stop');
 }
 
 /**
  * Set volume (0.0 to 1.0)
  */
-export async function linuxAudioSetVolume(volume: number): Promise<void> {
-    await invoke('linux_audio_set_volume', { volume });
+export async function nativeAudioSetVolume(volume: number): Promise<void> {
+    await invoke('audio_set_volume', { volume });
 }
 
 /**
  * Seek to position (0.0 to 1.0 as fraction of duration)
  */
-export async function linuxAudioSeek(position: number): Promise<void> {
-    await invoke('linux_audio_seek', { position });
+export async function nativeAudioSeek(position: number): Promise<void> {
+    await invoke('audio_seek', { position });
 }
 
 /**
  * Get current playback state
  */
-export async function linuxAudioGetState(): Promise<LinuxPlaybackState> {
-    return await invoke('linux_audio_get_state');
+export async function nativeAudioGetState(): Promise<NativePlaybackState> {
+    return await invoke('audio_get_state');
 }
 
 /**
  * Check if the current track has finished playing
  */
-export async function linuxAudioIsFinished(): Promise<boolean> {
-    return await invoke('linux_audio_is_finished');
+export async function nativeAudioIsFinished(): Promise<boolean> {
+    return await invoke('audio_is_finished');
+}
+
+/**
+ * Apply equalizer settings
+ */
+export async function nativeAudioSetEq(settings: EqSettings): Promise<void> {
+    await invoke('audio_set_eq', { settings });
 }
 
 // =============================================================================
