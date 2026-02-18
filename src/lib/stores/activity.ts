@@ -8,6 +8,11 @@ export const recentlyPlayed = writable<Track[]>([]);
 
 // Record a play event for a track
 export async function recordTrackPlay(trackId: number, albumId: number | null, durationPlayed: number): Promise<void> {
+    // Only record for tracks with numeric IDs (library tracks)
+    if (typeof trackId !== 'number') {
+        return;
+    }
+
     try {
         await recordPlay(trackId, albumId, durationPlayed);
     } catch (error) {

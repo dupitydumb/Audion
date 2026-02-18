@@ -10,6 +10,7 @@ import {
   duration,
   queue,
   togglePlay,
+  playTrack,
   nextTrack,
   previousTrack,
   seek,
@@ -527,14 +528,13 @@ export class PluginRuntime {
       case 'player.setTrack':
         if (args[0]) {
           const track = args[0];
-          const previousTrack = get(currentTrack);
-          currentTrack.set(track);
-          // Set duration if provided
-          if (track.duration) {
-            duration.set(track.duration);
-          }
-          // Emit trackChange event for lyrics and other plugins
-          pluginEvents.emit('trackChange', { track, previousTrack });
+
+          // Use the main player logic to handle backend selection (HTML5 vs Native)
+          // resolution of stream URLs, and UI state updates.
+          playTrack(track).catch(err => {
+            console.error(`[PluginRuntime] player.setTrack failed:`, err);
+          });
+
           return true;
         }
         return false;

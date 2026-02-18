@@ -13,7 +13,24 @@
   }
   ("use strict");
 
-  const API_BASE = "https://katze.qqdl.site";
+  // API Configuration - Multiple endpoints for different services
+  const API_ENDPOINTS = {
+    SEARCH: [
+      "https://hund.qqdl.site",
+      "https://katze.qqdl.site",
+      "https://tidal.kinoplus.online",
+      "https://maus.qqdl.site",
+      "https://arran.monochrome.tf"
+    ],
+    DETAILS: "https://triton.squid.wtf",         // Artist/Album details
+    STREAM: "https://katze.qqdl.site"            // Stream/playback endpoint
+  };
+
+  // Helper function to get a random search endpoint
+  function getRandomSearchEndpoint() {
+    const searchEndpoints = API_ENDPOINTS.SEARCH;
+    return searchEndpoints[Math.floor(Math.random() * searchEndpoints.length)];
+  }
 
   // ═══════════════════════════════════════════════════════════════════════════
   // TIDAL SEARCH PLUGIN
@@ -24,14 +41,15 @@
     api: null,
     isOpen: false,
     searchMode: "track", // 'track' or 'artist'
-    searchMode: "track", // 'track' or 'artist'
-    searchTimeout: null,
-    currentResults: [],
     searchTimeout: null,
     currentResults: [],
     isPlaying: null, // Currently playing Tidal track ID
     libraryTracks: new Set(), // Set of external_ids or Tidal IDs already in library
     hasNewChanges: false, // Track if we've added new songs
+
+    // Navigation state
+    navigationStack: [], // Stack of {type, data, scrollPosition} for back navigation
+    currentView: "search", // 'search', 'artist', 'album'
 
     init(api) {
       console.log("[TidalSearch] Initializing...");
@@ -247,6 +265,25 @@
                 .tidal-close-btn:hover {
                     background: var(--bg-highlight, #3e3e3e);
                     transform: rotate(90deg);
+                }
+
+                .tidal-back-btn {
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 50%;
+                    border: none;
+                    background: var(--bg-surface, #282828);
+                    color: var(--text-primary, #fff);
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    transition: all 0.2s ease;
+                }
+
+                .tidal-back-btn:hover {
+                    background: var(--bg-highlight, #3e3e3e);
+                    transform: translateX(-2px);
                 }
 
                 .tidal-search-controls {
@@ -669,6 +706,278 @@
                     background: var(--error-color, #f15e6c);
                 }
 
+                /* Artist Page Styles */
+                .tidal-artist-page {
+                    padding: 16px 0;
+                }
+
+                .tidal-artist-header {
+                    display: flex;
+                    align-items: center;
+                    gap: 20px;
+                    margin-bottom: 32px;
+                    padding: 0 4px;
+                }
+
+                .tidal-artist-page-picture {
+                    width: 120px;
+                    height: 120px;
+                    border-radius: 50%;
+                    object-fit: cover;
+                    background: var(--bg-highlight, #3e3e3e);
+                }
+
+                .tidal-artist-header-info h3 {
+                    font-size: 28px;
+                    font-weight: 700;
+                    color: var(--text-primary, #fff);
+                    margin: 0 0 8px 0;
+                }
+
+                .tidal-artist-meta {
+                    font-size: 14px;
+                    color: var(--text-secondary, #b3b3b3);
+                }
+
+                /* Album Page Styles */
+                .tidal-album-page {
+                    padding: 16px 0;
+                }
+
+                .tidal-album-page-header {
+                    display: flex;
+                    gap: 24px;
+                    margin-bottom: 32px;
+                    padding: 0 4px;
+                }
+
+                .tidal-album-page-cover {
+                    width: 200px;
+                    height: 200px;
+                    border-radius: 8px;
+                    object-fit: cover;
+                    background: var(--bg-highlight, #3e3e3e);
+                    flex-shrink: 0;
+                }
+
+                .tidal-album-page-info {
+                    flex: 1;
+                    display: flex;
+                    flex-direction: column;
+                    justify-content: center;
+                }
+
+                .tidal-album-page-info h3 {
+                    font-size: 24px;
+                    font-weight: 700;
+                    color: var(--text-primary, #fff);
+                    margin: 0 0 8px 0;
+                }
+
+                .tidal-album-page-artist {
+                    font-size: 16px;
+                    color: var(--text-secondary, #b3b3b3);
+                    margin-bottom: 8px;
+                }
+
+                .tidal-album-page-meta {
+                    font-size: 13px;
+                    color: var(--text-subdued, #6a6a6a);
+                }
+
+                /* Section Styles */
+                .tidal-section {
+                    margin-bottom: 32px;
+                }
+
+                .tidal-section-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    margin-bottom: 16px;
+                    padding: 0 4px;
+                }
+
+                .tidal-section-header h4 {
+                    font-size: 18px;
+                    font-weight: 600;
+                    color: var(--text-primary, #fff);
+                    margin: 0;
+                }
+
+                .tidal-section-count {
+                    font-size: 13px;
+                    color: var(--text-subdued, #6a6a6a);
+                }
+
+                /* Save All Button */
+                .tidal-save-all-btn {
+                    padding: 8px 16px;
+                    border-radius: 20px;
+                    border: 1px solid var(--accent-primary, #1DB954);
+                    background: transparent;
+                    color: var(--accent-primary, #1DB954);
+                    font-size: 13px;
+                    font-weight: 600;
+                    cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    transition: all 0.2s ease;
+                }
+
+                .tidal-save-all-btn:hover {
+                    background: var(--accent-primary, #1DB954);
+                    color: #fff;
+                }
+
+                /* Album Grid */
+                .tidal-album-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+                    gap: 16px;
+                    padding: 0 4px;
+                }
+
+                .tidal-album-item {
+                    cursor: pointer;
+                    border-radius: 8px;
+                    padding: 12px;
+                    transition: background 0.2s ease;
+                }
+
+                .tidal-album-item:hover {
+                    background: var(--bg-surface, #282828);
+                }
+
+                .tidal-album-cover {
+                    width: 100%;
+                    aspect-ratio: 1;
+                    border-radius: 4px;
+                    object-fit: cover;
+                    background: var(--bg-highlight, #3e3e3e);
+                    margin-bottom: 8px;
+                }
+
+                .tidal-album-title {
+                    font-size: 14px;
+                    font-weight: 500;
+                    color: var(--text-primary, #fff);
+                    margin-bottom: 4px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+
+                .tidal-album-meta {
+                    font-size: 12px;
+                    color: var(--text-subdued, #6a6a6a);
+                }
+
+                /* Track List */
+                .tidal-track-list {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 2px;
+                }
+
+                .tidal-track-number {
+                    width: 32px;
+                    text-align: center;
+                    font-size: 14px;
+                    color: var(--text-subdued, #6a6a6a);
+                    flex-shrink: 0;
+                }
+
+                /* Search Results Grid */
+                .tidal-search-results-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+                    gap: 16px;
+                    padding: 0 4px;
+                    margin-bottom: 8px;
+                }
+
+                /* Artist Cards */
+                .tidal-artist-card {
+                    cursor: pointer;
+                    border-radius: 8px;
+                    padding: 12px;
+                    transition: background 0.2s ease;
+                    text-align: center;
+                }
+
+                .tidal-artist-card:hover {
+                    background: var(--bg-surface, #282828);
+                }
+
+                .tidal-artist-card-picture {
+                    width: 100%;
+                    aspect-ratio: 1;
+                    border-radius: 50%;
+                    object-fit: cover;
+                    background: var(--bg-highlight, #3e3e3e);
+                    margin-bottom: 12px;
+                }
+
+                .tidal-artist-card-name {
+                    font-size: 14px;
+                    font-weight: 500;
+                    color: var(--text-primary, #fff);
+                    margin-bottom: 4px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+
+                .tidal-artist-card-type {
+                    font-size: 12px;
+                    color: var(--text-subdued, #6a6a6a);
+                    text-transform: uppercase;
+                    letter-spacing: 0.5px;
+                }
+
+                /* Album Cards */
+                .tidal-album-card {
+                    cursor: pointer;
+                    border-radius: 8px;
+                    padding: 12px;
+                    transition: background 0.2s ease;
+                }
+
+                .tidal-album-card:hover {
+                    background: var(--bg-surface, #282828);
+                }
+
+                .tidal-album-card-cover {
+                    width: 100%;
+                    aspect-ratio: 1;
+                    border-radius: 4px;
+                    object-fit: cover;
+                    background: var(--bg-highlight, #3e3e3e);
+                    margin-bottom: 8px;
+                }
+
+                .tidal-album-card-title {
+                    font-size: 14px;
+                    font-weight: 500;
+                    color: var(--text-primary, #fff);
+                    margin-bottom: 4px;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    display: -webkit-box;
+                    -webkit-line-clamp: 2;
+                    -webkit-box-orient: vertical;
+                }
+
+                .tidal-album-card-artist {
+                    font-size: 12px;
+                    color: var(--text-subdued, #6a6a6a);
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+
                 /* ═══ Mobile Responsive ═══ */
                 @media (max-width: 768px) {
                     #tidal-search-panel {
@@ -791,40 +1100,37 @@
       panel.id = "tidal-search-panel";
       panel.innerHTML = `
                 <div class="tidal-search-header">
+                    <button class="tidal-back-btn" style="display: none;" title="Back">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 12H5M12 19l-7-7 7-7"/>
+                        </svg>
+                    </button>
                     <h2>
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
                             <circle cx="11" cy="11" r="8" fill="none" stroke="currentColor" stroke-width="2"/>
                             <path d="M21 21l-4.35-4.35" stroke="currentColor" stroke-width="2" fill="none"/>
                         </svg>
-                        Tidal Search
+                        <span class="tidal-panel-title">Tidal Search</span>
                         <span class="tidal-badge">TIDAL</span>
                     </h2>
                     <button class="tidal-close-btn" title="Close">✕</button>
                 </div>
                 <div class="tidal-search-controls">
-                    <input type="text" class="tidal-search-input" placeholder="Search for tracks or artists..." autofocus>
+                    <input type="text" class="tidal-search-input" placeholder="Search for music on Tidal..." autofocus>
                     <div class="tidal-mode-toggle">
                         <button class="tidal-mode-btn active" data-mode="track">Tracks</button>
                         <button class="tidal-mode-btn" data-mode="artist">Artists</button>
+                        <button class="tidal-mode-btn" data-mode="album">Albums</button>
                     </div>
                 </div>
                 <div class="tidal-results-info" style="display: none;">
                     <span class="tidal-results-count"></span>
-                    <div class="tidal-quality-selector">
-                        <label>Quality:</label>
-                        <select id="tidal-quality">
-                            <option value="HI_RES_LOSSLESS">Hi-Res (24-bit)</option>
-                            <option value="LOSSLESS" selected>Lossless (16-bit)</option>
-                            <option value="HIGH">High (320kbps)</option>
-                            <option value="LOW">Low (96kbps)</option>
-                        </select>
-                    </div>
                 </div>
                 <div class="tidal-results-container">
                     <div class="tidal-empty">
                         <div class="tidal-empty-icon">🔍</div>
-                        <div>Search for tracks on Tidal</div>
-                        <div style="font-size: 12px; margin-top: 8px; color: var(--text-subdued);">Click any track to play it</div>
+                        <div>Search for music on Tidal</div>
+                        <div style="font-size: 12px; margin-top: 8px; color: var(--text-subdued);">Artists, Albums, and Tracks</div>
                     </div>
                 </div>
             `;
@@ -832,6 +1138,7 @@
 
       // Event listeners
       panel.querySelector(".tidal-close-btn").onclick = () => this.close();
+      panel.querySelector(".tidal-back-btn").onclick = () => this.navigateBack();
 
       const input = panel.querySelector(".tidal-search-input");
       input.addEventListener("input", (e) => this.handleSearch(e.target.value));
@@ -839,6 +1146,7 @@
         if (e.key === "Escape") this.close();
       });
 
+      // Mode toggle listeners
       panel.querySelectorAll(".tidal-mode-btn").forEach((btn) => {
         btn.onclick = (e) => this.setSearchMode(e.target.dataset.mode);
       });
@@ -929,6 +1237,12 @@
         this.api?.library?.refresh?.();
         this.hasNewChanges = false;
       }
+
+      // Reset navigation state
+      this.navigationStack = [];
+      this.currentView = "search";
+      this.updateBackButton();
+      this.updatePanelTitle("Tidal Search");
     },
 
     async fetchLibraryTracks() {
@@ -997,8 +1311,17 @@
       this.showLoading();
 
       try {
-        const param = this.searchMode === "track" ? "s" : "a";
-        const url = `${API_BASE}/search/?${param}=${encodeURIComponent(query)}`;
+        // Use different parameters based on search mode
+        let param;
+        if (this.searchMode === "track") {
+          param = "s"; // Track search
+        } else if (this.searchMode === "artist") {
+          param = "a"; // Artist search  
+        } else {
+          param = "al"; // Album search
+        }
+
+        const url = `${getRandomSearchEndpoint()}/search/?${param}=${encodeURIComponent(query)}`;
 
         // Use CORS-free fetch via Tauri backend
         const response = this.api.fetch
@@ -1012,10 +1335,13 @@
         const data = await response.json();
         this.currentResults = data;
 
+        // Render based on mode
         if (this.searchMode === "track") {
           this.renderTrackResults(data);
-        } else {
+        } else if (this.searchMode === "artist") {
           this.renderArtistResults(data);
+        } else {
+          this.renderAlbumResults(data);
         }
       } catch (err) {
         console.error("[TidalSearch] Search error:", err);
@@ -1068,6 +1394,139 @@
                 `;
       }
       if (info) info.style.display = "none";
+    },
+
+    renderUnifiedResults(data) {
+      const container = document.querySelector(".tidal-results-container");
+      const info = document.querySelector(".tidal-results-info");
+
+      // Extract all result types
+      const tracks = data?.data?.items || [];
+      const artists = data?.data?.artists?.items || [];
+      const albums = data?.data?.albums?.items || [];
+
+      const totalResults = tracks.length + artists.length + albums.length;
+
+      if (info) {
+        info.querySelector(".tidal-results-count").textContent =
+          `Found ${totalResults} results`;
+        info.style.display = "flex";
+      }
+
+      if (totalResults === 0) {
+        container.innerHTML = `
+          <div class="tidal-empty">
+            <div class="tidal-empty-icon">😔</div>
+            <div>No results found</div>
+          </div>
+        `;
+        return;
+      }
+
+      let html = '';
+
+      // Artists Section
+      if (artists.length > 0) {
+        html += `
+          <div class="tidal-section">
+            <div class="tidal-section-header">
+              <h4>Artists</h4>
+              <span class="tidal-section-count">${artists.length} results</span>
+            </div>
+            <div class="tidal-search-results-grid">
+              ${artists.map((artist) => this.renderArtistCard(artist)).join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      // Albums Section
+      if (albums.length > 0) {
+        html += `
+          <div class="tidal-section">
+            <div class="tidal-section-header">
+              <h4>Albums</h4>
+              <span class="tidal-section-count">${albums.length} results</span>
+            </div>
+            <div class="tidal-search-results-grid">
+              ${albums.map((album) => this.renderAlbumCard(album)).join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      // Tracks Section
+      if (tracks.length > 0) {
+        html += `
+          <div class="tidal-section">
+            <div class="tidal-section-header">
+              <h4>Tracks</h4>
+              <span class="tidal-section-count">${tracks.length} results</span>
+            </div>
+            <div class="tidal-track-list">
+              ${tracks.map((track) => this.renderTrackItem(track)).join("")}
+            </div>
+          </div>
+        `;
+      }
+
+      container.innerHTML = html;
+
+      // Attach event listeners
+      this.attachTrackEventListeners(container);
+
+      // Attach artist click listeners
+      container.querySelectorAll(".tidal-artist-card").forEach((el) => {
+        const artistId = el.dataset.artistId;
+        if (artistId) {
+          const artist = artists.find((a) => String(a.id) === artistId);
+          if (artist) {
+            el.onclick = () => this.handleArtistClick(artist);
+          }
+        }
+      });
+
+      // Attach album click listeners
+      container.querySelectorAll(".tidal-album-card").forEach((el) => {
+        const albumId = el.dataset.albumId;
+        if (albumId) {
+          el.onclick = () => this.handleAlbumClick(albumId);
+        }
+      });
+    },
+
+    renderArtistCard(artist) {
+      const pictureUrl = artist.picture
+        ? `https://resources.tidal.com/images/${artist.picture.replace(/-/g, "/")}/160x160.jpg`
+        : "";
+
+      return `
+        <div class="tidal-artist-card" data-artist-id="${artist.id}">
+          <img class="tidal-artist-card-picture" src="${pictureUrl}"
+               alt="${this.escapeHtml(artist.name)}"
+               onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 160 160%22%3E%3Ccircle fill=%22%23282828%22 cx=%2280%22 cy=%2280%22 r=%2280%22/%3E%3Ctext x=%2280%22 y=%2295%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2250%22%3E👤%3C/text%3E%3C/svg%3E'">
+          <div class="tidal-artist-card-name">${this.escapeHtml(artist.name)}</div>
+          <div class="tidal-artist-card-type">Artist</div>
+        </div>
+      `;
+    },
+
+    renderAlbumCard(album) {
+      const coverUrl = album.cover
+        ? `https://resources.tidal.com/images/${album.cover.replace(/-/g, "/")}/160x160.jpg`
+        : "";
+
+      const artistName = album.artist?.name || album.artists?.[0]?.name || "Various Artists";
+
+      return `
+        <div class="tidal-album-card" data-album-id="${album.id}">
+          <img class="tidal-album-card-cover" src="${coverUrl}"
+               alt="${this.escapeHtml(album.title)}"
+               onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 160 160%22%3E%3Crect fill=%22%23282828%22 width=%22160%22 height=%22160%22/%3E%3Ctext x=%2280%22 y=%2290%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2240%22%3E🎵%3C/text%3E%3C/svg%3E'">
+          <div class="tidal-album-card-title">${this.escapeHtml(album.title)}</div>
+          <div class="tidal-album-card-artist">${this.escapeHtml(artistName)}</div>
+        </div>
+      `;
     },
 
     renderTrackResults(data) {
@@ -1197,6 +1656,45 @@
       // Add click handlers
       container.querySelectorAll(".tidal-artist-item").forEach((el, index) => {
         el.onclick = () => this.handleArtistClick(artists[index]);
+      });
+    },
+
+    renderAlbumResults(data) {
+      const container = document.querySelector(".tidal-results-container");
+      const info = document.querySelector(".tidal-results-info");
+
+      // Albums are in data.albums.items according to API docs
+      const items = data?.data?.albums?.items || [];
+      const total = data?.data?.albums?.totalNumberOfItems || 0;
+
+      if (info) {
+        info.querySelector(".tidal-results-count").textContent =
+          total > 0 ? `${total} albums` : "No albums found";
+        info.style.display = "flex";
+      }
+
+      if (items.length === 0) {
+        container.innerHTML = `
+                    <div class="tidal-empty">
+                        <div class="tidal-empty-icon">😔</div>
+                        <div>No albums found</div>
+                    </div>
+                `;
+        return;
+      }
+
+      container.innerHTML = `
+                <div class="tidal-search-results-grid">
+                    ${items.map((album) => this.renderAlbumCard(album)).join("")}
+                </div>
+            `;
+
+      // Add click handlers
+      container.querySelectorAll(".tidal-album-card").forEach((el) => {
+        const albumId = el.dataset.albumId;
+        if (albumId) {
+          el.onclick = () => this.handleAlbumClick(albumId);
+        }
       });
     },
 
@@ -1340,7 +1838,7 @@
     },
 
     async fetchStream(trackId, quality) {
-      const url = `${API_BASE}/track/?id=${trackId}&quality=${quality}`;
+      const url = `${API_ENDPOINTS.STREAM}/track/?id=${trackId}&quality=${quality}`;
 
       // Use CORS-free fetch via Tauri backend
       const response = this.api.fetch
@@ -1358,7 +1856,7 @@
     async searchCoverForRPC(title, artist, trackId) {
       try {
         const query = `${title} ${artist}`;
-        const url = `${API_BASE}/search/?s=${encodeURIComponent(query)}`;
+        const url = `${getRandomSearchEndpoint()}/search/?s=${encodeURIComponent(query)}`;
 
         const response = this.api.fetch
           ? await this.api.fetch(url)
@@ -1394,6 +1892,106 @@
         console.log("[TidalSearch] Cover search error:", error);
       }
 
+      return null;
+    },
+
+    // Search for artist picture from Tidal with local caching
+    async searchArtistPictureForRPC(artistName) {
+      console.log('[TidalSearch] searchArtistPictureForRPC called for:', artistName);
+      try {
+        // Sanitize artist name for file system
+        const sanitizedName = artistName
+          .replace(/[<>:"/\\|?*]/g, '_')
+          .replace(/\s+/g, '_')
+          .toLowerCase();
+
+        console.log('[TidalSearch] Sanitized:', sanitizedName);
+        console.log('[TidalSearch] API check - path:', !!this.api.path, 'fs:', !!this.api.fs, 'fetch:', !!this.api.fetch, 'convertFileSrc:', !!this.api.convertFileSrc);
+
+        // Check if we have Tauri API for file operations
+        if (this.api.path && this.api.fs) {
+          console.log('[TidalSearch] Tauri APIs available, checking cache...');
+          try {
+            // Get app data directory
+            const appDataDir = await this.api.path.appDataDir();
+            const artistsDir = await this.api.path.join(appDataDir, 'covers', 'artists');
+            const imagePath = await this.api.path.join(artistsDir, `${sanitizedName}.jpg`);
+
+            // Check if cached image exists
+            const exists = await this.api.fs.exists(imagePath);
+            console.log('[TidalSearch] Cache check - path:', imagePath, 'exists:', exists);
+
+            if (exists) {
+              console.log('[TidalSearch] Using cached artist image:', imagePath);
+              // Convert to asset URL that can be used in src attribute
+              return this.api.convertFileSrc(imagePath);
+            }
+          } catch (cacheError) {
+            console.log('[TidalSearch] Cache check failed:', cacheError);
+            // Continue to fetch from API
+          }
+        } else {
+          console.log('[TidalSearch] Tauri APIs not available for cache check');
+        }
+
+        // Fetch from Tidal API
+        const url = `${getRandomSearchEndpoint()}/search/?a=${encodeURIComponent(artistName)}`;
+
+        const response = this.api.fetch
+          ? await this.api.fetch(url)
+          : await fetch(url);
+
+        if (!response.ok) {
+          console.log("[TidalSearch] Artist picture search failed:", response.status);
+          return null;
+        }
+
+        const data = await response.json();
+        const artists = data?.data?.artists?.items || [];
+
+        if (artists.length > 0 && artists[0].picture) {
+          const pictureUrl = `https://resources.tidal.com/images/${artists[0].picture.replace(/-/g, "/")}/480x480.jpg`;
+          console.log('[TidalSearch] Found picture URL from API:', pictureUrl);
+
+          // Download and cache the image if Tauri API is available
+          if (this.api.path && this.api.fs && this.api.fetch) {
+            console.log('[TidalSearch] Attempting to download and cache...');
+            try {
+              const appDataDir = await this.api.path.appDataDir();
+              const artistsDir = await this.api.path.join(appDataDir, 'covers', 'artists');
+              const imagePath = await this.api.path.join(artistsDir, `${sanitizedName}.jpg`);
+
+              // Ensure directory exists
+              console.log('[TidalSearch] Creating directory:', artistsDir);
+              await this.api.fs.createDir(artistsDir, { recursive: true });
+
+              // Download image
+              console.log('[TidalSearch] Downloading from:', pictureUrl);
+              const imageResponse = await this.api.fetch(pictureUrl);
+              if (imageResponse.ok) {
+                const arrayBuffer = await imageResponse.arrayBuffer();
+                const uint8Array = new Uint8Array(arrayBuffer);
+
+                // Write to file
+                await this.api.fs.writeBinaryFile(imagePath, uint8Array);
+                console.log('[TidalSearch] Cached artist image:', imagePath);
+
+                // Return converted path
+                return this.api.convertFileSrc(imagePath);
+              }
+            } catch (saveError) {
+              console.log('[TidalSearch] Failed to cache artist image:', saveError);
+              // Fall back to direct URL
+              return pictureUrl;
+            }
+          }
+
+          // If no Tauri API, return direct URL
+          return pictureUrl;
+        }
+      } catch (error) {
+        console.log("[TidalSearch] Artist picture search error:", error);
+      }
       return null;
     },
 
@@ -1563,15 +2161,619 @@
       if (albumArt && coverUrl) albumArt.src = coverUrl;
     },
 
-    handleArtistClick(artist) {
-      console.log("[TidalSearch] Artist clicked:", artist.name);
-      // Search for tracks by this artist
-      const input = document.querySelector(".tidal-search-input");
-      if (input) {
-        input.value = artist.name;
-        this.setSearchMode("track");
-        this.handleSearch(artist.name);
+    async handleArtistClick(artist) {
+      console.log("[TidalSearch] Navigating to artist page:", artist.name);
+
+      // Save current scroll position
+      const container = document.querySelector(".tidal-results-container");
+      const scrollPosition = container?.scrollTop || 0;
+
+      // Push current search state to navigation stack
+      this.navigationStack.push({
+        type: "search",
+        mode: this.searchMode,
+        query: document.querySelector(".tidal-search-input")?.value || "",
+        results: this.currentResults,
+        scrollPosition: scrollPosition
+      });
+
+      // Navigate to artist page
+      this.currentView = "artist";
+      this.updateBackButton();
+      this.updatePanelTitle("Artist");
+
+      // Fetch and display artist details
+      await this.fetchAndRenderArtistPage(artist.id);
+    },
+
+    async fetchAndRenderArtistPage(artistId) {
+      this.showLoading();
+
+      try {
+        const url = `${API_ENDPOINTS.DETAILS}/artist/?f=${artistId}`;
+
+        const response = this.api.fetch
+          ? await this.api.fetch(url)
+          : await fetch(url);
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log("[TidalSearch] Artist data:", data);
+
+        this.renderArtistPage(data);
+      } catch (err) {
+        console.error("[TidalSearch] Failed to fetch artist:", err);
+        this.showError(`Failed to load artist: ${err.message}`);
       }
+    },
+
+    async handleAlbumClick(albumId) {
+      console.log("[TidalSearch] Navigating to album page:", albumId);
+
+      // Save current scroll position
+      const container = document.querySelector(".tidal-results-container");
+      const scrollPosition = container?.scrollTop || 0;
+
+      // Push current view state to navigation stack
+      this.navigationStack.push({
+        type: this.currentView,
+        scrollPosition: scrollPosition,
+        // Store enough data to restore the view
+        data: this.currentView === "artist" ?
+          document.querySelector(".tidal-results-container").innerHTML :
+          null
+      });
+
+      // Navigate to album page
+      this.currentView = "album";
+      this.updateBackButton();
+      this.updatePanelTitle("Album");
+
+      // Fetch and display album details
+      await this.fetchAndRenderAlbumPage(albumId);
+    },
+
+    async fetchAndRenderAlbumPage(albumId) {
+      this.showLoading();
+
+      try {
+        const url = `${API_ENDPOINTS.DETAILS}/album/?id=${albumId}`;
+
+        const response = this.api.fetch
+          ? await this.api.fetch(url)
+          : await fetch(url);
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log("[TidalSearch] Album data:", data);
+
+        this.renderAlbumPage(data);
+      } catch (err) {
+        console.error("[TidalSearch] Failed to fetch album:", err);
+        this.showError(`Failed to load album: ${err.message}`);
+      }
+    },
+
+    navigateBack() {
+      if (this.navigationStack.length === 0) return;
+
+      const previousView = this.navigationStack.pop();
+      console.log("[TidalSearch] Navigating back to:", previousView.type);
+
+      if (previousView.type === "search") {
+        // Restore search view
+        this.currentView = "search";
+        this.searchMode = previousView.mode;
+        this.currentResults = previousView.results;
+
+        // Restore search input
+        const input = document.querySelector(".tidal-search-input");
+        if (input) input.value = previousView.query;
+
+        // Restore results
+        if (this.searchMode === "track") {
+          this.renderTrackResults(previousView.results);
+        } else {
+          this.renderArtistResults(previousView.results);
+        }
+
+        // Restore scroll position
+        setTimeout(() => {
+          const container = document.querySelector(".tidal-results-container");
+          if (container) container.scrollTop = previousView.scrollPosition;
+        }, 0);
+
+        this.updatePanelTitle("Tidal Search");
+      } else if (previousView.type === "artist" && previousView.data) {
+        // Restore artist view
+        this.currentView = "artist";
+        const container = document.querySelector(".tidal-results-container");
+        if (container) {
+          container.innerHTML = previousView.data;
+
+          // Re-attach event listeners for album clicks
+          container.querySelectorAll(".tidal-album-item").forEach((el) => {
+            const albumId = el.dataset.albumId;
+            if (albumId) {
+              el.onclick = () => this.handleAlbumClick(albumId);
+            }
+          });
+
+          // Re-attach event listeners for track play/save
+          this.attachTrackEventListeners(container);
+        }
+
+        // Restore scroll position
+        setTimeout(() => {
+          if (container) container.scrollTop = previousView.scrollPosition;
+        }, 0);
+
+        this.updatePanelTitle("Artist");
+      }
+
+      this.updateBackButton();
+    },
+
+    updateBackButton() {
+      const backBtn = document.querySelector(".tidal-back-btn");
+      if (backBtn) {
+        backBtn.style.display = this.navigationStack.length > 0 ? "flex" : "none";
+      }
+    },
+
+    updatePanelTitle(title) {
+      const titleElement = document.querySelector(".tidal-panel-title");
+      if (titleElement) {
+        titleElement.textContent = title;
+      }
+    },
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // ARTIST & ALBUM PAGE RENDERING
+    // ═══════════════════════════════════════════════════════════════════════
+
+    renderArtistPage(artistData) {
+      const container = document.querySelector(".tidal-results-container");
+      const info = document.querySelector(".tidal-results-info");
+
+      if (info) info.style.display = "none";
+
+      // Based on actual API response: no data field, albums at root, tracks (not topTracks) is direct array
+      const albums = artistData.albums?.items || [];
+      const tracks = artistData.tracks || [];
+
+      // Extract artist info from first album or first track
+      const artist = albums[0]?.artist || tracks[0]?.artists?.[0] || {};
+
+      // Store tracks in currentResults so they can be accessed for playback/saving
+      this.currentResults = {
+        data: {
+          items: tracks
+        }
+      };
+
+      const artistPictureUrl = artist.picture
+        ? `https://resources.tidal.com/images/${artist.picture.replace(/-/g, "/")}/480x480.jpg`
+        : "";
+
+      let html = `
+        <div class="tidal-artist-page">
+          <div class="tidal-artist-header">
+            <img class="tidal-artist-page-picture" src="${artistPictureUrl}"
+                 alt="${this.escapeHtml(artist.name || "Artist")}"
+                 onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 480 480%22%3E%3Ccircle fill=%22%23282828%22 cx=%22240%22 cy=%22240%22 r=%22240%22/%3E%3Ctext x=%22240%22 y=%22280%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2280%22%3E👤%3C/text%3E%3C/svg%3E'">
+            <div class="tidal-artist-header-info">
+              <h3>${this.escapeHtml(artist.name || "Unknown Artist")}</h3>
+              <div class="tidal-artist-meta">
+                ${artist.artistTypes?.join(", ") || "Artist"}
+              </div>
+            </div>
+          </div>
+      `;
+
+      // Top Tracks section
+      if (tracks.length > 0) {
+        const displayTracks = this.showAllArtistTracks ? tracks : tracks.slice(0, 25);
+        const hasMoreTracks = tracks.length > 25;
+
+        html += `
+          <div class="tidal-section">
+            <div class="tidal-section-header">
+              <h4>Top Tracks</h4>
+              <button class="tidal-save-all-btn" data-type="artist-tracks">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                </svg>
+                Save All ${tracks.length} Tracks
+              </button>
+            </div>
+            <div class="tidal-track-list">
+              ${displayTracks.map((track) => this.renderTrackItem(track)).join("")}
+            </div>
+            ${hasMoreTracks && !this.showAllArtistTracks ? `
+              <button class="tidal-load-more-btn" data-type="tracks">
+                Load More Tracks (${tracks.length - 25} remaining)
+              </button>
+            ` : ''}
+          </div>
+        `;
+      }
+
+      // Albums section - filter duplicates by exact title match
+      if (albums.length > 0) {
+        const uniqueAlbums = [];
+        const seenTitles = new Set();
+
+        for (const album of albums) {
+          const title = album.title?.toLowerCase().trim();
+          if (title && !seenTitles.has(title)) {
+            seenTitles.add(title);
+            uniqueAlbums.push(album);
+          }
+        }
+
+        const displayAlbums = this.showAllArtistAlbums ? uniqueAlbums : uniqueAlbums.slice(0, 25);
+        const hasMoreAlbums = uniqueAlbums.length > 25;
+
+        html += `
+          <div class="tidal-section">
+            <div class="tidal-section-header">
+              <h4>Albums</h4>
+              <span class="tidal-section-count">${uniqueAlbums.length} albums</span>
+            </div>
+            <div class="tidal-album-grid">
+              ${displayAlbums.map((album) => this.renderAlbumGridItem(album)).join("")}
+            </div>
+            ${hasMoreAlbums && !this.showAllArtistAlbums ? `
+              <button class="tidal-load-more-btn" data-type="albums">
+                Load More Albums (${uniqueAlbums.length - 25} remaining)
+              </button>
+            ` : ''}
+          </div>
+        `;
+      }
+
+      html += `</div>`;
+
+      container.innerHTML = html;
+
+      // Attach event listeners
+      this.attachTrackEventListeners(container);
+
+      // Attach album click listeners
+      container.querySelectorAll(".tidal-album-item").forEach((el) => {
+        const albumId = el.dataset.albumId;
+        if (albumId) {
+          el.onclick = () => this.handleAlbumClick(albumId);
+        }
+      });
+
+      // Attach save all button listener
+      const saveAllBtn = container.querySelector(".tidal-save-all-btn");
+      if (saveAllBtn) {
+        saveAllBtn.onclick = () => {
+          // Get all tracks from current artist data
+          const allTracks = artistData.tracks || [];
+          this.saveAllTracks(allTracks, "artist");
+        };
+      }
+
+      // Store current artist data for re-rendering on load more
+      this.currentArtistData = artistData;
+
+      // Attach load more button listeners
+      const loadMoreBtns = container.querySelectorAll(".tidal-load-more-btn");
+      loadMoreBtns.forEach(btn => {
+        const type = btn.dataset.type;
+        btn.onclick = () => {
+          if (type === "tracks") {
+            this.showAllArtistTracks = true;
+          } else if (type === "albums") {
+            this.showAllArtistAlbums = true;
+          }
+          // Re-render the artist page
+          this.renderArtistPage(artistData);
+        };
+      });
+    },
+
+    renderAlbumGridItem(album) {
+      const coverUrl = album.cover
+        ? `https://resources.tidal.com/images/${album.cover.replace(/-/g, "/")}/160x160.jpg`
+        : "";
+
+      const releaseYear = album.releaseDate
+        ? new Date(album.releaseDate).getFullYear()
+        : "";
+
+      return `
+        <div class="tidal-album-item" data-album-id="${album.id}">
+          <img class="tidal-album-cover" src="${coverUrl}" 
+               alt="${this.escapeHtml(album.title)}"
+               onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 160 160%22%3E%3Crect fill=%22%23282828%22 width=%22160%22 height=%22160%22/%3E%3Ctext x=%2280%22 y=%2290%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2240%22%3E🎵%3C/text%3E%3C/svg%3E'">
+          <div class="tidal-album-info">
+            <div class="tidal-album-title">${this.escapeHtml(album.title)}</div>
+            <div class="tidal-album-meta">
+              ${releaseYear} • ${album.numberOfTracks || 0} tracks
+            </div>
+          </div>
+        </div>
+      `;
+    },
+
+    renderAlbumPage(albumData) {
+      const container = document.querySelector(".tidal-results-container");
+      const info = document.querySelector(".tidal-results-info");
+
+      if (info) info.style.display = "none";
+
+      const album = albumData.data;
+      // Tracks are in data.items, wrapped as {item: trackData, type: 'track'}
+      const trackItems = albumData.data?.items || [];
+      const tracks = trackItems.map(t => t.item).filter(Boolean);
+
+      console.log("[TidalSearch] Album data:", albumData);
+      console.log("[TidalSearch] Tracks found:", tracks.length, tracks);
+
+      // Store tracks in currentResults so they can be accessed for playback/saving
+      this.currentResults = {
+        data: {
+          items: tracks
+        }
+      };
+
+      const coverUrl = album.cover
+        ? `https://resources.tidal.com/images/${album.cover.replace(/-/g, "/")}/320x320.jpg`
+        : "";
+
+      const releaseYear = album.releaseDate
+        ? new Date(album.releaseDate).getFullYear()
+        : "";
+
+      const artistName = album.artist?.name || album.artists?.[0]?.name || "Unknown Artist";
+
+      let html = `
+        <div class="tidal-album-page">
+          <div class="tidal-album-page-header">
+            <img class="tidal-album-page-cover" src="${coverUrl}"
+                 alt="${this.escapeHtml(album.title)}"
+                 onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 320 320%22%3E%3Crect fill=%22%23282828%22 width=%22320%22 height=%22320%22/%3E%3Ctext x=%22160%22 y=%22180%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2280%22%3E🎵%3C/text%3E%3C/svg%3E'">
+            <div class="tidal-album-page-info">
+              <h3>${this.escapeHtml(album.title)}</h3>
+              <div class="tidal-album-page-artist">${this.escapeHtml(artistName)}</div>
+              <div class="tidal-album-page-meta">
+                ${releaseYear} • ${album.numberOfTracks || 0} tracks • ${this.formatDuration(album.duration)}
+              </div>
+            </div>
+          </div>
+
+          <div class="tidal-section">
+            <div class="tidal-section-header">
+              <h4>Tracks</h4>
+              <button class="tidal-save-all-btn" data-type="album-tracks">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+                </svg>
+                Save All ${tracks.length} Tracks
+              </button>
+            </div>
+            <div class="tidal-track-list">
+              ${tracks.map((track, index) => this.renderAlbumTrackItem(track, index + 1)).join("")}
+            </div>
+          </div>
+        </div>
+      `;
+
+      container.innerHTML = html;
+
+      // Attach event listeners
+      this.attachTrackEventListeners(container);
+
+      // Attach save all button listener
+      const saveAllBtn = container.querySelector(".tidal-save-all-btn");
+      if (saveAllBtn) {
+        saveAllBtn.onclick = () => this.saveAllTracks(tracks, "album");
+      }
+    },
+
+    renderAlbumTrackItem(track, trackNumber) {
+      const duration = this.formatDuration(track.duration);
+      const artistName =
+        track.artist?.name || track.artists?.[0]?.name || "Unknown Artist";
+      const title = track.version
+        ? `${track.title} (${track.version})`
+        : track.title;
+      const isSaved = this.libraryTracks.has(String(track.id));
+      const explicitBadge = track.explicit
+        ? '<span class="tidal-explicit-badge">E</span>'
+        : "";
+
+      const heartIcon = isSaved
+        ? `<path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>`
+        : `<path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"/>`;
+
+      return `
+        <div class="tidal-track-item ${isSaved ? "saved" : ""}" data-id="${track.id}">
+          <div class="tidal-track-number">${trackNumber}</div>
+          <div class="tidal-track-info">
+            <div class="tidal-track-title">${this.escapeHtml(title)} ${explicitBadge}</div>
+            <div class="tidal-track-artist">${this.escapeHtml(artistName)}</div>
+          </div>
+          <div class="tidal-track-meta">
+            <span class="tidal-track-duration">${duration}</span>
+            <button class="tidal-save-btn ${isSaved ? "saved" : ""}" data-track-id="${track.id}" title="${isSaved ? "Already in library" : "Save to library"}" ${isSaved ? "disabled" : ""}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                ${heartIcon}
+              </svg>
+            </button>
+          </div>
+        </div>
+      `;
+    },
+
+    attachTrackEventListeners(container) {
+      // Get all track items and their data
+      const trackItems = container.querySelectorAll(".tidal-track-item");
+      const tracks = [];
+
+      trackItems.forEach((el) => {
+        // Find track data from currentResults or reconstruct from DOM
+        const trackId = el.dataset.id;
+        if (trackId) {
+          tracks.push({ id: trackId, element: el });
+        }
+      });
+
+      // Add click listeners for play
+      trackItems.forEach((el, index) => {
+        el.onclick = (e) => {
+          if (e.target.closest(".tidal-save-btn")) return;
+
+          // Find the track in current results
+          const trackId = el.dataset.id;
+          let track = null;
+
+          // Try to find in current results
+          if (this.currentResults?.data?.items) {
+            track = this.currentResults.data.items.find((t) => String(t.id) === String(trackId));
+          }
+
+          // For artist/album pages, we need to search in the response
+          // This is a simplified approach - in production you'd store the full data
+          if (!track) {
+            console.warn("[TidalSearch] Track data not found for playback");
+            return;
+          }
+
+          this.playTrack(track, el);
+        };
+      });
+
+      // Add click listeners for save buttons
+      container.querySelectorAll(".tidal-save-btn").forEach((btn) => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          const trackId = btn.dataset.trackId;
+
+          // Find track data
+          let track = null;
+          if (this.currentResults?.data?.items) {
+            track = this.currentResults.data.items.find((t) => String(t.id) === String(trackId));
+          }
+
+          if (track) {
+            this.saveTrack(track, btn);
+          }
+        };
+      });
+    },
+
+    async saveAllTracks(tracks, source) {
+      if (!tracks || tracks.length === 0) {
+        this.showToast("No tracks to save", true);
+        return;
+      }
+
+      console.log(`[TidalSearch] Saving ${tracks.length} tracks from ${source}`);
+
+      // Show progress bar
+      const progressContainer = document.getElementById("tidal-download-progress");
+      const progressBar = progressContainer?.querySelector(".tidal-download-progress-bar");
+      const progressText = progressContainer?.querySelector(".tidal-download-progress-text");
+
+      if (progressContainer) {
+        progressContainer.classList.remove("hidden");
+      }
+
+      let savedCount = 0;
+      let errorCount = 0;
+
+      for (let i = 0; i < tracks.length; i++) {
+        const track = tracks[i];
+
+        // Update progress
+        const progress = ((i + 1) / tracks.length) * 100;
+        if (progressBar) {
+          const innerBar = progressBar.querySelector(".tidal-download-progress-bar-inner") ||
+            document.createElement("div");
+          innerBar.className = "tidal-download-progress-bar-inner";
+          innerBar.style.width = `${progress}%`;
+          if (!progressBar.querySelector(".tidal-download-progress-bar-inner")) {
+            progressBar.appendChild(innerBar);
+          }
+        }
+        if (progressText) {
+          progressText.textContent = `Saving ${i + 1} of ${tracks.length} tracks...`;
+        }
+
+        // Skip if already saved
+        if (this.libraryTracks.has(String(track.id))) {
+          console.log(`[TidalSearch] Skipping already saved track: ${track.title}`);
+          savedCount++;
+          continue;
+        }
+
+        try {
+          const artistName =
+            track.artist?.name || track.artists?.[0]?.name || "Unknown Artist";
+          const title = track.title + (track.version ? ` (${track.version})` : "");
+          const coverUrl = track.album?.cover
+            ? `https://resources.tidal.com/images/${track.album.cover.replace(/-/g, "/")}/640x640.jpg`
+            : null;
+
+          const trackData = {
+            title: title,
+            artist: artistName,
+            album: track.album?.title || null,
+            duration: track.duration || null,
+            cover_url: coverUrl,
+            source_type: "tidal",
+            external_id: String(track.id),
+            format: track.mediaMetadata?.tags?.includes("HIRES_LOSSLESS")
+              ? "HI_RES_LOSSLESS"
+              : track.mediaMetadata?.tags?.includes("LOSSLESS")
+                ? "LOSSLESS"
+                : "HIGH",
+            bitrate: null,
+          };
+
+          if (this.api?.library?.addExternalTrack) {
+            await this.api.library.addExternalTrack(trackData);
+            this.libraryTracks.add(String(track.id));
+            savedCount++;
+          }
+        } catch (err) {
+          console.error(`[TidalSearch] Failed to save track ${track.title}:`, err);
+          errorCount++;
+        }
+
+        // Small delay to avoid overwhelming the system
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+
+      // Hide progress bar
+      if (progressContainer) {
+        progressContainer.classList.add("hidden");
+      }
+
+      // Show result
+      if (errorCount === 0) {
+        this.showToast(`✓ Saved all ${savedCount} tracks to library`);
+      } else {
+        this.showToast(
+          `Saved ${savedCount} tracks\n${errorCount} failed`,
+          errorCount > savedCount / 2
+        );
+      }
+
+      this.hasNewChanges = true;
+      console.log(`[TidalSearch] Bulk save complete: ${savedCount} saved, ${errorCount} errors`);
     },
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -1656,13 +2858,20 @@
       // Permission granted - execute the method
       return TidalSearch.searchCoverForRPC(title, artist, trackId);
     },
+
+    searchArtistPictureForRPC: async (artistName) => {
+      return TidalSearch.searchArtistPictureForRPC(artistName);
+    },
   };
 
   // Register plugin
   if (typeof Audion !== "undefined" && Audion.register) {
     Audion.register(TidalSearch);
+    // Also expose for direct access
+    window.tidalSearchPlugin = TidalSearch;
   } else {
     window.TidalSearch = TidalSearch;
     window.AudionPlugin = TidalSearch;
+    window.tidalSearchPlugin = TidalSearch;
   }
 })();

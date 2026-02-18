@@ -16,6 +16,7 @@
         setVolume,
         toggleShuffle,
         cycleRepeat,
+        isStreaming,
     } from "$lib/stores/player";
     import { lyricsVisible, toggleLyrics } from "$lib/stores/lyrics";
     import {
@@ -41,6 +42,13 @@
 
     $: isCurrentLiked = $currentTrack
         ? $likedTrackIds.has($currentTrack.id)
+        : false;
+
+    // Detect live streams (radio, etc.) — no duration, streaming source
+    $: isLive = $currentTrack
+        ? $currentTrack.source_type === "radio" ||
+          (isStreaming($currentTrack) &&
+              (!$currentTrack.duration || $currentTrack.duration === 0))
         : false;
 
     export let hidden: boolean = false;
@@ -257,9 +265,14 @@
 
                     <!-- Middle: Track info -->
                     <div class="mini-info">
-                        <span class="mini-title"
-                            >{$currentTrack.title || "Unknown Title"}</span
-                        >
+                        <div class="mini-title-row">
+                            <span class="mini-title"
+                                >{$currentTrack.title || "Unknown Title"}</span
+                            >
+                            {#if isLive}
+                                <span class="live-badge mini">LIVE</span>
+                            {/if}
+                        </div>
                         <span class="mini-artist"
                             >{$currentTrack.artist || "Unknown Artist"}</span
                         >
@@ -527,30 +540,42 @@
 
             <!-- Progress bar -->
             <div class="progress-container">
-                <span class="time">{formatDuration($currentTime)}</span>
-                <div
-                    class="progress-bar"
-                    bind:this={seekBarElement}
-                    on:mousedown={handleSeekStart}
-                    role="slider"
-                    aria-label="Seek"
-                    aria-valuenow={Math.round($progress * 100)}
-                    aria-valuemin="0"
-                    aria-valuemax="100"
-                    tabindex="0"
-                >
-                    <div class="progress-track">
+                {#if isLive}
+                    <span class="live-badge">LIVE</span>
+                    <div class="progress-bar live-bar">
+                        <div class="progress-track">
+                            <div class="progress-fill live-fill"></div>
+                        </div>
+                    </div>
+                    <span class="time live-time"
+                        >{formatDuration($currentTime)}</span
+                    >
+                {:else}
+                    <span class="time">{formatDuration($currentTime)}</span>
+                    <div
+                        class="progress-bar"
+                        bind:this={seekBarElement}
+                        on:mousedown={handleSeekStart}
+                        role="slider"
+                        aria-label="Seek"
+                        aria-valuenow={Math.round($progress * 100)}
+                        aria-valuemin="0"
+                        aria-valuemax="100"
+                        tabindex="0"
+                    >
+                        <div class="progress-track">
+                            <div
+                                class="progress-fill"
+                                style="width: {$progress * 100}%"
+                            ></div>
+                        </div>
                         <div
-                            class="progress-fill"
-                            style="width: {$progress * 100}%"
+                            class="progress-thumb"
+                            style="left: {$progress * 100}%"
                         ></div>
                     </div>
-                    <div
-                        class="progress-thumb"
-                        style="left: {$progress * 100}%"
-                    ></div>
-                </div>
-                <span class="time">{formatDuration($duration)}</span>
+                    <span class="time">{formatDuration($duration)}</span>
+                {/if}
             </div>
         </div>
 
@@ -984,6 +1009,89 @@
     .progress-bar:hover .progress-thumb,
     .volume-bar:hover .volume-thumb {
         transform: translateX(-50%) scale(1);
+    }
+
+    /* LIVE badge */
+    .live-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-size: 0.65rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        color: #fff;
+        background: #e53935;
+        padding: 2px 8px;
+        border-radius: 4px;
+        flex-shrink: 0;
+        text-transform: uppercase;
+        line-height: 1;
+    }
+
+    .live-badge::before {
+        content: "";
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #fff;
+        animation: live-pulse 1.5s ease-in-out infinite;
+    }
+
+    @keyframes live-pulse {
+        0%,
+        100% {
+            opacity: 1;
+        }
+        50% {
+            opacity: 0.3;
+        }
+    }
+
+    /* Mobile mini-player LIVE badge */
+    .live-badge.mini {
+        font-size: 0.55rem;
+        padding: 1px 5px;
+        margin-left: 6px;
+    }
+
+    .mini-title-row {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+    }
+
+    .mini-title-row .mini-title {
+        flex: 0 1 auto;
+        min-width: 0;
+    }
+
+    /* Live progress bar — non-interactive, steady glow */
+    .live-bar {
+        cursor: default;
+    }
+
+    .live-fill {
+        width: 100% !important;
+        background: linear-gradient(90deg, #e53935, #ff7043, #e53935);
+        background-size: 200% 100%;
+        animation: live-bar-shimmer 3s ease-in-out infinite;
+    }
+
+    @keyframes live-bar-shimmer {
+        0% {
+            background-position: 0% 50%;
+        }
+        50% {
+            background-position: 100% 50%;
+        }
+        100% {
+            background-position: 0% 50%;
+        }
+    }
+
+    .live-time {
+        color: #e53935;
     }
 
     /* Volume controls */

@@ -118,6 +118,116 @@ export function isStreaming(track: Track): boolean {
     return false;
 }
 
+// =============================================================================
+// PLAYLIST URL RESOLUTION
+// =============================================================================
+// Many radio stations provide playlist files (.m3u, .m3u8, .pls) that contain
+// the actual stream URL. HTML5 <audio> cannot parse these formats directly,
+// so we fetch them and extract the real stream URL before playback.
+// =============================================================================
+
+/** Known playlist file extensions that need resolution */
+const PLAYLIST_EXTENSIONS = ['.m3u', '.m3u8', '.pls'];
+
+/**
+ * Check if a URL points to a playlist file that needs resolution.
+ * Strips query strings and fragments before checking the extension.
+ */
+function isPlaylistUrl(url: string): boolean {
+    try {
+        const pathname = new URL(url).pathname.toLowerCase();
+        return PLAYLIST_EXTENSIONS.some(ext => pathname.endsWith(ext));
+    } catch {
+        // Fallback for malformed URLs: check the raw string
+        const lower = url.toLowerCase().split('?')[0].split('#')[0];
+        return PLAYLIST_EXTENSIONS.some(ext => lower.endsWith(ext));
+    }
+}
+
+/**
+ * Parse a .pls playlist file and return the first stream URL.
+ * PLS format: INI-like with File1=<url>, File2=<url>, etc.
+ */
+function parsePlsPlaylist(text: string): string | null {
+    for (const line of text.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        const match = trimmed.match(/^File\d+\s*=\s*(.+)$/i);
+        if (match && match[1].startsWith('http')) {
+            return match[1].trim();
+        }
+    }
+    return null;
+}
+
+/**
+ * Parse an .m3u/.m3u8 playlist file and return the first stream URL.
+ * If the file is a true HLS manifest (contains #EXT-X- directives),
+ * returns null so the original URL is used as-is — browsers/WebViews
+ * often handle HLS natively.
+ */
+function parseM3uPlaylist(text: string): string | null {
+    const lines = text.split(/\r?\n/);
+
+    // Detect true HLS manifests — these should be played directly
+    const isHls = lines.some(l => l.trim().startsWith('#EXT-X-'));
+    if (isHls) return null; // Let the browser handle HLS natively
+
+    // Simple M3U: find the first http(s) URL line
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#') && (trimmed.startsWith('http://') || trimmed.startsWith('https://'))) {
+            return trimmed;
+        }
+    }
+    return null;
+}
+
+/**
+ * Resolve a playlist URL to a direct stream URL.
+ * If the URL isn't a playlist format or resolution fails, returns the
+ * original URL unchanged so playback can still be attempted.
+ */
+async function resolvePlaylistUrl(url: string): Promise<string> {
+    if (!isPlaylistUrl(url)) return url;
+
+    console.log(`[Player] Resolving playlist URL: ${url}`);
+
+    try {
+        const response = await fetch(url, {
+            signal: AbortSignal.timeout(8000), // 8s timeout for slow servers
+        });
+
+        if (!response.ok) {
+            console.warn(`[Player] Playlist fetch failed (${response.status}), using original URL`);
+            return url;
+        }
+
+        const text = await response.text();
+        const lower = url.toLowerCase().split('?')[0].split('#')[0];
+        let resolved: string | null = null;
+
+        if (lower.endsWith('.pls')) {
+            resolved = parsePlsPlaylist(text);
+        } else {
+            // .m3u or .m3u8
+            resolved = parseM3uPlaylist(text);
+        }
+
+        if (resolved) {
+            console.log(`[Player] Resolved playlist URL: ${url} → ${resolved}`);
+            return resolved;
+        }
+
+        // Could be HLS or empty playlist — use original URL
+        console.log(`[Player] Playlist did not yield a direct URL (may be HLS), using original`);
+        return url;
+
+    } catch (err) {
+        console.warn(`[Player] Playlist resolution failed, using original URL:`, err);
+        return url;
+    }
+}
+
 // Plugin event emitter (global singleton for plugin system)
 export const pluginEvents = new EventEmitter<PluginEvents>();
 
@@ -451,10 +561,26 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
 
     try {
         let audioPath = track.local_src || track.path;
-        const streaming = isStreaming(track);
+
+        // Fallback for plugins using stream_url
+        if (!audioPath && (track as any).stream_url) {
+            audioPath = (track as any).stream_url;
+        }
+
+        // Fallback for plugins using external_id as URL (common in radio plugins)
+        if (!audioPath && track.external_id && (track.external_id.startsWith('http://') || track.external_id.startsWith('https://'))) {
+            audioPath = track.external_id;
+        }
+
+        const streaming = isStreaming(track) || !!(track as any).stream_url;
 
         // Prep the backends
         if (streaming) {
+            // Ensure we have a valid path
+            if (!audioPath) {
+                throw new Error('No audio path or stream URL found for track');
+            }
+
             // Stop native audio
             await nativeAudioStop().catch(() => { });
 
@@ -478,12 +604,35 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
 
             // Start HTML5
             const audio = getHtml5Audio();
+
+            // Reset src to avoid overlap issues
+            audio.pause();
+
+            // Resolve playlist-format URLs (.m3u, .pls, .m3u8) to direct stream URLs
+            audioPath = await resolvePlaylistUrl(audioPath);
+
             audio.src = audioPath;
             audio.volume = sliderToAudioVolume(get(volume));
-            await audio.play();
+
+            // Wrap play in a handler to catch AbortError (common with rapid skipping)
+            try {
+                await audio.play();
+            } catch (err) {
+                if (err instanceof DOMException && err.name === 'AbortError') {
+                    // This usually means another PLAY request came in, so we can ignore this one
+                    // or it means we paused/loaded too fast. 
+                    // If Playback was intentional, we should log it.
+                    console.warn('[Player] Playback aborted (likely replaced by new track)', err);
+                } else {
+                    throw err;
+                }
+            }
 
             console.log('[Player] HTML5 streaming started:', track.title);
         } else {
+            if (!audioPath) {
+                throw new Error('No local audio path found for track');
+            }
             // Stop HTML5 audio
             if (html5Audio) {
                 html5Audio.pause();

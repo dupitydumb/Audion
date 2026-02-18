@@ -412,6 +412,25 @@
         overflow-x: auto;
         padding-bottom: 8px;
         scrollbar-width: thin;
+        scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+    }
+
+    .carousel-row::-webkit-scrollbar {
+        height: 6px;
+    }
+
+    .carousel-row::-webkit-scrollbar-track {
+        background: transparent;
+        border-radius: 3px;
+    }
+
+    .carousel-row::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 3px;
+    }
+
+    .carousel-row::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.35);
     }
 
     .carousel-card {

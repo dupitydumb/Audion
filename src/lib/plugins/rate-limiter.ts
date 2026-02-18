@@ -110,7 +110,7 @@ export class RateLimiter {
 
 // Predefined rate limiters for different operations
 export const RATE_LIMITS = {
-    API_CALLS: { maxTokens: 100, refillRate: 100 / 60 },      // 100 calls per minute
+    API_CALLS: { maxTokens: 1000, refillRate: 1000 / 60 },    // 1000 calls per minute - Increased for batch ops
     STORAGE_WRITES: { maxTokens: 50, refillRate: 50 / 60 },   // 50 writes per minute
     EVENTS: { maxTokens: 1000, refillRate: 1000 / 60 }        // 1000 events per minute
 } as const;

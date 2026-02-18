@@ -47,9 +47,9 @@
     function handlePlayAll() {
         if (tracks.length > 0) {
             playTracks(tracks, 0, {
-                type: 'artist',
+                type: "artist",
                 artistName: artistName,
-                displayName: artistName
+                displayName: artistName,
             });
         }
     }
@@ -58,16 +58,64 @@
         return name.charAt(0).toUpperCase();
     }
 
-    onMount(() => {
-        loadArtistData();
-    });
-
-    // Reload when artistName changes
-    $: artistName, loadArtistData();
-
     // Download state
     let isDownloading = false;
     let downloadProgress = "";
+
+    // Artist picture handling
+    let artistPictureUrl: string | null = null;
+    let failedImage = false;
+
+    // Get artist picture URL from Tidal search
+    async function getArtistPicture(name: string) {
+        console.log("[ArtistDetail] getArtistPicture called for:", name);
+
+        if (!name) {
+            console.log("[ArtistDetail] No artist name provided");
+            return;
+        }
+
+        try {
+            console.log("[ArtistDetail] Checking for tidalSearchPlugin...");
+            const plugin = (window as any).tidalSearchPlugin;
+            console.log("[ArtistDetail] Plugin available:", !!plugin);
+
+            if (!plugin) {
+                console.log("[ArtistDetail] Plugin not available yet");
+                return;
+            }
+
+            console.log("[ArtistDetail] Calling searchArtistPictureForRPC...");
+            // Call Tidal search plugin to get artist image
+            const result = await plugin.searchArtistPictureForRPC(name);
+            console.log("[ArtistDetail] Result from plugin:", result);
+
+            if (result) {
+                artistPictureUrl = result;
+                failedImage = false;
+            }
+        } catch (error) {
+            console.log(
+                "[ArtistDetail] Failed to fetch artist picture:",
+                error,
+            );
+        }
+    }
+
+    function handleImageError() {
+        failedImage = true;
+    }
+
+    onMount(() => {
+        loadArtistData();
+        getArtistPicture(artistName);
+    });
+
+    // Reload when artistName changes
+    $: if (artistName) {
+        loadArtistData();
+        getArtistPicture(artistName);
+    }
 
     $: hasDownloadable = hasDownloadableTracks(tracks);
 
@@ -112,7 +160,11 @@
         </div>
     {:else}
         <header class="artist-header">
-            <button class="back-btn" on:click={goToArtists} aria-label="Go back to artists">
+            <button
+                class="back-btn"
+                on:click={goToArtists}
+                aria-label="Go back to artists"
+            >
                 <svg
                     viewBox="0 0 24 24"
                     fill="currentColor"
@@ -125,9 +177,18 @@
                 </svg>
             </button>
             <div class="artist-avatar">
-                <span class="artist-initial"
-                    >{getArtistInitial(artistName)}</span
-                >
+                {#if artistPictureUrl && !failedImage}
+                    <img
+                        src={artistPictureUrl}
+                        alt={artistName}
+                        class="artist-picture"
+                        on:error={handleImageError}
+                    />
+                {:else}
+                    <span class="artist-initial"
+                        >{getArtistInitial(artistName)}</span
+                    >
+                {/if}
             </div>
             <div class="artist-info">
                 <span class="artist-type">Artist</span>
@@ -204,11 +265,15 @@
             {#if activeTab === "albums"}
                 <AlbumGrid {albums} />
             {:else}
-            <TrackList 
-            {tracks} 
-            showAlbum={true}
-            playbackContext={{ type: 'artist', artistName, displayName: artistName }}
-        />
+                <TrackList
+                    {tracks}
+                    showAlbum={true}
+                    playbackContext={{
+                        type: "artist",
+                        artistName,
+                        displayName: artistName,
+                    }}
+                />
             {/if}
         </div>
     {/if}
@@ -298,6 +363,13 @@
         font-size: 4rem;
         font-weight: 700;
         color: var(--text-primary);
+    }
+
+    .artist-picture {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: var(--radius-full);
     }
 
     .artist-info {

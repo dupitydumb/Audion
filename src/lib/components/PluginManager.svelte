@@ -13,6 +13,8 @@
   } from "$lib/plugins/schema";
   import { addToast } from "$lib/stores/toast";
   import { confirm } from "$lib/stores/dialogs";
+  import { revealItemInDir } from "@tauri-apps/plugin-opener";
+  import { invoke } from "@tauri-apps/api/core";
 
   // Local state
   let newCommunityUrl = "";
@@ -26,6 +28,18 @@
     await pluginStore.init();
     await pluginStore.refreshMarketplace();
   });
+
+  async function openPluginsFolder() {
+    try {
+      const pluginDir = await invoke<string>("get_plugin_dir");
+      if (pluginDir) {
+        await revealItemInDir(pluginDir);
+      }
+    } catch (err) {
+      console.error("Failed to open plugins folder:", err);
+      addToast(`Failed to open folder: ${err}`, "error");
+    }
+  }
 
   function handleSearch() {
     pluginStore.setSearchQuery(searchQuery);
@@ -160,46 +174,67 @@
 <div class="plugin-view">
   <header class="view-header">
     <h1>Plugin Marketplace</h1>
-    <button
-      class="btn-secondary"
-      on:click={() => pluginStore.refreshMarketplace()}
-      disabled={$pluginStore.loading}
-      title="Force update from GitHub registry"
-    >
-      {#if $pluginStore.loading}
-        <svg
-          class="animate-spin"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          width="16"
-          height="16"
-          style="display: inline-block; margin-right: 4px;"
-        >
-          <circle cx="12" cy="12" r="10" stroke-width="4" opacity="0.25" />
-          <path
-            d="M12 2a10 10 0 0 1 10 10"
-            stroke-width="4"
-            stroke-linecap="round"
-          />
-        </svg>
-        Refreshing...
-      {:else}
+    <div class="header-actions">
+      <button
+        class="btn-secondary"
+        on:click={openPluginsFolder}
+        title="Open local plugins folder"
+      >
         <svg
           viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
+          fill="currentColor"
           width="16"
           height="16"
           style="display: inline-block; margin-right: 4px;"
         >
           <path
-            d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 0 1 9-9"
+            d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z"
           />
         </svg>
-        Fetch Plugins
-      {/if}
-    </button>
+        Open Folder
+      </button>
+
+      <button
+        class="btn-secondary"
+        on:click={() => pluginStore.refreshMarketplace()}
+        disabled={$pluginStore.loading}
+        title="Force update from GitHub registry"
+      >
+        {#if $pluginStore.loading}
+          <svg
+            class="animate-spin"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            width="16"
+            height="16"
+            style="display: inline-block; margin-right: 4px;"
+          >
+            <circle cx="12" cy="12" r="10" stroke-width="4" opacity="0.25" />
+            <path
+              d="M12 2a10 10 0 0 1 10 10"
+              stroke-width="4"
+              stroke-linecap="round"
+            />
+          </svg>
+          Refreshing...
+        {:else}
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            width="16"
+            height="16"
+            style="display: inline-block; margin-right: 4px;"
+          >
+            <path
+              d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 0 1 9-9"
+            />
+          </svg>
+          Fetch Plugins
+        {/if}
+      </button>
+    </div>
   </header>
 
   {#if $pluginStore.error}
@@ -801,6 +836,13 @@
     display: flex;
     gap: var(--spacing-sm);
     flex-wrap: wrap;
+    margin-top: auto;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
   }
 
   .btn-primary {
