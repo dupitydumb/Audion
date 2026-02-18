@@ -509,7 +509,7 @@
     .mobile-home {
         flex: 1;
         overflow-y: auto;
-        overflow-x: hidden;
+            overflow-x: auto;
         background-color: var(--bg-base);
         -webkit-overflow-scrolling: touch;
         -webkit-tap-highlight-color: transparent;
@@ -847,6 +847,7 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+            max-width: 100%;
     }
 
     /* ===== Empty State ===== */

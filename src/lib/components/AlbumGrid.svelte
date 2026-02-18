@@ -253,7 +253,7 @@
         width: 100%;
         height: 100%;
         box-sizing: border-box;
-        overflow: hidden;
+            overflow: visible;
     }
 
     .album-card:hover {
@@ -284,7 +284,7 @@
         width: 100%;
         aspect-ratio: 1;
         border-radius: var(--radius-sm);
-        overflow: hidden;
+            overflow: hidden;
         background-color: var(--bg-surface);
         margin-bottom: var(--spacing-md);
         box-shadow: var(--shadow-md);
@@ -297,19 +297,29 @@
         width: 100%;
         height: 100%;
         object-fit: cover;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
         image-rendering: auto;
     }
 
     .album-art-placeholder {
         width: 100%;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
         height: 100%;
         display: flex;
         align-items: center;
         justify-content: center;
+            min-width: 0;
         color: var(--text-subdued);
         background: linear-gradient(
             135deg,
             var(--bg-surface) 0%,
+            gap: var(--spacing-md);
             var(--bg-highlight) 100%
         );
     }
@@ -519,7 +529,7 @@
         flex-direction: column;
         gap: var(--spacing-xs);
         min-height: 0;
-        overflow: hidden;
+            overflow-y: auto;
     }
 
     .album-name {
@@ -544,9 +554,10 @@
     }
 
     .truncate {
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
+           overflow: hidden;
+           text-overflow: ellipsis;
+           white-space: nowrap;
+           max-width: 100%;
     }
 
     /* ── Mobile ── */

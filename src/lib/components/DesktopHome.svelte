@@ -444,6 +444,7 @@
         cursor: pointer;
         min-width: 160px;
         max-width: 160px;
+        width: 160px;
         transition: background 0.2s ease;
         text-align: left;
     }
@@ -507,6 +508,7 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        max-width: 100%;
     }
 
     .carousel-subtitle {
@@ -515,6 +517,7 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        max-width: 100%;
     }
 
     /* Top Tracks List */
@@ -593,6 +596,9 @@
     .top-track-artist {
         font-size: 0.75rem;
         color: var(--text-secondary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .top-track-plays {
