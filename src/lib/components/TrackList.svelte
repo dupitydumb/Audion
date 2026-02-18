@@ -27,7 +27,10 @@
     loadMoreTracks,
   } from "$lib/stores/library";
   import { pluginStore } from "$lib/stores/plugin-store";
-  import { goToAlbumDetail } from "$lib/stores/view";
+  import {
+    goToAlbumDetail,
+    goToArtistDetail,
+  } from "$lib/stores/view";
   import {
     canDownload,
     downloadTrack,
@@ -801,6 +804,26 @@
       goToAlbumDetail(track.album_id);
     }
   }
+
+  function handleArtistClick(e: MouseEvent) {
+    const artistButton = (e.target as HTMLElement).closest(".track-artist");
+    if (!artistButton) return;
+
+    e.stopPropagation();
+
+    const row = artistButton.closest(".track-row");
+    if (!row) return;
+
+    const trackId = parseInt(row.getAttribute("data-track-id") || "0");
+    const trackIndex = trackIndexMap.get(trackId);
+
+    if (trackIndex === undefined) return;
+
+    const track = sortedTracks[trackIndex];
+    if (track && track.artist) {
+      goToArtistDetail(track.artist);
+    }
+  }
 </script>
 
 <div class="track-list">
@@ -1061,8 +1084,9 @@
                     </span>
                   {/if}
                 </div>
-                <span class="track-artist truncate"
-                  >{track.artist || "Unknown Artist"}</span
+                <button
+                  class="track-artist truncate"
+                  on:click={handleArtistClick}>{track.artist || "Unknown Artist"}</button
                 >
               </span>
               {#if showAlbum}
@@ -1417,9 +1441,14 @@
   .track-artist {
     font-size: 0.8125rem;
     color: var(--text-secondary);
+    background: none;
+    border: none;
+    padding: 0;
+    text-align: left;
+    max-width: fit-content;
   }
 
-  .track-artist:hover {
+  .track-artist:hover:not(:disabled) {
     color: var(--text-primary);
     text-decoration: underline;
     cursor: pointer;

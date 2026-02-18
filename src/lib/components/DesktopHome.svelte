@@ -47,6 +47,26 @@
     function handlePlayTrack(track: Track, index: number, trackList: Track[]) {
         playTracks(trackList, index);
     }
+
+    function handleRowKeydown(
+        e: KeyboardEvent,
+        track: Track,
+        index: number,
+        trackList: Track[],
+    ) {
+        if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handlePlayTrack(track, index, trackList);
+        }
+    }
+
+    function handleContainerClick(e: MouseEvent, callback: () => void) {
+        const target = e.target as HTMLElement;
+        if (target.closest(".link") || target.closest("button")) {
+            return;
+        }
+        callback();
+    }
 </script>
 
 <div class="desktop-home">
@@ -121,10 +141,21 @@
             <h2 class="section-title">Recently Played</h2>
             <div class="carousel-row">
                 {#each $recentlyPlayed.slice(0, 10) as track, i}
-                    <button
+                    <div
                         class="carousel-card"
-                        on:click={() =>
-                            handlePlayTrack(track, i, $recentlyPlayed)}
+                        role="button"
+                        tabindex="0"
+                        on:click={(e) =>
+                            handleContainerClick(e, () =>
+                                handlePlayTrack(track, i, $recentlyPlayed),
+                            )}
+                        on:keydown={(e) =>
+                            handleRowKeydown(
+                                e,
+                                track,
+                                i,
+                                $recentlyPlayed,
+                            )}
                     >
                         <div class="carousel-art">
                             {#if getTrackCoverSrc(track)}
@@ -161,10 +192,15 @@
                         <span class="carousel-title"
                             >{track.title || "Unknown"}</span
                         >
-                        <span class="carousel-subtitle"
-                            >{track.artist || "Unknown"}</span
+                        <button
+                            class="carousel-subtitle link"
+                            on:click={() =>
+                                goToArtistDetail(track.artist || "Unknown")}
+                            title="Go to artist"
                         >
-                    </button>
+                            {track.artist || "Unknown"}
+                        </button>
+                    </div>
                 {/each}
             </div>
         </section>
@@ -176,10 +212,21 @@
             <h2 class="section-title">Your Top Songs</h2>
             <div class="top-tracks-list">
                 {#each $topTracks.slice(0, 10) as { track, play_count }, i}
-                    <button
+                    <div
                         class="top-track-row"
-                        on:click={() =>
-                            handlePlayTrack(
+                        role="button"
+                        tabindex="0"
+                        on:click={(e) =>
+                            handleContainerClick(e, () =>
+                                handlePlayTrack(
+                                    track,
+                                    i,
+                                    $topTracks.map((t) => t.track),
+                                ),
+                            )}
+                        on:keydown={(e) =>
+                            handleRowKeydown(
+                                e,
                                 track,
                                 i,
                                 $topTracks.map((t) => t.track),
@@ -212,15 +259,20 @@
                             <span class="top-track-title"
                                 >{track.title || "Unknown"}</span
                             >
-                            <span class="top-track-artist"
-                                >{track.artist || "Unknown"}</span
+                            <button
+                                class="top-track-artist link"
+                                on:click={() =>
+                                    goToArtistDetail(track.artist || "")}
+                                title="Go to artist"
                             >
+                                {track.artist || "Unknown"}
+                            </button>
                         </div>
                         <span class="top-track-plays">{play_count} plays</span>
                         <span class="top-track-duration"
                             >{formatDuration(track.duration)}</span
                         >
-                    </button>
+                    </div>
                 {/each}
             </div>
         </section>
@@ -232,9 +284,20 @@
             <h2 class="section-title">Most Played Albums</h2>
             <div class="carousel-row">
                 {#each $topAlbums.slice(0, 10) as { album, play_count }}
-                    <button
+                    <div
                         class="carousel-card"
-                        on:click={() => goToAlbumDetail(album.id)}
+                        role="button"
+                        tabindex="0"
+                        on:click={(e) =>
+                            handleContainerClick(e, () =>
+                                goToAlbumDetail(album.id),
+                            )}
+                        on:keydown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                goToAlbumDetail(album.id);
+                            }
+                        }}
                     >
                         <div class="carousel-art">
                             {#if getAlbumCoverSrc(album)}
@@ -259,10 +322,20 @@
                             {/if}
                         </div>
                         <span class="carousel-title">{album.name}</span>
-                        <span class="carousel-subtitle"
-                            >{album.artist || "Unknown Artist"} · {play_count} plays</span
-                        >
-                    </button>
+                        <div class="carousel-subtitle-container">
+                            <button
+                                class="carousel-subtitle link"
+                                on:click={() =>
+                                    goToArtistDetail(album.artist || "Unknown")}
+                                title="Go to artist"
+                            >
+                                {album.artist || "Unknown Artist"}
+                            </button>
+                            <span class="carousel-subtitle-plays">
+                                · {play_count} plays</span
+                            >
+                        </div>
+                    </div>
                 {/each}
             </div>
         </section>
@@ -511,18 +584,42 @@
 
     .carousel-subtitle {
         font-size: 0.75rem;
-        color: var(--text-secondary);
+        color: var(--text-subdued);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
     }
 
-    /* Top Tracks List */
-    .top-tracks-list {
-        display: flex;
-        flex-direction: column;
+    .carousel-subtitle.link {
+        background: none;
+        border: none;
+        padding: 0;
+        text-align: left;
+        cursor: pointer;
     }
 
+    .carousel-subtitle.link:hover {
+        text-decoration: underline;
+        color: var(--text-primary);
+    }
+
+    .carousel-subtitle-container {
+        display: flex;
+        align-items: center;
+        overflow: hidden;
+        width: 100%;
+        max-width: 100%;
+        gap: 4px;
+    }
+
+    .carousel-subtitle-plays {
+        font-size: 0.75rem;
+        color: var(--text-subdued);
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    /* Top Tracks List */
     .top-track-row {
         display: flex;
         align-items: center;
@@ -592,7 +689,20 @@
 
     .top-track-artist {
         font-size: 0.75rem;
-        color: var(--text-secondary);
+        color: var(--text-subdued);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        background: none;
+        border: none;
+        padding: 0;
+        text-align: left;
+        cursor: pointer;
+    }
+
+    .top-track-artist.link:hover {
+        text-decoration: underline;
+        color: var(--text-primary);
     }
 
     .top-track-plays {

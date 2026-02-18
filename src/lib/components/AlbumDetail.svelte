@@ -10,7 +10,7 @@
         formatDuration,
     } from "$lib/api/tauri";
     import { playTracks, currentTrack, isPlaying } from "$lib/stores/player";
-    import { goToAlbums } from "$lib/stores/view";
+    import { goToAlbums, goToArtistDetail } from "$lib/stores/view";
     import { loadLibrary, getAlbumCoverFromTracks } from "$lib/stores/library";
     import TrackList from "./TrackList.svelte";
     import {
@@ -259,9 +259,15 @@
                 <span class="album-type">Album</span>
                 <h1 class="album-title">{album.name}</h1>
                 <div class="album-meta">
-                    <span class="album-artist"
-                        >{album.artist || "Unknown Artist"}</span
+                    <button
+                        class="album-artist link"
+                        on:click={() => {
+                            if (album) goToArtistDetail(album.artist || "Unknown Artist");
+                        }}
+                        title="Go to artist"
                     >
+                        {album.artist || "Unknown Artist"}
+                    </button>
                     <span class="separator">•</span>
                     <span>{tracks.length} songs</span>
                     <span class="separator">•</span>
@@ -507,6 +513,14 @@
     .album-artist {
         font-weight: 600;
         color: var(--text-primary);
+        background: none;
+        border: none;
+        padding: 0;
+        cursor: pointer;
+    }
+
+    .album-artist:hover {
+        text-decoration: underline;
     }
 
     .separator {
