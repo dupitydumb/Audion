@@ -168,6 +168,13 @@
             progressiveScan.reset();
         }
     }
+    function handleContainerClick(e: MouseEvent, callback: () => void) {
+        const target = e.target as HTMLElement;
+        if (target.closest(".link") || target.closest("button")) {
+            return;
+        }
+        callback();
+    }
 </script>
 
 <div class="mobile-home">
@@ -283,9 +290,11 @@
             <h2 class="section-title">Recently Added</h2>
             <div class="carousel-container">
                 {#each recentTracks as track, i}
-                    <button
+                    <div
                         class="spotify-card"
-                        on:click={() => handlePlayTrack(i)}
+                        role="button"
+                        tabindex="0"
+                        on:click={(e) => handleContainerClick(e, () => handlePlayTrack(i))}
                     >
                         <div class="card-art">
                             {#if getTrackArt(track)}
@@ -321,10 +330,13 @@
                         <span class="card-title truncate-text"
                             >{track.title || "Unknown"}</span
                         >
-                        <span class="card-subtitle truncate-text"
-                            >{track.artist || "Unknown Artist"}</span
+                        <button
+                            class="card-subtitle truncate-text link"
+                            on:click={() => goToArtistDetail(track.artist || "Unknown Artist")}
                         >
-                    </button>
+                            {track.artist || "Unknown Artist"}
+                        </button>
+                    </div>
                 {/each}
             </div>
         </section>
@@ -336,9 +348,11 @@
             <h2 class="section-title">Liked Songs</h2>
             <div class="carousel-container">
                 {#each likedTracks as track, i}
-                    <button
+                    <div
                         class="spotify-card"
-                        on:click={() => handlePlayLiked(i)}
+                        role="button"
+                        tabindex="0"
+                        on:click={(e) => handleContainerClick(e, () => handlePlayLiked(i))}
                     >
                         <div class="card-art">
                             {#if getTrackArt(track)}
@@ -374,10 +388,13 @@
                         <span class="card-title truncate-text"
                             >{track.title || "Unknown"}</span
                         >
-                        <span class="card-subtitle truncate-text"
-                            >{track.artist || "Unknown Artist"}</span
+                        <button
+                            class="card-subtitle truncate-text link"
+                            on:click={() => goToArtistDetail(track.artist || "Unknown Artist")}
                         >
-                    </button>
+                            {track.artist || "Unknown Artist"}
+                        </button>
+                    </div>
                 {/each}
             </div>
         </section>
@@ -389,9 +406,11 @@
             <h2 class="section-title">Your Albums</h2>
             <div class="carousel-container">
                 {#each displayAlbums as album}
-                    <button
+                    <div
                         class="spotify-card"
-                        on:click={() => goToAlbumDetail(album.id)}
+                        role="button"
+                        tabindex="0"
+                        on:click={(e) => handleContainerClick(e, () => goToAlbumDetail(album.id))}
                     >
                         <div class="card-art">
                             {#if getAlbumArt(album)}
@@ -427,10 +446,13 @@
                         <span class="card-title truncate-text"
                             >{album.name}</span
                         >
-                        <span class="card-subtitle truncate-text"
-                            >{album.artist || "Various Artists"}</span
+                        <button
+                            class="card-subtitle truncate-text link"
+                            on:click={() => goToArtistDetail(album.artist || "Various Artists")}
                         >
-                    </button>
+                            {album.artist || "Various Artists"}
+                        </button>
+                    </div>
                 {/each}
             </div>
         </section>
@@ -912,5 +934,19 @@
     /* ===== Bottom Spacer ===== */
     .bottom-spacer {
         height: 140px; /* Mini player (64px) + Nav (60px) + margin */
+    }
+    .link {
+        background: none;
+        border: none;
+        padding: 0;
+        text-align: left;
+        cursor: pointer;
+        color: var(--text-secondary);
+        max-width: fit-content;
+    }
+
+    .link:hover {
+        text-decoration: underline;
+        color: var(--text-primary);
     }
 </style>

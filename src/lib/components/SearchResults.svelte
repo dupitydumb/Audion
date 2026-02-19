@@ -327,9 +327,16 @@
                 <div class="tracks-list">
                     {#each $searchResults.tracks.slice(0, 10) as track, index}
                         {@const albumArt = getTrackArt(track)}
-                        <button
+                        <div
                             class="track-item"
+                            role="button"
+                            tabindex="0"
                             on:click={() => handleTrackClick(index)}
+                            on:keydown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                    handleTrackClick(index);
+                                }
+                            }}
                             on:contextmenu={(e) =>
                                 handleTrackContextMenu(e, track, index)}
                         >
@@ -360,11 +367,12 @@
                                 <span class="track-title truncate"
                                     >{track.title || "Unknown Title"}</span
                                 >
-                                <span class="track-artist truncate"
-                                    >{track.artist || "Unknown Artist"}</span
-                                >
+                                <button
+                                    class="track-artist truncate link-text"
+                                    on:click|stopPropagation={() => handleArtistClick(track.artist || "Unknown Artist")}
+                                >{track.artist || "Unknown Artist"}</button>
                             </div>
-                        </button>
+                        </div>
                     {/each}
                     {#if $searchResults.tracks.length > 10}
                         <p class="more-results">
@@ -384,9 +392,16 @@
                 <div class="albums-grid">
                     {#each $searchResults.albums.slice(0, 6) as album}
                         {@const coverSrc = getAlbumCover(album)}
-                        <button
+                        <div
                             class="album-card"
+                            role="button"
+                            tabindex="0"
                             on:click={() => handleAlbumClick(album.id)}
+                            on:keydown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                    handleAlbumClick(album.id);
+                                }
+                            }}
                             on:contextmenu={(e) =>
                                 handleAlbumContextMenu(e, album)}
                         >
@@ -417,11 +432,12 @@
                                 <span class="album-name truncate"
                                     >{album.name}</span
                                 >
-                                <span class="album-artist truncate"
-                                    >{album.artist || "Unknown Artist"}</span
-                                >
+                                <button
+                                    class="album-artist truncate link-text"
+                                    on:click|stopPropagation={() => handleArtistClick(album.artist || "Unknown Artist")}
+                                >{album.artist || "Unknown Artist"}</button>
                             </div>
-                        </button>
+                        </div>
                     {/each}
                 </div>
             </section>
@@ -763,6 +779,20 @@
     .playlist-name {
         font-size: 0.875rem;
         font-weight: 600;
+        color: var(--text-primary);
+    }
+    .link-text {
+        background: none;
+        border: none;
+        padding: 0;
+        text-align: left;
+        cursor: pointer;
+        color: var(--text-secondary);
+        max-width: fit-content;
+    }
+
+    .link-text:hover {
+        text-decoration: underline;
         color: var(--text-primary);
     }
 </style>
