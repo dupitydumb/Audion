@@ -584,7 +584,7 @@
 
     .carousel-subtitle {
         font-size: 0.75rem;
-        color: var(--text-subdued);
+        color: var(--text-secondary);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -689,7 +689,7 @@
 
     .top-track-artist {
         font-size: 0.75rem;
-        color: var(--text-subdued);
+        color: var(--text-secondary);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
