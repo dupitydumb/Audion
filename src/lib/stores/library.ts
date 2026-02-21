@@ -279,12 +279,18 @@ function ingestTracks(incoming: Track[]): Track[] {
         trackMetadataCache.set(track.id, metadata);
 
         // Revoke old blob URL before caching new one
-        if (track.track_cover) {
-            const existingUrl = trackCoverCache.get(track.id);
-            if (existingUrl && existingUrl.startsWith('blob:')) {
-                revokeBlobUrl(existingUrl);
-            }
+        const existingUrl = trackCoverCache.get(track.id);
+        if (existingUrl && existingUrl.startsWith('blob:')) {
+            revokeBlobUrl(existingUrl);
+        }
 
+        // Priority 1: Use filesystem path (fastest, no JS overhead)
+        if (track.track_cover_path) {
+            const url = convertFileSrc(track.track_cover_path);
+            trackCoverCache.set(track.id, url);
+        }
+        // Priority 2: Use base64 (fallback, expensive)
+        else if (track.track_cover) {
             const blobUrl = convertBase64ToBlobUrl(track.track_cover);
             trackCoverCache.set(track.id, blobUrl);
         }
@@ -308,6 +314,7 @@ function ingestTracks(incoming: Track[]): Track[] {
 
     return lightweight;
 }
+
 
 /**
  * Add a single track to the library (handles metadata caching and store update)
