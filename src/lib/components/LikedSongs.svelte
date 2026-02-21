@@ -220,4 +220,28 @@
         font-size: 0.875rem;
         color: var(--text-secondary);
     }
+
+    @media (max-width: 768px) {
+        .liked-header {
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: var(--spacing-md);
+        }
+
+        .liked-gradient-bg {
+            width: 120px;
+            height: 120px;
+        }
+
+        .liked-title {
+            font-size: 2rem;
+        }
+
+        .liked-body {
+            padding-bottom: calc(
+                var(--mobile-bottom-inset) + var(--spacing-md)
+            );
+        }
+    }
 </style>

@@ -927,8 +927,9 @@
     font-size: 2rem;
     font-weight: 800;
     color: rgba(255, 255, 255, 0.25);
-    padding: 8px 0;
+    padding: 16px 0;
     white-space: pre-wrap;
+    overflow-wrap: break-word;
     /* Apple Music spring-like curve: slight overshoot */
     transition:
       transform 0.55s cubic-bezier(0.175, 0.885, 0.32, 1.275),
@@ -941,7 +942,7 @@
     transform: scale(0.95) translateY(0);
     transform-origin: left center;
     cursor: pointer;
-    line-height: 1.35;
+    line-height: 1.5;
     text-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
     letter-spacing: -0.01em;
   }
@@ -953,7 +954,7 @@
       contain: layout style paint;
       /* Skip rendering off-screen lines */
       content-visibility: auto;
-      contain-intrinsic-size: auto 40px;
+      contain-intrinsic-size: auto 60px;
       /* Remove filter from transition - use instant blur class changes */
       transition:
         transform 0.4s cubic-bezier(0.25, 0.1, 0.25, 1),

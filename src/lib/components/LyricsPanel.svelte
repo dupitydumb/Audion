@@ -500,11 +500,12 @@
         --line-distance: 6;
         font-size: 1.15rem;
         font-weight: 700;
-        line-height: 1.4;
+        line-height: 1.6;
         color: var(--lyrics-inactive);
-        padding: 8px 0;
+        padding: 12px 0;
         letter-spacing: -0.01em;
         white-space: pre-wrap;
+        overflow-wrap: break-word;
         /* Apple Music spring curve with slight overshoot */
         transition:
             transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275),

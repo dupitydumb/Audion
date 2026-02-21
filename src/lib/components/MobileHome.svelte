@@ -294,7 +294,8 @@
                         class="spotify-card"
                         role="button"
                         tabindex="0"
-                        on:click={(e) => handleContainerClick(e, () => handlePlayTrack(i))}
+                        on:click={(e) =>
+                            handleContainerClick(e, () => handlePlayTrack(i))}
                     >
                         <div class="card-art">
                             {#if getTrackArt(track)}
@@ -332,7 +333,10 @@
                         >
                         <button
                             class="card-subtitle truncate-text link"
-                            on:click={() => goToArtistDetail(track.artist || "Unknown Artist")}
+                            on:click={() =>
+                                goToArtistDetail(
+                                    track.artist || "Unknown Artist",
+                                )}
                         >
                             {track.artist || "Unknown Artist"}
                         </button>
@@ -352,7 +356,8 @@
                         class="spotify-card"
                         role="button"
                         tabindex="0"
-                        on:click={(e) => handleContainerClick(e, () => handlePlayLiked(i))}
+                        on:click={(e) =>
+                            handleContainerClick(e, () => handlePlayLiked(i))}
                     >
                         <div class="card-art">
                             {#if getTrackArt(track)}
@@ -390,7 +395,10 @@
                         >
                         <button
                             class="card-subtitle truncate-text link"
-                            on:click={() => goToArtistDetail(track.artist || "Unknown Artist")}
+                            on:click={() =>
+                                goToArtistDetail(
+                                    track.artist || "Unknown Artist",
+                                )}
                         >
                             {track.artist || "Unknown Artist"}
                         </button>
@@ -410,7 +418,10 @@
                         class="spotify-card"
                         role="button"
                         tabindex="0"
-                        on:click={(e) => handleContainerClick(e, () => goToAlbumDetail(album.id))}
+                        on:click={(e) =>
+                            handleContainerClick(e, () =>
+                                goToAlbumDetail(album.id),
+                            )}
                     >
                         <div class="card-art">
                             {#if getAlbumArt(album)}
@@ -448,7 +459,10 @@
                         >
                         <button
                             class="card-subtitle truncate-text link"
-                            on:click={() => goToArtistDetail(album.artist || "Various Artists")}
+                            on:click={() =>
+                                goToArtistDetail(
+                                    album.artist || "Various Artists",
+                                )}
                         >
                             {album.artist || "Various Artists"}
                         </button>
@@ -933,7 +947,7 @@
 
     /* ===== Bottom Spacer ===== */
     .bottom-spacer {
-        height: 140px; /* Mini player (64px) + Nav (60px) + margin */
+        height: calc(var(--mobile-bottom-inset, 130px) + var(--spacing-md));
     }
     .link {
         background: none;

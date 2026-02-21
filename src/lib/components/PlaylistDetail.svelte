@@ -72,7 +72,8 @@
         return generateSvgCover(playlist.name || "Playlist");
     })();
 
-    $: hasCustomCover = playlist && $playlistCovers && !!$playlistCovers[playlist.id];
+    $: hasCustomCover =
+        playlist && $playlistCovers && !!$playlistCovers[playlist.id];
 
     function handleCoverFile(e: Event) {
         const input = e.target as HTMLInputElement;
@@ -93,7 +94,7 @@
 
     async function handleRemoveCover() {
         if (!playlist) return;
-        
+
         if (
             !(await confirm(`Remove custom cover for "${playlist.name}"?`, {
                 title: "Remove Cover",
@@ -199,9 +200,9 @@
     function handlePlayAll() {
         if (tracks.length > 0) {
             playTracks(tracks, 0, {
-                type: 'playlist',
+                type: "playlist",
                 playlistId: playlistId,
-                displayName: playlist?.name ?? 'Playlist'
+                displayName: playlist?.name ?? "Playlist",
             });
         }
     }
@@ -312,20 +313,22 @@
             class="playlist-header"
             on:contextmenu={handleHeaderContextMenu}
         >
-        <button class="back-btn" on:click={goToPlaylists} title="Close">
-            <svg
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                width="20"
-                height="20"
-            >
-                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-            </svg>
-        </button>
-            <div 
+            <button class="back-btn" on:click={goToPlaylists} title="Close">
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    width="20"
+                    height="20"
+                >
+                    <path
+                        d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                    />
+                </svg>
+            </button>
+            <div
                 class="playlist-cover"
-                on:mouseenter={() => coverHovered = true}
-                on:mouseleave={() => coverHovered = false}
+                on:mouseenter={() => (coverHovered = true)}
+                on:mouseleave={() => (coverHovered = false)}
             >
                 <img src={coverSrc} alt="Playlist cover" class="cover-image" />
                 <input
@@ -338,26 +341,44 @@
                 {#if coverHovered}
                     <div class="cover-overlay">
                         {#if hasCustomCover}
-                            <button 
+                            <button
                                 class="cover-overlay-btn cover-delete-btn"
                                 on:click={handleRemoveCover}
                                 title="Remove cover"
                             >
-                                <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-                                    <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="currentColor"
+                                    width="20"
+                                    height="20"
+                                >
+                                    <path
+                                        d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
+                                    />
                                 </svg>
                             </button>
                         {/if}
-                        <button 
+                        <button
                             class="cover-overlay-btn cover-add-btn"
                             on:click={() => coverInput?.click()}
-                            title={hasCustomCover ? "Change cover" : "Add cover"}
+                            title={hasCustomCover
+                                ? "Change cover"
+                                : "Add cover"}
                         >
-                            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="currentColor"
+                                width="20"
+                                height="20"
+                            >
                                 {#if hasCustomCover}
-                                    <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                                    <path
+                                        d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
+                                    />
                                 {:else}
-                                    <path d="M19 7v2.99s-1.99.01-2 0V7h-3s.01-1.99 0-2h3V2h2v3h3v2h-3zm-3 4V8h-3V5H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-8h-3zM5 19l3-4 2 3 3-4 4 5H5z"/>
+                                    <path
+                                        d="M19 7v2.99s-1.99.01-2 0V7h-3s.01-1.99 0-2h3V2h2v3h3v2h-3zm-3 4V8h-3V5H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-8h-3zM5 19l3-4 2 3 3-4 4 5H5z"
+                                    />
                                 {/if}
                             </svg>
                         </button>
@@ -495,11 +516,15 @@
 
         <div class="playlist-tracks">
             {#if tracks.length > 0}
-            <TrackList 
-                {tracks}  
-                showAlbum={false}
-                playbackContext={{ type: 'playlist', playlistId, displayName: playlist?.name }}
-            />
+                <TrackList
+                    {tracks}
+                    showAlbum={false}
+                    playbackContext={{
+                        type: "playlist",
+                        playlistId,
+                        displayName: playlist?.name,
+                    }}
+                />
             {:else}
                 <div class="empty-state">
                     <svg
@@ -868,6 +893,12 @@
         .icon-btn {
             min-width: 44px;
             min-height: 44px;
+        }
+
+        .playlist-tracks {
+            padding-bottom: calc(
+                var(--mobile-bottom-inset) + var(--spacing-md)
+            );
         }
     }
 </style>

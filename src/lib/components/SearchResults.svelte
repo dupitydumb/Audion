@@ -369,8 +369,12 @@
                                 >
                                 <button
                                     class="track-artist truncate link-text"
-                                    on:click|stopPropagation={() => handleArtistClick(track.artist || "Unknown Artist")}
-                                >{track.artist || "Unknown Artist"}</button>
+                                    on:click|stopPropagation={() =>
+                                        handleArtistClick(
+                                            track.artist || "Unknown Artist",
+                                        )}
+                                    >{track.artist || "Unknown Artist"}</button
+                                >
                             </div>
                         </div>
                     {/each}
@@ -434,8 +438,12 @@
                                 >
                                 <button
                                     class="album-artist truncate link-text"
-                                    on:click|stopPropagation={() => handleArtistClick(album.artist || "Unknown Artist")}
-                                >{album.artist || "Unknown Artist"}</button>
+                                    on:click|stopPropagation={() =>
+                                        handleArtistClick(
+                                            album.artist || "Unknown Artist",
+                                        )}
+                                    >{album.artist || "Unknown Artist"}</button
+                                >
                             </div>
                         </div>
                     {/each}
@@ -514,6 +522,14 @@
 <style>
     .search-results {
         padding: var(--spacing-md);
+    }
+
+    @media (max-width: 768px) {
+        .search-results {
+            padding-bottom: calc(
+                var(--mobile-bottom-inset, 130px) + var(--spacing-md)
+            );
+        }
     }
 
     .no-results {

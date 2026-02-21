@@ -12,7 +12,13 @@
         setPlaylistCover,
     } from "$lib/stores/playlistCovers";
     import { contextMenu } from "$lib/stores/ui";
-    import { playTracks, addToQueue, currentPlaylistId, isPlaying, togglePlay } from "$lib/stores/player";
+    import {
+        playTracks,
+        addToQueue,
+        currentPlaylistId,
+        isPlaying,
+        togglePlay,
+    } from "$lib/stores/player";
     import type { Writable } from "svelte/store";
     import { confirm } from "$lib/stores/dialogs";
     import VirtualizedGrid from "./Virtualizedgrid.svelte";
@@ -20,12 +26,13 @@
     type Playlist = { id: number; name: string };
 
     // playlistCovers
-    const typedPlaylistCovers: Writable<Record<string, string>> = playlistCovers;
+    const typedPlaylistCovers: Writable<Record<string, string>> =
+        playlistCovers;
 
     // Extract store values
     $: playingPlaylistId = $currentPlaylistId;
     $: playing = $isPlaying;
-    
+
     // Determine if this playlist is the current one and paused
     function isPlaylistPaused(id: number): boolean {
         return playingPlaylistId === id && !playing;
@@ -69,11 +76,11 @@
         try {
             const tracks = await getPlaylistTracks(id);
             if (tracks.length > 0) {
-                const playlist = $playlists.find(p => p.id === id);
+                const playlist = $playlists.find((p) => p.id === id);
                 playTracks(tracks, 0, {
-                    type: 'playlist',
+                    type: "playlist",
                     playlistId: id,
-                    displayName: playlist?.name ?? 'Playlist'
+                    displayName: playlist?.name ?? "Playlist",
                 });
             }
         } catch (error) {
@@ -94,9 +101,9 @@
 
     async function handlePlaylistClick(playlist: Playlist, e: MouseEvent) {
         const target = e.target as HTMLElement;
-        
+
         // Check if play button was clicked
-        const playButton = target.closest('.play-button');
+        const playButton = target.closest(".play-button");
         if (playButton) {
             e.stopPropagation();
             await handlePlayPlaylist(playlist.id);
@@ -107,7 +114,10 @@
         goToPlaylistDetail(playlist.id);
     }
 
-    async function handlePlaylistContextMenu(playlist: Playlist, e: MouseEvent) {
+    async function handlePlaylistContextMenu(
+        playlist: Playlist,
+        e: MouseEvent,
+    ) {
         contextMenu.set({
             visible: true,
             x: e.clientX,
@@ -125,13 +135,26 @@
                 {
                     label: "Rename",
                     action: async () => {
-                        const newName = prompt("Enter new name:", playlist.name);
-                        if (newName && newName.trim() && newName !== playlist.name) {
+                        const newName = prompt(
+                            "Enter new name:",
+                            playlist.name,
+                        );
+                        if (
+                            newName &&
+                            newName.trim() &&
+                            newName !== playlist.name
+                        ) {
                             try {
-                                await renamePlaylist(playlist.id, newName.trim());
+                                await renamePlaylist(
+                                    playlist.id,
+                                    newName.trim(),
+                                );
                                 await loadPlaylists();
                             } catch (error) {
-                                console.error("Failed to rename playlist:", error);
+                                console.error(
+                                    "Failed to rename playlist:",
+                                    error,
+                                );
                             }
                         }
                     },
@@ -148,7 +171,8 @@
                         input.type = "file";
                         input.accept = "image/*";
                         input.onchange = (e) => {
-                            const file = (e.target as HTMLInputElement).files?.[0];
+                            const file = (e.target as HTMLInputElement)
+                                .files?.[0];
                             if (file) {
                                 const reader = new FileReader();
                                 reader.onload = () => {
@@ -164,7 +188,8 @@
                 { type: "separator" },
                 {
                     label: "Delete Playlist",
-                    action: () => handleDeletePlaylist(playlist.id, playlist.name),
+                    action: () =>
+                        handleDeletePlaylist(playlist.id, playlist.name),
                 },
             ],
         });
@@ -197,7 +222,8 @@
     }
 
     function getCoverSrc(playlist: Playlist) {
-        const custom = $typedPlaylistCovers && $typedPlaylistCovers[playlist.id];
+        const custom =
+            $typedPlaylistCovers && $typedPlaylistCovers[playlist.id];
         if (custom) return custom;
         return generateSvgCover(playlist.name || "Playlist", 512);
     }
@@ -241,7 +267,7 @@
     const emptyState = {
         icon: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/></svg>`,
         title: "No playlists yet",
-        description: "Create your first playlist to organize your music"
+        description: "Create your first playlist to organize your music",
     };
 </script>
 
@@ -308,15 +334,11 @@
                     on:error={(e) => handleImageError(e, playlist)}
                 />
                 {#if playingPlaylistId === playlist.id && playing}
-                    <div class="now-playing-badge">
-                        Now Playing
-                    </div>
+                    <div class="now-playing-badge">Now Playing</div>
                 {:else if isPlaylistPaused(playlist.id)}
-                    <div class="now-playing-badge paused-badge">
-                        Paused
-                    </div>
+                    <div class="now-playing-badge paused-badge">Paused</div>
                 {/if}
-                
+
                 {#if playingPlaylistId === playlist.id && playing}
                     <div class="playing-indicator-container">
                         <div class="playing-indicator">
@@ -324,19 +346,28 @@
                             <span class="bar"></span>
                             <span class="bar"></span>
                         </div>
-                        <button 
+                        <button
                             class="pause-button-overlay"
                             on:click={handlePauseClick}
                             aria-label="Pause"
                         >
-                            <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-                                <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="currentColor"
+                                width="24"
+                                height="24"
+                            >
+                                <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
                             </svg>
                         </button>
                     </div>
                 {/if}
                 <!-- Darkening overlay when hovering the playlist cover -->
-                <div class="playlist-cover-overlay" class:is-playing={playingPlaylistId === playlist.id && playing}>
+                <div
+                    class="playlist-cover-overlay"
+                    class:is-playing={playingPlaylistId === playlist.id &&
+                        playing}
+                >
                     {#if !(playingPlaylistId === playlist.id && playing)}
                         <div class="play-button">
                             <svg
@@ -619,7 +650,9 @@
         align-items: center;
         justify-content: center;
         transform: translateY(8px);
-        transition: transform var(--transition-fast), scale var(--transition-fast);
+        transition:
+            transform var(--transition-fast),
+            scale var(--transition-fast);
         box-shadow: var(--shadow-lg);
         will-change: transform, scale;
         cursor: pointer;
@@ -627,7 +660,7 @@
     }
 
     .play-button::after {
-        content: 'Play playlist';
+        content: "Play playlist";
         position: absolute;
         bottom: calc(100% + 8px);
         left: 50%;
@@ -644,7 +677,7 @@
         box-shadow: var(--shadow-md);
         z-index: 1000;
     }
-    
+
     .playlist-card.paused .play-button::after {
         content: "Resume playlist";
     }
@@ -727,6 +760,12 @@
         .now-playing-badge {
             font-size: 0.625rem;
             padding: 2px 6px;
+        }
+
+        .playlist-view {
+            padding-bottom: calc(
+                var(--mobile-bottom-inset) + var(--spacing-md)
+            );
         }
     }
 </style>

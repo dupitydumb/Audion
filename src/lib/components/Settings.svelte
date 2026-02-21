@@ -1955,8 +1955,10 @@
 
     .settings-content {
       padding: var(--spacing-sm);
-      /* Preserve bottom padding for fixed bottom nav (60px) + mini player (64px) + margin */
-      padding-bottom: calc(140px + var(--spacing-xl));
+      /* Preserve bottom padding for fixed bottom nav + mini player + margin */
+      padding-bottom: calc(
+        var(--mobile-bottom-inset, 130px) + var(--spacing-xl)
+      );
     }
 
     .settings-container {

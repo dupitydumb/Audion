@@ -31,7 +31,6 @@
 
   let isLoading = true;
   let notInTauri = false;
-  let audioElement: HTMLAudioElement | null = null;
 
   function handleContextMenu(e: MouseEvent) {
     if (!$appSettings.developerMode) {
@@ -40,8 +39,8 @@
   }
 
   // Mobile search handling
-  let mobileSearchInput = '';
-  let mobileSearchInputEl: HTMLInputElement;
+  let mobileSearchInput = "";
+  let mobileSearchInputEl: HTMLInputElement | undefined;
   let mobileSearchTimer: ReturnType<typeof setTimeout>;
 
   function handleMobileSearchInput(e: Event) {
@@ -55,7 +54,7 @@
 
   function closeMobileSearch() {
     mobileSearchOpen.set(false);
-    mobileSearchInput = '';
+    mobileSearchInput = "";
     clearSearch();
   }
 
@@ -151,7 +150,7 @@
       </div>
 
       <!-- PlayerBar always rendered for audio element -->
-      <PlayerBar bind:audioElementRef={audioElement} hidden={$isMiniPlayer} />
+      <PlayerBar hidden={$isMiniPlayer} />
       <MobileBottomNav />
 
       <FullScreenPlayer />
@@ -168,7 +167,7 @@
         <FullScreenPlayer />
         <ContextMenu />
       </div>
-      <PlayerBar bind:audioElementRef={audioElement} hidden={$isMiniPlayer} />
+      <PlayerBar hidden={$isMiniPlayer} />
       <MiniPlayer />
       <KeyboardShortcuts />
       <KeyboardShortcutsHelp />
@@ -242,6 +241,7 @@
     flex-direction: column;
     overflow: hidden;
     background-color: var(--bg-base);
+    padding-top: var(--safe-area-top);
   }
 
   .mobile-content {
