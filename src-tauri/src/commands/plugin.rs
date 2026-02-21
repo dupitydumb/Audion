@@ -69,7 +69,23 @@ pub struct CrossPluginAccess {
 
 // Helper to convert display name to safe folder name (fallback when safe_name not in manifest)
 fn to_safe_name(name: &str) -> String {
-    name.replace(" ", "-").to_lowercase()
+    // Replace one or more whitespace characters with a single dash, then lowercase
+    let mut result = String::new();
+    let mut last_was_space = false;
+
+    for c in name.chars() {
+        if c.is_whitespace() {
+            if !last_was_space {
+                result.push('-');
+                last_was_space = true;
+            }
+        } else {
+            result.push(c);
+            last_was_space = false;
+        }
+    }
+
+    result.to_lowercase()
 }
 
 // Get safe name from manifest (prefers explicit safe_name, falls back to conversion)
@@ -524,8 +540,8 @@ pub fn get_plugin_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
     // On Linux use XDG config directory (~/.config/<app>/plugins)
     #[cfg(target_os = "linux")]
     {
-        let mut plugin_dir = dirs::config_dir()
-            .ok_or_else(|| "Failed to get config directory".to_string())?;
+        let mut plugin_dir =
+            dirs::config_dir().ok_or_else(|| "Failed to get config directory".to_string())?;
         // Use the package name as the application folder (e.g., "audion")
         plugin_dir.push(env!("CARGO_PKG_NAME"));
         plugin_dir.push("plugins");

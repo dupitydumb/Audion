@@ -11,6 +11,7 @@
   import MiniPlayer from "$lib/components/MiniPlayer.svelte";
   import KeyboardShortcuts from "$lib/components/KeyboardShortcuts.svelte";
   import KeyboardShortcutsHelp from "$lib/components/KeyboardShortcutsHelp.svelte";
+  import StatsWrapped from "$lib/components/StatsWrapped.svelte";
 
   import { loadLibrary, loadPlaylists } from "$lib/stores/library";
   import ToastContainer from "$lib/components/ToastContainer.svelte";
@@ -28,10 +29,10 @@
   import { searchQuery, clearSearch } from "$lib/stores/search";
   import { currentView, goToHome } from "$lib/stores/view";
   import PluginUpdateDialog from "$lib/components/PluginUpdateDialog.svelte";
+  import { isStatsWrappedOpen } from "$lib/stores/ui";
 
   let isLoading = true;
   let notInTauri = false;
-  let audioElement: HTMLAudioElement | null = null;
 
   function handleContextMenu(e: MouseEvent) {
     if (!$appSettings.developerMode) {
@@ -40,8 +41,8 @@
   }
 
   // Mobile search handling
-  let mobileSearchInput = '';
-  let mobileSearchInputEl: HTMLInputElement;
+  let mobileSearchInput = "";
+  let mobileSearchInputEl: HTMLInputElement | undefined;
   let mobileSearchTimer: ReturnType<typeof setTimeout>;
 
   function handleMobileSearchInput(e: Event) {
@@ -55,7 +56,7 @@
 
   function closeMobileSearch() {
     mobileSearchOpen.set(false);
-    mobileSearchInput = '';
+    mobileSearchInput = "";
     clearSearch();
   }
 
@@ -151,7 +152,7 @@
       </div>
 
       <!-- PlayerBar always rendered for audio element -->
-      <PlayerBar bind:audioElementRef={audioElement} hidden={$isMiniPlayer} />
+      <PlayerBar hidden={$isMiniPlayer} />
       <MobileBottomNav />
 
       <FullScreenPlayer />
@@ -168,7 +169,7 @@
         <FullScreenPlayer />
         <ContextMenu />
       </div>
-      <PlayerBar bind:audioElementRef={audioElement} hidden={$isMiniPlayer} />
+      <PlayerBar hidden={$isMiniPlayer} />
       <MiniPlayer />
       <KeyboardShortcuts />
       <KeyboardShortcutsHelp />
@@ -178,6 +179,11 @@
     {#if $pluginStore.pendingUpdates.length > 0}
       <PluginUpdateDialog on:close={() => pluginStore.clearPendingUpdates()} />
     {/if}
+
+    <StatsWrapped
+      show={$isStatsWrappedOpen}
+      onClose={() => isStatsWrappedOpen.set(false)}
+    />
   {/if}
 </div>
 
@@ -242,6 +248,7 @@
     flex-direction: column;
     overflow: hidden;
     background-color: var(--bg-base);
+    padding-top: var(--safe-area-top);
   }
 
   .mobile-content {

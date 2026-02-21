@@ -1,7 +1,12 @@
 <script lang="ts">
   import { fade, fly } from "svelte/transition";
   import { derived } from "svelte/store";
-  import { isFullScreen, toggleFullScreen, isQueueVisible, toggleQueue } from "$lib/stores/ui";
+  import {
+    isFullScreen,
+    toggleFullScreen,
+    isQueueVisible,
+    toggleQueue,
+  } from "$lib/stores/ui";
   import {
     currentTrack,
     isPlaying,
@@ -30,7 +35,13 @@
     }
   }
   import { lyricsData, activeLine } from "$lib/stores/lyrics";
-  import { getAlbumArtSrc, getAlbum, getAlbumCoverSrc, getTrackCoverSrc, formatDuration } from "$lib/api/tauri";
+  import {
+    getAlbumArtSrc,
+    getAlbum,
+    getAlbumCoverSrc,
+    getTrackCoverSrc,
+    formatDuration,
+  } from "$lib/api/tauri";
   import { onMount, tick } from "svelte";
 
   let albumArt: string | null = null;
@@ -101,24 +112,28 @@
   }
 
   // Load album art
-$: if ($currentTrack) {
-  // Use the helper function that handles all cover sources
-  const trackCover = getTrackCoverSrc($currentTrack);
-  
-  if (trackCover) {
-    albumArt = trackCover;
+  $: if ($currentTrack) {
+    // Use the helper function that handles all cover sources
+    const trackCover = getTrackCoverSrc($currentTrack);
+
+    if (trackCover) {
+      albumArt = trackCover;
+    } else {
+      albumArt = null;
+    }
   } else {
     albumArt = null;
   }
-} else {
-  albumArt = null;
-}
 
   // Apple Music-style smooth scroll with custom easing
   let scrollAnimationId: number | null = null;
   let prevActiveLine = -1;
 
-  $: if ($activeLine !== -1 && lyricsContainer && $activeLine !== prevActiveLine) {
+  $: if (
+    $activeLine !== -1 &&
+    lyricsContainer &&
+    $activeLine !== prevActiveLine
+  ) {
     prevActiveLine = $activeLine;
     scrollToCurrentLine();
   }
@@ -131,7 +146,9 @@ $: if ($currentTrack) {
     await tick();
     if (!lyricsContainer) return;
 
-    const activeEl = lyricsContainer.querySelector(".lyric-line.active") as HTMLElement;
+    const activeEl = lyricsContainer.querySelector(
+      ".lyric-line.active",
+    ) as HTMLElement;
     if (!activeEl) return;
 
     // Cancel any ongoing scroll animation
@@ -142,8 +159,10 @@ $: if ($currentTrack) {
     const containerRect = lyricsContainer.getBoundingClientRect();
     const activeRect = activeEl.getBoundingClientRect();
     const containerCenter = containerRect.height / 2;
-    const activeCenter = activeRect.top - containerRect.top + activeRect.height / 2;
-    const targetScroll = lyricsContainer.scrollTop + (activeCenter - containerCenter);
+    const activeCenter =
+      activeRect.top - containerRect.top + activeRect.height / 2;
+    const targetScroll =
+      lyricsContainer.scrollTop + (activeCenter - containerCenter);
 
     const startScroll = lyricsContainer.scrollTop;
     const distance = targetScroll - startScroll;
@@ -230,7 +249,11 @@ $: if ($currentTrack) {
     {#if $isMobile}
       <!-- Mobile: Spotify-style header with chevron down -->
       <div class="mobile-header">
-        <button class="chevron-btn" on:click={toggleFullScreen} aria-label="Close">
+        <button
+          class="chevron-btn"
+          on:click={toggleFullScreen}
+          aria-label="Close"
+        >
           <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
             <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
           </svg>
@@ -238,13 +261,19 @@ $: if ($currentTrack) {
         <span class="now-playing-label">Now Playing</span>
         <button class="chevron-btn" on:click={toggleQueue} aria-label="Queue">
           <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-            <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z" />
+            <path
+              d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"
+            />
           </svg>
         </button>
       </div>
     {:else}
       <!-- Desktop: corner close button -->
-      <button class="close-btn" on:click={toggleFullScreen} aria-label="Close FullScreen">
+      <button
+        class="close-btn"
+        on:click={toggleFullScreen}
+        aria-label="Close FullScreen"
+      >
         <svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
           <path
             d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"
@@ -286,8 +315,18 @@ $: if ($currentTrack) {
             class="track-artist"
             role="button"
             tabindex="0"
-            on:click={() => { if ($currentTrack?.artist) { toggleFullScreen(); goToArtistDetail($currentTrack.artist); } }}
-            on:keydown={(e) => { if (e.key === 'Enter' && $currentTrack?.artist) { toggleFullScreen(); goToArtistDetail($currentTrack.artist); } }}
+            on:click={() => {
+              if ($currentTrack?.artist) {
+                toggleFullScreen();
+                goToArtistDetail($currentTrack.artist);
+              }
+            }}
+            on:keydown={(e) => {
+              if (e.key === "Enter" && $currentTrack?.artist) {
+                toggleFullScreen();
+                goToArtistDetail($currentTrack.artist);
+              }
+            }}
           >
             {$currentTrack?.artist || "Unknown Artist"}
           </span>
@@ -299,9 +338,24 @@ $: if ($currentTrack) {
             <div
               class="progress-bar"
               on:mousedown={handleSeekStart}
-              on:touchstart|preventDefault={(e) => { isSeeking = true; const touch = e.touches[0]; const bar = e.currentTarget; const rect = bar.getBoundingClientRect(); const pos = (touch.clientX - rect.left) / rect.width; seek(Math.max(0, Math.min(1, pos))); }}
-              on:touchmove|preventDefault={(e) => { if (isSeeking) { const touch = e.touches[0]; const bar = e.currentTarget; const rect = bar.getBoundingClientRect(); const pos = (touch.clientX - rect.left) / rect.width; seek(Math.max(0, Math.min(1, pos))); } }}
-              on:touchend={() => isSeeking = false}
+              on:touchstart|preventDefault={(e) => {
+                isSeeking = true;
+                const touch = e.touches[0];
+                const bar = e.currentTarget;
+                const rect = bar.getBoundingClientRect();
+                const pos = (touch.clientX - rect.left) / rect.width;
+                seek(Math.max(0, Math.min(1, pos)));
+              }}
+              on:touchmove|preventDefault={(e) => {
+                if (isSeeking) {
+                  const touch = e.touches[0];
+                  const bar = e.currentTarget;
+                  const rect = bar.getBoundingClientRect();
+                  const pos = (touch.clientX - rect.left) / rect.width;
+                  seek(Math.max(0, Math.min(1, pos)));
+                }
+              }}
+              on:touchend={() => (isSeeking = false)}
               role="slider"
               aria-label="Seek"
               aria-valuenow={Math.round($progress * 100)}
@@ -324,12 +378,28 @@ $: if ($currentTrack) {
           </div>
 
           <div class="buttons">
-            <button class="icon-btn shuffle-repeat" class:active={$shuffle} on:click={toggleShuffle} aria-label="Shuffle">
-              <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
-                <path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z" />
+            <button
+              class="icon-btn shuffle-repeat"
+              class:active={$shuffle}
+              on:click={toggleShuffle}
+              aria-label="Shuffle"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                width="22"
+                height="22"
+              >
+                <path
+                  d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"
+                />
               </svg>
             </button>
-            <button class="icon-btn large" on:click={previousTrack} aria-label="Previous">
+            <button
+              class="icon-btn large"
+              on:click={previousTrack}
+              aria-label="Previous"
+            >
               <svg
                 viewBox="0 0 24 24"
                 fill="currentColor"
@@ -360,7 +430,11 @@ $: if ($currentTrack) {
                 </svg>
               {/if}
             </button>
-            <button class="icon-btn large" on:click={nextTrack} aria-label="Next">
+            <button
+              class="icon-btn large"
+              on:click={nextTrack}
+              aria-label="Next"
+            >
               <svg
                 viewBox="0 0 24 24"
                 fill="currentColor"
@@ -370,11 +444,23 @@ $: if ($currentTrack) {
                 <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
               </svg>
             </button>
-            <button class="icon-btn shuffle-repeat" class:active={$repeat !== 'none'} on:click={cycleRepeat} aria-label="Repeat: {$repeat}">
-              <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
-                <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z" />
+            <button
+              class="icon-btn shuffle-repeat"
+              class:active={$repeat !== "none"}
+              on:click={cycleRepeat}
+              aria-label="Repeat: {$repeat}"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                width="22"
+                height="22"
+              >
+                <path
+                  d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"
+                />
               </svg>
-              {#if $repeat === 'one'}
+              {#if $repeat === "one"}
                 <span class="repeat-one-badge">1</span>
               {/if}
             </button>
@@ -382,9 +468,21 @@ $: if ($currentTrack) {
 
           <!-- Secondary row: Lyrics toggle -->
           <div class="secondary-controls">
-            <button class="secondary-btn" class:active={$lyricsVisible} on:click={toggleLyrics} aria-label="Lyrics">
-              <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-                <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6zm-2 16c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z" />
+            <button
+              class="secondary-btn"
+              class:active={$lyricsVisible}
+              on:click={toggleLyrics}
+              aria-label="Lyrics"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                fill="currentColor"
+                width="20"
+                height="20"
+              >
+                <path
+                  d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6zm-2 16c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"
+                />
               </svg>
               <span>Lyrics</span>
             </button>
@@ -517,27 +615,57 @@ $: if ($currentTrack) {
   }
 
   @keyframes bgDrift1 {
-    0%   { transform: translate(0, 0) scale(1) rotate(0deg); }
-    20%  { transform: translate(15%, -10%) scale(1.15) rotate(2deg); }
-    40%  { transform: translate(-10%, 18%) scale(1.05) rotate(-1deg); }
-    60%  { transform: translate(8%, 12%) scale(1.2) rotate(3deg); }
-    80%  { transform: translate(-18%, -8%) scale(1.1) rotate(-2deg); }
-    100% { transform: translate(12%, -15%) scale(1) rotate(1deg); }
+    0% {
+      transform: translate(0, 0) scale(1) rotate(0deg);
+    }
+    20% {
+      transform: translate(15%, -10%) scale(1.15) rotate(2deg);
+    }
+    40% {
+      transform: translate(-10%, 18%) scale(1.05) rotate(-1deg);
+    }
+    60% {
+      transform: translate(8%, 12%) scale(1.2) rotate(3deg);
+    }
+    80% {
+      transform: translate(-18%, -8%) scale(1.1) rotate(-2deg);
+    }
+    100% {
+      transform: translate(12%, -15%) scale(1) rotate(1deg);
+    }
   }
 
   @keyframes bgDrift2 {
-    0%   { transform: translate(0, 0) scale(1.1) rotate(0deg); }
-    25%  { transform: translate(-20%, 12%) scale(1) rotate(-3deg); }
-    50%  { transform: translate(15%, -18%) scale(1.2) rotate(2deg); }
-    75%  { transform: translate(-8%, -15%) scale(1.08) rotate(-1deg); }
-    100% { transform: translate(18%, 10%) scale(1.12) rotate(3deg); }
+    0% {
+      transform: translate(0, 0) scale(1.1) rotate(0deg);
+    }
+    25% {
+      transform: translate(-20%, 12%) scale(1) rotate(-3deg);
+    }
+    50% {
+      transform: translate(15%, -18%) scale(1.2) rotate(2deg);
+    }
+    75% {
+      transform: translate(-8%, -15%) scale(1.08) rotate(-1deg);
+    }
+    100% {
+      transform: translate(18%, 10%) scale(1.12) rotate(3deg);
+    }
   }
 
   @keyframes bgDrift3 {
-    0%   { transform: translate(10%, 5%) scale(1.05) rotate(0deg); }
-    33%  { transform: translate(-15%, -20%) scale(1.25) rotate(-4deg); }
-    66%  { transform: translate(20%, 12%) scale(1) rotate(3deg); }
-    100% { transform: translate(-10%, 18%) scale(1.15) rotate(-2deg); }
+    0% {
+      transform: translate(10%, 5%) scale(1.05) rotate(0deg);
+    }
+    33% {
+      transform: translate(-15%, -20%) scale(1.25) rotate(-4deg);
+    }
+    66% {
+      transform: translate(20%, 12%) scale(1) rotate(3deg);
+    }
+    100% {
+      transform: translate(-10%, 18%) scale(1.15) rotate(-2deg);
+    }
   }
 
   .backdrop-layer {
@@ -546,12 +674,11 @@ $: if ($currentTrack) {
     left: 0;
     width: 100%;
     height: 100%;
-    background:
-      radial-gradient(
-        ellipse at center,
-        rgba(0, 0, 0, 0.25) 0%,
-        rgba(0, 0, 0, 0.55) 100%
-      );
+    background: radial-gradient(
+      ellipse at center,
+      rgba(0, 0, 0, 0.25) 0%,
+      rgba(0, 0, 0, 0.55) 100%
+    );
     z-index: -1;
   }
 
@@ -800,7 +927,9 @@ $: if ($currentTrack) {
     font-size: 2rem;
     font-weight: 800;
     color: rgba(255, 255, 255, 0.25);
-    padding: 6px 0;
+    padding: 16px 0;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
     /* Apple Music spring-like curve: slight overshoot */
     transition:
       transform 0.55s cubic-bezier(0.175, 0.885, 0.32, 1.275),
@@ -813,7 +942,7 @@ $: if ($currentTrack) {
     transform: scale(0.95) translateY(0);
     transform-origin: left center;
     cursor: pointer;
-    line-height: 1.35;
+    line-height: 1.5;
     text-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
     letter-spacing: -0.01em;
   }
@@ -825,7 +954,7 @@ $: if ($currentTrack) {
       contain: layout style paint;
       /* Skip rendering off-screen lines */
       content-visibility: auto;
-      contain-intrinsic-size: auto 40px;
+      contain-intrinsic-size: auto 60px;
       /* Remove filter from transition - use instant blur class changes */
       transition:
         transform 0.4s cubic-bezier(0.25, 0.1, 0.25, 1),
@@ -1204,7 +1333,8 @@ $: if ($currentTrack) {
     }
 
     .right-panel {
-      max-height: 35vh;
+      max-height: 30vh;
+      margin-top: var(--spacing-md);
     }
 
     .lyrics-container {

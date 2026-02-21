@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { onMount } from "svelte";
     import {
         tracks,
         albums,
@@ -25,11 +26,39 @@
         goToSettings,
         goToLikedSongs,
     } from "$lib/stores/view";
+    import { isStatsWrappedOpen } from "$lib/stores/ui";
     import { progressiveScan, isScanning } from "$lib/stores/progressiveScan";
     import { addToast } from "$lib/stores/toast";
     import { isMobile } from "$lib/stores/mobile";
     import { getLikedTracks } from "$lib/api/tauri";
     import { likedTrackIds } from "$lib/stores/liked";
+    import {
+        topTracks,
+        topAlbums,
+        recentlyPlayed,
+        loadActivityData,
+        isLoadingActivity,
+    } from "$lib/stores/activity";
+
+    const monthNames = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    const currentMonthName = monthNames[new Date().getMonth()];
+
+    onMount(() => {
+        loadActivityData();
+    });
 
     // Greeting based on time of day
     function getGreeting(): string {
@@ -48,8 +77,11 @@
     // Artists for display (first 20)
     $: displayArtists = $artists.slice(0, 20);
 
-    // Quick play grid - first 6 albums
-    $: quickPlayAlbums = $albums.slice(0, 6);
+    // Quick play grid - top albums or first 6 library albums
+    $: quickPlayAlbums =
+        $topAlbums.length > 0
+            ? $topAlbums.slice(0, 6).map((ta) => ta.album)
+            : $albums.slice(0, 6);
 
     function getAlbumArt(album: Album): string | null {
         return getAlbumCoverFromTracks(album.id);
@@ -85,6 +117,22 @@
 
     function handlePlayLiked(index: number) {
         playTracks(likedTracks, index);
+    }
+
+    function handlePlayRecentlyPlayed(index: number) {
+        playTracks($recentlyPlayed, index);
+    }
+
+    function handlePlayTopTrack(index: number) {
+        const trackList = $topTracks.map((t) => t.track);
+        playTracks(trackList, index);
+    }
+
+    function handleKeydown(e: KeyboardEvent, callback: () => void) {
+        if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            callback();
+        }
     }
 
     async function handleAddFolder() {
@@ -224,31 +272,81 @@
         </div>
     </header>
 
-    <!-- Liked Songs Banner Card -->
-    <div class="liked-songs-banner-container">
-        <button class="liked-songs-banner" on:click={goToLikedSongs}>
-            <div class="liked-banner-content">
-                <div class="liked-banner-icon">
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="28"
-                        height="28"
-                    >
-                        <path
-                            d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+    <!-- Top Track Hero Section -->
+    {#if $topTracks.length > 0}
+        <section class="hero-section">
+            <div
+                class="hero-card"
+                role="button"
+                tabindex="0"
+                on:click={(e) =>
+                    handleContainerClick(e, () => handlePlayTopTrack(0))}
+                on:keydown={(e) =>
+                    handleKeydown(e, () => handlePlayTopTrack(0))}
+            >
+                <div class="hero-background">
+                    {#if getTrackArt($topTracks[0].track)}
+                        <img
+                            src={getTrackArt($topTracks[0].track)}
+                            alt=""
+                            class="bg-blur"
                         />
-                    </svg>
+                    {/if}
+                    <div class="hero-overlay"></div>
                 </div>
-                <div class="liked-banner-text">
-                    <span class="liked-banner-title">Liked Songs</span>
-                    <span class="liked-banner-subtitle"
-                        >{likedTracks.length} songs</span
-                    >
+
+                <div class="hero-content">
+                    <div class="hero-tag">YOUR #1 TRACK</div>
+                    <div class="hero-main-info">
+                        <div class="hero-art-container">
+                            {#if getTrackArt($topTracks[0].track)}
+                                <img
+                                    src={getTrackArt($topTracks[0].track)}
+                                    alt={$topTracks[0].track.title}
+                                />
+                            {:else}
+                                <div class="art-placeholder">
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="currentColor"
+                                        width="32"
+                                        height="32"
+                                    >
+                                        <path
+                                            d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
+                                        />
+                                    </svg>
+                                </div>
+                            {/if}
+                        </div>
+                        <div class="hero-text">
+                            <h2 class="hero-title truncate-text">
+                                {$topTracks[0].track.title}
+                            </h2>
+                            <p class="hero-artist truncate-text">
+                                {$topTracks[0].track.artist}
+                            </p>
+                        </div>
+                    </div>
+                    <div class="hero-stats">
+                        <span class="play-stat"
+                            >{$topTracks[0].play_count} PLAYS</span
+                        >
+                        <div class="hero-play-btn">
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="currentColor"
+                                width="24"
+                                height="24"
+                            >
+                                <path d="M8 5v14l11-7z" />
+                            </svg>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </button>
-    </div>
+        </section>
+    {/if}
 
     <!-- Quick Play Grid (Spotify-style 2-column compact cards) -->
     {#if quickPlayAlbums.length > 0}
@@ -284,7 +382,204 @@
         </div>
     {/if}
 
-    <!-- Recently Added Carousel -->
+    <!-- Wrapped Recap Card (Portrait/Premium style) -->
+    <div class="recap-card-container">
+        <button
+            class="recap-card"
+            on:click={() => isStatsWrappedOpen.set(true)}
+        >
+            <div class="recap-card-content">
+                <span class="recap-label">MONTHLY</span>
+                <h2 class="recap-title">{currentMonthName} Recap</h2>
+                <p class="recap-text">Check out your music month in review</p>
+                <div class="recap-pill">View Recap</div>
+            </div>
+            <div class="recap-card-decor">
+                <svg
+                    viewBox="0 0 100 100"
+                    fill="none"
+                    xmlns="http://www.w3.org/2000/svg"
+                >
+                    <circle
+                        cx="80"
+                        cy="20"
+                        r="40"
+                        fill="#1ed760"
+                        fill-opacity="0.3"
+                    />
+                    <circle
+                        cx="20"
+                        cy="80"
+                        r="30"
+                        fill="#1ed760"
+                        fill-opacity="0.1"
+                    />
+                </svg>
+            </div>
+        </button>
+    </div>
+
+    <!-- Jump Back In (Recently Played - Wide Cards) -->
+    {#if $recentlyPlayed.length > 0}
+        <section class="carousel-section wide-cards">
+            <h2 class="section-title">Jump Back In</h2>
+            <div class="carousel-container">
+                {#each $recentlyPlayed as track, i}
+                    <div
+                        class="wide-card"
+                        role="button"
+                        tabindex="0"
+                        on:click={(e) =>
+                            handleContainerClick(e, () =>
+                                handlePlayRecentlyPlayed(i),
+                            )}
+                        on:keydown={(e) =>
+                            handleKeydown(e, () => handlePlayRecentlyPlayed(i))}
+                    >
+                        <div class="wide-card-art">
+                            {#if getTrackArt(track)}
+                                <img
+                                    src={getTrackArt(track)}
+                                    alt={track.title}
+                                />
+                            {:else}
+                                <div class="art-placeholder-sm">
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="currentColor"
+                                        width="20"
+                                        height="20"
+                                    >
+                                        <path
+                                            d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
+                                        />
+                                    </svg>
+                                </div>
+                            {/if}
+                        </div>
+                        <div class="wide-card-info">
+                            <span class="card-title truncate-text"
+                                >{track.title || "Unknown"}</span
+                            >
+                            <span class="card-subtitle truncate-text">
+                                {track.artist || "Unknown Artist"}
+                            </span>
+                        </div>
+                    </div>
+                {/each}
+            </div>
+        </section>
+    {/if}
+
+    <!-- Your Top Songs (List View) -->
+    {#if $topTracks.length > 0}
+        <section class="list-section">
+            <h2 class="section-title">Your Top Songs</h2>
+            <div class="top-songs-list">
+                {#each $topTracks.slice(0, 4) as { track, play_count }, i}
+                    <div
+                        class="top-song-item"
+                        role="button"
+                        tabindex="0"
+                        on:click={(e) =>
+                            handleContainerClick(e, () =>
+                                handlePlayTopTrack(i),
+                            )}
+                        on:keydown={(e) =>
+                            handleKeydown(e, () => handlePlayTopTrack(i))}
+                    >
+                        <div class="song-rank">{i + 1}</div>
+                        <div class="song-art">
+                            {#if getTrackArt(track)}
+                                <img
+                                    src={getTrackArt(track)}
+                                    alt={track.title}
+                                />
+                            {:else}
+                                <div class="art-placeholder-xs">
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="currentColor"
+                                        width="16"
+                                        height="16"
+                                    >
+                                        <path
+                                            d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
+                                        />
+                                    </svg>
+                                </div>
+                            {/if}
+                        </div>
+                        <div class="song-info">
+                            <span class="song-title truncate-text"
+                                >{track.title || "Unknown"}</span
+                            >
+                            <span class="song-subtitle truncate-text"
+                                >{track.artist || "Unknown Artist"}</span
+                            >
+                        </div>
+                        <div class="song-count">{play_count}</div>
+                    </div>
+                {/each}
+            </div>
+        </section>
+    {/if}
+
+    <!-- Most Played Albums (List View) -->
+    {#if $topAlbums.length > 0}
+        <section class="list-section">
+            <h2 class="section-title">Most Played Albums</h2>
+            <div class="top-songs-list">
+                {#each $topAlbums.slice(0, 4) as { album, play_count }, i}
+                    <div
+                        class="top-song-item"
+                        role="button"
+                        tabindex="0"
+                        on:click={(e) =>
+                            handleContainerClick(e, () =>
+                                goToAlbumDetail(album.id),
+                            )}
+                        on:keydown={(e) =>
+                            handleKeydown(e, () => goToAlbumDetail(album.id))}
+                    >
+                        <div class="song-rank">{i + 1}</div>
+                        <div class="song-art">
+                            {#if getAlbumArt(album)}
+                                <img
+                                    src={getAlbumArt(album)}
+                                    alt={album.name}
+                                />
+                            {:else}
+                                <div class="art-placeholder-xs">
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="currentColor"
+                                        width="16"
+                                        height="16"
+                                    >
+                                        <path
+                                            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
+                                        />
+                                    </svg>
+                                </div>
+                            {/if}
+                        </div>
+                        <div class="song-info">
+                            <span class="song-title truncate-text"
+                                >{album.name}</span
+                            >
+                            <span class="song-subtitle truncate-text">
+                                {album.artist || "Unknown Artist"}
+                            </span>
+                        </div>
+                        <div class="song-count">{play_count}</div>
+                    </div>
+                {/each}
+            </div>
+        </section>
+    {/if}
+
+    <!-- Recently Added -->
     {#if recentTracks.length > 0}
         <section class="carousel-section">
             <h2 class="section-title">Recently Added</h2>
@@ -294,7 +589,10 @@
                         class="spotify-card"
                         role="button"
                         tabindex="0"
-                        on:click={(e) => handleContainerClick(e, () => handlePlayTrack(i))}
+                        on:click={(e) =>
+                            handleContainerClick(e, () => handlePlayTrack(i))}
+                        on:keydown={(e) =>
+                            handleKeydown(e, () => handlePlayTrack(i))}
                     >
                         <div class="card-art">
                             {#if getTrackArt(track)}
@@ -332,161 +630,14 @@
                         >
                         <button
                             class="card-subtitle truncate-text link"
-                            on:click={() => goToArtistDetail(track.artist || "Unknown Artist")}
+                            on:click={() =>
+                                goToArtistDetail(
+                                    track.artist || "Unknown Artist",
+                                )}
                         >
                             {track.artist || "Unknown Artist"}
                         </button>
                     </div>
-                {/each}
-            </div>
-        </section>
-    {/if}
-
-    <!-- Liked Songs Carousel -->
-    {#if likedTracks.length > 0}
-        <section class="carousel-section">
-            <h2 class="section-title">Liked Songs</h2>
-            <div class="carousel-container">
-                {#each likedTracks as track, i}
-                    <div
-                        class="spotify-card"
-                        role="button"
-                        tabindex="0"
-                        on:click={(e) => handleContainerClick(e, () => handlePlayLiked(i))}
-                    >
-                        <div class="card-art">
-                            {#if getTrackArt(track)}
-                                <img
-                                    src={getTrackArt(track)}
-                                    alt={track.title}
-                                />
-                            {:else}
-                                <div class="art-placeholder">
-                                    <svg
-                                        viewBox="0 0 24 24"
-                                        fill="currentColor"
-                                        width="24"
-                                        height="24"
-                                    >
-                                        <path
-                                            d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
-                                        />
-                                    </svg>
-                                </div>
-                            {/if}
-                            <div class="card-play-btn">
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="20"
-                                    height="20"
-                                >
-                                    <path d="M8 5v14l11-7z" />
-                                </svg>
-                            </div>
-                        </div>
-                        <span class="card-title truncate-text"
-                            >{track.title || "Unknown"}</span
-                        >
-                        <button
-                            class="card-subtitle truncate-text link"
-                            on:click={() => goToArtistDetail(track.artist || "Unknown Artist")}
-                        >
-                            {track.artist || "Unknown Artist"}
-                        </button>
-                    </div>
-                {/each}
-            </div>
-        </section>
-    {/if}
-
-    <!-- Albums Carousel -->
-    {#if displayAlbums.length > 0}
-        <section class="carousel-section">
-            <h2 class="section-title">Your Albums</h2>
-            <div class="carousel-container">
-                {#each displayAlbums as album}
-                    <div
-                        class="spotify-card"
-                        role="button"
-                        tabindex="0"
-                        on:click={(e) => handleContainerClick(e, () => goToAlbumDetail(album.id))}
-                    >
-                        <div class="card-art">
-                            {#if getAlbumArt(album)}
-                                <img
-                                    src={getAlbumArt(album)}
-                                    alt={album.name}
-                                />
-                            {:else}
-                                <div class="art-placeholder">
-                                    <svg
-                                        viewBox="0 0 24 24"
-                                        fill="currentColor"
-                                        width="24"
-                                        height="24"
-                                    >
-                                        <path
-                                            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
-                                        />
-                                    </svg>
-                                </div>
-                            {/if}
-                            <div class="card-play-btn">
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="20"
-                                    height="20"
-                                >
-                                    <path d="M8 5v14l11-7z" />
-                                </svg>
-                            </div>
-                        </div>
-                        <span class="card-title truncate-text"
-                            >{album.name}</span
-                        >
-                        <button
-                            class="card-subtitle truncate-text link"
-                            on:click={() => goToArtistDetail(album.artist || "Various Artists")}
-                        >
-                            {album.artist || "Various Artists"}
-                        </button>
-                    </div>
-                {/each}
-            </div>
-        </section>
-    {/if}
-
-    <!-- Artists Carousel -->
-    {#if displayArtists.length > 0}
-        <section class="carousel-section">
-            <h2 class="section-title">Your Artists</h2>
-            <div class="carousel-container">
-                {#each displayArtists as artist}
-                    <button
-                        class="spotify-card artist-card"
-                        on:click={() => goToArtistDetail(artist.name)}
-                    >
-                        <div class="card-art round">
-                            <div class="art-placeholder">
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="24"
-                                    height="24"
-                                >
-                                    <path
-                                        d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
-                                    />
-                                </svg>
-                            </div>
-                        </div>
-                        <span class="card-title truncate-text"
-                            >{artist.name}</span
-                        >
-                        <span class="card-subtitle truncate-text">Artist</span>
-                    </button>
                 {/each}
             </div>
         </section>
@@ -871,6 +1022,80 @@
         text-overflow: ellipsis;
     }
 
+    /* ===== Recap Card ===== */
+    .recap-card-container {
+        padding: 0 var(--spacing-md);
+        margin-bottom: var(--spacing-lg);
+    }
+
+    .recap-card {
+        width: 100%;
+        background: linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%);
+        border: 1px solid rgba(30, 215, 96, 0.3);
+        border-radius: var(--radius-lg);
+        padding: var(--spacing-lg);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        text-align: left;
+        position: relative;
+        overflow: hidden;
+        cursor: pointer;
+        color: white;
+    }
+
+    .recap-card:active {
+        transform: scale(0.98);
+    }
+
+    .recap-card-content {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .recap-label {
+        font-size: 0.7rem;
+        font-weight: 800;
+        color: #1ed760;
+        letter-spacing: 1px;
+    }
+
+    .recap-title {
+        font-size: 1.5rem;
+        font-weight: 800;
+        margin: 0;
+    }
+
+    .recap-text {
+        font-size: 0.85rem;
+        opacity: 0.7;
+        margin: 0 0 12px 0;
+    }
+
+    .recap-pill {
+        display: inline-block;
+        background: #1ed760;
+        color: black;
+        padding: 6px 16px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 700;
+        width: fit-content;
+    }
+
+    .recap-card-decor {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 120px;
+        height: 120px;
+        opacity: 0.5;
+        z-index: 1;
+    }
+
     /* ===== Empty State ===== */
     .empty-home {
         display: flex;
@@ -933,7 +1158,7 @@
 
     /* ===== Bottom Spacer ===== */
     .bottom-spacer {
-        height: 140px; /* Mini player (64px) + Nav (60px) + margin */
+        height: calc(var(--mobile-bottom-inset, 130px) + var(--spacing-md));
     }
     .link {
         background: none;
@@ -943,6 +1168,272 @@
         cursor: pointer;
         color: var(--text-secondary);
         max-width: fit-content;
+    }
+
+    /* ===== New Wide Card Style ===== */
+    .wide-card {
+        flex: 0 0 auto;
+        width: 240px;
+        scroll-snap-align: start;
+        background-color: var(--bg-elevated);
+        border-radius: var(--radius-md);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px;
+        transition: background-color 0.2s ease;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .wide-card:active {
+        background-color: var(--bg-surface);
+        transform: scale(0.98);
+    }
+
+    .wide-card-art {
+        width: 64px;
+        height: 64px;
+        border-radius: var(--radius-sm);
+        overflow: hidden;
+        flex-shrink: 0;
+        background-color: var(--bg-surface);
+    }
+
+    .wide-card-art img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .wide-card-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    /* ===== New Top Songs List Style ===== */
+    .list-section {
+        margin-bottom: var(--spacing-lg);
+    }
+
+    .top-songs-list {
+        display: flex;
+        flex-direction: column;
+        padding: 0 var(--spacing-md);
+        gap: 4px;
+    }
+
+    .top-song-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px;
+        border-radius: var(--radius-sm);
+        transition: background-color 0.2s ease;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .top-song-item:active {
+        background-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .song-rank {
+        width: 24px;
+        font-size: 0.875rem;
+        font-weight: 700;
+        color: var(--text-subdued);
+        text-align: center;
+    }
+
+    .song-art {
+        width: 48px;
+        height: 48px;
+        border-radius: 4px;
+        overflow: hidden;
+        flex-shrink: 0;
+        background-color: var(--bg-surface);
+    }
+
+    .song-art img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .song-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .song-title {
+        display: block;
+        font-size: 0.9375rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .song-subtitle {
+        display: block;
+        font-size: 0.8125rem;
+        color: var(--text-secondary);
+    }
+
+    .song-count {
+        font-size: 0.8125rem;
+        font-weight: 600;
+        color: var(--accent-primary);
+        opacity: 0.8;
+    }
+
+    .art-placeholder-xs {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-subdued);
+        background-color: var(--bg-surface);
+    }
+
+    /* ===== New Hero Card Style ===== */
+    .hero-section {
+        padding: 0 var(--spacing-md) var(--spacing-lg);
+    }
+
+    .hero-card {
+        position: relative;
+        width: 100%;
+        height: 180px;
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+        background-color: #282828;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        padding: var(--spacing-md);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        border: none;
+        cursor: pointer;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .hero-card:active {
+        transform: scale(0.98);
+    }
+
+    .hero-background {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: 0;
+    }
+
+    .bg-blur {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        filter: blur(20px) brightness(0.6);
+        transform: scale(1.2);
+    }
+
+    .hero-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(
+            to bottom,
+            transparent 0%,
+            rgba(0, 0, 0, 0.8) 100%
+        );
+        z-index: 1;
+    }
+
+    .hero-content {
+        position: relative;
+        z-index: 2;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .hero-tag {
+        font-size: 0.65rem;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        color: var(--accent-primary);
+        background-color: rgba(29, 185, 84, 0.1);
+        padding: 2px 8px;
+        border-radius: var(--radius-full);
+        width: fit-content;
+    }
+
+    .hero-main-info {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .hero-art-container {
+        width: 64px;
+        height: 64px;
+        border-radius: var(--radius-sm);
+        overflow: hidden;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        flex-shrink: 0;
+    }
+
+    .hero-art-container img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .hero-text {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .hero-title {
+        font-size: 1.25rem;
+        font-weight: 800;
+        color: white;
+        margin: 0;
+        line-height: 1.2;
+    }
+
+    .hero-artist {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.8);
+        margin: 4px 0 0;
+    }
+
+    .hero-stats {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .play-stat {
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: rgba(255, 255, 255, 0.6);
+    }
+
+    .hero-play-btn {
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background-color: var(--accent-primary);
+        color: black;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
     }
 
     .link:hover {

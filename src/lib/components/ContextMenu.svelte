@@ -1,7 +1,8 @@
 <script lang="ts">
     import { contextMenu, type ContextMenuItem } from "$lib/stores/ui";
-    import { fade } from "svelte/transition";
+    import { fade, fly } from "svelte/transition";
     import { onMount } from "svelte";
+    import { isMobile } from "$lib/stores/mobile";
 
     import { tick } from "svelte";
 
@@ -71,11 +72,15 @@
     // Close on any click (item selection)
     function handleItemClick(action: () => void) {
         action();
+        closeMenu();
+    }
+
+    function closeMenu() {
         contextMenu.update((m) => ({ ...m, visible: false }));
         activeSubmenu = null;
     }
 
-    function handleSubmenuHover(label: string) {
+    function handleSubmenuHover(label: string | null) {
         activeSubmenu = label;
     }
 
@@ -102,12 +107,25 @@
 </script>
 
 {#if $contextMenu.visible}
+    <!-- Backdrop for mobile -->
+    {#if $isMobile}
+        <div
+            class="context-menu-backdrop"
+            on:click={closeMenu}
+            transition:fade={{ duration: 200 }}
+        ></div>
+    {/if}
+
     <div
         class="context-menu"
         bind:this={menuElement}
-        style="top: {adjustedY}px; left: {adjustedX}px;"
+        style={$isMobile ? "" : `top: ${adjustedY}px; left: ${adjustedX}px;`}
         transition:fade={{ duration: 100 }}
     >
+        {#if $isMobile}
+            <div class="mobile-handle"></div>
+        {/if}
+
         {#each $contextMenu.items as item}
             {#if isSeparator(item)}
                 <div class="menu-separator"></div>
@@ -115,7 +133,13 @@
                 <div
                     class="menu-item has-submenu"
                     class:active={activeSubmenu === item.label}
-                    on:mouseenter={() => handleSubmenuHover(item.label)}
+                    on:mouseenter={() =>
+                        !$isMobile && handleSubmenuHover(item.label)}
+                    on:click={() =>
+                        $isMobile &&
+                        handleSubmenuHover(
+                            item.label === activeSubmenu ? null : item.label,
+                        )}
                     role="menuitem"
                     tabindex="0"
                 >
@@ -255,22 +279,64 @@
 
     /* ── Mobile ── */
     @media (max-width: 768px) {
+        .context-menu-backdrop {
+            position: fixed;
+            inset: 0;
+            background-color: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(2px);
+            z-index: 9998;
+        }
+
         .context-menu {
-            min-width: 200px;
-            max-width: calc(100vw - 32px);
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            top: auto;
+            width: 100%;
+            min-width: 100%;
+            max-width: 100%;
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+            border-top-left-radius: 16px;
+            border-top-right-radius: 16px;
+            padding: var(--spacing-sm);
+            padding-bottom: calc(
+                var(--safe-area-bottom, 0px) + var(--spacing-md)
+            );
+            box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
+            border: none;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .mobile-handle {
+            width: 40px;
+            height: 4px;
+            background-color: var(--bg-highlight);
+            border-radius: var(--radius-full);
+            margin: var(--spacing-xs) auto var(--spacing-md);
         }
 
         .menu-item,
         .menu-item.has-submenu {
             padding: var(--spacing-md);
             font-size: 1rem;
-            min-height: 44px;
+            min-height: 48px;
             display: flex;
             align-items: center;
+            border-radius: var(--radius-md);
         }
 
         .submenu {
-            max-height: 250px;
+            position: static;
+            width: 100%;
+            margin-top: var(--spacing-xs);
+            margin-left: var(--spacing-md);
+            border: none;
+            background-color: transparent;
+            box-shadow: none;
+            padding: 0;
+            max-height: none;
         }
     }
 </style>

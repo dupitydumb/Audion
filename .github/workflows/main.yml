@@ -245,7 +245,7 @@ jobs:
             libxdo-dev \
             libssl-dev \
             xvfb
-
+      
       # 4. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -471,15 +471,21 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
 
-      # 8. Install frontend dependencies
+      # 8. Setup Signing (Decode Keystore and Properties)
+      - name: Setup Signing
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > src-tauri/gen/android/release.keystore
+          echo "${{ secrets.ANDROID_KEY_PROPERTIES }}" > src-tauri/gen/android/key.properties
+
+      # 9. Install frontend dependencies
       - name: Install dependencies
         run: npm install
 
-      # 9. Build Tauri app for Android
+      # 10. Build Tauri app for Android (Signed)
       - name: Build Tauri app
         run: npm run tauri android build
 
-      # 10. Upload Android artifacts
+      # 11. Upload Android artifacts
       - name: Upload Android artifacts
         uses: softprops/action-gh-release@v2
         with:
@@ -490,7 +496,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 11. Send Discord notification for Android
+      # 12. Send Discord notification for Android
       - name: Discord notification (Android)
         if: success()
         env:

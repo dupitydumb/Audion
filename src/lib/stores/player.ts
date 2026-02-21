@@ -1,7 +1,7 @@
 // Player store - manages audio playback state
 import { writable, derived, get } from 'svelte/store';
 import type { Track } from '$lib/api/tauri';
-import { getAudioSrc, getAlbumArtSrc, getTrackCoverSrc } from '$lib/api/tauri';
+import { getAudioSrc, getAlbumArtSrc, getTrackCoverSrc, convertFileSrc } from '$lib/api/tauri';
 import { addToast } from '$lib/stores/toast';
 import { EventEmitter, type PluginEvents } from '$lib/plugins/event-emitter';
 import { tracks as libraryTracks, getFullTrack, getAlbumCoverFromTracks } from '$lib/stores/library';
@@ -27,6 +27,7 @@ import {
     nativeAudioGetState,
     nativeAudioIsFinished,
     nativeAudioSetEq,
+    shouldUseNativeAudio,
     type NativePlaybackState
 } from '$lib/services/native-audio';
 
@@ -35,6 +36,13 @@ let nativeStatePoller: ReturnType<typeof setInterval> | null = null;
 
 // HTML5 Audio element for streaming (initialized lazily)
 let html5Audio: HTMLAudioElement | null = null;
+
+// Track which backend is currently active ('native', 'html5', or 'none')
+type ActiveBackend = 'native' | 'html5' | 'none';
+let activeBackend: ActiveBackend = 'none';
+
+// Track if we should use native audio based on platform/settings
+let nativeAudioUsed = false;
 
 function getHtml5Audio(): HTMLAudioElement {
     if (!html5Audio && typeof window !== 'undefined') {
@@ -46,15 +54,13 @@ function getHtml5Audio(): HTMLAudioElement {
 
 function setupHtml5AudioListeners(audio: HTMLAudioElement): void {
     audio.addEventListener('timeupdate', () => {
-        const track = get(currentTrack);
-        if (track && isStreaming(track)) {
+        if (activeBackend === 'html5') {
             currentTime.set(audio.currentTime);
         }
     });
 
     audio.addEventListener('durationchange', () => {
-        const track = get(currentTrack);
-        if (track && isStreaming(track)) {
+        if (activeBackend === 'html5') {
             if (audio.duration && !isNaN(audio.duration)) {
                 duration.set(audio.duration);
             }
@@ -62,31 +68,27 @@ function setupHtml5AudioListeners(audio: HTMLAudioElement): void {
     });
 
     audio.addEventListener('play', () => {
-        const track = get(currentTrack);
-        if (track && isStreaming(track)) {
+        if (activeBackend === 'html5') {
             isPlaying.set(true);
             updateMediaSessionPlaybackState('playing');
         }
     });
 
     audio.addEventListener('pause', () => {
-        const track = get(currentTrack);
-        if (track && isStreaming(track)) {
+        if (activeBackend === 'html5') {
             isPlaying.set(false);
             updateMediaSessionPlaybackState('paused');
         }
     });
 
     audio.addEventListener('ended', () => {
-        const track = get(currentTrack);
-        if (track && isStreaming(track)) {
+        if (activeBackend === 'html5') {
             handleTrackEnd();
         }
     });
 
     audio.addEventListener('error', (e) => {
-        const track = get(currentTrack);
-        if (track && isStreaming(track)) {
+        if (activeBackend === 'html5') {
             console.error('[Player] HTML5 audio error:', audio.error);
             addToast(`Streaming playback failed: ${audio.error?.message || 'Unknown error'}`, 'error');
         }
@@ -328,7 +330,7 @@ export const repeat = writable<'none' | 'one' | 'all'>('none');
 equalizer.subscribe((state) => {
     const track = get(currentTrack);
     // EQ only works on native backend for now
-    if (track && !isStreaming(track)) {
+    if (activeBackend === 'native') {
         nativeAudioSetEq(state).catch(err => {
             console.error('[EQ] Failed to apply settings:', err);
         });
@@ -339,7 +341,11 @@ equalizer.subscribe((state) => {
 // BACKEND INITIALIZATION
 // =============================================================================
 export async function initAudioBackend(): Promise<void> {
-    console.log('[Player] Initializing native audio backend');
+    console.log('[Player] Initializing audio backend');
+
+    // Check if we should use native audio
+    nativeAudioUsed = await shouldUseNativeAudio();
+    console.log(`[Player] Native audio preferred: ${nativeAudioUsed}`);
 
     // Start/stop poller based on playback state
     isPlaying.subscribe((playing) => {
@@ -352,7 +358,7 @@ export async function initAudioBackend(): Promise<void> {
 }
 
 // Poll the native backend for state changes (only while playing)
-const POLL_INTERVAL_MS = 250;
+const POLL_INTERVAL_MS = 50;
 
 function startStatePoller(): void {
     if (nativeStatePoller) return;
@@ -360,33 +366,55 @@ function startStatePoller(): void {
     nativeStatePoller = setInterval(async () => {
         try {
             const track = get(currentTrack);
-            if (!track || isStreaming(track)) return;
+            if (!track) return;
 
-            const state = await nativeAudioGetState();
+            if (activeBackend === 'native') {
+                const state = await nativeAudioGetState();
 
-            currentTime.set(state.position);
-            if (state.duration > 0) {
-                duration.set(state.duration);
-            }
-
-            // Check if track finished
-            if (state.is_playing === false && get(isPlaying)) {
-                const finished = await nativeAudioIsFinished();
-                if (finished) {
-                    handleTrackEnd();
+                currentTime.set(state.position);
+                if (state.duration > 0) {
+                    duration.set(state.duration);
                 }
-            }
 
-            // Sync isPlaying state
-            if (state.is_playing !== get(isPlaying)) {
-                isPlaying.set(state.is_playing);
-            }
+                // Check if track finished
+                if (state.is_playing === false && get(isPlaying)) {
+                    const finished = await nativeAudioIsFinished();
+                    if (finished) {
+                        handleTrackEnd();
+                    }
+                }
 
-            // Emit time update for plugins
-            pluginEvents.emit('timeUpdate', {
-                currentTime: state.position,
-                duration: state.duration
-            });
+                // Sync isPlaying state
+                if (state.is_playing !== get(isPlaying)) {
+                    isPlaying.set(state.is_playing);
+                }
+
+                // Emit time update for plugins
+                pluginEvents.emit('timeUpdate', {
+                    currentTime: state.position,
+                    duration: state.duration
+                });
+            } else if (activeBackend === 'html5' && html5Audio) {
+                const pos = html5Audio.currentTime;
+                const dur = html5Audio.duration || 0;
+
+                currentTime.set(pos);
+                if (dur > 0 && !isNaN(dur)) {
+                    duration.set(dur);
+                }
+
+                // Sync isPlaying state (HTML5 events should handle this, but poller is a good fallback)
+                const playing = !html5Audio.paused && !html5Audio.ended;
+                if (playing !== get(isPlaying)) {
+                    isPlaying.set(playing);
+                }
+
+                // Emit time update for plugins
+                pluginEvents.emit('timeUpdate', {
+                    currentTime: pos,
+                    duration: dur
+                });
+            }
         } catch (e) {
             // Ignore polling errors (backend may still be initializing)
         }
@@ -413,6 +441,7 @@ export function cleanupPlayer(): void {
     }
 
     // Reset stores
+    activeBackend = 'none';
     isPlaying.set(false);
     currentTrack.set(null);
     currentTime.set(0);
@@ -636,25 +665,42 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
                 }
             }
 
+            activeBackend = 'html5';
             console.log('[Player] HTML5 streaming started:', track.title);
         } else {
             if (!audioPath) {
                 throw new Error('No local audio path found for track');
             }
-            // Stop HTML5 audio
-            if (html5Audio) {
-                html5Audio.pause();
-                html5Audio.src = '';
+
+            if (nativeAudioUsed) {
+                // Stop HTML5 audio
+                if (html5Audio) {
+                    html5Audio.pause();
+                    html5Audio.src = '';
+                }
+
+                // Play via native backend
+                await nativeAudioPlay(audioPath);
+
+                // Sync volume
+                const vol = sliderToAudioVolume(get(volume));
+                await nativeAudioSetVolume(vol);
+
+                activeBackend = 'native';
+                console.log('[Player] Native playback started:', track.title);
+            } else {
+                // Fallback to HTML5 via convertFileSrc if native is disabled (e.g. on macOS)
+                const audio = getHtml5Audio();
+                audio.pause();
+
+                // Use convertFileSrc to get a URL that the browser can play
+                audio.src = convertFileSrc(audioPath);
+                audio.volume = sliderToAudioVolume(get(volume));
+
+                await audio.play();
+                activeBackend = 'html5';
+                console.log('[Player] Local playback started via HTML5:', track.title);
             }
-
-            // Play via native backend
-            await nativeAudioPlay(audioPath);
-
-            // Sync volume
-            const vol = sliderToAudioVolume(get(volume));
-            await nativeAudioSetVolume(vol);
-
-            console.log('[Player] Native playback started:', track.title);
         }
 
         currentTime.set(0);
@@ -767,12 +813,11 @@ export function playTracks(
 export async function togglePlay(): Promise<void> {
     try {
         const track = get(currentTrack);
-        const streaming = track ? isStreaming(track) : false;
 
         if (get(isPlaying)) {
-            if (streaming) {
+            if (activeBackend === 'html5') {
                 getHtml5Audio().pause();
-            } else {
+            } else if (activeBackend === 'native') {
                 await nativeAudioPause();
             }
             isPlaying.set(false);
@@ -781,11 +826,11 @@ export async function togglePlay(): Promise<void> {
             if (track && (get(currentTime) === 0 || get(currentTime) >= get(duration))) {
                 // Restart if at end
                 await playTrack(track);
-            } else if (streaming) {
+            } else if (activeBackend === 'html5') {
                 await getHtml5Audio().play();
                 isPlaying.set(true);
                 updateMediaSessionPlaybackState('playing');
-            } else {
+            } else if (activeBackend === 'native') {
                 await nativeAudioResume();
                 isPlaying.set(true);
                 updateMediaSessionPlaybackState('playing');
@@ -817,11 +862,10 @@ export function nextTrack(): void {
 
     if (rep === 'one') {
         // Repeat current track
-        const track = get(currentTrack);
-        if (track && isStreaming(track)) {
+        if (activeBackend === 'html5') {
             getHtml5Audio().currentTime = 0;
             getHtml5Audio().play();
-        } else {
+        } else if (activeBackend === 'native') {
             nativeAudioSeek(0).catch(console.error);
         }
         return;
@@ -924,21 +968,12 @@ export async function previousTrack(): Promise<void> {
 
     // If more than 3 seconds in, restart current track
     try {
-        const track = get(currentTrack);
-        const streaming = track ? isStreaming(track) : false;
-        let pos = 0;
-
-        if (streaming) {
-            pos = getHtml5Audio().currentTime;
-        } else {
-            const state = await nativeAudioGetState();
-            pos = state.position;
-        }
+        let pos = get(currentTime);
 
         if (pos > 3) {
-            if (streaming) {
+            if (activeBackend === 'html5') {
                 getHtml5Audio().currentTime = 0;
-            } else {
+            } else if (activeBackend === 'native') {
                 await nativeAudioSeek(0);
             }
             return;
@@ -972,16 +1007,13 @@ export async function previousTrack(): Promise<void> {
 
 // Seek to position (0-1)
 export async function seek(position: number): Promise<void> {
-    const track = get(currentTrack);
-    const streaming = track ? isStreaming(track) : false;
-
     try {
-        if (streaming) {
+        if (activeBackend === 'html5') {
             const audio = getHtml5Audio();
             if (audio.duration) {
                 audio.currentTime = position * audio.duration;
             }
-        } else {
+        } else if (activeBackend === 'native') {
             await nativeAudioSeek(position);
         }
     } catch (err) {
@@ -1000,7 +1032,9 @@ export async function setVolume(sliderValue: number): Promise<void> {
             html5Audio.volume = vol;
         }
         // Update native volume
-        await nativeAudioSetVolume(vol);
+        if (nativeAudioUsed) {
+            await nativeAudioSetVolume(vol);
+        }
     } catch (err) {
         console.error('[Player] Volume set failed:', err);
     }

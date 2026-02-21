@@ -260,11 +260,29 @@ pub struct AudioPlayer {
 
 impl AudioPlayer {
     pub fn new() -> Result<Self, String> {
-        let (stream, stream_handle) = OutputStream::try_default()
-            .map_err(|e| format!("Failed to open audio output: {}", e))?;
+        log::info!("[AUDIO] Initializing output stream...");
+        let (stream, stream_handle) = match OutputStream::try_default() {
+            Ok(s) => {
+                log::info!("[AUDIO] Output stream initialized successfully");
+                s
+            }
+            Err(e) => {
+                log::error!("[AUDIO] Failed to open audio output: {}", e);
+                return Err(format!("Failed to open audio output: {}", e));
+            }
+        };
 
-        let sink = Sink::try_new(&stream_handle)
-            .map_err(|e| format!("Failed to create audio sink: {}", e))?;
+        log::info!("[AUDIO] Creating sink...");
+        let sink = match Sink::try_new(&stream_handle) {
+            Ok(s) => {
+                log::info!("[AUDIO] Sink created successfully");
+                s
+            }
+            Err(e) => {
+                log::error!("[AUDIO] Failed to create audio sink: {}", e);
+                return Err(format!("Failed to create audio sink: {}", e));
+            }
+        };
 
         Ok(Self {
             _stream: stream,
@@ -552,9 +570,7 @@ pub fn audio_set_eq(
 }
 
 #[tauri::command]
-pub fn native_audio_available(
-    state: tauri::State<'_, PlaybackStateSync>,
-) -> bool {
+pub fn native_audio_available(state: tauri::State<'_, PlaybackStateSync>) -> bool {
     state
         .inner()
         .player

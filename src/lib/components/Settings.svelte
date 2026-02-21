@@ -57,6 +57,12 @@
   let mergeProgress: MergeProgressUpdate | null = null;
   let mergePercentage = 0;
 
+  // Audio Backend state
+  let initialAudioBackend = $appSettings.audioBackend;
+  let showRefreshNotice = false;
+
+  $: showRefreshNotice = $appSettings.audioBackend !== initialAudioBackend;
+
   // Event listeners
   let unlistenSync: UnlistenFn | null = null;
   let unlistenMerge: UnlistenFn | null = null;
@@ -287,6 +293,10 @@
     const sizes = ["B", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  }
+
+  function handleRefresh() {
+    window.location.reload();
   }
 </script>
 
@@ -554,6 +564,63 @@
             </button>
           </div>
         </div>
+
+        <div class="setting-item">
+          <span class="setting-label">Audio Backend</span>
+          <div class="theme-modes">
+            <button
+              class="mode-btn"
+              class:active={$appSettings.audioBackend === "auto"}
+              on:click={() => appSettings.setAudioBackend("auto")}
+            >
+              <span>Auto</span>
+            </button>
+            <button
+              class="mode-btn"
+              class:active={$appSettings.audioBackend === "native"}
+              on:click={() => appSettings.setAudioBackend("native")}
+            >
+              <span>Native</span>
+            </button>
+            <button
+              class="mode-btn"
+              class:active={$appSettings.audioBackend === "html5"}
+              on:click={() => appSettings.setAudioBackend("html5")}
+            >
+              <span>HTML5</span>
+            </button>
+          </div>
+          <p class="setting-hint">
+            <strong>Auto:</strong> Recommended. Uses Native on Linux/Android and
+            HTML5 elsewhere.<br />
+            <strong>Native:</strong> Better performance, system-wide EQ (Rust
+            backend).<br />
+            <strong>HTML5:</strong> Legacy web audio playback.
+          </p>
+        </div>
+
+        {#if showRefreshNotice}
+          <div class="setting-item refresh-notice">
+            <div class="notice-content">
+              <svg
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="currentColor"
+              >
+                <path
+                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"
+                />
+              </svg>
+              <span
+                >Changing the audio backend requires a refresh to take effect.</span
+              >
+            </div>
+            <button class="selector-btn refresh-btn" on:click={handleRefresh}>
+              Refresh Now
+            </button>
+          </div>
+        {/if}
       </section>
 
       <!-- Cover Management -->
@@ -1830,6 +1897,55 @@
     font-weight: 600;
   }
 
+  .notice-content {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    color: var(--accent-primary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+  }
+
+  .refresh-notice {
+    background-color: rgba(var(--accent-primary-rgb, 30, 215, 96), 0.1);
+    border: 1px solid rgba(var(--accent-primary-rgb, 30, 215, 96), 0.3);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: var(--spacing-md);
+    animation: fadeIn 0.3s ease;
+  }
+
+  .refresh-btn {
+    background-color: var(--accent-primary);
+    color: #000;
+    border: none;
+    font-weight: 600;
+    padding: var(--spacing-xs) var(--spacing-md);
+    cursor: pointer;
+    transition:
+      transform 0.2s ease,
+      background-color 0.2s ease;
+  }
+
+  .refresh-btn:hover {
+    background-color: var(--accent-hover);
+    transform: scale(1.05);
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(5px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
   /* ── Mobile ── */
   @media (max-width: 768px) {
     .view-header h1 {
@@ -1839,8 +1955,10 @@
 
     .settings-content {
       padding: var(--spacing-sm);
-      /* Preserve bottom padding for fixed bottom nav (60px) + mini player (64px) + margin */
-      padding-bottom: calc(140px + var(--spacing-xl));
+      /* Preserve bottom padding for fixed bottom nav + mini player + margin */
+      padding-bottom: calc(
+        var(--mobile-bottom-inset, 130px) + var(--spacing-xl)
+      );
     }
 
     .settings-container {

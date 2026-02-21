@@ -1021,6 +1021,20 @@ pub struct AlbumWithCount {
     pub play_count: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtistWithCount {
+    pub artist: String,
+    pub play_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatsSummary {
+    pub total_plays: i64,
+    pub total_duration_seconds: i64,
+    pub top_artist: Option<String>,
+    pub top_genre: Option<String>, // Placeholder for now
+}
+
 pub fn like_track(conn: &Connection, track_id: i64) -> Result<()> {
     conn.execute(
         "INSERT OR IGNORE INTO liked_tracks (track_id) VALUES (?1)",
@@ -1111,6 +1125,7 @@ pub fn get_top_tracks(conn: &Connection, limit: i32) -> Result<Vec<TrackWithCoun
         "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.album_id, t.format, t.bitrate, t.source_type, t.cover_url, t.external_id, t.local_src, t.track_cover_path, t.disc_number, COUNT(ph.id) as play_count
          FROM tracks t
          INNER JOIN play_history ph ON t.id = ph.track_id
+         WHERE strftime('%Y-%m', ph.played_at) = strftime('%Y-%m', 'now')
          GROUP BY t.id
          ORDER BY play_count DESC
          LIMIT ?1",
@@ -1151,7 +1166,8 @@ pub fn get_top_albums(conn: &Connection, limit: i32) -> Result<Vec<AlbumWithCoun
         "SELECT a.id, a.name, a.artist, a.art_data, a.art_path, COUNT(ph.id) as play_count
          FROM albums a
          INNER JOIN play_history ph ON a.id = ph.album_id
-         WHERE ph.album_id IS NOT NULL
+         WHERE ph.album_id IS NOT NULL 
+         AND strftime('%Y-%m', ph.played_at) = strftime('%Y-%m', 'now')
          GROUP BY a.id
          ORDER BY play_count DESC
          LIMIT ?1",
@@ -1210,4 +1226,61 @@ pub fn get_recently_played(conn: &Connection, limit: i32) -> Result<Vec<Track>> 
         .collect::<Result<Vec<_>>>()?;
 
     Ok(tracks)
+}
+
+pub fn get_top_artists(conn: &Connection, limit: i32) -> Result<Vec<ArtistWithCount>> {
+    let mut stmt = conn.prepare(
+        "SELECT t.artist, COUNT(ph.id) as play_count
+         FROM tracks t
+         INNER JOIN play_history ph ON t.id = ph.track_id
+         WHERE t.artist IS NOT NULL
+         AND strftime('%Y-%m', ph.played_at) = strftime('%Y-%m', 'now')
+         GROUP BY t.artist
+         ORDER BY play_count DESC
+         LIMIT ?1",
+    )?;
+
+    let results = stmt
+        .query_map(params![limit], |row| {
+            Ok(ArtistWithCount {
+                artist: row.get(0)?,
+                play_count: row.get(1)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(results)
+}
+
+pub fn get_stats_summary(conn: &Connection) -> Result<StatsSummary> {
+    let total_plays: i64 =
+        conn.query_row("SELECT COUNT(*) FROM play_history WHERE strftime('%Y-%m', played_at) = strftime('%Y-%m', 'now')", [], |row| row.get(0))?;
+
+    let total_duration: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(duration_played), 0) FROM play_history WHERE strftime('%Y-%m', played_at) = strftime('%Y-%m', 'now')",
+        [],
+        |row| row.get(0),
+    )?;
+
+    let top_artist: Option<String> = conn
+        .query_row(
+            "SELECT t.artist
+         FROM tracks t
+         INNER JOIN play_history ph ON t.id = ph.track_id
+         WHERE t.artist IS NOT NULL
+         AND strftime('%Y-%m', ph.played_at) = strftime('%Y-%m', 'now')
+         GROUP BY t.artist
+         ORDER BY COUNT(ph.id) DESC
+         LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    Ok(StatsSummary {
+        total_plays,
+        total_duration_seconds: total_duration,
+        top_artist,
+        top_genre: None,
+    })
 }

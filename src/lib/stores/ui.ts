@@ -6,6 +6,7 @@ export const isFullScreen = writable(false);
 export const isMiniPlayer = writable(false);
 export const isQueueVisible = writable(false);
 export const isSettingsOpen = writable(false);
+export const isStatsWrappedOpen = writable(false);
 
 // Store original window state for restoring after PIP mode
 let originalWindowState: {

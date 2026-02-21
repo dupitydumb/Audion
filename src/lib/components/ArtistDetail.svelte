@@ -542,5 +542,11 @@
             min-height: 44px;
             white-space: nowrap;
         }
+
+        .artist-content {
+            padding-bottom: calc(
+                var(--mobile-bottom-inset) + var(--spacing-md)
+            );
+        }
     }
 </style>

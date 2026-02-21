@@ -262,7 +262,10 @@
                     <button
                         class="album-artist link"
                         on:click={() => {
-                            if (album) goToArtistDetail(album.artist || "Unknown Artist");
+                            if (album)
+                                goToArtistDetail(
+                                    album.artist || "Unknown Artist",
+                                );
                         }}
                         title="Go to artist"
                     >
@@ -672,6 +675,12 @@
             padding: var(--spacing-sm) var(--spacing-lg);
             font-size: 0.875rem;
             min-height: 44px;
+        }
+
+        .track-list-section {
+            padding-bottom: calc(
+                var(--mobile-bottom-inset) + var(--spacing-md)
+            );
         }
     }
 </style>
