@@ -71,12 +71,14 @@ pub fn run() {
             // =============================================================================
             // NATIVE AUDIO BACKEND INITIALIZATION
             // =============================================================================
-            // Initialize the native audio backend.
-            // This is now the default backend for all platforms.
+            // Register state immediately (empty) so commands are available, then
+            // initialize the actual audio output in a background thread with a
+            // timeout to prevent blocking the UI on slow audio subsystems.
             // =============================================================================
             {
                 log::info!("[AUDIO] Initializing native audio backend (rodio)...");
                 app.manage(audio::PlaybackStateSync::new());
+                audio::PlaybackStateSync::init_async(app.handle().clone());
             }
 
             // Handle window start mode (desktop only)

@@ -20,22 +20,42 @@ impl Database {
         // Use execute_batch because these PRAGMAs return results which execute() doesn't like
         conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
 
-        // Run an integrity check on startup
-        match conn.query_row("PRAGMA integrity_check;", [], |row| row.get::<_, String>(0)) {
-            Ok(status) if status != "ok" => {
-                eprintln!("[DB] Warning: Database integrity check failed: {}", status);
-            }
-            Err(e) => {
-                eprintln!("[DB] Warning: Could not run integrity check: {}", e);
-            }
-            _ => {} // Everything is fine ("ok")
-        }
-
         // Initialize schema
         schema::init_schema(&conn)?;
 
-        Ok(Self {
+        let db = Self {
             conn: Arc::new(Mutex::new(conn)),
-        })
+        };
+
+        // Run integrity check in background to avoid blocking startup
+        db.check_integrity_async();
+
+        Ok(db)
+    }
+
+    fn check_integrity_async(&self) {
+        let conn = self.conn.clone();
+        std::thread::spawn(move || {
+            let guard = match conn.lock() {
+                Ok(g) => g,
+                Err(_) => {
+                    log::error!("[DB] Failed to acquire lock for integrity check");
+                    return;
+                }
+            };
+            match guard.query_row("PRAGMA integrity_check;", [], |row| {
+                row.get::<_, String>(0)
+            }) {
+                Ok(status) if status != "ok" => {
+                    log::warn!("[DB] Integrity check failed: {}", status);
+                }
+                Err(e) => {
+                    log::warn!("[DB] Could not run integrity check: {}", e);
+                }
+                _ => {
+                    log::info!("[DB] Integrity check passed");
+                }
+            }
+        });
     }
 }

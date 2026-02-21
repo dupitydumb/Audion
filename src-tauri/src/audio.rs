@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use serde::{Deserialize, Serialize};
+use tauri::Manager;
 
 // =============================================================================
 // DSP: EQUALIZER FILTERS
@@ -441,16 +442,33 @@ unsafe impl Sync for PlaybackStateSync {}
 
 impl PlaybackStateSync {
     pub fn new() -> Self {
-        let player = match AudioPlayer::new() {
-            Ok(p) => Some(p),
-            Err(e) => {
-                log::error!("[AUDIO] Failed to initialize audio: {}", e);
-                None
-            }
-        };
         Self {
-            player: Mutex::new(player),
+            player: Mutex::new(None),
         }
+    }
+
+    pub fn init_async(app_handle: tauri::AppHandle) {
+        std::thread::spawn(move || {
+            let start = Instant::now();
+
+            match AudioPlayer::new() {
+                Ok(p) => {
+                    log::info!(
+                        "[AUDIO] Backend initialized in {:.1}s",
+                        start.elapsed().as_secs_f64()
+                    );
+                    let state: tauri::State<'_, PlaybackStateSync> =
+                        app_handle.state::<PlaybackStateSync>();
+                    let sync = state.inner();
+                    if let Ok(mut guard) = sync.player.lock() {
+                        *guard = Some(p);
+                    }
+                }
+                Err(e) => {
+                    log::error!("[AUDIO] Failed to initialize audio: {}", e);
+                }
+            }
+        });
     }
 }
 
@@ -534,6 +552,13 @@ pub fn audio_set_eq(
 }
 
 #[tauri::command]
-pub fn native_audio_available() -> bool {
-    true
+pub fn native_audio_available(
+    state: tauri::State<'_, PlaybackStateSync>,
+) -> bool {
+    state
+        .inner()
+        .player
+        .lock()
+        .map(|guard| guard.is_some())
+        .unwrap_or(false)
 }

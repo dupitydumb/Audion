@@ -340,18 +340,27 @@ equalizer.subscribe((state) => {
 // =============================================================================
 export async function initAudioBackend(): Promise<void> {
     console.log('[Player] Initializing native audio backend');
-    startStatePoller();
+
+    // Start/stop poller based on playback state
+    isPlaying.subscribe((playing) => {
+        if (playing) {
+            startStatePoller();
+        } else {
+            stopStatePoller();
+        }
+    });
 }
 
-// Poll the native backend for state changes
+// Poll the native backend for state changes (only while playing)
+const POLL_INTERVAL_MS = 250;
+
 function startStatePoller(): void {
     if (nativeStatePoller) return;
 
     nativeStatePoller = setInterval(async () => {
         try {
-            // If playing via HTML5, skip native polling
             const track = get(currentTrack);
-            if (track && isStreaming(track)) return;
+            if (!track || isStreaming(track)) return;
 
             const state = await nativeAudioGetState();
 
@@ -378,11 +387,10 @@ function startStatePoller(): void {
                 currentTime: state.position,
                 duration: state.duration
             });
-
         } catch (e) {
-            // Ignore polling errors
+            // Ignore polling errors (backend may still be initializing)
         }
-    }, 100);
+    }, POLL_INTERVAL_MS);
 }
 
 function stopStatePoller(): void {
