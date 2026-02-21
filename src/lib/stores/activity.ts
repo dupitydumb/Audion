@@ -5,6 +5,7 @@ import { recordPlay, getTopTracks, getTopAlbums, getRecentlyPlayed, type Track, 
 export const topTracks = writable<TrackWithCount[]>([]);
 export const topAlbums = writable<AlbumWithCount[]>([]);
 export const recentlyPlayed = writable<Track[]>([]);
+export const isLoadingActivity = writable<boolean>(false);
 
 // Record a play event for a track
 export async function recordTrackPlay(trackId: number, albumId: number | null, durationPlayed: number): Promise<void> {
@@ -22,6 +23,9 @@ export async function recordTrackPlay(trackId: number, albumId: number | null, d
 
 // Load activity data (top tracks, top albums, recently played)
 export async function loadActivityData(): Promise<void> {
+    if (get(isLoadingActivity)) return;
+
+    isLoadingActivity.set(true);
     try {
         const [topT, topA, recent] = await Promise.all([
             getTopTracks(50),
@@ -33,6 +37,8 @@ export async function loadActivityData(): Promise<void> {
         recentlyPlayed.set(recent);
     } catch (error) {
         console.error('[Activity] Failed to load activity data:', error);
+    } finally {
+        isLoadingActivity.set(false);
     }
 }
 

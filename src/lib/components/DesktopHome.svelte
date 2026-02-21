@@ -37,8 +37,11 @@
         loadActivityData();
     });
 
-    // Quick play: pick 6 random albums for the quick-play grid
-    $: quickPlayAlbums = $libraryAlbums.slice(0, 6);
+    // Quick play: top albums or first 6 library albums
+    $: quickPlayAlbums =
+        $topAlbums.length > 0
+            ? $topAlbums.slice(0, 6).map((ta) => ta.album)
+            : $libraryAlbums.slice(0, 6);
 
     function handleQuickPlay(album: Album) {
         goToAlbumDetail(album.id);
@@ -138,7 +141,7 @@
     <!-- Recently Played -->
     {#if $recentlyPlayed.length > 0}
         <section class="home-section">
-            <h2 class="section-title">Recently Played</h2>
+            <h2 class="section-title">Jump Back In</h2>
             <div class="carousel-row">
                 {#each $recentlyPlayed.slice(0, 10) as track, i}
                     <div
@@ -150,12 +153,7 @@
                                 handlePlayTrack(track, i, $recentlyPlayed),
                             )}
                         on:keydown={(e) =>
-                            handleRowKeydown(
-                                e,
-                                track,
-                                i,
-                                $recentlyPlayed,
-                            )}
+                            handleRowKeydown(e, track, i, $recentlyPlayed)}
                     >
                         <div class="carousel-art">
                             {#if getTrackCoverSrc(track)}
@@ -626,25 +624,33 @@
         gap: 12px;
         padding: 8px 12px;
         border: none;
-        background: none;
+        background: transparent;
         cursor: pointer;
         border-radius: 6px;
-        transition: background 0.15s ease;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         text-align: left;
         width: 100%;
     }
 
     .top-track-row:hover {
-        background: var(--surface-hover, rgba(255, 255, 255, 0.07));
+        background: var(--surface-hover, rgba(255, 255, 255, 0.1));
+        transform: translateX(4px);
     }
 
     .top-track-rank {
-        width: 24px;
-        font-size: 0.9rem;
-        font-weight: 600;
+        width: 32px;
+        font-size: 1rem;
+        font-weight: 700;
         color: var(--text-subdued);
         text-align: center;
         flex-shrink: 0;
+        font-family: "JetBrains Mono", monospace;
+        opacity: 0.5;
+    }
+
+    .top-track-row:hover .top-track-rank {
+        color: var(--accent-color, #1db954);
+        opacity: 1;
     }
 
     .top-track-art {
