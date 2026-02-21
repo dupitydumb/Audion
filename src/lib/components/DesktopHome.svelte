@@ -26,6 +26,24 @@
         goToArtistDetail,
         goToLikedSongs,
     } from "$lib/stores/view";
+    import { isStatsWrappedOpen } from "$lib/stores/ui";
+
+    const monthNames = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    const currentMonthName =
+        monthNames[new Date().getHours() < 24 ? new Date().getMonth() : 0];
 
     // Greeting based on time of day
     let greeting = "Good evening";
@@ -76,6 +94,27 @@
     <!-- Greeting -->
     <header class="home-header">
         <h1 class="greeting">{greeting}</h1>
+        <button
+            class="recap-launch-btn"
+            on:click={() => isStatsWrappedOpen.set(true)}
+            aria-label="{currentMonthName} Recap"
+        >
+            <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                width="18"
+                height="18"
+            >
+                <path
+                    d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+                ></path>
+            </svg>
+            <span>{currentMonthName} Recap</span>
+        </button>
     </header>
 
     <!-- Quick Play Grid -->
@@ -115,28 +154,6 @@
             </div>
         </section>
     {/if}
-
-    <!-- Liked Songs Card -->
-    <section class="home-section">
-        <button class="liked-songs-card" on:click={goToLikedSongs}>
-            <div class="liked-songs-gradient">
-                <svg
-                    viewBox="0 0 24 24"
-                    width="28"
-                    height="28"
-                    fill="currentColor"
-                >
-                    <path
-                        d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
-                    />
-                </svg>
-            </div>
-            <div class="liked-songs-info">
-                <span class="liked-songs-title">Liked Songs</span>
-                <span class="liked-songs-count">{$likedCount} songs</span>
-            </div>
-        </button>
-    </section>
 
     <!-- Recently Played -->
     {#if $recentlyPlayed.length > 0}
@@ -276,14 +293,14 @@
         </section>
     {/if}
 
-    <!-- Top Albums -->
+    <!-- Top Albums (List View) -->
     {#if $topAlbums.length > 0}
         <section class="home-section">
             <h2 class="section-title">Most Played Albums</h2>
-            <div class="carousel-row">
-                {#each $topAlbums.slice(0, 10) as { album, play_count }}
+            <div class="top-tracks-list">
+                {#each $topAlbums.slice(0, 10) as { album, play_count }, i}
                     <div
-                        class="carousel-card"
+                        class="top-track-row"
                         role="button"
                         tabindex="0"
                         on:click={(e) =>
@@ -297,7 +314,8 @@
                             }
                         }}
                     >
-                        <div class="carousel-art">
+                        <span class="top-track-rank">{i + 1}</span>
+                        <div class="top-track-art">
                             {#if getAlbumCoverSrc(album)}
                                 <img
                                     src={getAlbumCoverSrc(album)}
@@ -305,12 +323,12 @@
                                     decoding="async"
                                 />
                             {:else}
-                                <div class="carousel-art-placeholder">
+                                <div class="top-track-art-placeholder">
                                     <svg
                                         viewBox="0 0 24 24"
                                         fill="currentColor"
-                                        width="24"
-                                        height="24"
+                                        width="16"
+                                        height="16"
                                     >
                                         <path
                                             d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
@@ -319,20 +337,18 @@
                                 </div>
                             {/if}
                         </div>
-                        <span class="carousel-title">{album.name}</span>
-                        <div class="carousel-subtitle-container">
+                        <div class="top-track-info">
+                            <span class="top-track-title">{album.name}</span>
                             <button
-                                class="carousel-subtitle link"
+                                class="top-track-artist link"
                                 on:click={() =>
-                                    goToArtistDetail(album.artist || "Unknown")}
+                                    goToArtistDetail(album.artist || "")}
                                 title="Go to artist"
                             >
                                 {album.artist || "Unknown Artist"}
                             </button>
-                            <span class="carousel-subtitle-plays">
-                                · {play_count} plays</span
-                            >
                         </div>
+                        <span class="top-track-plays">{play_count} plays</span>
                     </div>
                 {/each}
             </div>
@@ -723,5 +739,46 @@
         width: 48px;
         text-align: right;
         flex-shrink: 0;
+    }
+    .home-header {
+        margin-bottom: var(--spacing-xl);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .greeting {
+        font-size: 2rem;
+        font-weight: 800;
+        color: var(--text-primary);
+        letter-spacing: -0.02em;
+        margin: 0;
+    }
+
+    .recap-launch-btn {
+        background: linear-gradient(135deg, #1ed760 0%, #17a34a 100%);
+        color: black;
+        border: none;
+        padding: 8px 20px;
+        border-radius: 20px;
+        font-size: 0.9rem;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+        transition:
+            transform 0.2s,
+            box-shadow 0.2s;
+        box-shadow: 0 4px 12px rgba(30, 215, 96, 0.2);
+    }
+
+    .recap-launch-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(30, 215, 96, 0.3);
+    }
+
+    .recap-launch-btn:active {
+        transform: translateY(0);
     }
 </style>

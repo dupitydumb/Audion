@@ -4,7 +4,7 @@
 ### Features
 - Add preference setting for audio backend
 - Add context menu for mobile
-
+- Add recap to show stats
 
 ### Changes
 - Increase update frequency of `currentTime` to 20Hz for smoother progress bar and lyrics highlighting

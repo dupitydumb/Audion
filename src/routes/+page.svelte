@@ -11,6 +11,7 @@
   import MiniPlayer from "$lib/components/MiniPlayer.svelte";
   import KeyboardShortcuts from "$lib/components/KeyboardShortcuts.svelte";
   import KeyboardShortcutsHelp from "$lib/components/KeyboardShortcutsHelp.svelte";
+  import StatsWrapped from "$lib/components/StatsWrapped.svelte";
 
   import { loadLibrary, loadPlaylists } from "$lib/stores/library";
   import ToastContainer from "$lib/components/ToastContainer.svelte";
@@ -28,6 +29,7 @@
   import { searchQuery, clearSearch } from "$lib/stores/search";
   import { currentView, goToHome } from "$lib/stores/view";
   import PluginUpdateDialog from "$lib/components/PluginUpdateDialog.svelte";
+  import { isStatsWrappedOpen } from "$lib/stores/ui";
 
   let isLoading = true;
   let notInTauri = false;
@@ -177,6 +179,11 @@
     {#if $pluginStore.pendingUpdates.length > 0}
       <PluginUpdateDialog on:close={() => pluginStore.clearPendingUpdates()} />
     {/if}
+
+    <StatsWrapped
+      show={$isStatsWrappedOpen}
+      onClose={() => isStatsWrappedOpen.set(false)}
+    />
   {/if}
 </div>
 

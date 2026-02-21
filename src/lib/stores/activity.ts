@@ -1,10 +1,12 @@
 // Activity store - manages play history and activity data
 import { writable, get } from 'svelte/store';
-import { recordPlay, getTopTracks, getTopAlbums, getRecentlyPlayed, type Track, type TrackWithCount, type AlbumWithCount } from '$lib/api/tauri';
+import { recordPlay, getTopTracks, getTopAlbums, getRecentlyPlayed, getTopArtists, getStatsSummary, type Track, type TrackWithCount, type AlbumWithCount, type ArtistWithCount, type StatsSummary } from '$lib/api/tauri';
 
 export const topTracks = writable<TrackWithCount[]>([]);
 export const topAlbums = writable<AlbumWithCount[]>([]);
+export const topArtists = writable<ArtistWithCount[]>([]);
 export const recentlyPlayed = writable<Track[]>([]);
+export const statsSummary = writable<StatsSummary | null>(null);
 export const isLoadingActivity = writable<boolean>(false);
 
 // Record a play event for a track
@@ -27,14 +29,18 @@ export async function loadActivityData(): Promise<void> {
 
     isLoadingActivity.set(true);
     try {
-        const [topT, topA, recent] = await Promise.all([
+        const [topT, topA, topArt, recent, stats] = await Promise.all([
             getTopTracks(50),
             getTopAlbums(20),
+            getTopArtists(20),
             getRecentlyPlayed(20),
+            getStatsSummary(),
         ]);
         topTracks.set(topT);
         topAlbums.set(topA);
+        topArtists.set(topArt);
         recentlyPlayed.set(recent);
+        statsSummary.set(stats);
     } catch (error) {
         console.error('[Activity] Failed to load activity data:', error);
     } finally {
