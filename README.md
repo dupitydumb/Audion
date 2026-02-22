@@ -8,7 +8,9 @@
 
 <p align="center">
   <a href="https://github.com/dupitydumb/Audion/releases"><img src="https://img.shields.io/badge/version-1.2.2-blue.svg" alt="Version"></a>
-  <img src="https://img.shields.io/badge/platform-Windows-blue.svg" alt="Platform">
+  <img src="https://img.shields.io/badge/platform-Windows-brightgreen.svg" alt="Windows">
+  <img src="https://img.shields.io/badge/platform-macOS-brightgreen.svg" alt="macOS">
+  <img src="https://img.shields.io/badge/platform-Linux-brightgreen.svg" alt="Linux">
   <a href="https://discord.gg/27XRVQsBd9"><img src="https://img.shields.io/discord/1234567890?color=5865F2&label=Discord&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
@@ -48,10 +50,13 @@ Audion is a privacy-focused music player that brings the Spotify experience to y
 ## ⚡ Quick Start
 
 ### Download
-Get the latest version from [Releases](https://github.com/dupitydumb/Audion/releases/latest)
+Get the latest builds from [Releases](https://github.com/dupitydumb/Audion/releases/latest).
 
-**Windows:** `Audion_x64-setup.exe`  
-**macOS & Linux:** Coming soon
+- **Windows:** Audion_x64-setup.exe
+- **macOS (dmg):** Audion.dmg
+- **Linux (AppImage):** Audion-x86_64.AppImage
+
+If you prefer, download the platform-specific asset from the Releases page for your OS.
 
 ### First Run
 1. Launch Audion
