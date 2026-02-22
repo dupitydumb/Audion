@@ -69,14 +69,14 @@ pub fn run() {
             app.manage(discord::DiscordState(std::sync::Mutex::new(None)));
 
             // =============================================================================
-            // NATIVE AUDIO BACKEND INITIALIZATION
+            // NATIVE AUDIO BACKEND INITIALIZATION (Non-blocking, thread-safe)
             // =============================================================================
-            // Register state immediately (empty) so commands are available, then
-            // initialize the actual audio output in a background thread with a
-            // timeout to prevent blocking the UI on slow audio subsystems.
+            // Register state immediately (empty) so commands are available.
+            // The actual audio engine is only initialized lazily on a dedicated thread
+            // when the first command is received. No mutexes or blocking on the UI thread.
             // =============================================================================
             {
-                log::info!("[AUDIO] Initializing native audio backend (rodio)...");
+                log::info!("[AUDIO] Registering native audio backend state (no engine init on UI thread)...");
                 app.manage(audio::PlaybackStateSync::new());
                 audio::PlaybackStateSync::init_async(app.handle().clone());
             }
