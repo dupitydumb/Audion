@@ -1771,62 +1771,48 @@
 
         console.log("[TidalSearch] Stream URL:", streamUrl);
 
-        // Get the audio element and play
-        const audioElement = document.querySelector("audio");
-        if (audioElement) {
-          // Update current playing track
-          this.isPlaying = track.id;
+        // Use the app's player API instead of querying a DOM <audio> element.
+        // The player will call our registered stream resolver to obtain `streamUrl`.
+        // Update current playing track
+        this.isPlaying = track.id;
 
-          // Create Audion-compatible track object
-          const artistName =
-            track.artist?.name || track.artists?.[0]?.name || "Unknown Artist";
-          const coverUrl = track.album?.cover
-            ? `https://resources.tidal.com/images/${track.album.cover.replace(/-/g, "/")}/320x320.jpg`
-            : null;
+        // Create Audion-compatible track object
+        const artistName =
+          track.artist?.name || track.artists?.[0]?.name || "Unknown Artist";
+        const coverUrl = track.album?.cover
+          ? `https://resources.tidal.com/images/${track.album.cover.replace(/-/g, "/")}/320x320.jpg`
+          : null;
 
-          const audionTrack = {
-            id: track.id,
-            path: streamUrl, // Use stream URL as path
-            title: track.title + (track.version ? ` (${track.version})` : ""),
-            artist: artistName,
-            album: track.album?.title || null,
-            duration: track.duration || null,
-            cover_url: coverUrl, // For Tidal album art
-            tidal_id: track.id, // Keep original Tidal ID
-            format: streamData?.data?.audioQuality || "LOSSLESS",
-            bitrate: streamData?.data?.sampleRate || null,
-          };
+        const audionTrack = {
+          id: track.id,
+          path: streamUrl, // Use stream URL as path (player will prefer resolving via stream resolver)
+          title: track.title + (track.version ? ` (${track.version})` : ""),
+          artist: artistName,
+          album: track.album?.title || null,
+          duration: track.duration || null,
+          cover_url: coverUrl,
+          tidal_id: track.id,
+          format: streamData?.data?.audioQuality || "LOSSLESS",
+          bitrate: streamData?.data?.sampleRate || null,
+        };
 
-          // Set track via API (triggers trackChange event for lyrics)
-          if (this.api?.player?.setTrack) {
-            this.api.player.setTrack(audionTrack);
-          }
-
-          // Set audio source and play
-          audioElement.src = streamUrl;
-
-          try {
-            await audioElement.play();
-          } catch (playErr) {
-            // Ignore AbortError (happens when quickly switching tracks)
-            if (playErr.name !== "AbortError") {
-              throw playErr;
-            }
-          }
-
-          // Show toast notification
-          this.showToast(`▶ ${audionTrack.title} - ${artistName}`);
-
-          // Update track items to show playing state
-          document.querySelectorAll(".tidal-track-item").forEach((el) => {
-            el.classList.toggle(
-              "playing",
-              parseInt(el.dataset.id) === track.id,
-            );
-          });
+        // Set track via the plugin API (this triggers app playback and emits trackChange)
+        if (this.api?.player?.setTrack) {
+          this.api.player.setTrack(audionTrack);
         } else {
-          throw new Error("Audio element not found");
+          console.warn('[TidalSearch] player.setTrack not available');
         }
+
+        // Show toast notification
+        this.showToast(`▶ ${audionTrack.title} - ${artistName}`);
+
+        // Update track items to show playing state
+        document.querySelectorAll(".tidal-track-item").forEach((el) => {
+          el.classList.toggle(
+            "playing",
+            parseInt(el.dataset.id) === track.id,
+          );
+        });
       } catch (err) {
         console.error("[TidalSearch] Playback error:", err);
         this.showToast(`Error: ${err.message}`, true);

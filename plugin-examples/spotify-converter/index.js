@@ -374,6 +374,10 @@
                     <div id="sc-file-info" class="sc-file-info"></div>
                 </div>
 
+                <div class="sc-details" id="sc-privacy-note" style="margin-top:4px;">
+                    ⚠️ <strong>Important:</strong> Spotify playlists must be public. Private playlists cannot be fetched by this plugin. Make the playlist public via Spotify (Share → Make Public), or use the JSON import method below.
+                </div>
+
                 <div class="sc-help-box" id="sc-help-box">
                     <strong>💡 Alternative Method:</strong> If the automatic conversion fails, you can manually import the playlist data:
                     <ol style="margin: 8px 0; padding-left: 20px;">
@@ -561,8 +565,11 @@
             }));
 
             return {
-                title: 'Spotify Import', // The new API doesn't seem to return playlist name in the example
-                description: `Imported with ${tracks.length} tracks`,
+                // Use the playlist `name` returned by the API when available
+                title: data.name || 'Spotify Import',
+                description: data.description || `Imported with ${tracks.length} tracks`,
+                // Expose image URL so caller can set playlist cover
+                image: data.image || null,
                 tracks: tracks
             };
         },
@@ -675,6 +682,17 @@
                 this.log('📝 Creating playlist in library...', 'info');
                 const audionPlaylistId = await this.api.library.createPlaylist(playlistData.title);
                 this.log(`✅ Playlist created. Starting track search...`, 'success');
+
+                // If the converter returned an image URL, set it as the playlist cover
+                if (playlistData.image) {
+                    try {
+                        await this.api.library.updatePlaylistCover(audionPlaylistId, playlistData.image);
+                        this.log('🖼️ Playlist image set from Spotify data', 'success');
+                    } catch (e) {
+                        console.warn('Failed to set playlist cover', e);
+                        this.log('⚠️ Failed to set playlist image', 'warn');
+                    }
+                }
                 this.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'info');
 
                 // ── PHASE 1: Search Tidal concurrently (fast) ──

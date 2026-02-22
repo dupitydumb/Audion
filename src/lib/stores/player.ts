@@ -327,14 +327,26 @@ export const shuffle = writable(false);
 export const repeat = writable<'none' | 'one' | 'all'>('none');
 
 // Subscribe to EQ changes to update native backend
+// Debounced subscription: batch rapid EQ changes and avoid thrashing
+let _eqApplyTimer: ReturnType<typeof setTimeout> | null = null;
+let _latestEqState: any = null;
 equalizer.subscribe((state) => {
-    const track = get(currentTrack);
-    // EQ only works on native backend for now
-    if (activeBackend === 'native') {
-        nativeAudioSetEq(state).catch(err => {
+    _latestEqState = state;
+
+    // Only attempt to apply when native backend is active
+    if (activeBackend !== 'native') return;
+
+    // Debounce rapid updates (200ms)
+    if (_eqApplyTimer) clearTimeout(_eqApplyTimer);
+    _eqApplyTimer = setTimeout(async () => {
+        try {
+            await nativeAudioSetEq(_latestEqState);
+        } catch (err) {
             console.error('[EQ] Failed to apply settings:', err);
-        });
-    }
+        } finally {
+            _eqApplyTimer = null;
+        }
+    }, 200);
 });
 
 // =============================================================================
@@ -355,6 +367,19 @@ export async function initAudioBackend(): Promise<void> {
             stopStatePoller();
         }
     });
+
+    // If native backend is available, apply current EQ state once to ensure
+    // native side has the latest settings (prevents mismatch / thrash on first play)
+    if (nativeAudioUsed) {
+        try {
+            // Use equalizer.getState() to get the current stored state
+            const state = equalizer.getState();
+            await nativeAudioSetEq(state);
+            console.log('[Player] Applied initial EQ settings to native backend');
+        } catch (err) {
+            console.warn('[Player] Failed to apply initial EQ settings:', err);
+        }
+    }
 }
 
 // Poll the native backend for state changes (only while playing)
