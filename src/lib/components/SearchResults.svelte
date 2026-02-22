@@ -331,7 +331,10 @@
                 {#if key === "tracks" && $searchResults.tracks.length > 0}
                     <section class="result-section">
                         <h2 class="section-title">
-                            Tracks ({$searchResults.tracks.length})
+                            <button class="section-pill pill-inactive" aria-pressed="false" title="Tracks">
+                                <span class="pill-label">Tracks</span>
+                                <span class="pill-count">{$searchResults.tracks.length}</span>
+                            </button>
                         </h2>
                         <div class="tracks-list">
                             {#each $searchResults.tracks.slice(0, 10) as track, index}
@@ -398,7 +401,10 @@
                 {:else if key === "albums" && $searchResults.albums.length > 0}
                     <section class="result-section">
                         <h2 class="section-title">
-                            Albums ({$searchResults.albums.length})
+                            <button class="section-pill pill-inactive" aria-pressed="false" title="Albums">
+                                <span class="pill-label">Albums</span>
+                                <span class="pill-count">{$searchResults.albums.length}</span>
+                            </button>
                         </h2>
                         <div class="albums-grid">
                             {#each $searchResults.albums.slice(0, 6) as album}
@@ -460,7 +466,10 @@
                 {:else if key === "artists" && $searchResults.artists.length > 0}
                     <section class="result-section">
                         <h2 class="section-title">
-                            Artists ({$searchResults.artists.length})
+                            <button class="section-pill pill-inactive" aria-pressed="false" title="Artists">
+                                <span class="pill-label">Artists</span>
+                                <span class="pill-count">{$searchResults.artists.length}</span>
+                            </button>
                         </h2>
                         <div class="artists-grid">
                             {#each $searchResults.artists.slice(0, 6) as artist}
@@ -492,7 +501,10 @@
                 {:else if key === "playlists" && $searchResults.playlists?.length > 0}
                     <section class="result-section">
                         <h2 class="section-title">
-                            Playlists ({$searchResults.playlists.length})
+                            <button class="section-pill pill-inactive" aria-pressed="false" title="Playlists">
+                                <span class="pill-label">Playlists</span>
+                                <span class="pill-count">{$searchResults.playlists.length}</span>
+                            </button>
                         </h2>
                         <div class="playlists-grid">
                             {#each $searchResults.playlists.slice(0, 6) as playlist}
@@ -567,6 +579,62 @@
         font-weight: 700;
         color: var(--text-primary);
         margin-bottom: var(--spacing-md);
+    }
+
+    /* Section pill badge (themed) */
+    .section-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        padding: 6px 10px;
+        border-radius: var(--radius-full, 999px);
+        background: var(--bg-surface);
+        color: var(--text-secondary);
+        border: 1px solid var(--border-color);
+        font-weight: 600;
+        cursor: default;
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        transition: background-color var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast);
+        font-size: 0.95rem;
+    }
+
+    .section-pill:focus,
+    .section-pill:hover {
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        outline: none;
+    }
+
+    .section-pill.pill-active {
+        background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary, var(--accent-primary)));
+        color: var(--text-on-accent, #fff);
+        border-color: transparent;
+        box-shadow: var(--shadow-sm);
+    }
+
+    .pill-label {
+        display: inline-block;
+        line-height: 1;
+    }
+
+    .pill-count {
+        display: inline-block;
+        min-width: 24px;
+        padding: 2px 6px;
+        border-radius: 999px;
+        background: var(--bg-elevated);
+        color: var(--text-secondary);
+        font-size: 0.8rem;
+        text-align: center;
+        font-weight: 700;
+    }
+
+    /* Remove native inner focus indicator / arrow on some browsers */
+    .section-pill::-webkit-focus-inner {
+        border: 0;
+        padding: 0;
     }
 
     /* Tracks List */

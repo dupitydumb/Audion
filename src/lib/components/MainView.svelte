@@ -625,28 +625,7 @@
                                 )}
                                 {@const visibleIdx = visibleKeys.indexOf(key)}
                                 <div class="pill-wrapper">
-                                    <div class="pill-reorder-arrows">
-                                        <button
-                                            class="reorder-arrow"
-                                            disabled={visibleIdx === 0}
-                                            on:click={() => moveSection(key, -1)}
-                                            aria-label="Move {SECTION_LABELS[key]} left"
-                                        >
-                                            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                                <path d="M15 5c0 0-6 3.5-6 7s6 7 6 7" />
-                                            </svg>
-                                        </button>
-                                        <button
-                                            class="reorder-arrow"
-                                            disabled={visibleIdx === visibleKeys.length - 1}
-                                            on:click={() => moveSection(key, 1)}
-                                            aria-label="Move {SECTION_LABELS[key]} right"
-                                        >
-                                            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                                                <path d="M9 5c0 0 6 3.5 6 7s-6 7-6 7" />
-                                            </svg>
-                                        </button>
-                                    </div>
+                                        <!-- reorder arrows removed for simpler pill layout -->
                                     <button
                                         class="section-pill"
                                         class:pill-active={!hiddenSections.has(key)}
@@ -955,7 +934,7 @@
 
     .results-pills {
         display: flex;
-        gap: var(--spacing-sm);
+        gap: var(--spacing-xs);
         flex-wrap: wrap;
         align-items: center;
     }
@@ -963,41 +942,6 @@
     .pill-wrapper {
         display: flex;
         align-items: center;
-    }
-
-    .pill-reorder-arrows {
-        display: contents;
-    }
-
-    .reorder-arrow {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: none;
-        border: none;
-        cursor: pointer;
-        padding: 2px 3px;
-        border-radius: var(--radius-full);
-        transition: background-color 0.15s, color 0.15s, opacity 0.15s;
-        opacity: 0;
-        pointer-events: none;
-        color: inherit;
-        flex-shrink: 0;
-    }
-
-    .pill-wrapper:hover .reorder-arrow {
-        opacity: 1;
-        pointer-events: all;
-    }
-
-    .reorder-arrow:hover:not(:disabled) {
-        background-color: rgba(255,255,255,0.15);
-    }
-
-    .reorder-arrow:disabled {
-        opacity: 0 !important;
-        cursor: default;
-        pointer-events: none;
     }
 
     .section-pill {
