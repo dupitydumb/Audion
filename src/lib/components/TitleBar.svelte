@@ -85,8 +85,18 @@
         appWindow.isMaximized().then((m) => (isMaximized = m));
 
         // Listen for resize to update maximize state
-        const unlistenResize = appWindow.onResized(async () => {
-            isMaximized = await appWindow.isMaximized();
+        let _resizeTimer: ReturnType<typeof setTimeout> | null = null;
+        const unlistenResize = appWindow.onResized(() => {
+            // Debounce rapid resize events to avoid triggering reactive loops
+            if (_resizeTimer) clearTimeout(_resizeTimer);
+            _resizeTimer = setTimeout(async () => {
+                try {
+                    isMaximized = await appWindow.isMaximized();
+                } catch (e) {
+                    console.warn('[TitleBar] Failed to get maximize state:', e);
+                }
+                _resizeTimer = null;
+            }, 120);
         });
 
         const unsubscribeSearch = searchQuery.subscribe((value) => {
@@ -107,6 +117,10 @@
             unsubscribeNav();
             window.removeEventListener("keydown", handleGlobalKeydown);
             unlistenResize.then((f) => f());
+            if (_resizeTimer) {
+                clearTimeout(_resizeTimer);
+                _resizeTimer = null;
+            }
         };
     });
 </script>

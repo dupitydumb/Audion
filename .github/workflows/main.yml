@@ -148,7 +148,6 @@ jobs:
           echo "nsis_size=$nsisSize MB" >> $env:GITHUB_OUTPUT
       
       # 13. Send Discord notification
-      # 13. Send Discord notification
       - name: Discord notification
         if: success()
         shell: pwsh
@@ -177,7 +176,7 @@ jobs:
               @{
                 title = "🚀 New Release: v$env:VERSION"
                 description = "A new Windows release has been published!"
-                color = 3066993  # Green color
+                color = 1947988  # Audion Green (#1DB954)
                 fields = @(
                   @{
                     name = "📦 MSI Installer"
@@ -245,7 +244,7 @@ jobs:
             libxdo-dev \
             libssl-dev \
             xvfb
-
+      
       # 4. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -313,11 +312,10 @@ jobs:
           curl -H "Content-Type: application/json" \
             -X POST \
             -d "{
-              \"content\": \"@everyone\",
               \"embeds\": [{
                 \"title\": \"🐧 Linux Release Added: v${VERSION}\",
                 \"description\": \"Linux builds have been added to the release!\",
-                \"color\": 16742144,
+                \"color\": 1947988,
                 \"fields\": [
                   {\"name\": \"📦 DEB Package\", \"value\": \"\`${DEB_NAME}\` (${DEB_SIZE})\", \"inline\": false},
                   {\"name\": \"📦 AppImage\", \"value\": \"\`${APPIMAGE_NAME}\` (${APPIMAGE_SIZE})\", \"inline\": false}
@@ -409,11 +407,10 @@ jobs:
           curl -H "Content-Type: application/json" \
             -X POST \
             -d "{
-              \"content\": \"@everyone\",
               \"embeds\": [{
                 \"title\": \"🍎 macOS Release Added: v${VERSION}\",
                 \"description\": \"macOS builds have been added to the release!\",
-                \"color\": 15158332,
+                \"color\": 1947988,
                 \"fields\": [
                   {\"name\": \"📦 DMG Package\", \"value\": \"\`${DMG_NAME}\` (${DMG_SIZE})\", \"inline\": false},
                   {\"name\": \"📦 App Bundle (tar.gz)\", \"value\": \"\`${APP_tar_NAME}\` (${APP_tar_SIZE})\", \"inline\": false}
@@ -429,6 +426,8 @@ jobs:
     needs: [release-windows, release-linux, release-macos]
     # Allow running if previous jobs succeeded or were skipped, and platform matches
     if: ${{ always() && (github.event_name == 'push' || inputs.platform == 'android' || inputs.platform == 'all') && (needs.release-windows.result == 'success' || needs.release-windows.result == 'skipped') && (needs.release-linux.result == 'success' || needs.release-linux.result == 'skipped') && (needs.release-macos.result == 'success' || needs.release-macos.result == 'skipped') }}
+    env:
+      GRADLE_OPTS: -Xmx4096m
     steps:
       # 1. Checkout repository
       - name: Checkout repository
@@ -463,23 +462,37 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android
+          targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
 
-      # 7. Rust cache
+      # 7. Install tauri-cli (required for generated BuildTask.kt)
+      - name: Install tauri-cli
+        run: |
+          wget -qO- https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz | tar -xvzf - -C ~/.cargo/bin
+          cargo binstall tauri-cli --version 2.1.1 -y
+
+      # 8. Rust cache
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
 
-      # 8. Install frontend dependencies
+      # 9. Setup Signing (Decode Keystore and Properties)
+      - name: Setup Signing
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > src-tauri/gen/android/release.keystore
+          echo "${{ secrets.ANDROID_KEY_PROPERTIES }}" > src-tauri/gen/android/key.properties
+          # Delete tauri.settings.gradle to force regeneration with correct paths
+          rm -f src-tauri/gen/android/tauri.settings.gradle
+
+      # 10. Install frontend dependencies
       - name: Install dependencies
         run: npm install
 
-      # 9. Build Tauri app for Android
+      # 11. Build Tauri app for Android (Signed)
       - name: Build Tauri app
         run: npm run tauri android build
 
-      # 10. Upload Android artifacts
+      # 12. Upload Android artifacts
       - name: Upload Android artifacts
         uses: softprops/action-gh-release@v2
         with:
@@ -490,7 +503,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # 11. Send Discord notification for Android
+      # 12. Send Discord notification for Android
       - name: Discord notification (Android)
         if: success()
         env:
@@ -511,11 +524,10 @@ jobs:
           curl -H "Content-Type: application/json" \
             -X POST \
             -d "{
-              \"content\": \"@everyone\",
               \"embeds\": [{
                 \"title\": \"🤖 Android Release Added: v${VERSION}\",
                 \"description\": \"Android build has been added to the release!\",
-                \"color\": 16776960,
+                \"color\": 1947988,
                 \"fields\": [
                   {\"name\": \"📦 APK Package\", \"value\": \"\`${APK_NAME}\` (${APK_SIZE})\", \"inline\": false}
                 ],

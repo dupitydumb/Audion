@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Required for any sandboxed app -->
+  <key>com.apple.security.app-sandbox</key>
+  <false/>
+
+  <!-- Read access to user-selected files -->
+  <key>com.apple.security.files.user-selected.read-only</key>
+  <true/>
+
+  <!-- Read access to Music folder -->
+  <key>com.apple.security.assets.music.read-only</key>
+  <true/>
+
+  <!-- If you need to read arbitrary paths (like $HOME/.local) -->
+  <key>com.apple.security.files.downloads.read-only</key>
+  <true/>
+</dict>
+</plist>

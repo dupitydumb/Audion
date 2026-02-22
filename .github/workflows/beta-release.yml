@@ -85,87 +85,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-<<<<<<< HEAD
-  release-linux:
-    runs-on: ubuntu-24.04
-    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.platform == 'linux' || inputs.platform == 'all') }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      
-      - name: Read app version
-        id: version
-        run: |
-          VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
-          echo "version=$VERSION-beta" >> $GITHUB_OUTPUT
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: "npm"
-      
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-      
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: './src-tauri -> target'
-      
-      - name: Install dependencies (ubuntu only)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-0=2.44.0-2 \
-            libwebkit2gtk-4.1-dev=2.44.0-2 \
-            libjavascriptcoregtk-4.1-0=2.44.0-2 \
-            libjavascriptcoregtk-4.1-dev=2.44.0-2 \
-            gir1.2-javascriptcoregtk-4.1=2.44.0-2 \
-            gir1.2-webkit2-4.1=2.44.0-2 \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf
-      
-      - name: Install frontend dependencies
-        run: npm install
-      
-      - name: Build Tauri app
-        run: npm run tauri build
-      
-      - name: Read release notes
-        id: changelog
-        run: |
-          if [ ! -f "releasenote.md" ]; then
-            content="Beta release of Audion."
-          else
-            content=$(cat releasenote.md)
-          fi
-          delimiter="EOF_$(uuidgen)"
-          echo "content<<$delimiter" >> $GITHUB_OUTPUT
-          echo "$content" >> $GITHUB_OUTPUT
-          echo "$delimiter" >> $GITHUB_OUTPUT
-      
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.version.outputs.version }}
-          name: Beta v${{ steps.version.outputs.version }}
-          body: ${{ steps.changelog.outputs.content }}
-          prerelease: true
-          files: |
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/appimage/*.AppImage
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-=======
->>>>>>> 181cb5c (feat(CI): Mobile Build)
   release-android:
     runs-on: ubuntu-latest
     if: ${{ github.event_name == 'workflow_dispatch' && (inputs.platform == 'android' || inputs.platform == 'all') }}
+    env:
+      GRADLE_OPTS: -Xmx4096m
     steps:
       # 1. Checkout repository
       - name: Checkout repository
@@ -200,23 +124,37 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android
+          targets: aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
 
-      # 7. Rust cache
+      # 7. Install tauri-cli (required for generated BuildTask.kt)
+      - name: Install tauri-cli
+        run: |
+          wget -qO- https://github.com/cargo-bins/cargo-binstall/releases/latest/download/cargo-binstall-x86_64-unknown-linux-musl.tgz | tar -xvzf - -C ~/.cargo/bin
+          cargo binstall tauri-cli --version 2.1.1 -y
+
+      # 8. Rust cache
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
 
-      # 8. Install frontend dependencies
+      # 9. Setup Signing (Decode Keystore and Properties)
+      - name: Setup Signing
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > src-tauri/gen/android/release.keystore
+          echo "${{ secrets.ANDROID_KEY_PROPERTIES }}" > src-tauri/gen/android/key.properties
+          # Delete tauri.settings.gradle to force regeneration with correct paths
+          rm -f src-tauri/gen/android/tauri.settings.gradle
+
+      # 10. Install frontend dependencies
       - name: Install dependencies
         run: npm install
 
-      # 9. Build Tauri app for Android
+      # 11. Build Tauri app for Android (Signed)
       - name: Build Tauri app
         run: npm run tauri android build
 
-      # 10. Upload Android artifacts
+      # 12. Upload Android artifacts
       - name: Upload Android artifacts
         uses: softprops/action-gh-release@v2
         with:

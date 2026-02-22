@@ -428,6 +428,18 @@ export interface AlbumWithCount {
     play_count: number;
 }
 
+export interface ArtistWithCount {
+    artist: String;
+    play_count: number;
+}
+
+export interface StatsSummary {
+    total_plays: number;
+    total_duration_seconds: number;
+    top_artist: string | null;
+    top_genre: string | null;
+}
+
 export async function likeTrack(trackId: number): Promise<void> {
     return await invoke('like_track', { trackId });
 }
@@ -462,6 +474,14 @@ export async function getTopAlbums(limit: number): Promise<AlbumWithCount[]> {
 
 export async function getRecentlyPlayed(limit: number): Promise<Track[]> {
     return await invoke('get_recently_played', { limit });
+}
+
+export async function getTopArtists(limit: number): Promise<ArtistWithCount[]> {
+    return await invoke('get_top_artists', { limit });
+}
+
+export async function getStatsSummary(): Promise<StatsSummary> {
+    return await invoke('get_stats_summary');
 }
 
 

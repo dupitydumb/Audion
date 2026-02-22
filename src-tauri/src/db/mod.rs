@@ -36,16 +36,16 @@ impl Database {
     fn check_integrity_async(&self) {
         let conn = self.conn.clone();
         std::thread::spawn(move || {
+            // Delay integrity check to allow initial library load to complete
+            std::thread::sleep(std::time::Duration::from_secs(30));
+
             let guard = match conn.lock() {
                 Ok(g) => g,
                 Err(_) => {
-                    log::error!("[DB] Failed to acquire lock for integrity check");
                     return;
                 }
             };
-            match guard.query_row("PRAGMA integrity_check;", [], |row| {
-                row.get::<_, String>(0)
-            }) {
+            match guard.query_row("PRAGMA integrity_check;", [], |row| row.get::<_, String>(0)) {
                 Ok(status) if status != "ok" => {
                     log::warn!("[DB] Integrity check failed: {}", status);
                 }

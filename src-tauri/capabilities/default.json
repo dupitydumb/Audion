@@ -22,7 +22,6 @@
     "core:window:allow-minimize",
     "core:window:allow-maximize",
     "core:window:allow-toggle-maximize",
-    "core:window:allow-set-resizable",
     "core:window:allow-start-dragging",
     "core:window:allow-inner-size",
     "core:window:allow-outer-position",
@@ -56,6 +55,12 @@
         },
         {
           "path": "$HOME/Music/**"
+        },
+        {
+          "path": "$HOME/.config/audion/**"
+        },
+        {
+          "path": "$HOME/.config/com.audion.app/**"
         }
       ]
     },
@@ -76,6 +81,12 @@
         },
         {
           "path": "$HOME/Music/**"
+        },
+        {
+          "path": "$HOME/.config/audion/**"
+        },
+        {
+          "path": "$HOME/.config/com.audion.app/**"
         }
       ]
     }

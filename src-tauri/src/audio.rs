@@ -2,15 +2,17 @@
 // NATIVE AUDIO BACKEND
 // =============================================================================
 // This module provides native audio playback using rodio.
-// It supports basic playback controls, seeking, and a 10-band equalizer.
+// It uses a message-passing architecture to prevent UI freezes and mutex
+// contention, particularly on macOS.
 // =============================================================================
 
 use std::f32::consts::PI;
 use std::fs::File;
 use std::io::BufReader;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex}; // Only for state snapshot, not for engine control
 use std::time::{Duration, Instant};
 
+use crossbeam::channel::{unbounded, Receiver, Sender};
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
@@ -136,10 +138,8 @@ impl BiquadFilter {
 /// A Source wrapper that applies a multi-band EQ
 struct EqSource<S: Source<Item = f32>> {
     input: S,
-    filters: Vec<BiquadFilter>,
     sample_rate: u32,
     channels: u16,
-    // We need separate filter states for each channel to avoid cross-talk
     filter_states: Vec<Vec<BiquadFilter>>,
     current_channel: usize,
 }
@@ -148,7 +148,7 @@ impl<S: Source<Item = f32>> EqSource<S> {
     fn new(input: S, settings: &EqSettings) -> Self {
         let sample_rate = input.sample_rate();
         let channels = input.channels();
-        let q = 1.41; // Standard Q for 1-octave band
+        let q = 1.41;
 
         let mut base_filters = Vec::new();
         if settings.enabled {
@@ -171,7 +171,6 @@ impl<S: Source<Item = f32>> EqSource<S> {
 
         Self {
             input,
-            filters: base_filters,
             sample_rate,
             channels,
             filter_states,
@@ -182,19 +181,13 @@ impl<S: Source<Item = f32>> EqSource<S> {
 
 impl<S: Source<Item = f32>> Iterator for EqSource<S> {
     type Item = f32;
-
     fn next(&mut self) -> Option<Self::Item> {
         let mut sample = self.input.next()?;
-
-        // Apply filters for the current channel
         let channel_filters = &mut self.filter_states[self.current_channel];
         for filter in channel_filters {
             sample = filter.process(sample);
         }
-
-        // Advance channel index
         self.current_channel = (self.current_channel + 1) % self.channels as usize;
-
         Some(sample)
     }
 }
@@ -203,15 +196,12 @@ impl<S: Source<Item = f32>> Source for EqSource<S> {
     fn current_frame_len(&self) -> Option<usize> {
         self.input.current_frame_len()
     }
-
     fn channels(&self) -> u16 {
         self.channels
     }
-
     fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
-
     fn total_duration(&self) -> Option<Duration> {
         self.input.total_duration()
     }
@@ -229,6 +219,7 @@ pub struct PlaybackState {
     pub volume: f32,
     pub current_path: String,
     pub eq_settings: EqSettings,
+    pub is_initialized: bool,
 }
 
 impl Default for PlaybackState {
@@ -237,29 +228,47 @@ impl Default for PlaybackState {
             is_playing: false,
             position: 0.0,
             duration: 0.0,
-            volume: 0.7, // 70% default
+            volume: 0.7,
             current_path: String::new(),
             eq_settings: EqSettings::default(),
+            is_initialized: false,
         }
     }
 }
 
 // =============================================================================
-// AUDIO PLAYER
+// AUDIO COMMANDS
 // =============================================================================
 
-pub struct AudioPlayer {
+enum AudioCommand {
+    Play(String),
+    Pause,
+    Resume,
+    Stop,
+    SetVolume(f32),
+    Seek(f64),
+    SetEq(EqSettings),
+}
+
+// =============================================================================
+// INTERNAL AUDIO PLAYER (Managed by Audio Thread)
+// =============================================================================
+
+struct AudioPlayer {
     _stream: OutputStream,
     stream_handle: OutputStreamHandle,
     sink: Sink,
-    state: PlaybackState,
     track_duration: Option<Duration>,
     playback_started_at: Option<Instant>,
     position_at_pause: f64,
+    current_path: String,
+    volume: f32,
+    eq_settings: EqSettings,
 }
 
 impl AudioPlayer {
-    pub fn new() -> Result<Self, String> {
+    fn new() -> Result<Self, String> {
+        log::info!("[AUDIO] Initializing output stream (lazy)...");
         let (stream, stream_handle) = OutputStream::try_default()
             .map_err(|e| format!("Failed to open audio output: {}", e))?;
 
@@ -270,110 +279,75 @@ impl AudioPlayer {
             _stream: stream,
             stream_handle,
             sink,
-            state: PlaybackState::default(),
             track_duration: None,
             playback_started_at: None,
             position_at_pause: 0.0,
+            current_path: String::new(),
+            volume: 0.7,
+            eq_settings: EqSettings::default(),
         })
     }
 
-    pub fn play_file(&mut self, path: &str) -> Result<(), String> {
-        log::info!("[AUDIO] Loading file: {}", path);
-
+    fn play_file(&mut self, path: &str) -> Result<(), String> {
+        log::info!("[AUDIO] Loading file on background thread: {}", path);
         self.sink.stop();
         self.sink = Sink::try_new(&self.stream_handle)
             .map_err(|e| format!("Failed to create audio sink: {}", e))?;
 
-        let file =
-            File::open(path).map_err(|e| format!("Failed to open file '{}': {}", path, e))?;
+        let file = File::open(path).map_err(|e| format!("Failed to open file: {}", e))?;
         let reader = BufReader::new(file);
-
-        let source = Decoder::new(reader)
-            .map_err(|e| format!("Failed to decode audio '{}': {}", path, e))?;
+        let source = Decoder::new(reader).map_err(|e| format!("Failed to decode audio: {}", e))?;
 
         self.track_duration = source.total_duration();
+        let eq_source = EqSource::new(source.convert_samples(), &self.eq_settings);
 
-        // Wrap source in EqSource
-        let eq_source = EqSource::new(source.convert_samples(), &self.state.eq_settings);
-
-        self.sink.set_volume(self.state.volume);
+        self.sink.set_volume(self.volume);
         self.sink.append(eq_source);
         self.sink.play();
 
-        self.state.is_playing = true;
-        self.state.position = 0.0;
-        self.state.duration = self.track_duration.map(|d| d.as_secs_f64()).unwrap_or(0.0);
-        self.state.current_path = path.to_string();
-
+        self.current_path = path.to_string();
         self.playback_started_at = Some(Instant::now());
         self.position_at_pause = 0.0;
 
-        log::info!(
-            "[AUDIO] Playing: {} (duration: {:.1}s)",
-            path,
-            self.state.duration
-        );
         Ok(())
     }
 
-    pub fn pause(&mut self) {
+    fn pause(&mut self) {
         if let Some(started_at) = self.playback_started_at {
             self.position_at_pause += started_at.elapsed().as_secs_f64();
         }
         self.playback_started_at = None;
         self.sink.pause();
-        self.state.is_playing = false;
     }
 
-    pub fn resume(&mut self) {
+    fn resume(&mut self) {
         self.sink.play();
-        self.state.is_playing = true;
         self.playback_started_at = Some(Instant::now());
     }
 
-    pub fn stop(&mut self) {
+    fn stop(&mut self) {
         self.sink.stop();
-        self.state.is_playing = false;
-        self.state.position = 0.0;
-        self.state.current_path = String::new();
+        self.current_path = String::new();
         self.playback_started_at = None;
         self.position_at_pause = 0.0;
     }
 
-    pub fn set_volume(&mut self, v: f32) {
+    fn set_volume(&mut self, v: f32) {
         let v = v.clamp(0.0, 1.0);
         self.sink.set_volume(v);
-        self.state.volume = v;
+        self.volume = v;
     }
 
-    pub fn set_eq(&mut self, settings: EqSettings) -> Result<(), String> {
-        self.state.eq_settings = settings;
-
-        // If playing, we need to restart the track to apply new EQ settings
-        // In a more advanced implementation, we would update filters in real-time
-        // but rodio's Sink/Source pattern makes that complex without custom atomics.
-        // For now, if a track is playing, we re-load it at current position.
-        if !self.state.current_path.is_empty() {
-            let current_pos = self.get_state().position;
-            let duration = self.state.duration;
-            if duration > 0.0 {
-                self.seek(current_pos / duration)?;
-            }
+    fn seek(&mut self, position_fraction: f64) -> Result<(), String> {
+        if self.current_path.is_empty() {
+            return Err("No track loaded".into());
         }
-        Ok(())
-    }
-
-    pub fn seek(&mut self, position_fraction: f64) -> Result<(), String> {
-        if self.state.current_path.is_empty() {
-            return Err("No track loaded".to_string());
-        }
-
         let duration = self.track_duration.ok_or("Track duration unknown")?;
         let seek_to =
             Duration::from_secs_f64(duration.as_secs_f64() * position_fraction.clamp(0.0, 1.0));
 
-        let path = self.state.current_path.clone();
-        let was_playing = self.state.is_playing;
+        let was_playing = self.playback_started_at.is_some() || !self.sink.is_paused();
+        let path = self.current_path.clone();
 
         self.sink.stop();
         self.sink = Sink::try_new(&self.stream_handle)
@@ -382,31 +356,34 @@ impl AudioPlayer {
         let file = File::open(&path).map_err(|e| format!("Failed to open file: {}", e))?;
         let source = Decoder::new(BufReader::new(file))
             .map_err(|e| format!("Failed to decode audio: {}", e))?;
+        let eq_source = EqSource::new(
+            source.skip_duration(seek_to).convert_samples(),
+            &self.eq_settings,
+        );
 
-        // Apply EQ to the new source
-        let source = source.skip_duration(seek_to);
-        let eq_source = EqSource::new(source.convert_samples(), &self.state.eq_settings);
-
-        self.sink.set_volume(self.state.volume);
+        self.sink.set_volume(self.volume);
         self.sink.append(eq_source);
 
         self.position_at_pause = seek_to.as_secs_f64();
         if was_playing {
             self.sink.play();
-            self.state.is_playing = true;
             self.playback_started_at = Some(Instant::now());
         } else {
             self.sink.pause();
-            self.state.is_playing = false;
             self.playback_started_at = None;
         }
-
-        self.state.position = seek_to.as_secs_f64();
         Ok(())
     }
 
-    pub fn get_state(&self) -> PlaybackState {
-        let mut state = self.state.clone();
+    // Returns current position and is_playing status
+    fn update_state(&mut self, state: &mut PlaybackState) {
+        state.is_playing =
+            self.playback_started_at.is_some() && !self.sink.is_paused() && !self.sink.empty();
+        state.duration = self.track_duration.map(|d| d.as_secs_f64()).unwrap_or(0.0);
+        state.current_path = self.current_path.clone();
+        state.volume = self.volume;
+        state.eq_settings = self.eq_settings.clone();
+
         if let Some(started_at) = self.playback_started_at {
             state.position = self.position_at_pause + started_at.elapsed().as_secs_f64();
             if state.duration > 0.0 && state.position > state.duration {
@@ -415,60 +392,123 @@ impl AudioPlayer {
         } else {
             state.position = self.position_at_pause;
         }
-        if self.sink.empty() && state.is_playing {
+
+        if self.sink.empty() && !self.current_path.is_empty() {
             state.is_playing = false;
         }
-        state
-    }
-
-    pub fn is_finished(&self) -> bool {
-        self.sink.empty() && !self.state.current_path.is_empty()
     }
 }
 
 // =============================================================================
-// GLOBAL STATE
+// GLOBAL SYNC STATE
 // =============================================================================
 
 pub struct PlaybackStateSync {
-    pub player: Mutex<Option<AudioPlayer>>,
+    command_tx: Sender<AudioCommand>,
+    shared_state: Arc<Mutex<PlaybackState>>, // Only for state snapshot
 }
-
-// SAFETY: AudioPlayer is only accessed through the Mutex, which provides
-// synchronization. The underlying rodio types are thread-safe when accessed
-// this way.
-unsafe impl Send for PlaybackStateSync {}
-unsafe impl Sync for PlaybackStateSync {}
 
 impl PlaybackStateSync {
     pub fn new() -> Self {
-        Self {
-            player: Mutex::new(None),
-        }
-    }
+        let (tx, rx) = unbounded();
+        let shared_state = Arc::new(Mutex::new(PlaybackState::default()));
 
-    pub fn init_async(app_handle: tauri::AppHandle) {
+        // Spawn dedicated audio thread (engine is owned ONLY by this thread)
+        let state_clone = Arc::clone(&shared_state);
         std::thread::spawn(move || {
-            let start = Instant::now();
+            let mut player_opt: Option<AudioPlayer> = None;
 
-            match AudioPlayer::new() {
-                Ok(p) => {
-                    log::info!(
-                        "[AUDIO] Backend initialized in {:.1}s",
-                        start.elapsed().as_secs_f64()
-                    );
-                    let state: tauri::State<'_, PlaybackStateSync> =
-                        app_handle.state::<PlaybackStateSync>();
-                    let sync = state.inner();
-                    if let Ok(mut guard) = sync.player.lock() {
-                        *guard = Some(p);
+            loop {
+                // Wait for commands with a timeout so we can update position
+                match rx.recv_timeout(Duration::from_millis(100)) {
+                    Ok(cmd) => {
+                        // Lazy initialization
+                        if player_opt.is_none() {
+                            match AudioPlayer::new() {
+                                Ok(p) => {
+                                    player_opt = Some(p);
+                                    if let Ok(mut s) = state_clone.lock() {
+                                        s.is_initialized = true;
+                                    }
+                                }
+                                Err(e) => {
+                                    log::error!("[AUDIO] Lazy init failed: {}", e);
+                                    continue;
+                                }
+                            }
+                        }
+
+                        // All engine operations are performed ONLY on this thread
+                        let player = player_opt.as_mut().unwrap();
+                        match cmd {
+                            AudioCommand::Play(path) => {
+                                let _ = player.play_file(&path);
+                            }
+                            AudioCommand::Pause => player.pause(),
+                            AudioCommand::Resume => player.resume(),
+                            AudioCommand::Stop => player.stop(),
+                            AudioCommand::SetVolume(v) => player.set_volume(v),
+                            AudioCommand::Seek(f) => {
+                                let _ = player.seek(f);
+                            }
+                            AudioCommand::SetEq(settings) => {
+                                player.eq_settings = settings;
+                                if !player.current_path.is_empty() {
+                                    let current_pos = player.get_state_for_internal().position;
+                                    let duration = player
+                                        .track_duration
+                                        .map(|d| d.as_secs_f64())
+                                        .unwrap_or(0.0);
+                                    if duration > 0.0 {
+                                        let _ = player.seek(current_pos / duration);
+                                    }
+                                }
+                            }
+                        }
                     }
+                    Err(crossbeam::channel::RecvTimeoutError::Disconnected) => break,
+                    Err(crossbeam::channel::RecvTimeoutError::Timeout) => {}
                 }
-                Err(e) => {
-                    log::error!("[AUDIO] Failed to initialize audio: {}", e);
+
+                // Update shared state snapshot for UI (never engine control)
+                if let Some(player) = player_opt.as_mut() {
+                    if let Ok(mut s) = state_clone.lock() {
+                        player.update_state(&mut s);
+                    }
                 }
             }
         });
+
+        Self {
+            command_tx: tx,
+            shared_state,
+        }
+    }
+
+    // Helper for EQ refresh
+    fn get_state_for_internal(&self) -> PlaybackState {
+        self.shared_state.lock().unwrap().clone()
+    }
+}
+
+// Internal version of get_state to avoid circular logic
+impl AudioPlayer {
+    fn get_state_for_internal(&self) -> PlaybackState {
+        let mut s = PlaybackState::default();
+        s.duration = self.track_duration.map(|d| d.as_secs_f64()).unwrap_or(0.0);
+        if let Some(started_at) = self.playback_started_at {
+            s.position = self.position_at_pause + started_at.elapsed().as_secs_f64();
+        } else {
+            s.position = self.position_at_pause;
+        }
+        s
+    }
+}
+
+// Compatibility method deleted - we handle init in new() now
+impl PlaybackStateSync {
+    pub fn init_async(_app_handle: tauri::AppHandle) {
+        // No-op: Initialization is now lazy and handled in the audio thread itself
     }
 }
 
@@ -478,33 +518,34 @@ impl PlaybackStateSync {
 
 #[tauri::command]
 pub fn audio_play(path: String, state: tauri::State<'_, PlaybackStateSync>) -> Result<(), String> {
-    let mut guard = state.inner().player.lock().map_err(|_| "Lock poisoned")?;
-    let player = guard.as_mut().ok_or("Audio backend not initialized")?;
-    player.play_file(&path)
+    state
+        .command_tx
+        .send(AudioCommand::Play(path))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn audio_pause(state: tauri::State<'_, PlaybackStateSync>) -> Result<(), String> {
-    let mut guard = state.inner().player.lock().map_err(|_| "Lock poisoned")?;
-    let player = guard.as_mut().ok_or("Audio backend not initialized")?;
-    player.pause();
-    Ok(())
+    state
+        .command_tx
+        .send(AudioCommand::Pause)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn audio_resume(state: tauri::State<'_, PlaybackStateSync>) -> Result<(), String> {
-    let mut guard = state.inner().player.lock().map_err(|_| "Lock poisoned")?;
-    let player = guard.as_mut().ok_or("Audio backend not initialized")?;
-    player.resume();
-    Ok(())
+    state
+        .command_tx
+        .send(AudioCommand::Resume)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn audio_stop(state: tauri::State<'_, PlaybackStateSync>) -> Result<(), String> {
-    let mut guard = state.inner().player.lock().map_err(|_| "Lock poisoned")?;
-    let player = guard.as_mut().ok_or("Audio backend not initialized")?;
-    player.stop();
-    Ok(())
+    state
+        .command_tx
+        .send(AudioCommand::Stop)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -512,33 +553,36 @@ pub fn audio_set_volume(
     volume: f32,
     state: tauri::State<'_, PlaybackStateSync>,
 ) -> Result<(), String> {
-    let mut guard = state.inner().player.lock().map_err(|_| "Lock poisoned")?;
-    let player = guard.as_mut().ok_or("Audio backend not initialized")?;
-    player.set_volume(volume);
-    Ok(())
+    state
+        .command_tx
+        .send(AudioCommand::SetVolume(volume))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn audio_seek(position: f64, state: tauri::State<'_, PlaybackStateSync>) -> Result<(), String> {
-    let mut guard = state.inner().player.lock().map_err(|_| "Lock poisoned")?;
-    let player = guard.as_mut().ok_or("Audio backend not initialized")?;
-    player.seek(position)
+    state
+        .command_tx
+        .send(AudioCommand::Seek(position))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn audio_get_state(
     state: tauri::State<'_, PlaybackStateSync>,
 ) -> Result<PlaybackState, String> {
-    let guard = state.inner().player.lock().map_err(|_| "Lock poisoned")?;
-    let player = guard.as_ref().ok_or("Audio backend not initialized")?;
-    Ok(player.get_state())
+    Ok(state
+        .shared_state
+        .lock()
+        .map_err(|_| "Lock poisoned")?
+        .clone())
 }
 
 #[tauri::command]
 pub fn audio_is_finished(state: tauri::State<'_, PlaybackStateSync>) -> Result<bool, String> {
-    let guard = state.inner().player.lock().map_err(|_| "Lock poisoned")?;
-    let player = guard.as_ref().ok_or("Audio backend not initialized")?;
-    Ok(player.is_finished())
+    let s = state.shared_state.lock().map_err(|_| "Lock poisoned")?;
+    // A track is finished if it has a path but is NOT playing and position is at/near duration
+    Ok(!s.is_playing && !s.current_path.is_empty() && s.position >= s.duration - 0.1)
 }
 
 #[tauri::command]
@@ -546,19 +590,17 @@ pub fn audio_set_eq(
     settings: EqSettings,
     state: tauri::State<'_, PlaybackStateSync>,
 ) -> Result<(), String> {
-    let mut guard = state.inner().player.lock().map_err(|_| "Lock poisoned")?;
-    let player = guard.as_mut().ok_or("Audio backend not initialized")?;
-    player.set_eq(settings)
+    state
+        .command_tx
+        .send(AudioCommand::SetEq(settings))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub fn native_audio_available(
-    state: tauri::State<'_, PlaybackStateSync>,
-) -> bool {
+pub fn native_audio_available(state: tauri::State<'_, PlaybackStateSync>) -> bool {
     state
-        .inner()
-        .player
+        .shared_state
         .lock()
-        .map(|guard| guard.is_some())
+        .map(|s| s.is_initialized)
         .unwrap_or(false)
 }

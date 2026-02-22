@@ -77,3 +77,18 @@ pub async fn get_recently_played(
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     queries::get_recently_played(&conn, limit).map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub async fn get_top_artists(
+    limit: i32,
+    db: State<'_, Database>,
+) -> Result<Vec<queries::ArtistWithCount>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    queries::get_top_artists(&conn, limit).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_stats_summary(db: State<'_, Database>) -> Result<queries::StatsSummary, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    queries::get_stats_summary(&conn).map_err(|e| e.to_string())
+}

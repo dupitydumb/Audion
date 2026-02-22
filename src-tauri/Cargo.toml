@@ -1,6 +1,6 @@
 [package]
 name = "audion"
-version = "1.2.1"
+version = "1.2.2"
 description = "A local Spotify-style music player"
 authors = ["AvKov"]
 edition = "2021"
@@ -104,3 +104,8 @@ discord-rich-presence = "1.0"
 trash = "5"
 # Global keyboard shortcuts (desktop only)
 tauri-plugin-global-shortcut = "2"
+
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+dirs = "5"

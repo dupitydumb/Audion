@@ -35,8 +35,10 @@ src-tauri/target/
 **/*.rs.bk
 
 # Tauri v2 (Mobile / Cross-Platform)
-# Ignores the generated Android and iOS projects
-src-tauri/gen/
+# Allow the generated Android and iOS projects, but allow the nested .gitignore to handle build artifacts
+!src-tauri/gen/android/
+!src-tauri/gen/apple/
+src-tauri/gen/android/tauri.settings.gradle
 
 # Vite HMR timestamps
 vite.config.js.timestamp-*

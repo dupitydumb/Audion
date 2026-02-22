@@ -101,7 +101,12 @@
     }
 
     // Apple Music-style smooth scroll with custom easing
-    $: if ($activeLine >= 0 && lineElements[$activeLine] && lyricsContainer && $activeLine !== prevActiveLine) {
+    $: if (
+        $activeLine >= 0 &&
+        lineElements[$activeLine] &&
+        lyricsContainer &&
+        $activeLine !== prevActiveLine
+    ) {
         prevActiveLine = $activeLine;
         smoothScrollToActive();
     }
@@ -119,7 +124,8 @@
         const containerHeight = lyricsContainer.clientHeight;
         const elementTop = element.offsetTop;
         const elementHeight = element.clientHeight;
-        const targetScroll = elementTop - containerHeight / 2 + elementHeight / 2;
+        const targetScroll =
+            elementTop - containerHeight / 2 + elementHeight / 2;
 
         const startScroll = lyricsContainer.scrollTop;
         const distance = targetScroll - startScroll;
@@ -155,13 +161,13 @@
 
     // Import LRC file handler
     async function handleImportLrc() {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.lrc';
-        input.style.display = 'none';
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = ".lrc";
+        input.style.display = "none";
         document.body.appendChild(input);
         input.click();
-        await new Promise(resolve => {
+        await new Promise((resolve) => {
             input.onchange = resolve;
         });
         if (input.files && input.files[0]) {
@@ -183,8 +189,11 @@
             return;
         }
         try {
-            const { invoke } = await import('@tauri-apps/api/core');
-            await invoke('save_lrc_file', { musicPath: $currentTrack.path, lrcContent });
+            const { invoke } = await import("@tauri-apps/api/core");
+            await invoke("save_lrc_file", {
+                musicPath: $currentTrack.path,
+                lrcContent,
+            });
             // Reload lyrics
             await fetchLyricsForTrack();
             addToast("Lyrics imported successfully!", "success");
@@ -210,9 +219,14 @@
                     aria-label="Import LRC file"
                     on:click={handleImportLrc}
                 >
-                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                        <path d="M19 9h-4V3H9v6H5l7 7 7-7z"/>
-                        <path d="M5 18h14v2H5z"/>
+                    <svg
+                        viewBox="0 0 24 24"
+                        width="20"
+                        height="20"
+                        fill="currentColor"
+                    >
+                        <path d="M19 9h-4V3H9v6H5l7 7 7-7z" />
+                        <path d="M5 18h14v2H5z" />
                     </svg>
                 </button>
                 <button
@@ -486,10 +500,12 @@
         --line-distance: 6;
         font-size: 1.15rem;
         font-weight: 700;
-        line-height: 1.4;
+        line-height: 1.6;
         color: var(--lyrics-inactive);
-        padding: 4px 0;
+        padding: 12px 0;
         letter-spacing: -0.01em;
+        white-space: pre-wrap;
+        overflow-wrap: break-word;
         /* Apple Music spring curve with slight overshoot */
         transition:
             transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275),

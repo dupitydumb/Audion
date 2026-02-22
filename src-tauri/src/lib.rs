@@ -21,8 +21,116 @@ use db::Database;
 use std::path::PathBuf;
 use tauri::Manager;
 
+// =============================================================================
+// LOGGING SETUP
+// =============================================================================
+// - Rotates daily (e.g. audion.2026-02-22.log)
+// - Prunes logs older than LOG_RETAIN_DAYS on startup
+// - Captures panics/crashes to the log before exit
+// - Level: WARN for deps, INFO for audion (configurable via RUST_LOG env var)
+// =============================================================================
+
+const LOG_RETAIN_DAYS: u64 = 3;
+
+fn init_logging(log_dir: &PathBuf) {
+    use tracing_appender::rolling;
+    use tracing_subscriber::{fmt, EnvFilter};
+
+    std::fs::create_dir_all(log_dir).ok();
+
+    // Prune old logs before setting up the new appender
+    prune_old_logs(log_dir, LOG_RETAIN_DAYS);
+
+    let file_appender = rolling::daily(log_dir, "audion.log");
+    let (non_blocking, worker_guard) = tracing_appender::non_blocking(file_appender);
+
+    // Leak the guard so it lives for the entire process lifetime.
+    // This ensures the background writer thread is never dropped and logs are
+    // always flushed, including during shutdown.
+    Box::leak(Box::new(worker_guard));
+
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("warn,audion=info"));
+
+    fmt::Subscriber::builder()
+        .with_writer(non_blocking)
+        .with_env_filter(filter)
+        .with_ansi(false)           // No ANSI color codes in log files
+        .with_target(true)          // Show module path (e.g. audion::audio)
+        .with_thread_ids(false)     // Keep lines short; enable if debugging races
+        .init();
+}
+
+/// Remove log files in `log_dir` that are older than `keep_days` days.
+fn prune_old_logs(log_dir: &PathBuf, keep_days: u64) {
+    let cutoff = std::time::SystemTime::now()
+        .checked_sub(std::time::Duration::from_secs(keep_days * 86_400))
+        .unwrap();
+
+    let Ok(entries) = std::fs::read_dir(log_dir) else { return };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // Only touch files that match the rolling appender naming pattern
+        let name = path.file_name().unwrap_or_default().to_string_lossy();
+        if !name.starts_with("audion.log") {
+            continue;
+        }
+        if let Ok(meta) = entry.metadata() {
+            if meta.modified().map_or(false, |m| m < cutoff) {
+                let _ = std::fs::remove_file(&path);
+                // Can't use tracing here yet (not initialized), so silently skip
+            }
+        }
+    }
+}
+
+/// Install a panic hook that writes crash info to the tracing log before exit.
+fn init_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}", l.file(), l.line()))
+            .unwrap_or_else(|| "unknown location".into());
+
+        let payload = info
+            .payload()
+            .downcast_ref::<&str>()
+            .copied()
+            .unwrap_or_else(|| {
+                info.payload()
+                    .downcast_ref::<String>()
+                    .map(|s| s.as_str())
+                    .unwrap_or("(non-string panic payload)")
+            });
+
+        tracing::error!(
+            location = %location,
+            payload = %payload,
+            "PANIC — application crashed"
+        );
+
+        // Give the non-blocking writer time to flush before the process dies.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }));
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // ------------------------------------------------------------------
+    // Resolve the log directory before Tauri starts so we can log early
+    // failures. Use the platform app-data dir when available, otherwise
+    // fall back to the current directory.
+    // ------------------------------------------------------------------
+    let log_dir = dirs::data_local_dir()
+        .map(|d| d.join("audion").join("logs"))
+        .unwrap_or_else(|| PathBuf::from("logs"));
+
+    init_logging(&log_dir);
+    init_panic_hook();
+
+    tracing::info!("Audion starting up");
+
     // Initialize security audit logging
     security::init_logger();
 
@@ -53,14 +161,23 @@ pub fn run() {
                 .app_data_dir()
                 .unwrap_or_else(|_| PathBuf::from("."));
 
+            tracing::info!(path = %app_dir.display(), "App data directory resolved");
+
             // Ensure directory exists
-            std::fs::create_dir_all(&app_dir).ok();
+            if let Err(e) = std::fs::create_dir_all(&app_dir) {
+                tracing::error!(error = %e, "Failed to create app data directory");
+            }
 
             // Initialize cover storage app data directory (cross-platform)
             scanner::cover_storage::init_app_data_dir(app_dir.clone());
+            tracing::info!("Cover storage initialized");
 
             // Initialize database
-            let database = Database::new(&app_dir).expect("Failed to initialize database");
+            let database = Database::new(&app_dir).map_err(|e| {
+                tracing::error!(error = %e, "Failed to initialize database");
+                e
+            })?;
+            tracing::info!("Database initialized");
 
             app.manage(database);
 
@@ -69,14 +186,14 @@ pub fn run() {
             app.manage(discord::DiscordState(std::sync::Mutex::new(None)));
 
             // =============================================================================
-            // NATIVE AUDIO BACKEND INITIALIZATION
+            // NATIVE AUDIO BACKEND INITIALIZATION (Non-blocking, thread-safe)
             // =============================================================================
-            // Register state immediately (empty) so commands are available, then
-            // initialize the actual audio output in a background thread with a
-            // timeout to prevent blocking the UI on slow audio subsystems.
+            // Register state immediately (empty) so commands are available.
+            // The actual audio engine is only initialized lazily on a dedicated thread
+            // when the first command is received. No mutexes or blocking on the UI thread.
             // =============================================================================
             {
-                log::info!("[AUDIO] Initializing native audio backend (rodio)...");
+                tracing::info!("Registering native audio backend state (lazy init)");
                 app.manage(audio::PlaybackStateSync::new());
                 audio::PlaybackStateSync::init_async(app.handle().clone());
             }
@@ -88,18 +205,23 @@ pub fn run() {
                 if let Some(window) = app.get_webview_window("main") {
                     match window_config.start_mode {
                         commands::window::WindowStartMode::Maximized => {
+                            tracing::info!("Window start mode: Maximized");
                             window.maximize().ok();
                         }
                         commands::window::WindowStartMode::Minimized => {
+                            tracing::info!("Window start mode: Minimized");
                             window.minimize().ok();
                         }
                         commands::window::WindowStartMode::Normal => {
-                            // Default behavior, do nothing (windowed)
+                            tracing::info!("Window start mode: Normal");
                         }
                     }
+                } else {
+                    tracing::warn!("Main webview window not found during setup");
                 }
             }
 
+            tracing::info!("App setup complete");
             Ok(())
         })
         .invoke_handler({
@@ -159,6 +281,8 @@ pub fn run() {
                     commands::get_top_tracks,
                     commands::get_top_albums,
                     commands::get_recently_played,
+                    commands::get_top_artists,
+                    commands::get_stats_summary,
                     // Lyrics commands
                     commands::save_lrc_file,
                     commands::load_lrc_file,
@@ -270,6 +394,8 @@ pub fn run() {
                     commands::get_top_tracks,
                     commands::get_top_albums,
                     commands::get_recently_played,
+                    commands::get_top_artists,
+                    commands::get_stats_summary,
                     // Lyrics commands
                     commands::save_lrc_file,
                     commands::load_lrc_file,
