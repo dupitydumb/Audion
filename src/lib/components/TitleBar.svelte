@@ -474,10 +474,29 @@
     }
 
     /* Drag Regions */
+    /* Drag Regions */
+    /* Use data-tauri-drag-region attribute and explicit classes so macOS
+       WebKit will treat the area as draggable. Interactive elements inside
+       titlebar must be explicitly marked as no-drag to receive pointer events. */
+    [data-tauri-drag-region],
     .drag-region {
+        -webkit-app-region: drag;
+        app-region: drag;
         flex-grow: 1;
         height: 100%;
         min-width: 16px;
+    }
+
+    /* Interactive elements should not be draggable so clicks work on macOS */
+    .titlebar .left-controls,
+    .titlebar .window-controls,
+    .titlebar .nav-group,
+    .titlebar .search-input-wrapper,
+    .titlebar button,
+    .titlebar input,
+    .titlebar a {
+        -webkit-app-region: no-drag;
+        app-region: no-drag;
     }
 
     /* Search Bar */
