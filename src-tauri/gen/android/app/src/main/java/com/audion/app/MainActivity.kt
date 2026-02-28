@@ -65,26 +65,45 @@ class MainActivity : TauriActivity() {
   }
 
   inner class AudioInterface(private val context: Context) {
+
     @JavascriptInterface
-    fun startNotification(title: String, artist: String, album: String, isPlaying: Boolean, artUrl: String?) {
-        try {
-            val intent = Intent(context, MediaNotificationService::class.java).apply {
-                putExtra(MediaNotificationService.EXTRA_TITLE, title)
-                putExtra(MediaNotificationService.EXTRA_ARTIST, artist)
-                putExtra(MediaNotificationService.EXTRA_ALBUM, album)
-                putExtra(MediaNotificationService.EXTRA_IS_PLAYING, isPlaying)
-                putExtra(MediaNotificationService.EXTRA_ART_URL, artUrl)
-            }
-            ContextCompat.startForegroundService(context, intent)
-        } catch (e: Exception) {
-            // Android 12+ throws ForegroundServiceStartNotAllowedException if app is in background
-            e.printStackTrace()
+    fun startNotification(
+      title: String,
+      artist: String,
+      album: String,
+      isPlaying: Boolean,
+      artUrl: String?,
+      currentTime: String?,
+      duration: String?
+    ) {
+      try {
+        val intent = Intent(context, MediaNotificationService::class.java).apply {
+          putExtra(MediaNotificationService.EXTRA_TITLE, title)
+          putExtra(MediaNotificationService.EXTRA_ARTIST, artist)
+          putExtra(MediaNotificationService.EXTRA_ALBUM, album)
+          putExtra(MediaNotificationService.EXTRA_IS_PLAYING, isPlaying)
+          putExtra(MediaNotificationService.EXTRA_ART_URL, artUrl)
+          putExtra(MediaNotificationService.EXTRA_CURRENT_TIME, currentTime)
+          putExtra(MediaNotificationService.EXTRA_DURATION, duration)
         }
+        ContextCompat.startForegroundService(context, intent)
+      } catch (e: Exception) {
+        // Android 12+ throws ForegroundServiceStartNotAllowedException if app is in background
+        e.printStackTrace()
+      }
     }
 
     @JavascriptInterface
-    fun updateNotification(title: String, artist: String, album: String, isPlaying: Boolean, artUrl: String?) {
-         startNotification(title, artist, album, isPlaying, artUrl)
+    fun updateNotification(
+      title: String,
+      artist: String,
+      album: String,
+      isPlaying: Boolean,
+      artUrl: String?,
+      currentTime: String?,
+      duration: String?
+    ) {
+      startNotification(title, artist, album, isPlaying, artUrl, currentTime, duration)
     }
 
     @JavascriptInterface

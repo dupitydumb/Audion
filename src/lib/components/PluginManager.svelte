@@ -15,15 +15,15 @@
   import { confirm } from "$lib/stores/dialogs";
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
   import { invoke } from "@tauri-apps/api/core";
-  import { onDestroy } from 'svelte';
-  import { saveScroll, getScroll } from '$lib/stores/scrollMemory';
+  import { onDestroy } from "svelte";
+  import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
 
   let pluginContentEl: HTMLDivElement;
   let scrollRestored = false;
   let currentScrollTop = 0;
 
   onDestroy(() => {
-      saveScroll('plugins', currentScrollTop);
+    saveScroll("plugins", currentScrollTop);
   });
 
   // Local state
@@ -35,19 +35,25 @@
   let activeTab: "curated" | "community" | "installed" = "curated";
 
   // Install State
-  type InstallState = 'idle' | 'loading' | 'success' | 'error';
-  let installState: InstallState = 'idle';
-  let confettiParticles: { x: number; y: number; color: string; angle: number; speed: number }[] = [];
+  type InstallState = "idle" | "loading" | "success" | "error";
+  let installState: InstallState = "idle";
+  let confettiParticles: {
+    x: number;
+    y: number;
+    color: string;
+    angle: number;
+    speed: number;
+  }[] = [];
   let installBtnEl: HTMLButtonElement;
 
   onMount(async () => {
-      await pluginStore.init();
-      await pluginStore.refreshMarketplace();
-      const saved = getScroll('plugins');
-      if (saved > 0 && pluginContentEl) {
-          pluginContentEl.scrollTop = saved;
-      }
-      scrollRestored = true;
+    await pluginStore.init();
+    await pluginStore.refreshMarketplace();
+    const saved = getScroll("plugins");
+    if (saved > 0 && pluginContentEl) {
+      pluginContentEl.scrollTop = saved;
+    }
+    scrollRestored = true;
   });
 
   async function openPluginsFolder() {
@@ -144,52 +150,56 @@
   }
 
   async function handleConfirmInstall() {
-      if (installState !== 'idle') return;
-      installState = 'loading';
+    if (installState !== "idle") return;
+    installState = "loading";
 
-      try {
-          const success = await pluginStore.installPlugin(selectedPlugin!);
-          if (success && pendingPermissions.length > 0) {
-              await pluginStore.grantPermissions(selectedPlugin!.manifest.name, pendingPermissions);
-          }
-
-          installState = 'success';
-          spawnConfetti();
-
-          setTimeout(() => {
-              if (pluginContentEl) saveScroll('plugins', currentScrollTop);
-              closePermissionModal();
-              installState = 'idle';
-          }, 1800);
-
-      } catch (err) {
-          installState = 'error';
-          setTimeout(() => {
-              installState = 'idle';
-          }, 2500);
+    try {
+      const success = await pluginStore.installPlugin(selectedPlugin!);
+      if (success && pendingPermissions.length > 0) {
+        await pluginStore.grantPermissions(
+          selectedPlugin!.manifest.name,
+          pendingPermissions,
+        );
       }
+
+      installState = "success";
+      spawnConfetti();
+
+      setTimeout(() => {
+        if (pluginContentEl) saveScroll("plugins", currentScrollTop);
+        closePermissionModal();
+        installState = "idle";
+      }, 1800);
+    } catch (err) {
+      installState = "error";
+      setTimeout(() => {
+        installState = "idle";
+      }, 2500);
+    }
   }
 
   function spawnConfetti() {
-      if (!installBtnEl) return;
-      const rect = installBtnEl.getBoundingClientRect();
-      const colors = ['#1ed760', '#ff6b6b', '#ffd93d', '#6bceff', '#ff9f43'];
-      confettiParticles = Array.from({ length: 22 }, (_, i) => ({
-          x: rect.left + rect.width / 2,
-          y: rect.top + rect.height / 2,
-          color: colors[i % colors.length],
-          angle: (i / 22) * 360,
-          speed: 3 + Math.random() * 4,
-      }));
-      setTimeout(() => { confettiParticles = []; }, 1500);
+    if (!installBtnEl) return;
+    const rect = installBtnEl.getBoundingClientRect();
+    const colors = ["#1ed760", "#ff6b6b", "#ffd93d", "#6bceff", "#ff9f43"];
+    confettiParticles = Array.from({ length: 22 }, (_, i) => ({
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+      color: colors[i % colors.length],
+      angle: (i / 22) * 360,
+      speed: 3 + Math.random() * 4,
+    }));
+    setTimeout(() => {
+      confettiParticles = [];
+    }, 1500);
   }
 
   function closePermissionModal() {
-      showPermissionModal = false;
-      selectedPlugin = null;
-      pendingPermissions = [];
-      installState = 'idle';
-      confettiParticles = [];
+    showPermissionModal = false;
+    selectedPlugin = null;
+    pendingPermissions = [];
+    installState = "idle";
+    confettiParticles = [];
   }
 
   async function handleUninstall(name: string) {
@@ -338,8 +348,12 @@
   <div
     class="plugin-content"
     bind:this={pluginContentEl}
-    style="visibility: {scrollRestored || getScroll('plugins') === 0 ? 'visible' : 'hidden'};"
-    on:scroll={(e) => { currentScrollTop = (e.target as HTMLElement).scrollTop; }}
+    style="visibility: {scrollRestored || getScroll('plugins') === 0
+      ? 'visible'
+      : 'hidden'};"
+    on:scroll={(e) => {
+      currentScrollTop = (e.target as HTMLElement).scrollTop;
+    }}
   >
     {#if $pluginStore.loading}
       <div class="empty-state">
@@ -655,45 +669,80 @@
       {/if}
 
       <div class="modal-actions">
-          <button class="btn-secondary" on:click={closePermissionModal} disabled={installState === 'loading'}>
-              Cancel
-          </button>
-          <button
-              class="btn-install"
-              class:loading={installState === 'loading'}
-              class:success={installState === 'success'}
-              class:error={installState === 'error'}
-              on:click={handleConfirmInstall}
-              disabled={installState !== 'idle'}
-              bind:this={installBtnEl}
-          >
-              {#if installState === 'loading'}
-                  <svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" width="18" height="18">
-                      <circle cx="12" cy="12" r="10" stroke-width="3" opacity="0.25"/>
-                      <path d="M12 2a10 10 0 0 1 10 10" stroke-width="3" stroke-linecap="round"/>
-                  </svg>
-                  Installing...
-              {:else if installState === 'success'}
-                  <svg class="checkmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" width="18" height="18" stroke-linecap="round" stroke-linejoin="round">
-                      <polyline class="check-path" points="4,12 10,18 20,6" stroke-width="2.5"/>
-                  </svg>
-                  Installed!
-              {:else if installState === 'error'}
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="18" height="18" stroke-linecap="round">
-                      <path d="M18 6L6 18M6 6l12 12" stroke-width="2.5"/>
-                  </svg>
-                  Failed
-              {:else}
-                  Grant & Install
-              {/if}
-          </button>
+        <button
+          class="btn-secondary"
+          on:click={closePermissionModal}
+          disabled={installState === "loading"}
+        >
+          Cancel
+        </button>
+        <button
+          class="btn-install"
+          class:loading={installState === "loading"}
+          class:success={installState === "success"}
+          class:error={installState === "error"}
+          on:click={handleConfirmInstall}
+          disabled={installState !== "idle"}
+          bind:this={installBtnEl}
+        >
+          {#if installState === "loading"}
+            <svg
+              class="spin"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              width="18"
+              height="18"
+            >
+              <circle cx="12" cy="12" r="10" stroke-width="3" opacity="0.25" />
+              <path
+                d="M12 2a10 10 0 0 1 10 10"
+                stroke-width="3"
+                stroke-linecap="round"
+              />
+            </svg>
+            Installing...
+          {:else if installState === "success"}
+            <svg
+              class="checkmark"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              width="18"
+              height="18"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <polyline
+                class="check-path"
+                points="4,12 10,18 20,6"
+                stroke-width="2.5"
+              />
+            </svg>
+            Installed!
+          {:else if installState === "error"}
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              width="18"
+              height="18"
+              stroke-linecap="round"
+            >
+              <path d="M18 6L6 18M6 6l12 12" stroke-width="2.5" />
+            </svg>
+            Failed
+          {:else}
+            Grant & Install
+          {/if}
+        </button>
       </div>
-    
+
       <!-- Confetti particles (fixed position, outside modal flow) -->
       {#each confettiParticles as p, i}
-          <div
-              class="confetti-particle"
-              style="
+        <div
+          class="confetti-particle"
+          style="
                   left: {p.x}px;
                   top: {p.y}px;
                   background: {p.color};
@@ -701,7 +750,7 @@
                   --speed: {p.speed};
                   animation-delay: {i * 0.03}s;
               "
-          ></div>
+        ></div>
       {/each}
     </div>
   </div>
@@ -714,7 +763,8 @@
     height: 100%;
     min-height: 0;
     padding: var(--spacing-md);
-    overflow: hidden;
+    overflow-x: hidden; /* Prevent horizontal overflow */
+    box-sizing: border-box;
   }
 
   .view-header {
@@ -723,11 +773,13 @@
     justify-content: space-between;
     margin-bottom: var(--spacing-lg);
     flex-shrink: 0;
+    gap: var(--spacing-md);
   }
 
   .view-header h1 {
-    font-size: 2rem;
+    font-size: 1.5rem; /* Reduced from 2rem */
     font-weight: 700;
+    margin: 0;
   }
 
   .error-banner {
@@ -831,6 +883,7 @@
     gap: var(--spacing-md);
     transition: background-color var(--transition-normal);
     position: relative;
+    min-width: 0; /* CRITICAL: Allows flex children to truncate */
   }
 
   .plugin-card:hover {
@@ -883,6 +936,7 @@
     flex-direction: column;
     gap: var(--spacing-xs);
     flex: 1;
+    min-width: 0; /* CRITICAL: Allows children like .plugin-name to truncate */
   }
 
   .plugin-name {
@@ -956,73 +1010,87 @@
     opacity: 0.9;
   }
 
-    .btn-install {
-      padding: var(--spacing-sm) var(--spacing-md);
-      background-color: var(--accent-primary);
-      color: var(--bg-base);
-      border-radius: var(--radius-sm);
-      font-weight: 500;
-      font-size: 0.875rem;
-      transition: background-color 0.2s, transform 0.1s;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      min-width: 130px;
-      justify-content: center;
+  .btn-install {
+    padding: var(--spacing-sm) var(--spacing-md);
+    background-color: var(--accent-primary);
+    color: var(--bg-base);
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+    font-size: 0.875rem;
+    transition:
+      background-color 0.2s,
+      transform 0.1s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 130px;
+    justify-content: center;
   }
 
-  .btn-install:hover:not(:disabled) { opacity: 0.9; }
-  .btn-install:disabled { cursor: not-allowed; }
-  .btn-install.loading { opacity: 0.85; }
-  .btn-install.success { background-color: #1ed760; }
-  .btn-install.error { background-color: #ef4444; }
+  .btn-install:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+  .btn-install:disabled {
+    cursor: not-allowed;
+  }
+  .btn-install.loading {
+    opacity: 0.85;
+  }
+  .btn-install.success {
+    background-color: #1ed760;
+  }
+  .btn-install.error {
+    background-color: #ef4444;
+  }
 
   .spin {
-      animation: spin 0.8s linear infinite;
+    animation: spin 0.8s linear infinite;
   }
 
   @keyframes spin {
-      to { transform: rotate(360deg); }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   /* Checkmark draw animation */
   .check-path {
-      stroke-dasharray: 30;
-      stroke-dashoffset: 30;
-      animation: draw-check 0.5s ease forwards;
+    stroke-dasharray: 30;
+    stroke-dashoffset: 30;
+    animation: draw-check 0.5s ease forwards;
   }
 
   @keyframes draw-check {
-      to { stroke-dashoffset: 0; }
+    to {
+      stroke-dashoffset: 0;
+    }
   }
 
   /* Confetti */
   .confetti-particle {
-      position: fixed;
-      width: 7px;
-      height: 7px;
-      border-radius: 2px;
-      pointer-events: none;
-      z-index: 9999;
-      animation: confetti-burst 1.2s ease-out forwards;
-      transform-origin: center;
+    position: fixed;
+    width: 7px;
+    height: 7px;
+    border-radius: 2px;
+    pointer-events: none;
+    z-index: 9999;
+    animation: confetti-burst 1.2s ease-out forwards;
+    transform-origin: center;
   }
 
   @keyframes confetti-burst {
-      0% {
-          transform: translate(0, 0) rotate(0deg) scale(1);
-          opacity: 1;
-      }
-      100% {
-          transform: 
-              translate(
-                  calc(cos(var(--angle)) * calc(var(--speed) * 30px)),
-                  calc(sin(var(--angle)) * calc(var(--speed) * 30px) - 80px)
-              )
-              rotate(720deg)
-              scale(0);
-          opacity: 0;
-      }
+    0% {
+      transform: translate(0, 0) rotate(0deg) scale(1);
+      opacity: 1;
+    }
+    100% {
+      transform: translate(
+          calc(cos(var(--angle)) * calc(var(--speed) * 30px)),
+          calc(sin(var(--angle)) * calc(var(--speed) * 30px) - 80px)
+        )
+        rotate(720deg) scale(0);
+      opacity: 0;
+    }
   }
 
   .btn-secondary {
@@ -1103,16 +1171,20 @@
     border: 1px solid var(--border-color);
   }
 
-  .modal h2 {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin-bottom: var(--spacing-sm);
+  .view-header h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0;
   }
 
-  .modal-desc {
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-    margin-bottom: var(--spacing-lg);
+  .plugin-view {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    padding: var(--spacing-md);
+    overflow-x: hidden; /* Prevent horizontal overflow */
+    box-sizing: border-box;
   }
 
   .permission-section {
@@ -1239,6 +1311,30 @@
 
   /* ── Mobile ── */
   @media (max-width: 768px) {
+    .view-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--spacing-md);
+    }
+
+    .view-header h1 {
+      font-size: 1.25rem;
+    }
+
+    .header-actions {
+      width: 100%;
+      flex-wrap: wrap;
+      gap: var(--spacing-xs);
+    }
+
+    .header-actions button {
+      flex: 1;
+      justify-content: center;
+      padding: 8px 12px;
+      font-size: 0.8125rem;
+      white-space: nowrap;
+    }
+
     .plugin-grid {
       grid-template-columns: 1fr;
       gap: var(--spacing-md);
@@ -1246,6 +1342,18 @@
 
     .remove-btn {
       opacity: 1;
+    }
+
+    .tabs {
+      overflow-x: auto;
+      padding-bottom: 4px;
+      gap: 4px;
+    }
+
+    .tab {
+      padding: 6px 12px;
+      font-size: 0.8125rem;
+      white-space: nowrap;
     }
   }
 </style>

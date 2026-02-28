@@ -1,14 +1,32 @@
+
 import { get } from 'svelte/store';
-import { currentTrack, isPlaying, togglePlay, nextTrack, previousTrack } from '$lib/stores/player';
+import { currentTrack, isPlaying, togglePlay, nextTrack, previousTrack, currentTime, duration } from '$lib/stores/player';
 import { nativeAudioStop } from '$lib/services/native-audio';
 import { getTrackCoverSrc } from '$lib/api/tauri';
 import { isAndroid, isTauri } from '$lib/api/tauri';
 
 interface AndroidInterface {
-    startNotification(title: string, artist: string, album: string, isPlaying: boolean, artUrl: string | null): void;
-    updateNotification(title: string, artist: string, album: string, isPlaying: boolean, artUrl: string | null): void;
+    startNotification(
+        title: string,
+        artist: string,
+        album: string,
+        isPlaying: boolean,
+        artUrl: string | null,
+        currentTime: string,
+        duration: string
+    ): void;
+    updateNotification(
+        title: string,
+        artist: string,
+        album: string,
+        isPlaying: boolean,
+        artUrl: string | null,
+        currentTime: string,
+        duration: string
+    ): void;
     stopNotification(): void;
 }
+
 
 declare global {
     interface Window {
@@ -17,9 +35,11 @@ declare global {
     }
 }
 
+
 let notificationInitialized = false;
 let lastArtUrl: string | null = null;
 let lastArtBase64: string | null = null;
+
 
 export async function initAndroidNotification() {
     if (!isAndroid() || !isTauri() || notificationInitialized) return;
@@ -41,8 +61,6 @@ export async function initAndroidNotification() {
                 break;
             case 'stop':
                 nativeAudioStop();
-                // We should probably pause if native stop isn't enough context?
-                // Actually nativeAudioStop calls rust backend. The player store might need to update state.
                 isPlaying.set(false);
                 break;
         }
@@ -59,9 +77,11 @@ export async function initAndroidNotification() {
 
         const playing = get(isPlaying);
         const artUrl = getTrackCoverSrc(track);
+        const pos = get(currentTime);
+        const dur = get(duration);
+        const { formatDuration } = await import('$lib/api/tauri');
 
         let artData: string | null = null;
-
         // Optimize art loading: if URL changed, resolve it to base64 or pass through if http
         if (artUrl !== lastArtUrl) {
             lastArtUrl = artUrl;
@@ -94,22 +114,26 @@ export async function initAndroidNotification() {
             track.artist || 'Unknown Artist',
             track.album || '',
             playing,
-            artData
+            artData,
+            formatDuration(pos),
+            formatDuration(dur)
         );
     });
 
-    isPlaying.subscribe((playing) => {
+    isPlaying.subscribe(async (playing) => {
         const track = get(currentTrack);
         if (track) {
-            // Update play/pause state without reloading art if possible
-            // Note: Our Kotlin implementation re-uses cached bitmap if URL is same/null
-            // We pass consistent artData (which is cached here too)
+            const pos = get(currentTime);
+            const dur = get(duration);
+            const { formatDuration } = await import('$lib/api/tauri');
             window.AndroidMediaNotification?.updateNotification(
                 track.title || 'Unknown Title',
                 track.artist || 'Unknown Artist',
                 track.album || '',
                 playing,
-                lastArtBase64
+                lastArtBase64,
+                formatDuration(pos),
+                formatDuration(dur)
             );
         }
     });
