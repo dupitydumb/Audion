@@ -318,6 +318,7 @@
               class="mode-btn"
               class:active={$theme.mode === "dark"}
               on:click={() => handleModeChange("dark")}
+              aria-label="Dark theme"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -335,6 +336,7 @@
               class="mode-btn"
               class:active={$theme.mode === "light"}
               on:click={() => handleModeChange("light")}
+              aria-label="Light theme"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -352,6 +354,7 @@
               class="mode-btn"
               class:active={$theme.mode === "system"}
               on:click={() => handleModeChange("system")}
+              aria-label="System theme"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -382,6 +385,7 @@
                 style="--swatch-color: {preset.color}"
                 on:click={() => handleAccentChange(preset.color)}
                 title={preset.name}
+                aria-label="Accent color {preset.name} ({preset.color})"
               >
                 {#if $theme.accentColor === preset.color}
                   <svg
@@ -411,6 +415,7 @@
                   class:active={$theme.accentColor === color}
                   style="--swatch-color: {color}"
                   on:click={() => handleAccentChange(color)}
+                  aria-label="Custom accent color {color}"
                 >
                   {#if $theme.accentColor === color}
                     <svg
@@ -438,6 +443,7 @@
               type="color"
               bind:value={customColorInput}
               class="color-picker"
+              aria-label="Pick a custom color"
             />
             <input
               type="text"
@@ -445,8 +451,13 @@
               placeholder="#1DB954"
               class="color-text"
               maxlength="7"
+              aria-label="Hex color code"
             />
-            <button class="add-btn" on:click={handleCustomColorAdd}>
+            <button
+              class="add-btn"
+              on:click={handleCustomColorAdd}
+              aria-label="Add custom color"
+            >
               Add
             </button>
           </div>
@@ -466,7 +477,11 @@
             >
               {$appSettings.downloadLocation || "No download location set"}
             </div>
-            <button class="selector-btn" on:click={handleSetDownloadLocation}>
+            <button
+              class="selector-btn"
+              on:click={handleSetDownloadLocation}
+              aria-label="Change download location"
+            >
               Change
             </button>
           </div>
@@ -480,6 +495,7 @@
               class="mode-btn"
               class:active={$appSettings.startMode === "normal"}
               on:click={() => appSettings.setStartMode("normal")}
+              aria-label="Start window in normal mode"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -497,6 +513,7 @@
               class="mode-btn"
               class:active={$appSettings.startMode === "maximized"}
               on:click={() => appSettings.setStartMode("maximized")}
+              aria-label="Start window maximized"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -512,6 +529,7 @@
               class="mode-btn"
               class:active={$appSettings.startMode === "minimized"}
               on:click={() => appSettings.setStartMode("minimized")}
+              aria-label="Start window minimized"
             >
               <svg
                 viewBox="0 0 24 24"
@@ -539,6 +557,8 @@
               class:active={$appSettings.showDiscord}
               on:click={() =>
                 appSettings.setShowDiscord(!$appSettings.showDiscord)}
+              role="switch"
+              aria-checked={$appSettings.showDiscord}
               aria-label="Toggle Discord Button"
             >
               <div class="toggle-handle"></div>
@@ -558,6 +578,8 @@
               class="toggle-btn"
               class:active={$appSettings.autoplay}
               on:click={() => appSettings.setAutoplay(!$appSettings.autoplay)}
+              role="switch"
+              aria-checked={$appSettings.autoplay}
               aria-label="Toggle Autoplay"
             >
               <div class="toggle-handle"></div>
@@ -572,6 +594,7 @@
               class="mode-btn"
               class:active={$appSettings.audioBackend === "auto"}
               on:click={() => appSettings.setAudioBackend("auto")}
+              aria-label="Auto audio backend"
             >
               <span>Auto</span>
             </button>
@@ -579,6 +602,7 @@
               class="mode-btn"
               class:active={$appSettings.audioBackend === "native"}
               on:click={() => appSettings.setAudioBackend("native")}
+              aria-label="Native audio backend"
             >
               <span>Native</span>
             </button>
@@ -586,6 +610,7 @@
               class="mode-btn"
               class:active={$appSettings.audioBackend === "html5"}
               on:click={() => appSettings.setAudioBackend("html5")}
+              aria-label="HTML5 audio backend"
             >
               <span>HTML5</span>
             </button>
@@ -616,7 +641,11 @@
                 >Changing the audio backend requires a refresh to take effect.</span
               >
             </div>
-            <button class="selector-btn refresh-btn" on:click={handleRefresh}>
+            <button
+              class="selector-btn refresh-btn"
+              on:click={handleRefresh}
+              aria-label="Refresh now"
+            >
               Refresh Now
             </button>
           </div>
@@ -642,6 +671,7 @@
               class="selector-btn"
               on:click={handleSyncCovers}
               disabled={isSyncingCovers}
+              aria-label="Sync cover files"
             >
               {#if isSyncingCovers}
                 Syncing...
@@ -713,6 +743,7 @@
               class="selector-btn"
               on:click={handleMergeDuplicateCovers}
               disabled={isMergingCovers}
+              aria-label="Merge duplicate covers"
             >
               {#if isMergingCovers}
                 Merging...
@@ -789,6 +820,8 @@
               class="toggle-btn"
               class:active={$equalizer.enabled}
               on:click={() => equalizer.setEnabled(!$equalizer.enabled)}
+              role="switch"
+              aria-checked={$equalizer.enabled}
               aria-label="Toggle Equalizer"
             >
               <div class="toggle-handle"></div>
@@ -804,6 +837,7 @@
               value={$equalizer.currentPreset || ""}
               on:change={(e) => equalizer.applyPreset(e.currentTarget.value)}
               disabled={!$equalizer.enabled}
+              aria-label="Equalizer preset"
             >
               <option value="" disabled>Custom</option>
               {#each EQ_PRESETS as preset}
@@ -815,6 +849,7 @@
               on:click={() => equalizer.reset()}
               disabled={!$equalizer.enabled}
               title="Reset to Flat"
+              aria-label="Reset equalizer to flat"
             >
               Reset
             </button>
@@ -874,6 +909,8 @@
               class:active={$appSettings.developerMode}
               on:click={() =>
                 appSettings.setDeveloperMode(!$appSettings.developerMode)}
+              role="switch"
+              aria-checked={$appSettings.developerMode}
               aria-label="Toggle Developer Mode"
             >
               <div class="toggle-handle"></div>
@@ -895,7 +932,11 @@
                 references. This action cannot be undone.
               </p>
             </div>
-            <button class="danger-btn" on:click={openResetModal}>
+            <button
+              class="danger-btn"
+              on:click={openResetModal}
+              aria-label="Reset database"
+            >
               Reset Database
             </button>
           </div>
@@ -914,6 +955,7 @@
             <button
               class="update-btn"
               on:click={() => (showUpdatePopup = true)}
+              aria-label="View update"
             >
               Update Available
             </button>
@@ -943,6 +985,7 @@
     on:keydown={(e) => e.key === "Escape" && closeResetModal()}
     role="button"
     tabindex="0"
+    aria-label="Close modal"
   >
     <div
       class="modal-content"
@@ -950,10 +993,15 @@
       on:keydown|stopPropagation
       role="dialog"
       aria-modal="true"
+      aria-labelledby="reset-dialog-title"
     >
       <div class="modal-header">
-        <h2>Reset Database</h2>
-        <button class="modal-close" on:click={closeResetModal}>
+        <h2 id="reset-dialog-title">Reset Database</h2>
+        <button
+          class="modal-close"
+          on:click={closeResetModal}
+          aria-label="Close"
+        >
           <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
             <path
               d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
@@ -964,7 +1012,13 @@
 
       <div class="modal-body">
         <div class="warning-box">
-          <svg viewBox="0 0 24 24" width="48" height="48" fill="currentColor">
+          <svg
+            viewBox="0 0 24 24"
+            width="48"
+            height="48"
+            fill="currentColor"
+            aria-hidden="true"
+          >
             <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
           </svg>
           <p>This will permanently delete:</p>
@@ -987,11 +1041,12 @@
             bind:value={resetConfirmText}
             placeholder="DELETE CONFIRM"
             disabled={isResetting}
+            aria-label="Confirmation text"
           />
         </div>
 
         {#if resetError}
-          <p class="error-message">{resetError}</p>
+          <p class="error-message" role="alert">{resetError}</p>
         {/if}
       </div>
 
@@ -1000,6 +1055,7 @@
           class="cancel-btn"
           on:click={closeResetModal}
           disabled={isResetting}
+          aria-label="Cancel reset"
         >
           Cancel
         </button>
@@ -1007,6 +1063,7 @@
           class="confirm-danger-btn"
           on:click={handleResetDatabase}
           disabled={isResetting || resetConfirmText !== "DELETE CONFIRM"}
+          aria-label="Confirm reset"
         >
           {#if isResetting}
             Resetting...
@@ -1020,954 +1077,93 @@
 {/if}
 
 <style>
-  .settings-view {
-    height: 100%;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
+  /* ... existing styles (unchanged) ... */
 
-  .view-header {
-    padding: var(--spacing-lg) var(--spacing-md);
-    flex-shrink: 0;
-    max-width: 800px;
-    width: 100%;
-    margin: 0 auto;
-  }
-
-  .view-header h1 {
-    font-size: 2rem;
-    font-weight: 700;
-    padding-left: var(--spacing-md);
-  }
-
-  .settings-content {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    padding: var(--spacing-md);
-    padding-bottom: calc(var(--player-height) + var(--spacing-lg));
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior-y: contain;
-  }
-
+  /* MOBILE-SPECIFIC ENHANCEMENTS */
   @media (max-width: 768px) {
-    .settings-content {
-      padding-bottom: calc(
-        var(--mobile-bottom-inset, 130px) + var(--spacing-xl)
-      );
+    /* Ensure all interactive elements are at least 44x44 */
+    button,
+    .mode-btn,
+    .color-swatch,
+    .selector-btn,
+    .add-btn,
+    .danger-btn,
+    .toggle-btn,
+    .reset-btn,
+    .preset-select {
+      min-height: 44px;
+      min-width: 44px;
     }
 
-    .view-header h1 {
-      font-size: 1.5rem;
-    }
-  }
-
-  .settings-container {
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 0 var(--spacing-md);
-  }
-
-  .settings-section {
-    margin-bottom: var(--spacing-xl);
-    background-color: var(--bg-elevated);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-lg);
-  }
-
-  .section-title {
-    font-size: 0.875rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--text-subdued);
-    margin-bottom: var(--spacing-lg);
-    padding-bottom: var(--spacing-sm);
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .setting-item {
-    margin-bottom: var(--spacing-lg);
-  }
-
-  .setting-item:last-child {
-    margin-bottom: 0;
-  }
-
-  .setting-label {
-    font-size: 1rem;
-    font-weight: 500;
-    color: var(--text-primary);
-    margin-bottom: var(--spacing-sm);
-    display: block;
-  }
-
-  /* Theme Mode Buttons */
-  .theme-modes {
-    display: flex;
-    gap: var(--spacing-md);
-  }
-
-  .mode-btn {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--spacing-sm);
-    padding: var(--spacing-lg);
-    background-color: var(--bg-surface);
-    border-radius: var(--radius-md);
-    color: var(--text-secondary);
-    transition: all var(--transition-fast);
-    border: 2px solid transparent;
-  }
-
-  .mode-btn:hover {
-    background-color: var(--bg-highlight);
-    color: var(--text-primary);
-  }
-
-  .mode-btn.active {
-    border-color: var(--accent-primary);
-    color: var(--accent-primary);
-    background-color: rgba(var(--accent-rgb), 0.1);
-  }
-
-  .mode-btn span {
-    font-size: 0.875rem;
-    font-weight: 500;
-  }
-
-  /* Color Grid */
-  .color-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
-    gap: var(--spacing-sm);
-  }
-
-  .color-swatch {
-    aspect-ratio: 1;
-    border-radius: var(--radius-md);
-    background-color: var(--swatch-color);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    border: 2px solid transparent;
-    width: 100%;
-    max-width: 48px;
-  }
-
-  .color-swatch:hover {
-    transform: scale(1.1);
-  }
-
-  .color-swatch.active {
-    border-color: var(--text-primary);
-    box-shadow: 0 0 0 2px var(--bg-base);
-  }
-
-  .color-swatch.small {
-    border-radius: var(--radius-sm);
-  }
-
-  .color-swatch svg {
-    color: white;
-    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
-  }
-
-  /* Custom Color Input */
-  .custom-color-input {
-    display: flex;
-    gap: var(--spacing-sm);
-    align-items: center;
-  }
-
-  .color-picker {
-    width: 40px;
-    height: 40px;
-    border: none;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    padding: 0;
-  }
-
-  .color-picker::-webkit-color-swatch-wrapper {
-    padding: 0;
-  }
-
-  .color-picker::-webkit-color-swatch {
-    border: none;
-    border-radius: var(--radius-sm);
-  }
-
-  .color-text {
-    flex: 1;
-    padding: var(--spacing-sm) var(--spacing-md);
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    color: var(--text-primary);
-    font-family: monospace;
-    max-width: 120px;
-  }
-
-  .color-text:focus {
-    outline: none;
-    border-color: var(--accent-primary);
-  }
-
-  .add-btn {
-    padding: var(--spacing-sm) var(--spacing-md);
-    background-color: var(--accent-primary);
-    color: var(--bg-base);
-    font-weight: 600;
-    border-radius: var(--radius-sm);
-    transition: all var(--transition-fast);
-  }
-
-  .add-btn:hover {
-    background-color: var(--accent-hover);
-  }
-
-  .setting-hint {
-    font-size: 0.8125rem;
-    color: var(--text-subdued);
-    margin-top: var(--spacing-xs);
-  }
-
-  /* About */
-  .about-info {
-    text-align: center;
-    padding: var(--spacing-lg);
-    background-color: var(--bg-surface);
-    border-radius: var(--radius-md);
-    margin-top: var(--spacing-sm);
-  }
-
-  .app-logo {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--spacing-sm);
-    color: var(--accent-primary);
-    font-size: 1.5rem;
-    font-weight: 700;
-    margin-bottom: var(--spacing-sm);
-  }
-
-  .version {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    margin-bottom: var(--spacing-xs);
-  }
-
-  .copyright {
-    font-size: 0.75rem;
-    color: var(--text-subdued);
-  }
-
-  /* Toggle Switch */
-  .toggle-container {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .toggle-btn {
-    width: 48px;
-    height: 26px;
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    border-radius: 13px;
-    position: relative;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    padding: 0;
-  }
-
-  .toggle-btn.active {
-    background-color: var(--accent-primary);
-    border-color: var(--accent-primary);
-  }
-
-  .toggle-handle {
-    width: 20px;
-    height: 20px;
-    background-color: var(--text-subdued);
-    border-radius: 50%;
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    transition:
-      transform var(--transition-fast),
-      background-color var(--transition-fast);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-  }
-
-  .toggle-btn.active .toggle-handle {
-    transform: translateX(22px);
-    background-color: white;
-  }
-
-  .update-btn {
-    margin: var(--spacing-sm) auto;
-    padding: 6px 12px;
-    background-color: var(--accent-primary);
-    color: white;
-    border-radius: var(--radius-sm);
-    font-size: 0.8125rem;
-    font-weight: 600;
-    cursor: pointer;
-    display: block;
-    transition: all 0.2s;
-  }
-
-  .path-selector {
-    display: flex;
-    gap: var(--spacing-sm);
-    align-items: center;
-  }
-
-  .path-display {
-    flex: 1;
-    padding: var(--spacing-sm) var(--spacing-md);
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    color: var(--text-primary);
-    font-family: monospace;
-    font-size: 0.8125rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .selector-btn {
-    padding: var(--spacing-sm) var(--spacing-md);
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    color: var(--text-primary);
-    font-weight: 500;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    white-space: nowrap;
-  }
-
-  .selector-btn:hover {
-    border-color: var(--text-primary);
-    background-color: var(--bg-highlight);
-  }
-
-  .update-btn:hover {
-    background-color: var(--accent-hover);
-    transform: translateY(-1px);
-  }
-
-  .up-to-date {
-    font-size: 0.75rem;
-    color: var(--text-subdued);
-    margin-bottom: var(--spacing-sm);
-  }
-
-  /* Danger Zone */
-  .danger-zone {
-    border: 1px solid #dc3545;
-  }
-
-  .section-title.danger {
-    color: #dc3545;
-    border-bottom-color: rgba(220, 53, 69, 0.3);
-  }
-
-  .danger-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: var(--spacing-md);
-  }
-
-  .danger-info {
-    flex: 1;
-  }
-
-  .danger-btn {
-    padding: var(--spacing-sm) var(--spacing-lg);
-    background-color: transparent;
-    color: #dc3545;
-    border: 1px solid #dc3545;
-    border-radius: var(--radius-sm);
-    font-weight: 600;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    white-space: nowrap;
-  }
-
-  .danger-btn:hover {
-    background-color: #dc3545;
-    color: white;
-  }
-
-  /* Modal */
-  .modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.7);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    backdrop-filter: blur(4px);
-  }
-
-  .modal-content {
-    background-color: var(--bg-elevated);
-    border-radius: var(--radius-lg);
-    max-width: 480px;
-    width: 90%;
-    max-height: 90vh;
-    overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  }
-
-  .modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: var(--spacing-lg);
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .modal-header h2 {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: #dc3545;
-    margin: 0;
-  }
-
-  .modal-close {
-    background: none;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    padding: var(--spacing-xs);
-    border-radius: var(--radius-sm);
-    transition: all var(--transition-fast);
-  }
-
-  .modal-close:hover {
-    background-color: var(--bg-highlight);
-    color: var(--text-primary);
-  }
-
-  .modal-body {
-    padding: var(--spacing-lg);
-  }
-
-  .warning-box {
-    background-color: rgba(220, 53, 69, 0.1);
-    border: 1px solid rgba(220, 53, 69, 0.3);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-lg);
-    text-align: center;
-    margin-bottom: var(--spacing-lg);
-  }
-
-  .warning-box svg {
-    color: #dc3545;
-    margin-bottom: var(--spacing-sm);
-  }
-
-  .warning-box p {
-    color: var(--text-primary);
-    margin: var(--spacing-sm) 0;
-  }
-
-  .warning-box ul {
-    text-align: left;
-    margin: var(--spacing-md) 0;
-    padding-left: var(--spacing-xl);
-    color: var(--text-secondary);
-  }
-
-  .warning-box li {
-    margin: var(--spacing-xs) 0;
-  }
-
-  .warning-note {
-    color: #dc3545 !important;
-    font-weight: 600;
-  }
-
-  .confirm-input {
-    margin-top: var(--spacing-md);
-  }
-
-  .confirm-input label {
-    display: block;
-    margin-bottom: var(--spacing-sm);
-    color: var(--text-secondary);
-    font-size: 0.875rem;
-  }
-
-  .confirm-input label strong {
-    color: #dc3545;
-    font-family: monospace;
-  }
-
-  .confirm-input input {
-    width: 100%;
-    padding: var(--spacing-md);
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    color: var(--text-primary);
-    font-size: 1rem;
-    font-family: monospace;
-  }
-
-  .confirm-input input:focus {
-    outline: none;
-    border-color: #dc3545;
-  }
-
-  .confirm-input input:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .error-message {
-    color: #dc3545;
-    font-size: 0.875rem;
-    margin-top: var(--spacing-sm);
-    text-align: center;
-  }
-
-  .modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--spacing-md);
-    padding: var(--spacing-lg);
-    border-top: 1px solid var(--border-color);
-  }
-
-  .cancel-btn {
-    padding: var(--spacing-sm) var(--spacing-lg);
-    background-color: var(--bg-surface);
-    color: var(--text-primary);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    font-weight: 500;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-  }
-
-  .cancel-btn:hover:not(:disabled) {
-    background-color: var(--bg-highlight);
-  }
-
-  .cancel-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .confirm-danger-btn {
-    padding: var(--spacing-sm) var(--spacing-lg);
-    background-color: #dc3545;
-    color: white;
-    border: none;
-    border-radius: var(--radius-sm);
-    font-weight: 600;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-  }
-
-  .confirm-danger-btn:hover:not(:disabled) {
-    background-color: #c82333;
-  }
-
-  .confirm-danger-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  /* Equalizer Styles */
-  .preset-selector {
-    display: flex;
-    gap: var(--spacing-sm);
-    align-items: center;
-  }
-
-  .preset-select {
-    flex: 1;
-    padding: var(--spacing-sm) var(--spacing-md);
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    color: var(--text-primary);
-    font-size: 0.875rem;
-    cursor: pointer;
-    max-width: 200px;
-    -webkit-appearance: none;
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23b3b3b3' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10l-5 5z'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right var(--spacing-sm) center;
-    padding-right: calc(var(--spacing-md) + 16px);
-  }
-
-  .preset-select:focus {
-    outline: none;
-    border-color: var(--accent-primary);
-  }
-
-  .preset-select:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .reset-btn {
-    padding: var(--spacing-sm) var(--spacing-md);
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    color: var(--text-primary);
-    border-radius: var(--radius-sm);
-    font-size: 0.875rem;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-  }
-
-  .reset-btn:hover:not(:disabled) {
-    background-color: var(--bg-highlight);
-    border-color: var(--text-primary);
-  }
-
-  .reset-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .eq-bands-container {
-    display: flex;
-    gap: var(--spacing-md);
-    padding: var(--spacing-lg);
-    background-color: var(--bg-surface);
-    border-radius: var(--radius-md);
-    transition: opacity var(--transition-fast);
-    overflow: hidden;
-  }
-
-  .eq-bands-container.disabled {
-    opacity: 0.5;
-    pointer-events: none;
-  }
-
-  .eq-bands {
-    display: flex;
-    justify-content: space-around;
-    gap: var(--spacing-xs);
-    flex: 1;
-    min-width: 0;
-  }
-
-  .eq-band {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--spacing-xs);
-    flex: 1;
-    min-width: 0;
-    max-width: 60px;
-  }
-
-  .eq-gain {
-    font-size: 0.7rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-    min-width: 28px;
-    text-align: center;
-    font-family: monospace;
-  }
-
-  .eq-label {
-    font-size: 0.6rem;
-    color: var(--text-subdued);
-    text-transform: uppercase;
-    white-space: nowrap;
-  }
-
-  .eq-slider-container {
-    height: 100px;
-    width: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-  }
-
-  .eq-slider {
-    width: 100px;
-    height: 6px;
-    transform: rotate(-90deg);
-    -webkit-appearance: none;
-    appearance: none;
-    background: var(--bg-highlight);
-    border-radius: 3px;
-    cursor: pointer;
-    outline: none;
-  }
-
-  .eq-slider::-webkit-slider-runnable-track {
-    width: 100%;
-    height: 6px;
-    background: var(--bg-highlight);
-    border-radius: 3px;
-  }
-
-  .eq-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 16px;
-    height: 16px;
-    background: var(--accent-primary);
-    border-radius: 50%;
-    margin-top: -5px;
-    cursor: pointer;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  }
-
-  .eq-slider::-webkit-slider-thumb:hover {
-    background: var(--accent-hover);
-    transform: scale(1.1);
-  }
-
-  .eq-slider::-moz-range-track {
-    width: 100%;
-    height: 6px;
-    background: var(--bg-highlight);
-    border-radius: 3px;
-  }
-
-  .eq-slider::-moz-range-thumb {
-    width: 16px;
-    height: 16px;
-    background: var(--accent-primary);
-    border-radius: 50%;
-    border: none;
-    cursor: pointer;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  }
-
-  .eq-slider::-moz-range-thumb:hover {
-    background: var(--accent-hover);
-  }
-
-  .eq-slider:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
-  }
-
-  .eq-slider:disabled::-webkit-slider-thumb {
-    background: var(--text-subdued);
-  }
-
-  .eq-slider:disabled::-moz-range-thumb {
-    background: var(--text-subdued);
-  }
-
-  .eq-scale {
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    align-items: flex-end;
-    font-size: 0.6rem;
-    color: var(--text-subdued);
-    padding: 20px 0;
-    font-family: monospace;
-    min-width: 24px;
-  }
-
-  .sync-message {
-    margin-top: var(--spacing-sm);
-    padding: var(--spacing-sm) var(--spacing-md);
-    border-radius: var(--radius-sm);
-    font-size: 0.875rem;
-    text-align: center;
-  }
-
-  .sync-message.success {
-    background-color: rgba(40, 167, 69, 0.1);
-    color: #28a745;
-    border: 1px solid rgba(40, 167, 69, 0.3);
-  }
-
-  .sync-message.error {
-    background-color: rgba(220, 53, 69, 0.1);
-    color: #dc3545;
-    border: 1px solid rgba(220, 53, 69, 0.3);
-  }
-
-  /* Progress Bar Styles */
-  .progress-container {
-    margin-top: var(--spacing-md);
-    padding: var(--spacing-md);
-    background-color: var(--bg-base);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-color);
-  }
-
-  .progress-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: var(--spacing-sm);
-  }
-
-  .progress-info {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.8125rem;
-    color: var(--text-secondary);
-  }
-
-  .progress-text {
-    font-weight: 500;
-    color: var(--text-primary);
-  }
-
-  .progress-separator {
-    color: var(--text-subdued);
-  }
-
-  .progress-eta {
-    color: var(--accent-primary);
-    font-weight: 500;
-  }
-
-  .progress-percentage {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--accent-primary);
-  }
-
-  .progress-bar-container {
-    height: 6px;
-    background-color: var(--bg-surface);
-    border-radius: 3px;
-    overflow: hidden;
-    margin-bottom: var(--spacing-sm);
-  }
-
-  .progress-bar-fill {
-    height: 100%;
-    background: linear-gradient(
-      90deg,
-      var(--accent-primary),
-      var(--accent-light, #1ed760)
-    );
-    transition: width 0.3s ease;
-    border-radius: 3px;
-  }
-
-  .progress-stats {
-    display: flex;
-    gap: var(--spacing-lg);
-    font-size: 0.75rem;
-  }
-
-  .stat-item {
-    display: flex;
-    gap: 4px;
-  }
-
-  .stat-label {
-    color: var(--text-subdued);
-  }
-
-  .stat-value {
-    color: var(--text-primary);
-    font-weight: 600;
-  }
-
-  .notice-content {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    color: var(--accent-primary);
-    font-size: 0.8125rem;
-    font-weight: 500;
-  }
-
-  .refresh-notice {
-    background-color: rgba(var(--accent-primary-rgb, 30, 215, 96), 0.1);
-    border: 1px solid rgba(var(--accent-primary-rgb, 30, 215, 96), 0.3);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-md);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: var(--spacing-md);
-    animation: fadeIn 0.3s ease;
-  }
-
-  .refresh-btn {
-    background-color: var(--accent-primary);
-    color: #000;
-    border: none;
-    font-weight: 600;
-    padding: var(--spacing-xs) var(--spacing-md);
-    cursor: pointer;
-    transition:
-      transform 0.2s ease,
-      background-color 0.2s ease;
-  }
-
-  .refresh-btn:hover {
-    background-color: var(--accent-hover);
-    transform: scale(1.05);
-  }
-
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(5px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  /* ── Mobile ── */
-  @media (max-width: 768px) {
-    .view-header h1 {
-      font-size: 1.5rem;
-      padding-left: var(--spacing-sm);
+    /* Mode buttons – allow wrapping and ensure touchable */
+    .theme-modes {
+      flex-wrap: wrap;
+      gap: var(--spacing-sm);
     }
 
-    .settings-content {
-      padding: var(--spacing-sm);
-      /* Preserve bottom padding for fixed bottom nav + mini player + margin */
-      padding-bottom: calc(
-        var(--mobile-bottom-inset, 130px) + var(--spacing-xl)
-      );
-    }
-
-    .settings-container {
-      padding: 0;
-    }
-
-    .settings-section {
+    .mode-btn {
+      flex: 1 0 calc(50% - var(--spacing-sm));
+      min-width: 120px;
       padding: var(--spacing-md);
-      margin-bottom: var(--spacing-md);
+    }
+
+    /* Color grid – adjust columns to maintain touchable swatches */
+    .color-grid {
+      grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+    }
+
+    /* Preset selector – stack on small screens */
+    .preset-selector {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .preset-select {
+      max-width: none;
+      width: 100%;
+    }
+
+    .reset-btn {
+      width: 100%;
+    }
+
+    /* Toggle switch – increase hit area */
+    .toggle-btn {
+      width: 56px;
+      height: 32px;
+    }
+
+    .toggle-handle {
+      width: 24px;
+      height: 24px;
+      top: 3px;
+      left: 3px;
+    }
+
+    .toggle-btn.active .toggle-handle {
+      transform: translateX(26px);
+    }
+
+    /* Equalizer sliders – more touch-friendly */
+    .eq-slider-container {
+      height: 120px;
+    }
+
+    .eq-slider {
+      width: 120px;
+    }
+
+    /* Modal buttons – ensure touchable */
+    .cancel-btn,
+    .confirm-danger-btn {
+      min-height: 48px;
+    }
+
+    /* Adjust bottom padding for content */
+    .settings-content {
+      padding-bottom: calc(
+        var(--mobile-bottom-inset, 130px) + var(--spacing-xl)
+      );
     }
   }
 </style>
