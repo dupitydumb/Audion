@@ -12,6 +12,9 @@
   import VirtualizedGrid from "./Virtualizedgrid.svelte";
   import MediaCard from "./MediaCard.svelte";
   import { onDestroy } from "svelte";
+  import { saveScroll, getScroll } from '$lib/stores/scrollMemory';
+
+  let currentScrollTop = getScroll('artists');
 
   export let artists: Artist[] = [];
 
@@ -133,14 +136,17 @@
   };
 
   onDestroy(() => {
-    currentRunId++;
-    resolvedPictures.clear();
-    failedImages.clear();
+      saveScroll('artists', currentScrollTop);
+      currentRunId++;
+      resolvedPictures.clear();
+      failedImages.clear();
   });
 </script>
 
 <VirtualizedGrid
   items={artists}
+  bind:currentScrollTop
+  initialScrollTop={currentScrollTop}
   getItemKey={(artist: Artist) => artist.name}
   onItemClick={handleArtistClick}
   onItemContextMenu={handleArtistContextMenu}

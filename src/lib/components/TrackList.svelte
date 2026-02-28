@@ -39,6 +39,9 @@
   import { multiSelect } from "$lib/stores/multiselect";
   import { isMobile } from "$lib/stores/mobile";
   import { confirm } from "$lib/stores/dialogs";
+  import { saveScroll, getScroll } from '$lib/stores/scrollMemory';
+
+  export let scrollKey: string | null = null;
 
   export let tracks: Track[] = [];
   export let title: string = "Tracks";
@@ -278,6 +281,13 @@
       };
       updateHeight();
 
+      if (scrollKey) {
+          const saved = getScroll(scrollKey);
+          if (saved > 0 && containerElement) {
+              containerElement.scrollTop = saved;
+          }
+      }
+
       window.addEventListener("resize", updateHeight);
       return () => {
         window.removeEventListener("resize", updateHeight);
@@ -290,6 +300,7 @@
 
   // Cleanup on destroy
   onDestroy(() => {
+    if (scrollKey) saveScroll(scrollKey, scrollTop);
     failedImages.clear();
     trackAlbumArtCache.clear();
     albumMap.clear();

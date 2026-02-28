@@ -29,6 +29,12 @@
     export let onLoadMore: (() => Promise<boolean>) | undefined = undefined;
     export let hasMore = true;
 
+    // Scroll Memory
+    export let initialScrollTop = 0;
+    export let currentScrollTop = 0; // bind:currentScrollTop
+
+    let scrollRestored = false;
+
     // Responsive values
     let containerWidth = 800;
     let containerHeight = 600;
@@ -146,6 +152,7 @@
 
     function handleScroll(e: Event) {
         scrollTop = (e.target as HTMLElement).scrollTop;
+        currentScrollTop = scrollTop;
     }
 
     // Infinite scroll
@@ -178,6 +185,11 @@
         };
         update();
 
+        if (initialScrollTop > 0) {
+            containerElement.scrollTop = initialScrollTop;
+        }
+        scrollRestored = true;
+
         if (typeof ResizeObserver !== 'undefined') {
             resizeObserver = new ResizeObserver(update);
             resizeObserver.observe(containerElement);
@@ -198,7 +210,7 @@
 {#if items.length > 0}
     <div
         class="virtualized-grid-container"
-        style="padding: {padding};"
+        style="padding: {padding}; visibility: {scrollRestored || initialScrollTop === 0 ? 'visible' : 'hidden'};"
         on:scroll={handleScroll}
         on:click={handleBodyClick}
         on:contextmenu={handleBodyContextMenu}

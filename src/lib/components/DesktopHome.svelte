@@ -30,6 +30,16 @@
   import { isStatsWrappedOpen } from "$lib/stores/ui";
   import { getTracksByAlbum } from "$lib/api/tauri";
   import MediaCard from "./MediaCard.svelte";
+  import { onDestroy } from 'svelte';
+    import { saveScroll, getScroll } from '$lib/stores/scrollMemory';
+
+    let homeEl: HTMLDivElement;
+    let scrollRestored = false;
+    let currentScrollTop = 0;
+
+    onDestroy(() => {
+        saveScroll('home', currentScrollTop);
+    });
 
   const monthNames = [
       "January",
@@ -52,19 +62,24 @@
   if (hour < 12) greeting = "Good morning";
   else if (hour < 18) greeting = "Good afternoon";
 
-  onMount(() => {
+    onMount(() => {
       loadActivityData();
+      const saved = getScroll('home');
+      if (saved > 0 && homeEl) {
+          homeEl.scrollTop = saved;
+      }
+      scrollRestored = true;
   });
-
-  // Playback state
-  $: playingAlbumId = $currentAlbumId;
-  $: playingTrackId = $currentTrackId;
-  $: playing = $isPlaying;
-  $: pausedAlbumId = !playing ? playingAlbumId : null;
-  $: pausedTrackId = !playing ? playingTrackId : null;
-
-  // Derived lists
-  $: quickPlayAlbums =
+  
+    // Playback state 
+    $: playingAlbumId = $currentAlbumId;
+    $: playingTrackId = $currentTrackId;
+    $: playing = $isPlaying;
+    $: pausedAlbumId = !playing ? playingAlbumId : null;
+    $: pausedTrackId = !playing ? playingTrackId : null;
+  
+    // Derived lists 
+    $: quickPlayAlbums =
       $topAlbums.length > 0
           ? $topAlbums.slice(0, 6).map((ta) => ta.album)
           : $libraryAlbums.slice(0, 6);
@@ -214,34 +229,41 @@
               },
           ],
       });
-  }
-</script>
-
-<div class="desktop-home">
-  <!-- Greeting -->
-  <header class="home-header">
-      <h1 class="greeting">{greeting}</h1>
-      <button
-          class="recap-launch-btn"
-          on:click={() => isStatsWrappedOpen.set(true)}
-          aria-label="{currentMonthName} Recap"
-      >
-          <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-              width="18"
-              height="18"
-              aria-hidden="true"
-          >
-              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
-          </svg>
-          <span>{currentMonthName} Recap</span>
-      </button>
-  </header>
+    }
+  </script>
+  
+  <div
+    class="desktop-home"
+    bind:this={homeEl}
+    style="visibility: {scrollRestored || getScroll('home') === 0 ? 'visible' : 'hidden'};"
+    on:scroll={(e) => { currentScrollTop = (e.target as HTMLElement).scrollTop; }}
+  >
+    <!-- Greeting -->
+    <header class="home-header">
+        <h1 class="greeting">{greeting}</h1>
+        <button
+            class="recap-launch-btn"
+            on:click={() => isStatsWrappedOpen.set(true)}
+            aria-label="{currentMonthName} Recap"
+        >
+            <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                width="18"
+                height="18"
+                aria-hidden="true"
+            >
+                <path
+                    d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
+                ></path>
+            </svg>
+            <span>{currentMonthName} Recap</span>
+        </button>
+    </header>
 
   <!-- Quick Play Grid -->
   {#if quickPlayAlbums.length > 0}

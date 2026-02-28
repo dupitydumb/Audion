@@ -1,28 +1,36 @@
 <script lang="ts">
-  import { playlists, loadPlaylists } from "$lib/stores/library";
-  import { goToPlaylistDetail } from "$lib/stores/view";
-  import {
-      createPlaylist,
-      getPlaylistTracks,
-      deletePlaylist,
-      renamePlaylist,
-  } from "$lib/api/tauri";
-  import {
-      playlistCovers,
-      setPlaylistCover,
-  } from "$lib/stores/playlistCovers";
-  import { contextMenu } from "$lib/stores/ui";
-  import {
-      playTracks,
-      addToQueue,
-      currentPlaylistId,
-      isPlaying,
-      togglePlay,
-  } from "$lib/stores/player";
-  import type { Writable } from "svelte/store";
-  import { confirm } from "$lib/stores/dialogs";
-  import VirtualizedGrid from "./Virtualizedgrid.svelte";
-  import MediaCard from "./MediaCard.svelte";
+    import { playlists, loadPlaylists } from "$lib/stores/library";
+    import { goToPlaylistDetail } from "$lib/stores/view";
+    import {
+        createPlaylist,
+        getPlaylistTracks,
+        deletePlaylist,
+        renamePlaylist,
+    } from "$lib/api/tauri";
+    import {
+        playlistCovers,
+        setPlaylistCover,
+    } from "$lib/stores/playlistCovers";
+    import { contextMenu } from "$lib/stores/ui";
+    import {
+        playTracks,
+        addToQueue,
+        currentPlaylistId,
+        isPlaying,
+        togglePlay,
+    } from "$lib/stores/player";
+    import type { Writable } from "svelte/store";
+    import { confirm } from "$lib/stores/dialogs";
+    import VirtualizedGrid from "./Virtualizedgrid.svelte";
+    import MediaCard from "./MediaCard.svelte";
+    import { onDestroy } from 'svelte';
+    import { saveScroll, getScroll } from '$lib/stores/scrollMemory';
+
+    let currentScrollTop = getScroll('playlists');
+
+    onDestroy(() => {
+        saveScroll('playlists', currentScrollTop);
+    });
 
   type Playlist = { id: number; name: string };
 
@@ -333,11 +341,13 @@
   {/if}
 
   <VirtualizedGrid
-      items={$playlists}
-      onItemClick={handlePlaylistClick}
-      onItemContextMenu={handlePlaylistContextMenu}
-      emptyStateConfig={emptyState}
-      let:item={playlist}
+    items={$playlists}
+    bind:currentScrollTop
+    initialScrollTop={currentScrollTop}
+    onItemClick={handlePlaylistClick}
+    onItemContextMenu={handlePlaylistContextMenu}
+    emptyStateConfig={emptyState}
+    let:item={playlist}
   >
       {@const cover = getCoverSrc(playlist)}
       {@const isNowPlaying = playingPlaylistId === playlist.id && playing}

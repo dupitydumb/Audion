@@ -657,7 +657,7 @@
             </header>
 
             <div class="view-content">
-                <TrackList tracks={$tracks} showAlbum={true} />
+                <TrackList tracks={$tracks} showAlbum={true} scrollKey="tracks" />
             </div>
         </div>
     {:else if $currentView.type === "tracks-multiselect" && $currentView.id}

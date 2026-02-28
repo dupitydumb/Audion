@@ -81,7 +81,7 @@
                 >
             </div>
         {:else}
-            <TrackList {tracks} title="Liked Songs" showAlbum={true} />
+            <TrackList {tracks} title="Liked Songs" showAlbum={true} scrollKey="liked-songs" />
         {/if}
     </div>
 </div>

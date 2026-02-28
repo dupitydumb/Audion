@@ -8,6 +8,14 @@
   import VirtualizedGrid from "./Virtualizedgrid.svelte";
   import MediaCard from "./MediaCard.svelte";
   import { confirm } from "$lib/stores/dialogs";
+  import { onDestroy } from 'svelte';
+  import { saveScroll, getScroll } from '$lib/stores/scrollMemory';
+
+  let currentScrollTop = getScroll('albums');
+
+  onDestroy(() => {
+      saveScroll('albums', currentScrollTop);
+  });
 
   export let albums: Album[] = [];
 
@@ -102,12 +110,14 @@
 </script>
 
 <VirtualizedGrid
-  items={albums}
-  onItemClick={handleAlbumClick}
-  onItemContextMenu={handleAlbumContextMenu}
-  onLoadMore={handleLoadMore}
-  emptyStateConfig={emptyState}
-  let:item={album}
+    items={albums}
+    bind:currentScrollTop
+    initialScrollTop={currentScrollTop}
+    onItemClick={handleAlbumClick}
+    onItemContextMenu={handleAlbumContextMenu}
+    onLoadMore={handleLoadMore}
+    emptyStateConfig={emptyState}
+    let:item={album}
 >
   {@const cover = getAlbumCoverFromTracks(album.id)}
   {@const isNowPlaying = playingAlbumId === album.id && playing}
