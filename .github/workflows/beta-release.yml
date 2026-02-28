@@ -71,9 +71,6 @@ jobs:
           echo $content >> $env:GITHUB_OUTPUT
           echo $delimiter >> $env:GITHUB_OUTPUT
       
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/nsis/*.exe
-      
       - name: Rename Windows artifacts
         shell: pwsh
         run: |

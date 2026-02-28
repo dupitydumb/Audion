@@ -69,9 +69,6 @@ jobs:
           echo $content >> $env:GITHUB_OUTPUT
           echo $delimiter >> $env:GITHUB_OUTPUT
       
-            src-tauri/target/release/bundle/msi/*.msi
-            src-tauri/target/release/bundle/nsis/*.exe
-      
       - name: Rename Windows artifacts
         shell: pwsh
         run: |
@@ -135,8 +132,6 @@ jobs:
         run: npm install
       - name: Build Tauri app
         run: xvfb-run npm run tauri build
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/appimage/*.AppImage
       
       - name: Rename Linux artifacts
         run: |
@@ -187,8 +182,6 @@ jobs:
         run: npm install
       - name: Build Tauri app
         run: npm run tauri build -- --target universal-apple-darwin
-            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-            src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz
       
       - name: Rename macOS artifacts
         run: |
@@ -259,7 +252,6 @@ jobs:
         run: rm -rf src-tauri/gen/android
       - name: Build Tauri app for Android (Signed)
         run: npm run tauri android build
-            src-tauri/gen/android/app/build/outputs/apk/release/*.apk
       
       - name: Rename Android artifacts
         run: |
