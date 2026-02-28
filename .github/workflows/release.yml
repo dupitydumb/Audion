@@ -257,7 +257,6 @@ jobs:
           overwrite: ${{ inputs.overwrite }}
           files: |
             src-tauri/target/universal-apple-darwin/release/bundle/dmg/audion_*_macos.dmg
-            src-tauri/target/universal-apple-darwin/release/bundle/macos/audion_*_macos.app.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
