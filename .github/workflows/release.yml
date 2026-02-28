@@ -217,6 +217,7 @@ jobs:
         uses: ./.github/actions/setup
         with:
           platform: macos
+          rust_targets: x86_64-apple-darwin,aarch64-apple-darwin
 
       - name: Build Tauri app (Universal)
         run: npm run tauri build -- --target universal-apple-darwin
