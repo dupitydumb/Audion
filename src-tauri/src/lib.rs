@@ -49,15 +49,15 @@ fn init_logging(log_dir: &PathBuf) {
     // always flushed, including during shutdown.
     Box::leak(Box::new(worker_guard));
 
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("warn,audion=info"));
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn,audion=info"));
 
     fmt::Subscriber::builder()
         .with_writer(non_blocking)
         .with_env_filter(filter)
-        .with_ansi(false)           // No ANSI color codes in log files
-        .with_target(true)          // Show module path (e.g. audion::audio)
-        .with_thread_ids(false)     // Keep lines short; enable if debugging races
+        .with_ansi(false) // No ANSI color codes in log files
+        .with_target(true) // Show module path (e.g. audion::audio)
+        .with_thread_ids(false) // Keep lines short; enable if debugging races
         .init();
 }
 
@@ -67,7 +67,9 @@ fn prune_old_logs(log_dir: &PathBuf, keep_days: u64) {
         .checked_sub(std::time::Duration::from_secs(keep_days * 86_400))
         .unwrap();
 
-    let Ok(entries) = std::fs::read_dir(log_dir) else { return };
+    let Ok(entries) = std::fs::read_dir(log_dir) else {
+        return;
+    };
 
     for entry in entries.flatten() {
         let path = entry.path();
@@ -216,6 +218,24 @@ pub fn run() {
                             tracing::info!("Window start mode: Normal");
                         }
                     }
+
+                    // Focus Fix: Ensure the window is focused after creation and setup.
+                    // This is especially critical on macOS with custom titlebars to ensure the window becomes "key".
+                    let w = window.clone();
+                    window.set_focus().ok();
+                    window.run_on_main_thread(move || {
+                        w.eval(
+                            "
+                            document.addEventListener('mousedown', () => {
+                                if (window.__TAURI__ && window.__TAURI__.window) {
+                                    window.__TAURI__.window.getCurrentWindow().focus().catch(() => {});
+                                }
+                            }, { once: true });
+                        ",
+                        )
+                        .ok();
+                    })
+                    .ok();
                 } else {
                     tracing::warn!("Main webview window not found during setup");
                 }

@@ -93,7 +93,7 @@
                 try {
                     isMaximized = await appWindow.isMaximized();
                 } catch (e) {
-                    console.warn('[TitleBar] Failed to get maximize state:', e);
+                    console.warn("[TitleBar] Failed to get maximize state:", e);
                 }
                 _resizeTimer = null;
             }, 120);
@@ -141,7 +141,9 @@
                         viewBox="0 0 24 24"
                         fill="currentColor"
                     >
-                        <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
+                        <path
+                            d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"
+                        />
                     </svg>
                 </button>
             {:else}
@@ -236,7 +238,10 @@
                     />
                     <button
                         class="clear-search"
-                        on:click={() => { handleClearSearch(); mobileSearchOpen = false; }}
+                        on:click={() => {
+                            handleClearSearch();
+                            mobileSearchOpen = false;
+                        }}
                         title="Close search"
                     >
                         <svg
@@ -255,7 +260,7 @@
                 <span class="mobile-title">Audion</span>
                 <button
                     class="nav-btn search-toggle-btn"
-                    on:click={() => mobileSearchOpen = true}
+                    on:click={() => (mobileSearchOpen = true)}
                     aria-label="Open search"
                 >
                     <svg
@@ -293,6 +298,7 @@
                     bind:this={searchInputEl}
                     on:input={handleSearchInput}
                     on:keydown={handleKeydown}
+                    on:click={() => searchInputEl?.focus()}
                     spellcheck="false"
                     title="Search (Ctrl+F)"
                 />
@@ -331,7 +337,11 @@
         {#if !$isMobile}
             <div class="drag-region" data-tauri-drag-region></div>
             <div class="window-controls">
-                <button class="win-btn" on:click={minimize} aria-label="Minimize">
+                <button
+                    class="win-btn"
+                    on:click={minimize}
+                    aria-label="Minimize"
+                >
                     <svg
                         width="10"
                         height="1"
@@ -393,7 +403,8 @@
                         fill="none"
                         stroke="currentColor"
                         stroke-width="1.2"
-                        stroke-linecap="round"><path d="M1 1l8 8M9 1L1 9" /></svg
+                        stroke-linecap="round"
+                        ><path d="M1 1l8 8M9 1L1 9" /></svg
                     >
                 </button>
             </div>
