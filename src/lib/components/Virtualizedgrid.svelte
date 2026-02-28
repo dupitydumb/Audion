@@ -42,15 +42,10 @@
 
     // Validate dimensions
     $: {
-        if (cardHeight <= 0) {
-            console.error('[VirtualizedGrid] Invalid cardHeight:', cardHeight, '- must be > 0');
-        }
-        if (cardWidth <= 0) {
-            console.error('[VirtualizedGrid] Invalid cardWidth:', cardWidth, '- must be > 0');
-        }
-        if (containerWidth < 0 || containerHeight < 0) {
+        if (cardHeight <= 0) console.error('[VirtualizedGrid] Invalid cardHeight:', cardHeight);
+        if (cardWidth <= 0) console.error('[VirtualizedGrid] Invalid cardWidth:', cardWidth);
+        if (containerWidth <= 0 || containerHeight <= 0)
             console.error('[VirtualizedGrid] Invalid container dimensions:', { containerWidth, containerHeight });
-        }
     }
 
     // Calculate columns based on container width
@@ -74,15 +69,13 @@
         if (items !== lastItemsReference) {
             lastItemsReference = items;
             const newMap = new Map<string, number>();
-            
-            for (let idx = 0; idx < items.length; idx++) {
+
+            for (let i = 0; i < items.length; i++) {
                 try {
-                    const key = String(getItemKey(items[idx]));
-                    newMap.set(key, idx);
-                } catch (error) {
-                    console.error('[VirtualizedGrid] getItemKey failed for item at index', idx, error);
-                    // fallback
-                    newMap.set(`fallback-${idx}`, idx);
+                    newMap.set(String(getItemKey(items[i])), i);
+                } catch (err) {
+                    console.error('[VirtualizedGrid] getItemKey failed at index', i, err);
+                    newMap.set(`fallback-${i}`, i);
                 }
             }
             
@@ -109,103 +102,50 @@
         const visibleRows: ItemRow[] = [];
         for (let rowIndex = startRow; rowIndex < endRow; rowIndex++) {
             const startIdx = rowIndex * columns;
-            const endIdx = Math.min(startIdx + columns, items.length);
-            const rowItems = items.slice(startIdx, endIdx);
-            if (rowItems.length > 0) {
-                visibleRows.push({ rowIndex, items: rowItems });
-            }
+            const rowItems = items.slice(startIdx, Math.min(startIdx + columns, items.length));
+            if (rowItems.length > 0) visibleRows.push({ rowIndex, items: rowItems });
         }
-        
-        const offsetY = startRow * ROW_HEIGHT;
 
-        virtualScrollState = {
-            totalHeight,
-            startRow,
-            endRow,
-            offsetY,
-            visibleRows,
-        };
+        virtualScrollState = { totalHeight, startRow, endRow, offsetY: startRow * ROW_HEIGHT, visibleRows };
     }
 
-    // Event handlers
+    // Shared event delegation (one listener for the whole grid)
+    function resolveItem(e: MouseEvent): Item | null {
+        let el = e.target as HTMLElement | null;
+        while (el && el !== containerElement) {
+            const key = el.getAttribute('data-item-key');
+            if (key !== null) {
+                const idx = itemIndexMap.get(key);
+                if (idx !== undefined) return items[idx] ?? null;
+                console.warn('[VirtualizedGrid] Key not found in index map:', key);
+                return null;
+            }
+            el = el.parentElement;
+        }
+        return null;
+    }
+
     function handleBodyClick(e: MouseEvent) {
         if (!onItemClick) return;
-
-        const target = e.target as HTMLElement;
-        
-        let element: HTMLElement | null = target;
-        let itemKey: string | null = null;
-        
-        while (element && element !== containerElement) {
-            itemKey = element.getAttribute('data-item-key');
-            if (itemKey) break;
-            element = element.parentElement;
-        }
-        
-        if (!itemKey) return;
-
-        // Use index map
-        const itemIndex = itemIndexMap.get(itemKey);
-        if (itemIndex === undefined) {
-            console.warn('[VirtualizedGrid] Item key not found in index map:', itemKey);
-            return;
-        }
-        
-        const item = items[itemIndex];
-        if (!item) {
-            console.warn('[VirtualizedGrid] Item not found at index:', itemIndex);
-            return;
-        }
-
-        try {
-            onItemClick(item, e);
-        } catch (error) {
-            console.error('[VirtualizedGrid] onItemClick handler error:', error);
+        const item = resolveItem(e);
+        if (item) {
+            try { onItemClick(item, e); }
+            catch (err) { console.error('[VirtualizedGrid] onItemClick error:', err); }
         }
     }
 
     function handleBodyContextMenu(e: MouseEvent) {
         if (!onItemContextMenu) return;
-
-        const target = e.target as HTMLElement;
-        
-        let element: HTMLElement | null = target;
-        let itemKey: string | null = null;
-        
-        while (element && element !== containerElement) {
-            itemKey = element.getAttribute('data-item-key');
-            if (itemKey) break;
-            element = element.parentElement;
-        }
-        
-        if (!itemKey) return;
-
-        e.preventDefault();
-
-        // Use index map
-        const itemIndex = itemIndexMap.get(itemKey);
-        if (itemIndex === undefined) {
-            console.warn('[VirtualizedGrid] Item key not found in index map:', itemKey);
-            return;
-        }
-        
-        const item = items[itemIndex];
-        if (!item) {
-            console.warn('[VirtualizedGrid] Item not found at index:', itemIndex);
-            return;
-        }
-
-        try {
-            onItemContextMenu(item, e);
-        } catch (error) {
-            console.error('[VirtualizedGrid] onItemContextMenu handler error:', error);
+        const item = resolveItem(e);
+        if (item) {
+            e.preventDefault();
+            try { onItemContextMenu(item, e); }
+            catch (err) { console.error('[VirtualizedGrid] onItemContextMenu error:', err); }
         }
     }
 
-    // Scroll handler
     function handleScroll(e: Event) {
-        const target = e.target as HTMLElement;
-        scrollTop = target.scrollTop;
+        scrollTop = (e.target as HTMLElement).scrollTop;
     }
 
     // Infinite scroll
@@ -213,68 +153,44 @@
 
     async function loadMoreIfNeeded() {
         if (!onLoadMore || isLoadingMore || !hasMore) return;
-
-        const threshold = virtualScrollState.totalHeight * 0.8;
-        if (scrollTop + containerHeight < threshold) return;
-
+        if (scrollTop + containerHeight < virtualScrollState.totalHeight * 0.8) return;
         isLoadingMore = true;
         try {
-            const loaded = await onLoadMore();
-            hasMore = loaded;
-        } catch (error) {
-            console.error('[VirtualizedGrid] Failed to load more items:', error);
-            // Don't set hasMore to false on error - allow retry
+            hasMore = await onLoadMore();
+        } catch (err) {
+            console.error('[VirtualizedGrid] loadMore error:', err);
         } finally {
             isLoadingMore = false;
         }
     }
 
-    $: {
-        if (scrollTop > 0) {
-            loadMoreIfNeeded();
-        }
-    }
+    $: if (scrollTop > 0) loadMoreIfNeeded();
 
-    // Resize observer
+    // ResizeObserver
     let resizeObserver: ResizeObserver | undefined;
 
     onMount(() => {
-        if (containerElement) {
-            const updateDimensions = () => {
-                containerHeight = containerElement.clientHeight;
-                containerWidth = containerElement.clientWidth;
-            };
-            updateDimensions();
+        if (!containerElement) return;
 
-            if (typeof ResizeObserver !== 'undefined') {
-                resizeObserver = new ResizeObserver(updateDimensions);
-                resizeObserver.observe(containerElement);
-            } else {
-                window.addEventListener("resize", updateDimensions);
-                return () => {
-                    window.removeEventListener("resize", updateDimensions);
-                };
-            }
+        const update = () => {
+            containerHeight = containerElement.clientHeight;
+            containerWidth = containerElement.clientWidth;
+        };
+        update();
+
+        if (typeof ResizeObserver !== 'undefined') {
+            resizeObserver = new ResizeObserver(update);
+            resizeObserver.observe(containerElement);
+        } else {
+            window.addEventListener('resize', update);
+            return () => window.removeEventListener('resize', update);
         }
     });
 
     onDestroy(() => {
-        if (containerElement) {
-            // Clean up images
-            const images = containerElement.querySelectorAll('img');
-            images.forEach(img => {
-                img.src = '';
-            });
-        }
-
-        // Clear index map
+        resizeObserver?.disconnect();
+        resizeObserver = undefined;
         itemIndexMap.clear();
-
-        if (resizeObserver) {
-            resizeObserver.disconnect();
-            resizeObserver = undefined;
-        }
-
         containerElement = undefined as any;
     });
 </script>
@@ -307,12 +223,7 @@
                         "
                     >
                         {#each row.items as item (getItemKey(item))}
-                            <div
-                                class="grid-card"
-                                data-item-key={getItemKey(item)}
-                                role="button"
-                                tabindex="0"
-                            >
+                            <div class="grid-card" data-item-key={getItemKey(item)}>
                                 <slot {item} />
                             </div>
                         {/each}
@@ -335,7 +246,6 @@
         overflow-y: auto;
         overflow-x: hidden;
         position: relative;
-        will-change: scroll-position;
         scroll-behavior: auto;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior-y: contain;

@@ -284,6 +284,11 @@ export const currentArtistName = derived(
 // Current track
 export const currentTrack = writable<Track | null>(null);
 
+/**
+ * Current track ID (if playing from a track)
+ */
+export const currentTrackId = derived(currentTrack, ($t) => $t?.id ?? null);
+
 // Playing state
 export const isPlaying = writable(false);
 

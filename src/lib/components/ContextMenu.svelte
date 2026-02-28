@@ -1,6 +1,6 @@
 <script lang="ts">
     import { contextMenu, type ContextMenuItem } from "$lib/stores/ui";
-    import { fade, fly } from "svelte/transition";
+    import { fade } from "svelte/transition";
     import { onMount } from "svelte";
     import { isMobile } from "$lib/stores/mobile";
 
@@ -21,52 +21,25 @@
     }
 
     async function updatePosition() {
-        // Wait for DOM to update so we can measure dimensions
-        await tick();
-
-        if (!menuElement) return;
-
-        const { x, y } = $contextMenu;
-        const { innerWidth, innerHeight } = window;
-        const rect = menuElement.getBoundingClientRect();
-
-        let newX = x;
-        let newY = y;
-
-        // Check right edge
-        if (x + rect.width > innerWidth) {
-            newX = innerWidth - rect.width - 8; // 8px padding
-        }
-
-        // Check bottom edge
-        if (y + rect.height > innerHeight) {
-            newY = innerHeight - rect.height - 8;
-        }
-
-        // Check left edge
-        if (newX < 8) {
-            newX = 8;
-        }
-
-        // Check top edge
-        if (newY < 8) {
-            newY = 8;
-        }
-
-        adjustedX = newX;
-        adjustedY = newY;
+      await tick();
+      if (!menuElement) return;
+  
+      const { x, y } = $contextMenu;
+      const { innerWidth, innerHeight } = window;
+      const rect = menuElement.getBoundingClientRect();
+  
+      let newX = x + rect.width > innerWidth ? innerWidth - rect.width - 8 : x;
+      let newY = y + rect.height > innerHeight ? innerHeight - rect.height - 8 : y;
+  
+      adjustedX = Math.max(8, newX);
+      adjustedY = Math.max(8, newY);
     }
 
     // Close on click outside
     function handleClickOutside(event: MouseEvent) {
-        if (
-            $contextMenu.visible &&
-            menuElement &&
-            !menuElement.contains(event.target as Node)
-        ) {
-            contextMenu.update((m) => ({ ...m, visible: false }));
-            activeSubmenu = null;
-        }
+      if ($contextMenu.visible && menuElement && !menuElement.contains(event.target as Node)) {
+        closeMenu();
+      }
     }
 
     // Close on any click (item selection)
@@ -83,26 +56,14 @@
     function handleSubmenuHover(label: string | null) {
         activeSubmenu = label;
     }
-
-    function handleSubmenuLeave() {
-        // Delay to allow moving to submenu
-        setTimeout(() => {
-            // Only clear if still no hover
-        }, 100);
-    }
-
+  
     onMount(() => {
         window.addEventListener("click", handleClickOutside);
         return () => window.removeEventListener("click", handleClickOutside);
     });
-
-    // Type guard for separator
-    function isSeparator(
-        item: ContextMenuItem | { type: "separator" },
-    ): item is { type: "separator" } {
-        return (
-            "type" in item && item.type === "separator" && !("label" in item)
-        );
+  
+    function isSeparator(item: ContextMenuItem | { type: "separator" }): item is { type: "separator" } {
+      return item.type === "separator";
     }
 </script>
 
@@ -135,6 +96,7 @@
                     class:active={activeSubmenu === item.label}
                     on:mouseenter={() =>
                         !$isMobile && handleSubmenuHover(item.label)}
+                    on:mouseleave={() => !$isMobile && handleSubmenuHover(null)}    
                     on:click={() =>
                         $isMobile &&
                         handleSubmenuHover(
@@ -149,6 +111,7 @@
                         fill="currentColor"
                         width="14"
                         height="14"
+                        aria-hidden="true"
                     >
                         <path
                             d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"
