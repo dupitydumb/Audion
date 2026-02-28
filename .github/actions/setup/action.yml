@@ -1,0 +1,46 @@
+name: 'Setup Node, Rust, cache, and install dependencies'
+description: 'Common setup steps for all platforms'
+inputs:
+  platform:
+    description: 'Platform being built (windows, linux, macos, android)'
+    required: true
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: ${{ inputs.platform == 'android' && 'aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android' || '' }}
+
+    - name: Rust cache
+      uses: swatinem/rust-cache@v2
+      with:
+        workspaces: './src-tauri -> target'
+
+    - name: Install dependencies (npm)
+      shell: bash
+      run: npm install
+
+    - name: Install Linux system dependencies (if on Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libwebkit2gtk-4.1-dev \
+          libjavascriptcoregtk-4.1-dev \
+          libappindicator3-dev \
+          librsvg2-dev \
+          patchelf \
+          libasound2-dev \
+          build-essential \
+          curl wget file \
+          libxdo-dev \
+          libssl-dev \
+          xvfb
