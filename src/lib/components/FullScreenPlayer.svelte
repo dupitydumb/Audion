@@ -1224,6 +1224,147 @@
     }
   }
 
+  /* Mobile Layout overrides for structure */
+  @media (max-width: 768px) {
+    .player-content {
+      display: flex;
+      flex-direction: column;
+      padding: var(--spacing-md) var(--spacing-lg) var(--spacing-xl);
+      gap: var(--spacing-lg);
+      height: calc(100vh - 80px - env(safe-area-inset-top, 0px));
+      max-height: none;
+      justify-content: flex-end; /* Push content to bottom */
+    }
+
+    .left-panel {
+      display: flex;
+      flex-direction: column;
+      gap: var(--spacing-sm); /* Reduce gap */
+      max-height: none;
+      padding-left: 0;
+      align-items: center;
+      width: 100%;
+      flex: 1; /* take up remaining space */
+      justify-content: space-evenly; /* Space out art, info and controls, preventing overflow */
+      overflow: hidden; /* Contain inner elements */
+    }
+
+    .art-container {
+      width: 100%;
+      max-width: 280px; /* Slightly smaller to guarantee fit */
+      /* Apple Music style: large square art that scales with available space */
+      aspect-ratio: 1 / 1;
+      height: auto;
+      max-height: 40vh; /* Do not let cover art completely take over screen height */
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--shadow-xl);
+      flex-shrink: 1; /* allow art to shrink if needed */
+    }
+
+    .art-container img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: var(--radius-lg);
+    }
+
+    .track-info {
+      align-items: flex-start; /* Apple Music left-aligns text */
+      text-align: left;
+      width: 100%;
+      max-width: 400px;
+      margin: 0 auto;
+    }
+
+    .track-title {
+      font-size: 1.5rem;
+    }
+
+    .track-artist {
+      font-size: 1.1rem;
+    }
+
+    .player-controls {
+      max-width: 400px;
+      width: 100%;
+      align-items: center;
+      margin: 0 auto;
+    }
+
+    .progress-bar-container {
+      width: 100%;
+      margin: 0 auto var(--spacing-md);
+    }
+
+    .buttons {
+      gap: var(--spacing-md);
+      width: 100%;
+      justify-content: space-between;
+    }
+
+    .progress-track {
+      height: 4px;
+    }
+
+    .progress-fill {
+      background-color: #fff; /* Apple Music uses white/black theme color */
+    }
+
+    .progress-thumb {
+      transform: translateX(-50%) scale(1);
+      width: 12px;
+      height: 12px;
+    }
+
+    .play-btn.large {
+      width: 64px;
+      height: 64px;
+      color: #000;
+    }
+
+    .icon-btn.large {
+      width: 36px;
+      height: 36px;
+    }
+
+    /* Right panel (Lyrics) */
+    .right-panel {
+      display: flex; /* use flex to properly contain lyrics container inside right-panel */
+      flex-direction: column;
+      width: 100%;
+      height: 25vh; /* slightly reduce height */
+      max-height: 25vh;
+      margin-top: 0;
+      flex-shrink: 0; /* do not shrink lyrics container beyond this fixed size */
+      mask-image: linear-gradient(
+        to bottom,
+        transparent 0%,
+        black 15%,
+        black 85%,
+        transparent 100%
+      );
+      -webkit-mask-image: linear-gradient(
+        to bottom,
+        transparent 0%,
+        black 15%,
+        black 85%,
+        transparent 100%
+      );
+    }
+
+    .lyrics-container {
+      padding: 10vh 0; /* Padding for scrolling */
+    }
+
+    .lyric-line {
+      font-size: 1.25rem; /* Slightly smaller to fit */
+      text-align: left; /* Apple Music left-aligns lyrics */
+    }
+  }
+
   /* Respect reduced motion preferences */
   @media (prefers-reduced-motion: reduce) {
     .bg-layer-1,

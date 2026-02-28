@@ -32,6 +32,7 @@ use tauri::Manager;
 
 const LOG_RETAIN_DAYS: u64 = 3;
 
+#[cfg(not(mobile))]
 fn init_logging(log_dir: &PathBuf) {
     use tracing_appender::rolling;
     use tracing_subscriber::{fmt, EnvFilter};
@@ -61,7 +62,22 @@ fn init_logging(log_dir: &PathBuf) {
         .init();
 }
 
+#[cfg(mobile)]
+fn init_logging(_log_dir: &PathBuf) {
+    use tracing_subscriber::{fmt, EnvFilter};
+
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn,audion=info"));
+
+    fmt::Subscriber::builder()
+        .with_env_filter(filter)
+        .with_ansi(true)
+        .with_target(true)
+        .init();
+}
+
 /// Remove log files in `log_dir` that are older than `keep_days` days.
+#[cfg(not(mobile))]
 fn prune_old_logs(log_dir: &PathBuf, keep_days: u64) {
     let cutoff = std::time::SystemTime::now()
         .checked_sub(std::time::Duration::from_secs(keep_days * 86_400))
