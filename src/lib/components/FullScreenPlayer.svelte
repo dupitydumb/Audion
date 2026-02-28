@@ -412,28 +412,6 @@
               {/if}
             </button>
           </div>
-
-          <!-- Secondary row: Lyrics toggle -->
-          <div class="secondary-controls">
-            <button
-              class="secondary-btn"
-              class:active={$lyricsVisible}
-              on:click={toggleLyrics}
-              aria-label="Lyrics"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                width="20"
-                height="20"
-              >
-                <path
-                  d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6zm-2 16c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"
-                />
-              </svg>
-              <span>Lyrics</span>
-            </button>
-          </div>
         </div>
       </div>
 
@@ -1229,8 +1207,8 @@
     .player-content {
       display: flex;
       flex-direction: column;
-      padding: var(--spacing-md) var(--spacing-lg) var(--spacing-xl);
-      gap: var(--spacing-lg);
+      padding: var(--spacing-md) var(--spacing-xl) 48px;
+      gap: var(--spacing-xl);
       height: calc(100vh - 80px - env(safe-area-inset-top, 0px));
       max-height: none;
       justify-content: flex-end; /* Push content to bottom */
@@ -1239,23 +1217,23 @@
     .left-panel {
       display: flex;
       flex-direction: column;
-      gap: var(--spacing-sm); /* Reduce gap */
+      gap: var(--spacing-md);
       max-height: none;
       padding-left: 0;
       align-items: center;
       width: 100%;
       flex: 1; /* take up remaining space */
-      justify-content: space-evenly; /* Space out art, info and controls, preventing overflow */
+      justify-content: space-around; /* Better distribution */
       overflow: hidden; /* Contain inner elements */
     }
 
     .art-container {
       width: 100%;
-      max-width: 280px; /* Slightly smaller to guarantee fit */
+      max-width: 240px;
       /* Apple Music style: large square art that scales with available space */
       aspect-ratio: 1 / 1;
       height: auto;
-      max-height: 40vh; /* Do not let cover art completely take over screen height */
+      max-height: 35vh; /* Do not let cover art completely take over screen height */
       margin: 0 auto;
       display: flex;
       align-items: center;
@@ -1272,8 +1250,8 @@
     }
 
     .track-info {
-      align-items: flex-start; /* Apple Music left-aligns text */
-      text-align: left;
+      align-items: center; /* Apple Music left-aligns text, but USER wants it in the middle */
+      text-align: center;
       width: 100%;
       max-width: 400px;
       margin: 0 auto;
@@ -1285,6 +1263,7 @@
 
     .track-artist {
       font-size: 1.1rem;
+      text-align: center;
     }
 
     .player-controls {
