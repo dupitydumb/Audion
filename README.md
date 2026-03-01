@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dupitydumb/Audion/releases"><img src="https://img.shields.io/badge/version-1.2.2-blue.svg" alt="Version"></a>
+  <a href="https://github.com/dupitydumb/Audion/releases"><img src="https://img.shields.io/badge/version-1.2.4-blue.svg" alt="Version"></a>
   <img src="https://img.shields.io/badge/platform-Windows-brightgreen.svg" alt="Windows">
   <img src="https://img.shields.io/badge/platform-macOS-brightgreen.svg" alt="macOS">
   <img src="https://img.shields.io/badge/platform-Linux-brightgreen.svg" alt="Linux">
@@ -30,21 +30,42 @@ Audion is a privacy-focused music player that brings the Spotify experience to y
 
 ## 📸 Screenshots
 
-<details>
-<summary>Click to view screenshots</summary>
+<div align="center">
 
-<p align="center">
-  <img width="1343" height="795" alt="image" src="https://github.com/user-attachments/assets/f4d0f1d4-8147-4d81-b010-502da196b432"/>
-  <br><em>Immersive full-screen player</em>
-</p>
+### Desktop
+<div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;">
+  <a href="https://github.com/user-attachments/assets/7aa5f266-6b36-47cc-930c-b56f3883acc0">
+    <img src="https://github.com/user-attachments/assets/878874db-8615-4881-b4c7-531d1d89874f" width="400" alt="Fullscreen Mode" style="border-radius: 8px; border: 1px solid #333;" />
+  </a>
+  <a href="https://github.com/user-attachments/assets/a67ec2d7-1859-4b86-bf20-0ba218e800e4">
+    <img src="https://github.com/user-attachments/assets/a67ec2d7-1859-4b86-bf20-0ba218e800e4" width="400" alt="Plugin Marketplace" style="border-radius: 8px; border: 1px solid #333;" />
+  </a>
+  <a href="https://github.com/user-attachments/assets/94164ad4-4783-474d-886f-4a407979d902">
+    <img src="https://github.com/user-attachments/assets/94164ad4-4783-474d-886f-4a407979d902" width="400" alt="Main Page" style="border-radius: 8px; border: 1px solid #333;" />
+  </a>
+  <a href="https://github.com/user-attachments/assets/65a86a0d-6d28-4bd6-9ce9-b68bfae54be7">
+    <img src="https://github.com/user-attachments/assets/65a86a0d-6d28-4bd6-9ce9-b68bfae54be7" width="400" alt="Home Page" style="border-radius: 8px; border: 1px solid #333;" />
+  </a>
+  <a href="https://github.com/user-attachments/assets/878874db-8615-4881-b4c7-531d1d89874f">
+    <img src="https://github.com/user-attachments/assets/7aa5f266-6b36-47cc-930c-b56f3883acc0" width="400" alt="Theme Selection" style="border-radius: 8px; border: 1px solid #333;" />
+  </a>
+</div>
 
-<p align="center">
-  <img width="1345" height="793" alt="image" src="https://github.com/user-attachments/assets/00c79e80-48a2-4142-8530-27357195c3b3" />
-  <br><em>Real-time synced lyrics</em>
-</p>
+### Mobile (Android)
+<div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;">
+  <a href="https://github.com/user-attachments/assets/74f38713-b645-4abc-bad8-a70793de0e87">
+    <img src="https://github.com/user-attachments/assets/74f38713-b645-4abc-bad8-a70793de0e87" width="240" alt="Android Library" style="border-radius: 8px; border: 1px solid #333;" />
+  </a>
+  <a href="https://github.com/user-attachments/assets/f3bc93c4-1b46-4fff-8226-dcc9c8622922">
+    <img src="https://github.com/user-attachments/assets/f3bc93c4-1b46-4fff-8226-dcc9c8622922" width="240" alt="Android Home" style="border-radius: 8px; border: 1px solid #333;" />
+  </a>
+  <a href="https://github.com/user-attachments/assets/583c41ea-3205-49bb-bb94-f59d168f7bdc">
+    <img src="https://github.com/user-attachments/assets/583c41ea-3205-49bb-bb94-f59d168f7bdc" width="240" alt="Android Fullscreen" style="border-radius: 8px; border: 1px solid #333;" />
+  </a>
+</div>
 
-</details>
-
+<p><em>Click any screenshot to view full size</em></p>
+</div>
 ---
 
 ## ⚡ Quick Start
@@ -101,58 +122,6 @@ npm run tauri build  # Production build
 ```
 
 **Tech stack:** Tauri 2.0, SvelteKit, Rust, SQLite
-
----
-
-## 🐧 Linux Troubleshooting
-
-### "Could not create surfaceless EGL display" Error
-
-If you encounter this error when running the AppImage:
-```
-could not create surfaceless egl display bad alloc aborting
-```
-
-**Solution 1: Use software rendering**
-```bash
-WEBKIT_DISABLE_COMPOSITING_MODE=1 ./Audion.AppImage
-```
-
-**Solution 2: Force software rendering with Mesa**
-```bash
-LIBGL_ALWAYS_SOFTWARE=1 ./Audion.AppImage
-```
-
-**Solution 3: Disable GPU acceleration**
-```bash
-WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Audion.AppImage
-```
-
-**Solution 4: Combined flags (most compatible)**
-```bash
-WEBKIT_DISABLE_COMPOSITING_MODE=1 WEBKIT_DISABLE_DMABUF_RENDERER=1 ./Audion.AppImage
-```
-
-**Permanent fix:** Add the environment variable to your `.bashrc` or create a desktop entry with the flag.
-
-### Missing Dependencies
-
-Ensure you have the required WebKitGTK libraries installed:
-
-**Ubuntu/Debian:**
-```bash
-sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1
-```
-
-**Fedora:**
-```bash
-sudo dnf install webkit2gtk4.1 gtk3 libappindicator-gtk3
-```
-
-**Arch Linux:**
-```bash
-sudo pacman -S webkit2gtk-4.1 gtk3 libappindicator-gtk3
-```
 
 ---
 
