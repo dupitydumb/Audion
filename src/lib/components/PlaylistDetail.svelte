@@ -519,6 +519,7 @@
                 <TrackList
                     {tracks}
                     showAlbum={false}
+                    playlistId={playlistId}
                     playbackContext={{
                         type: "playlist",
                         playlistId,

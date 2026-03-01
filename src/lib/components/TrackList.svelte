@@ -375,6 +375,28 @@
 
   // Event delegation
   function handleBodyClick(e: MouseEvent) {
+    // Artist click
+    const artistBtn = (e.target as HTMLElement).closest(".track-artist");
+    if (artistBtn) {
+        const row = artistBtn.closest(".track-row");
+        if (!row) return;
+        const trackId = parseInt(row.getAttribute("data-track-id") || "0");
+        const track = sortedTracks[trackIndexMap.get(trackId)!];
+        if (track?.artist) goToArtistDetail(track.artist);
+        return;
+    }
+
+    // Album click
+    const albumBtn = (e.target as HTMLElement).closest(".col-album");
+    if (albumBtn) {
+        const row = albumBtn.closest(".track-row");
+        if (!row) return;
+        const trackId = parseInt(row.getAttribute("data-track-id") || "0");
+        const track = sortedTracks[trackIndexMap.get(trackId)!];
+        if (track?.album_id) goToAlbumDetail(track.album_id);
+        return;
+    }
+
     const row = (e.target as HTMLElement).closest(".track-row");
     if (!row) return;
 
@@ -792,46 +814,6 @@
     swipeDeltaX = 0;
   }
 
-  // Helper to handle album click from event delegation
-  function handleAlbumClick(e: MouseEvent) {
-    const albumButton = (e.target as HTMLElement).closest(".col-album");
-    if (!albumButton) return;
-
-    e.stopPropagation();
-
-    const row = albumButton.closest(".track-row");
-    if (!row) return;
-
-    const trackId = parseInt(row.getAttribute("data-track-id") || "0");
-    const trackIndex = trackIndexMap.get(trackId);
-
-    if (trackIndex === undefined) return;
-
-    const track = sortedTracks[trackIndex];
-    if (track && track.album_id) {
-      goToAlbumDetail(track.album_id);
-    }
-  }
-
-  function handleArtistClick(e: MouseEvent) {
-    const artistButton = (e.target as HTMLElement).closest(".track-artist");
-    if (!artistButton) return;
-
-    e.stopPropagation();
-
-    const row = artistButton.closest(".track-row");
-    if (!row) return;
-
-    const trackId = parseInt(row.getAttribute("data-track-id") || "0");
-    const trackIndex = trackIndexMap.get(trackId);
-
-    if (trackIndex === undefined) return;
-
-    const track = sortedTracks[trackIndex];
-    if (track && track.artist) {
-      goToArtistDetail(track.artist);
-    }
-  }
 </script>
 
 <div class="track-list">
@@ -981,8 +963,8 @@
                   <svg
                     viewBox="0 0 24 24"
                     fill="currentColor"
-                    width="16"
-                    height="16"
+                    width="22"
+                    height="22"
                   >
                     <path
                       d="M3 15h18v-2H3v2zm0 4h18v-2H3v2zm0-8h18V9H3v2zm0-6v2h18V5H3z"
@@ -1093,15 +1075,15 @@
                   {/if}
                 </div>
                 <button
-                  class="track-artist truncate"
-                  on:click={handleArtistClick}
-                  >{track.artist || "Unknown Artist"}</button
+                    class="track-artist truncate"
+                    disabled={!track.artist}
+                >{track.artist || "Unknown Artist"}</button
                 >
               </div>
               {#if showAlbum}
                 <button
                   class="col-album truncate"
-                  on:click={handleAlbumClick}
+                  on:click|stopPropagation
                   disabled={!track.album_id}>{track.album || "-"}</button
                 >
               {/if}
@@ -1238,7 +1220,7 @@
     padding-left: var(--spacing-lg);
     align-items: center;
     border-radius: var(--radius-md);
-    transition: background-color var(--transition-fast);
+    transition: background-color var(--transition-fast), transform var(--transition-fast);
     width: 100%;
     text-align: left;
     height: 56px; /* Fixed height for virtual scrolling */
@@ -1275,6 +1257,7 @@
 
   .track-row:hover {
     background-color: rgba(255, 255, 255, 0.1);
+    transform: translateX(4px);
     cursor: pointer;
   }
 
@@ -1289,6 +1272,7 @@
   .track-row.dragging {
     opacity: 0.5;
     background-color: var(--bg-highlight);
+    transform: none;
   }
 
   .track-row.drag-over {
@@ -1300,8 +1284,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
+    width: 40px;
+    height: 40px;
     color: var(--text-subdued);
     cursor: grab;
     opacity: 0;
@@ -1318,8 +1302,6 @@
 
   .drag-handle:hover {
     color: var(--text-primary);
-    background-color: rgba(255, 255, 255, 0.1);
-    border-radius: var(--radius-sm);
   }
 
   .drag-handle:active {
@@ -1460,7 +1442,7 @@
     padding: 0;
     margin: 0;
     text-align: left;
-    max-width: fit-content;
+    width: fit-content;
     line-height: 1.2;
   }
 
@@ -1474,6 +1456,7 @@
     font-size: 0.875rem;
     color: var(--text-secondary);
     text-align: left;
+    width: fit-content;
   }
 
   .col-album:hover:not(:disabled) {
@@ -1520,6 +1503,7 @@
 
   .track-row.unavailable:hover {
     background-color: transparent;
+    transform: none;
   }
 
   .downloaded-icon {
