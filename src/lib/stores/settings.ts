@@ -10,6 +10,7 @@ export interface AppSettings {
     startMode: 'normal' | 'maximized' | 'minimized';
     autoplay: boolean;
     audioBackend: 'auto' | 'native' | 'html5';
+    paginationBatchSize: number;
 }
 
 const SETTINGS_STORAGE_KEY = 'audion_settings';
@@ -23,6 +24,7 @@ const defaultSettings: AppSettings = {
     startMode: 'normal',
     autoplay: false,
     audioBackend: 'auto',
+    paginationBatchSize: 1000,
 };
 
 // Load settings from localStorage
@@ -107,6 +109,13 @@ function createSettingsStore() {
             });
         },
 
+        setPaginationBatchSize(size: number) {
+            update(state => {
+                const newState = { ...state, paginationBatchSize: size };
+                saveSettings(newState);
+                return newState;
+            });
+        },
 
         async setStartMode(mode: 'normal' | 'maximized' | 'minimized') {
             try {

@@ -2,6 +2,7 @@
 import { writable, get } from 'svelte/store';
 import type { Track, Album, Artist, Playlist, ScanBatchEvent } from '$lib/api/tauri';
 import { getLibraryCounts, getPlaylists, getTracksPaginated, getAlbumsPaginated, searchLibrary, convertFileSrc } from '$lib/api/tauri';
+import { appSettings } from '$lib/stores/settings';
 
 // BLOB URL CONVERSION
 /**
@@ -67,11 +68,15 @@ function revokeBlobUrl(url: string | null | undefined): void {
 // CONFIGURATION
 const CACHE_CONFIG = {
     MAX_METADATA_CACHE: 100000,   // Increased for metadata
-    MAX_ALBUM_ART_CACHE: 1000,    // Increased for better ux 
-    TRACK_BATCH_SIZE: 1000,       // Paginated fetch size
-    ENABLE_SMART_LOADING: true,
+    MAX_ALBUM_ART_CACHE: 1000,    // Increased for better ux
     MAX_TRACK_COVER_CACHE: 2000,  // Added limit
+    ENABLE_SMART_LOADING: true,
 };
+
+// Read pagination batch size from user settings at call time
+function getBatchSize(): number {
+    return get(appSettings).paginationBatchSize;
+}
 
 // LRU CACHE
 class LRUCache<K, V> {
@@ -493,8 +498,8 @@ export async function loadLibrary(): Promise<void> {
         // Parallel: library metadata, first track batch, first album batch
         const [counts, initialTracks, initialAlbums] = await Promise.all([
             getLibraryCounts(),
-            getTracksPaginated(CACHE_CONFIG.TRACK_BATCH_SIZE, 0),
-            getAlbumsPaginated(CACHE_CONFIG.TRACK_BATCH_SIZE, 0)  // Paginated albums
+            getTracksPaginated(getBatchSize(), 0),
+            getAlbumsPaginated(getBatchSize(), 0),  // Paginated albums
         ]);
 
         console.timeEnd('[Library] IPC load initial');
@@ -543,7 +548,7 @@ export async function loadMoreTracks(): Promise<boolean> {
 
     isLoading.set(true);
     try {
-        const newTracks = await getTracksPaginated(CACHE_CONFIG.TRACK_BATCH_SIZE, offset);
+        const newTracks = await getTracksPaginated(getBatchSize(), offset);
         if (newTracks.length === 0) return false;
 
         // Same ingestion path as loadLibrary -caches + maps stay consistent
@@ -573,7 +578,7 @@ export async function loadMoreAlbums(): Promise<boolean> {
 
     isLoading.set(true);
     try {
-        const newAlbums = await getAlbumsPaginated(CACHE_CONFIG.TRACK_BATCH_SIZE, offset);
+        const newAlbums = await getAlbumsPaginated(getBatchSize(), offset);
         if (newAlbums.length === 0) return false;
 
         // Same ingestion path as loadLibrary -caches + maps
