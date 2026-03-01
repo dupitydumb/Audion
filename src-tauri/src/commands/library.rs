@@ -935,6 +935,7 @@ pub async fn add_external_track(
         external_id: Some(track.external_id),
         content_hash,
         local_src: None,
+        musicbrainz_recording_id: None,
     };
 
     queries::insert_or_update_track(&conn, &track_insert)

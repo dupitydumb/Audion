@@ -13,7 +13,9 @@ export type ViewType =
     | 'playlist-detail'
     | 'liked-songs'
     | 'plugins'
-    | 'settings';
+    | 'settings'
+    | 'listenbrainz'
+    | 'discover';
 
 export interface ViewState {
     type: ViewType;
@@ -142,4 +144,12 @@ export function goToTracksMultiSelect(playlistId: number): void {
 
 export function goToLikedSongs(): void {
     currentView.set({ type: 'liked-songs' });
+}
+
+export function goToListenBrainz(): void {
+    currentView.set({ type: 'listenbrainz' });
+}
+
+export function goToDiscover(): void {
+    currentView.set({ type: 'discover' });
 }

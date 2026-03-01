@@ -10,6 +10,7 @@ import { appSettings } from '$lib/stores/settings';
 import { equalizer, EQ_FREQUENCIES } from '$lib/stores/equalizer';
 import { pluginStore } from '$lib/stores/plugin-store';
 import { recordTrackPlay } from '$lib/stores/activity';
+import { submitListenbrainzListen } from '$lib/api/tauri';
 
 // =============================================================================
 // NATIVE AUDIO BACKEND
@@ -645,11 +646,34 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
         const durationPlayed = Math.floor((Date.now() - playStartTime) / 1000);
         if (durationPlayed > 5) { // Only record if played for more than 5 seconds
             recordTrackPlay(previousTrackObj.id, previousTrackObj.album_id ?? null, durationPlayed);
+            // ListenBrainz: scrobble if >= 50 % of track duration or 4 minutes played
+            const trackDuration = previousTrackObj.duration ?? 0;
+            if (get(appSettings).listenBrainzEnabled && trackDuration > 0) {
+                const threshold = Math.min(Math.floor(trackDuration / 2), 240);
+                if (durationPlayed >= threshold) {
+                    submitListenbrainzListen(
+                        previousTrackObj.artist ?? 'Unknown Artist',
+                        previousTrackObj.title ?? 'Unknown',
+                        previousTrackObj.album,
+                        previousTrackObj.duration,
+                        false,
+                    ).catch(e => console.warn('[ListenBrainz] Scrobble failed:', e));
+                }
+            }
         }
     }
     playStartTime = Date.now();
 
-    currentTrack.set(track);
+    // ListenBrainz: notify 'playing_now'
+    if (get(appSettings).listenBrainzEnabled) {
+        submitListenbrainzListen(
+            track.artist ?? 'Unknown Artist',
+            track.title ?? 'Unknown',
+            track.album,
+            track.duration,
+            true,
+        ).catch(e => console.warn('[ListenBrainz] Now-playing failed:', e));
+    }
 
     // Get full track with base64 data URI for plugins
     const fullTrack = await getFullTrack(track.id, true);
@@ -776,6 +800,7 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
             }
         }
 
+        currentTrack.set(trackForPlugins);
         currentTime.set(0);
         duration.set(track.duration || 0);
         isPlaying.set(true);
@@ -1162,6 +1187,20 @@ function handleTrackEnd(): void {
         const durationPlayed = Math.floor((Date.now() - playStartTime) / 1000);
         if (durationPlayed > 5) {
             recordTrackPlay(track.id, track.album_id ?? null, durationPlayed);
+            // ListenBrainz: scrobble if >= 50 % of duration or 4 minutes
+            const trackDuration = track.duration ?? 0;
+            if (get(appSettings).listenBrainzEnabled && trackDuration > 0) {
+                const threshold = Math.min(Math.floor(trackDuration / 2), 240);
+                if (durationPlayed >= threshold) {
+                    submitListenbrainzListen(
+                        track.artist ?? 'Unknown Artist',
+                        track.title ?? 'Unknown',
+                        track.album,
+                        track.duration,
+                        false,
+                    ).catch(e => console.warn('[ListenBrainz] Scrobble failed:', e));
+                }
+            }
         }
         playStartTime = 0; // Reset so playTrack doesn't double-record
     }

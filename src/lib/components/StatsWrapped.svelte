@@ -11,6 +11,7 @@
     import {
         getTrackCoverSrc,
         getAlbumArtSrc,
+        getTopGenresFromMb,
         type Track,
     } from "$lib/api/tauri";
 
@@ -20,6 +21,27 @@
     let currentSlide = 0;
     let canvas: HTMLCanvasElement;
     let isExporting = false;
+
+    // Genre data from MusicBrainz
+    let topGenres: [string, number][] = [];
+    let genresLoading = false;
+    let genresFetched = false;
+
+    async function fetchGenres() {
+        if (genresFetched || genresLoading) return;
+        genresLoading = true;
+        try {
+            topGenres = await getTopGenresFromMb(5);
+        } catch (e) {
+            console.warn("[StatsWrapped] Genre fetch failed:", e);
+        } finally {
+            genresLoading = false;
+            genresFetched = true;
+        }
+    }
+
+    // Start fetching genres as soon as the wrapped opens
+    $: if (show && !genresFetched) fetchGenres();
 
     const monthNames = [
         "January",
@@ -42,6 +64,7 @@
         { id: "top-tracks", title: "Top Tracks" },
         { id: "top-artist", title: "Top Artist" },
         { id: "summary", title: "Your Month in Music" },
+        { id: "top-genre", title: "Your Sound" },
         { id: "final-recap", title: "The Full Picture" },
     ];
 
@@ -146,6 +169,7 @@
             else if (currentSlide === 1) await drawTopTracks(ctx);
             else if (currentSlide === 2) await drawTopArtist(ctx);
             else if (currentSlide === 3) await drawSummary(ctx);
+            else if (currentSlide === 4) await drawGenreSlide(ctx);
             else await drawFinalRecap(ctx);
 
             // Footer
@@ -254,6 +278,34 @@
         ctx.font = "900 200px Inter, sans-serif";
         ctx.fillText($statsSummary.total_plays.toString(), 540, 1350);
         ctx.fillText("TOTAL PLAYS", 540, 1450);
+    }
+
+    async function drawGenreSlide(ctx: CanvasRenderingContext2D) {
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "900 90px Inter, sans-serif";
+        ctx.fillText("YOUR SOUND", 540, 350);
+
+        if (topGenres.length > 0) {
+            const [topGenre] = topGenres[0];
+            ctx.font = "900 180px Inter, sans-serif";
+            ctx.fillStyle = "#a78bfa";
+            ctx.fillText(topGenre, 540, 700);
+
+            if (topGenres.length > 1) {
+                ctx.font = "bold 60px Inter, sans-serif";
+                ctx.fillStyle = "rgba(255,255,255,0.7)";
+                ctx.fillText("Also into:", 540, 900);
+                topGenres.slice(1).forEach(([genre], i) => {
+                    ctx.fillText(genre, 540, 990 + i * 90);
+                });
+            }
+        } else {
+            ctx.font = "bold 70px Inter, sans-serif";
+            ctx.fillStyle = "rgba(255,255,255,0.5)";
+            ctx.fillText("Play more music", 540, 600);
+            ctx.fillText("to discover your genre!", 540, 700);
+        }
     }
 
     async function drawFinalRecap(ctx: CanvasRenderingContext2D) {
@@ -466,6 +518,48 @@
                         </div>
                     </div>
                 {:else if currentSlide === 4}
+                    <!-- ── Genre slide (MusicBrainz) ── -->
+                    <div
+                        class="slide genre-slide"
+                        in:scale={{ duration: 600, start: 0.8, easing: cubicOut }}
+                    >
+                        <h2 class="slide-title">Your Sound</h2>
+                        {#if genresLoading}
+                            <div class="genre-loading">
+                                <div class="genre-spinner"></div>
+                                <span>Discovering your genres…</span>
+                            </div>
+                        {:else if topGenres.length > 0}
+                            <div
+                                class="top-genre-name"
+                                in:fly={{ y: 40, duration: 600, delay: 200 }}
+                            >
+                                {topGenres[0][0]}
+                            </div>
+                            <p class="genre-label" in:fly={{ y: 20, duration: 500, delay: 400 }}>
+                                is your #1 genre
+                            </p>
+                            {#if topGenres.length > 1}
+                                <div class="genre-also" in:fly={{ y: 20, duration: 500, delay: 600 }}>
+                                    <span class="also-label">Also into:</span>
+                                    <div class="genre-pill-row">
+                                        {#each topGenres.slice(1) as [genre], i}
+                                            <span
+                                                class="genre-pill"
+                                                in:fly={{ x: 20, delay: 700 + i * 100 }}
+                                            >{genre}</span>
+                                        {/each}
+                                    </div>
+                                </div>
+                            {/if}
+                        {:else}
+                            <div class="genre-empty">
+                                <p>Keep listening to uncover your genre identity!</p>
+                            </div>
+                        {/if}
+                        <p class="mb-credit">Genres via MusicBrainz</p>
+                    </div>
+                {:else if currentSlide === 5}
                     <div class="slide final-slide" in:fade={{ duration: 600 }}>
                         <div class="final-card">
                             <div class="final-header">
@@ -603,6 +697,9 @@
         background: radial-gradient(circle at center, #013220, #000);
     }
     .slide-4 {
+        background: radial-gradient(circle at 30% 70%, #2d1b69, #000);
+    }
+    .slide-5 {
         background: #000;
     }
 
@@ -944,6 +1041,100 @@
         text-transform: uppercase;
         font-weight: 800;
         opacity: 0.5;
+    }
+
+    /* ── Genre slide ── */
+    .genre-slide {
+        align-items: center;
+        text-align: center;
+        justify-content: center;
+    }
+
+    .top-genre-name {
+        font-size: 3.5rem;
+        font-weight: 900;
+        line-height: 1;
+        background: linear-gradient(135deg, #a78bfa, #60a5fa);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin: var(--spacing-lg) 0 var(--spacing-sm);
+        text-align: center;
+    }
+
+    .genre-label {
+        font-size: 1rem;
+        opacity: 0.7;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        margin: 0 0 var(--spacing-xl);
+    }
+
+    .genre-also {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--spacing-sm);
+    }
+
+    .also-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        opacity: 0.5;
+    }
+
+    .genre-pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+    }
+
+    .genre-pill {
+        background: rgba(167, 139, 250, 0.2);
+        border: 1px solid rgba(167, 139, 250, 0.4);
+        color: #c4b5fd;
+        padding: 4px 14px;
+        border-radius: 20px;
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+
+    .genre-loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--spacing-md);
+        opacity: 0.6;
+        margin: var(--spacing-xl) 0;
+    }
+
+    .genre-spinner {
+        width: 32px;
+        height: 32px;
+        border: 3px solid rgba(255, 255, 255, 0.15);
+        border-top-color: #a78bfa;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .genre-empty {
+        opacity: 0.5;
+        text-align: center;
+        margin: var(--spacing-xl) 0;
+    }
+
+    .mb-credit {
+        font-size: 0.65rem;
+        opacity: 0.3;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-top: auto;
     }
 
     .footer {

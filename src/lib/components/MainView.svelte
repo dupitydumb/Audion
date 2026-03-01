@@ -35,6 +35,8 @@
 
     import PluginManager from "./PluginManager.svelte";
     import Settings from "./Settings.svelte";
+    import Recommendations from "./Recommendations.svelte";
+    import MbDiscover from "./MbDiscover.svelte";
 
     import { tick, onMount } from "svelte";
     import { fade, fly } from "svelte/transition";
@@ -717,6 +719,14 @@
     {:else if $currentView.type === "liked-songs"}
         <div class="view-container no-padding">
             <LikedSongs />
+        </div>
+    {:else if $currentView.type === "listenbrainz"}
+        <div class="view-container no-padding">
+            <Recommendations />
+        </div>
+    {:else if $currentView.type === "discover"}
+        <div class="view-container no-padding">
+            <MbDiscover />
         </div>
     {:else}
         <div class="view-container">

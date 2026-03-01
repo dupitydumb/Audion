@@ -8,6 +8,9 @@
     selectMusicFolder,
     syncCoverPathsFromFiles,
     mergeDuplicateCovers,
+    setListenbrainzToken,
+    deleteListenbrainzToken,
+    verifyListenbrainzToken,
     type MergeCoverResult,
   } from "$lib/api/tauri";
   import { loadLibrary } from "$lib/stores/library";
@@ -297,6 +300,37 @@
 
   function handleRefresh() {
     window.location.reload();
+  }
+
+  // ── ListenBrainz ───────────────────────────────────────────────────────────
+  let lbTokenInput = '';
+  let lbIsVerifying = false;
+  let lbVerifyError = '';
+  let lbVerifySuccess = false;
+
+  async function handleVerifyLbToken() {
+    if (!lbTokenInput.trim()) return;
+    lbIsVerifying = true;
+    lbVerifyError = '';
+    lbVerifySuccess = false;
+    try {
+      const username = await verifyListenbrainzToken(lbTokenInput.trim());
+      await setListenbrainzToken(lbTokenInput.trim());
+      appSettings.setListenBrainzTokenSet(true, username);
+      lbVerifySuccess = true;
+      lbTokenInput = '';
+      setTimeout(() => { lbVerifySuccess = false; }, 4000);
+    } catch (e) {
+      lbVerifyError = String(e);
+    } finally {
+      lbIsVerifying = false;
+    }
+  }
+
+  async function handleRemoveLbToken() {
+    await deleteListenbrainzToken();
+    appSettings.setListenBrainzTokenSet(false, '');
+    if ($appSettings.listenBrainzEnabled) appSettings.toggleListenBrainz();
   }
 </script>
 
@@ -648,6 +682,93 @@
             >
               Refresh Now
             </button>
+          </div>
+        {/if}
+      </section>
+
+      <!-- Cover Management -->
+      <section class="settings-section">
+        <h3 class="section-title">ListenBrainz</h3>
+
+        <!-- Enable toggle -->
+        <div class="setting-item">
+          <div class="toggle-container">
+            <div class="toggle-info">
+              <span class="setting-label">Enable ListenBrainz</span>
+              <p class="setting-hint">
+                Submit your listening history and receive personalised
+                recommendations. Requires a free
+                <a href="https://listenbrainz.org" target="_blank" rel="noreferrer">ListenBrainz</a>
+                account.
+              </p>
+            </div>
+            <button
+              class="toggle-btn"
+              class:active={$appSettings.listenBrainzEnabled}
+              on:click={() => appSettings.toggleListenBrainz()}
+              role="switch"
+              aria-checked={$appSettings.listenBrainzEnabled}
+              aria-label="Toggle ListenBrainz"
+            >
+              <div class="toggle-handle"></div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Token management -->
+        {#if !$appSettings.listenBrainzTokenSet}
+          <div class="setting-item">
+            <span class="setting-label">User Token</span>
+            <div class="path-selector">
+              <input
+                type="password"
+                bind:value={lbTokenInput}
+                placeholder="Paste your ListenBrainz token"
+                class="lb-token-input"
+                on:keydown={(e) => e.key === 'Enter' && handleVerifyLbToken()}
+              />
+              <button
+                class="selector-btn"
+                on:click={handleVerifyLbToken}
+                disabled={!lbTokenInput.trim() || lbIsVerifying}
+              >
+                {lbIsVerifying ? 'Verifying…' : 'Verify & Save'}
+              </button>
+            </div>
+            <p class="setting-hint">
+              Find your token at
+              <a href="https://listenbrainz.org/settings/" target="_blank" rel="noreferrer"
+                >listenbrainz.org/settings</a
+              >.
+            </p>
+            {#if lbVerifyError}
+              <p class="setting-hint" style="color: var(--text-error);">✗ {lbVerifyError}</p>
+            {/if}
+            {#if lbVerifySuccess}
+              <p class="setting-hint" style="color: var(--accent-primary);">✓ Token verified and saved!</p>
+            {/if}
+          </div>
+        {:else}
+          <div class="setting-item">
+            <div class="danger-item">
+              <div class="danger-info">
+                <span class="setting-label">Token Stored</span>
+                <p class="setting-hint">
+                  {#if $appSettings.listenBrainzUsername}
+                    Signed in as <strong>{$appSettings.listenBrainzUsername}</strong>.
+                  {:else}
+                    A token is saved. Enable the toggle above to start scrobbling.
+                  {/if}
+                </p>
+              </div>
+              <button
+                class="selector-btn danger-btn"
+                on:click={handleRemoveLbToken}
+                aria-label="Remove ListenBrainz token"
+              >
+                Remove Token
+              </button>
+            </div>
           </div>
         {/if}
       </section>

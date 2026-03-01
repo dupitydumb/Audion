@@ -352,6 +352,22 @@ pub fn run() {
                     commands::plugin_clear_data,
                     // Network commands
                     commands::proxy_fetch,
+                    // ListenBrainz commands
+                    commands::set_listenbrainz_token,
+                    commands::get_listenbrainz_token_set,
+                    commands::delete_listenbrainz_token,
+                    commands::verify_listenbrainz_token,
+                    commands::submit_listenbrainz_listen,
+                    commands::fetch_listenbrainz_recommendations,
+                    // MusicBrainz commands
+                    commands::get_artist_musicbrainz_info,
+                    commands::get_top_genres_from_mb,
+                    commands::enrich_track_metadata_mb,
+                    commands::get_release_mb_info,
+                    commands::get_similar_artists_mb,
+                    commands::get_artist_discography_mb,
+                    commands::search_artists_mb,
+                    commands::search_releases_mb,
                     // Window commands
                     commands::window::get_window_start_mode,
                     commands::window::set_window_start_mode,
@@ -465,6 +481,22 @@ pub fn run() {
                     commands::plugin_clear_data,
                     // Network commands
                     commands::proxy_fetch,
+                    // ListenBrainz commands
+                    commands::set_listenbrainz_token,
+                    commands::get_listenbrainz_token_set,
+                    commands::delete_listenbrainz_token,
+                    commands::verify_listenbrainz_token,
+                    commands::submit_listenbrainz_listen,
+                    commands::fetch_listenbrainz_recommendations,
+                    // MusicBrainz commands
+                    commands::get_artist_musicbrainz_info,
+                    commands::get_top_genres_from_mb,
+                    commands::enrich_track_metadata_mb,
+                    commands::get_release_mb_info,
+                    commands::get_similar_artists_mb,
+                    commands::get_artist_discography_mb,
+                    commands::search_artists_mb,
+                    commands::search_releases_mb,
                     // =========================================================================
                     // NATIVE AUDIO COMMANDS
                     // =========================================================================

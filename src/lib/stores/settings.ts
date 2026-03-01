@@ -10,6 +10,10 @@ export interface AppSettings {
     startMode: 'normal' | 'maximized' | 'minimized';
     autoplay: boolean;
     audioBackend: 'auto' | 'native' | 'html5';
+    listenBrainzEnabled: boolean;
+    /** True when a token file exists – refreshed at startup, not persisted in localStorage */
+    listenBrainzTokenSet: boolean;
+    listenBrainzUsername: string;
 }
 
 const SETTINGS_STORAGE_KEY = 'audion_settings';
@@ -23,6 +27,9 @@ const defaultSettings: AppSettings = {
     startMode: 'normal',
     autoplay: false,
     audioBackend: 'auto',
+    listenBrainzEnabled: false,
+    listenBrainzTokenSet: false,
+    listenBrainzUsername: '',
 };
 
 // Load settings from localStorage
@@ -107,18 +114,16 @@ function createSettingsStore() {
             });
         },
 
-
-        async setStartMode(mode: 'normal' | 'maximized' | 'minimized') {
-            try {
-                await invoke('set_window_start_mode', { mode });
-                update(state => ({ ...state, startMode: mode }));
-            } catch (error) {
-                console.error('[Settings] Failed to set start mode:', error);
-            }
+        toggleListenBrainz() {
+            update(state => {
+                const newState = { ...state, listenBrainzEnabled: !state.listenBrainzEnabled };
+                saveSettings(newState);
+                return newState;
+            });
         },
 
-        getDownloadLocation(): string | null {
-            return get({ subscribe }).downloadLocation;
+        setListenBrainzTokenSet(set: boolean, username = '') {
+            update(state => ({ ...state, listenBrainzTokenSet: set, listenBrainzUsername: username }));
         },
 
         async initialize() {
@@ -132,8 +137,29 @@ function createSettingsStore() {
                 console.error('[Settings] Failed to fetch start mode:', error);
             }
 
+            // Check whether a ListenBrainz token is stored
+            try {
+                const tokenSet = await invoke<boolean>('get_listenbrainz_token_set');
+                state.listenBrainzTokenSet = tokenSet;
+            } catch (error) {
+                console.error('[Settings] Failed to check LB token:', error);
+            }
+
             set(state);
-        }
+        },
+
+        async setStartMode(mode: 'normal' | 'maximized' | 'minimized') {
+            try {
+                await invoke('set_window_start_mode', { mode });
+                update(state => ({ ...state, startMode: mode }));
+            } catch (error) {
+                console.error('[Settings] Failed to set start mode:', error);
+            }
+        },
+
+        getDownloadLocation(): string | null {
+            return get({ subscribe }).downloadLocation;
+        },
     };
 }
 

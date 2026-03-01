@@ -1,0 +1,296 @@
+//! ListenBrainz integration commands
+//!
+//! All scrobbling is fully opt-in. The user token is stored as a file inside
+//! the platform app-data directory (user-readable only). It is never written
+//! to the main SQLite database or to any world-readable location.
+
+use serde::{Deserialize, Serialize};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+const LB_API_BASE: &str = "https://api.listenbrainz.org/1";
+
+// ── Token storage (app-data file) ─────────────────────────────────────────────
+
+fn token_file_path() -> Option<std::path::PathBuf> {
+    dirs::data_local_dir().map(|d| d.join("audion").join("lb_token"))
+}
+
+async fn read_token() -> Option<String> {
+    let path = token_file_path()?;
+    let t = tokio::fs::read_to_string(&path).await.ok()?;
+    let t = t.trim().to_string();
+    if t.is_empty() { None } else { Some(t) }
+}
+
+/// Store or clear the ListenBrainz user token.
+#[tauri::command]
+pub async fn set_listenbrainz_token(token: Option<String>) -> Result<(), String> {
+    let path = token_file_path().ok_or("Cannot resolve app data directory")?;
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    match token {
+        Some(t) => tokio::fs::write(&path, t.trim().as_bytes())
+            .await
+            .map_err(|e| e.to_string()),
+        None => {
+            let _ = tokio::fs::remove_file(&path).await;
+            Ok(())
+        }
+    }
+}
+
+/// Returns `true` if a token is currently stored.
+#[tauri::command]
+pub async fn get_listenbrainz_token_set() -> Result<bool, String> {
+    Ok(read_token().await.is_some())
+}
+
+/// Remove the stored ListenBrainz token.
+#[tauri::command]
+pub async fn delete_listenbrainz_token() -> Result<(), String> {
+    if let Some(path) = token_file_path() {
+        let _ = tokio::fs::remove_file(path).await;
+    }
+    Ok(())
+}
+
+// ── Token validation ──────────────────────────────────────────────────────────
+
+#[derive(Deserialize)]
+struct ValidateTokenResponse {
+    valid: bool,
+    user_name: Option<String>,
+}
+
+/// Validate a token against the ListenBrainz API. Returns the username on
+/// success, or an error string if the token is invalid or the network fails.
+#[tauri::command]
+pub async fn verify_listenbrainz_token(token: String) -> Result<String, String> {
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(format!("{}/validate-token", LB_API_BASE))
+        .header("Authorization", format!("Token {}", token.trim()))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    let data: ValidateTokenResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("Parse error: {}", e))?;
+
+    if data.valid {
+        Ok(data.user_name.unwrap_or_default())
+    } else {
+        Err("Invalid ListenBrainz token".into())
+    }
+}
+
+// ── Submit listen ─────────────────────────────────────────────────────────────
+
+/// Submit a single listen (`now_playing = false`) or a "playing_now" event
+/// (`now_playing = true`). Silently succeeds if no token is configured.
+#[tauri::command]
+pub async fn submit_listenbrainz_listen(
+    artist: String,
+    title: String,
+    album: Option<String>,
+    duration_secs: Option<i32>,
+    now_playing: bool,
+) -> Result<(), String> {
+    let token = match read_token().await {
+        Some(t) => t,
+        None => return Ok(()), // silently skip – no token configured
+    };
+
+    let listen_type = if now_playing { "playing_now" } else { "single" };
+
+    let mut additional_info = serde_json::json!({
+        "media_player": "Audion",
+        "submission_client": "Audion",
+    });
+
+    if let Some(d) = duration_secs {
+        additional_info["duration_ms"] =
+            serde_json::Value::Number(serde_json::Number::from(d * 1000));
+    }
+
+    let mut track_meta = serde_json::json!({
+        "artist_name": artist,
+        "track_name": title,
+        "additional_info": additional_info,
+    });
+
+    if let Some(a) = album {
+        track_meta["release_name"] = serde_json::Value::String(a);
+    }
+
+    let payload = if now_playing {
+        serde_json::json!({
+            "listen_type": listen_type,
+            "payload": [{ "track_metadata": track_meta }]
+        })
+    } else {
+        let ts = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        serde_json::json!({
+            "listen_type": listen_type,
+            "payload": [{
+                "listened_at": ts,
+                "track_metadata": track_meta,
+            }]
+        })
+    };
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(format!("{}/submit-listens", LB_API_BASE))
+        .header("Authorization", format!("Token {}", token))
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    if !resp.status().is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        tracing::warn!(error = %text, "ListenBrainz submission failed");
+        return Err(format!("ListenBrainz error: {}", text));
+    }
+
+    Ok(())
+}
+
+// ── Recommendations ───────────────────────────────────────────────────────────
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct LbRecommendation {
+    pub recording_mbid: Option<String>,
+    pub artist_name: String,
+    pub track_name: String,
+    pub release_name: Option<String>,
+    pub score: Option<f64>,
+    /// ID of a matching local track if found in the library.
+    pub local_track_id: Option<i64>,
+}
+
+/// Fetch personalised recording recommendations from ListenBrainz collaborative
+/// filtering and try to match each one to a track in the local library.
+#[tauri::command]
+pub async fn fetch_listenbrainz_recommendations(
+    limit: Option<usize>,
+    db: tauri::State<'_, crate::db::Database>,
+) -> Result<Vec<LbRecommendation>, String> {
+    let token = match read_token().await {
+        Some(t) => t,
+        None => return Err("No ListenBrainz token configured. Enable it in Settings first.".into()),
+    };
+
+    // Resolve username from token
+    let username = verify_listenbrainz_token(token.clone()).await?;
+    if username.is_empty() {
+        return Err("Could not determine ListenBrainz username from token".into());
+    }
+
+    let count = limit.unwrap_or(50);
+    let client = reqwest::Client::new();
+    let url = format!(
+        "{}/cf/recommendation/user/{}/recording?count={}",
+        LB_API_BASE, username, count
+    );
+
+    let resp = client
+        .get(&url)
+        .header("Authorization", format!("Token {}", token))
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    let status = resp.status();
+
+    // 204 = "No recommendations yet" — the user hasn't been processed by CF yet.
+    if status == reqwest::StatusCode::NO_CONTENT {
+        return Ok(vec![]);
+    }
+
+    if !status.is_success() {
+        let text = resp.text().await.unwrap_or_default();
+        return Err(format!("ListenBrainz API error ({}): {}", status, text));
+    }
+
+    let data: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Parse error: {}", e))?;
+
+    let recordings = data["payload"]["mbids"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let mut results = Vec::new();
+
+    for rec in &recordings {
+        let mbid = rec["recording_mbid"].as_str().map(|s| s.to_string());
+        let artist_name = rec["mb_artist_credit_name"]
+            .as_str()
+            .unwrap_or("Unknown Artist")
+            .to_string();
+        let track_name = rec["mb_track_name"]
+            .as_str()
+            .unwrap_or("Unknown Track")
+            .to_string();
+        let release_name = rec["mb_release_name"].as_str().map(|s| s.to_string());
+        let score = rec["score"].as_f64();
+
+        let local_track_id = match_to_local(&conn, &mbid, &artist_name, &track_name);
+
+        results.push(LbRecommendation {
+            recording_mbid: mbid,
+            artist_name,
+            track_name,
+            release_name,
+            score,
+            local_track_id,
+        });
+    }
+
+    Ok(results)
+}
+
+/// Try to find a matching local track by MBID first, then fuzzy artist+title.
+fn match_to_local(
+    conn: &rusqlite::Connection,
+    mbid: &Option<String>,
+    artist: &str,
+    title: &str,
+) -> Option<i64> {
+    // 1. Exact MusicBrainz Recording ID
+    if let Some(ref m) = mbid {
+        if let Ok(id) = conn.query_row(
+            "SELECT id FROM tracks WHERE musicbrainz_recording_id = ?1 LIMIT 1",
+            rusqlite::params![m],
+            |row| row.get::<_, i64>(0),
+        ) {
+            return Some(id);
+        }
+    }
+
+    // 2. Case-insensitive artist + title match
+    if let Ok(id) = conn.query_row(
+        "SELECT id FROM tracks \
+         WHERE lower(artist) = lower(?1) AND lower(title) = lower(?2) \
+         LIMIT 1",
+        rusqlite::params![artist, title],
+        |row| row.get::<_, i64>(0),
+    ) {
+        return Some(id);
+    }
+
+    None
+}

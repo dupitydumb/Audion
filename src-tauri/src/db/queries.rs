@@ -67,6 +67,7 @@ pub struct TrackInsert {
     pub external_id: Option<String>,
     pub content_hash: Option<String>,
     pub local_src: Option<String>,
+    pub musicbrainz_recording_id: Option<String>,
 }
 
 // Track operations
@@ -126,7 +127,8 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
                 external_id = ?11,
                 content_hash = ?12,
                 local_src = ?13,
-                disc_number = ?15
+                disc_number = ?15,
+                musicbrainz_recording_id = ?16
              WHERE id = ?14",
             params![
                 track.title,
@@ -144,6 +146,7 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
                 track.local_src,
                 track_id, // Use existing ID
                 track.disc_number,
+                track.musicbrainz_recording_id,
             ],
         )?;
 
@@ -151,8 +154,8 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
     } else {
         // insert new track
         conn.execute(
-            "INSERT INTO tracks (path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, content_hash, local_src, disc_number)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            "INSERT INTO tracks (path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, content_hash, local_src, disc_number, musicbrainz_recording_id)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 track.path,
                 track.title,
@@ -169,11 +172,30 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
                 track.content_hash,
                 track.local_src,
                 track.disc_number,
+                track.musicbrainz_recording_id,
             ],
         )?;
 
         Ok((conn.last_insert_rowid(), true)) // Return (new_id, was_new = true)
     }
+}
+
+/// Update MusicBrainz Recording ID and/or genre for a track.
+/// Uses COALESCE so that passing `None` preserves the existing DB value.
+pub fn update_track_mb_data(
+    conn: &Connection,
+    track_id: i64,
+    mbid: Option<&str>,
+    genre: Option<&str>,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE tracks
+         SET musicbrainz_recording_id = COALESCE(?1, musicbrainz_recording_id),
+             genre                    = COALESCE(?2, genre)
+         WHERE id = ?3",
+        params![mbid, genre, track_id],
+    )?;
+    Ok(())
 }
 
 /// Delete a track from the database by ID

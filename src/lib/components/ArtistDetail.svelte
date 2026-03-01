@@ -5,6 +5,12 @@
         getAlbumsByArtist,
         getTracksByArtist,
         formatDuration,
+        getArtistMusicBrainzInfo,
+        getSimilarArtistsMb,
+        getArtistDiscographyMb,
+        type MbArtistInfo,
+        type MbSimilarArtist,
+        type MbDiscographyItem,
     } from "$lib/api/tauri";
     import { playTracks } from "$lib/stores/player";
     import { goToArtists, goToAlbumDetail } from "$lib/stores/view";
@@ -24,7 +30,97 @@
     let albums: Album[] = [];
     let tracks: Track[] = [];
     let loading = true;
-    let activeTab: "albums" | "tracks" = "albums";
+    let activeTab: "albums" | "tracks" | "about" = "albums";
+
+    // MusicBrainz artist info
+    let mbInfo: MbArtistInfo | null = null;
+    let mbLoading = false;
+    let mbError: string | null = null;
+    let mbFetched = false;
+
+    // Similar artists from MB
+    let similarArtists: MbSimilarArtist[] = [];
+    let similarLoading = false;
+    let similarFetched = false;
+
+    // MusicBrainz discography
+    let discography: MbDiscographyItem[] = [];
+    let discoLoading = false;
+    let discoFetched = false;
+    let showAllDiscoTypes = false;
+    let failedCovers = new Set<string>();
+
+    const DISCO_PRIMARY = ["album", "single"];
+
+    function discoTypeClass(rt: string): string {
+        const l = rt.toLowerCase();
+        if (l === "album") return "rt-album";
+        if (l === "single") return "rt-single";
+        if (l === "ep") return "rt-ep";
+        if (l === "live") return "rt-live";
+        if (l === "compilation") return "rt-compilation";
+        if (l === "soundtrack") return "rt-soundtrack";
+        if (l === "remix") return "rt-remix";
+        return "rt-other";
+    }
+
+    $: filteredDisco = showAllDiscoTypes
+        ? discography
+        : discography.filter((d) => DISCO_PRIMARY.includes(d.release_type.toLowerCase()));
+    $: hiddenDiscoCount = discography.length - filteredDisco.length;
+
+    function handleCoverError(mbid: string) {
+        failedCovers.add(mbid);
+        failedCovers = failedCovers; // trigger reactivity
+    }
+
+    async function loadMbInfo() {
+        if (mbFetched || mbLoading) return;
+        mbLoading = true;
+        mbError = null;
+        try {
+            mbInfo = await getArtistMusicBrainzInfo(artistName);
+        } catch (e: any) {
+            mbError = e?.toString?.() || "Failed to load artist info";
+        } finally {
+            mbLoading = false;
+            mbFetched = true;
+        }
+    }
+
+    async function loadSimilarArtists() {
+        if (similarFetched || similarLoading) return;
+        similarLoading = true;
+        try {
+            similarArtists = await getSimilarArtistsMb(artistName);
+        } catch (e) {
+            console.warn("[ArtistDetail] Similar artists fetch failed:", e);
+        } finally {
+            similarLoading = false;
+            similarFetched = true;
+        }
+    }
+
+    async function loadDiscography() {
+        if (discoFetched || discoLoading) return;
+        discoLoading = true;
+        try {
+            discography = await getArtistDiscographyMb(artistName);
+        } catch (e) {
+            console.warn("[ArtistDetail] Discography fetch failed:", e);
+        } finally {
+            discoLoading = false;
+            discoFetched = true;
+        }
+    }
+
+    function handleAboutTab() {
+        activeTab = "about";
+        // Fire all three in parallel — each self-guards against double-fetching
+        loadMbInfo();
+        loadSimilarArtists();
+        loadDiscography();
+    }
 
     $: totalDuration = tracks.reduce((sum, t) => sum + (t.duration || 0), 0);
 
@@ -115,6 +211,21 @@
     $: if (artistName) {
         loadArtistData();
         getArtistPicture(artistName);
+        // Reset MB info so it gets re-fetched for the new artist
+        mbInfo = null;
+        mbFetched = false;
+        mbError = null;
+        similarArtists = [];
+        similarFetched = false;
+        discography = [];
+        discoFetched = false;
+        showAllDiscoTypes = false;
+        failedCovers = new Set();
+        if (activeTab === "about") {
+            loadMbInfo();
+            loadSimilarArtists();
+            loadDiscography();
+        }
     }
 
     $: hasDownloadable = hasDownloadableTracks(tracks);
@@ -259,12 +370,19 @@
             >
                 All Songs
             </button>
+            <button
+                class="tab"
+                class:active={activeTab === "about"}
+                on:click={handleAboutTab}
+            >
+                About
+            </button>
         </div>
 
         <div class="artist-content">
             {#if activeTab === "albums"}
                 <AlbumGrid {albums} />
-            {:else}
+            {:else if activeTab === "tracks"}
                 <TrackList
                     {tracks}
                     showAlbum={true}
@@ -274,6 +392,158 @@
                         displayName: artistName,
                     }}
                 />
+            {:else}
+                <!-- About tab: MusicBrainz info -->
+                <div class="about-panel">
+                    {#if mbLoading}
+                        <div class="about-loading">
+                            <div class="spinner"></div>
+                            <span>Looking up on MusicBrainz…</span>
+                        </div>
+                    {:else if mbError}
+                        <p class="about-error">{mbError}</p>
+                    {:else if mbInfo}
+                        {#if mbInfo.genres.length > 0}
+                            <section class="about-section">
+                                <h3 class="about-heading">Genres</h3>
+                                <div class="genre-pills">
+                                    {#each mbInfo.genres as genre}
+                                        <span class="genre-pill">{genre}</span>
+                                    {/each}
+                                </div>
+                            </section>
+                        {/if}
+
+                        {#if mbInfo.bio}
+                            <section class="about-section">
+                                <h3 class="about-heading">About</h3>
+                                <p class="about-bio">{mbInfo.bio}</p>
+                            </section>
+                        {/if}
+
+                        {#if mbInfo.wikipedia_url}
+                            <a
+                                class="wiki-link"
+                                href={mbInfo.wikipedia_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                            >
+                                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15v-4H7l5-8v4h4l-5 8z"/>
+                                </svg>
+                                Read on Wikipedia
+                            </a>
+                        {/if}
+
+                        {#if mbInfo.disambiguation}
+                            <p class="about-disambiguation">({mbInfo.disambiguation})</p>
+                        {/if}
+
+                        <p class="mb-attribution">Data from MusicBrainz</p>
+                    {:else}
+                        <div class="about-empty">
+                            <p>No info found for this artist on MusicBrainz.</p>
+                        </div>
+                    {/if}
+
+                    <!-- ── Similar / Related Artists ── -->
+                    <section class="about-section">
+                        <h3 class="about-heading">Related Artists</h3>
+                        {#if similarLoading}
+                            <div class="about-loading">
+                                <div class="spinner"></div>
+                                <span>Looking up related artists…</span>
+                            </div>
+                        {:else if similarArtists.length > 0}
+                            <div class="similar-list">
+                                {#each similarArtists as a}
+                                    <div class="similar-item" class:in-library={a.in_library}>
+                                        <div class="similar-avatar">
+                                            {a.name.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div class="similar-meta">
+                                            <span class="similar-name">{a.name}</span>
+                                            <span class="similar-rel">{a.relation_type}</span>
+                                        </div>
+                                        {#if a.in_library}
+                                            <span class="in-library-dot" title="In your library">•</span>
+                                        {/if}
+                                    </div>
+                                {/each}
+                            </div>
+                        {:else if similarFetched}
+                            <p class="about-empty-sm">No related artists found.</p>
+                        {/if}
+                    </section>
+
+                    <!-- ── Discography ── -->
+                    <section class="about-section">
+                        <div class="disco-section-header">
+                            <h3 class="about-heading">Discography on MusicBrainz</h3>
+                            {#if discoFetched && (hiddenDiscoCount > 0 || showAllDiscoTypes)}
+                                <button
+                                    class="disco-toggle-btn"
+                                    on:click={() => (showAllDiscoTypes = !showAllDiscoTypes)}
+                                >
+                                    {showAllDiscoTypes ? "Albums & Singles" : `Show all (${discography.length})`}
+                                </button>
+                            {/if}
+                        </div>
+                        {#if discoLoading}
+                            <div class="about-loading">
+                                <div class="spinner"></div>
+                                <span>Loading discography…</span>
+                            </div>
+                        {:else if filteredDisco.length > 0}
+                            <div class="disco-grid">
+                                {#each filteredDisco as item (item.mbid)}
+                                    <div class="disco-card {discoTypeClass(item.release_type)}">
+                                        <div class="disco-cover-wrap">
+                                            {#if !failedCovers.has(item.mbid)}
+                                                <img
+                                                    class="disco-cover"
+                                                    src={item.cover_url}
+                                                    alt={item.title}
+                                                    loading="lazy"
+                                                    on:error={() => handleCoverError(item.mbid)}
+                                                />
+                                            {:else}
+                                                <div class="disco-cover-placeholder {discoTypeClass(item.release_type)}">
+                                                    {#if item.release_type.toLowerCase() === "album"}
+                                                        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/></svg>
+                                                    {:else if item.release_type.toLowerCase() === "single"}
+                                                        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                                                    {:else if item.release_type.toLowerCase() === "ep"}
+                                                        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/></svg>
+                                                    {:else if item.release_type.toLowerCase() === "live"}
+                                                        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M12 3v9.28c-.47-.17-.97-.28-1.5-.28C8.01 12 6 14.01 6 16.5S8.01 21 10.5 21c2.31 0 4.2-1.75 4.45-4H15V6h4V3h-7z"/></svg>
+                                                    {:else if item.release_type.toLowerCase() === "compilation"}
+                                                        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"/></svg>
+                                                    {:else if item.release_type.toLowerCase() === "soundtrack"}
+                                                        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg>
+                                                    {:else}
+                                                        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/></svg>
+                                                    {/if}
+                                                </div>
+                                            {/if}
+                                        </div>
+                                        <div class="disco-card-body">
+                                            <span class="disco-card-title" title={item.title}>{item.title}</span>
+                                            <div class="disco-card-meta">
+                                                <span class="disco-badge {discoTypeClass(item.release_type)}">{item.release_type}</span>
+                                                {#if item.year}
+                                                    <span class="disco-card-year">{item.year}</span>
+                                                {/if}
+                                            </div>
+                                        </div>
+                                    </div>
+                                {/each}
+                            </div>
+                        {:else if discoFetched}
+                            <p class="about-empty-sm">No discography found.</p>
+                        {/if}
+                    </section>
+                </div>
             {/if}
         </div>
     {/if}
@@ -480,6 +750,326 @@
         border-top-color: var(--text-primary);
         border-radius: 50%;
         animation: spin 1s linear infinite;
+    }
+
+    /* ── About / MusicBrainz panel ── */
+    .about-panel {
+        padding: var(--spacing-lg);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-lg);
+    }
+
+    .about-loading {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+        color: var(--text-secondary);
+        padding: var(--spacing-xl) 0;
+    }
+
+    .about-error {
+        color: var(--color-error, #f87171);
+        font-size: 0.875rem;
+    }
+
+    .about-section {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+
+    .about-heading {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        color: var(--text-subdued);
+        margin: 0;
+    }
+
+    .genre-pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .genre-pill {
+        background: rgba(var(--accent-primary-rgb, 30 215 96) / 0.12);
+        border: 1px solid rgba(var(--accent-primary-rgb, 30 215 96) / 0.3);
+        color: var(--accent-primary);
+        padding: 4px 14px;
+        border-radius: var(--radius-full);
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+
+    .about-bio {
+        font-size: 0.9rem;
+        line-height: 1.7;
+        color: var(--text-secondary);
+        margin: 0;
+    }
+
+    .wiki-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-full);
+        padding: 6px 16px;
+        width: fit-content;
+        text-decoration: none;
+        transition: all var(--transition-fast);
+    }
+
+    .wiki-link:hover {
+        color: var(--text-primary);
+        border-color: var(--text-primary);
+    }
+
+    .about-disambiguation {
+        font-size: 0.8rem;
+        color: var(--text-subdued);
+        font-style: italic;
+        margin: 0;
+    }
+
+    .mb-attribution {
+        font-size: 0.65rem;
+        color: var(--text-subdued);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        opacity: 0.5;
+        margin: 0;
+    }
+
+    .about-empty {
+        color: var(--text-secondary);
+        font-size: 0.875rem;
+        padding: var(--spacing-xl) 0;
+    }
+
+    .about-empty-sm {
+        font-size: 0.8rem;
+        color: var(--text-subdued);
+        margin: 0;
+    }
+
+    /* ── Similar artists ── */
+    .similar-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .similar-item {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        padding: 6px 10px;
+        border-radius: var(--radius-sm);
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid transparent;
+        transition: background var(--transition-fast);
+    }
+
+    .similar-item.in-library {
+        border-color: rgba(var(--accent-primary-rgb, 30 215 96) / 0.2);
+        background: rgba(var(--accent-primary-rgb, 30 215 96) / 0.05);
+    }
+
+    .similar-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: var(--radius-full);
+        background: var(--bg-highlight);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.875rem;
+        font-weight: 700;
+        color: var(--text-secondary);
+        flex-shrink: 0;
+    }
+
+    .similar-meta {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+    }
+
+    .similar-name {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .similar-rel {
+        font-size: 0.7rem;
+        color: var(--text-subdued);
+        text-transform: capitalize;
+    }
+
+    .in-library-dot {
+        color: var(--accent-primary);
+        font-size: 1.2rem;
+        line-height: 1;
+        flex-shrink: 0;
+    }
+
+    /* ── Discography ── */
+    .disco-section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: var(--spacing-sm);
+    }
+
+    .disco-section-header .about-heading {
+        margin-bottom: 0;
+    }
+
+    .disco-toggle-btn {
+        background: var(--bg-highlight);
+        color: var(--text-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-full);
+        padding: 4px 14px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+        white-space: nowrap;
+    }
+
+    .disco-toggle-btn:hover {
+        background: var(--accent-subtle);
+        color: var(--accent-primary);
+        border-color: var(--accent-primary);
+    }
+
+    .disco-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: var(--spacing-sm);
+    }
+
+    .disco-card {
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-elevated);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        border: 1px solid var(--border-color);
+        transition: all var(--transition-fast);
+        border-left: 3px solid var(--border-color);
+    }
+
+    .disco-card:hover {
+        background: var(--bg-highlight);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    /* Per-type card left borders */
+    .disco-card.rt-album   { border-left-color: #3b82f6; }
+    .disco-card.rt-single  { border-left-color: #22c55e; }
+    .disco-card.rt-ep      { border-left-color: #a855f7; }
+    .disco-card.rt-live    { border-left-color: #ef4444; }
+    .disco-card.rt-compilation { border-left-color: #f59e0b; }
+    .disco-card.rt-soundtrack  { border-left-color: #ec4899; }
+    .disco-card.rt-remix   { border-left-color: #06b6d4; }
+    .disco-card.rt-other   { border-left-color: #6b7280; }
+
+    .disco-cover-wrap {
+        width: 100%;
+        aspect-ratio: 1;
+        overflow: hidden;
+        background: var(--bg-surface);
+    }
+
+    .disco-cover {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+    }
+
+    .disco-cover-placeholder {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-subdued);
+        background: var(--bg-surface);
+    }
+
+    .disco-cover-placeholder.rt-album   { color: #3b82f6; background: rgba(59,130,246,0.08); }
+    .disco-cover-placeholder.rt-single  { color: #22c55e; background: rgba(34,197,94,0.08); }
+    .disco-cover-placeholder.rt-ep      { color: #a855f7; background: rgba(168,85,247,0.08); }
+    .disco-cover-placeholder.rt-live    { color: #ef4444; background: rgba(239,68,68,0.08); }
+    .disco-cover-placeholder.rt-compilation { color: #f59e0b; background: rgba(245,158,11,0.08); }
+    .disco-cover-placeholder.rt-soundtrack  { color: #ec4899; background: rgba(236,72,153,0.08); }
+    .disco-cover-placeholder.rt-remix   { color: #06b6d4; background: rgba(6,182,212,0.08); }
+    .disco-cover-placeholder.rt-other   { color: #6b7280; background: rgba(107,114,128,0.08); }
+
+    .disco-card-body {
+        padding: 8px 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        min-width: 0;
+    }
+
+    .disco-card-title {
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.3;
+    }
+
+    .disco-card-meta {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .disco-badge {
+        font-size: 0.62rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 1px 6px;
+        border-radius: var(--radius-full);
+        line-height: 1.5;
+    }
+
+    .disco-badge.rt-album   { color: #3b82f6; background: rgba(59,130,246,0.15); }
+    .disco-badge.rt-single  { color: #22c55e; background: rgba(34,197,94,0.15); }
+    .disco-badge.rt-ep      { color: #a855f7; background: rgba(168,85,247,0.15); }
+    .disco-badge.rt-live    { color: #ef4444; background: rgba(239,68,68,0.15); }
+    .disco-badge.rt-compilation { color: #f59e0b; background: rgba(245,158,11,0.15); }
+    .disco-badge.rt-soundtrack  { color: #ec4899; background: rgba(236,72,153,0.15); }
+    .disco-badge.rt-remix   { color: #06b6d4; background: rgba(6,182,212,0.15); }
+    .disco-badge.rt-other   { color: #6b7280; background: rgba(107,114,128,0.15); }
+
+    .disco-card-year {
+        font-size: 0.68rem;
+        color: var(--text-subdued);
+        font-weight: 500;
     }
 
     /* ── Mobile ── */

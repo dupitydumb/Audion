@@ -131,6 +131,11 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
                 Some(duration),
             ));
 
+            // Extract MusicBrainz Recording ID for ListenBrainz matching
+            let musicbrainz_recording_id = tag
+                .get_string(&ItemKey::MusicBrainzTrackId)
+                .map(|s| s.to_string());
+
             Some(TrackInsert {
                 path: path.to_string_lossy().to_string(),
                 title,
@@ -148,6 +153,7 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
                 external_id: None,
                 content_hash,
                 local_src: None,
+                musicbrainz_recording_id,
             })
         }
         None => {
@@ -186,6 +192,7 @@ fn create_fallback_metadata(path: &Path) -> TrackInsert {
         external_id: None,
         content_hash: None, // Will be set later with duration
         local_src: None,
+        musicbrainz_recording_id: None,
     }
 }
 
@@ -254,6 +261,7 @@ fn extract_flac_metadata_fallback(path: &Path, _duration_hint: Option<i32>) -> O
                 external_id: None,
                 content_hash,
                 local_src: None,
+                musicbrainz_recording_id: None,
             })
         }
         Err(e) => {

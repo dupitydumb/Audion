@@ -753,3 +753,218 @@ export async function importAudioFile(filePath: string, overwrite: boolean): Pro
         return e?.toString?.() || 'error';
     }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ListenBrainz commands
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Store or clear the ListenBrainz user token (written to app-data file). */
+export async function setListenbrainzToken(token: string | null): Promise<void> {
+    return await invoke('set_listenbrainz_token', { token });
+}
+
+/** Returns `true` if a token file currently exists. */
+export async function getListenbrainzTokenSet(): Promise<boolean> {
+    return await invoke('get_listenbrainz_token_set');
+}
+
+/** Remove the stored token. */
+export async function deleteListenbrainzToken(): Promise<void> {
+    return await invoke('delete_listenbrainz_token');
+}
+
+/**
+ * Validate a token with the ListenBrainz API.
+ * Resolves with the username on success, rejects with an error message otherwise.
+ */
+export async function verifyListenbrainzToken(token: string): Promise<string> {
+    return await invoke('verify_listenbrainz_token', { token });
+}
+
+/**
+ * Submit a single listen or a "playing_now" notification.
+ * Fire-and-forget safe — always resolves; errors are logged server-side.
+ */
+export async function submitListenbrainzListen(
+    artist: string,
+    title: string,
+    album?: string | null,
+    durationSecs?: number | null,
+    nowPlaying = false,
+): Promise<void> {
+    return await invoke('submit_listenbrainz_listen', {
+        artist,
+        title,
+        album: album ?? null,
+        durationSecs: durationSecs ?? null,
+        nowPlaying,
+    });
+}
+
+export interface LbRecommendation {
+    recording_mbid: string | null;
+    artist_name: string;
+    track_name: string;
+    release_name: string | null;
+    score: number | null;
+    /** Local track ID if a match was found in the library, otherwise null. */
+    local_track_id: number | null;
+}
+
+/** Fetch personalised recording recommendations from ListenBrainz CF. */
+export async function fetchListenbrainzRecommendations(limit = 50): Promise<LbRecommendation[]> {
+    return await invoke('fetch_listenbrainz_recommendations', { limit });
+}
+
+// =============================================================================
+// MUSICBRAINZ
+// =============================================================================
+
+/** Rich artist metadata returned by the MusicBrainz lookup. */
+export interface MbArtistInfo {
+    mbid: string | null;
+    name: string;
+    /** Extra text disambiguating artists with the same name, e.g. "UK band". */
+    disambiguation: string | null;
+    /** Up to 5 genre names sorted by community vote count. */
+    genres: string[];
+    /** English Wikipedia URL if available. */
+    wikipedia_url: string | null;
+    /** First paragraph bio from the Wikipedia article. */
+    bio: string | null;
+}
+
+/**
+ * Fetch MusicBrainz metadata for a single artist by name.
+ * Makes 2 MB requests + optional Wikipedia fetch (rate-limited server-side).
+ */
+export async function getArtistMusicBrainzInfo(artistName: string): Promise<MbArtistInfo> {
+    return await invoke('get_artist_musicbrainz_info', { artistName });
+}
+
+/**
+ * Aggregate genre data from the user's most-played artists via MusicBrainz.
+ * Returns up to 5 `[genre, count]` pairs sorted by frequency.
+ * `artistLimit` controls how many top artists to query (default 5, max 10).
+ */
+export async function getTopGenresFromMb(artistLimit = 5): Promise<[string, number][]> {
+    return await invoke('get_top_genres_from_mb', { artistLimit });
+}
+
+/** Result of enriching a local track with MusicBrainz recording data. */
+export interface MbTrackEnrichment {
+    mbid: string | null;
+    genre: string | null;
+    /** ISRC codes (International Standard Recording Codes) for this recording. */
+    isrcs: string[];
+}
+
+/** Release metadata from MusicBrainz (label, year, country, release type). */
+export interface MbReleaseInfo {
+    mbid: string | null;
+    year: string | null;
+    country: string | null;
+    label: string | null;
+    /** e.g. "Album", "EP", "Single", "Live", "Compilation" */
+    release_type: string | null;
+}
+
+/** An artist related to the queried artist on MusicBrainz. */
+export interface MbSimilarArtist {
+    name: string;
+    /** MB relation type e.g. "member of band", "collaboration". */
+    relation_type: string;
+    /** True when this artist has at least one track in the local library. */
+    in_library: boolean;
+}
+
+/** A release group from an artist's MusicBrainz discography. */
+export interface MbDiscographyItem {
+    /** MusicBrainz Release Group ID (UUID). */
+    mbid: string;
+    title: string;
+    year: string | null;
+    /** e.g. "Album", "EP", "Single", "Live" */
+    release_type: string;
+    /** Cover Art Archive URL (250px front cover). May 404 if no art exists. */
+    cover_url: string;
+}
+
+/**
+ * Enrich a local track with MusicBrainz recording data.
+ * Writes MBID + genre back to the local DB and returns ISRC codes.
+ */
+export async function enrichTrackMetadataMb(
+    trackId: number,
+    artist: string,
+    title: string,
+): Promise<MbTrackEnrichment> {
+    return await invoke('enrich_track_metadata_mb', { trackId, artist, title });
+}
+
+/**
+ * Fetch release info (label, year, country, type) for an album from MusicBrainz.
+ */
+export async function getReleaseMbInfo(
+    albumName: string,
+    artistName: string,
+): Promise<MbReleaseInfo> {
+    return await invoke('get_release_mb_info', { albumName, artistName });
+}
+
+/**
+ * Find artists related to `artistName` on MusicBrainz.
+ * Each result includes whether the artist is present in the local library.
+ */
+export async function getSimilarArtistsMb(artistName: string): Promise<MbSimilarArtist[]> {
+    return await invoke('get_similar_artists_mb', { artistName });
+}
+
+/**
+ * Fetch the full MusicBrainz discography (release groups) for an artist,
+ * sorted newest-first.
+ */
+export async function getArtistDiscographyMb(artistName: string): Promise<MbDiscographyItem[]> {
+    return await invoke('get_artist_discography_mb', { artistName });
+}
+
+// ── MusicBrainz Discovery Search ─────────────────────────────────────────────
+
+/** A single artist result from a MusicBrainz discovery search. */
+export interface MbDiscoverArtist {
+    mbid: string;
+    name: string;
+    disambiguation: string | null;
+    artist_type: string | null;
+    country: string | null;
+    genres: string[];
+    active_years: string | null;
+}
+
+/** A single release-group result from a MusicBrainz discovery search. */
+export interface MbDiscoverRelease {
+    mbid: string;
+    title: string;
+    artist_name: string;
+    artist_mbid: string | null;
+    release_type: string;
+    year: string | null;
+    country: string | null;
+    genres: string[];
+}
+
+/**
+ * Search MusicBrainz for artists matching a free-text query.
+ * Returns up to `limit` results (default 15, max 25).
+ */
+export async function searchArtistsMb(query: string, limit?: number): Promise<MbDiscoverArtist[]> {
+    return await invoke('search_artists_mb', { query, limit });
+}
+
+/**
+ * Search MusicBrainz for release groups (albums / EPs / singles)
+ * matching a free-text query. Returns up to `limit` results.
+ */
+export async function searchReleasesMb(query: string, limit?: number): Promise<MbDiscoverRelease[]> {
+    return await invoke('search_releases_mb', { query, limit });
+}

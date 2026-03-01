@@ -116,6 +116,20 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
     let _ = conn.execute("ALTER TABLE tracks ADD COLUMN track_cover_path TEXT", []);
     let _ = conn.execute("ALTER TABLE albums ADD COLUMN art_path TEXT", []);
 
+    // Add MusicBrainz Recording ID for ListenBrainz recommendation matching
+    let _ = conn.execute("ALTER TABLE tracks ADD COLUMN musicbrainz_recording_id TEXT", []);
+    let _ = conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tracks_mbid ON tracks(musicbrainz_recording_id)",
+        [],
+    );
+
+    // MusicBrainz genre enrichment
+    let _ = conn.execute("ALTER TABLE tracks ADD COLUMN genre TEXT", []);
+    let _ = conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tracks_genre ON tracks(genre)",
+        [],
+    );
+
     // Create index for content_hash after migration ensures column exists
     let _ = conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_tracks_content_hash ON tracks(content_hash)",
