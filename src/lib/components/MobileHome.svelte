@@ -272,6 +272,33 @@
         </div>
     </header>
 
+    <!-- Liked Songs Banner -->
+    <div class="liked-songs-banner-container">
+        <button class="liked-songs-banner" on:click={goToLikedSongs}>
+            <div class="liked-banner-content">
+                <div class="liked-banner-icon">
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        width="24"
+                        height="24"
+                    >
+                        <path
+                            d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+                        />
+                    </svg>
+                </div>
+                <div class="liked-banner-text">
+                    <span class="liked-banner-title">Liked Songs</span>
+                    <span class="liked-banner-subtitle"
+                        >{$likedTrackIds.size}
+                        {$likedTrackIds.size === 1 ? "song" : "songs"}</span
+                    >
+                </div>
+            </div>
+        </button>
+    </div>
+
     <!-- Top Track Hero Section -->
     {#if $topTracks.length > 0}
         <section class="hero-section">

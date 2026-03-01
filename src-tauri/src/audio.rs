@@ -597,10 +597,6 @@ pub fn audio_set_eq(
 }
 
 #[tauri::command]
-pub fn native_audio_available(state: tauri::State<'_, PlaybackStateSync>) -> bool {
-    state
-        .shared_state
-        .lock()
-        .map(|s| s.is_initialized)
-        .unwrap_or(false)
+pub fn native_audio_available(_state: tauri::State<'_, PlaybackStateSync>) -> bool {
+    true
 }

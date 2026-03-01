@@ -2,6 +2,7 @@
 import { writable, derived, get } from 'svelte/store';
 import type { Track } from '$lib/api/tauri';
 import { getAudioSrc, getAlbumArtSrc, getTrackCoverSrc, convertFileSrc } from '$lib/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 import { addToast } from '$lib/stores/toast';
 import { EventEmitter, type PluginEvents } from '$lib/plugins/event-emitter';
 import { tracks as libraryTracks, getFullTrack, getAlbumCoverFromTracks } from '$lib/stores/library';
@@ -412,6 +413,8 @@ function startStatePoller(): void {
                 currentTime.set(state.position);
                 if (state.duration > 0) {
                     duration.set(state.duration);
+                } else {
+                    console.warn('[Poller] Native backend reported 0 duration for track at:', state.position);
                 }
 
                 // Check if track finished
@@ -453,8 +456,13 @@ function startStatePoller(): void {
                     duration: dur
                 });
             }
+
+            // Sync Media Session position if something is playing
+            if (get(isPlaying)) {
+                updateMediaSessionPosition();
+            }
         } catch (e) {
-            // Ignore polling errors (backend may still be initializing)
+            console.error('[Player] Poller error:', e);
         }
     }, POLL_INTERVAL_MS);
 }
@@ -541,24 +549,44 @@ function initMediaSessionHandlers(): void {
     console.log('[Player] MediaSession action handlers registered');
 }
 
-function updateMediaSessionMetadata(track: Track): void {
+async function updateMediaSessionMetadata(track: Track): Promise<void> {
     if (!('mediaSession' in navigator)) return;
 
     // Initialize handlers on first use (needs user gesture context)
     initMediaSessionHandlers();
 
+    console.log('[MediaSession] Updating metadata for:', track.title);
+
     // Resolve artwork URL
     const artworkSources: MediaImage[] = [];
-    const coverSrc = getTrackCoverSrc(track);
 
-    // Also try album cover as fallback
-    const albumCover = track.album_id ? getAlbumCoverFromTracks(track.album_id) : null;
-    const artUrl = coverSrc || albumCover;
+    // Specifically for MediaSession, we want to avoid asset:// URLs if possible
+    // because Android's system notification usually can't resolve them.
+    // AND we want to avoid large Base64 strings to avoid Binder limit crashes.
+    let artUrl: string | null = null;
+
+    if (track.track_cover && track.track_cover.startsWith('data:')) {
+        try {
+            console.log('[MediaSession] Saving Base64 artwork to temp file...');
+            const tempPath = await invoke<string>('save_notification_image', { dataUri: track.track_cover });
+            artUrl = convertFileSrc(tempPath);
+            console.log('[MediaSession] Artwork saved to:', artUrl);
+        } catch (e) {
+            console.error('[MediaSession] Failed to save notification image:', e);
+            // Fallback to Base64 if saving fails (might still crash if too big)
+            artUrl = track.track_cover;
+        }
+    } else {
+        artUrl = getTrackCoverSrc(track);
+    }
+
+    // Also try album cover as fallback if still no art
+    if (!artUrl && track.album_id) {
+        artUrl = getAlbumCoverFromTracks(track.album_id);
+    }
 
     if (artUrl) {
-        // MediaSession accepts data: URIs, asset:// URIs, and http(s) URLs.
-        // data: URIs and http(s) work directly. Tauri asset:// protocol URLs
-        // are served by the WebView and work within its context.
+        console.log('[MediaSession] Setting artwork src:', artUrl.substring(0, 50) + '...');
         artworkSources.push(
             { src: artUrl, sizes: '512x512', type: 'image/jpeg' }
         );
@@ -571,6 +599,7 @@ function updateMediaSessionMetadata(track: Track): void {
             album: track.album || '',
             artwork: artworkSources,
         });
+        console.log('[MediaSession] Metadata set successfully');
     } catch (err) {
         console.warn('[Player] Failed to set MediaSession metadata:', err);
     }
@@ -588,24 +617,29 @@ function updateMediaSessionPlaybackState(state: 'playing' | 'paused' | 'none'): 
 function updateMediaSessionPosition(): void {
     if (!('mediaSession' in navigator)) return;
 
-    let dur = 0;
-    let pos = 0;
+    let dur = get(duration);
+    let pos = get(currentTime);
     let rate = 1;
 
-    dur = get(duration);
-    pos = get(currentTime);
-    rate = 1;
-
-    if (!dur || !isFinite(dur)) return;
+    // Basic validity check
+    if (!dur || !isFinite(dur) || isNaN(dur)) {
+        // Only log if it's 0 after playback started (might be intentional for a moment)
+        return;
+    }
 
     try {
+        // Ensure position is within bounds [0, duration]
+        const safePos = Math.max(0, Math.min(pos, dur));
+
+        console.log(`[MediaSession] Updating position: ${safePos.toFixed(2)} / ${dur.toFixed(2)} (rate: ${rate})`);
+
         navigator.mediaSession.setPositionState({
             duration: dur,
             playbackRate: rate,
-            position: Math.min(pos, dur),
+            position: safePos,
         });
     } catch (err) {
-        // Ignore — setPositionState not supported everywhere
+        console.error('[MediaSession] setPositionState failed:', err);
     }
 }
 
@@ -634,6 +668,15 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
 
     const trackForPlugins = fullTrack || track;
     pluginEvents.emit('trackChange', { track: trackForPlugins, previousTrack: previousTrackObj });
+
+    // Update Media Session early so the UI reflects the change immediately
+    // even if the audio engine takes a moment to initialize or resolve streams.
+    console.log('[Player] Preparing MediaSession metadata for:', trackForPlugins.title);
+    await updateMediaSessionMetadata(trackForPlugins);
+    if (sessionId !== currentSessionId) {
+        console.log('[Player] Session changed during metadata update, aborting playback');
+        return;
+    }
 
     try {
         let audioPath = track.local_src || track.path;
@@ -746,9 +789,9 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
         duration.set(track.duration || 0);
         isPlaying.set(true);
 
-        // Update Media Session
-        updateMediaSessionMetadata(track);
+        // Update Media Session state and position (metadata was updated earlier)
         updateMediaSessionPlaybackState('playing');
+        updateMediaSessionPosition();
 
     } catch (err) {
         console.error('[Player] Playback failed:', err);
@@ -874,6 +917,7 @@ export async function togglePlay(): Promise<void> {
                 isPlaying.set(true);
                 updateMediaSessionPlaybackState('playing');
             }
+            updateMediaSessionPosition();
         }
     } catch (err) {
         console.error('[Player] Toggle failed:', err);
@@ -1055,6 +1099,7 @@ export async function seek(position: number): Promise<void> {
         } else if (activeBackend === 'native') {
             await nativeAudioSeek(position);
         }
+        updateMediaSessionPosition();
     } catch (err) {
         console.error('[Player] Seek failed:', err);
     }

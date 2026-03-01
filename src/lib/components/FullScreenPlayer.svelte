@@ -25,23 +25,9 @@
   import { isMobile } from "$lib/stores/mobile";
   import { lyricsVisible, toggleLyrics } from "$lib/stores/lyrics";
   import { goToArtistDetail } from "$lib/stores/view";
-
-  // Seek to a specific lyric line time
-  function handleLineClick(lineTime: number) {
-    const dur = $duration;
-    if (dur && dur > 0) {
-      const position = lineTime / dur;
-      seek(Math.max(0, Math.min(1, position)));
-    }
-  }
   import { lyricsData, activeLine } from "$lib/stores/lyrics";
-  import {
-    getAlbumArtSrc,
-    getAlbum,
-    getAlbumCoverSrc,
-    getTrackCoverSrc,
-    formatDuration,
-  } from "$lib/api/tauri";
+  // Only keep the used imports
+  import { getTrackCoverSrc, formatDuration } from "$lib/api/tauri";
   import { onMount, tick } from "svelte";
 
   let albumArt: string | null = null;
@@ -52,7 +38,8 @@
   const wordSyncState = derived(
     [lyricsData, currentTime, activeLine],
     ([$lyrics, $time, $activeLineIdx]) => {
-      if (!$lyrics || $activeLineIdx < 0) {
+      // Guard against missing lyrics data
+      if (!$lyrics?.lines || $activeLineIdx < 0) {
         return { activeWordIdx: -1, progress: 0 };
       }
 
@@ -113,14 +100,8 @@
 
   // Load album art
   $: if ($currentTrack) {
-    // Use the helper function that handles all cover sources
     const trackCover = getTrackCoverSrc($currentTrack);
-
-    if (trackCover) {
-      albumArt = trackCover;
-    } else {
-      albumArt = null;
-    }
+    albumArt = trackCover || null;
   } else {
     albumArt = null;
   }
@@ -151,7 +132,6 @@
     ) as HTMLElement;
     if (!activeEl) return;
 
-    // Cancel any ongoing scroll animation
     if (scrollAnimationId) {
       cancelAnimationFrame(scrollAnimationId);
     }
@@ -166,18 +146,18 @@
 
     const startScroll = lyricsContainer.scrollTop;
     const distance = targetScroll - startScroll;
-    const duration = 600; // ms — smooth but not sluggish
+    const duration = 600;
     let startTime: number | null = null;
 
     function step(timestamp: number) {
       if (!startTime) startTime = timestamp;
       const elapsed = timestamp - startTime;
-      const progress = Math.min(elapsed / duration, 1);
-      const eased = easeOutExpo(progress);
+      const prog = Math.min(elapsed / duration, 1);
+      const eased = easeOutExpo(prog);
 
       lyricsContainer.scrollTop = startScroll + distance * eased;
 
-      if (progress < 1) {
+      if (prog < 1) {
         scrollAnimationId = requestAnimationFrame(step);
       } else {
         scrollAnimationId = null;
@@ -187,49 +167,38 @@
     scrollAnimationId = requestAnimationFrame(step);
   }
 
-  function handleSeekStart(e: MouseEvent) {
+  // --- Unified pointer-based seeking ---
+  function handleSeekPointerDown(e: PointerEvent) {
+    if (e.button !== 0) return; // primary button only
     isSeeking = true;
-    handleSeek(e);
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    handleSeekPointerMove(e);
   }
 
-  function handleSeek(e: MouseEvent) {
+  function handleSeekPointerMove(e: PointerEvent) {
+    if (!isSeeking) return;
     const bar = e.currentTarget as HTMLDivElement;
     const rect = bar.getBoundingClientRect();
     const pos = (e.clientX - rect.left) / rect.width;
     seek(Math.max(0, Math.min(1, pos)));
   }
 
-  onMount(() => {
-    const onMouseMove = (e: MouseEvent) => {
-      if (isSeeking) {
-        const bar = document.querySelector(
-          ".fullscreen-player .progress-bar",
-        ) as HTMLDivElement;
-        if (bar) {
-          const rect = bar.getBoundingClientRect();
-          const pos = (e.clientX - rect.left) / rect.width;
-          seek(Math.max(0, Math.min(1, pos)));
-        }
-      }
-    };
-
-    const onMouseUp = () => {
+  function handleSeekPointerUp(e: PointerEvent) {
+    if (isSeeking) {
       isSeeking = false;
-    };
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    }
+  }
 
-    window.addEventListener("mousemove", onMouseMove);
-    window.addEventListener("mouseup", onMouseUp);
-
-    return () => {
-      window.removeEventListener("mousemove", onMouseMove);
-      window.removeEventListener("mouseup", onMouseUp);
-    };
+  onMount(() => {
+    // No global listeners needed; pointer events are attached to the element.
+    return () => {};
   });
 </script>
 
 {#if $isFullScreen}
   <div class="fullscreen-player" transition:fade={{ duration: 300 }}>
-    <!-- Apple Music-style animated blurred background -->
+    <!-- Animated blurred background (simplified on mobile) -->
     <div class="bg-canvas">
       <div
         class="bg-layer bg-layer-1"
@@ -247,7 +216,7 @@
     <div class="backdrop-layer"></div>
 
     {#if $isMobile}
-      <!-- Mobile: Spotify-style header with chevron down -->
+      <!-- Mobile header -->
       <div class="mobile-header">
         <button
           class="chevron-btn"
@@ -268,7 +237,7 @@
         </button>
       </div>
     {:else}
-      <!-- Desktop: corner close button -->
+      <!-- Desktop close button -->
       <button
         class="close-btn"
         on:click={toggleFullScreen}
@@ -311,25 +280,18 @@
           <h1 class="track-title">
             {$currentTrack?.title || "Unknown Title"}
           </h1>
-          <span
+          <!-- Artist as a proper button (styled like text) -->
+          <button
             class="track-artist"
-            role="button"
-            tabindex="0"
             on:click={() => {
               if ($currentTrack?.artist) {
                 toggleFullScreen();
                 goToArtistDetail($currentTrack.artist);
               }
             }}
-            on:keydown={(e) => {
-              if (e.key === "Enter" && $currentTrack?.artist) {
-                toggleFullScreen();
-                goToArtistDetail($currentTrack.artist);
-              }
-            }}
           >
             {$currentTrack?.artist || "Unknown Artist"}
-          </span>
+          </button>
         </div>
 
         <div class="player-controls">
@@ -337,25 +299,10 @@
             <span class="time">{formatDuration($currentTime)}</span>
             <div
               class="progress-bar"
-              on:mousedown={handleSeekStart}
-              on:touchstart|preventDefault={(e) => {
-                isSeeking = true;
-                const touch = e.touches[0];
-                const bar = e.currentTarget;
-                const rect = bar.getBoundingClientRect();
-                const pos = (touch.clientX - rect.left) / rect.width;
-                seek(Math.max(0, Math.min(1, pos)));
-              }}
-              on:touchmove|preventDefault={(e) => {
-                if (isSeeking) {
-                  const touch = e.touches[0];
-                  const bar = e.currentTarget;
-                  const rect = bar.getBoundingClientRect();
-                  const pos = (touch.clientX - rect.left) / rect.width;
-                  seek(Math.max(0, Math.min(1, pos)));
-                }
-              }}
-              on:touchend={() => (isSeeking = false)}
+              on:pointerdown={handleSeekPointerDown}
+              on:pointermove={handleSeekPointerMove}
+              on:pointerup={handleSeekPointerUp}
+              on:pointercancel={handleSeekPointerUp}
               role="slider"
               aria-label="Seek"
               aria-valuenow={Math.round($progress * 100)}
@@ -465,28 +412,6 @@
               {/if}
             </button>
           </div>
-
-          <!-- Secondary row: Lyrics toggle -->
-          <div class="secondary-controls">
-            <button
-              class="secondary-btn"
-              class:active={$lyricsVisible}
-              on:click={toggleLyrics}
-              aria-label="Lyrics"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                width="20"
-                height="20"
-              >
-                <path
-                  d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6zm-2 16c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"
-                />
-              </svg>
-              <span>Lyrics</span>
-            </button>
-          </div>
         </div>
       </div>
 
@@ -508,9 +433,12 @@
                 class:passed={i < $activeLine}
                 class:word-sync={hasWordSync && isActiveLine}
                 style="--line-distance: {clampedDist};"
-                on:click={() => handleLineClick(line.time)}
+                on:click={() => {
+                  const dur = $duration;
+                  if (dur && dur > 0) seek(line.time / dur);
+                }}
                 on:keydown={(e) =>
-                  e.key === "Enter" && handleLineClick(line.time)}
+                  e.key === "Enter" && seek(line.time / $duration)}
                 role="button"
                 tabindex="0"
               >
@@ -549,6 +477,7 @@
 {/if}
 
 <style>
+  /* ========== Original styles (kept as is) ========== */
   .fullscreen-player {
     position: fixed;
     top: 0;
@@ -766,11 +695,22 @@
     text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
   }
 
+  /* Artist button styled like text */
   .track-artist {
     font-size: clamp(1rem, 2vw, 1.25rem);
     color: rgba(255, 255, 255, 0.75);
     font-weight: 500;
     text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .track-artist:hover {
+    text-decoration: underline;
   }
 
   .player-controls {
@@ -782,7 +722,6 @@
     flex-shrink: 0;
   }
 
-  /* progress-bar*/
   .progress-bar-container {
     display: flex;
     align-items: center;
@@ -797,6 +736,7 @@
     position: relative;
     display: flex;
     align-items: center;
+    touch-action: none; /* added to prevent page scroll on touch drag */
   }
 
   .progress-track {
@@ -859,7 +799,6 @@
     color: #fff;
   }
 
-  /*play-btn */
   .play-btn.large {
     width: 64px;
     height: 64px;
@@ -930,7 +869,6 @@
     padding: 16px 0;
     white-space: pre-wrap;
     overflow-wrap: break-word;
-    /* Apple Music spring-like curve: slight overshoot */
     transition:
       transform 0.55s cubic-bezier(0.175, 0.885, 0.32, 1.275),
       color 0.45s cubic-bezier(0.25, 0.1, 0.25, 1),
@@ -950,18 +888,14 @@
   /* Mobile: performance optimizations for lyric lines */
   @media (max-width: 768px) {
     .lyric-line {
-      /* Containment isolates repaint regions */
       contain: layout style paint;
-      /* Skip rendering off-screen lines */
       content-visibility: auto;
       contain-intrinsic-size: auto 60px;
-      /* Remove filter from transition - use instant blur class changes */
       transition:
         transform 0.4s cubic-bezier(0.25, 0.1, 0.25, 1),
         opacity 0.35s ease;
     }
 
-    /* Force visible for active and nearby lines */
     .lyric-line.active,
     .lyric-line.near,
     .lyric-line.mid {
@@ -975,7 +909,6 @@
     opacity: 1;
   }
 
-  /* Distance-based depth — progressive blur & fade */
   .lyric-line.near {
     color: rgba(255, 255, 255, 0.4);
     filter: blur(0.5px);
@@ -997,7 +930,6 @@
     transform: scale(0.93);
   }
 
-  /* Active line: scale up, glow, no blur */
   .lyric-line.active {
     color: #fff;
     filter: blur(0px);
@@ -1009,33 +941,26 @@
       0 2px 10px rgba(0, 0, 0, 0.4);
   }
 
-  /* Mobile: fixed blur values instead of calc() for better caching */
   @media (max-width: 768px) {
     .lyric-line.near {
       filter: blur(0.5px);
     }
-
     .lyric-line.mid {
       filter: blur(1.5px);
     }
-
     .lyric-line.far {
       filter: blur(3px);
       opacity: 0.35;
     }
-
     .lyric-line.active {
-      /* Simplified text-shadow: single layer instead of 3 */
       text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
     }
-
     .lyric-line.passed.far {
       filter: blur(3px);
       opacity: 0.25;
     }
   }
 
-  /* Passed lines mirror future but slightly more faded */
   .lyric-line.passed.near {
     color: rgba(255, 255, 255, 0.35);
     opacity: 0.75;
@@ -1057,7 +982,6 @@
     transform: scale(0.92);
   }
 
-  /* Word highlighting - Apple Music style */
   .lyric-word {
     --word-progress: 0%;
     --highlight-color: #fff;
@@ -1071,21 +995,16 @@
     transition: text-shadow 0.2s ease;
   }
 
-  /* Mobile: containment and GPU optimization for words */
   @media (max-width: 768px) {
     .lyric-word {
       contain: layout style;
-      /* Remove text-shadow transition on mobile */
       transition: none;
     }
-
     .lyric-line.word-sync .lyric-word.highlighted {
-      /* Simplified: no text-shadow glow on mobile */
       text-shadow: none;
     }
   }
 
-  /* Active word being filled — soft gradient edge (8% feather) */
   .lyric-line.word-sync .lyric-word.highlighted {
     background-image: linear-gradient(
       to right,
@@ -1113,7 +1032,6 @@
     );
   }
 
-  /* Past lines - all words fully highlighted */
   .lyric-line.passed .lyric-word {
     background-image: linear-gradient(
       to right,
@@ -1122,7 +1040,6 @@
     );
   }
 
-  /* Future lines - all words dimmed */
   .lyric-line:not(.active):not(.passed) .lyric-word {
     background-image: linear-gradient(
       to right,
@@ -1141,7 +1058,6 @@
     text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
   }
 
-  /* ── Shuffle / Repeat buttons ── */
   .icon-btn.shuffle-repeat {
     width: 36px;
     height: 36px;
@@ -1164,7 +1080,6 @@
     right: 2px;
   }
 
-  /* ── Secondary controls row (Lyrics, etc.) ── */
   .secondary-controls {
     display: flex;
     align-items: center;
@@ -1197,7 +1112,6 @@
     color: rgba(255, 255, 255, 0.8);
   }
 
-  /* ── Mobile header (chevron + Now Playing) ── */
   .mobile-header {
     display: flex;
     align-items: center;
@@ -1236,67 +1150,138 @@
     text-transform: uppercase;
   }
 
-  /* Track artist is tappable */
-  .track-artist {
-    cursor: pointer;
-  }
+  /* ========== NEW / MODIFIED STYLES ========== */
 
-  .track-artist:hover {
-    text-decoration: underline;
-  }
-
-  /* ── Mobile ── */
+  /* Mobile touch target improvements */
   @media (max-width: 768px) {
-    .fullscreen-player {
-      /* Ensure it covers safe areas */
-      padding-bottom: env(safe-area-inset-bottom);
+    .chevron-btn,
+    .secondary-btn,
+    .icon-btn.large,
+    .play-btn.large {
+      min-height: 44px;
+      min-width: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
+    .secondary-btn {
+      padding: 10px 16px;
+    }
+
+    /* Disable background drift animations on mobile for performance */
+    .bg-layer-1,
+    .bg-layer-2,
+    .bg-layer-3 {
+      animation: none !important;
+      transform: none !important;
+    }
+
+    /* Add a static gradient overlay for visual depth */
+    .bg-canvas::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(
+        circle at 30% 30%,
+        rgba(0, 0, 0, 0.2),
+        rgba(0, 0, 0, 0.8)
+      );
+      pointer-events: none;
+      z-index: -1;
+    }
+
+    /* Keep only one blur layer, hide the others */
+    .bg-layer-1 {
+      filter: blur(60px) brightness(0.5);
+      opacity: 0.6;
+    }
+    .bg-layer-2,
+    .bg-layer-3 {
+      display: none;
+    }
+  }
+
+  /* Mobile Layout overrides for structure */
+  @media (max-width: 768px) {
     .player-content {
-      grid-template-columns: 1fr;
-      padding: 0 var(--spacing-lg);
-      padding-top: 0;
-      gap: var(--spacing-md);
-      overflow-y: auto;
-      align-items: start;
+      display: flex;
+      flex-direction: column;
+      padding: var(--spacing-md) var(--spacing-xl) 48px;
+      gap: var(--spacing-xl);
+      height: calc(100vh - 80px - env(safe-area-inset-top, 0px));
+      max-height: none;
+      justify-content: flex-end; /* Push content to bottom */
     }
 
     .left-panel {
-      align-items: center;
-      padding-left: 0;
-      height: auto;
-      max-height: none;
+      display: flex;
+      flex-direction: column;
       gap: var(--spacing-md);
+      max-height: none;
+      padding-left: 0;
+      align-items: center;
+      width: 100%;
+      flex: 1; /* take up remaining space */
+      justify-content: space-around; /* Better distribution */
+      overflow: hidden; /* Contain inner elements */
     }
 
     .art-container {
-      max-width: min(320px, 75vw);
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      width: 100%;
+      max-width: 240px;
+      /* Apple Music style: large square art that scales with available space */
+      aspect-ratio: 1 / 1;
+      height: auto;
+      max-height: 35vh; /* Do not let cover art completely take over screen height */
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: var(--shadow-xl);
+      flex-shrink: 1; /* allow art to shrink if needed */
+    }
+
+    .art-container img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: var(--radius-lg);
     }
 
     .track-info {
+      align-items: center; /* Apple Music left-aligns text, but USER wants it in the middle */
       text-align: center;
-      align-items: center;
       width: 100%;
+      max-width: 400px;
+      margin: 0 auto;
     }
 
     .track-title {
-      font-size: 1.35rem;
-      font-weight: 700;
+      font-size: 1.5rem;
     }
 
     .track-artist {
-      font-size: 0.95rem;
-      color: rgba(255, 255, 255, 0.7);
+      font-size: 1.1rem;
+      text-align: center;
     }
 
     .player-controls {
-      max-width: 100%;
+      max-width: 400px;
+      width: 100%;
       align-items: center;
+      margin: 0 auto;
     }
 
     .progress-bar-container {
       width: 100%;
+      margin: 0 auto var(--spacing-md);
+    }
+
+    .buttons {
+      gap: var(--spacing-md);
+      width: 100%;
+      justify-content: space-between;
     }
 
     .progress-track {
@@ -1304,7 +1289,7 @@
     }
 
     .progress-fill {
-      background-color: #1db954;
+      background-color: #fff; /* Apple Music uses white/black theme color */
     }
 
     .progress-thumb {
@@ -1313,46 +1298,62 @@
       height: 12px;
     }
 
-    .buttons {
-      gap: var(--spacing-md);
-      width: 100%;
-      justify-content: space-between;
-      max-width: 320px;
-    }
-
     .play-btn.large {
-      width: 60px;
-      height: 60px;
-      background-color: #fff;
+      width: 64px;
+      height: 64px;
       color: #000;
     }
 
     .icon-btn.large {
-      width: 44px;
-      height: 44px;
+      width: 36px;
+      height: 36px;
     }
 
+    /* Right panel (Lyrics) */
     .right-panel {
-      max-height: 30vh;
-      margin-top: var(--spacing-md);
+      display: flex; /* use flex to properly contain lyrics container inside right-panel */
+      flex-direction: column;
+      width: 100%;
+      height: 25vh; /* slightly reduce height */
+      max-height: 25vh;
+      margin-top: 0;
+      flex-shrink: 0; /* do not shrink lyrics container beyond this fixed size */
+      mask-image: linear-gradient(
+        to bottom,
+        transparent 0%,
+        black 15%,
+        black 85%,
+        transparent 100%
+      );
+      -webkit-mask-image: linear-gradient(
+        to bottom,
+        transparent 0%,
+        black 15%,
+        black 85%,
+        transparent 100%
+      );
     }
 
     .lyrics-container {
-      padding: 10vh 0;
+      padding: 10vh 0; /* Padding for scrolling */
     }
 
     .lyric-line {
-      font-size: 1.25rem;
+      font-size: 1.25rem; /* Slightly smaller to fit */
+      text-align: left; /* Apple Music left-aligns lyrics */
     }
+  }
 
-    .close-btn {
-      top: var(--spacing-md);
-      right: var(--spacing-md);
+  /* Respect reduced motion preferences */
+  @media (prefers-reduced-motion: reduce) {
+    .bg-layer-1,
+    .bg-layer-2,
+    .bg-layer-3 {
+      animation: none !important;
+      transform: none !important;
     }
-
-    .close-btn svg {
-      width: 28px;
-      height: 28px;
+    .lyric-line {
+      transition: none !important;
     }
   }
 </style>

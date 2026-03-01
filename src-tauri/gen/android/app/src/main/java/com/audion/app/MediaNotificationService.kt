@@ -41,6 +41,8 @@ class MediaNotificationService : Service() {
         const val EXTRA_ALBUM = "album"
         const val EXTRA_IS_PLAYING = "is_playing"
         const val EXTRA_ART_URL = "art_url"
+        const val EXTRA_CURRENT_TIME = "current_time"
+        const val EXTRA_DURATION = "duration"
 
         // Reference to the WebView for evaluating JS commands
         var webViewRef: WebView? = null
@@ -82,8 +84,10 @@ class MediaNotificationService : Service() {
                 val album = intent?.getStringExtra(EXTRA_ALBUM) ?: ""
                 val isPlaying = intent?.getBooleanExtra(EXTRA_IS_PLAYING, false) ?: false
                 val artUrl = intent?.getStringExtra(EXTRA_ART_URL)
+                val currentTime = intent?.getStringExtra(EXTRA_CURRENT_TIME) ?: null
+                val duration = intent?.getStringExtra(EXTRA_DURATION) ?: null
 
-                updateNotification(title, artist, album, isPlaying, artUrl)
+                updateNotification(title, artist, album, isPlaying, artUrl, currentTime, duration)
             }
         }
 
@@ -142,7 +146,9 @@ class MediaNotificationService : Service() {
         artist: String,
         album: String,
         isPlaying: Boolean,
-        artUrl: String?
+        artUrl: String?,
+        currentTime: String?,
+        duration: String?
     ) {
         // Update media session metadata
         val metadataBuilder = MediaMetadataCompat.Builder()
@@ -182,7 +188,7 @@ class MediaNotificationService : Service() {
                         currentArtBitmap = bitmap
                         // Re-update with the loaded bitmap
                         withContext(Dispatchers.Main) {
-                            updateNotification(title, artist, album, isPlaying, null)
+                            updateNotification(title, artist, album, isPlaying, null, currentTime, duration)
                         }
                     }
                 } catch (e: Exception) {
@@ -192,7 +198,7 @@ class MediaNotificationService : Service() {
         }
 
         // Build notification
-        val notification = buildNotification(title, artist, album, isPlaying)
+        val notification = buildNotification(title, artist, album, isPlaying, currentTime, duration)
         startForeground(NOTIFICATION_ID, notification)
     }
 
@@ -200,7 +206,9 @@ class MediaNotificationService : Service() {
         title: String,
         artist: String,
         album: String,
-        isPlaying: Boolean
+        isPlaying: Boolean,
+        currentTime: String?,
+        duration: String?
     ): Notification {
         // Intent to open the app when notification is tapped
         val contentIntent = packageManager.getLaunchIntentForPackage(packageName)?.let {
@@ -232,10 +240,14 @@ class MediaNotificationService : Service() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val timeInfo = if (!currentTime.isNullOrEmpty() && !duration.isNullOrEmpty()) {
+            "$currentTime / $duration"
+        } else ""
+
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(title)
             .setContentText(artist)
-            .setSubText(album)
+            .setSubText(if (timeInfo.isNotEmpty()) "$album  •  $timeInfo" else album)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(contentIntent)
             .setDeleteIntent(stopIntent)

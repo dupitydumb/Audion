@@ -636,12 +636,13 @@
             flex-direction: column;
             align-items: center;
             text-align: center;
-            padding: var(--spacing-md);
+            padding: calc(var(--safe-area-top) + var(--spacing-md))
+                var(--spacing-md) var(--spacing-md);
             gap: var(--spacing-md);
         }
 
         .back-btn {
-            top: var(--spacing-sm);
+            top: calc(var(--safe-area-top) + var(--spacing-sm));
             left: var(--spacing-sm);
         }
 
