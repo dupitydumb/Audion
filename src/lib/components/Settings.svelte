@@ -63,6 +63,12 @@
 
   $: showRefreshNotice = $appSettings.audioBackend !== initialAudioBackend;
 
+  let batchSliderEl: HTMLInputElement;
+  $: if (batchSliderEl) {
+    const pct = ($appSettings.paginationBatchSize - 100) / 4900 * 100;
+    batchSliderEl.style.background = `linear-gradient(to right, var(--accent-primary) ${pct}%, var(--bg-highlight) ${pct}%)`;
+  }
+
   // Event listeners
   let unlistenSync: UnlistenFn | null = null;
   let unlistenMerge: UnlistenFn | null = null;
@@ -621,6 +627,32 @@
             <strong>Native:</strong> Better performance, system-wide EQ (Rust
             backend).<br />
             <strong>HTML5:</strong> Legacy web audio playback.
+          </p>
+        </div>
+
+        <div class="setting-item">
+          <div class="slider-header">
+            <span class="setting-label">Pagination Batch Size</span>
+            <span class="slider-value">{$appSettings.paginationBatchSize.toLocaleString()}</span>
+          </div>
+          <input
+            bind:this={batchSliderEl}
+            type="range"
+            class="batch-slider"
+            min="100"
+            max="5000"
+            step="100"
+            value={$appSettings.paginationBatchSize}
+            on:input={(e) => appSettings.setPaginationBatchSize(parseInt(e.currentTarget.value))}
+          />
+          <div class="slider-labels">
+            <span>100</span>
+            <span>5,000</span>
+          </div>
+          <p class="setting-hint">
+            How many tracks/albums to load per page. Lower values mean faster initial
+            load; higher values reduce round-trips when scrolling a large library.
+            Takes effect on next library load.
           </p>
         </div>
 
@@ -1195,6 +1227,74 @@
   .mode-btn span {
     font-size: 0.875rem;
     font-weight: 500;
+  }
+
+  .slider-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .slider-value {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--accent-primary);
+    font-family: monospace;
+    min-width: 40px;
+    text-align: right;
+  }
+
+  .batch-slider {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--bg-highlight);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+  }
+
+  .batch-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    background: var(--accent-primary);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  }
+
+  .batch-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
+  }
+
+  .batch-slider::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    background: var(--accent-primary);
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+    transition: transform var(--transition-fast);
+  }
+
+  .batch-slider::-moz-range-thumb:hover {
+    transform: scale(1.2);
+  }
+
+  .slider-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.7rem;
+    color: var(--text-subdued);
+    margin-top: var(--spacing-xs);
+    font-family: monospace;
   }
 
   /* Color Grid */

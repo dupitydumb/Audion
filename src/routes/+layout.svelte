@@ -23,7 +23,6 @@
   import ProgressiveScanStatus from "$lib/components/ProgressiveScanStatus.svelte";
   import "../app.css";
 
-  let handleVisibilityChange: (() => void) | null = null;
   let migrationStatus = "";
   let showMigrationBanner = false;
   let showPermissionBanner = false;
@@ -80,13 +79,11 @@
   }
 
   onMount(async () => {
-    // Detect platform early for Linux-specific fixes (asset:// -> file://)
-    await initPlatformDetection();
-
+    initPlatformDetection(); // caller has guard so await can be removed
     appSettings.initialize();
     theme.initialize();
     initMobileDetection();
-    await initAudioBackend();
+    initAudioBackend(); //await can be removed because, it's caller already has guard
 
     // Load liked tracks from database
     loadLikedTracks();
@@ -98,24 +95,10 @@
       initAndroidNotification();
     }
 
-    const migrationStart = performance.now();
 
     // Run cover migration if needed
     await runCoverMigration();
 
-    console.log(
-      `  [LAYOUT] Cover migration: ${(performance.now() - migrationStart).toFixed(2)}ms`,
-    );
-
-    // handle page visibility
-    handleVisibilityChange = () => {
-      if (document.hidden) {
-        // Tab hidden - we could pause here if desired
-        // But DON'T call cleanupPlayer() - too aggressive
-      }
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
   });
 
   async function checkAndroidPermissions() {
@@ -206,11 +189,6 @@
   // Cleanup on component unmount
   onDestroy(() => {
     console.log("[App] Cleaning up on unmount");
-
-    // Remove visibility change listener
-    if (handleVisibilityChange) {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    }
 
     // Cleanup Android back handler
     cleanupAndroidBackHandler();

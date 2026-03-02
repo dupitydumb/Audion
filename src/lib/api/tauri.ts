@@ -137,6 +137,12 @@ export interface Library {
     artists: Artist[];
 }
 
+export interface LibraryCounts {
+    track_count: number;
+    album_count: number;
+    artist_count: number;
+    artists: Artist[];
+}
 export interface ScanResult {
     tracks_added: number;
     tracks_updated: number;
@@ -194,6 +200,11 @@ export async function getDefaultMusicDirs(): Promise<string[]> {
 
 export async function getLibrary(): Promise<Library> {
     return await invoke('get_library');
+}
+
+/** Counts + artist list only */
+export async function getLibraryCounts(): Promise<LibraryCounts> {
+    return await invoke('get_library_counts');
 }
 
 export async function getTracksPaginated(limit: number, offset: number): Promise<Track[]> {

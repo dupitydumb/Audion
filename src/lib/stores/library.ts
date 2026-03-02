@@ -1,7 +1,8 @@
 // Library store - manages music library state
-import { writable, derived, get } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 import type { Track, Album, Artist, Playlist, ScanBatchEvent } from '$lib/api/tauri';
-import { getLibrary, getPlaylists, getAlbumCoverSrc, getAlbumArtSrc, getTracksPaginated, getAlbumsPaginated, searchLibrary, convertFileSrc } from '$lib/api/tauri';
+import { getLibraryCounts, getPlaylists, getTracksPaginated, getAlbumsPaginated, searchLibrary, convertFileSrc } from '$lib/api/tauri';
+import { appSettings } from '$lib/stores/settings';
 
 // BLOB URL CONVERSION
 /**
@@ -67,11 +68,15 @@ function revokeBlobUrl(url: string | null | undefined): void {
 // CONFIGURATION
 const CACHE_CONFIG = {
     MAX_METADATA_CACHE: 100000,   // Increased for metadata
-    MAX_ALBUM_ART_CACHE: 1000,    // Increased for better ux 
-    TRACK_BATCH_SIZE: 1000,       // Paginated fetch size
-    ENABLE_SMART_LOADING: true,
+    MAX_ALBUM_ART_CACHE: 1000,    // Increased for better ux
     MAX_TRACK_COVER_CACHE: 2000,  // Added limit
+    ENABLE_SMART_LOADING: true,
 };
+
+// Read pagination batch size from user settings at call time
+function getBatchSize(): number {
+    return get(appSettings).paginationBatchSize;
+}
 
 // LRU CACHE
 class LRUCache<K, V> {
@@ -183,10 +188,6 @@ const trackCoverCache = new LRUCache<number, string>(CACHE_CONFIG.MAX_TRACK_COVE
         revokeBlobUrl(url);
     }
 });
-
-// Full object cache (for recently accessed items)
-const fullTrackCache = new LRUCache<number, Track>(1000);
-const fullAlbumCache = new LRUCache<number, Album>(200);
 
 // Track ID to Album ID mapping (for album cover lookups)
 const trackToAlbumMap = new Map<number, number>();
@@ -379,13 +380,6 @@ function ingestAlbums(incoming: Album[]): Album[] {
  * @param preferBase64 - If true, converts blob URLs back to base64 data URIs (for plugins/exports)
  */
 export async function getFullTrack(trackId: number, preferBase64: boolean = false): Promise<Track | null> {
-    // Check full cache first (but only if not requesting base64)
-    if (!preferBase64) {
-        const cached = fullTrackCache.get(trackId);
-        if (cached) return cached;
-    }
-
-    // Reconstruct from metadata + caches
     const metadata = trackMetadataCache.get(trackId);
     if (!metadata) return null;
 
@@ -409,11 +403,6 @@ export async function getFullTrack(trackId: number, preferBase64: boolean = fals
         }
     }
 
-    // Only cache if not base64 version (to avoid caching duplicates)
-    if (!preferBase64) {
-        fullTrackCache.set(trackId, track);
-    }
-
     return track;
 }
 
@@ -421,17 +410,9 @@ export async function getFullTrack(trackId: number, preferBase64: boolean = fals
  * Get full album with art data
  */
 export function getFullAlbum(albumId: number): Album | null {
-    // Check full cache first
-    const cached = fullAlbumCache.get(albumId);
-    if (cached) return cached;
-
-    // Reconstruct from metadata + art cache
     const metadata = albumMetadataCache.get(albumId);
     if (!metadata) return null;
-
-    const album = reconstructAlbum(metadata);
-    fullAlbumCache.set(albumId, album);
-    return album;
+    return reconstructAlbum(metadata);
 }
 
 /**
@@ -515,20 +496,18 @@ export async function loadLibrary(): Promise<void> {
         console.time('[Library] IPC load initial');
 
         // Parallel: library metadata, first track batch, first album batch
-        const [library, initialTracks, initialAlbums] = await Promise.all([
-            getLibrary(),
-            getTracksPaginated(CACHE_CONFIG.TRACK_BATCH_SIZE, 0),
-            getAlbumsPaginated(CACHE_CONFIG.TRACK_BATCH_SIZE, 0)  // Paginated albums
+        const [counts, initialTracks, initialAlbums] = await Promise.all([
+            getLibraryCounts(),
+            getTracksPaginated(getBatchSize(), 0),
+            getAlbumsPaginated(getBatchSize(), 0),  // Paginated albums
         ]);
 
         console.timeEnd('[Library] IPC load initial');
 
         // counts
-        // library.tracks.length is the TOTAL track count
-        // library.albums.length is the TOTAL album count
-        totalTrackCount = library.tracks.length;
-        totalAlbumCount = library.albums.length;  //this is the total, not loaded count
-        totalArtistCount = library.artists.length;
+        totalTrackCount = counts.track_count;
+        totalAlbumCount = counts.album_count;
+        totalArtistCount = counts.artist_count;
 
         trackCount.set(totalTrackCount);
         albumCount.set(totalAlbumCount);
@@ -542,7 +521,7 @@ export async function loadLibrary(): Promise<void> {
 
         // commit to stores 
         albums.set(lightAlbums);
-        artists.set(library.artists);
+        artists.set(counts.artists);
         tracks.set(lightTracks);
 
     } catch (error) {
@@ -569,7 +548,7 @@ export async function loadMoreTracks(): Promise<boolean> {
 
     isLoading.set(true);
     try {
-        const newTracks = await getTracksPaginated(CACHE_CONFIG.TRACK_BATCH_SIZE, offset);
+        const newTracks = await getTracksPaginated(getBatchSize(), offset);
         if (newTracks.length === 0) return false;
 
         // Same ingestion path as loadLibrary -caches + maps stay consistent
@@ -599,7 +578,7 @@ export async function loadMoreAlbums(): Promise<boolean> {
 
     isLoading.set(true);
     try {
-        const newAlbums = await getAlbumsPaginated(CACHE_CONFIG.TRACK_BATCH_SIZE, offset);
+        const newAlbums = await getAlbumsPaginated(getBatchSize(), offset);
         if (newAlbums.length === 0) return false;
 
         // Same ingestion path as loadLibrary -caches + maps
@@ -657,16 +636,14 @@ export function ingestScanBatch(event: ScanBatchEvent): void {
  */
 export async function loadAlbumsAndArtists(): Promise<void> {
     try {
-        const library = await getLibrary();
-
-        // Use ingestAlbums to cache album art
-        const lightAlbums = ingestAlbums(library.albums);
-
-        albums.set(lightAlbums);
-        albumCount.set(library.albums.length);
-
-        artists.set(library.artists);
-        artistCount.set(library.artists.length);
+        const [firstAlbums, counts] = await Promise.all([
+            getAlbumsPaginated(getBatchSize(), 0),
+            getLibraryCounts(),
+        ]);
+        albums.set(ingestAlbums(firstAlbums));
+        albumCount.set(counts.album_count);
+        artists.set(counts.artists);
+        artistCount.set(counts.artist_count);
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         lastError.set(message);
@@ -712,8 +689,6 @@ export async function clearLibrary(): Promise<void> {
     albumMetadataCache.clear();
     albumArtCache.clear();  // Triggers revokeBlobUrl via onEvict
     trackCoverCache.clear(); // Triggers revokeBlobUrl via onEvict
-    fullTrackCache.clear();
-    fullAlbumCache.clear();
     trackToAlbumMap.clear();
     albumToTracksMap.clear();
 
@@ -770,10 +745,6 @@ export function getCacheStats() {
         heavyData: {
             albumArt: albumArtCache.size,
             trackCovers: trackCoverCache.size,
-        },
-        fullObjects: {
-            tracks: fullTrackCache.size,
-            albums: fullAlbumCache.size,
         },
         mappings: {
             trackToAlbum: trackToAlbumMap.size,

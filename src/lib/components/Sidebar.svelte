@@ -32,6 +32,7 @@
         addFolder,
         rescanMusic,
         deletePlaylist,
+        createPlaylist,
         type Playlist,
         getPlaylistTracks,
         renamePlaylist,
@@ -43,9 +44,9 @@
         addToQueue,
         currentTrack,
         isPlaying,
-        queue,
+        togglePlay,
     } from "$lib/stores/player";
-    import { setPlaylistCover } from "$lib/stores/playlistCovers";
+    import { playlistCovers, setPlaylistCover } from "$lib/stores/playlistCovers";
     import { uiSlotManager } from "$lib/plugins/ui-slots";
 
     import { updates } from "$lib/stores/updates";
@@ -64,6 +65,137 @@
     let scanStatus = "Scanning...";
     let scanError: string | null = null;
     let showUpdatePopup = false;
+
+    // Playlist collapse state
+    let playlistsExpanded = true;
+    let playlistHeaderHovered = false;
+
+    // Per-item hover state for overlay
+    let hoveredPlaylistId: number | null = null;
+
+    // Marquee
+    const MARQUEE_GAP = 48;
+    let marqueeActive: Record<number, boolean> = {};
+    let marqueeOverflows: Record<number, boolean> = {};
+    let marqueeDurations: Record<number, string> = {};
+    let nameEls = new Map<number, HTMLSpanElement>();
+
+    function registerNameEl(node: HTMLSpanElement, id: number) {
+        nameEls.set(id, node);
+        return { destroy() { nameEls.delete(id); } };
+    }
+
+    function measureOverflow(id: number) {
+        requestAnimationFrame(() => {
+            const el = nameEls.get(id);
+            const overflows = el ? el.scrollWidth > el.clientWidth : false;
+            marqueeDurations = { ...marqueeDurations, [id]: overflows ? `${Math.max(3, (el!.scrollWidth + MARQUEE_GAP) / 55).toFixed(1)}s` : "0s" };
+            marqueeOverflows = { ...marqueeOverflows, [id]: overflows };
+        });
+    }
+
+    function handleItemMouseEnter(id: number) {
+        hoveredPlaylistId = id;
+        marqueeActive = { ...marqueeActive, [id]: true };
+        measureOverflow(id);
+    }
+
+    function handleItemMouseLeave(id: number) {
+        hoveredPlaylistId = null;
+        marqueeActive = { ...marqueeActive, [id]: false };
+        const { [id]: _o, ...restO } = marqueeOverflows;
+        marqueeOverflows = restO;
+        const { [id]: _d, ...restD } = marqueeDurations;
+        marqueeDurations = restD;
+    }
+
+    // Inline rename state
+    let renamingPlaylistId: number | null = null;
+    let renameValue = "";
+
+    // Inline create state
+    let creatingPlaylist = false;
+    let createValue = "";
+
+    function startCreatePlaylist() {
+        creatingPlaylist = true;
+        createValue = "";
+        setTimeout(() => {
+            const input = document.querySelector<HTMLInputElement>('.create-input');
+            if (input) { input.focus(); }
+        }, 50);
+    }
+
+    function cancelCreate() {
+        creatingPlaylist = false;
+        createValue = "";
+    }
+
+    async function saveCreate() {
+        const trimmed = createValue.trim();
+        if (trimmed) {
+            try {
+                await createPlaylist(trimmed);
+                await loadPlaylists();
+                playlistsExpanded = true;
+            } catch (error) {
+                console.error("Failed to create playlist:", error);
+            }
+        }
+        creatingPlaylist = false;
+        createValue = "";
+    }
+
+    function handleCreateKeydown(e: KeyboardEvent) {
+        if (e.key === "Enter") { e.preventDefault(); saveCreate(); }
+        if (e.key === "Escape") { e.preventDefault(); cancelCreate(); }
+    }
+
+    function handleAllPlaylistsContextMenu(e: MouseEvent) {
+        e.preventDefault();
+        contextMenu.set({
+            visible: true,
+            x: e.clientX,
+            y: e.clientY,
+            items: [
+                { label: "New Playlist", action: () => startCreatePlaylist() },
+            ],
+        });
+    }
+
+    function startRename(playlist: Playlist) {
+        renamingPlaylistId = playlist.id;
+        renameValue = playlist.name;
+        // Focus the input after DOM update
+        setTimeout(() => {
+            const input = document.querySelector<HTMLInputElement>('.rename-input');
+            if (input) { input.focus(); input.select(); }
+        }, 50);
+    }
+
+    function cancelRename() {
+        renamingPlaylistId = null;
+        renameValue = "";
+    }
+
+    async function saveRename(id: number) {
+        const trimmed = renameValue.trim();
+        if (trimmed && trimmed !== $playlists.find(p => p.id === id)?.name) {
+            try {
+                await renamePlaylist(id, trimmed);
+                await loadPlaylists();
+            } catch (error) {
+                console.error("Failed to rename playlist:", error);
+            }
+        }
+        renamingPlaylistId = null;
+        renameValue = "";
+    }
+
+    function handleRenameKeydown(e: KeyboardEvent, id: number) {
+        if (e.key === "Enter") { e.preventDefault(); saveRename(id); }
+        if (e.key === "Escape") { e.preventDefault(); cancelRename(); }
+    }
 
     // Slot containers
     let slotTop: HTMLDivElement;
@@ -232,30 +364,7 @@
                 { type: "separator" },
                 {
                     label: "Rename",
-                    action: async () => {
-                        const newName = prompt(
-                            "Enter new name:",
-                            playlist.name,
-                        );
-                        if (
-                            newName &&
-                            newName.trim() &&
-                            newName !== playlist.name
-                        ) {
-                            try {
-                                await renamePlaylist(
-                                    playlist.id,
-                                    newName.trim(),
-                                );
-                                await loadPlaylists();
-                            } catch (error) {
-                                console.error(
-                                    "Failed to rename playlist:",
-                                    error,
-                                );
-                            }
-                        }
-                    },
+                    action: () => startRename(playlist),
                 },
                 {
                     label: "Change Cover",
@@ -269,8 +378,7 @@
                             if (file) {
                                 const reader = new FileReader();
                                 reader.onload = () => {
-                                    const result = reader.result as string;
-                                    setPlaylistCover(playlist.id, result);
+                                    setPlaylistCover(playlist.id, reader.result as string);
                                 };
                                 reader.readAsDataURL(file);
                             }
@@ -294,6 +402,10 @@
             ($currentView.type === "album-detail" && viewType === "albums") ||
             ($currentView.type === "artist-detail" && viewType === "artists")
         );
+    }
+
+    function togglePlaylists() {
+        playlistsExpanded = !playlistsExpanded;
     }
 
     onMount(() => {
@@ -441,81 +553,208 @@
         </section>
 
         <section class="nav-section">
-            <div class="nav-section-header">
+            <div class="nav-section-header playlists-header">
                 <h3 class="nav-section-title">Playlists</h3>
+                <button
+                    class="collapse-btn"
+                    on:click={togglePlaylists}
+                    aria-label={playlistsExpanded ? "Collapse playlists" : "Expand playlists"}
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        width="28"
+                        height="28"
+                        class="collapse-arrow"
+                        class:rotated={!playlistsExpanded}
+                    >
+                        <path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z" />
+                    </svg>
+                </button>
             </div>
+
             <ul class="nav-list">
                 <li>
-                    <button
-                        class="nav-item"
-                        class:active={isActive("playlists")}
-                        on:click={() => navigateAndClose(goToPlaylists)}
-                    >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="24"
-                            height="24"
-                        >
-                            <path
-                                d="M19 9H5V7h14v2zm0 4H5v-2h14v2zm-8 4H5v-2h6v2zm8-2v2h-2v2h-2v-2h-2v-2h2v-2h2v2h2z"
-                            />
-                        </svg>
+                    <button class="nav-item" class:active={isActive("playlists")} on:click={() => navigateAndClose(goToPlaylists)} on:contextmenu={handleAllPlaylistsContextMenu}>
+                        <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24"><path d="M19 9H5V7h14v2zm0 4H5v-2h14v2zm-8 4H5v-2h6v2zm8-2v2h-2v2h-2v-2h-2v-2h2v-2h2v2h2z" /></svg>
                         <span>All Playlists</span>
                         <span class="nav-count">{$playlists.length}</span>
                     </button>
                 </li>
-                {#each $playlists as playlist (playlist.id)}
-                    <li>
-                        <button
-                            class="nav-item playlist-item"
-                            class:active={$currentView.type ===
-                                "playlist-detail" &&
-                                $currentView.id !== undefined &&
-                                playlist.id !== undefined &&
-                                $currentView.id === playlist.id}
-                            class:playing={isPlaylistPlaying(
-                                playlist.id,
-                                currentPlaylistIdValue,
-                                isPlayingValue,
-                            )}
-                            on:click={() =>
-                                navigateAndClose(() =>
-                                    goToPlaylistDetail(playlist.id),
-                                )}
-                            on:contextmenu={(e) =>
-                                handlePlaylistContextMenu(e, playlist)}
-                        >
-                            {#if isPlaylistPlaying(playlist.id, currentPlaylistIdValue, isPlayingValue)}
-                                <div class="playing-indicator">
-                                    <span class="bar"></span>
-                                    <span class="bar"></span>
-                                    <span class="bar"></span>
+            </ul>
+
+            <!-- Inline create new playlist -->
+            {#if creatingPlaylist}
+                <div class="nav-item playlist-item rename-mode create-mode">
+                    <div class="playlist-thumb-placeholder create-thumb">
+                        <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                        </svg>
+                    </div>
+                    <div class="rename-body">
+                        <input
+                            class="rename-input create-input"
+                            type="text"
+                            placeholder="Playlist name"
+                            bind:value={createValue}
+                            on:keydown={handleCreateKeydown}
+                            on:click|stopPropagation
+                        />
+                        <div class="rename-actions">
+                            <button class="rename-cancel" on:click|stopPropagation={cancelCreate}>Cancel</button>
+                            <button class="rename-save" on:click|stopPropagation={saveCreate}>Create</button>
+                        </div>
+                    </div>
+                </div>
+            {/if}
+
+            <!-- Collapsible playlist list -->
+            <div class="playlist-collapse-wrapper" class:collapsed={!playlistsExpanded}>
+                <ul class="nav-list playlist-inner-list">
+                    {#each $playlists as playlist (playlist.id)}
+                        <li>
+                            {#if renamingPlaylistId === playlist.id}
+                                <!-- Inline rename mode -->
+                                <div class="nav-item playlist-item rename-mode">
+                                    <div class="playlist-icon-wrap">
+                                        {#if $playlistCovers[playlist.id]}
+                                            <img
+                                                src={$playlistCovers[playlist.id]}
+                                                alt={playlist.name}
+                                                class="playlist-thumb"
+                                            />
+                                        {:else}
+                                            <div class="playlist-thumb-placeholder">
+                                                <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                                                    <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z" />
+                                                </svg>
+                                            </div>
+                                        {/if}
+                                    </div>
+                                    <div class="rename-body">
+                                        <input
+                                            class="rename-input"
+                                            type="text"
+                                            bind:value={renameValue}
+                                            on:keydown={(e) => handleRenameKeydown(e, playlist.id)}
+                                            on:click|stopPropagation
+                                        />
+                                        <div class="rename-actions">
+                                            <button class="rename-cancel" on:click|stopPropagation={cancelRename}>Cancel</button>
+                                            <button class="rename-save" on:click|stopPropagation={() => saveRename(playlist.id)}>Save</button>
+                                        </div>
+                                    </div>
                                 </div>
                             {:else}
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="24"
-                                    height="24"
+                                {@const isNowPlaying = isPlaylistPlaying(playlist.id, currentPlaylistIdValue, isPlayingValue)}
+                                {@const isPaused = !isPlayingValue && currentPlaylistIdValue === playlist.id}
+                                {@const isHovered = hoveredPlaylistId === playlist.id}
+                                {@const nameOverflows = marqueeOverflows[playlist.id] ?? false}
+                                {@const nameDuration = marqueeDurations[playlist.id] ?? "0s"}
+                                <button
+                                    class="nav-item playlist-item"
+                                    class:active={$currentView.type === "playlist-detail" &&
+                                        $currentView.id !== undefined &&
+                                        playlist.id !== undefined &&
+                                        $currentView.id === playlist.id}
+                                    class:playing={isNowPlaying}
+                                    class:paused={isPaused}
+                                    on:click={() => navigateAndClose(() => goToPlaylistDetail(playlist.id))}
+                                    on:contextmenu={(e) => handlePlaylistContextMenu(e, playlist)}
+                                    on:mouseenter={() => handleItemMouseEnter(playlist.id)}
+                                    on:mouseleave={() => handleItemMouseLeave(playlist.id)}
                                 >
-                                    <path
-                                        d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"
-                                    />
-                                </svg>
+                                    <!-- Thumbnail with interactive overlay -->
+                                    <div
+                                        class="playlist-icon-wrap"
+                                        on:click|stopPropagation={() => {
+                                            if (isNowPlaying || isPaused) {
+                                                togglePlay();
+                                            } else {
+                                                handlePlayPlaylist(playlist.id);
+                                            }
+                                        }}
+                                        role="button"
+                                        tabindex="-1"
+                                        aria-label={isNowPlaying ? "Pause" : isPaused ? "Resume" : "Play"}
+                                    >
+                                        {#if $playlistCovers[playlist.id]}
+                                            <img
+                                                src={$playlistCovers[playlist.id]}
+                                                alt={playlist.name}
+                                                class="playlist-thumb"
+                                            />
+                                        {:else}
+                                            <div class="playlist-thumb-placeholder">
+                                                <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                                                    <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z" />
+                                                </svg>
+                                            </div>
+                                        {/if}
+
+                                        <!-- Playing: dancing bars, hover shows pause -->
+                                        {#if isNowPlaying}
+                                            <div class="thumb-overlay" class:show-icon={isHovered}>
+                                                {#if isHovered}
+                                                    <!-- pause icon -->
+                                                    <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                                                        <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                                                    </svg>
+                                                {:else}
+                                                    <div class="thumb-bars">
+                                                        <span class="tbar"></span>
+                                                        <span class="tbar"></span>
+                                                        <span class="tbar"></span>
+                                                    </div>
+                                                {/if}
+                                            </div>
+
+                                        <!-- Paused: always show overlay with resume icon, but dim on hover -->
+                                        {:else if isPaused}
+                                            <div class="thumb-overlay show-icon paused-overlay">
+                                                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                                                    <path d="M8 5v14l11-7z" />
+                                                </svg>
+                                            </div>
+
+                                        <!-- Idle: show play icon on hover -->
+                                        {:else if isHovered}
+                                            <div class="thumb-overlay show-icon">
+                                                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                                                    <path d="M8 5v14l11-7z" />
+                                                </svg>
+                                            </div>
+                                        {/if}
+                                    </div>
+
+                                    <!-- Name with marquee -->
+                                    <div class="playlist-name-track" class:animate={isHovered && nameOverflows}>
+                                        <span
+                                            class="playlist-name-text"
+                                            class:accent={isNowPlaying || isPaused}
+                                            class:pl-marquee={isHovered && nameOverflows}
+                                            style="--marquee-duration: {nameDuration};"
+                                            use:registerNameEl={playlist.id}
+                                        >{playlist.name}</span>
+                                        {#if isHovered && nameOverflows}
+                                            <span
+                                                class="playlist-name-text pl-marquee"
+                                                class:accent={isNowPlaying || isPaused}
+                                                aria-hidden="true"
+                                                style="--marquee-duration: {nameDuration};"
+                                            >{playlist.name}</span>
+                                        {/if}
+                                    </div>
+
+                                    {#if playlistTrackCounts.has(playlist.id)}
+                                        <span class="nav-count">{playlistTrackCounts.get(playlist.id)}</span>
+                                    {/if}
+                                </button>
                             {/if}
-                            <span class="truncate">{playlist.name}</span>
-                            {#if playlistTrackCounts.has(playlist.id)}
-                                <span class="nav-count"
-                                    >{playlistTrackCounts.get(
-                                        playlist.id,
-                                    )}</span
-                                >
-                            {/if}
-                        </button>
-                    </li>
-                {/each}
-            </ul>
+                        </li>
+                    {/each}
+                </ul>
+            </div>
         </section>
 
         <section class="nav-section">
@@ -725,10 +964,15 @@
         margin-bottom: var(--spacing-xl);
     }
 
+    /* ── Playlist section header ── */
     .nav-section-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
+        /* match nav-item horizontal padding so content lines up */
+        padding: 0 var(--spacing-md);
+        margin-bottom: var(--spacing-md);
+        min-height: 20px;
     }
 
     .nav-section-title {
@@ -737,10 +981,71 @@
         text-transform: uppercase;
         letter-spacing: 0.12em;
         color: var(--text-subdued);
-        margin-bottom: var(--spacing-md);
+        margin: 0;
+        padding: 0;
         padding-left: var(--spacing-md);
     }
 
+    .playlists-header .nav-section-title {
+        padding-left: 0;
+    }
+
+    /* Always-visible collapse arrow */
+    .collapse-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        /* large tap target */
+        width: 44px;
+        height: 44px;
+        padding: 0;
+        border-radius: 4px;
+        color: var(--text-subdued);
+        background: none;
+        border: none;
+        cursor: pointer;
+        flex-shrink: 0;
+        /* only colour transitions, never background */
+        transition: color 0.15s ease;
+        /* pull it right to align with .nav-count */
+        margin-right: -16px;
+    }
+
+    .collapse-btn:hover {
+        color: var(--text-primary);
+        /* intentionally no background-color change */
+    }
+
+    .collapse-arrow {
+        transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        transform: rotate(0deg);
+    }
+
+    .collapse-arrow.rotated {
+        transform: rotate(180deg);
+    }
+
+    /* ── Collapsible wrapper ── */
+    .playlist-collapse-wrapper {
+        display: grid;
+        grid-template-rows: 1fr;
+        transition: grid-template-rows 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+                    opacity 0.25s ease;
+        opacity: 1;
+        overflow: hidden;
+    }
+
+    .playlist-collapse-wrapper.collapsed {
+        grid-template-rows: 0fr;
+        opacity: 0;
+    }
+
+    .playlist-inner-list {
+        overflow: hidden;
+        min-height: 0;
+    }
+
+    /* ── Nav items ── */
     .nav-list {
         list-style: none;
         display: flex;
@@ -773,10 +1078,7 @@
         font-weight: 500;
     }
 
-    .nav-item.playing {
-        background-color: var(--accent-subtle);
-        color: var(--text-primary);
-    }
+
 
     .nav-item svg {
         flex-shrink: 0;
@@ -796,48 +1098,155 @@
 
     .playlist-item {
         padding-left: var(--spacing-md);
+        padding-top: 6px;
+        padding-bottom: 6px;
     }
 
-    .playing-indicator {
+    /* Playlist icon wrapper */
+    .playlist-icon-wrap {
+        position: relative;
+        width: 40px;
+        height: 40px;
+        flex-shrink: 0;
+        border-radius: 4px;
+        overflow: hidden;
+        cursor: pointer;
+    }
+
+    .playlist-thumb {
+        width: 40px;
+        height: 40px;
+        border-radius: 4px;
+        object-fit: cover;
+        display: block;
+        opacity: 0.85;
+        transition: opacity 0.15s ease;
+    }
+
+    .nav-item:hover .playlist-thumb,
+    .nav-item.active .playlist-thumb {
+        opacity: 1;
+    }
+
+    .playlist-thumb-placeholder {
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        background-color: var(--bg-surface);
         display: flex;
         align-items: center;
         justify-content: center;
+        color: var(--text-subdued);
+    }
+
+    /* Overlay. dark bg , icon/bars centred */
+    .thumb-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.0);
+        transition: background 0.15s ease;
+        border-radius: 4px;
+        color: white;
+    }
+
+    /* When showing a static icon, darken background */
+    .thumb-overlay.show-icon {
+        background: rgba(0, 0, 0, 0.5);
+        filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
+    }
+
+    /* Paused overlay is always visible but lighter */
+    .thumb-overlay.paused-overlay {
+        background: rgba(0, 0, 0, 0.38);
+        filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.6));
+    }
+
+    /* Dancing bars inside overlay (playing, not hovered) */
+    .thumb-bars {
+        display: flex;
+        align-items: flex-end;
         gap: 2px;
-        width: 24px;
-        height: 24px;
-        flex-shrink: 0;
+        height: 18px;
     }
 
-    .playing-indicator .bar {
+    .tbar {
         width: 3px;
-        height: 12px;
         background-color: var(--accent-primary);
-        animation: equalizer 0.8s ease-in-out infinite;
+        border-radius: 2px;
+        animation: pl-eq 0.8s ease-in-out infinite;
     }
 
-    .playing-indicator .bar:nth-child(2) {
-        animation-delay: 0.2s;
+    .tbar:nth-child(2) { animation-delay: 0.2s; }
+    .tbar:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes pl-eq {
+        0%, 100% { height: 4px; }
+        50% { height: 16px; }
     }
 
-    .playing-indicator .bar:nth-child(3) {
-        animation-delay: 0.4s;
+    /* Card background highlight for playing/paused */
+    .nav-item.playing,
+    .nav-item.paused {
+        background-color: var(--accent-subtle);
+        color: var(--text-primary);
     }
 
-    @keyframes equalizer {
-        0%,
-        100% {
-            height: 4px;
-        }
-        50% {
-            height: 14px;
-        }
-    }
-
-    .nav-item.playing .nav-count {
+    .nav-item.playing .nav-count,
+    .nav-item.paused .nav-count {
         color: var(--accent-primary);
         font-weight: 600;
     }
 
+    /* ── Playlist name marquee ── */
+    .playlist-name-track {
+        display: flex;
+        flex-direction: row;
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+    }
+
+    .playlist-name-track.animate {
+        -webkit-mask-image: linear-gradient(to right, transparent 0%, black 5%, black 90%, transparent 100%);
+        mask-image: linear-gradient(to right, transparent 0%, black 5%, black 90%, transparent 100%);
+    }
+
+    .playlist-name-text {
+        font-size: 0.9375rem;
+        color: var(--text-secondary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex-shrink: 0;
+        max-width: 100%;
+        transition: color 0.15s ease;
+    }
+
+    .nav-item:hover .playlist-name-text {
+        color: var(--text-primary);
+    }
+
+    .playlist-name-text.accent {
+        color: var(--accent-primary);
+    }
+
+    .pl-marquee {
+        overflow: visible;
+        text-overflow: clip;
+        max-width: none;
+        padding-right: 48px;
+        animation: pl-marquee-scroll var(--marquee-duration) linear infinite;
+    }
+
+    @keyframes pl-marquee-scroll {
+        from { transform: translateX(0); }
+        to   { transform: translateX(-100%); }
+    }
+
+    /* Footer */
     .sidebar-footer {
         padding: var(--spacing-md);
         border-top: 1px solid var(--border-color);
@@ -901,19 +1310,89 @@
 
     /* Mobile: sidebar fills its container (the drawer) */
     @media (max-width: 768px) {
-        .sidebar {
-            width: 100%;
-            border-right: none;
-            height: 100%;
-        }
-
-        .sidebar-header {
-            padding-top: var(--spacing-md);
-        }
-
-        .nav-item {
-            padding: 14px var(--spacing-md);
-            min-height: 48px;
-        }
+        .sidebar { width: 100%; border-right: none; height: 100%; }
+        .sidebar-header { padding-top: var(--spacing-md); }
+        .nav-item { padding: 14px var(--spacing-md); min-height: 48px; }
     }
+
+    .create-thumb {
+        width: 40px;
+        height: 40px;
+        flex-shrink: 0;
+        color: var(--accent-primary);
+        background-color: var(--accent-subtle);
+    }
+    .rename-mode {
+        flex-direction: row;
+        align-items: flex-start;
+        cursor: default;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        /* expand vertically to fit input + buttons */
+        height: auto;
+    }
+
+    .rename-body {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .rename-input {
+        width: 100%;
+        background: var(--bg-highlight, rgba(255,255,255,0.08));
+        border: 1px solid var(--accent-primary);
+        border-radius: var(--radius-sm, 4px);
+        color: var(--text-primary);
+        font-size: 0.9375rem;
+        padding: 5px 8px;
+        outline: none;
+        box-sizing: border-box;
+        transition: border-color 0.15s ease;
+    }
+
+    .rename-input:focus {
+        border-color: var(--accent-primary);
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-primary) 25%, transparent);
+    }
+
+    .rename-actions {
+        display: flex;
+        gap: 6px;
+        justify-content: flex-end;
+    }
+
+    .rename-cancel,
+    .rename-save {
+        font-size: 0.75rem;
+        font-weight: 600;
+        padding: 4px 12px;
+        border-radius: var(--radius-sm, 4px);
+        border: none;
+        cursor: pointer;
+        transition: opacity 0.15s ease, background-color 0.15s ease;
+        letter-spacing: 0.02em;
+    }
+
+    .rename-cancel {
+        background: var(--bg-surface);
+        color: var(--text-secondary);
+    }
+
+    .rename-cancel:hover {
+        background: var(--bg-highlight);
+        color: var(--text-primary);
+    }
+
+    .rename-save {
+        background: var(--accent-primary);
+        color: var(--bg-base);
+    }
+
+    .rename-save:hover {
+        opacity: 0.85;
+    }
+
 </style>

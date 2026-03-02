@@ -358,7 +358,17 @@ equalizer.subscribe((state) => {
 // =============================================================================
 // BACKEND INITIALIZATION
 // =============================================================================
+
+let audioBackendReady: Promise<void> | null = null;
+let audioBackendInitialized = false;
+
 export async function initAudioBackend(): Promise<void> {
+    audioBackendReady = _initAudioBackend();
+    await audioBackendReady;
+    audioBackendInitialized = true;
+}
+
+async function _initAudioBackend(): Promise<void> {
     console.log('[Player] Initializing audio backend');
 
     // Check if we should use native audio
@@ -637,6 +647,7 @@ function updateMediaSessionPosition(): void {
 
 // Play a specific track
 export async function playTrack(track: Track, skipLocalSrc = false, startTime = 0): Promise<void> {
+    if (!audioBackendInitialized) await audioBackendReady;
     const previousTrackObj = get(currentTrack);
     const sessionId = ++currentSessionId;
 
@@ -884,6 +895,7 @@ export function playTracks(
 }
 
 export async function togglePlay(): Promise<void> {
+    if (!audioBackendInitialized) await audioBackendReady;
     try {
         const track = get(currentTrack);
 
@@ -916,7 +928,8 @@ export async function togglePlay(): Promise<void> {
 }
 
 // Next track
-export function nextTrack(): void {
+export async function nextTrack(): Promise<void> {
+    if (!audioBackendInitialized) await audioBackendReady;
     const q = get(queue);
     const rep = get(repeat);
     const shuf = get(shuffle);
@@ -1034,6 +1047,7 @@ function playRandomFromLibrary(): void {
 
 // Previous track
 export async function previousTrack(): Promise<void> {
+    if (!audioBackendInitialized) await audioBackendReady;
     const q = get(queue);
     const shuf = get(shuffle);
     let idx = get(queueIndex);

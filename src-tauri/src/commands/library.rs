@@ -203,6 +203,14 @@ pub struct Library {
     pub artists: Vec<queries::Artist>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct LibraryCounts {
+    pub track_count: usize,
+    pub album_count: usize,
+    pub artist_count: usize,
+    pub artists: Vec<queries::Artist>,
+}
+
 /// Adaptive batch sizing for rescan_music
 fn calculate_batch_size(
     tracks_processed: usize,
@@ -686,6 +694,29 @@ pub async fn get_library(db: State<'_, Database>) -> Result<Library, String> {
         albums,
         artists,
     })
+}
+
+#[tauri::command]
+pub async fn get_library_counts(db: State<'_, Database>) -> Result<LibraryCounts, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let _ = queries::init_fts(&conn);
+
+    let track_count: usize = conn
+        .query_row("SELECT COUNT(*) FROM tracks", [], |r| r.get(0))
+        .unwrap_or(0);
+    let album_count: usize = conn
+        .query_row("SELECT COUNT(*) FROM albums", [], |r| r.get(0))
+        .unwrap_or(0);
+    let artist_count: usize = conn
+        .query_row(
+            "SELECT COUNT(DISTINCT artist) FROM tracks WHERE artist IS NOT NULL",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    let artists = queries::get_all_artists(&conn).map_err(|e| e.to_string())?;
+
+    Ok(LibraryCounts { track_count, album_count, artist_count, artists })
 }
 
 #[tauri::command]
