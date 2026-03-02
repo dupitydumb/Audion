@@ -399,6 +399,11 @@ async fn write_metadata_to_file(
             tag.set_track(track_num as u32);
         }
     }
+    if let Some(disc_num) = input.disc_number {
+        if disc_num > 0 && disc_num <= 255 {
+            tag.set_disk(disc_num as u32);
+        }
+    }
 
     // If we have cover data, embed it
     if let Some(cover_data) = cover_data {
@@ -668,6 +673,11 @@ async fn write_m4a_metadata(
             tag.set_track_number(track_num as u16);
         }
     }
+    if let Some(disc_num) = input.disc_number {
+        if disc_num > 0 && (disc_num as u32) <= u16::MAX as u32 {
+            tag.set_disc_number(disc_num as u16);
+        }
+    }
 
     // Download and set cover art if URL provided
     if let Some(cover_data) = cover_data {
@@ -738,6 +748,9 @@ fn write_flac_metadata(
     }
     if let Some(track_num) = input.track_number {
         tag.set_vorbis("TRACKNUMBER", vec![track_num.to_string()]);
+    }
+    if let Some(disc_num) = input.disc_number {
+        tag.set_vorbis("DISCNUMBER", vec![disc_num.to_string()]);
     }
     // Add cover art if available
     if let Some(cover_data) = cover_data {
