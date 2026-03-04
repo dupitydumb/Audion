@@ -898,8 +898,9 @@ export async function enrichTrackMetadataMb(
     trackId: number,
     artist: string,
     title: string,
+    persist = true,
 ): Promise<MbTrackEnrichment> {
-    return await invoke('enrich_track_metadata_mb', { trackId, artist, title });
+    return await invoke('enrich_track_metadata_mb', { trackId, artist, title, persist });
 }
 
 /**

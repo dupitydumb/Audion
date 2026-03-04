@@ -947,6 +947,23 @@ export class PluginRuntime {
       }
     };
 
+    // MusicBrainz API (always available)
+    api.musicbrainz = {
+        enrichTrack: async (artist: string, title: string): Promise<{ mbid: string | null; genre: string | null; isrcs: string[] }> => {
+            try {
+                return await invoke('enrich_track_metadata_mb', {
+                    trackId: 0,
+                    artist,
+                    title,
+                    persist: false
+                });
+            } catch (error) {
+                console.error('[PluginRuntime] MusicBrainz enrichTrack failed:', error);
+                return { mbid: null, genre: null, isrcs: [] };
+            }
+        }
+    };
+
     // Request API - allows inter-plugin communication
     api.request = async <T = any>(requestName: string, data: any): Promise<T> => {
       try {
