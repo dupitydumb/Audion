@@ -5,6 +5,7 @@ pub mod schema;
 use rusqlite::Connection;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use tauri::Manager;
 
 #[derive(Clone)]
 pub struct Database {

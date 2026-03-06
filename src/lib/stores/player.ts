@@ -107,7 +107,6 @@ async function playWithDash(blobUrl: string, audioElement: HTMLAudioElement): Pr
 
     const mpdText = await fetch(blobUrl).then(r => r.text());
     URL.revokeObjectURL(blobUrl);
-
     const bytes = new TextEncoder().encode(mpdText);
     const binary = Array.from(bytes).reduce((acc, byte) => acc + String.fromCharCode(byte), '');
     const dataUrl = 'data:application/dash+xml;base64,' + btoa(binary);
@@ -115,13 +114,11 @@ async function playWithDash(blobUrl: string, audioElement: HTMLAudioElement): Pr
     const dashjs = await getDashPlayer();
     dashPlayer = dashjs.MediaPlayer().create();
     dashPlayer.initialize(audioElement, dataUrl, true);
-
     dashPlayer.on(dashjs.MediaPlayer.events.ERROR, (e: any) => {
         console.error('[Player] dash.js error:', e);
         addToast(`Hi-Res playback error: ${e.error?.message || 'Unknown error'}`, 'error');
     });
 }
-
 
 function getHtml5Audio(): HTMLAudioElement {
     if (!html5Audio && typeof window !== 'undefined') {
@@ -901,11 +898,12 @@ export function cleanupPlayer(): void {
     stopStatePoller();
     nativeAudioStop().catch(console.error);
 
+    // Cleanup dash.js
     if (dashPlayer) {
-        try { dashPlayer.destroy(); } catch (_) { }
+        try { dashPlayer.destroy(); } catch (_) {}
         dashPlayer = null;
     }
-
+    
     // Cleanup HTML5
     if (html5Audio) {
         html5Audio.pause();
