@@ -103,7 +103,7 @@ If you prefer, download the platform-specific asset from the Releases page for y
 - Dark/light themes with custom accent colors
 - Full-screen mode
 - Mini player
-- Keyboard shortcuts
+- Keyboard shortcuts [ Shift + / ]
 
 ### Plugins
 Extend Audion with JavaScript/WASM plugins. [Learn more →](./PLUGINS.md)
