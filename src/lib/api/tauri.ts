@@ -234,6 +234,8 @@ export interface ExternalTrackInput {
     external_id: string;  // Source-specific ID
     format?: string;
     bitrate?: number;
+    track_number?: number;
+    disc_number?: number;
 }
 
 export async function addExternalTrack(track: ExternalTrackInput): Promise<number> {

@@ -885,6 +885,8 @@ pub struct ExternalTrackInput {
     pub format: Option<String>,
     pub bitrate: Option<i32>,
     pub stream_url: Option<String>, // The decoded stream URL
+    pub track_number: Option<i32>,
+    pub disc_number: Option<i32>,
 }
 
 /// Add an external (streaming) track to the library
@@ -923,8 +925,8 @@ pub async fn add_external_track(
         title: Some(track.title),
         artist: Some(track.artist),
         album: track.album,
-        track_number: None,
-        disc_number: None,
+        track_number: track.track_number,
+        disc_number: track.disc_number,
         duration: track.duration,
         album_art: None,   // External tracks use cover_url instead
         track_cover: None, // External tracks use cover_url instead

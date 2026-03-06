@@ -2019,6 +2019,8 @@
             cover_url: coverUrl,
             source_type: "tidal",
             external_id: String(track.id), // Used to fetch stream on play
+            track_number: track.trackNumber || null,
+            disc_number: track.volumeNumber || null,
             format: track.mediaMetadata?.tags?.includes("HIRES_LOSSLESS")
               ? "HI_RES_LOSSLESS"
               : track.mediaMetadata?.tags?.includes("LOSSLESS")
@@ -2503,6 +2505,10 @@
       // Tracks are in data.items, wrapped as {item: trackData, type: 'track'}
       const trackItems = albumData.data?.items || [];
       const tracks = trackItems.map(t => t.item).filter(Boolean);
+      console.log(
+        "[TidalSearch] First track raw:",
+        JSON.stringify(tracks[0], null, 2),
+      );
 
       console.log("[TidalSearch] Album data:", albumData);
       console.log("[TidalSearch] Tracks found:", tracks.length, tracks);
@@ -2721,6 +2727,8 @@
             cover_url: coverUrl,
             source_type: "tidal",
             external_id: String(track.id),
+            track_number: track.trackNumber || null,
+            disc_number: track.volumeNumber || null,
             format: track.mediaMetadata?.tags?.includes("HIRES_LOSSLESS")
               ? "HI_RES_LOSSLESS"
               : track.mediaMetadata?.tags?.includes("LOSSLESS")

@@ -175,6 +175,7 @@ export async function downloadTrack(
                 artist: track.artist || null,
                 album: track.album || null,
                 track_number: track.track_number || null,
+                disc_number: track.disc_number || null,
                 cover_url: track.cover_url || null
             }
         });

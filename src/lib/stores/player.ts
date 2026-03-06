@@ -38,12 +38,67 @@ let nativeStatePoller: ReturnType<typeof setInterval> | null = null;
 // HTML5 Audio element for streaming (initialized lazily)
 let html5Audio: HTMLAudioElement | null = null;
 
+// dash.js player instance for Hi-Res DASH/MPD streaming
+let dashPlayer: any | null = null;
+
 // Track which backend is currently active ('native', 'html5', or 'none')
 type ActiveBackend = 'native' | 'html5' | 'none';
 let activeBackend: ActiveBackend = 'none';
 
 // Track if we should use native audio based on platform/settings
 let nativeAudioUsed = false;
+
+type AudioPathKind = 'local' | 'stream' | 'blob' | 'custom-scheme';
+
+function classifyAudioPath(path: string): AudioPathKind {
+    if (path.startsWith('blob:')) return 'blob';
+    if (path.startsWith('http://') || path.startsWith('https://')) return 'stream';
+    if (path.startsWith('file://') || path.startsWith('asset://') || path.startsWith('tauri://')) return 'local';
+    if (path.includes('://')) return 'custom-scheme';
+    return 'local'; // absolute/relative filesystem path
+}
+
+// Lazily load dash.js and create a player instance
+async function getDashPlayer(): Promise<any> {
+    if (typeof window === 'undefined') throw new Error('No window');
+
+    // Load dash.js from CDN if not already loaded
+    if (!(window as any).dashjs) {
+        await new Promise<void>((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/dashjs/4.7.4/dash.all.min.js';
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error('Failed to load dash.js'));
+            document.head.appendChild(script);
+        });
+    }
+
+    return (window as any).dashjs;
+}
+
+async function playWithDash(blobUrl: string, audioElement: HTMLAudioElement): Promise<void> {
+    
+    if (dashPlayer) {
+        try { dashPlayer.destroy(); } catch (_) {}
+        dashPlayer = null;
+    }
+
+    const mpdText = await fetch(blobUrl).then(r => r.text());
+    URL.revokeObjectURL(blobUrl);
+    
+    const bytes = new TextEncoder().encode(mpdText);
+    const binary = Array.from(bytes).reduce((acc, byte) => acc + String.fromCharCode(byte), '');
+    const dataUrl = 'data:application/dash+xml;base64,' + btoa(binary);
+
+    const dashjs = await getDashPlayer();
+    dashPlayer = dashjs.MediaPlayer().create();
+    dashPlayer.initialize(audioElement, dataUrl, true);
+    
+    dashPlayer.on(dashjs.MediaPlayer.events.ERROR, (e: any) => {
+        console.error('[Player] dash.js error:', e);
+        addToast(`Hi-Res playback error: ${e.error?.message || 'Unknown error'}`, 'error');
+    });
+}
 
 function getHtml5Audio(): HTMLAudioElement {
     if (!html5Audio && typeof window !== 'undefined') {
@@ -472,6 +527,12 @@ export function cleanupPlayer(): void {
     stopStatePoller();
     nativeAudioStop().catch(console.error);
 
+    // Cleanup dash.js
+    if (dashPlayer) {
+        try { dashPlayer.destroy(); } catch (_) {}
+        dashPlayer = null;
+    }
+    
     // Cleanup HTML5
     if (html5Audio) {
         html5Audio.pause();
@@ -694,8 +755,8 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
             // Stop native audio
             await nativeAudioStop().catch(() => { });
 
-            // Resolve custom schemes (like tidal://) to HTTP URLs
-            if (audioPath.includes('://') && !audioPath.startsWith('http')) {
+            // Resolve custom schemes (like tidal://) to HTTP or blob URLs
+            if (classifyAudioPath(audioPath) === 'custom-scheme') {
                 const runtime = pluginStore.getRuntime();
                 if (runtime) {
                     const sourceType = track.source_type;
@@ -718,28 +779,44 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
             // Reset src to avoid overlap issues
             audio.pause();
 
-            // Resolve playlist-format URLs (.m3u, .pls, .m3u8) to direct stream URLs
-            audioPath = await resolvePlaylistUrl(audioPath);
+            // Destroy any existing dash player before switching tracks
+            if (dashPlayer) {
+                try { dashPlayer.destroy(); } catch (_) {}
+                dashPlayer = null;
+            }
 
-            audio.src = audioPath;
-            audio.volume = sliderToAudioVolume(get(volume));
+            const finalKind = classifyAudioPath(audioPath);
+
+            if (finalKind === 'blob') {
+                audio.volume = sliderToAudioVolume(get(volume));
+                
+                await playWithDash(audioPath, audio);
+                console.log('[Player] dash.js DASH streaming started:', track.title);
+            } else {
+                // Resolve playlist-format URLs (.m3u, .pls, .m3u8) to direct stream URLs
+                audioPath = await resolvePlaylistUrl(audioPath);
+
+                audio.src = audioPath;
+                audio.volume = sliderToAudioVolume(get(volume));
 
             // Wrap play in a handler to catch AbortError (common with rapid skipping)
-            try {
-                await audio.play();
-            } catch (err) {
-                if (err instanceof DOMException && err.name === 'AbortError') {
+                try {
+                    await audio.play();
+                } catch (err) {
+                    if (err instanceof DOMException && err.name === 'AbortError') {
                     // This usually means another PLAY request came in, so we can ignore this one
                     // or it means we paused/loaded too fast. 
                     // If Playback was intentional, we should log it.
-                    console.warn('[Player] Playback aborted (likely replaced by new track)', err);
-                } else {
-                    throw err;
+                        console.warn('[Player] Playback aborted (likely replaced by new track)', err);
+                    } else {
+                        throw err;
+                    }
                 }
+
+                console.log('[Player] HTML5 streaming started:', track.title);
             }
 
             activeBackend = 'html5';
-            console.log('[Player] HTML5 streaming started:', track.title);
         } else {
             if (!audioPath) {
                 throw new Error('No local audio path found for track');
