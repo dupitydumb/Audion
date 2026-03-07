@@ -34,6 +34,7 @@
     "global-shortcut:allow-unregister",
     "global-shortcut:allow-unregister-all",
     "global-shortcut:allow-is-registered",
+    "deep-link:default",
     "fs:allow-read",
     "fs:allow-write-file",
     "fs:allow-create",

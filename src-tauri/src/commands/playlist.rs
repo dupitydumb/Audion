@@ -1,12 +1,48 @@
 // Playlist-related Tauri commands
 use crate::db::{queries, Database};
-use tauri::State;
 use rusqlite::params;
+use tauri::State;
+
+/// Helper: check if user is logged in (for sync enqueuing)
+fn is_logged_in(conn: &rusqlite::Connection) -> bool {
+    queries::get_sync_meta(conn, "access_token")
+        .ok()
+        .flatten()
+        .is_some()
+        && queries::get_sync_meta(conn, "user_id")
+            .ok()
+            .flatten()
+            .is_some()
+}
+
+/// Helper: build a track hash for sync payloads (title|artist|album)
+fn build_track_hash(track: &queries::Track) -> String {
+    format!(
+        "{}|{}|{}",
+        track.title.as_deref().unwrap_or(""),
+        track.artist.as_deref().unwrap_or(""),
+        track.album.as_deref().unwrap_or("")
+    )
+}
 
 #[tauri::command]
 pub async fn create_playlist(name: String, db: State<'_, Database>) -> Result<i64, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::create_playlist(&conn, &name).map_err(|e| e.to_string())
+    let id = queries::create_playlist(&conn, &name).map_err(|e| e.to_string())?;
+
+    // Enqueue sync change
+    if is_logged_in(&conn) {
+        let payload = serde_json::json!({ "name": name }).to_string();
+        let _ = queries::enqueue_sync_change(
+            &conn,
+            "playlist",
+            &format!("local_{}", id),
+            "create",
+            Some(&payload),
+        );
+    }
+
+    Ok(id)
 }
 
 #[tauri::command]
@@ -31,7 +67,43 @@ pub async fn add_track_to_playlist(
     db: State<'_, Database>,
 ) -> Result<(), String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::add_track_to_playlist(&conn, playlist_id, track_id).map_err(|e| e.to_string())
+    queries::add_track_to_playlist(&conn, playlist_id, track_id).map_err(|e| e.to_string())?;
+
+    // Enqueue sync change
+    if is_logged_in(&conn) {
+        // Get the position that was just assigned
+        let position: i32 = conn.query_row(
+            "SELECT COALESCE(position, 0) FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2",
+            rusqlite::params![playlist_id, track_id],
+            |row| row.get(0),
+        ).unwrap_or(0);
+
+        let mut payload = serde_json::json!({
+            "playlistId": format!("local_{}", playlist_id),
+            "position": position,
+        });
+        // Attach track metadata for cross-device matching
+        if let Ok(Some(track)) = queries::get_track_by_id(&conn, track_id) {
+            let track_hash = build_track_hash(&track);
+            payload["trackHash"] = serde_json::Value::String(track_hash);
+            payload["title"] = serde_json::json!(track.title);
+            payload["artist"] = serde_json::json!(track.artist);
+            payload["album"] = serde_json::json!(track.album);
+            payload["duration"] = serde_json::json!(track.duration);
+            payload["externalId"] = serde_json::json!(track.external_id);
+            payload["sourceType"] = serde_json::json!(track.source_type);
+            payload["coverUrl"] = serde_json::json!(track.cover_url);
+        }
+        let _ = queries::enqueue_sync_change(
+            &conn,
+            "playlist_track",
+            &format!("local_{}_{}", playlist_id, track_id),
+            "create",
+            Some(&payload.to_string()),
+        );
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -41,13 +113,43 @@ pub async fn remove_track_from_playlist(
     db: State<'_, Database>,
 ) -> Result<(), String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::remove_track_from_playlist(&conn, playlist_id, track_id).map_err(|e| e.to_string())
+    queries::remove_track_from_playlist(&conn, playlist_id, track_id).map_err(|e| e.to_string())?;
+
+    // Enqueue sync change
+    if is_logged_in(&conn) {
+        let payload = serde_json::json!({
+            "playlistId": format!("local_{}", playlist_id),
+        })
+        .to_string();
+        let _ = queries::enqueue_sync_change(
+            &conn,
+            "playlist_track",
+            &format!("local_{}_{}", playlist_id, track_id),
+            "delete",
+            Some(&payload),
+        );
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn delete_playlist(playlist_id: i64, db: State<'_, Database>) -> Result<(), String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::delete_playlist(&conn, playlist_id).map_err(|e| e.to_string())
+    queries::delete_playlist(&conn, playlist_id).map_err(|e| e.to_string())?;
+
+    // Enqueue sync change
+    if is_logged_in(&conn) {
+        let _ = queries::enqueue_sync_change(
+            &conn,
+            "playlist",
+            &format!("local_{}", playlist_id),
+            "delete",
+            None,
+        );
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -57,7 +159,21 @@ pub async fn rename_playlist(
     db: State<'_, Database>,
 ) -> Result<(), String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::rename_playlist(&conn, playlist_id, &new_name).map_err(|e| e.to_string())
+    queries::rename_playlist(&conn, playlist_id, &new_name).map_err(|e| e.to_string())?;
+
+    // Enqueue sync change
+    if is_logged_in(&conn) {
+        let payload = serde_json::json!({ "name": new_name }).to_string();
+        let _ = queries::enqueue_sync_change(
+            &conn,
+            "playlist",
+            &format!("local_{}", playlist_id),
+            "update",
+            Some(&payload),
+        );
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -68,7 +184,21 @@ pub async fn update_playlist_cover(
 ) -> Result<(), String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     queries::update_playlist_cover(&conn, playlist_id, cover_url.as_deref())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    // Enqueue sync change
+    if is_logged_in(&conn) {
+        let payload = serde_json::json!({ "coverUrl": cover_url }).to_string();
+        let _ = queries::enqueue_sync_change(
+            &conn,
+            "playlist",
+            &format!("local_{}", playlist_id),
+            "update",
+            Some(&payload),
+        );
+    }
+
+    Ok(())
 }
 
 /// Reorder tracks in a playlist by moving a track from one position to another
@@ -85,16 +215,16 @@ pub async fn reorder_playlist_tracks(
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
     // Get all tracks in the playlist ordered by position
-    let mut stmt = conn.prepare(
-        "SELECT track_id, position FROM playlist_tracks 
+    let mut stmt = conn
+        .prepare(
+            "SELECT track_id, position FROM playlist_tracks 
          WHERE playlist_id = ?1 
-         ORDER BY position"
-    ).map_err(|e| e.to_string())?;
-    
+         ORDER BY position",
+        )
+        .map_err(|e| e.to_string())?;
+
     let tracks: Vec<(i64, i64)> = stmt
-        .query_map(params![playlist_id], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })
+        .query_map(params![playlist_id], |row| Ok((row.get(0)?, row.get(1)?)))
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
@@ -119,10 +249,10 @@ pub async fn reorder_playlist_tracks(
 
     // Create a new ordered list of track IDs
     let mut track_ids: Vec<i64> = tracks.iter().map(|(id, _)| *id).collect();
-    
+
     // Remove the track from its current position
     let moved_track_id = track_ids.remove(from_index as usize);
-    
+
     // Insert it at the new position
     track_ids.insert(to_index as usize, moved_track_id);
 
@@ -137,15 +267,32 @@ pub async fn reorder_playlist_tracks(
              SET position = ?1 
              WHERE playlist_id = ?2 AND track_id = ?3",
             params![new_position as i64, playlist_id, track_id],
-        ).map_err(|e| {
+        )
+        .map_err(|e| {
             // Rollback on error
             let _ = conn.execute("ROLLBACK", []);
             e.to_string()
         })?;
     }
 
-    conn.execute("COMMIT", [])
-        .map_err(|e| e.to_string())?;
+    conn.execute("COMMIT", []).map_err(|e| e.to_string())?;
+
+    // Enqueue sync change for the reorder
+    if is_logged_in(&conn) {
+        let payload = serde_json::json!({
+            "playlistId": format!("local_{}", playlist_id),
+            "fromIndex": from_index,
+            "toIndex": to_index,
+        })
+        .to_string();
+        let _ = queries::enqueue_sync_change(
+            &conn,
+            "playlist_track",
+            &format!("local_{}_reorder", playlist_id),
+            "update",
+            Some(&payload),
+        );
+    }
 
     Ok(())
 }

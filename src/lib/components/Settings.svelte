@@ -18,6 +18,16 @@
   import { confirm } from "$lib/stores/dialogs";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { onMount, onDestroy } from "svelte";
+  import {
+    authState,
+    syncStatus,
+    isLoggedIn,
+    isSyncing,
+    showLoginModal,
+    logout,
+    triggerSync,
+    deleteAccount,
+  } from "$lib/stores/sync";
 
   interface MigrationProgressUpdate {
     current: number;
@@ -341,6 +351,130 @@
 
   <div class="settings-content">
     <div class="settings-container">
+      <!-- Account & Sync -->
+      <section class="settings-section">
+        <h3 class="section-title">Account</h3>
+
+        {#if $isLoggedIn}
+          <div class="setting-item account-card">
+            <div class="account-profile">
+              {#if $authState.avatar_url}
+                <img
+                  src={$authState.avatar_url}
+                  alt="Profile"
+                  class="avatar"
+                />
+              {:else}
+                <div class="avatar avatar-placeholder">
+                  {($authState.name || $authState.email || "U").charAt(0).toUpperCase()}
+                </div>
+              {/if}
+              <div class="account-info">
+                <span class="account-name">{$authState.name || "User"}</span>
+                <span class="account-email">{$authState.email || ""}</span>
+              </div>
+            </div>
+            <div class="account-actions">
+              <button
+                class="btn-secondary btn-sm"
+                on:click={() => triggerSync()}
+                disabled={$isSyncing}
+                aria-label="Sync now"
+              >
+                {#if $isSyncing}
+                  Syncing...
+                {:else}
+                  Sync Now
+                {/if}
+              </button>
+              <button
+                class="btn-secondary btn-sm"
+                on:click={async () => {
+                  const ok = await confirm(
+                    "Are you sure you want to log out? Unsynced changes will be lost.",
+                    "Log Out",
+                  );
+                  if (ok) logout();
+                }}
+                aria-label="Log out"
+              >
+                Log Out
+              </button>
+            </div>
+          </div>
+
+          <div class="setting-item">
+            <div class="sync-info">
+              <span class="setting-label">Sync Status</span>
+              <span class="setting-value">
+                {#if $isSyncing}
+                  Syncing...
+                {:else if $syncStatus.last_error}
+                  <span class="text-error">Error: {$syncStatus.last_error}</span>
+                {:else if $syncStatus.last_sync_at}
+                  Last synced: {$syncStatus.last_sync_at}
+                {:else}
+                  Not synced yet
+                {/if}
+              </span>
+            </div>
+            {#if $syncStatus.pending_changes > 0}
+              <span class="setting-hint"
+                >{$syncStatus.pending_changes} pending change{$syncStatus.pending_changes !== 1 ? "s" : ""}</span
+              >
+            {/if}
+          </div>
+
+          <div class="setting-item">
+            <div class="danger-item">
+              <div class="danger-info">
+                <span class="setting-label">Delete Account</span>
+                <p class="setting-hint">
+                  Permanently delete your account and all synced data from the
+                  server. Your local library is not affected.
+                </p>
+              </div>
+              <button
+                class="danger-btn"
+                on:click={async () => {
+                  const ok = await confirm(
+                    "This will permanently delete your account and all synced data from the server. This cannot be undone. Continue?",
+                    "Delete Account",
+                    true,
+                  );
+                  if (ok) {
+                    try {
+                      await deleteAccount();
+                    } catch (e) {
+                      console.error("Failed to delete account:", e);
+                    }
+                  }
+                }}
+                aria-label="Delete account"
+              >
+                Delete Account
+              </button>
+            </div>
+          </div>
+        {:else}
+          <div class="setting-item">
+            <div class="account-signin">
+              <p class="setting-hint">
+                Sign in to sync your playlists, liked songs, and settings
+                across all your devices.
+              </p>
+              <button
+                class="btn-primary"
+                on:click={() => showLoginModal.set(true)}
+                aria-label="Sign in"
+              >
+                Sign In
+              </button>
+            </div>
+          </div>
+        {/if}
+      </section>
+
       <!-- Theme Mode -->
       <section class="settings-section">
         <h3 class="section-title">Appearance</h3>
@@ -1588,6 +1722,86 @@
   .danger-btn:hover {
     background-color: #dc3545;
     color: white;
+  }
+
+  /* Account section */
+  .account-card {
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+
+  .account-profile {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    width: 100%;
+  }
+
+  .avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-full);
+    object-fit: cover;
+    flex-shrink: 0;
+  }
+
+  .avatar-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-primary);
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.125rem;
+  }
+
+  .account-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .account-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 0.9375rem;
+  }
+
+  .account-email {
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .account-actions {
+    display: flex;
+    gap: var(--spacing-sm);
+    width: 100%;
+  }
+
+  .btn-sm {
+    padding: var(--spacing-xs) var(--spacing-md);
+    font-size: 0.8125rem;
+  }
+
+  .account-signin {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    align-items: flex-start;
+  }
+
+  .sync-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .text-error {
+    color: var(--error-color);
+    font-size: 0.8125rem;
   }
 
   /* Modal */

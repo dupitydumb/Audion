@@ -16,6 +16,7 @@
     "dialog:allow-open",
     "notification:default",
     "os:default",
+    "deep-link:default",
     "fs:allow-read",
     "fs:allow-write",
     {

@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use tokio::time::{sleep, Duration};
 
 const MB_API_BASE: &str = "https://musicbrainz.org/ws/2";
-const MB_USER_AGENT: &str = "Audion/1.2.4 (https://audionplayer.com)";
+const MB_USER_AGENT: &str = "Audion/1.2.5 (https://audionplayer.com)";
 const WIKI_SUMMARY_BASE: &str = "https://en.wikipedia.org/api/rest_v1/page/summary";
 
 // ── Raw MusicBrainz JSON shapes ───────────────────────────────────────────────

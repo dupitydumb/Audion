@@ -7,7 +7,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dupitydumb/Audion/releases"><img src="https://img.shields.io/badge/version-1.2.4-blue.svg" alt="Version"></a>
+  <a href="https://github.com/dupitydumb/Audion/releases"><img src="https://img.shields.io/badge/version-1.2.5-blue.svg" alt="Version"></a>
   <img src="https://img.shields.io/badge/platform-Windows-brightgreen.svg" alt="Windows">
   <img src="https://img.shields.io/badge/platform-macOS-brightgreen.svg" alt="macOS">
   <img src="https://img.shields.io/badge/platform-Linux-brightgreen.svg" alt="Linux">

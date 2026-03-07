@@ -52,6 +52,7 @@
 
     import { updates } from "$lib/stores/updates";
     import UpdatePopup from "./UpdatePopup.svelte";
+    import SyncStatus from "./SyncStatus.svelte";
 
     import { currentPlaylistId } from "$lib/stores/player";
 
@@ -319,6 +320,7 @@
         <div class="logo">
             <img src="/logo.png" alt="Audion Logo" width="32" height="32" />
             <span class="logo-text">Audion</span>
+            <SyncStatus />
             {#if $updates.hasUpdate}
                 <div
                     class="update-badge"

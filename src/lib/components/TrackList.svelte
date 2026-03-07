@@ -39,7 +39,7 @@
   import { multiSelect } from "$lib/stores/multiselect";
   import { isMobile } from "$lib/stores/mobile";
   import { confirm } from "$lib/stores/dialogs";
-  import { saveScroll, getScroll } from '$lib/stores/scrollMemory';
+  import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
 
   export let scrollKey: string | null = null;
 
@@ -128,7 +128,7 @@
   $: filteredTracks = tracks;
 
   // Sorting state
-  type SortField = "title" | "album" | "duration" | null;
+  type SortField = "title" | "album" | "duration" | "date_added" | null;
   let sortField: SortField = null;
   let sortDirection: "asc" | "desc" = "asc";
 
@@ -142,7 +142,8 @@
       }
     } else {
       sortField = field;
-      sortDirection = "asc";
+      // For date_added, default to descending (Recently added)
+      sortDirection = field === "date_added" ? "desc" : "asc";
     }
   }
 
@@ -178,6 +179,10 @@
             case "duration":
               valA = a.duration || 0;
               valB = b.duration || 0;
+              break;
+            case "date_added":
+              valA = a.date_added || "";
+              valB = b.date_added || "";
               break;
           }
 
@@ -282,10 +287,10 @@
       updateHeight();
 
       if (scrollKey) {
-          const saved = getScroll(scrollKey);
-          if (saved > 0 && containerElement) {
-              containerElement.scrollTop = saved;
-          }
+        const saved = getScroll(scrollKey);
+        if (saved > 0 && containerElement) {
+          containerElement.scrollTop = saved;
+        }
       }
 
       window.addEventListener("resize", updateHeight);
@@ -863,11 +868,15 @@
     {#if playlistId !== null && !multiSelectMode}
       <span class="col-header col-drag"></span>
     {/if}
-    <button class="col-header col-num" on:click={() => toggleSort(null)}>
-      {#if sortField === null}
-        <span class="sort-icon">#</span>
-      {:else}
-        #
+    <button
+      class="col-header col-num"
+      on:click={() => toggleSort("date_added")}
+    >
+      #
+      {#if sortField === "date_added"}
+        <span class="sort-icon">{sortDirection === "asc" ? "▲" : "▼"}</span>
+      {:else if sortField === null}
+        <span class="sort-icon">•</span>
       {/if}
     </button>
     <span class="col-header col-cover"></span>

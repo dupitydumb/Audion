@@ -21,6 +21,8 @@
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
   import ProgressiveScanStatus from "$lib/components/ProgressiveScanStatus.svelte";
+  import LoginModal from "$lib/components/LoginModal.svelte";
+  import { initSync, destroySync } from "$lib/stores/sync";
   import "../app.css";
 
   let handleVisibilityChange: (() => void) | null = null;
@@ -90,6 +92,9 @@
 
     // Load liked tracks from database
     loadLikedTracks();
+
+    // Initialize sync state (auth check, event listeners)
+    initSync();
 
     // Initialize Android-specific features
     if (isAndroid() && isTauri()) {
@@ -217,6 +222,9 @@
 
     // Cleanup player resources
     cleanupPlayer();
+
+    // Cleanup sync event listeners
+    destroySync();
   });
 
   // Cleanup on hot reload (development only)
@@ -233,6 +241,7 @@
 {/if}
 <ConfirmDialog />
 <ProgressiveScanStatus />
+<LoginModal />
 
 {#if showMigrationBanner}
   <div class="migration-banner">

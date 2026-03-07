@@ -1,7 +1,9 @@
-## Release Note - 1.2.4
+## Release Note - 1.2.6
 
 
-### Fixes
-- text overflow
-- general bug fixes
-- macos focus issue
+### Features
+- Account Sync
+- MusicBrainz Integration
+- ListenBrainz Integration
+- Sort by added date
+- Pin playlist

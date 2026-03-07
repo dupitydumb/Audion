@@ -7,6 +7,7 @@ mod db;
 mod discord;
 mod scanner;
 mod security;
+mod sync;
 mod utils;
 
 // =============================================================================
@@ -19,7 +20,91 @@ mod audio;
 
 use db::Database;
 use std::path::PathBuf;
-use tauri::Manager;
+use tauri::{Emitter, Listener, Manager};
+
+/// Handle a deep link URL — extract tokens, store them, fetch profile, trigger sync.
+/// Called from both the deep-link event listener (macOS) and the single-instance
+/// callback (Windows/Linux).
+fn handle_deep_link_url(app_handle: &tauri::AppHandle, url_str: &str) {
+    tracing::info!("Processing deep link: {}", url_str);
+
+    let url = match url::Url::parse(url_str) {
+        Ok(u) => u,
+        Err(e) => {
+            tracing::error!("Failed to parse deep link URL: {}", e);
+            return;
+        }
+    };
+
+    if url.path() != "/auth/callback" && url.path() != "auth/callback" {
+        tracing::info!("Deep link is not an auth callback, ignoring: {}", url.path());
+        return;
+    }
+
+    let mut access_token = None;
+    let mut refresh_token = None;
+
+    for (key, value) in url.query_pairs() {
+        match key.as_ref() {
+            "access_token" => access_token = Some(value.to_string()),
+            "refresh_token" => refresh_token = Some(value.to_string()),
+            _ => {}
+        }
+    }
+
+    let (at, rt) = match (access_token, refresh_token) {
+        (Some(a), Some(r)) => (a, r),
+        _ => {
+            tracing::error!("Deep link missing access_token or refresh_token");
+            return;
+        }
+    };
+
+    let db = app_handle.state::<Database>();
+    let sync_state = app_handle.state::<sync::SyncState>();
+
+    // Store tokens
+    if let Err(e) = sync::auth::store_auth_tokens(&db, &at, &rt) {
+        tracing::error!("Failed to store auth tokens: {}", e);
+        return;
+    }
+
+    // Fetch profile and trigger sync in background
+    let db_clone = db.inner().clone();
+    let server_url = sync_state.server_url.clone();
+    let is_syncing = sync_state.is_syncing.clone();
+    let handle = app_handle.clone();
+    let at_clone = at.clone();
+
+    tauri::async_runtime::spawn(async move {
+        // Fetch profile
+        match sync::auth::fetch_and_store_profile(&db_clone, &server_url, &at_clone).await {
+            Ok(state) => {
+                tracing::info!("Profile fetched: {:?}", state.email);
+                let _ = handle.emit("sync://auth-state-changed", &state);
+            }
+            Err(e) => {
+                tracing::error!("Failed to fetch profile: {}", e);
+            }
+        }
+
+        // Initial full sync
+        let temp_state = sync::SyncState {
+            is_syncing,
+            server_url: server_url.clone(),
+            app_handle: Some(handle.clone()),
+        };
+        match sync::perform_full_sync(&db_clone, &temp_state).await {
+            Ok(status) => {
+                tracing::info!("Initial sync completed");
+                let _ = handle.emit("sync://status-changed", &status);
+            }
+            Err(e) => {
+                tracing::error!("Initial sync failed: {}", e);
+            }
+        }
+    });
+}
 
 // =============================================================================
 // LOGGING SETUP
@@ -152,13 +237,45 @@ pub fn run() {
     // Initialize security audit logging
     security::init_logger();
 
-    let mut builder = tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    // ==========================================================================
+    // PLUGIN REGISTRATION ORDER MATTERS!
+    // Single-instance MUST be first (Tauri requirement), then deep-link.
+    // ==========================================================================
+
+    // 1. Single-instance plugin (MUST be first): routes deep links to existing
+    //    window on Windows/Linux instead of spawning a new process.
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            tracing::info!("Single instance: another instance launched with args: {:?}", argv);
+
+            // On Windows/Linux, deep links arrive as command-line arguments
+            for arg in argv.iter().skip(1) {
+                if arg.starts_with("audion://") {
+                    handle_deep_link_url(app, arg);
+                }
+            }
+
+            // Focus the existing window
+            if let Some(window) = app.get_webview_window("main") {
+                window.unminimize().ok();
+                window.set_focus().ok();
+            }
+        }));
+    }
+
+    // 2. Deep-link plugin (must come after single-instance)
+    builder = builder.plugin(tauri_plugin_deep_link::init());
+
+    // 3. All other plugins
+    builder = builder
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_os::init());
+        .plugin(tauri_plugin_notification::init());
 
     #[cfg(desktop)]
     {
@@ -214,6 +331,59 @@ pub fn run() {
                 tracing::info!("Registering native audio backend state (lazy init)");
                 app.manage(audio::PlaybackStateSync::new());
                 audio::PlaybackStateSync::init_async(app.handle().clone());
+            }
+
+            // =============================================================================
+            // SYNC STATE INITIALIZATION
+            // =============================================================================
+            {
+                tracing::info!("Registering sync state");
+                app.manage(sync::SyncState::new_with_handle(app.handle().clone()));
+            }
+
+            // =============================================================================
+            // DEEP LINK HANDLER (audion:// OAuth callback)
+            // =============================================================================
+            // On macOS, deep links arrive via the deep-link://new-url event.
+            // On Windows/Linux, they arrive via single-instance argv (handled above).
+            // =============================================================================
+            {
+                let app_handle = app.handle().clone();
+                app.listen("deep-link://new-url", move |event: tauri::Event| {
+                    let payload_str = event.payload();
+                    tracing::info!("Deep link event received: {}", payload_str);
+
+                    if let Ok(urls) = serde_json::from_str::<Vec<String>>(payload_str) {
+                        for url_str in &urls {
+                            if url_str.starts_with("audion://") {
+                                handle_deep_link_url(&app_handle, url_str);
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Also check if the app was started with a deep link (cold start)
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                if let Ok(Some(urls)) = app.deep_link().get_current() {
+                    tracing::info!("App started with deep link: {:?}", urls);
+                    for url in &urls {
+                        let url_str = url.to_string();
+                        if url_str.starts_with("audion://") {
+                            handle_deep_link_url(app.handle(), &url_str);
+                        }
+                    }
+                }
+            }
+
+            // Register deep-link schemes at runtime (required on Windows/Linux for dev builds)
+            #[cfg(any(windows, target_os = "linux"))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                if let Err(e) = app.deep_link().register_all() {
+                    tracing::warn!("Failed to register deep link schemes: {}", e);
+                }
             }
 
             // Handle window start mode (desktop only)
@@ -378,6 +548,17 @@ pub fn run() {
                     discord::discord_disconnect,
                     discord::discord_reconnect,
                     // =========================================================================
+                    // SYNC COMMANDS
+                    // =========================================================================
+                    commands::sync_get_auth_state,
+                    commands::sync_handle_auth_callback,
+                    commands::sync_logout,
+                    commands::sync_trigger,
+                    commands::sync_get_status,
+                    commands::sync_get_server_url,
+                    commands::sync_enqueue_change,
+                    commands::sync_delete_account,
+                    // =========================================================================
                     // NATIVE AUDIO COMMANDS
                     // =========================================================================
                     // These commands control the native audio backend (rodio).
@@ -497,6 +678,17 @@ pub fn run() {
                     commands::get_artist_discography_mb,
                     commands::search_artists_mb,
                     commands::search_releases_mb,
+                    // =========================================================================
+                    // SYNC COMMANDS
+                    // =========================================================================
+                    commands::sync_get_auth_state,
+                    commands::sync_handle_auth_callback,
+                    commands::sync_logout,
+                    commands::sync_trigger,
+                    commands::sync_get_status,
+                    commands::sync_get_server_url,
+                    commands::sync_enqueue_change,
+                    commands::sync_delete_account,
                     // =========================================================================
                     // NATIVE AUDIO COMMANDS
                     // =========================================================================

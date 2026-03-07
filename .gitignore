@@ -49,3 +49,6 @@ plugin-examples/
 
 #Skills
 .agents/
+
+#Server
+/audion-server

@@ -173,6 +173,14 @@ async fn handle_track_import(
     }
 
     // Return the full track object for the frontend
+    let date_added: Option<String> = conn
+        .query_row(
+            "SELECT date_added FROM tracks WHERE id = ?1",
+            [track_id],
+            |row| row.get(0),
+        )
+        .ok();
+
     let track = queries::Track {
         id: track_id,
         path: track_data.path.clone(),
@@ -191,6 +199,7 @@ async fn handle_track_import(
         track_cover: None, // Frontend uses track_cover_path via convertFileSrc
         track_cover_path: cover_path,
         disc_number: track_data.disc_number,
+        date_added,
     };
 
     Ok(track)
@@ -544,14 +553,18 @@ pub async fn rescan_music(
                         }
 
                         // Build Track struct for frontend
-                        let album_id = tx_db
+                        let (album_id, date_added) = tx_db
                             .query_row(
-                                "SELECT album_id FROM tracks WHERE id = ?1",
+                                "SELECT album_id, date_added FROM tracks WHERE id = ?1",
                                 [track_id],
-                                |row| row.get::<_, Option<i64>>(0),
+                                |row| {
+                                    Ok((
+                                        row.get::<_, Option<i64>>(0)?,
+                                        row.get::<_, Option<String>>(1)?,
+                                    ))
+                                },
                             )
-                            .ok()
-                            .flatten();
+                            .unwrap_or((None, None));
 
                         batch_tracks.push(queries::Track {
                             id: track_id,
@@ -571,6 +584,7 @@ pub async fn rescan_music(
                             track_cover: None,
                             track_cover_path: cover_path,
                             disc_number: track_data.disc_number,
+                            date_added,
                         });
                     }
                     Ok(_) => {}

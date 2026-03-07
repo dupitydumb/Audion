@@ -9,6 +9,7 @@ pub mod musicbrainz;
 pub mod network;
 pub mod playlist;
 pub mod plugin;
+pub mod sync;
 
 pub use activity::*;
 pub use library::*;
@@ -21,3 +22,4 @@ pub use playlist::*;
 pub use plugin::*;
 pub mod window;
 pub use covers::*;
+pub use sync::*;
