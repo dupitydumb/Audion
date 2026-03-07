@@ -15,6 +15,7 @@
   export let secondaryText = "";
   // If provided, secondary text renders as a clickable button
   export let secondaryAction: (() => void) | null = null;
+  export let isPinned = false;
 
   $: isRound = variant === "round";
   $: isCentered = variant === "round";
@@ -77,20 +78,27 @@
 
   function handleTouchStart(e: TouchEvent) {
     const target = e.target as HTMLElement;
-    if (target.closest(".play-button") || target.closest(".pause-button-overlay")) return;
+    if (
+      target.closest(".play-button") ||
+      target.closest(".pause-button-overlay")
+    )
+      return;
     if (touchTimeout) clearTimeout(touchTimeout);
 
     isActive = true;
-    
+
     measureOverflow(() => {
       const longest = Math.max(
         parseFloat(primaryDuration) || 0,
-        parseFloat(secondaryDuration) || 0
+        parseFloat(secondaryDuration) || 0,
       );
-      touchTimeout = setTimeout(() => {
-        isActive = false;
-        resetOverflow();
-      }, Math.min(Math.max(6000, longest * 2 * 1000), 10000));
+      touchTimeout = setTimeout(
+        () => {
+          isActive = false;
+          resetOverflow();
+        },
+        Math.min(Math.max(6000, longest * 2 * 1000), 10000),
+      );
     });
   }
 
@@ -141,6 +149,16 @@
   >
     <slot name="cover" />
 
+    {#if isPinned}
+      <div class="pinned-indicator" aria-label="Pinned to top">
+        <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+          <path
+            d="M16 9V4l1 0V2H7v2l1 0v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"
+          />
+        </svg>
+      </div>
+    {/if}
+
     {#if isNowPlaying}
       <div class="playing-indicator-container">
         <div class="playing-indicator" aria-hidden="true">
@@ -154,7 +172,13 @@
           on:click|stopPropagation={() => dispatch("pause")}
           aria-label={pauseTooltip}
         >
-          <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            width="24"
+            height="24"
+            aria-hidden="true"
+          >
             <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
           </svg>
         </button>
@@ -170,7 +194,13 @@
           aria-label={isPaused ? resumeTooltip : playTooltip}
           on:click|stopPropagation={() => dispatch("play")}
         >
-          <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24" aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            fill="currentColor"
+            width="24"
+            height="24"
+            aria-hidden="true"
+          >
             <path d="M8 5v14l11-7z" />
           </svg>
         </button>
@@ -184,42 +214,53 @@
         class="text-inner"
         bind:this={primaryEl}
         style="--marquee-duration: {primaryDuration};"
-        class:marquee={isActive && primaryOverflows}
-      >{primaryText}</span>
+        class:marquee={isActive && primaryOverflows}>{primaryText}</span
+      >
       {#if isActive && primaryOverflows}
-        <span class="text-inner marquee" aria-hidden="true" style="--marquee-duration: {primaryDuration};">
+        <span
+          class="text-inner marquee"
+          aria-hidden="true"
+          style="--marquee-duration: {primaryDuration};"
+        >
           {primaryText}
         </span>
       {/if}
     </div>
 
     {#if secondaryText}
-      <div class="text-track secondary" class:animate={isActive && secondaryOverflows}>
+      <div
+        class="text-track secondary"
+        class:animate={isActive && secondaryOverflows}
+      >
         {#if secondaryAction}
           <button
             class="text-inner secondary-link"
             bind:this={secondaryEl}
             style="--marquee-duration: {secondaryDuration};"
             class:marquee={isActive && secondaryOverflows}
-            on:click|stopPropagation={secondaryAction}
-          >{secondaryText}</button>
+            on:click|stopPropagation={secondaryAction}>{secondaryText}</button
+          >
           {#if isActive && secondaryOverflows}
             <button
               class="text-inner secondary-link marquee"
               aria-hidden="true"
               style="--marquee-duration: {secondaryDuration};"
-              on:click|stopPropagation={secondaryAction}
-            >{secondaryText}</button>
+              on:click|stopPropagation={secondaryAction}>{secondaryText}</button
+            >
           {/if}
         {:else}
           <span
             class="text-inner"
             bind:this={secondaryEl}
             style="--marquee-duration: {secondaryDuration};"
-            class:marquee={isActive && secondaryOverflows}
-          >{secondaryText}</span>
+            class:marquee={isActive && secondaryOverflows}>{secondaryText}</span
+          >
           {#if isActive && secondaryOverflows}
-            <span class="text-inner marquee" aria-hidden="true" style="--marquee-duration: {secondaryDuration};">
+            <span
+              class="text-inner marquee"
+              aria-hidden="true"
+              style="--marquee-duration: {secondaryDuration};"
+            >
               {secondaryText}
             </span>
           {/if}
@@ -246,8 +287,12 @@
     position: relative;
   }
 
-  .media-card:hover { background-color: var(--bg-surface); }
-  .media-card.now-playing { background-color: var(--accent-subtle); }
+  .media-card:hover {
+    background-color: var(--bg-surface);
+  }
+  .media-card.now-playing {
+    background-color: var(--accent-subtle);
+  }
   .media-card.now-playing:hover,
   .media-card.paused,
   .media-card.paused:hover {
@@ -256,9 +301,17 @@
   }
 
   /* Round / centered variant */
-  .media-card.centered { align-items: center; text-align: center; }
-  .media-card.centered .info { align-items: center; width: 100%; }
-  .media-card.centered .text-track { width: 100%; }
+  .media-card.centered {
+    align-items: center;
+    text-align: center;
+  }
+  .media-card.centered .info {
+    align-items: center;
+    width: 100%;
+  }
+  .media-card.centered .text-track {
+    width: 100%;
+  }
   .media-card.centered .text-track:not(.animate) .text-inner {
     max-width: 100%;
     width: 100%;
@@ -289,9 +342,11 @@
   }
 
   @media (max-width: 768px) {
-    .cover.round { width: 100px; height: 100px; }
+    .cover.round {
+      width: 100px;
+      height: 100px;
+    }
   }
-
 
   .cover :global(img) {
     width: 100%;
@@ -314,7 +369,26 @@
     z-index: 2;
   }
 
-  .badge.paused-badge { background-color: var(--text-secondary); }
+  .badge.paused-badge {
+    background-color: var(--text-secondary);
+  }
+
+  /* Pinned Indicator */
+  .pinned-indicator {
+    position: absolute;
+    top: var(--spacing-sm);
+    right: var(--spacing-sm);
+    background-color: var(--accent-primary);
+    color: var(--bg-base);
+    width: 24px;
+    height: 24px;
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: var(--shadow-md);
+    z-index: 2;
+  }
 
   /* Cover overlay */
   .cover-overlay {
@@ -329,9 +403,18 @@
     pointer-events: none;
   }
 
-  .cover:hover .cover-overlay { opacity: 1; pointer-events: auto; }
-  .cover-overlay.is-playing { opacity: 0; background: transparent; }
-  .cover:hover .cover-overlay.is-playing { opacity: 1; background: rgba(0, 0, 0, 0.5); }
+  .cover:hover .cover-overlay {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .cover-overlay.is-playing {
+    opacity: 0;
+    background: transparent;
+  }
+  .cover:hover .cover-overlay.is-playing {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.5);
+  }
 
   /* Play button */
   .play-button {
@@ -346,7 +429,9 @@
     align-items: center;
     justify-content: center;
     transform: translateY(8px);
-    transition: transform var(--transition-fast), scale var(--transition-fast);
+    transition:
+      transform var(--transition-fast),
+      scale var(--transition-fast);
     box-shadow: var(--shadow-lg);
     cursor: pointer;
     position: relative;
@@ -371,9 +456,15 @@
     z-index: 1000;
   }
 
-  .play-button:hover::after { opacity: 1; }
-  .cover:hover .play-button { transform: translateY(0); }
-  .play-button:hover { transform: translateY(0) scale(1.05); }
+  .play-button:hover::after {
+    opacity: 1;
+  }
+  .cover:hover .play-button {
+    transform: translateY(0);
+  }
+  .play-button:hover {
+    transform: translateY(0) scale(1.05);
+  }
 
   /* Playing indicator */
   .playing-indicator-container {
@@ -399,7 +490,9 @@
     position: relative;
   }
 
-  .playing-indicator:hover { transform: scale(1.05); }
+  .playing-indicator:hover {
+    transform: scale(1.05);
+  }
 
   .playing-indicator .bar {
     width: 4px;
@@ -409,12 +502,21 @@
     animation: equalizer 0.8s ease-in-out infinite;
   }
 
-  .playing-indicator .bar:nth-child(2) { animation-delay: 0.2s; }
-  .playing-indicator .bar:nth-child(3) { animation-delay: 0.4s; }
+  .playing-indicator .bar:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+  .playing-indicator .bar:nth-child(3) {
+    animation-delay: 0.4s;
+  }
 
   @keyframes equalizer {
-    0%, 100% { height: 6px; }
-    50% { height: 20px; }
+    0%,
+    100% {
+      height: 6px;
+    }
+    50% {
+      height: 20px;
+    }
   }
 
   /* Pause button overlay */
@@ -434,7 +536,9 @@
     cursor: pointer;
   }
 
-  .playing-indicator-container:hover .pause-button-overlay { opacity: 1; }
+  .playing-indicator-container:hover .pause-button-overlay {
+    opacity: 1;
+  }
 
   .pause-button-overlay::after {
     content: attr(data-pause-tooltip);
@@ -455,7 +559,9 @@
     z-index: 1000;
   }
 
-  .pause-button-overlay:hover::after { opacity: 1; }
+  .pause-button-overlay:hover::after {
+    opacity: 1;
+  }
 
   /* Info */
   .info {
@@ -472,8 +578,20 @@
     display: flex;
     flex-direction: row;
     overflow: hidden;
-    -webkit-mask-image: linear-gradient(to right, transparent 0%, black 4%, black 92%, transparent 100%);
-    mask-image: linear-gradient(to right, transparent 0%, black 4%, black 92%, transparent 100%);
+    -webkit-mask-image: linear-gradient(
+      to right,
+      transparent 0%,
+      black 4%,
+      black 92%,
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      to right,
+      transparent 0%,
+      black 4%,
+      black 92%,
+      transparent 100%
+    );
   }
 
   .text-track:not(.animate) {
@@ -496,7 +614,9 @@
   }
 
   .media-card.now-playing .text-track:not(.secondary) .text-inner,
-  .media-card.paused .text-track:not(.secondary) .text-inner { color: var(--accent-primary); }
+  .media-card.paused .text-track:not(.secondary) .text-inner {
+    color: var(--accent-primary);
+  }
 
   .text-track.secondary .text-inner {
     font-size: 0.8125rem;
@@ -546,16 +666,31 @@
   }
 
   @keyframes marquee-scroll {
-    from { transform: translateX(0); }
-    to { transform: translateX(-100%); }
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-100%);
+    }
   }
 
   /* Mobile */
   @media (max-width: 768px) {
-    .media-card { padding: var(--spacing-sm); }
-    .cover { margin-bottom: var(--spacing-sm); }
-    .text-track:not(.secondary) .text-inner { font-size: 0.8125rem; }
-    .text-track.secondary .text-inner { font-size: 0.75rem; }
-    .badge { font-size: 0.625rem; padding: 2px 6px; }
+    .media-card {
+      padding: var(--spacing-sm);
+    }
+    .cover {
+      margin-bottom: var(--spacing-sm);
+    }
+    .text-track:not(.secondary) .text-inner {
+      font-size: 0.8125rem;
+    }
+    .text-track.secondary .text-inner {
+      font-size: 0.75rem;
+    }
+    .badge {
+      font-size: 0.625rem;
+      padding: 2px 6px;
+    }
   }
 </style>

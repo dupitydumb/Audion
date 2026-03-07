@@ -2,6 +2,8 @@
 import { writable, derived, get } from 'svelte/store';
 import type { Track, Album, Artist, Playlist, ScanBatchEvent } from '$lib/api/tauri';
 import { getLibrary, getPlaylists, getAlbumCoverSrc, getAlbumArtSrc, getTracksPaginated, getAlbumsPaginated, searchLibrary, convertFileSrc } from '$lib/api/tauri';
+import { customArtworks, getCustomArtworkSync } from './customArtwork';
+import { playlistCovers, getPlaylistCoverSync } from './playlistCovers';
 
 // BLOB URL CONVERSION
 /**
@@ -438,6 +440,10 @@ export function getFullAlbum(albumId: number): Album | null {
  * Get track cover art (for TrackList)
  */
 export function getTrackCover(trackId: number): string | null {
+    // Priority: Custom artwork -> trackCoverCache
+    const custom = getCustomArtworkSync(get(customArtworks), 'track', trackId);
+    if (custom) return custom;
+
     return trackCoverCache.get(trackId) || null;
 }
 
@@ -445,6 +451,10 @@ export function getTrackCover(trackId: number): string | null {
  * Get album art (for AlbumGrid)
  */
 export function getAlbumArt(albumId: number): string | null {
+    // Priority: Custom artwork -> albumArtCache
+    const custom = getCustomArtworkSync(get(customArtworks), 'album', albumId);
+    if (custom) return custom;
+
     return albumArtCache.get(albumId) || null;
 }
 
@@ -455,6 +465,10 @@ export function getTrackAlbumCover(trackId: number): string | null {
     const metadata = trackMetadataCache.get(trackId);
     if (!metadata) return null;
 
+    // Priority 0: Custom track artwork
+    const customTrack = getCustomArtworkSync(get(customArtworks), 'track', trackId);
+    if (customTrack) return customTrack;
+
     // Priority 1: Track's embedded cover
     const trackCover = trackCoverCache.get(trackId);
     if (trackCover) return trackCover;
@@ -462,7 +476,13 @@ export function getTrackAlbumCover(trackId: number): string | null {
     // Priority 2: External cover URL
     if (metadata.cover_url) return metadata.cover_url;
 
-    // Priority 3: Album art
+    // Priority 3: Custom album artwork
+    if (metadata.album_id) {
+        const customAlbum = getCustomArtworkSync(get(customArtworks), 'album', metadata.album_id);
+        if (customAlbum) return customAlbum;
+    }
+
+    // Priority 4: Album art
     if (metadata.album_id) {
         const albumArt = albumArtCache.get(metadata.album_id);
         if (albumArt) return albumArt;
@@ -473,6 +493,10 @@ export function getTrackAlbumCover(trackId: number): string | null {
 
 // Priority: album art cache → album metadata art_path → first track cover
 export function getAlbumCoverFromTracks(albumId: number): string | null {
+    // Priority 0: Custom album artwork
+    const customAlbum = getCustomArtworkSync(get(customArtworks), 'album', albumId);
+    if (customAlbum) return customAlbum;
+
     // Priority 1: albumArtCache (now populated by ingestAlbums)
     const cachedArt = albumArtCache.get(albumId);
     if (cachedArt) return cachedArt;

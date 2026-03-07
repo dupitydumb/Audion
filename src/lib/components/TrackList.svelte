@@ -38,13 +38,14 @@
   import { onDestroy, onMount } from "svelte";
   import { multiSelect } from "$lib/stores/multiselect";
   import { isMobile } from "$lib/stores/mobile";
-  import { confirm } from "$lib/stores/dialogs";
+  import { confirm, prompt } from "$lib/stores/dialogs";
   import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
+  import { setCustomArtwork } from "$lib/stores/customArtwork";
 
   export let scrollKey: string | null = null;
 
   export let tracks: Track[] = [];
-  export let title: string = "Tracks";
+  // export let title = ""; // unused
   export let showAlbum: boolean = true;
   export let isTidalAvailable: boolean = true;
   export let playbackContext: PlaybackContext | undefined = undefined;
@@ -526,6 +527,49 @@
                   disabled: true,
                 },
               ],
+      },
+      { type: "separator" },
+      {
+        label: "Change Artwork",
+        submenu: [
+          {
+            label: "From File",
+            action: () => {
+              const input = document.createElement("input");
+              input.type = "file";
+              input.accept = "image/*";
+              input.onchange = (e) => {
+                const file = (e.target as HTMLInputElement).files?.[0];
+                if (file) {
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    const result = reader.result as string;
+                    setCustomArtwork("track", track.id, result);
+                    addToast("Artwork updated", "success");
+                    // Refresh local cache for reactivity
+                    trackAlbumArtCache.delete(track.id);
+                  };
+                  reader.readAsDataURL(file);
+                }
+              };
+              input.click();
+            },
+          },
+          {
+            label: "From URL",
+            action: async () => {
+              const url = await prompt("Enter image URL:", {
+                title: "Change Artwork",
+                placeholder: "https://example.com/image.jpg",
+              });
+              if (url && url.trim()) {
+                setCustomArtwork("track", track.id, url.trim());
+                addToast("Artwork updated", "success");
+                trackAlbumArtCache.delete(track.id);
+              }
+            },
+          },
+        ],
       },
     ];
 

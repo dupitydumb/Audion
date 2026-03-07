@@ -6,4 +6,5 @@
 - MusicBrainz Integration
 - ListenBrainz Integration
 - Sort by added date
-- Pin playlist
+- Pin playlist, album, artist
+- Add custom artwork

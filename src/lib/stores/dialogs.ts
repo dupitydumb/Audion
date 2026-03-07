@@ -17,7 +17,7 @@ export interface ConfirmDialogState {
     resolve: ((value: boolean) => void) | null;
 }
 
-const initialState: ConfirmDialogState = {
+const initialConfirmState: ConfirmDialogState = {
     visible: false,
     message: '',
     title: 'Confirm Action',
@@ -27,7 +27,7 @@ const initialState: ConfirmDialogState = {
     resolve: null
 };
 
-export const confirmDialogStore = writable<ConfirmDialogState>(initialState);
+export const confirmDialogStore = writable<ConfirmDialogState>(initialConfirmState);
 
 export function confirm(message: string, options: ConfirmOptions = {}): Promise<boolean> {
     return new Promise((resolve) => {
@@ -49,7 +49,66 @@ export function closeConfirmDialog(result: boolean) {
             state.resolve(result);
         }
         return {
-            ...initialState,
+            ...initialConfirmState,
+            visible: false
+        };
+    });
+}
+
+export interface PromptOptions {
+    title?: string;
+    placeholder?: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    initialValue?: string;
+}
+
+export interface PromptDialogState {
+    visible: boolean;
+    message: string;
+    title: string;
+    placeholder: string;
+    confirmLabel: string;
+    cancelLabel: string;
+    value: string;
+    resolve: ((value: string | null) => void) | null;
+}
+
+const initialPromptState: PromptDialogState = {
+    visible: false,
+    message: '',
+    title: 'Enter Value',
+    placeholder: '',
+    confirmLabel: 'OK',
+    cancelLabel: 'Cancel',
+    value: '',
+    resolve: null
+};
+
+export const promptDialogStore = writable<PromptDialogState>(initialPromptState);
+
+export function prompt(message: string, options: PromptOptions = {}): Promise<string | null> {
+    return new Promise((resolve) => {
+        promptDialogStore.set({
+            visible: true,
+            message,
+            title: options.title || 'Enter Value',
+            placeholder: options.placeholder || '',
+            confirmLabel: options.confirmLabel || 'OK',
+            cancelLabel: options.cancelLabel || 'Cancel',
+            value: options.initialValue || '',
+            resolve
+        });
+    });
+}
+
+export function closePromptDialog(result: string | null) {
+    promptDialogStore.update(state => {
+        if (state.resolve) {
+            state.resolve(result);
+        }
+        return {
+            ...initialPromptState,
             visible: false
         };
     });

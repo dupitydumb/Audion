@@ -24,6 +24,15 @@
         type DownloadProgress,
     } from "$lib/services/downloadService";
     import { addToast } from "$lib/stores/toast";
+    import { contextMenu } from "$lib/stores/ui";
+    import { confirm, prompt } from "$lib/stores/dialogs";
+    import {
+        pinnedItems,
+        pinItem,
+        unpinItem,
+        isPinned,
+    } from "$lib/stores/pinned";
+    import { setCustomArtwork } from "$lib/stores/customArtwork";
 
     export let artistName: string;
 
@@ -66,7 +75,9 @@
 
     $: filteredDisco = showAllDiscoTypes
         ? discography
-        : discography.filter((d) => DISCO_PRIMARY.includes(d.release_type.toLowerCase()));
+        : discography.filter((d) =>
+              DISCO_PRIMARY.includes(d.release_type.toLowerCase()),
+          );
     $: hiddenDiscoCount = discography.length - filteredDisco.length;
 
     function handleCoverError(mbid: string) {
@@ -261,6 +272,86 @@
             downloadProgress = "";
         }
     }
+
+    function handleContextMenu(e: MouseEvent) {
+        e.preventDefault();
+        const pinned = isPinned("artist", artistName, $pinnedItems);
+        contextMenu.set({
+            visible: true,
+            x: e.clientX,
+            y: e.clientY,
+            items: [
+                {
+                    label: pinned ? "Unpin from Top" : "Pin to Top",
+                    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2L4.5 9L9 9L9 22L15 22L15 9L19.5 9L12 2Z"/></svg>`,
+                    action: () => {
+                        if (pinned) {
+                            unpinItem("artist", artistName);
+                        } else {
+                            pinItem("artist", artistName);
+                        }
+                    },
+                },
+                { type: "separator" },
+                {
+                    label: "Change Artwork",
+                    submenu: [
+                        {
+                            label: "From File",
+                            action: () => {
+                                const input = document.createElement("input");
+                                input.type = "file";
+                                input.accept = "image/*";
+                                input.onchange = (e) => {
+                                    const file = (e.target as HTMLInputElement)
+                                        .files?.[0];
+                                    if (file) {
+                                        const reader = new FileReader();
+                                        reader.onload = () => {
+                                            const result =
+                                                reader.result as string;
+                                            setCustomArtwork(
+                                                "artist",
+                                                artistName,
+                                                result,
+                                            );
+                                            addToast(
+                                                "Artist artwork updated",
+                                                "success",
+                                            );
+                                        };
+                                        reader.readAsDataURL(file);
+                                    }
+                                };
+                                input.click();
+                            },
+                        },
+                        {
+                            label: "From URL",
+                            action: async () => {
+                                const url = await prompt("Enter image URL:", {
+                                    title: "Change Artwork",
+                                    placeholder:
+                                        "https://example.com/image.jpg",
+                                });
+                                if (url && url.trim()) {
+                                    setCustomArtwork(
+                                        "artist",
+                                        artistName,
+                                        url.trim(),
+                                    );
+                                    addToast(
+                                        "Artist artwork updated",
+                                        "success",
+                                    );
+                                }
+                            },
+                        },
+                    ],
+                },
+            ],
+        });
+    }
 </script>
 
 <div class="artist-detail">
@@ -270,7 +361,11 @@
             <span>Loading artist...</span>
         </div>
     {:else}
-        <header class="artist-header">
+        <header
+            class="artist-header"
+            on:contextmenu={handleContextMenu}
+            role="banner"
+        >
             <button
                 class="back-btn"
                 on:click={goToArtists}
@@ -428,15 +523,24 @@
                                 target="_blank"
                                 rel="noopener noreferrer"
                             >
-                                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15v-4H7l5-8v4h4l-5 8z"/>
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="currentColor"
+                                    width="16"
+                                    height="16"
+                                >
+                                    <path
+                                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15v-4H7l5-8v4h4l-5 8z"
+                                    />
                                 </svg>
                                 Read on Wikipedia
                             </a>
                         {/if}
 
                         {#if mbInfo.disambiguation}
-                            <p class="about-disambiguation">({mbInfo.disambiguation})</p>
+                            <p class="about-disambiguation">
+                                ({mbInfo.disambiguation})
+                            </p>
                         {/if}
 
                         <p class="mb-attribution">Data from MusicBrainz</p>
@@ -457,35 +561,53 @@
                         {:else if similarArtists.length > 0}
                             <div class="similar-list">
                                 {#each similarArtists as a}
-                                    <div class="similar-item" class:in-library={a.in_library}>
+                                    <div
+                                        class="similar-item"
+                                        class:in-library={a.in_library}
+                                    >
                                         <div class="similar-avatar">
                                             {a.name.charAt(0).toUpperCase()}
                                         </div>
                                         <div class="similar-meta">
-                                            <span class="similar-name">{a.name}</span>
-                                            <span class="similar-rel">{a.relation_type}</span>
+                                            <span class="similar-name"
+                                                >{a.name}</span
+                                            >
+                                            <span class="similar-rel"
+                                                >{a.relation_type}</span
+                                            >
                                         </div>
                                         {#if a.in_library}
-                                            <span class="in-library-dot" title="In your library">•</span>
+                                            <span
+                                                class="in-library-dot"
+                                                title="In your library">•</span
+                                            >
                                         {/if}
                                     </div>
                                 {/each}
                             </div>
                         {:else if similarFetched}
-                            <p class="about-empty-sm">No related artists found.</p>
+                            <p class="about-empty-sm">
+                                No related artists found.
+                            </p>
                         {/if}
                     </section>
 
                     <!-- ── Discography ── -->
                     <section class="about-section">
                         <div class="disco-section-header">
-                            <h3 class="about-heading">Discography on MusicBrainz</h3>
+                            <h3 class="about-heading">
+                                Discography on MusicBrainz
+                            </h3>
                             {#if discoFetched && (hiddenDiscoCount > 0 || showAllDiscoTypes)}
                                 <button
                                     class="disco-toggle-btn"
-                                    on:click={() => (showAllDiscoTypes = !showAllDiscoTypes)}
+                                    on:click={() =>
+                                        (showAllDiscoTypes =
+                                            !showAllDiscoTypes)}
                                 >
-                                    {showAllDiscoTypes ? "Albums & Singles" : `Show all (${discography.length})`}
+                                    {showAllDiscoTypes
+                                        ? "Albums & Singles"
+                                        : `Show all (${discography.length})`}
                                 </button>
                             {/if}
                         </div>
@@ -497,7 +619,11 @@
                         {:else if filteredDisco.length > 0}
                             <div class="disco-grid">
                                 {#each filteredDisco as item (item.mbid)}
-                                    <div class="disco-card {discoTypeClass(item.release_type)}">
+                                    <div
+                                        class="disco-card {discoTypeClass(
+                                            item.release_type,
+                                        )}"
+                                    >
                                         <div class="disco-cover-wrap">
                                             {#if !failedCovers.has(item.mbid)}
                                                 <img
@@ -505,34 +631,109 @@
                                                     src={item.cover_url}
                                                     alt={item.title}
                                                     loading="lazy"
-                                                    on:error={() => handleCoverError(item.mbid)}
+                                                    on:error={() =>
+                                                        handleCoverError(
+                                                            item.mbid,
+                                                        )}
                                                 />
                                             {:else}
-                                                <div class="disco-cover-placeholder {discoTypeClass(item.release_type)}">
+                                                <div
+                                                    class="disco-cover-placeholder {discoTypeClass(
+                                                        item.release_type,
+                                                    )}"
+                                                >
                                                     {#if item.release_type.toLowerCase() === "album"}
-                                                        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/></svg>
+                                                        <svg
+                                                            viewBox="0 0 24 24"
+                                                            fill="currentColor"
+                                                            width="28"
+                                                            height="28"
+                                                            ><path
+                                                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
+                                                            /></svg
+                                                        >
                                                     {:else if item.release_type.toLowerCase() === "single"}
-                                                        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+                                                        <svg
+                                                            viewBox="0 0 24 24"
+                                                            fill="currentColor"
+                                                            width="28"
+                                                            height="28"
+                                                            ><path
+                                                                d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
+                                                            /></svg
+                                                        >
                                                     {:else if item.release_type.toLowerCase() === "ep"}
-                                                        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/></svg>
+                                                        <svg
+                                                            viewBox="0 0 24 24"
+                                                            fill="currentColor"
+                                                            width="28"
+                                                            height="28"
+                                                            ><path
+                                                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"
+                                                            /></svg
+                                                        >
                                                     {:else if item.release_type.toLowerCase() === "live"}
-                                                        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M12 3v9.28c-.47-.17-.97-.28-1.5-.28C8.01 12 6 14.01 6 16.5S8.01 21 10.5 21c2.31 0 4.2-1.75 4.45-4H15V6h4V3h-7z"/></svg>
+                                                        <svg
+                                                            viewBox="0 0 24 24"
+                                                            fill="currentColor"
+                                                            width="28"
+                                                            height="28"
+                                                            ><path
+                                                                d="M12 3v9.28c-.47-.17-.97-.28-1.5-.28C8.01 12 6 14.01 6 16.5S8.01 21 10.5 21c2.31 0 4.2-1.75 4.45-4H15V6h4V3h-7z"
+                                                            /></svg
+                                                        >
                                                     {:else if item.release_type.toLowerCase() === "compilation"}
-                                                        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"/></svg>
+                                                        <svg
+                                                            viewBox="0 0 24 24"
+                                                            fill="currentColor"
+                                                            width="28"
+                                                            height="28"
+                                                            ><path
+                                                                d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"
+                                                            /></svg
+                                                        >
                                                     {:else if item.release_type.toLowerCase() === "soundtrack"}
-                                                        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg>
+                                                        <svg
+                                                            viewBox="0 0 24 24"
+                                                            fill="currentColor"
+                                                            width="28"
+                                                            height="28"
+                                                            ><path
+                                                                d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"
+                                                            /></svg
+                                                        >
                                                     {:else}
-                                                        <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/></svg>
+                                                        <svg
+                                                            viewBox="0 0 24 24"
+                                                            fill="currentColor"
+                                                            width="28"
+                                                            height="28"
+                                                            ><path
+                                                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
+                                                            /></svg
+                                                        >
                                                     {/if}
                                                 </div>
                                             {/if}
                                         </div>
                                         <div class="disco-card-body">
-                                            <span class="disco-card-title" title={item.title}>{item.title}</span>
+                                            <span
+                                                class="disco-card-title"
+                                                title={item.title}
+                                                >{item.title}</span
+                                            >
                                             <div class="disco-card-meta">
-                                                <span class="disco-badge {discoTypeClass(item.release_type)}">{item.release_type}</span>
+                                                <span
+                                                    class="disco-badge {discoTypeClass(
+                                                        item.release_type,
+                                                    )}"
+                                                    >{item.release_type}</span
+                                                >
                                                 {#if item.year}
-                                                    <span class="disco-card-year">{item.year}</span>
+                                                    <span
+                                                        class="disco-card-year"
+                                                        >{item.year}</span
+                                                    >
                                                 {/if}
                                             </div>
                                         </div>
@@ -981,14 +1182,30 @@
     }
 
     /* Per-type card left borders */
-    .disco-card.rt-album   { border-left-color: #3b82f6; }
-    .disco-card.rt-single  { border-left-color: #22c55e; }
-    .disco-card.rt-ep      { border-left-color: #a855f7; }
-    .disco-card.rt-live    { border-left-color: #ef4444; }
-    .disco-card.rt-compilation { border-left-color: #f59e0b; }
-    .disco-card.rt-soundtrack  { border-left-color: #ec4899; }
-    .disco-card.rt-remix   { border-left-color: #06b6d4; }
-    .disco-card.rt-other   { border-left-color: #6b7280; }
+    .disco-card.rt-album {
+        border-left-color: #3b82f6;
+    }
+    .disco-card.rt-single {
+        border-left-color: #22c55e;
+    }
+    .disco-card.rt-ep {
+        border-left-color: #a855f7;
+    }
+    .disco-card.rt-live {
+        border-left-color: #ef4444;
+    }
+    .disco-card.rt-compilation {
+        border-left-color: #f59e0b;
+    }
+    .disco-card.rt-soundtrack {
+        border-left-color: #ec4899;
+    }
+    .disco-card.rt-remix {
+        border-left-color: #06b6d4;
+    }
+    .disco-card.rt-other {
+        border-left-color: #6b7280;
+    }
 
     .disco-cover-wrap {
         width: 100%;
@@ -1014,14 +1231,38 @@
         background: var(--bg-surface);
     }
 
-    .disco-cover-placeholder.rt-album   { color: #3b82f6; background: rgba(59,130,246,0.08); }
-    .disco-cover-placeholder.rt-single  { color: #22c55e; background: rgba(34,197,94,0.08); }
-    .disco-cover-placeholder.rt-ep      { color: #a855f7; background: rgba(168,85,247,0.08); }
-    .disco-cover-placeholder.rt-live    { color: #ef4444; background: rgba(239,68,68,0.08); }
-    .disco-cover-placeholder.rt-compilation { color: #f59e0b; background: rgba(245,158,11,0.08); }
-    .disco-cover-placeholder.rt-soundtrack  { color: #ec4899; background: rgba(236,72,153,0.08); }
-    .disco-cover-placeholder.rt-remix   { color: #06b6d4; background: rgba(6,182,212,0.08); }
-    .disco-cover-placeholder.rt-other   { color: #6b7280; background: rgba(107,114,128,0.08); }
+    .disco-cover-placeholder.rt-album {
+        color: #3b82f6;
+        background: rgba(59, 130, 246, 0.08);
+    }
+    .disco-cover-placeholder.rt-single {
+        color: #22c55e;
+        background: rgba(34, 197, 94, 0.08);
+    }
+    .disco-cover-placeholder.rt-ep {
+        color: #a855f7;
+        background: rgba(168, 85, 247, 0.08);
+    }
+    .disco-cover-placeholder.rt-live {
+        color: #ef4444;
+        background: rgba(239, 68, 68, 0.08);
+    }
+    .disco-cover-placeholder.rt-compilation {
+        color: #f59e0b;
+        background: rgba(245, 158, 11, 0.08);
+    }
+    .disco-cover-placeholder.rt-soundtrack {
+        color: #ec4899;
+        background: rgba(236, 72, 153, 0.08);
+    }
+    .disco-cover-placeholder.rt-remix {
+        color: #06b6d4;
+        background: rgba(6, 182, 212, 0.08);
+    }
+    .disco-cover-placeholder.rt-other {
+        color: #6b7280;
+        background: rgba(107, 114, 128, 0.08);
+    }
 
     .disco-card-body {
         padding: 8px 10px;
@@ -1057,14 +1298,38 @@
         line-height: 1.5;
     }
 
-    .disco-badge.rt-album   { color: #3b82f6; background: rgba(59,130,246,0.15); }
-    .disco-badge.rt-single  { color: #22c55e; background: rgba(34,197,94,0.15); }
-    .disco-badge.rt-ep      { color: #a855f7; background: rgba(168,85,247,0.15); }
-    .disco-badge.rt-live    { color: #ef4444; background: rgba(239,68,68,0.15); }
-    .disco-badge.rt-compilation { color: #f59e0b; background: rgba(245,158,11,0.15); }
-    .disco-badge.rt-soundtrack  { color: #ec4899; background: rgba(236,72,153,0.15); }
-    .disco-badge.rt-remix   { color: #06b6d4; background: rgba(6,182,212,0.15); }
-    .disco-badge.rt-other   { color: #6b7280; background: rgba(107,114,128,0.15); }
+    .disco-badge.rt-album {
+        color: #3b82f6;
+        background: rgba(59, 130, 246, 0.15);
+    }
+    .disco-badge.rt-single {
+        color: #22c55e;
+        background: rgba(34, 197, 94, 0.15);
+    }
+    .disco-badge.rt-ep {
+        color: #a855f7;
+        background: rgba(168, 85, 247, 0.15);
+    }
+    .disco-badge.rt-live {
+        color: #ef4444;
+        background: rgba(239, 68, 68, 0.15);
+    }
+    .disco-badge.rt-compilation {
+        color: #f59e0b;
+        background: rgba(245, 158, 11, 0.15);
+    }
+    .disco-badge.rt-soundtrack {
+        color: #ec4899;
+        background: rgba(236, 72, 153, 0.15);
+    }
+    .disco-badge.rt-remix {
+        color: #06b6d4;
+        background: rgba(6, 182, 212, 0.15);
+    }
+    .disco-badge.rt-other {
+        color: #6b7280;
+        background: rgba(107, 114, 128, 0.15);
+    }
 
     .disco-card-year {
         font-size: 0.68rem;

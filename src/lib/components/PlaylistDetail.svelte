@@ -7,7 +7,13 @@
         renamePlaylist,
         formatDuration,
     } from "$lib/api/tauri";
-    import { confirm } from "$lib/stores/dialogs";
+    import { confirm, prompt } from "$lib/stores/dialogs";
+    import {
+        pinnedItems,
+        pinItem,
+        unpinItem,
+        isPinned,
+    } from "$lib/stores/pinned";
     import { contextMenu } from "$lib/stores/ui";
     import { playTracks, addToQueue } from "$lib/stores/player";
     import { goToPlaylists, goToTracksMultiSelect } from "$lib/stores/view";
@@ -258,6 +264,7 @@
     function handleHeaderContextMenu(e: MouseEvent) {
         e.preventDefault();
         if (!playlist) return;
+        const pinned = isPinned("playlist", playlist.id, $pinnedItems);
 
         contextMenu.set({
             visible: true,
@@ -278,16 +285,47 @@
                 },
                 { type: "separator" },
                 {
+                    label: pinned ? "Unpin from Top" : "Pin to Top",
+                    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2L4.5 9L9 9L9 22L15 22L15 9L19.5 9L12 2Z"/></svg>`,
+                    action: () => {
+                        if (pinned) {
+                            unpinItem("playlist", playlist!.id);
+                        } else {
+                            pinItem("playlist", playlist!.id);
+                        }
+                    },
+                },
+                { type: "separator" },
+                {
                     label: "Rename",
                     action: startEditing,
                 },
                 {
                     label: "Change Cover",
-                    action: () => coverInput?.click(),
+                    submenu: [
+                        {
+                            label: "From File",
+                            action: () => coverInput?.click(),
+                        },
+                        {
+                            label: "From URL",
+                            action: async () => {
+                                const url = await prompt("Enter image URL:", {
+                                    title: "Change Cover",
+                                    placeholder:
+                                        "https://example.com/image.jpg",
+                                });
+                                if (url && url.trim()) {
+                                    setPlaylistCover(playlist!.id, url.trim());
+                                }
+                            },
+                        },
+                    ],
                 },
                 { type: "separator" },
                 {
                     label: "Delete Playlist",
+                    danger: true,
                     action: handleDelete,
                 },
             ],
@@ -312,6 +350,8 @@
         <header
             class="playlist-header"
             on:contextmenu={handleHeaderContextMenu}
+            role="region"
+            aria-label="Playlist header"
         >
             <button class="back-btn" on:click={goToPlaylists} title="Close">
                 <svg
@@ -329,6 +369,7 @@
                 class="playlist-cover"
                 on:mouseenter={() => (coverHovered = true)}
                 on:mouseleave={() => (coverHovered = false)}
+                role="presentation"
             >
                 <img src={coverSrc} alt="Playlist cover" class="cover-image" />
                 <input
@@ -394,7 +435,6 @@
                         on:keydown={handleKeyDown}
                         on:blur={handleRename}
                         class="edit-input"
-                        autofocus
                     />
                 {:else}
                     <h1 class="playlist-title" on:dblclick={startEditing}>

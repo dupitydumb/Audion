@@ -126,6 +126,7 @@ export interface ContextMenuItem {
     label: string;
     action?: () => void;
     danger?: boolean;
+    icon?: string;
     disabled?: boolean;
     submenu?: ContextMenuItem[];
     type?: 'item' | 'separator';

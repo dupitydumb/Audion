@@ -24,7 +24,7 @@
     } from "$lib/services/downloadService";
     import { addToast } from "$lib/stores/toast";
     import { goto } from "$app/navigation";
-    import { confirm } from "$lib/stores/dialogs";
+    import { confirm, prompt } from "$lib/stores/dialogs";
 
     export let albumId: number;
 
@@ -187,15 +187,92 @@
 
     import { contextMenu } from "$lib/stores/ui";
     import { deleteAlbum } from "$lib/api/tauri";
+    import {
+        pinnedItems,
+        pinItem,
+        unpinItem,
+        isPinned,
+    } from "$lib/stores/pinned";
+    import { setCustomArtwork } from "$lib/stores/customArtwork";
 
     function handleContextMenu(e: MouseEvent) {
         if (!album) return;
         e.preventDefault();
+        const pinned = isPinned("album", album.id, $pinnedItems);
         contextMenu.set({
             visible: true,
             x: e.clientX,
             y: e.clientY,
             items: [
+                {
+                    label: pinned ? "Unpin from Top" : "Pin to Top",
+                    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2L4.5 9L9 9L9 22L15 22L15 9L19.5 9L12 2Z"/></svg>`,
+                    action: () => {
+                        if (pinned) {
+                            unpinItem("album", album!.id);
+                        } else {
+                            pinItem("album", album!.id);
+                        }
+                    },
+                },
+                { type: "separator" },
+                {
+                    label: "Change Artwork",
+                    submenu: [
+                        {
+                            label: "From File",
+                            action: () => {
+                                const input = document.createElement("input");
+                                input.type = "file";
+                                input.accept = "image/*";
+                                input.onchange = (e) => {
+                                    const file = (e.target as HTMLInputElement)
+                                        .files?.[0];
+                                    if (file) {
+                                        const reader = new FileReader();
+                                        reader.onload = () => {
+                                            const result =
+                                                reader.result as string;
+                                            setCustomArtwork(
+                                                "album",
+                                                album!.id,
+                                                result,
+                                            );
+                                            addToast(
+                                                "Album artwork updated",
+                                                "success",
+                                            );
+                                        };
+                                        reader.readAsDataURL(file);
+                                    }
+                                };
+                                input.click();
+                            },
+                        },
+                        {
+                            label: "From URL",
+                            action: async () => {
+                                const url = await prompt("Enter image URL:", {
+                                    title: "Change Artwork",
+                                    placeholder:
+                                        "https://example.com/image.jpg",
+                                });
+                                if (url && url.trim()) {
+                                    setCustomArtwork(
+                                        "album",
+                                        album!.id,
+                                        url.trim(),
+                                    );
+                                    addToast(
+                                        "Album artwork updated",
+                                        "success",
+                                    );
+                                }
+                            },
+                        },
+                    ],
+                },
+                { type: "separator" },
                 {
                     label: "Delete Album",
                     danger: true,
@@ -235,7 +312,7 @@
         <header
             class="album-header"
             on:contextmenu={handleContextMenu}
-            role="region"
+            role="banner"
             aria-label="Album Header"
         >
             <button
@@ -365,15 +442,25 @@
         {:else if mbRelease && (mbRelease.year || mbRelease.label || mbRelease.country || mbRelease.release_type)}
             <div class="mb-info-bar">
                 {#if mbRelease.release_type}
-                    <span class="mb-chip type-chip">{mbRelease.release_type}</span>
+                    <span class="mb-chip type-chip"
+                        >{mbRelease.release_type}</span
+                    >
                 {/if}
                 {#if mbRelease.year}
                     <span class="mb-chip">{mbRelease.year}</span>
                 {/if}
                 {#if mbRelease.label}
                     <span class="mb-chip">
-                        <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12" style="opacity:0.6;flex-shrink:0">
-                            <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/>
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            width="12"
+                            height="12"
+                            style="opacity:0.6;flex-shrink:0"
+                        >
+                            <path
+                                d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"
+                            />
                         </svg>
                         {mbRelease.label}
                     </span>

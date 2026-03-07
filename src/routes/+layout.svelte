@@ -19,6 +19,7 @@
   import { goBack, navigationHistory } from "$lib/stores/view";
   import { isFullScreen, isQueueVisible, contextMenu } from "$lib/stores/ui";
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
+  import PromptDialog from "$lib/components/PromptDialog.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
   import ProgressiveScanStatus from "$lib/components/ProgressiveScanStatus.svelte";
   import LoginModal from "$lib/components/LoginModal.svelte";
@@ -240,6 +241,7 @@
   <TitleBar />
 {/if}
 <ConfirmDialog />
+<PromptDialog />
 <ProgressiveScanStatus />
 <LoginModal />
 
