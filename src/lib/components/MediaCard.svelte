@@ -1,7 +1,11 @@
 <script lang="ts">
   import { createEventDispatcher, onDestroy } from "svelte";
 
-  const dispatch = createEventDispatcher<{ play: void; pause: void }>();
+  const dispatch = createEventDispatcher<{
+    play: void;
+    pause: void;
+    click: MouseEvent;
+  }>();
 
   export let isNowPlaying = false;
   export let isPaused = false;
@@ -135,6 +139,7 @@
   on:mouseleave={handleMouseLeave}
   on:touchstart={handleTouchStart}
   on:keydown={handleKeyDown}
+  on:click={(e) => dispatch("click", e)}
 >
   {#if isNowPlaying}
     <div class="badge" aria-hidden="true">Now Playing</div>
@@ -285,6 +290,8 @@
     box-sizing: border-box;
     overflow: hidden;
     position: relative;
+    cursor: pointer;
+    user-select: none;
   }
 
   .media-card:hover {

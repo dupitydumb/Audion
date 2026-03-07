@@ -8,7 +8,11 @@
     import { appSettings } from "$lib/stores/settings";
     import { playTrack } from "$lib/stores/player";
     import { getFullTrack } from "$lib/stores/library";
-    import { goToSettings } from "$lib/stores/view";
+    import {
+        goToSettings,
+        goToArtistDetail,
+        goToDiscover,
+    } from "$lib/stores/view";
 
     type LoadState = "idle" | "loading" | "done" | "error" | "not-configured";
 
@@ -36,13 +40,25 @@
     }
 
     async function handlePlay(rec: LbRecommendation) {
-        if (!rec.local_track_id) return;
+        if (!rec.local_track_id) {
+            handleDiscoverSearch(rec);
+            return;
+        }
         try {
             const track = await getFullTrack(rec.local_track_id);
             if (track) await playTrack(track);
         } catch (e) {
             console.error("[Recommendations] Play failed:", e);
         }
+    }
+
+    function handleArtistClick(name: string) {
+        goToArtistDetail(name);
+    }
+
+    function handleDiscoverSearch(rec: LbRecommendation) {
+        const query = `${rec.artist_name} ${rec.track_name}`;
+        goToDiscover(query);
     }
 
     // Format score as a percentage-like indicator (0–1 → "★★★★☆" stars etc.)
@@ -60,8 +76,19 @@
         <h1>Discover</h1>
         <p class="subtitle">Personalised picks from ListenBrainz</p>
         {#if state === "done"}
-            <button class="refresh-btn" on:click={load} aria-label="Refresh recommendations">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5">
+            <button
+                class="refresh-btn"
+                on:click={load}
+                aria-label="Refresh recommendations"
+            >
+                <svg
+                    viewBox="0 0 24 24"
+                    width="18"
+                    height="18"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2.5"
+                >
                     <polyline points="23 4 23 10 17 10"></polyline>
                     <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
                 </svg>
@@ -76,10 +103,16 @@
                 <div class="spinner"></div>
                 <p>Fetching recommendations…</p>
             </div>
-
         {:else if state === "not-configured"}
             <div class="state-card" in:fade>
-                <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
+                <svg
+                    viewBox="0 0 24 24"
+                    width="48"
+                    height="48"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                >
                     <circle cx="12" cy="12" r="10"></circle>
                     <path d="M12 8v4m0 4h.01"></path>
                 </svg>
@@ -88,12 +121,20 @@
                     Enable ListenBrainz and save a token in Settings to receive
                     personalised recommendations.
                 </p>
-                <button class="action-btn" on:click={goToSettings}>Open Settings</button>
+                <button class="action-btn" on:click={goToSettings}
+                    >Open Settings</button
+                >
             </div>
-
         {:else if state === "error"}
             <div class="state-card error" in:fade>
-                <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
+                <svg
+                    viewBox="0 0 24 24"
+                    width="48"
+                    height="48"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.5"
+                >
                     <circle cx="12" cy="12" r="10"></circle>
                     <line x1="12" y1="8" x2="12" y2="12"></line>
                     <line x1="12" y1="16" x2="12.01" y2="16"></line>
@@ -102,14 +143,21 @@
                 <p>{errorMessage}</p>
                 <button class="action-btn" on:click={load}>Try again</button>
             </div>
-
         {:else if state === "done" && recs.length === 0}
             <div class="state-card" in:fade>
-                <svg viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.3">
+                <svg
+                    viewBox="0 0 24 24"
+                    width="56"
+                    height="56"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.3"
+                >
                     <path d="M9 18V5l12-2v13"></path>
                     <circle cx="6" cy="18" r="3"></circle>
                     <circle cx="18" cy="16" r="3"></circle>
-                    <line x1="1" y1="1" x2="23" y2="23" stroke-width="1.5"></line>
+                    <line x1="1" y1="1" x2="23" y2="23" stroke-width="1.5"
+                    ></line>
                 </svg>
                 <h3>No recommendations yet</h3>
                 <p>
@@ -118,16 +166,17 @@
                     albums — check back in a day or two.
                 </p>
                 <div class="empty-actions">
-                    <button class="action-btn" on:click={load}>Check again</button>
+                    <button class="action-btn" on:click={load}
+                        >Check again</button
+                    >
                     <a
                         class="action-link"
                         href="https://listenbrainz.org"
                         target="_blank"
-                        rel="noreferrer"
-                    >View on ListenBrainz ↗</a>
+                        rel="noreferrer">View on ListenBrainz ↗</a
+                    >
                 </div>
             </div>
-
         {:else if state === "done"}
             <div class="rec-grid">
                 {#each recs as rec, i (rec.recording_mbid ?? `${rec.artist_name}-${rec.track_name}-${i}`)}
@@ -142,19 +191,48 @@
                     >
                         <div class="rec-cover">
                             {#if rec.local_track_id !== null}
-                                <svg viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
-                                    <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z" />
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="currentColor"
+                                    width="28"
+                                    height="28"
+                                >
+                                    <path
+                                        d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"
+                                    />
                                 </svg>
                             {:else}
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="28" height="28">
-                                    <path d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z" />
+                                <svg
+                                    viewBox="0 0 24 24"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    stroke-width="1.5"
+                                    width="28"
+                                    height="28"
+                                >
+                                    <path
+                                        d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"
+                                    />
                                 </svg>
                             {/if}
                         </div>
 
                         <div class="rec-meta">
-                            <div class="rec-title" title={rec.track_name}>{rec.track_name}</div>
-                            <div class="rec-artist">{rec.artist_name}</div>
+                            <div class="rec-title" title={rec.track_name}>
+                                {rec.track_name}
+                            </div>
+                            <div
+                                class="rec-artist"
+                                role="link"
+                                tabindex="0"
+                                on:click|stopPropagation={() =>
+                                    handleArtistClick(rec.artist_name)}
+                                on:keydown={(e) =>
+                                    e.key === "Enter" &&
+                                    handleArtistClick(rec.artist_name)}
+                            >
+                                {rec.artist_name}
+                            </div>
                             {#if rec.release_name}
                                 <div class="rec-album">{rec.release_name}</div>
                             {/if}
@@ -162,23 +240,47 @@
 
                         <div class="rec-right">
                             {#if rec.score != null}
-                                <span class="rec-score">{scoreLabel(rec.score)}</span>
+                                <span class="rec-score"
+                                    >{scoreLabel(rec.score)}</span
+                                >
                             {/if}
                             {#if rec.local_track_id !== null}
                                 <button
                                     class="play-btn"
-                                    on:click|stopPropagation={() => handlePlay(rec)}
+                                    on:click|stopPropagation={() =>
+                                        handlePlay(rec)}
                                     aria-label="Play {rec.track_name}"
                                 >
-                                    <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                                        <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="currentColor"
+                                        width="16"
+                                        height="16"
+                                    >
+                                        <polygon points="5 3 19 12 5 21 5 3"
+                                        ></polygon>
                                     </svg>
                                 </button>
                             {:else}
-                                <span class="not-in-library" title="Not in your library">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
-                                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                <span
+                                    class="not-in-library"
+                                    title="Search in Discover"
+                                >
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        stroke-width="2.5"
+                                        width="14"
+                                        height="14"
+                                    >
+                                        <circle cx="11" cy="11" r="8"></circle>
+                                        <line
+                                            x1="21"
+                                            y1="21"
+                                            x2="16.65"
+                                            y2="16.65"
+                                        ></line>
                                     </svg>
                                 </span>
                             {/if}
@@ -323,7 +425,9 @@
     }
 
     @keyframes spin {
-        to { transform: rotate(360deg); }
+        to {
+            transform: rotate(360deg);
+        }
     }
 
     /* Grid */
@@ -394,6 +498,15 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        display: inline-block;
+        max-width: 100%;
+        cursor: pointer;
+        transition: color 0.1s;
+    }
+
+    .rec-artist:hover {
+        color: var(--accent-primary);
+        text-decoration: underline;
     }
 
     .rec-album {

@@ -111,10 +111,7 @@ fn collect_genres(
         ) {
             return;
         }
-        if !combined
-            .iter()
-            .any(|(n, _)| n.to_lowercase() == name_lower)
-        {
+        if !combined.iter().any(|(n, _)| n.to_lowercase() == name_lower) {
             combined.push((title_case(&tag.name), tag.count.unwrap_or(0)));
         }
     };
@@ -158,14 +155,7 @@ async fn fetch_wiki_bio(wiki_url: &str) -> Option<String> {
     let client = mb_client().ok()?;
     let url = format!("{}/{}", WIKI_SUMMARY_BASE, title);
 
-    let resp: WikiSummaryResponse = client
-        .get(&url)
-        .send()
-        .await
-        .ok()?
-        .json()
-        .await
-        .ok()?;
+    let resp: WikiSummaryResponse = client.get(&url).send().await.ok()?.json().await.ok()?;
 
     resp.extract
 }
@@ -177,9 +167,7 @@ async fn fetch_wiki_bio(wiki_url: &str) -> Option<String> {
 /// Makes 2 HTTP requests (search + detail) plus an optional Wikipedia fetch,
 /// each separated by a 1.1 s sleep to respect the MB rate limit.
 #[tauri::command]
-pub async fn get_artist_musicbrainz_info(
-    artist_name: String,
-) -> Result<MbArtistInfo, String> {
+pub async fn get_artist_musicbrainz_info(artist_name: String) -> Result<MbArtistInfo, String> {
     let client = mb_client()?;
 
     // ── 1. Search for the artist ─────────────────────────────────────────────
@@ -602,10 +590,7 @@ pub async fn get_release_mb_info(
         .query(&[
             (
                 "query",
-                format!(
-                    "release:\"{}\" AND artist:\"{}\"",
-                    album_name, artist_name
-                ),
+                format!("release:\"{}\" AND artist:\"{}\"", album_name, artist_name),
             ),
             ("limit", "1".into()),
             ("inc", "labels+release-groups".into()),
@@ -728,9 +713,7 @@ pub async fn get_similar_artists_mb(
     let local_lower: Vec<String> = {
         let conn = db.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
-            .prepare(
-                "SELECT DISTINCT lower(artist) FROM tracks WHERE artist IS NOT NULL",
-            )
+            .prepare("SELECT DISTINCT lower(artist) FROM tracks WHERE artist IS NOT NULL")
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map([], |row| row.get::<_, String>(0))
@@ -811,7 +794,10 @@ pub async fn get_artist_discography_mb(
         .unwrap_or_default()
         .into_iter()
         .map(|rg| {
-            let cover_url = format!("https://coverartarchive.org/release-group/{}/front-250", rg.id);
+            let cover_url = format!(
+                "https://coverartarchive.org/release-group/{}/front-250",
+                rg.id
+            );
             MbDiscographyItem {
                 mbid: rg.id,
                 title: rg.title,
@@ -965,25 +951,24 @@ pub async fn search_artists_mb(
         .into_iter()
         .map(|a| {
             let genres = collect_genres(a.tags.as_ref(), a.genres.as_ref(), 5);
-            let active_years = a.life_span.map(|ls| {
-                let begin = ls
-                    .begin
-                    .as_deref()
-                    .map(year_from_date)
-                    .unwrap_or_default();
-                let end = if ls.ended.unwrap_or(false) {
-                    ls.end
-                        .as_deref()
-                        .map(year_from_date)
-                        .unwrap_or_else(|| "?".into())
-                } else {
-                    "present".into()
-                };
-                if begin.is_empty() {
-                    return String::new();
-                }
-                format!("{} – {}", begin, end)
-            }).filter(|s| !s.is_empty());
+            let active_years = a
+                .life_span
+                .map(|ls| {
+                    let begin = ls.begin.as_deref().map(year_from_date).unwrap_or_default();
+                    let end = if ls.ended.unwrap_or(false) {
+                        ls.end
+                            .as_deref()
+                            .map(year_from_date)
+                            .unwrap_or_else(|| "?".into())
+                    } else {
+                        "present".into()
+                    };
+                    if begin.is_empty() {
+                        return String::new();
+                    }
+                    format!("{} – {}", begin, end)
+                })
+                .filter(|s| !s.is_empty());
 
             MbDiscoverArtist {
                 mbid: a.id,
@@ -1040,19 +1025,20 @@ pub async fn search_releases_mb(
                 .and_then(|ac| ac.into_iter().next())
                 .map(|ac| {
                     let name = ac.name.unwrap_or_else(|| {
-                        ac.artist.as_ref().map(|a| a.name.clone()).unwrap_or_default()
+                        ac.artist
+                            .as_ref()
+                            .map(|a| a.name.clone())
+                            .unwrap_or_default()
                     });
                     let mbid = ac.artist.map(|a| a.id);
                     (name, mbid)
                 })
                 .unwrap_or_else(|| ("Unknown Artist".into(), None));
 
-            let country = rg
-                .releases
-                .and_then(|rels| {
-                    rels.into_iter()
-                        .find_map(|r| r.country.filter(|c| !c.is_empty()))
-                });
+            let country = rg.releases.and_then(|rels| {
+                rels.into_iter()
+                    .find_map(|r| r.country.filter(|c| !c.is_empty()))
+            });
 
             let genres = collect_genres(rg.tags.as_ref(), None, 3);
 
@@ -1070,4 +1056,154 @@ pub async fn search_releases_mb(
         .collect();
 
     Ok(results)
+}
+
+// ── Track fetching commands ──────────────────────────────────────────────────
+
+/// A single track from a MusicBrainz release.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MbTrack {
+    pub mbid: String,
+    pub title: String,
+    pub artist: String,
+    pub duration_ms: Option<u32>,
+    pub track_number: u32,
+    pub disc_number: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct MbReleaseGroupDetail {
+    releases: Option<Vec<MbReleaseInGroupDetail>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MbReleaseInGroupDetail {
+    id: String,
+    status: Option<String>,
+    country: Option<String>,
+    #[serde(rename = "track-count")]
+    track_count: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MbReleaseDetail {
+    media: Option<Vec<MbMedia>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MbMedia {
+    position: u32,
+    tracks: Vec<MbTrackRaw>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MbTrackRaw {
+    title: String,
+    length: Option<u32>,
+    position: u32,
+    recording: MbRecordingPartial,
+}
+
+#[derive(Debug, Deserialize)]
+struct MbRecordingPartial {
+    id: String,
+    #[serde(rename = "artist-credit")]
+    artist_credit: Option<Vec<MbArtistCredit>>,
+}
+
+/// Fetch all tracks for a given release-group MBID.
+///
+/// Makes up to 2 HTTP requests (browse releases + release detail).
+#[tauri::command]
+pub async fn get_release_group_tracks_mb(rg_mbid: String) -> Result<Vec<MbTrack>, String> {
+    let client = mb_client()?;
+
+    // 1. Get releases for this release group to find the "best" one
+    let rg_resp = client
+        .get(format!("{}/release-group/{}", MB_API_BASE, rg_mbid))
+        .query(&[("inc", "releases"), ("fmt", "json")])
+        .send()
+        .await
+        .map_err(|e| format!("MB release-group browse error: {}", e))?;
+
+    if !rg_resp.status().is_success() {
+        return Err(format!("MB returned {}", rg_resp.status()));
+    }
+
+    let rg_data: MbReleaseGroupDetail = rg_resp
+        .json()
+        .await
+        .map_err(|e| format!("Parse error: {}", e))?;
+
+    let releases = rg_data.releases.unwrap_or_default();
+    if releases.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // Select the "best" release: Priority for Official status, then specific countries
+    let best_release = releases
+        .iter()
+        .find(|r| {
+            r.status.as_deref() == Some("Official")
+                && (r.country.as_deref() == Some("US") || r.country.as_deref() == Some("GB"))
+        })
+        .or_else(|| {
+            releases
+                .iter()
+                .find(|r| r.status.as_deref() == Some("Official"))
+        })
+        .unwrap_or_else(|| &releases[0]);
+
+    let release_mbid = &best_release.id;
+
+    // Rate-limit gap
+    sleep(Duration::from_millis(1100)).await;
+
+    // 2. Fetch recordings for the selected release
+    let rel_resp = client
+        .get(format!("{}/release/{}", MB_API_BASE, release_mbid))
+        .query(&[("inc", "recordings+artist-credits"), ("fmt", "json")])
+        .send()
+        .await
+        .map_err(|e| format!("MB release detail error: {}", e))?;
+
+    if !rel_resp.status().is_success() {
+        return Err(format!("MB returned {}", rel_resp.status()));
+    }
+
+    let rel_data: MbReleaseDetail = rel_resp
+        .json()
+        .await
+        .map_err(|e| format!("Parse error: {}", e))?;
+
+    let mut tracks = Vec::new();
+
+    for media in rel_data.media.unwrap_or_default() {
+        for track in media.tracks {
+            let artist_name = track
+                .recording
+                .artist_credit
+                .and_then(|ac| ac.into_iter().next())
+                .map(|ac| {
+                    ac.name.unwrap_or_else(|| {
+                        ac.artist
+                            .as_ref()
+                            .map(|a| a.name.clone())
+                            .unwrap_or_default()
+                    })
+                })
+                .unwrap_or_else(|| "Unknown Artist".into());
+
+            tracks.push(MbTrack {
+                mbid: track.recording.id,
+                title: track.title,
+                artist: artist_name,
+                duration_ms: track.length,
+                track_number: track.position,
+                disc_number: media.position,
+            });
+        }
+    }
+
+    Ok(tracks)
 }

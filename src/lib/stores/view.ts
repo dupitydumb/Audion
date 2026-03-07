@@ -21,6 +21,7 @@ export interface ViewState {
     type: ViewType;
     id?: number;    // For album/playlist detail views
     name?: string;  // For artist detail views
+    query?: string; // For discovery search
 }
 
 const MAX_HISTORY = 50;
@@ -150,6 +151,6 @@ export function goToListenBrainz(): void {
     currentView.set({ type: 'listenbrainz' });
 }
 
-export function goToDiscover(): void {
-    currentView.set({ type: 'discover' });
+export function goToDiscover(query?: string): void {
+    currentView.set({ type: 'discover', query });
 }

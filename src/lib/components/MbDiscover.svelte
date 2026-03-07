@@ -11,8 +11,16 @@
         type MbArtistInfo,
         type MbDiscographyItem,
     } from "$lib/api/tauri";
-    import { goToArtistDetail, goToAlbumDetail } from "$lib/stores/view";
-    import { artists as libraryArtists, albums as libraryAlbums } from "$lib/stores/library";
+    import {
+        goToArtistDetail,
+        goToAlbumDetail,
+        currentView,
+    } from "$lib/stores/view";
+    import {
+        artists as libraryArtists,
+        albums as libraryAlbums,
+    } from "$lib/stores/library";
+    import MediaCard from "./MediaCard.svelte";
 
     type Tab = "artists" | "releases";
     type SearchState = "idle" | "loading" | "done" | "error";
@@ -35,7 +43,9 @@
     let detailLoading = false;
 
     // Local library lookup sets (lowercased)
-    $: localArtistSet = new Set($libraryArtists.map((a) => a.name.toLowerCase()));
+    $: localArtistSet = new Set(
+        $libraryArtists.map((a) => a.name.toLowerCase()),
+    );
     $: localAlbumMap = new Map(
         $libraryAlbums.map((a) => [a.name.toLowerCase(), a.id]),
     );
@@ -156,6 +166,24 @@
           );
 
     $: hiddenCount = detailDiscography.length - filteredDiscography.length;
+
+    function getReleaseCoverUrl(mbid: string): string {
+        return `https://coverartarchive.org/release-group/${mbid}/front-250`;
+    }
+
+    function handleImageError(e: Event) {
+        const target = e.target as HTMLImageElement;
+        target.style.display = "none";
+        // Ensure its sibling (the icon) is shown if we had a toggle-based fallback,
+        // but here we'll use a local state or just let the CSS handle it if we structure it right.
+    }
+    onMount(() => {
+        if ($currentView.type === "discover" && $currentView.query) {
+            searchInput = $currentView.query;
+            activeTab = "releases";
+            executeSearch();
+        }
+    });
 </script>
 
 <div class="discover-root">
@@ -163,21 +191,40 @@
     <header class="discover-header">
         <div class="header-row">
             <div class="header-title-group">
-                <svg class="header-icon" viewBox="0 0 24 24" fill="currentColor" width="28" height="28">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                <svg
+                    class="header-icon"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    width="28"
+                    height="28"
+                >
+                    <path
+                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"
+                    />
                 </svg>
                 <div>
                     <h1>Discover</h1>
-                    <p class="header-subtitle">Search MusicBrainz to find artists &amp; albums beyond your library</p>
+                    <p class="header-subtitle">
+                        Search MusicBrainz to find artists &amp; albums beyond
+                        your library
+                    </p>
                 </div>
             </div>
         </div>
 
         <!-- Search bar -->
         <div class="search-bar">
-            <svg class="search-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="11" cy="11" r="8"/>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            <svg
+                class="search-icon"
+                viewBox="0 0 24 24"
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+            >
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
             <input
                 type="text"
@@ -188,9 +235,27 @@
                 on:keydown={handleKeydown}
             />
             {#if searchInput}
-                <button class="clear-btn" aria-label="Clear search" on:click={() => { searchInput = ""; lastQuery = ""; artistResults = []; releaseResults = []; searchState = "idle"; detailArtist = null; }}>
-                    <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+                <button
+                    class="clear-btn"
+                    aria-label="Clear search"
+                    on:click={() => {
+                        searchInput = "";
+                        lastQuery = "";
+                        artistResults = [];
+                        releaseResults = [];
+                        searchState = "idle";
+                        detailArtist = null;
+                    }}
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        width="18"
+                        height="18"
+                        fill="currentColor"
+                    >
+                        <path
+                            d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                        />
                     </svg>
                 </button>
             {/if}
@@ -198,15 +263,37 @@
 
         <!-- Tabs -->
         <div class="tab-bar">
-            <button class="tab" class:active={activeTab === "artists"} on:click={() => switchTab("artists")}>
-                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                    <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+            <button
+                class="tab"
+                class:active={activeTab === "artists"}
+                on:click={() => switchTab("artists")}
+            >
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    width="16"
+                    height="16"
+                >
+                    <path
+                        d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
+                    />
                 </svg>
                 Artists
             </button>
-            <button class="tab" class:active={activeTab === "releases"} on:click={() => switchTab("releases")}>
-                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/>
+            <button
+                class="tab"
+                class:active={activeTab === "releases"}
+                on:click={() => switchTab("releases")}
+            >
+                <svg
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    width="16"
+                    height="16"
+                >
+                    <path
+                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
+                    />
                 </svg>
                 Albums &amp; Releases
             </button>
@@ -217,129 +304,188 @@
     <div class="discover-content">
         {#if searchState === "idle"}
             <div class="empty-state" in:fade={{ duration: 200 }}>
-                <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor" opacity="0.15">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                <svg
+                    viewBox="0 0 24 24"
+                    width="64"
+                    height="64"
+                    fill="currentColor"
+                    opacity="0.15"
+                >
+                    <path
+                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"
+                    />
                 </svg>
                 <p>Search the MusicBrainz database</p>
-                <span class="hint">Type an artist name, album title, or keyword to get started</span>
+                <span class="hint"
+                    >Type an artist name, album title, or keyword to get started</span
+                >
             </div>
-
         {:else if searchState === "loading"}
             <div class="loading-state" in:fade={{ duration: 150 }}>
                 <div class="spinner"></div>
                 <p>Searching MusicBrainz…</p>
             </div>
-
         {:else if searchState === "error"}
             <div class="error-state" in:fade={{ duration: 200 }}>
-                <svg viewBox="0 0 24 24" width="48" height="48" fill="currentColor" opacity="0.4">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                <svg
+                    viewBox="0 0 24 24"
+                    width="48"
+                    height="48"
+                    fill="currentColor"
+                    opacity="0.4"
+                >
+                    <path
+                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
+                    />
                 </svg>
                 <p>Search failed</p>
                 <span class="hint">{errorMsg}</span>
             </div>
-
         {:else if searchState === "done"}
             <!-- Artist results -->
             {#if activeTab === "artists"}
                 {#if artistResults.length === 0}
                     <div class="no-results" in:fade={{ duration: 200 }}>
-                        <p>No artists found for "<strong>{lastQuery}</strong>"</p>
-                        <span class="hint">Try a different spelling or keyword</span>
+                        <p>
+                            No artists found for "<strong>{lastQuery}</strong>"
+                        </p>
+                        <span class="hint"
+                            >Try a different spelling or keyword</span
+                        >
                     </div>
                 {:else}
-                    <div class="results-grid artist-grid" in:fade={{ duration: 200 }}>
+                    <div class="artist-grid" in:fade={{ duration: 200 }}>
                         {#each artistResults as artist (artist.mbid)}
-                            <button
-                                class="artist-card"
-                                class:in-library={isArtistInLibrary(artist.name)}
+                            <div
+                                class="card-wrapper"
+                                role="presentation"
                                 on:click={() => handleArtistClick(artist)}
+                                on:keydown={(e) =>
+                                    e.key === "Enter" &&
+                                    handleArtistClick(artist)}
                             >
-                                <div class="artist-avatar">
-                                    <span>{artistInitial(artist.name)}</span>
-                                </div>
-                                <div class="card-info">
-                                    <div class="card-name-row">
-                                        <span class="card-name">{artist.name}</span>
-                                        {#if isArtistInLibrary(artist.name)}
-                                            <span class="in-lib-badge" title="In your library">●</span>
-                                        {/if}
+                                <MediaCard
+                                    variant="round"
+                                    primaryText={artist.name}
+                                    secondaryText={artist.disambiguation ||
+                                        artist.artist_type ||
+                                        ""}
+                                    isNowPlaying={isArtistInLibrary(
+                                        artist.name,
+                                    )}
+                                >
+                                    <div slot="cover" class="artist-avatar">
+                                        <span>{artistInitial(artist.name)}</span
+                                        >
                                     </div>
-                                    {#if artist.disambiguation}
-                                        <span class="card-disambig">{artist.disambiguation}</span>
-                                    {/if}
-                                    <div class="card-meta">
-                                        {#if artist.artist_type}
-                                            <span class="meta-chip type-chip">{artist.artist_type}</span>
-                                        {/if}
+                                    <div slot="extra-info" class="card-meta">
                                         {#if artist.country}
-                                            <span class="meta-chip">{artist.country}</span>
+                                            <span class="meta-chip"
+                                                >{artist.country}</span
+                                            >
                                         {/if}
                                         {#if artist.active_years}
-                                            <span class="meta-chip">{artist.active_years}</span>
+                                            <span class="meta-chip"
+                                                >{artist.active_years}</span
+                                            >
+                                        {/if}
+                                        {#if artist.genres.length > 0}
+                                            <div class="genre-pills">
+                                                {#each artist.genres.slice(0, 2) as genre}
+                                                    <span class="genre-pill"
+                                                        >{genre}</span
+                                                    >
+                                                {/each}
+                                            </div>
                                         {/if}
                                     </div>
-                                    {#if artist.genres.length > 0}
-                                        <div class="genre-pills">
-                                            {#each artist.genres.slice(0, 3) as genre}
-                                                <span class="genre-pill">{genre}</span>
-                                            {/each}
-                                        </div>
-                                    {/if}
-                                </div>
-                            </button>
+                                </MediaCard>
+                            </div>
                         {/each}
                     </div>
                 {/if}
 
-            <!-- Release results -->
+                <!-- Release results -->
             {:else if activeTab === "releases"}
                 {#if releaseResults.length === 0}
                     <div class="no-results" in:fade={{ duration: 200 }}>
-                        <p>No releases found for "<strong>{lastQuery}</strong>"</p>
-                        <span class="hint">Try a different spelling or keyword</span>
+                        <p>
+                            No releases found for "<strong>{lastQuery}</strong>"
+                        </p>
+                        <span class="hint"
+                            >Try a different spelling or keyword</span
+                        >
                     </div>
                 {:else}
-                    <div class="results-grid release-grid" in:fade={{ duration: 200 }}>
+                    <div class="release-grid" in:fade={{ duration: 200 }}>
                         {#each releaseResults as release (release.mbid)}
-                            <button
-                                class="release-card"
-                                class:in-library={findLocalAlbumId(release.title) !== undefined}
+                            <div
+                                class="card-wrapper"
+                                role="presentation"
                                 on:click={() => handleReleaseClick(release)}
+                                on:keydown={(e) =>
+                                    e.key === "Enter" &&
+                                    handleReleaseClick(release)}
                             >
-                                <div class="release-icon">
-                                    <svg viewBox="0 0 24 24" fill="currentColor" width="32" height="32">
-                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/>
-                                    </svg>
-                                </div>
-                                <div class="card-info">
-                                    <div class="card-name-row">
-                                        <span class="card-name">{release.title}</span>
-                                        {#if findLocalAlbumId(release.title) !== undefined}
-                                            <span class="in-lib-badge" title="In your library">●</span>
-                                        {/if}
+                                <MediaCard
+                                    primaryText={release.title}
+                                    secondaryText={release.artist_name}
+                                    isNowPlaying={findLocalAlbumId(
+                                        release.title,
+                                    ) !== undefined}
+                                    secondaryAction={() =>
+                                        goToArtistDetail(release.artist_name)}
+                                >
+                                    <div slot="cover" class="release-icon">
+                                        <img
+                                            src={getReleaseCoverUrl(
+                                                release.mbid,
+                                            )}
+                                            alt={release.title}
+                                            loading="lazy"
+                                            on:error={(e) => {
+                                                const target = e.currentTarget;
+                                                target.style.display = "none";
+                                                target.nextElementSibling?.classList.remove(
+                                                    "hidden",
+                                                );
+                                            }}
+                                        />
+                                        <svg
+                                            class="hidden"
+                                            viewBox="0 0 24 24"
+                                            fill="currentColor"
+                                            width="32"
+                                            height="32"
+                                        >
+                                            <path
+                                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
+                                            />
+                                        </svg>
                                     </div>
-                                    <span class="card-artist">{release.artist_name}</span>
-                                    <div class="card-meta">
+                                    <div slot="extra-info" class="card-meta">
                                         {#if release.release_type}
-                                            <span class="meta-chip type-chip">{release.release_type}</span>
+                                            <span class="meta-chip type-chip"
+                                                >{release.release_type}</span
+                                            >
                                         {/if}
                                         {#if release.year}
-                                            <span class="meta-chip">{release.year}</span>
+                                            <span class="meta-chip"
+                                                >{release.year}</span
+                                            >
                                         {/if}
-                                        {#if release.country}
-                                            <span class="meta-chip">{release.country}</span>
+                                        {#if release.genres.length > 0}
+                                            <div class="genre-pills">
+                                                {#each release.genres.slice(0, 2) as genre}
+                                                    <span class="genre-pill"
+                                                        >{genre}</span
+                                                    >
+                                                {/each}
+                                            </div>
                                         {/if}
                                     </div>
-                                    {#if release.genres.length > 0}
-                                        <div class="genre-pills">
-                                            {#each release.genres.slice(0, 3) as genre}
-                                                <span class="genre-pill">{genre}</span>
-                                            {/each}
-                                        </div>
-                                    {/if}
-                                </div>
-                            </button>
+                                </MediaCard>
+                            </div>
                         {/each}
                     </div>
                 {/if}
@@ -352,15 +498,28 @@
         <div class="detail-overlay" transition:fade={{ duration: 200 }}>
             <div class="detail-panel" in:fly={{ x: 300, duration: 300 }}>
                 <header class="detail-header">
-                    <button class="back-btn" aria-label="Close detail panel" on:click={closeDetail}>
-                        <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-                            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>
+                    <button
+                        class="back-btn"
+                        aria-label="Close detail panel"
+                        on:click={closeDetail}
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            width="24"
+                            height="24"
+                        >
+                            <path
+                                d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"
+                            />
                         </svg>
                     </button>
                     <div class="detail-title-block">
                         <h2>{detailArtist.name}</h2>
                         {#if detailArtist.disambiguation}
-                            <span class="detail-disambig">{detailArtist.disambiguation}</span>
+                            <span class="detail-disambig"
+                                >{detailArtist.disambiguation}</span
+                            >
                         {/if}
                     </div>
                 </header>
@@ -407,13 +566,19 @@
                             <h3>Details</h3>
                             <div class="card-meta detail-meta">
                                 {#if detailArtist.artist_type}
-                                    <span class="meta-chip type-chip">{detailArtist.artist_type}</span>
+                                    <span class="meta-chip type-chip"
+                                        >{detailArtist.artist_type}</span
+                                    >
                                 {/if}
                                 {#if detailArtist.country}
-                                    <span class="meta-chip">🌍 {detailArtist.country}</span>
+                                    <span class="meta-chip"
+                                        >🌍 {detailArtist.country}</span
+                                    >
                                 {/if}
                                 {#if detailArtist.active_years}
-                                    <span class="meta-chip">📅 {detailArtist.active_years}</span>
+                                    <span class="meta-chip"
+                                        >📅 {detailArtist.active_years}</span
+                                    >
                                 {/if}
                             </div>
                         </section>
@@ -426,7 +591,9 @@
                                     {#if hiddenCount > 0 || showAllReleaseTypes}
                                         <button
                                             class="disco-filter-btn"
-                                            on:click={() => (showAllReleaseTypes = !showAllReleaseTypes)}
+                                            on:click={() =>
+                                                (showAllReleaseTypes =
+                                                    !showAllReleaseTypes)}
                                         >
                                             {showAllReleaseTypes
                                                 ? "Albums & Singles only"
@@ -436,29 +603,121 @@
                                 </div>
                                 <div class="disco-list">
                                     {#each filteredDiscography as item}
-                                        <div class="disco-item {releaseTypeClass(item.release_type)}">
-                                            <div class="disco-type-icon {releaseTypeClass(item.release_type)}">
-                                                {#if item.release_type.toLowerCase() === "album"}
-                                                    <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/></svg>
-                                                {:else if item.release_type.toLowerCase() === "single"}
-                                                    <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
-                                                {:else if item.release_type.toLowerCase() === "ep"}
-                                                    <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/></svg>
-                                                {:else if item.release_type.toLowerCase() === "live"}
-                                                    <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12 3v9.28c-.47-.17-.97-.28-1.5-.28C8.01 12 6 14.01 6 16.5S8.01 21 10.5 21c2.31 0 4.2-1.75 4.45-4H15V6h4V3h-7z"/></svg>
-                                                {:else if item.release_type.toLowerCase() === "compilation"}
-                                                    <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"/></svg>
-                                                {:else if item.release_type.toLowerCase() === "soundtrack"}
-                                                    <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"/></svg>
-                                                {:else}
-                                                    <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/></svg>
-                                                {/if}
+                                        <div
+                                            class="disco-item {releaseTypeClass(
+                                                item.release_type,
+                                            )}"
+                                        >
+                                            <div
+                                                class="disco-type-icon {releaseTypeClass(
+                                                    item.release_type,
+                                                )}"
+                                            >
+                                                <img
+                                                    src={getReleaseCoverUrl(
+                                                        item.mbid,
+                                                    )}
+                                                    alt=""
+                                                    loading="lazy"
+                                                    on:error={(e) => {
+                                                        const target =
+                                                            e.currentTarget;
+                                                        target.style.display =
+                                                            "none";
+                                                        target.nextElementSibling?.classList.remove(
+                                                            "hidden",
+                                                        );
+                                                    }}
+                                                />
+                                                <div
+                                                    class="hidden icon-fallback"
+                                                >
+                                                    {#if item.release_type.toLowerCase() === "album"}
+                                                        <svg
+                                                            viewBox="0 0 24 24"
+                                                            fill="currentColor"
+                                                            width="18"
+                                                            height="18"
+                                                            ><path
+                                                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
+                                                            /></svg
+                                                        >
+                                                    {:else if item.release_type.toLowerCase() === "single"}
+                                                        <svg
+                                                            viewBox="0 0 24 24"
+                                                            fill="currentColor"
+                                                            width="18"
+                                                            height="18"
+                                                            ><path
+                                                                d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
+                                                            /></svg
+                                                        >
+                                                    {:else if item.release_type.toLowerCase() === "ep"}
+                                                        <svg
+                                                            viewBox="0 0 24 24"
+                                                            fill="currentColor"
+                                                            width="18"
+                                                            height="18"
+                                                            ><path
+                                                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"
+                                                            /></svg
+                                                        >
+                                                    {:else if item.release_type.toLowerCase() === "live"}
+                                                        <svg
+                                                            viewBox="0 0 24 24"
+                                                            fill="currentColor"
+                                                            width="18"
+                                                            height="18"
+                                                            ><path
+                                                                d="M12 3v9.28c-.47-.17-.97-.28-1.5-.28C8.01 12 6 14.01 6 16.5S8.01 21 10.5 21c2.31 0 4.2-1.75 4.45-4H15V6h4V3h-7z"
+                                                            /></svg
+                                                        >
+                                                    {:else if item.release_type.toLowerCase() === "compilation"}
+                                                        <svg
+                                                            viewBox="0 0 24 24"
+                                                            fill="currentColor"
+                                                            width="18"
+                                                            height="18"
+                                                            ><path
+                                                                d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"
+                                                            /></svg
+                                                        >
+                                                    {:else if item.release_type.toLowerCase() === "soundtrack"}
+                                                        <svg
+                                                            viewBox="0 0 24 24"
+                                                            fill="currentColor"
+                                                            width="18"
+                                                            height="18"
+                                                            ><path
+                                                                d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"
+                                                            /></svg
+                                                        >
+                                                    {:else}
+                                                        <svg
+                                                            viewBox="0 0 24 24"
+                                                            fill="currentColor"
+                                                            width="18"
+                                                            height="18"
+                                                            ><path
+                                                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
+                                                            /></svg
+                                                        >
+                                                    {/if}
+                                                </div>
                                             </div>
                                             <div class="disco-info">
-                                                <span class="disco-title">{item.title}</span>
-                                                <span class="disco-year">{item.year ?? "—"}</span>
+                                                <span class="disco-title"
+                                                    >{item.title}</span
+                                                >
+                                                <span class="disco-year"
+                                                    >{item.year ?? "—"}</span
+                                                >
                                             </div>
-                                            <span class="disco-badge {releaseTypeClass(item.release_type)}">{item.release_type}</span>
+                                            <span
+                                                class="disco-badge {releaseTypeClass(
+                                                    item.release_type,
+                                                )}">{item.release_type}</span
+                                            >
                                         </div>
                                     {/each}
                                 </div>
@@ -587,7 +846,9 @@
         font-size: 0.85rem;
         font-weight: 500;
         cursor: pointer;
-        transition: color var(--transition-fast), border-color var(--transition-fast);
+        transition:
+            color var(--transition-fast),
+            border-color var(--transition-fast);
     }
 
     .tab:hover {
@@ -644,119 +905,61 @@
     }
 
     @keyframes spin {
-        to { transform: rotate(360deg); }
+        to {
+            transform: rotate(360deg);
+        }
     }
 
     /* ─── Results grid ─────────────────────────────────────────────────────── */
-    .results-grid {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
+    .artist-grid,
+    .release-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: var(--spacing-md);
+    }
+
+    .card-wrapper {
+        display: contents; /* Ensure grid layout is preserved */
+    }
+
+    /* Target the actual card inside the wrapper for the click area if display: contents isn't enough */
+    .card-wrapper > :global(*) {
+        cursor: pointer;
     }
 
     /* ─── Artist & Release cards ───────────────────────────────────────────── */
-    .artist-card,
-    .release-card {
-        display: flex;
-        align-items: center;
-        gap: 14px;
-        width: 100%;
-        padding: 12px var(--spacing-md);
-        background: var(--bg-elevated);
-        border: 1px solid transparent;
-        border-radius: var(--radius-md);
-        cursor: pointer;
-        text-align: left;
-        transition: background var(--transition-fast), border-color var(--transition-fast);
-        color: var(--text-primary);
-    }
-
-    .artist-card:hover,
-    .release-card:hover {
-        background: var(--bg-surface);
-        border-color: var(--border-color);
-    }
-
-    .artist-card.in-library,
-    .release-card.in-library {
-        background: var(--accent-subtle);
-    }
-
     .artist-avatar {
-        width: 48px;
-        height: 48px;
-        border-radius: var(--radius-full);
-        background: linear-gradient(135deg, var(--accent-primary) 0%, #1a73e8 100%);
+        width: 100%;
+        height: 100%;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 1.2rem;
+        font-size: 2.5rem;
         font-weight: 700;
         color: #fff;
-        flex-shrink: 0;
+        background: linear-gradient(
+            135deg,
+            var(--accent-primary) 0%,
+            #1a73e8 100%
+        );
     }
 
     .release-icon {
-        width: 48px;
-        height: 48px;
-        border-radius: var(--radius-md);
-        background: var(--bg-surface);
+        width: 100%;
+        height: 100%;
         display: flex;
         align-items: center;
         justify-content: center;
         color: var(--text-secondary);
-        flex-shrink: 0;
-    }
-
-    .card-info {
-        flex: 1;
-        min-width: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 3px;
-    }
-
-    .card-name-row {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-
-    .card-name {
-        font-weight: 600;
-        font-size: 0.95rem;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .in-lib-badge {
-        color: var(--accent-primary);
-        font-size: 0.65rem;
-        flex-shrink: 0;
-    }
-
-    .card-disambig {
-        font-size: 0.78rem;
-        color: var(--text-secondary);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .card-artist {
-        font-size: 0.82rem;
-        color: var(--text-secondary);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        background: var(--bg-surface);
     }
 
     .card-meta {
         display: flex;
-        flex-wrap: wrap;
-        gap: 5px;
-        margin-top: 2px;
+        flex-direction: column;
+        gap: 4px;
+        margin-top: 4px;
+        align-items: inherit;
     }
 
     .meta-chip {
@@ -764,9 +967,10 @@
         align-items: center;
         padding: 1px 8px;
         border-radius: var(--radius-sm);
-        font-size: 0.7rem;
+        font-size: 0.72rem;
         background: var(--bg-surface);
         color: var(--text-secondary);
+        width: fit-content;
     }
 
     .type-chip {
@@ -779,7 +983,8 @@
         display: flex;
         flex-wrap: wrap;
         gap: 4px;
-        margin-top: 3px;
+        margin-top: 2px;
+        justify-content: inherit;
     }
 
     .genre-pill {
@@ -920,7 +1125,9 @@
         padding: 3px 10px;
         border-radius: var(--radius-lg);
         cursor: pointer;
-        transition: color var(--transition-fast), border-color var(--transition-fast);
+        transition:
+            color var(--transition-fast),
+            border-color var(--transition-fast);
     }
 
     .disco-filter-btn:hover {
@@ -950,14 +1157,30 @@
     }
 
     /* Per-type left border accent — album uses the app accent */
-    .disco-item.rt-album    { border-left-color: var(--accent-primary); }
-    .disco-item.rt-single   { border-left-color: #e8a317; }
-    .disco-item.rt-ep        { border-left-color: #1a73e8; }
-    .disco-item.rt-live      { border-left-color: #e84040; }
-    .disco-item.rt-compilation { border-left-color: #9b59b6; }
-    .disco-item.rt-soundtrack  { border-left-color: #e67e22; }
-    .disco-item.rt-remix     { border-left-color: #00bcd4; }
-    .disco-item.rt-other     { border-left-color: var(--text-subdued); }
+    .disco-item.rt-album {
+        border-left-color: var(--accent-primary);
+    }
+    .disco-item.rt-single {
+        border-left-color: #e8a317;
+    }
+    .disco-item.rt-ep {
+        border-left-color: #1a73e8;
+    }
+    .disco-item.rt-live {
+        border-left-color: #e84040;
+    }
+    .disco-item.rt-compilation {
+        border-left-color: #9b59b6;
+    }
+    .disco-item.rt-soundtrack {
+        border-left-color: #e67e22;
+    }
+    .disco-item.rt-remix {
+        border-left-color: #00bcd4;
+    }
+    .disco-item.rt-other {
+        border-left-color: var(--text-subdued);
+    }
 
     /* Type icon */
     .disco-type-icon {
@@ -970,21 +1193,66 @@
         flex-shrink: 0;
     }
 
-    .disco-type-icon.rt-album       { background: var(--accent-subtle); color: var(--accent-primary); }
-    .disco-type-icon.rt-single      { background: rgba(232, 163, 23, 0.12); color: #e8a317; }
-    .disco-type-icon.rt-ep          { background: rgba(26, 115, 232, 0.12); color: #1a73e8; }
-    .disco-type-icon.rt-live        { background: rgba(232, 64, 64, 0.12); color: #e84040; }
-    .disco-type-icon.rt-compilation { background: rgba(155, 89, 182, 0.12); color: #9b59b6; }
-    .disco-type-icon.rt-soundtrack  { background: rgba(230, 126, 34, 0.12); color: #e67e22; }
-    .disco-type-icon.rt-remix       { background: rgba(0, 188, 212, 0.12); color: #00bcd4; }
-    .disco-type-icon.rt-other       { background: var(--bg-highlight); color: var(--text-subdued); }
+    .disco-type-icon.rt-album {
+        background: var(--accent-subtle);
+        color: var(--accent-primary);
+    }
+    .disco-type-icon.rt-single {
+        background: rgba(232, 163, 23, 0.12);
+        color: #e8a317;
+    }
+    .disco-type-icon.rt-ep {
+        background: rgba(26, 115, 232, 0.12);
+        color: #1a73e8;
+    }
+    .disco-type-icon.rt-live {
+        background: rgba(232, 64, 64, 0.12);
+        color: #e84040;
+    }
+    .disco-type-icon.rt-compilation {
+        background: rgba(155, 89, 182, 0.12);
+        color: #9b59b6;
+    }
+    .disco-type-icon.rt-soundtrack {
+        background: rgba(230, 126, 34, 0.12);
+        color: #e67e22;
+    }
+    .disco-type-icon.rt-remix {
+        background: rgba(0, 188, 212, 0.12);
+        color: #00bcd4;
+    }
+    .disco-type-icon.rt-other {
+        background: var(--bg-highlight);
+        color: var(--text-subdued);
+    }
 
-    .disco-info {
-        flex: 1;
-        min-width: 0;
+    .release-icon img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .release-icon svg.hidden,
+    .disco-type-icon img[style*="display: none"] + .hidden,
+    .hidden {
+        display: none !important;
+    }
+
+    .disco-type-icon {
+        position: relative;
+        overflow: hidden;
+    }
+
+    .disco-type-icon img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .icon-fallback {
         display: flex;
-        flex-direction: column;
-        gap: 2px;
+        align-items: center;
+        justify-content: center;
     }
 
     .disco-title {
@@ -1012,14 +1280,38 @@
         text-transform: uppercase;
     }
 
-    .disco-badge.rt-album       { background: var(--accent-subtle); color: var(--accent-primary); }
-    .disco-badge.rt-single      { background: rgba(232, 163, 23, 0.15); color: #e8a317; }
-    .disco-badge.rt-ep          { background: rgba(26, 115, 232, 0.15); color: #1a73e8; }
-    .disco-badge.rt-live        { background: rgba(232, 64, 64, 0.15); color: #e84040; }
-    .disco-badge.rt-compilation { background: rgba(155, 89, 182, 0.15); color: #9b59b6; }
-    .disco-badge.rt-soundtrack  { background: rgba(230, 126, 34, 0.15); color: #e67e22; }
-    .disco-badge.rt-remix       { background: rgba(0, 188, 212, 0.15); color: #00bcd4; }
-    .disco-badge.rt-other       { background: var(--bg-highlight); color: var(--text-subdued); }
+    .disco-badge.rt-album {
+        background: var(--accent-subtle);
+        color: var(--accent-primary);
+    }
+    .disco-badge.rt-single {
+        background: rgba(232, 163, 23, 0.15);
+        color: #e8a317;
+    }
+    .disco-badge.rt-ep {
+        background: rgba(26, 115, 232, 0.15);
+        color: #1a73e8;
+    }
+    .disco-badge.rt-live {
+        background: rgba(232, 64, 64, 0.15);
+        color: #e84040;
+    }
+    .disco-badge.rt-compilation {
+        background: rgba(155, 89, 182, 0.15);
+        color: #9b59b6;
+    }
+    .disco-badge.rt-soundtrack {
+        background: rgba(230, 126, 34, 0.15);
+        color: #e67e22;
+    }
+    .disco-badge.rt-remix {
+        background: rgba(0, 188, 212, 0.15);
+        color: #00bcd4;
+    }
+    .disco-badge.rt-other {
+        background: var(--bg-highlight);
+        color: var(--text-subdued);
+    }
 
     /* ─── Responsive ───────────────────────────────────────────────────────── */
     @media (max-width: 600px) {

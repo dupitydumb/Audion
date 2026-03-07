@@ -5,6 +5,7 @@
 //! to the main SQLite database or to any world-readable location.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const LB_API_BASE: &str = "https://api.listenbrainz.org/1";
@@ -19,7 +20,11 @@ async fn read_token() -> Option<String> {
     let path = token_file_path()?;
     let t = tokio::fs::read_to_string(&path).await.ok()?;
     let t = t.trim().to_string();
-    if t.is_empty() { None } else { Some(t) }
+    if t.is_empty() {
+        None
+    } else {
+        Some(t)
+    }
 }
 
 /// Store or clear the ListenBrainz user token.
@@ -178,6 +183,28 @@ pub struct LbRecommendation {
     pub local_track_id: Option<i64>,
 }
 
+#[derive(Deserialize, Debug)]
+struct LbMetadataRespItem {
+    artist: Option<LbMetadataArtist>,
+    recording: Option<LbMetadataRecording>,
+    release: Option<LbMetadataRelease>,
+}
+
+#[derive(Deserialize, Debug)]
+struct LbMetadataArtist {
+    name: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct LbMetadataRecording {
+    name: String,
+}
+
+#[derive(Deserialize, Debug)]
+struct LbMetadataRelease {
+    name: String,
+}
+
 /// Fetch personalised recording recommendations from ListenBrainz collaborative
 /// filtering and try to match each one to a track in the local library.
 #[tauri::command]
@@ -187,7 +214,9 @@ pub async fn fetch_listenbrainz_recommendations(
 ) -> Result<Vec<LbRecommendation>, String> {
     let token = match read_token().await {
         Some(t) => t,
-        None => return Err("No ListenBrainz token configured. Enable it in Settings first.".into()),
+        None => {
+            return Err("No ListenBrainz token configured. Enable it in Settings first.".into())
+        }
     };
 
     // Resolve username from token
@@ -203,6 +232,7 @@ pub async fn fetch_listenbrainz_recommendations(
         LB_API_BASE, username, count
     );
 
+    eprintln!("[LB] fetch_listenbrainz_recommendations called");
     let resp = client
         .get(&url)
         .header("Authorization", format!("Token {}", token))
@@ -232,21 +262,93 @@ pub async fn fetch_listenbrainz_recommendations(
         .cloned()
         .unwrap_or_default();
 
+    if recordings.is_empty() {
+        return Ok(vec![]);
+    }
+
+    // ── Pre-fetch metadata for the MBIDs ─────────────────────────────────────
+    // Collaborative filtering recommendations only return MBIDs + scores.
+    // We need names + artists to show them and to match them locally.
+    let mbids: Vec<String> = recordings
+        .iter()
+        .filter_map(|r| r["recording_mbid"].as_str().map(|s| s.to_string()))
+        .collect();
+
+    eprintln!(
+        "[LB] Pre-fetching metadata for {} MBIDs: {:?}",
+        mbids.len(),
+        mbids
+    );
+
+    let mut metadata_map: HashMap<String, LbMetadataRespItem> = HashMap::new();
+
+    if !mbids.is_empty() {
+        let metadata_url = format!("{}/metadata/recording/", LB_API_BASE);
+        let m_resp = client
+            .get(&metadata_url)
+            .query(&[
+                ("recording_mbids", mbids.join(",")),
+                ("inc", "artist".to_string()),
+            ])
+            .send()
+            .await;
+
+        if let Ok(resp) = m_resp {
+            let status = resp.status();
+            eprintln!("[LB] Metadata API response status: {}", status);
+            if status.is_success() {
+                let text = resp.text().await.unwrap_or_default();
+                eprintln!("[LB] Metadata API raw response length: {}", text.len());
+                match serde_json::from_str::<HashMap<String, LbMetadataRespItem>>(&text) {
+                    Ok(m_map) => {
+                        eprintln!(
+                            "[LB] Successfully parsed metadata for {} tracks",
+                            m_map.len()
+                        );
+                        metadata_map = m_map;
+                    }
+                    Err(e) => {
+                        eprintln!("[LB] Failed to parse metadata JSON: {}", e);
+                    }
+                }
+            }
+        } else if let Err(e) = m_resp {
+            eprintln!("[LB] Metadata API request failed: {}", e);
+        }
+    }
+
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     let mut results = Vec::new();
 
     for rec in &recordings {
         let mbid = rec["recording_mbid"].as_str().map(|s| s.to_string());
-        let artist_name = rec["mb_artist_credit_name"]
-            .as_str()
-            .unwrap_or("Unknown Artist")
-            .to_string();
-        let track_name = rec["mb_track_name"]
-            .as_str()
-            .unwrap_or("Unknown Track")
-            .to_string();
-        let release_name = rec["mb_release_name"].as_str().map(|s| s.to_string());
         let score = rec["score"].as_f64();
+
+        let (artist_name, track_name, release_name) =
+            match mbid.as_ref().and_then(|m| metadata_map.get(m)) {
+                Some(meta) => (
+                    meta.artist
+                        .as_ref()
+                        .map(|a| a.name.clone())
+                        .unwrap_or_else(|| "Unknown Artist".to_string()),
+                    meta.recording
+                        .as_ref()
+                        .map(|r| r.name.clone())
+                        .unwrap_or_else(|| "Unknown Track".to_string()),
+                    meta.release.as_ref().map(|r| r.name.clone()),
+                ),
+                None => (
+                    rec["mb_artist_credit_name"]
+                        .as_str()
+                        .unwrap_or("Unknown Artist")
+                        .to_string(),
+                    rec["mb_track_name"]
+                        .as_str()
+                        .unwrap_or("Unknown Track")
+                        .to_string(),
+                    rec["mb_release_name"].as_str().map(|s| s.to_string()),
+                ),
+            };
 
         let local_track_id = match_to_local(&conn, &mbid, &artist_name, &track_name);
 
