@@ -12,6 +12,8 @@
         getTrackCoverSrc,
         getAlbumArtSrc,
         getTopGenresFromMb,
+        proxyFetchBytes,
+        saveImageToGallery,
         type Track,
     } from "$lib/api/tauri";
 
@@ -127,13 +129,31 @@
     }
 
     // Helper to load image for canvas
-    function loadImage(src: string): Promise<HTMLImageElement> {
+    async function loadImage(src: string): Promise<HTMLImageElement> {
+        // If it's a remote URL, fetch via proxy to bypass CORS
+        let finalSrc = src;
+        if (src.startsWith("http") && !src.includes("tauri.localhost")) {
+            try {
+                const base64 = await proxyFetchBytes(src);
+                // Determine mime type from URL or default to jpeg
+                const ext = src.split(".").pop()?.toLowerCase();
+                const mime = ext === "png" ? "image/png" : "image/jpeg";
+                finalSrc = `data:${mime};base64,${base64}`;
+            } catch (e) {
+                console.warn(
+                    "[StatsWrapped] Proxy fetch failed for image:",
+                    src,
+                    e,
+                );
+            }
+        }
+
         return new Promise((resolve, reject) => {
             const img = new Image();
             img.crossOrigin = "anonymous";
             img.onload = () => resolve(img);
             img.onerror = reject;
-            img.src = src;
+            img.src = finalSrc;
         });
     }
 
@@ -200,10 +220,11 @@
             ctx.fillText("LISTEN ON AUDIONPLAYER.COM", 540, 1820);
 
             const dataUrl = canvas.toDataURL("image/png");
-            const link = document.createElement("a");
-            link.download = `audion-wrapped-${currentMonthName.toLowerCase()}.png`;
-            link.href = dataUrl;
-            link.click();
+            const base64Data = dataUrl.split(",")[1];
+            const fileName = `audion-wrapped-${currentMonthName.toLowerCase()}.png`;
+
+            await saveImageToGallery(base64Data, fileName);
+            // Optional: You could show a "Saved to gallery" toast here if available
         } catch (error) {
             console.error("Export failed:", error);
         } finally {
@@ -786,12 +807,11 @@
                         stroke="currentColor"
                         stroke-width="2.5"
                     >
-                        <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"
-                        ></path>
-                        <polyline points="16 6 12 2 8 6"></polyline>
-                        <line x1="12" y1="2" x2="12" y2="15"></line>
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
                     </svg>
-                    <span>{isExporting ? "Saving..." : "Share Story"}</span>
+                    <span>{isExporting ? "Saving..." : "Download Image"}</span>
                 </button>
                 <button
                     class="nav-btn"

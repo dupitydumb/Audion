@@ -587,6 +587,8 @@ pub fn run() {
                     audio::audio_is_finished,
                     audio::audio_set_eq,
                     audio::native_audio_available,
+                    commands::proxy_fetch_bytes,
+                    commands::save_image_to_gallery,
                 ]
             }
             #[cfg(mobile)]
@@ -720,6 +722,8 @@ pub fn run() {
                     audio::audio_is_finished,
                     audio::audio_set_eq,
                     audio::native_audio_available,
+                    commands::proxy_fetch_bytes,
+                    commands::save_image_to_gallery,
                 ]
             }
         })

@@ -995,3 +995,28 @@ export async function getReleaseGroupTracksMb(rgMbid: string): Promise<MbTrack[]
 export async function getArtistTopTracksMb(artistMbid: string): Promise<MbTrack[]> {
     return await invoke('get_artist_top_tracks_mb', { artistMbid });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Network & Utility Commands
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Proxy fetch command - makes HTTP requests from the Rust backend to bypass CORS.
+ */
+export async function proxyFetch(url: string, method?: string, headers?: Record<string, string>, body?: string): Promise<any> {
+    return await invoke('proxy_fetch', { request: { url, method, headers, body } });
+}
+
+/**
+ * Fetch binary data as a base64 string from the Rust backend (bypasses CORS).
+ */
+export async function proxyFetchBytes(url: string): Promise<string> {
+    return await invoke('proxy_fetch_bytes', { url });
+}
+
+/**
+ * Save a base64-encoded image to the user's gallery or download folder.
+ */
+export async function saveImageToGallery(base64Data: string, filename: string): Promise<string> {
+    return await invoke('save_image_to_gallery', { base64Data, filename });
+}

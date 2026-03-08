@@ -1035,3 +1035,56 @@ pub fn get_default_music_dirs() -> Vec<String> {
 
     dirs
 }
+
+#[tauri::command]
+pub async fn save_image_to_gallery(
+    app: tauri::AppHandle,
+    base64_data: String,
+    filename: String,
+) -> Result<String, String> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    use std::fs;
+    use tauri::Manager;
+
+    let bytes = STANDARD
+        .decode(base64_data)
+        .map_err(|e| format!("Failed to decode base64: {}", e))?;
+
+    let mut download_dir = None;
+
+    // Try to get public download/pictures directory
+    #[cfg(not(target_os = "android"))]
+    {
+        download_dir = dirs::download_dir();
+    }
+
+    #[cfg(target_os = "android")]
+    {
+        // On Android, we prefer /storage/emulated/0/Download or /storage/emulated/0/Pictures
+        let android_download = std::path::PathBuf::from("/storage/emulated/0/Download");
+        if android_download.exists() {
+            download_dir = Some(android_download);
+        } else {
+            let android_pictures = std::path::PathBuf::from("/storage/emulated/0/Pictures");
+            if android_pictures.exists() {
+                download_dir = Some(android_pictures);
+            }
+        }
+    }
+
+    let save_dir = download_dir.unwrap_or_else(|| {
+        // Fallback to app data dir if no public dir found
+        app.path()
+            .app_data_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+    });
+
+    if !save_dir.exists() {
+        fs::create_dir_all(&save_dir).map_err(|e| format!("Failed to create directory: {}", e))?;
+    }
+
+    let file_path = save_dir.join(filename);
+    fs::write(&file_path, bytes).map_err(|e| format!("Failed to write file: {}", e))?;
+
+    Ok(file_path.to_string_lossy().to_string())
+}
