@@ -511,6 +511,7 @@ pub async fn enrich_track_metadata_mb(
     track_id: i64,
     artist: String,
     title: String,
+    persist: bool,
     db: tauri::State<'_, crate::db::Database>,
 ) -> Result<MbTrackEnrichment, String> {
     let client = mb_client()?;
@@ -556,7 +557,7 @@ pub async fn enrich_track_metadata_mb(
     let isrcs = recording.isrcs.clone().unwrap_or_default();
 
     // Write back to DB (best-effort — don't propagate DB failures)
-    {
+    if persist {
         let conn = db.conn.lock().map_err(|e| e.to_string())?;
         crate::db::queries::update_track_mb_data(
             &conn,
