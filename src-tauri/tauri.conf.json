@@ -15,8 +15,8 @@
         "title": "Audion",
         "width": 1280,
         "height": 800,
-        "minWidth": 1280,
-        "minHeight": 800,
+        "minWidth": 0,
+        "minHeight": 0,
         "backgroundColor": "#121212",
         "visible": true,
         "decorations": false,
@@ -62,11 +62,15 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["audion"]
+        "schemes": [
+          "audion"
+        ]
       },
       "mobile": [
         {
-          "scheme": ["audion"],
+          "scheme": [
+            "audion"
+          ],
           "appLink": false
         }
       ]

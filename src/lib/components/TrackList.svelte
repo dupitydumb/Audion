@@ -1538,6 +1538,7 @@
     text-align: left;
     max-width: fit-content;
     line-height: 1.2;
+    min-height: 0;
   }
 
   .track-artist:hover:not(:disabled) {

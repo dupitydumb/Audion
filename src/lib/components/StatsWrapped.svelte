@@ -1151,7 +1151,7 @@
 
     .premium-card {
         width: 85%;
-        height: 90%;
+        height: 70%;
         background: #ffffff;
         border-radius: 32px;
         color: black;

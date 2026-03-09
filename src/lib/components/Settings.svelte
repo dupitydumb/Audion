@@ -1893,10 +1893,17 @@
     transition: all 0.2s;
   }
 
+  @media (max-width: 768px) {
+    .path-selector {
+      display: flex;
+      gap: var(--spacing-sm);
+      flex-direction: column;
+    }
+  }
+
   .path-selector {
     display: flex;
     gap: var(--spacing-sm);
-    align-items: center;
   }
 
   .path-display {
@@ -1954,8 +1961,8 @@
   .danger-item {
     display: flex;
     justify-content: space-between;
-    align-items: center;
     gap: var(--spacing-md);
+    flex-direction: column;
   }
 
   .danger-info {
