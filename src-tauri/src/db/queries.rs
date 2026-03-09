@@ -1484,6 +1484,12 @@ pub fn get_sync_meta(conn: &Connection, key: &str) -> Result<Option<String>> {
     .optional()
 }
 
+/// Helper: check if user is logged in (for sync enqueuing)
+pub fn is_logged_in(conn: &Connection) -> bool {
+    get_sync_meta(conn, "access_token").ok().flatten().is_some()
+        && get_sync_meta(conn, "user_id").ok().flatten().is_some()
+}
+
 /// Set a sync metadata value (upsert).
 pub fn set_sync_meta(conn: &Connection, key: &str, value: &str) -> Result<()> {
     conn.execute(
@@ -1667,5 +1673,57 @@ pub fn store_id_mapping(
 /// Clear all sync ID mappings (e.g., on logout).
 pub fn clear_sync_id_map(conn: &Connection) -> Result<()> {
     conn.execute("DELETE FROM sync_id_map", [])?;
+    Ok(())
+}
+
+/// Helper: build a track hash for sync payloads (title|artist|album)
+pub fn build_track_hash_str(
+    title: Option<&str>,
+    artist: Option<&str>,
+    album: Option<&str>,
+) -> String {
+    format!(
+        "{}|{}|{}",
+        title.unwrap_or(""),
+        artist.unwrap_or(""),
+        album.unwrap_or("")
+    )
+}
+
+/// Enqueue a library track sync change.
+pub fn enqueue_track_sync_change(conn: &Connection, track: &Track, operation: &str) -> Result<()> {
+    if !is_logged_in(conn) {
+        return Ok(());
+    }
+
+    let track_hash = build_track_hash_str(
+        track.title.as_deref(),
+        track.artist.as_deref(),
+        track.album.as_deref(),
+    );
+
+    let payload = serde_json::json!({
+        "trackHash": track_hash,
+        "title": track.title,
+        "artist": track.artist,
+        "album": track.album,
+        "duration": track.duration,
+        "externalId": track.external_id,
+        "sourceType": track.source_type,
+        "coverUrl": track.cover_url,
+        "trackNumber": track.track_number,
+        "discNumber": track.disc_number,
+        "format": track.format,
+        "bitrate": track.bitrate,
+    });
+
+    let _ = enqueue_sync_change(
+        conn,
+        "library_track",
+        &format!("local_lib_{}", track.id),
+        operation,
+        Some(&payload.to_string()),
+    );
+
     Ok(())
 }

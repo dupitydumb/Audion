@@ -12,6 +12,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { isTauri } from '$lib/api/tauri';
 import { refreshAll } from '$lib/stores/library';
 import { loadLikedTracks } from '$lib/stores/liked';
+import { isOnline } from '$lib/stores/network';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -163,6 +164,34 @@ export async function initSync(): Promise<void> {
     } catch (error) {
         console.error('[Sync] Failed to check current deep link:', error);
     }
+
+    // ─── Automatic Sync Trigger ──────────────────────────────────────────
+    // Watch for pending changes and online status. Trigger sync after a short delay.
+    let syncTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    syncStatus.subscribe(($status) => {
+        const canSync = $status.pending_changes > 0 && !$status.is_syncing && get(isOnline) && get(isLoggedIn);
+
+        if (canSync) {
+            if (syncTimeout) clearTimeout(syncTimeout);
+            syncTimeout = setTimeout(() => {
+                triggerSync();
+            }, 2000); // 2 second debounce
+        } else if (syncTimeout) {
+            clearTimeout(syncTimeout);
+            syncTimeout = null;
+        }
+    });
+
+    // Also trigger when coming back online
+    isOnline.subscribe(($online) => {
+        if ($online) {
+            const $status = get(syncStatus);
+            if ($status.pending_changes > 0 && !$status.is_syncing && get(isLoggedIn)) {
+                triggerSync();
+            }
+        }
+    });
 }
 
 /**

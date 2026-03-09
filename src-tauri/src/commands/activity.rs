@@ -2,28 +2,6 @@
 use crate::db::{queries, Database};
 use tauri::State;
 
-/// Helper: check if user is logged in (for sync enqueuing)
-fn is_logged_in(conn: &rusqlite::Connection) -> bool {
-    queries::get_sync_meta(conn, "access_token")
-        .ok()
-        .flatten()
-        .is_some()
-        && queries::get_sync_meta(conn, "user_id")
-            .ok()
-            .flatten()
-            .is_some()
-}
-
-/// Helper: build a track hash for sync payloads (title|artist|album)
-fn build_track_hash(track: &queries::Track) -> String {
-    format!(
-        "{}|{}|{}",
-        track.title.as_deref().unwrap_or(""),
-        track.artist.as_deref().unwrap_or(""),
-        track.album.as_deref().unwrap_or("")
-    )
-}
-
 // ============================================================================
 // Liked Tracks commands
 // ============================================================================
@@ -34,10 +12,14 @@ pub async fn like_track(track_id: i64, db: State<'_, Database>) -> Result<(), St
     queries::like_track(&conn, track_id).map_err(|e| e.to_string())?;
 
     // Enqueue sync change
-    if is_logged_in(&conn) {
+    if queries::is_logged_in(&conn) {
         let mut payload = serde_json::json!({});
         if let Ok(Some(track)) = queries::get_track_by_id(&conn, track_id) {
-            let track_hash = build_track_hash(&track);
+            let track_hash = queries::build_track_hash_str(
+                track.title.as_deref(),
+                track.artist.as_deref(),
+                track.album.as_deref(),
+            );
             payload["trackHash"] = serde_json::Value::String(track_hash);
             payload["title"] = serde_json::json!(track.title);
             payload["artist"] = serde_json::json!(track.artist);
@@ -65,10 +47,14 @@ pub async fn unlike_track(track_id: i64, db: State<'_, Database>) -> Result<(), 
 
     // Build payload before deleting (need track info for the hash)
     let mut payload = serde_json::json!({});
-    let logged_in = is_logged_in(&conn);
+    let logged_in = queries::is_logged_in(&conn);
     if logged_in {
         if let Ok(Some(track)) = queries::get_track_by_id(&conn, track_id) {
-            let track_hash = build_track_hash(&track);
+            let track_hash = queries::build_track_hash_str(
+                track.title.as_deref(),
+                track.artist.as_deref(),
+                track.album.as_deref(),
+            );
             payload["trackHash"] = serde_json::Value::String(track_hash);
         }
     }
@@ -122,9 +108,13 @@ pub async fn record_play(
     queries::record_play(&conn, track_id, album_id, duration_played).map_err(|e| e.to_string())?;
 
     // Enqueue sync change
-    if is_logged_in(&conn) {
+    if queries::is_logged_in(&conn) {
         if let Ok(Some(track)) = queries::get_track_by_id(&conn, track_id) {
-            let track_hash = build_track_hash(&track);
+            let track_hash = queries::build_track_hash_str(
+                track.title.as_deref(),
+                track.artist.as_deref(),
+                track.album.as_deref(),
+            );
             let payload = serde_json::json!({
                 "trackHash": track_hash,
                 "title": track.title,

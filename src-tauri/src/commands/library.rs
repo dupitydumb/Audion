@@ -827,8 +827,16 @@ pub async fn delete_track(track_id: i64, db: State<'_, Database>) -> Result<bool
         let _ = cover_storage::delete_track_cover_file(cover_path.as_deref());
     }
 
+    // Get track info before deletion for sync
+    let track_full_info = queries::get_track_by_id(&conn, track_id).ok().flatten();
+
     let result = queries::delete_track(&conn, track_id)
         .map_err(|e| format!("Failed to delete track: {}", e))?;
+
+    // Enqueue sync change
+    if let Some(track) = track_full_info {
+        let _ = queries::enqueue_track_sync_change(&conn, &track, "delete");
+    }
 
     // Clean up empty albums after track deletion
     let _ = queries::cleanup_empty_albums(&conn);
@@ -861,7 +869,7 @@ pub async fn delete_album(album_id: i64, db: State<'_, Database>) -> Result<bool
         tracks.len()
     );
 
-    for track in tracks {
+    for track in &tracks {
         // Only delete file if it's a local track
         let is_local = track.source_type.is_none() || track.source_type.as_deref() == Some("local");
 
@@ -883,6 +891,11 @@ pub async fn delete_album(album_id: i64, db: State<'_, Database>) -> Result<bool
 
     let result = queries::delete_album(&conn, album_id)
         .map_err(|e| format!("Failed to delete album: {}", e))?;
+
+    // Enqueue sync changes for deleted tracks
+    for track in &tracks {
+        let _ = queries::enqueue_track_sync_change(&conn, track, "delete");
+    }
 
     log::info!("[AUDIT] Album {} deleted from library", album_id);
     Ok(result)
@@ -956,7 +969,13 @@ pub async fn add_external_track(
     };
 
     queries::insert_or_update_track(&conn, &track_insert)
-        .map(|(track_id, _was_new)| track_id)
+        .map(|(track_id, _was_new)| {
+            // Enqueue sync change
+            if let Ok(Some(track)) = queries::get_track_by_id(&conn, track_id) {
+                let _ = queries::enqueue_track_sync_change(&conn, &track, "create");
+            }
+            track_id
+        })
         .map_err(|e| format!("Failed to add external track: {}", e))
 }
 

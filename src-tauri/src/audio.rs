@@ -12,10 +12,10 @@ use std::io::BufReader;
 use std::sync::{Arc, Mutex}; // Only for state snapshot, not for engine control
 use std::time::{Duration, Instant};
 
-use crossbeam::channel::{unbounded, Receiver, Sender};
+use crossbeam::channel::{unbounded, Sender};
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use serde::{Deserialize, Serialize};
-use tauri::Manager;
+// use tauri::Manager;
 
 // =============================================================================
 // DSP: EQUALIZER FILTERS

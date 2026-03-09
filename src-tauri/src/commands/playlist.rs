@@ -3,35 +3,13 @@ use crate::db::{queries, Database};
 use rusqlite::params;
 use tauri::State;
 
-/// Helper: check if user is logged in (for sync enqueuing)
-fn is_logged_in(conn: &rusqlite::Connection) -> bool {
-    queries::get_sync_meta(conn, "access_token")
-        .ok()
-        .flatten()
-        .is_some()
-        && queries::get_sync_meta(conn, "user_id")
-            .ok()
-            .flatten()
-            .is_some()
-}
-
-/// Helper: build a track hash for sync payloads (title|artist|album)
-fn build_track_hash(track: &queries::Track) -> String {
-    format!(
-        "{}|{}|{}",
-        track.title.as_deref().unwrap_or(""),
-        track.artist.as_deref().unwrap_or(""),
-        track.album.as_deref().unwrap_or("")
-    )
-}
-
 #[tauri::command]
 pub async fn create_playlist(name: String, db: State<'_, Database>) -> Result<i64, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     let id = queries::create_playlist(&conn, &name).map_err(|e| e.to_string())?;
 
     // Enqueue sync change
-    if is_logged_in(&conn) {
+    if queries::is_logged_in(&conn) {
         let payload = serde_json::json!({ "name": name }).to_string();
         let _ = queries::enqueue_sync_change(
             &conn,
@@ -70,7 +48,7 @@ pub async fn add_track_to_playlist(
     queries::add_track_to_playlist(&conn, playlist_id, track_id).map_err(|e| e.to_string())?;
 
     // Enqueue sync change
-    if is_logged_in(&conn) {
+    if queries::is_logged_in(&conn) {
         // Get the position that was just assigned
         let position: i32 = conn.query_row(
             "SELECT COALESCE(position, 0) FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2",
@@ -84,7 +62,11 @@ pub async fn add_track_to_playlist(
         });
         // Attach track metadata for cross-device matching
         if let Ok(Some(track)) = queries::get_track_by_id(&conn, track_id) {
-            let track_hash = build_track_hash(&track);
+            let track_hash = queries::build_track_hash_str(
+                track.title.as_deref(),
+                track.artist.as_deref(),
+                track.album.as_deref(),
+            );
             payload["trackHash"] = serde_json::Value::String(track_hash);
             payload["title"] = serde_json::json!(track.title);
             payload["artist"] = serde_json::json!(track.artist);
@@ -116,7 +98,7 @@ pub async fn remove_track_from_playlist(
     queries::remove_track_from_playlist(&conn, playlist_id, track_id).map_err(|e| e.to_string())?;
 
     // Enqueue sync change
-    if is_logged_in(&conn) {
+    if queries::is_logged_in(&conn) {
         let payload = serde_json::json!({
             "playlistId": format!("local_{}", playlist_id),
         })
@@ -139,7 +121,7 @@ pub async fn delete_playlist(playlist_id: i64, db: State<'_, Database>) -> Resul
     queries::delete_playlist(&conn, playlist_id).map_err(|e| e.to_string())?;
 
     // Enqueue sync change
-    if is_logged_in(&conn) {
+    if queries::is_logged_in(&conn) {
         let _ = queries::enqueue_sync_change(
             &conn,
             "playlist",
@@ -162,7 +144,7 @@ pub async fn rename_playlist(
     queries::rename_playlist(&conn, playlist_id, &new_name).map_err(|e| e.to_string())?;
 
     // Enqueue sync change
-    if is_logged_in(&conn) {
+    if queries::is_logged_in(&conn) {
         let payload = serde_json::json!({ "name": new_name }).to_string();
         let _ = queries::enqueue_sync_change(
             &conn,
@@ -187,7 +169,7 @@ pub async fn update_playlist_cover(
         .map_err(|e| e.to_string())?;
 
     // Enqueue sync change
-    if is_logged_in(&conn) {
+    if queries::is_logged_in(&conn) {
         let payload = serde_json::json!({ "coverUrl": cover_url }).to_string();
         let _ = queries::enqueue_sync_change(
             &conn,
@@ -278,7 +260,7 @@ pub async fn reorder_playlist_tracks(
     conn.execute("COMMIT", []).map_err(|e| e.to_string())?;
 
     // Enqueue sync change for the reorder
-    if is_logged_in(&conn) {
+    if queries::is_logged_in(&conn) {
         let payload = serde_json::json!({
             "playlistId": format!("local_{}", playlist_id),
             "fromIndex": from_index,

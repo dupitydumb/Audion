@@ -23,7 +23,7 @@ const DEFAULT_SERVER_URL: &str = "https://api.audionplayer.com";
 const MAX_RETRY_COUNT: i32 = 10;
 
 /// Max changes per push request to avoid Cloudflare Worker timeouts.
-const PUSH_CHUNK_SIZE: usize = 100;
+const PUSH_CHUNK_SIZE: usize = 500;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 

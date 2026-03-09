@@ -27,6 +27,7 @@
   import PromptDialog from "$lib/components/PromptDialog.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
   import ProgressiveScanStatus from "$lib/components/ProgressiveScanStatus.svelte";
+  import SyncProgressOverlay from "$lib/components/SyncProgressOverlay.svelte";
   import LoginModal from "$lib/components/LoginModal.svelte";
   import { initSync, destroySync } from "$lib/stores/sync";
   import "../app.css";
@@ -248,6 +249,7 @@
 <ConfirmDialog />
 <PromptDialog />
 <ProgressiveScanStatus />
+<SyncProgressOverlay />
 <LoginModal />
 
 {#if showMigrationBanner}
