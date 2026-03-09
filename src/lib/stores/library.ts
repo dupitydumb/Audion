@@ -342,6 +342,42 @@ export function addTrackToLibrary(track: Track): void {
 }
 
 
+/**
+ * Update a track's cover URL in the library (metadata, cache, and store)
+ */
+export function updateTrackCover(trackId: number, coverUrl: string): void {
+    // 1. Update metadata cache
+    const metadata = trackMetadataCache.get(trackId);
+    if (metadata) {
+        trackMetadataCache.set(trackId, {
+            ...metadata,
+            cover_url: coverUrl
+        });
+    }
+
+    // 2. Update track cover cache (blob URL or external URL)
+    trackCoverCache.set(trackId, coverUrl);
+
+    // 3. Update reactive store
+    tracks.update(current => {
+        const index = current.findIndex(t => t.id === trackId);
+        if (index >= 0) {
+            const updated = [...current];
+            updated[index] = {
+                ...updated[index],
+                cover_url: coverUrl,
+                track_cover: null // Ensure we don't use old embedded cover if it exists
+            } as Track;
+            return updated;
+        }
+        return current;
+    });
+
+    // 4. Clear full track cache to force reconstruction
+    fullTrackCache.delete(trackId);
+}
+
+
 // ingestAlbums — caches album metadata and album art separately
 // Returns lightweight Album[] for the store
 function ingestAlbums(incoming: Album[]): Album[] {

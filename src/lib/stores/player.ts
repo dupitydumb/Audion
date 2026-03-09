@@ -5,7 +5,8 @@ import { getAudioSrc, getAlbumArtSrc, getTrackCoverSrc, convertFileSrc } from '$
 import { invoke } from '@tauri-apps/api/core';
 import { addToast } from '$lib/stores/toast';
 import { EventEmitter, type PluginEvents } from '$lib/plugins/event-emitter';
-import { tracks as libraryTracks, getFullTrack, getAlbumCoverFromTracks } from '$lib/stores/library';
+import { tracks as libraryTracks, getFullTrack, getAlbumCoverFromTracks, updateTrackCover } from '$lib/stores/library';
+import { fetchTrackCover } from '$lib/services/cover-fetcher';
 import { appSettings } from '$lib/stores/settings';
 import { equalizer, EQ_FREQUENCIES } from '$lib/stores/equalizer';
 import { pluginStore } from '$lib/stores/plugin-store';
@@ -624,8 +625,6 @@ function updateMediaSessionPosition(): void {
         // Ensure position is within bounds [0, duration]
         const safePos = Math.max(0, Math.min(pos, dur));
 
-        console.log(`[MediaSession] Updating position: ${safePos.toFixed(2)} / ${dur.toFixed(2)} (rate: ${rate})`);
-
         navigator.mediaSession.setPositionState({
             duration: dur,
             playbackRate: rate,
@@ -688,6 +687,39 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
     // even if the audio engine takes a moment to initialize or resolve streams.
     console.log('[Player] Preparing MediaSession metadata for:', trackForPlugins.title);
     await updateMediaSessionMetadata(trackForPlugins);
+
+    // AUTO-FETCH COVER LOGIC
+    // If the track is missing a cover, attempt to fetch it from an external source.
+    // This runs asynchronously and does not block playback.
+    if (!track.track_cover_path && !track.cover_url) {
+        fetchTrackCover(track).then(async (newCoverUrl) => {
+            if (newCoverUrl) {
+                console.log(`[Player] Auto-fetched cover for "${track.title}": ${newCoverUrl}`);
+
+                // 1. Persist to Backend Database
+                try {
+                    await invoke('update_track_cover_url', { trackId: track.id, coverUrl: newCoverUrl });
+                } catch (e) {
+                    console.error('[Player] Failed to persist fetched cover to database:', e);
+                }
+
+                // 2. Update reactive library store (metadata, cache, and main list)
+                updateTrackCover(track.id, newCoverUrl);
+
+                // 3. Update current player state if still playing the same track
+                const current = get(currentTrack);
+                if (current && current.id === track.id) {
+                    currentTrack.update(t => t ? { ...t, cover_url: newCoverUrl } : t);
+
+                    // 4. Update Media Session (system notification) immediately with new art
+                    updateMediaSessionMetadata({ ...track, cover_url: newCoverUrl }).catch(() => { });
+                }
+            }
+        }).catch(err => {
+            console.error('[Player] Failed to auto-fetch cover:', err);
+        });
+    }
+
     if (sessionId !== currentSessionId) {
         console.log('[Player] Session changed during metadata update, aborting playback');
         return;
