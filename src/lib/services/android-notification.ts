@@ -3,6 +3,7 @@ import { get } from 'svelte/store';
 import { currentTrack, isPlaying, togglePlay, nextTrack, previousTrack, currentTime, duration } from '$lib/stores/player';
 import { nativeAudioStop } from '$lib/services/native-audio';
 import { getTrackCoverSrc } from '$lib/api/tauri';
+import { formatDuration } from '$lib/api/tauri';
 import { isAndroid, isTauri } from '$lib/api/tauri';
 import { isLoved, toggleLove } from '$lib/stores/loved';
 
@@ -42,6 +43,8 @@ declare global {
 let notificationInitialized = false;
 let lastArtUrl: string | null = null;
 let lastArtBase64: string | null = null;
+let lastProgressSecond = -1;
+let lastDurationSecond = -1;
 
 
 export async function initAndroidNotification() {
@@ -78,15 +81,16 @@ export async function initAndroidNotification() {
             window.AndroidMediaNotification?.stopNotification();
             lastArtUrl = null;
             lastArtBase64 = null;
+            lastProgressSecond = -1;
+            lastDurationSecond = -1;
             return;
         }
 
         const playing = get(isPlaying);
-        const loved = get(isLoved) as boolean;
+        const loved = get(isLoved);
         const artUrl = getTrackCoverSrc(track);
         const pos = get(currentTime);
         const dur = get(duration);
-        const { formatDuration } = await import('$lib/api/tauri');
 
         let artData: string | null = null;
         // Optimize art loading: if URL changed, resolve it to base64 or pass through if http
@@ -131,10 +135,9 @@ export async function initAndroidNotification() {
     isPlaying.subscribe(async (playing) => {
         const track = get(currentTrack);
         if (track) {
-            const loved = get(isLoved) as boolean;
+            const loved = get(isLoved);
             const pos = get(currentTime);
             const dur = get(duration);
-            const { formatDuration } = await import('$lib/api/tauri');
             window.AndroidMediaNotification?.updateNotification(
                 track.title || 'Unknown Title',
                 track.artist || 'Unknown Artist',
@@ -146,6 +149,60 @@ export async function initAndroidNotification() {
                 formatDuration(dur)
             );
         }
+    });
+
+    currentTime.subscribe((pos) => {
+        const track = get(currentTrack);
+        if (!track) return;
+
+        const dur = get(duration);
+        const posSecond = Math.floor(pos || 0);
+        const durSecond = Math.floor(dur || 0);
+
+        if (posSecond === lastProgressSecond && durSecond === lastDurationSecond) {
+            return;
+        }
+
+        lastProgressSecond = posSecond;
+        lastDurationSecond = durSecond;
+
+        window.AndroidMediaNotification?.updateNotification(
+            track.title || 'Unknown Title',
+            track.artist || 'Unknown Artist',
+            track.album || '',
+            get(isPlaying),
+            get(isLoved),
+            lastArtBase64,
+            formatDuration(pos),
+            formatDuration(dur)
+        );
+    });
+
+    duration.subscribe((dur) => {
+        const track = get(currentTrack);
+        if (!track) return;
+
+        const pos = get(currentTime);
+        const posSecond = Math.floor(pos || 0);
+        const durSecond = Math.floor(dur || 0);
+
+        if (posSecond === lastProgressSecond && durSecond === lastDurationSecond) {
+            return;
+        }
+
+        lastProgressSecond = posSecond;
+        lastDurationSecond = durSecond;
+
+        window.AndroidMediaNotification?.updateNotification(
+            track.title || 'Unknown Title',
+            track.artist || 'Unknown Artist',
+            track.album || '',
+            get(isPlaying),
+            get(isLoved),
+            lastArtBase64,
+            formatDuration(pos),
+            formatDuration(dur)
+        );
     });
 
     notificationInitialized = true;

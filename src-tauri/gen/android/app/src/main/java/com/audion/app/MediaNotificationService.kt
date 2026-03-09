@@ -32,6 +32,8 @@ class MediaNotificationService : Service() {
         const val NOTIFICATION_ID = 1001
 
         const val ACTION_PLAY_PAUSE = "com.audion.app.PLAY_PAUSE"
+        const val ACTION_PREVIOUS = "com.audion.app.PREVIOUS"
+        const val ACTION_NEXT = "com.audion.app.NEXT"
         const val ACTION_LOVE = "com.audion.app.LOVE"
         const val ACTION_STOP = "com.audion.app.STOP"
 
@@ -65,6 +67,12 @@ class MediaNotificationService : Service() {
         when (intent?.action) {
             ACTION_PLAY_PAUSE -> {
                 evaluateJs("window.__audionMediaAction?.('playPause')")
+            }
+            ACTION_PREVIOUS -> {
+                evaluateJs("window.__audionMediaAction?.('previous')")
+            }
+            ACTION_NEXT -> {
+                evaluateJs("window.__audionMediaAction?.('next')")
             }
             ACTION_LOVE -> {
                 evaluateJs("window.__audionMediaAction?.('love')")
@@ -123,6 +131,12 @@ class MediaNotificationService : Service() {
                 override fun onPause() {
                     evaluateJs("window.__audionMediaAction?.('playPause')")
                 }
+                override fun onSkipToPrevious() {
+                    evaluateJs("window.__audionMediaAction?.('previous')")
+                }
+                override fun onSkipToNext() {
+                    evaluateJs("window.__audionMediaAction?.('next')")
+                }
                 override fun onStop() {
                     evaluateJs("window.__audionMediaAction?.('stop')")
                     stopSelf()
@@ -155,12 +169,12 @@ class MediaNotificationService : Service() {
 
         mediaSession?.setMetadata(metadataBuilder.build())
 
-        // Update playback state — only expose play/pause and stop,
-        // skipping ACTION_SKIP_TO_NEXT/PREVIOUS so Android's media widget
-        // does not render its own skip buttons.
+        // Update playback state with transport controls.
         val stateBuilder = PlaybackStateCompat.Builder()
             .setActions(
                 PlaybackStateCompat.ACTION_PLAY_PAUSE or
+                PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+                PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
                 PlaybackStateCompat.ACTION_STOP
             )
             .setState(
@@ -218,13 +232,23 @@ class MediaNotificationService : Service() {
             Intent(this, MediaNotificationService::class.java).apply { action = ACTION_LOVE },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
-        val playPauseIntent = PendingIntent.getService(
+        val previousIntent = PendingIntent.getService(
             this, 1,
+            Intent(this, MediaNotificationService::class.java).apply { action = ACTION_PREVIOUS },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val playPauseIntent = PendingIntent.getService(
+            this, 2,
             Intent(this, MediaNotificationService::class.java).apply { action = ACTION_PLAY_PAUSE },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
+        val nextIntent = PendingIntent.getService(
+            this, 3,
+            Intent(this, MediaNotificationService::class.java).apply { action = ACTION_NEXT },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
         val stopIntent = PendingIntent.getService(
-            this, 2,
+            this, 4,
             Intent(this, MediaNotificationService::class.java).apply { action = ACTION_STOP },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -245,6 +269,11 @@ class MediaNotificationService : Service() {
             .setShowWhen(false)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .addAction(
+                R.drawable.ic_skip_previous,
+                "Previous",
+                previousIntent
+            )
+            .addAction(
                 if (isLoved) R.drawable.ic_heart_filled else R.drawable.ic_heart,
                 "Love",
                 loveIntent
@@ -254,10 +283,15 @@ class MediaNotificationService : Service() {
                 if (isPlaying) "Pause" else "Play",
                 playPauseIntent
             )
+            .addAction(
+                R.drawable.ic_skip_next,
+                "Next",
+                nextIntent
+            )
             .setStyle(
                 MediaStyle()
                     .setMediaSession(mediaSession?.sessionToken)
-                    .setShowActionsInCompactView(0, 1) // love, play/pause
+                    .setShowActionsInCompactView(0, 2, 3) // previous, play/pause, next
                     .setShowCancelButton(true)
                     .setCancelButtonIntent(stopIntent)
             )
