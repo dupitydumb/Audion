@@ -110,8 +110,18 @@ rodio = { version = "0.19", default-features = false, features = [
     "symphonia-mp3",
     "symphonia-wav",
     "symphonia-aac",
-    "symphonia-isomp4", 
-    "symphonia-all" 
+    "symphonia-isomp4",
+    "symphonia-all",
+    "crossbeam-channel"
+] }
+
+symphonia = { version = "0.5", default-features = false, features = [
+    "flac",
+    "mp3",
+    "aac",
+    "ogg",
+    "wav",
+    "isomp4",
 ] }
 
 [target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
