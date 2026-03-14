@@ -29,6 +29,7 @@
     triggerSync,
     deleteAccount,
   } from "$lib/stores/sync";
+  import { nativeAudioStop } from '$lib/services/native-audio';
 
   interface MigrationProgressUpdate {
     current: number;
@@ -160,6 +161,7 @@
 
     try {
       await resetDatabase();
+      handleRefresh();
 
       // Reload the library to reflect changes
       await loadLibrary();
@@ -355,6 +357,7 @@
   }
 
   function handleRefresh() {
+    nativeAudioStop();
     window.location.reload();
   }
 
@@ -489,8 +492,8 @@
                 class="logout-btn"
                 on:click={async () => {
                   const ok = await confirm(
-                    "Are you sure you want to log out? Unsynced changes will be lost.",
-                    "Log Out",
+                      "Are you sure you want to log out? Unsynced changes will be lost.",
+                      { title: "Log Out" }
                   );
                   if (ok) logout();
                 }}
@@ -599,9 +602,8 @@
                 class="danger-btn"
                 on:click={async () => {
                   const ok = await confirm(
-                    "This will permanently delete your account and all synced data from the server. This cannot be undone. Continue?",
-                    "Delete Account",
-                    true,
+                      "This will permanently delete your account and all synced data from the server. This cannot be undone. Continue?",
+                      { title: "Delete Account", danger: true }
                   );
                   if (ok) {
                     try {

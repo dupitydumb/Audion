@@ -22,13 +22,16 @@ import { submitListenbrainzListen } from '$lib/api/tauri';
 // =============================================================================
 import {
     nativeAudioPlay,
+    nativeAudioPreload,
     nativeAudioPause,
     nativeAudioResume,
     nativeAudioStop,
     nativeAudioSetVolume,
     nativeAudioSeek,
     nativeAudioGetState,
-    nativeAudioIsFinished,
+    nativeAudioSetRepeatOne,
+    nativeAudioPollEvent,
+    type AudioEventType,
     nativeAudioSetEq,
     shouldUseNativeAudio,
     type NativePlaybackState
@@ -382,6 +385,7 @@ export async function initAudioBackend(): Promise<void> {
         try {
             // Use equalizer.getState() to get the current stored state
             const state = equalizer.getState();
+            nativeAudioSetRepeatOne(get(repeat) === 'one').catch(console.error);
             await nativeAudioSetEq(state);
             console.log('[Player] Applied initial EQ settings to native backend');
         } catch (err) {
@@ -411,17 +415,36 @@ function startStatePoller(): void {
                     console.warn('[Poller] Native backend reported 0 duration for track at:', state.position);
                 }
 
-                // Check if track finished
-                if (state.is_playing === false && get(isPlaying)) {
-                    const finished = await nativeAudioIsFinished();
-                    if (finished) {
-                        handleTrackEnd();
+                // Poll for audio events 
+                const event = await nativeAudioPollEvent();
+
+                if (event.type === 'TrackFinished') {
+                    // Track ended naturally, nothing was preloaded.
+    
+                    handleTrackEnd();
+                } else if (event.type === 'TrackAdvanced') {
+                    // Gapless advance: audio backend already moved to the next track.
+                    // We must NOT call nativeAudioPlay() — that would restart it.
+                    // Just advance the UI queue index and update metadata.
+                    handleGaplessAdvance();
+                } else if (event.type === 'StateChanged') {
+                    // Backend confirmed a seek or loop — update UI immediately
+                    currentTime.set(event.data.position);
+                    if (event.data.position === 0) {
+                        // repeat-one loop — reset isPlaying to true in case UI lost sync
+                        isPlaying.set(true);
+                        updateMediaSessionPlaybackState('playing');
                     }
                 }
+                
 
-                // Sync isPlaying state
+                // Sync isPlaying state — ignore false when duration is 0 (track still loading)
                 if (state.is_playing !== get(isPlaying)) {
-                    isPlaying.set(state.is_playing);
+                    if (state.is_playing === false && state.duration === 0 && state.position === 0) {
+                        // Backend hasn't loaded track yet, don't trust this state
+                    } else {
+                        isPlaying.set(state.is_playing);
+                    }
                 }
 
                 // Emit time update for plugins
@@ -809,11 +832,14 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
                 }
 
                 // Play via native backend
-                await nativeAudioPlay(audioPath);
+                await nativeAudioPlay(audioPath, (track as any).replay_gain_db ?? null);
 
                 // Sync volume
                 const vol = sliderToAudioVolume(get(volume));
                 await nativeAudioSetVolume(vol);
+
+                // Preload next track for gapless playback
+                _schedulePreload();
 
                 activeBackend = 'native';
                 console.log('[Player] Native playback started:', track.title);
@@ -972,35 +998,27 @@ export async function togglePlay(): Promise<void> {
     }
 }
 
-// Next track
-export function nextTrack(): void {
-    const q = get(queue);
-    const rep = get(repeat);
-    const shuf = get(shuffle);
+// =============================================================================
+// QUEUE INDEX HELPERS
+// =============================================================================
+
+/**
+ * Advance queue index stores (shuffledIndex, userQueueCount) and return the
+ * next absolute queue index. Returns null if playback should stop or hand off
+ * to autoplay (caller must handle those cases).
+ *
+ * @param dry — if true, compute the next index without writing any stores.
+ *              Used by _schedulePreload() to peek ahead.
+ */
+function _advanceQueueIndex(dry = false): number | null {
+    const q         = get(queue);
+    const rep       = get(repeat);
+    const shuf      = get(shuffle);
     const userCount = get(userQueueCount);
-    const settings = get(appSettings);
+    const settings  = get(appSettings);
+    let idx         = get(queueIndex);
 
-    // Standard indices
-    let idx = get(queueIndex);
-
-    if (q.length === 0) {
-        // Queue is empty, try autoplay from library
-        if (settings.autoplay) {
-            playRandomFromLibrary();
-        }
-        return;
-    }
-
-    if (rep === 'one') {
-        // Repeat current track
-        if (activeBackend === 'html5') {
-            getHtml5Audio().currentTime = 0;
-            getHtml5Audio().play();
-        } else if (activeBackend === 'native') {
-            nativeAudioSeek(0).catch(console.error);
-        }
-        return;
-    }
+    if (q.length === 0) return null;
 
     // Check if we have user-queued tracks to play first
     if (userCount > 0) {
@@ -1008,58 +1026,64 @@ export function nextTrack(): void {
         // User queue tracks are inserted directly after current track in the main queue list.
         // So we just increment normal index.
         idx = idx + 1;
+        if (!dry) userQueueCount.update(c => Math.max(0, c - 1));
 
-        // When playing priority tracks, we do NOT update shuffledIndex.
-        // We want to resume the shuffle flow from where we left off after priority tracks are done.
     } else if (shuf) {
-        // Persistent Shuffle Mode
         const shufIndices = get(shuffledIndices);
-        let shufIdx = get(shuffledIndex);
-
-        // Move to next in shuffled list
-        shufIdx = shufIdx + 1;
+        let shufIdx = get(shuffledIndex) + 1;
 
         if (shufIdx >= shufIndices.length) {
             if (rep === 'all') {
                 shufIdx = 0;
-            } else if (settings.autoplay) {
-                // Autoplay: pick random track from library
-                playRandomFromLibrary();
-                return;
             } else {
-                isPlaying.set(false);
-                return;
+                // End of shuffle — caller decides autoplay/stop
+                return null;
             }
         }
 
-        shuffledIndex.set(shufIdx);
+        if (!dry) shuffledIndex.set(shufIdx);
         idx = shufIndices[shufIdx];
     } else {
-        // Sequential next
         idx = idx + 1;
+
+        if (idx >= q.length) {
+            if (rep === 'all') {
+                idx = 0;
+            } else {
+                // End of queue — caller decides autoplay/stop
+                return null;
+            }
+        }
     }
 
-    if (!shuf && idx >= q.length) { // Check bounds for sequential
-        if (rep === 'all') {
-            idx = 0;
-        } else if (settings.autoplay) {
-            // Autoplay: pick random track from library
+    return idx;
+}
+
+// Next track
+export function nextTrack(): void {
+    const q        = get(queue);
+    const settings = get(appSettings);
+
+    if (q.length === 0) {
+        if (settings.autoplay) playRandomFromLibrary();
+        return;
+    }
+
+    const idx = _advanceQueueIndex();
+
+    if (idx === null) {
+        // End of queue/shuffle with no repeat
+        if (settings.autoplay) {
             playRandomFromLibrary();
-            return;
         } else {
             // Stop at end
             isPlaying.set(false);
-            return;
         }
+        return;
     }
 
     queueIndex.set(idx);
     playTrack(q[idx]);
-
-    // Decrement user queue count if we consumed a user-added track
-    if (userCount > 0) {
-        userQueueCount.update(c => Math.max(0, c - 1));
-    }
 }
 
 // Play a random track from the library (for autoplay feature)
@@ -1146,6 +1170,10 @@ export async function seek(position: number): Promise<void> {
             }
         } else if (activeBackend === 'native') {
             await nativeAudioSeek(position);
+            // Update UI immediately — poller is stopped while paused
+            if (!get(isPlaying)) {
+                currentTime.set(position * get(duration));
+            }
         }
         updateMediaSessionPosition();
     } catch (err) {
@@ -1205,9 +1233,11 @@ export function toggleShuffle(): void {
 // Cycle repeat mode
 export function cycleRepeat(): void {
     repeat.update(r => {
-        if (r === 'none') return 'all';
-        if (r === 'all') return 'one';
-        return 'none';
+        const next = r === 'none' ? 'all' : r === 'all' ? 'one' : 'none';
+        if (activeBackend === 'native') {
+            nativeAudioSetRepeatOne(next === 'one').catch(console.error);
+        }
+        return next;
     });
 }
 
@@ -1237,6 +1267,113 @@ function handleTrackEnd(): void {
         playStartTime = 0; // Reset so playTrack doesn't double-record
     }
     nextTrack();
+}
+
+// Handle gapless advance — audio backend already playing the next track.
+function handleGaplessAdvance(): void {
+    const q = get(queue);
+
+    // Record play for the track that just ended
+    const prevTrack = get(currentTrack);
+    if (prevTrack && playStartTime > 0) {
+        const durationPlayed = Math.floor((Date.now() - playStartTime) / 1000);
+        if (durationPlayed > 5) {
+            recordTrackPlay(prevTrack.id, prevTrack.album_id ?? null, durationPlayed);
+            const trackDuration = prevTrack.duration ?? 0;
+            if (get(appSettings).listenBrainzEnabled && trackDuration > 0) {
+                const threshold = Math.min(Math.floor(trackDuration / 2), 240);
+                if (durationPlayed >= threshold) {
+                    submitListenbrainzListen(
+                        prevTrack.artist ?? 'Unknown Artist',
+                        prevTrack.title ?? 'Unknown',
+                        prevTrack.album,
+                        prevTrack.duration,
+                        false,
+                    ).catch(e => console.warn('[ListenBrainz] Scrobble failed:', e));
+                }
+            }
+        }
+    }
+    playStartTime = Date.now();
+
+    const idx = _advanceQueueIndex();
+    if (idx === null) {
+        // Nothing to advance to — treat as track finished
+        handleTrackEnd();
+        return;
+    }
+
+    queueIndex.set(idx);
+    const nextTrackObj = q[idx];
+    if (!nextTrackObj) return;
+
+    _advanceUiToTrack(nextTrackObj);
+}
+
+// Update all UI state for a track without touching the audio backend.
+async function _advanceUiToTrack(track: Track): Promise<void> {
+    const previousTrackObj = get(currentTrack);
+
+    // Full track for plugins / cover art
+    const fullTrack = await getFullTrack(track.id, true);
+    const trackForPlugins = fullTrack || track;
+
+    currentTrack.set(trackForPlugins);
+    currentTime.set(0);
+    duration.set(track.duration || 0);
+    isPlaying.set(true);
+
+    pluginEvents.emit('trackChange', { track: trackForPlugins, previousTrack: previousTrackObj });
+    pluginEvents.emit('queueChange', { queue: get(queue), index: get(queueIndex) });
+
+    await updateMediaSessionMetadata(trackForPlugins);
+    updateMediaSessionPlaybackState('playing');
+    updateMediaSessionPosition();
+
+    // Schedule preload of the NEXT-next track to keep gapless chain alive
+    _schedulePreload();
+
+    // ListenBrainz now-playing
+    if (get(appSettings).listenBrainzEnabled) {
+        submitListenbrainzListen(
+            track.artist ?? 'Unknown Artist',
+            track.title ?? 'Unknown',
+            track.album,
+            track.duration,
+            true,
+        ).catch(e => console.warn('[ListenBrainz] Now-playing failed:', e));
+    }
+}
+
+// =============================================================================
+// GAPLESS PRELOAD
+// =============================================================================
+// After playTrack() starts a local file on the native backend, we immediately
+// tell the backend to open and buffer the NEXT track in the queue.
+// The backend appends it to its internal rodio queue so the transition is
+// seamless — no gap between tracks.
+//
+// We call this every time a new track starts. The backend ignores duplicate
+// preloads for the same path.
+// =============================================================================
+
+function _schedulePreload(): void {
+    if (activeBackend !== 'native') return;
+
+    const q      = get(queue);
+    const nextIdx = _advanceQueueIndex(true); // dry run — no store writes
+
+    if (nextIdx === null || nextIdx >= q.length) return;
+
+    const nextTrackObj = q[nextIdx];
+    if (!nextTrackObj || isStreaming(nextTrackObj)) return;
+
+    const nextPath = nextTrackObj.local_src || nextTrackObj.path;
+    if (!nextPath) return;
+
+    nativeAudioPreload(nextPath, (nextTrackObj as any).replay_gain_db ?? null).catch(e => {
+        console.warn('[Player] Preload failed (non-fatal):', e);
+    });
 }
 
 // Progress as percentage (0-1)
@@ -1397,6 +1534,7 @@ export function reorderQueue(fromIndex: number, toIndex: number): void {
             });
         });
     }
+    _schedulePreload();
 }
 
 // Clear upcoming queue (keep history)
