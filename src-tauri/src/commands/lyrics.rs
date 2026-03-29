@@ -7,72 +7,114 @@ use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
 /// Get LRC file path for a music file or URL
-fn resolve_lrc_path(app: &AppHandle, music_path: &str) -> PathBuf {
-    // Check if it's a real local file that exists
+/// Path for user-imported LRC (song.lrc beside the music file, or hash.lrc in cache)
+/// This is the high-priority file .never overwritten by the API fetcher.
+fn resolve_user_lrc_path(app: &AppHandle, music_path: &str) -> PathBuf {
     if let Ok(metadata) = fs::metadata(music_path) {
         if metadata.is_file() {
-            let path = PathBuf::from(music_path);
-            return path.with_extension("lrc");
+            return PathBuf::from(music_path).with_extension("lrc");
         }
     }
-
-    // For URLs, custom protocols (tidal:), or invalid paths, use cache
-    let mut hasher = DefaultHasher::new();
-    music_path.hash(&mut hasher);
-    let hash = hasher.finish();
-
-    let app_dir = app
-        .path()
-        .app_data_dir()
-        .unwrap_or_else(|_| PathBuf::from("."));
-    let lyrics_dir = app_dir.join("lyrics");
-
-    // Ensure lyrics directory exists
+    // URL/stream: use app cache dir
+    let hash = hash_path(music_path);
+    let lyrics_dir = app_lyrics_dir(app);
     let _ = fs::create_dir_all(&lyrics_dir);
-
     lyrics_dir.join(format!("{}.lrc", hash))
 }
 
+/// Path for API-fetched LRC (song.api.lrc beside the music file, or hash.api.lrc in cache)
+/// Lower priority .never touches the user's song.lrc.
+fn resolve_api_lrc_path(app: &AppHandle, music_path: &str) -> PathBuf {
+    if let Ok(metadata) = fs::metadata(music_path) {
+        if metadata.is_file() {
+            let path = PathBuf::from(music_path);
+            let stem = path.file_stem().unwrap_or_default().to_string_lossy();
+            let parent = path.parent().unwrap_or_else(|| Path::new("."));
+            return parent.join(format!("{}.api.lrc", stem));
+        }
+    }
+    let hash = hash_path(music_path);
+    let lyrics_dir = app_lyrics_dir(app);
+    let _ = fs::create_dir_all(&lyrics_dir);
+    lyrics_dir.join(format!("{}.api.lrc", hash))
+}
+
+fn hash_path(music_path: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    music_path.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn app_lyrics_dir(app: &AppHandle) -> PathBuf {
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join("lyrics")
+}
+
 /// Save LRC file alongside music file or in cache for streams
+/// Save user-imported LRC
 #[tauri::command]
 pub fn save_lrc_file(
     app: AppHandle,
     music_path: String,
     lrc_content: String,
 ) -> Result<(), String> {
-    let lrc_path = resolve_lrc_path(&app, &music_path);
-
-    fs::write(&lrc_path, lrc_content).map_err(|e| format!("Failed to save LRC file: {}", e))?;
-
-    Ok(())
+    let lrc_path = resolve_user_lrc_path(&app, &music_path);
+    fs::write(&lrc_path, lrc_content)
+        .map_err(|e| format!("Failed to save LRC file: {}", e))
 }
 
-/// Load LRC file if it exists
+/// Save API-fetched LRC .only called by the API fetch path, never overwrites user's song.lrc
+#[tauri::command]
+pub fn save_api_lrc_file(
+    app: AppHandle,
+    music_path: String,
+    lrc_content: String,
+) -> Result<(), String> {
+    let lrc_path = resolve_api_lrc_path(&app, &music_path);
+    fs::write(&lrc_path, lrc_content)
+        .map_err(|e| format!("Failed to save API LRC file: {}", e))
+}
+
+/// Load user-imported LRC
 #[tauri::command]
 pub fn load_lrc_file(app: AppHandle, music_path: String) -> Result<Option<String>, String> {
-    let lrc_path = resolve_lrc_path(&app, &music_path);
-
-    if !lrc_path.exists() {
-        return Ok(None);
-    }
-
-    let content =
-        fs::read_to_string(&lrc_path).map_err(|e| format!("Failed to read LRC file: {}", e))?;
-
-    Ok(Some(content))
+    let lrc_path = resolve_user_lrc_path(&app, &music_path);
+    if !lrc_path.exists() { return Ok(None); }
+    fs::read_to_string(&lrc_path)
+        .map(Some)
+        .map_err(|e| format!("Failed to read LRC file: {}", e))
 }
 
-/// Delete LRC file for a music file
+/// Load API-fetched LRC
+#[tauri::command]
+pub fn load_api_lrc_file(app: AppHandle, music_path: String) -> Result<Option<String>, String> {
+    let lrc_path = resolve_api_lrc_path(&app, &music_path);
+    if !lrc_path.exists() { return Ok(None); }
+    fs::read_to_string(&lrc_path)
+        .map(Some)
+        .map_err(|e| format!("Failed to read API LRC file: {}", e))
+}
+
+/// Delete user-imported LRC
 #[tauri::command]
 pub fn delete_lrc_file(app: AppHandle, music_path: String) -> Result<bool, String> {
-    let lrc_path = resolve_lrc_path(&app, &music_path);
+    let lrc_path = resolve_user_lrc_path(&app, &music_path);
+    if !lrc_path.exists() { return Ok(false); }
+    fs::remove_file(&lrc_path)
+        .map(|_| true)
+        .map_err(|e| format!("Failed to delete LRC file: {}", e))
+}
 
-    if !lrc_path.exists() {
-        return Ok(false);
-    }
-
-    fs::remove_file(&lrc_path).map_err(|e| format!("Failed to delete LRC file: {}", e))?;
-    Ok(true)
+/// Delete API-fetched LRC file for a music file
+#[tauri::command]
+pub fn delete_api_lrc_file(app: AppHandle, music_path: String) -> Result<bool, String> {
+    let lrc_path = resolve_api_lrc_path(&app, &music_path);
+    if !lrc_path.exists() { return Ok(false); }
+    fs::remove_file(&lrc_path)
+        .map(|_| true)
+        .map_err(|e| format!("Failed to delete API LRC file: {}", e))
 }
 
 /// Proxy request to Musixmatch API to avoid CORS issues
@@ -285,18 +327,19 @@ pub fn get_lyrics(
     app: AppHandle,
     music_path: String,
 ) -> Result<Option<Vec<LyricLineJson>>, String> {
-    let lrc_path = resolve_lrc_path(&app, &music_path);
+    // User-imported LRC takes priority over API-fetched
+    let lrc_path = resolve_user_lrc_path(&app, &music_path);
+    let lrc_path = if lrc_path.exists() {
+        lrc_path
+    } else {
+        let api_path = resolve_api_lrc_path(&app, &music_path);
+        if api_path.exists() { api_path } else { return Ok(None); }
+    };
 
-    if !lrc_path.exists() {
-        return Ok(None);
-    }
+    let content = fs::read_to_string(&lrc_path)
+        .map_err(|e| format!("Failed to read LRC file: {}", e))?;
 
-    let content =
-        fs::read_to_string(&lrc_path).map_err(|e| format!("Failed to read LRC file: {}", e))?;
-
-    let lyrics = parse_lrc_content(&content);
-
-    Ok(Some(lyrics))
+    Ok(Some(parse_lrc_content(&content)))
 }
 
 /// Get current lyric line based on playback time
@@ -306,20 +349,20 @@ pub fn get_current_lyric(
     music_path: String,
     current_time: f64,
 ) -> Result<Option<CurrentLyricJson>, String> {
-    let lrc_path = resolve_lrc_path(&app, &music_path);
+    // User-imported LRC takes priority over API-fetched
+    let lrc_path = resolve_user_lrc_path(&app, &music_path);
+    let lrc_path = if lrc_path.exists() {
+        lrc_path
+    } else {
+        let api_path = resolve_api_lrc_path(&app, &music_path);
+        if api_path.exists() { api_path } else { return Ok(None); }
+    };
 
-    if !lrc_path.exists() {
-        return Ok(None);
-    }
-
-    let content =
-        fs::read_to_string(&lrc_path).map_err(|e| format!("Failed to read LRC file: {}", e))?;
+    let content = fs::read_to_string(&lrc_path)
+        .map_err(|e| format!("Failed to read LRC file: {}", e))?;
 
     let lyrics = parse_lrc_content(&content);
-
-    if lyrics.is_empty() {
-        return Ok(None);
-    }
+    if lyrics.is_empty() { return Ok(None); }
 
     // Find the active line (last line with time <= current_time)
     let mut active_index = None;
@@ -331,17 +374,15 @@ pub fn get_current_lyric(
         }
     }
 
-    if let Some(index) = active_index {
+    Ok(active_index.map(|index| {
         let line = &lyrics[index];
-        Ok(Some(CurrentLyricJson {
+        CurrentLyricJson {
             index,
             time: line.time,
             text: line.text.clone(),
             words: line.words.clone(),
-        }))
-    } else {
-        Ok(None)
-    }
+        }
+    }))
 }
 
 /// Extract embedded lyrics from a music file using lofty

@@ -194,6 +194,11 @@
                 musicPath: $currentTrack.path,
                 lrcContent,
             });
+
+            // Clear current lyrics immediately so stale data doesn't persist
+            lyricsData.set(null);
+            lyricsLoading.set(true);
+
             // Reload lyrics
             await fetchLyricsForTrack();
             addToast("Lyrics imported successfully!", "success");
@@ -344,11 +349,14 @@
         {#if $lyricsData}
             <footer class="lyrics-footer">
                 <span class="lyrics-source">
+                    <!-- source label -->
                     Source: {$lyricsData.source === "cache"
                         ? "Cached"
+                        : $lyricsData.source === "embedded"
+                        ? "Embedded"
                         : $lyricsData.source === "lrclib"
-                          ? "LRCLIB"
-                          : "Musixmatch"}
+                            ? "LRCLIB"
+                            : "Musixmatch"}
                 </span>
             </footer>
         {/if}

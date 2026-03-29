@@ -500,8 +500,11 @@ pub fn run() {
                     commands::get_stats_summary,
                     // Lyrics commands
                     commands::save_lrc_file,
+                    commands::save_api_lrc_file,
                     commands::load_lrc_file,
+                    commands::load_api_lrc_file,
                     commands::delete_lrc_file,
+                    commands::delete_api_lrc_file,
                     commands::musixmatch_request,
                     commands::get_lyrics,
                     commands::get_current_lyric,
@@ -652,8 +655,11 @@ pub fn run() {
                     commands::get_stats_summary,
                     // Lyrics commands
                     commands::save_lrc_file,
+                    commands::save_api_lrc_file,
                     commands::load_lrc_file,
+                    commands::load_api_lrc_file,
                     commands::delete_lrc_file,
+                    commands::delete_api_lrc_file,
                     commands::musixmatch_request,
                     commands::get_lyrics,
                     commands::get_current_lyric,
