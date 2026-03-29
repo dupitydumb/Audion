@@ -321,19 +321,24 @@ fn parse_lrc_content(lrc_content: &str) -> Vec<LyricLineJson> {
     lyrics
 }
 
+fn resolve_active_lrc_path(app: &AppHandle, music_path: &str) -> Option<PathBuf> {
+    let user_path = resolve_user_lrc_path(app, music_path);
+    if user_path.exists() { return Some(user_path); }
+    let api_path = resolve_api_lrc_path(app, music_path);
+    if api_path.exists() { return Some(api_path); }
+    None
+}
+
+
 /// Get all lyrics for a music file
 #[tauri::command]
 pub fn get_lyrics(
     app: AppHandle,
     music_path: String,
 ) -> Result<Option<Vec<LyricLineJson>>, String> {
-    // User-imported LRC takes priority over API-fetched
-    let lrc_path = resolve_user_lrc_path(&app, &music_path);
-    let lrc_path = if lrc_path.exists() {
-        lrc_path
-    } else {
-        let api_path = resolve_api_lrc_path(&app, &music_path);
-        if api_path.exists() { api_path } else { return Ok(None); }
+    let lrc_path = match resolve_active_lrc_path(&app, &music_path) {
+        Some(p) => p,
+        None => return Ok(None),
     };
 
     let content = fs::read_to_string(&lrc_path)
@@ -342,20 +347,15 @@ pub fn get_lyrics(
     Ok(Some(parse_lrc_content(&content)))
 }
 
-/// Get current lyric line based on playback time
 #[tauri::command]
 pub fn get_current_lyric(
     app: AppHandle,
     music_path: String,
     current_time: f64,
 ) -> Result<Option<CurrentLyricJson>, String> {
-    // User-imported LRC takes priority over API-fetched
-    let lrc_path = resolve_user_lrc_path(&app, &music_path);
-    let lrc_path = if lrc_path.exists() {
-        lrc_path
-    } else {
-        let api_path = resolve_api_lrc_path(&app, &music_path);
-        if api_path.exists() { api_path } else { return Ok(None); }
+    let lrc_path = match resolve_active_lrc_path(&app, &music_path) {
+        Some(p) => p,
+        None => return Ok(None),
     };
 
     let content = fs::read_to_string(&lrc_path)
@@ -364,7 +364,6 @@ pub fn get_current_lyric(
     let lyrics = parse_lrc_content(&content);
     if lyrics.is_empty() { return Ok(None); }
 
-    // Find the active line (last line with time <= current_time)
     let mut active_index = None;
     for (i, line) in lyrics.iter().enumerate() {
         if line.time <= current_time {

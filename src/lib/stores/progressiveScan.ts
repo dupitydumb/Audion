@@ -56,16 +56,13 @@ function createProgressiveScanStore() {
                 `${batchTracks.length} tracks ` +
                 `(${progress.current}/${progress.total})`
             );
-            console.log(` [TIMING] Batch ${progress.current_batch} received at ${(performance.now() - funcStart).toFixed(2)}ms since start`);
 
             const trackUpdateStart = performance.now();
             tracks.update(existing => [...existing, ...batchTracks]);
-            console.log(` [TIMING] Track update took ${(performance.now() - trackUpdateStart).toFixed(2)}ms`);
 
             trackCount.update(n => n + batchTracks.length);
             update(state => ({ ...state, progress }));
 
-            console.log(` [TIMING] Batch ${progress.current_batch} handler total: ${(performance.now() - batchHandlerStart).toFixed(2)}ms`);
         });
 
         unlistenComplete = await listen<ScanResult>(completeEvent, (event) => {
@@ -93,7 +90,6 @@ function createProgressiveScanStore() {
         async startScan(clearExisting: boolean = true) {
             const funcStart = performance.now();
             console.log('[ProgressiveScan] Starting library scan...');
-            console.log(` [TIMING] startScan called at ${funcStart.toFixed(2)}ms`);
 
             // Clear library if requested (for full rescan)
             if (clearExisting) {
@@ -105,7 +101,6 @@ function createProgressiveScanStore() {
                 trackCount.set(0);
                 albumCount.set(0);
                 artistCount.set(0);
-                console.log(` [TIMING] Library clear took ${(performance.now() - clearStart).toFixed(2)}ms`);
             }
 
             set({ ...INITIAL_STATE, isScanning: true, mode: 'library', startTime: Date.now() });
@@ -148,19 +143,8 @@ function createProgressiveScanStore() {
          */
         async startImport(playlistId: number) {
             console.log('[ProgressiveScan] Starting folder import, playlist:', playlistId);
-
-            set({ ...INITIAL_STATE, isScanning: true, mode: 'folder', playlistId, startTime: Date.now() });
-
-            try {
-                await attachListeners('folder-import-batch-ready', 'folder-import-complete');
-            } catch (error) {
-                console.error('[ProgressiveScan] Failed to set up import listeners:', error);
-                update(state => ({
-                    ...state,
-                    isScanning: false,
-                    errors: [`Failed to set up import listeners: ${error}`],
-                }));
-            }
+            // listeners already attached by prepareImport. just update state
+            update(state => ({ ...state, playlistId }));
         },
 
         /**

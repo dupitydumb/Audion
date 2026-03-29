@@ -3,6 +3,7 @@ use rusqlite::{params, Connection, OptionalExtension, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Instant;
+use::std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Track {
@@ -1011,12 +1012,12 @@ pub fn register_music_folder(conn: &Connection, path: &str) -> Result<bool> {
     };
 
     // If any existing folder is a parent
-    if existing.iter().any(|f| path.starts_with(f.as_str())) {
+    if existing.iter().any(|f| Path::new(path).starts_with(Path::new(f))) {
         return Ok(false);
     }
 
     // Remove any existing folders that are subfolders of the new path
-    for f in existing.iter().filter(|f| f.starts_with(path)) {
+    for f in existing.iter().filter(|f| Path::new(f).starts_with(Path::new(path))) {
         conn.execute("DELETE FROM music_folders WHERE path = ?1", [f])?;
     }
 
