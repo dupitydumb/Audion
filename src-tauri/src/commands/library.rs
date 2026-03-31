@@ -3,13 +3,10 @@ use crate::db::{queries, Database};
 use crate::scanner::{cover_storage, extract_metadata, scan_directory};
 use crate::security;
 use base64::{engine::general_purpose::STANDARD, Engine};
-use crossbeam::channel::{bounded, Receiver, Sender};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
 use tauri::Emitter;
 use tauri::State;
 
@@ -30,6 +27,13 @@ pub struct ScanProgress {
     pub estimated_time_remaining_ms: u64,
     pub tracks_added: usize,
     pub tracks_updated: usize,
+}
+
+
+#[derive(Debug, Clone)]
+pub enum ScanSource {
+    Rescan,
+    FolderImport(i64), // carries playlist_id
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -63,6 +67,68 @@ pub async fn import_audio_file(
         .ok_or_else(|| format!("Failed to extract metadata for {}", file_str))?;
 
     handle_track_import(db, track_data, overwrite).await
+}
+
+#[tauri::command]
+pub async fn begin_folder_import(
+    window: tauri::Window,
+    folder_path: String,
+    db: State<'_, Database>,
+) -> Result<i64, String> {
+    let path_buf = std::path::PathBuf::from(&folder_path);
+
+    if !path_buf.exists() || !path_buf.is_dir() {
+        return Err("Invalid folder path".to_string());
+    }
+
+    let canonical = path_buf
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve path: {}", e))?;
+    let folder_str = canonical.to_string_lossy().to_string();
+
+    let playlist_name = canonical
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| folder_str.clone());
+
+    let playlist_id = {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        let id = queries::create_playlist(&conn, &playlist_name)
+            .map_err(|e| e.to_string())?;
+        queries::set_playlist_folder_path(&conn, id, &folder_str)
+            .map_err(|e| e.to_string())?;
+        let _ = queries::register_music_folder(&conn, &folder_str);
+        id
+    };
+
+    let scan_result = scan_directory(&folder_str);
+    let all_files = scan_result.audio_files;
+    let scan_errors = scan_result.errors;
+
+    let mut file_playlist_map: std::collections::HashMap<String, Vec<i64>> =
+        std::collections::HashMap::new();
+    for f in &all_files {
+        file_playlist_map.insert(f.clone(), vec![playlist_id]);
+    }
+
+    let db_conn = Arc::clone(&db.conn);
+
+    // Spawn in background. returns immediately so frontend can register listeners first
+    tauri::async_runtime::spawn(async move {
+        let _ = run_scan_and_import(
+            &window,
+            db_conn,
+            all_files,
+            file_playlist_map,
+            0,
+            scan_errors,
+            vec![folder_str],
+            ScanSource::FolderImport(playlist_id),
+        )
+        .await;
+    });
+
+    Ok(playlist_id)
 }
 
 #[tauri::command]
@@ -173,6 +239,14 @@ async fn handle_track_import(
     }
 
     // Return the full track object for the frontend
+    let date_added: Option<String> = conn
+        .query_row(
+            "SELECT date_added FROM tracks WHERE id = ?1",
+            [track_id],
+            |row| row.get(0),
+        )
+        .ok();
+
     let track = queries::Track {
         id: track_id,
         path: track_data.path.clone(),
@@ -191,6 +265,8 @@ async fn handle_track_import(
         track_cover: None, // Frontend uses track_cover_path via convertFileSrc
         track_cover_path: cover_path,
         disc_number: track_data.disc_number,
+        metadata_json: track_data.metadata_json.clone(),
+        date_added,
     };
 
     Ok(track)
@@ -370,86 +446,76 @@ pub async fn add_folder(path: String, db: State<'_, Database>) -> Result<(), Str
     let path_str = canonical_path.to_string_lossy().to_string();
 
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::add_music_folder(&conn, &path_str)
+    queries::register_music_folder(&conn, &path_str)
         .map_err(|e| format!("Failed to add folder: {}", e))?;
 
     Ok(())
 }
 
-#[tauri::command]
-pub async fn rescan_music(
-    window: tauri::Window,
-    db: State<'_, Database>,
+async fn run_scan_and_import(
+    window: &tauri::Window,
+    db_conn: Arc<std::sync::Mutex<rusqlite::Connection>>,
+    all_files: Vec<String>,
+    file_playlist_map: std::collections::HashMap<String, Vec<i64>>,
+    tracks_deleted: usize,
+    scan_errors: Vec<String>,
+    folders: Vec<String>, // used for timestamp update after batch
+    source: ScanSource,
 ) -> Result<ScanResult, String> {
-    let total_start = Instant::now();
-
-    // 1: Cleanup
-    let (folders, tracks_deleted) = {
-        let conn = db.conn.lock().map_err(|e| e.to_string())?;
-
-        // Get all scanned folders
-        let folders = queries::get_music_folders(&conn).map_err(|e| e.to_string())?;
-
-        let tracks_deleted = queries::cleanup_deleted_tracks(&conn, &folders)
-            .map_err(|e| format!("Failed to cleanup deleted tracks: {}", e))?;
-
-        // Clean up empty albums after track cleanup
-        let _ = queries::cleanup_empty_albums(&conn);
-
-        (folders, tracks_deleted)
-    }; // conn dropped here
-
-    // 2: Directory walk
-    let mut all_files = Vec::new();
-    let mut scan_errors = Vec::new();
-
-    for folder in &folders {
-        let result = scan_directory(folder);
-        all_files.extend(result.audio_files);
-        scan_errors.extend(result.errors);
-    }
-
     let total_files = all_files.len();
-
+    let total_start = std::time::Instant::now();
+ 
     if total_files == 0 {
-        return Ok(ScanResult {
+        let result = ScanResult {
             tracks_added: 0,
             tracks_updated: 0,
             tracks_deleted,
             errors: scan_errors,
-        });
+        };
+        let (complete_event, _) = event_names(&source);
+        let _ = window.emit(complete_event, &result);
+        return Ok(result);
     }
-
-    // 3: Parallel metadata extraction
-    let (tx, rx): (Sender<queries::TrackInsert>, Receiver<queries::TrackInsert>) = bounded(500);
-    let extracted_count = Arc::new(AtomicUsize::new(0));
+ 
+    // Parallel metadata extraction
+    let (tx, rx): (
+        crossbeam::channel::Sender<queries::TrackInsert>,
+        crossbeam::channel::Receiver<queries::TrackInsert>,
+    ) = crossbeam::channel::bounded(500);
+    let extracted_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let extracted_count_clone = extracted_count.clone();
 
     std::thread::spawn(move || {
         all_files.par_iter().for_each(|file_path| {
             if let Some(track_data) = extract_metadata(file_path) {
                 let _ = tx.send(track_data);
-                extracted_count_clone.fetch_add(1, Ordering::Relaxed);
             }
+            // increment regardless of success so the receiver loop exits cleanly
+            extracted_count_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         });
     });
-
-    // 4: Batch assembly + DB writes + frontend updates
+ 
     let window_clone = window.clone();
-    let db_conn = Arc::clone(&db.conn);
-    let folders_clone = folders.clone();
-    let total_start_clone = total_start;
-
+    let source_clone = source.clone();
+ 
     let batch_result = tauri::async_runtime::spawn_blocking(move || {
         let mut tracks_added = 0usize;
         let mut tracks_updated = 0usize;
+        let mut tracks_inserted = 0usize;
+        let mut batch_added = 0usize;
+        let mut batch_updated = 0usize;
         let mut batches_sent = 0usize;
         let mut tracks_sent = 0usize;
         let mut errors = Vec::new();
         let mut pending = Vec::new();
-
-        let mut conn = db_conn.lock().unwrap();
-
+ 
+        let mut conn = match db_conn.lock() {
+            Ok(c) => c,
+            Err(e) => {
+                return (0, 0, 0, vec![format!("Failed to acquire DB lock: {}", e)]);
+            }
+        };
+ 
         loop {
             // Collect one batch from the channel
             let queue_depth = rx.len();
@@ -460,7 +526,7 @@ pub async fn rescan_music(
                     Ok(track_data) => pending.push(track_data),
                     Err(_) => {
                         // If extraction is done, stop waiting
-                        if extracted_count.load(Ordering::Relaxed) >= total_files {
+                        if extracted_count.load(std::sync::atomic::Ordering::Relaxed) >= total_files {
                             break;
                         }
                     }
@@ -470,18 +536,24 @@ pub async fn rescan_music(
             if pending.is_empty() {
                 break; // nothing left anywhere
             }
-
-            // Single transaction for the whole batch
-            let tx_db = conn.transaction().unwrap();
+ 
+            let tx_db = match conn.transaction() {
+                Ok(t) => t,
+                Err(e) => {
+                    errors.push(format!("Failed to begin transaction: {}", e));
+                    break;
+                }
+            };
             let mut batch_tracks = Vec::new();
 
             for track_data in &pending {
                 match queries::insert_or_update_track(&tx_db, track_data) {
                     Ok((track_id, was_new)) if track_id > 0 => {
+                        tracks_inserted += 1;
                         if was_new {
-                            tracks_added += 1;
+                            batch_added += 1;   // accumulate into batch delta, not running total
                         } else {
-                            tracks_updated += 1;
+                            batch_updated += 1;
                         }
 
                         // Save track cover
@@ -542,16 +614,34 @@ pub async fn rescan_music(
                                 }
                             }
                         }
-
-                        // Build Track struct for frontend
-                        let album_id = tx_db
+ 
+                        // Update playlist membership
+                        if let Some(playlist_ids) = file_playlist_map.get(&track_data.path) {
+                            for playlist_id in playlist_ids {
+                                if let Err(e) =
+                                    queries::add_track_to_playlist(&tx_db, *playlist_id, track_id)
+                                {
+                                    errors.push(format!(
+                                        "Failed to add track {} to playlist {}: {}",
+                                        track_id, playlist_id, e
+                                    ));
+                                }
+                            }
+                        }
+ 
+                        // Build Track struct for batch events
+                        let (album_id, date_added) = tx_db
                             .query_row(
-                                "SELECT album_id FROM tracks WHERE id = ?1",
+                                "SELECT album_id, date_added FROM tracks WHERE id = ?1",
                                 [track_id],
-                                |row| row.get::<_, Option<i64>>(0),
+                                |row| {
+                                    Ok((
+                                        row.get::<_, Option<i64>>(0)?,
+                                        row.get::<_, Option<String>>(1)?,
+                                    ))
+                                },
                             )
-                            .ok()
-                            .flatten();
+                            .unwrap_or((None, None));
 
                         batch_tracks.push(queries::Track {
                             id: track_id,
@@ -571,20 +661,31 @@ pub async fn rescan_music(
                             track_cover: None,
                             track_cover_path: cover_path,
                             disc_number: track_data.disc_number,
+                            metadata_json: track_data.metadata_json.clone(),
+                            date_added,
                         });
                     }
                     Ok(_) => {}
                     Err(e) => errors.push(format!("Insert failed for {}: {}", track_data.path, e)),
                 }
             }
+ 
+            let tracks_processed = tracks_inserted;
+            tracks_inserted = 0; // reset for next batch
 
-            tx_db.commit().unwrap();
-
-            // Emit batch to frontend
-            tracks_sent += batch_tracks.len();
-            batches_sent += 1;
-
-            let elapsed_ms = total_start_clone.elapsed().as_millis() as u64;
+            if let Err(e) = tx_db.commit() {
+                errors.push(format!("Failed to commit batch transaction: {}", e));
+                // Don't advance tracks_sent .these weren't persisted
+            } else {
+                tracks_sent += tracks_processed;
+                tracks_added += batch_added;
+                tracks_updated += batch_updated;
+                batches_sent += 1;  // only count successfully committed batches
+            }
+            batch_added = 0;   // reset for next batch regardless
+            batch_updated = 0;
+ 
+            let elapsed_ms = total_start.elapsed().as_millis() as u64;
             let avg_ms_per_track = if tracks_sent > 0 {
                 elapsed_ms / tracks_sent as u64
             } else {
@@ -592,31 +693,46 @@ pub async fn rescan_music(
             };
             let eta_ms = total_files.saturating_sub(tracks_sent) as u64 * avg_ms_per_track;
 
-            let _ = window_clone.emit(
-                "scan-batch-ready",
-                ScanBatchEvent {
-                    tracks: batch_tracks,
-                    progress: ScanProgress {
-                        current: tracks_sent,
-                        total: total_files,
-                        current_batch: batches_sent,
-                        batch_size: pending.len(),
-                        estimated_time_remaining_ms: eta_ms,
-                        tracks_added,
-                        tracks_updated,
-                    },
-                },
-            );
-
+            let progress = ScanProgress {
+                current: tracks_sent,
+                total: total_files,
+                current_batch: batches_sent,
+                batch_size: tracks_processed,
+                estimated_time_remaining_ms: eta_ms,
+                tracks_added,
+                tracks_updated,
+            };
+ 
+            match &source_clone {
+                ScanSource::Rescan => {
+                    let _ = window_clone.emit(
+                        "scan-batch-ready",
+                        ScanBatchEvent {
+                            tracks: batch_tracks,
+                            progress,
+                        },
+                    );
+                }
+                ScanSource::FolderImport(_) => {
+                    let _ = window_clone.emit(
+                        "folder-import-batch-ready",
+                        ScanBatchEvent {
+                            tracks: batch_tracks,
+                            progress,
+                        },
+                    );
+                }
+            }
+ 
             pending.clear();
 
             if tracks_sent >= total_files {
                 break;
             }
         }
-
-        // Update folder timestamps
-        for folder in &folders_clone {
+ 
+        // Update folder timestamps for all scanned folders
+        for folder in &folders {
             if let Err(e) = queries::update_folder_last_scanned(&conn, folder) {
                 errors.push(format!("Scan time update failed for {}: {}", folder, e));
             }
@@ -629,18 +745,107 @@ pub async fn rescan_music(
 
     let (tracks_added, tracks_updated, _batches_sent, mut errors) = batch_result;
     errors.extend(scan_errors);
+ 
+    let result = ScanResult {
+        tracks_added,
+        tracks_updated,
+        tracks_deleted,
+        errors: errors.clone(),
+    };
+ 
+    let (complete_event, _) = event_names(&source);
+    let _ = window.emit(complete_event, &result);
+ 
+    Ok(result)
+}
+ 
+// helper to keep event name logic in one place
+fn event_names(source: &ScanSource) -> (&'static str, &'static str) {
+    match source {
+        ScanSource::Rescan => ("scan-complete", "scan-batch-ready"),
+        ScanSource::FolderImport(_) => ("folder-import-complete", "folder-import-batch-ready"),
+    }
+}
 
-    // Emit completion event
-    let _ = window.emit(
-        "scan-complete",
-        ScanResult {
-            tracks_added,
-            tracks_updated,
-            tracks_deleted,
-            errors: errors.clone(),
-        },
-    );
+#[tauri::command]
+pub async fn rescan_music(
+    window: tauri::Window,
+    db: State<'_, Database>,
+) -> Result<ScanResult, String> {
+    // 1: Cleanup
+    let (folders, folder_playlists, tracks_deleted) = {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
+        let folders = queries::get_music_folders(&conn).map_err(|e| e.to_string())?;
+
+        let tracks_deleted = queries::cleanup_deleted_tracks(&conn, &folders)
+            .map_err(|e| format!("Failed to cleanup deleted tracks: {}", e))?;
+
+        let _ = queries::cleanup_empty_albums(&conn);
+
+        let folder_playlists = queries::get_folder_playlists(&conn).unwrap_or_default();
+
+        (folders, folder_playlists, tracks_deleted)
+    }; // conn dropped here
+
+    // 2: Directory walk
+    // Collect files from registered music folders
+    let mut all_files = Vec::new();
+    let mut scan_errors = Vec::new();
+
+    for folder in &folders {
+        let result = scan_directory(folder);
+        all_files.extend(result.audio_files);
+        scan_errors.extend(result.errors);
+    }
+
+    // Also collect files from folder-playlists not already covered by a music folder
+    // Track which playlist each file belongs to for membership updates
+    let mut file_playlist_map: std::collections::HashMap<String, Vec<i64>> =
+        std::collections::HashMap::new();
+
+    for (playlist_id, folder_path) in &folder_playlists {
+        let already_covered = folders.iter().any(|f| {
+            folder_path.starts_with(f.as_str())
+        });
+    
+        if already_covered {
+            // Reuse files already collected from the music folder scan above 
+            // no need to walk the filesystem again.
+            for file_path in all_files.iter().filter(|p| p.starts_with(folder_path.as_str())) {
+                file_playlist_map
+                    .entry(file_path.clone())
+                    .or_default()
+                    .push(*playlist_id);
+            }
+        } else {
+            let result = scan_directory(folder_path);
+            for file_path in &result.audio_files {
+                file_playlist_map
+                    .entry(file_path.clone())
+                    .or_default()
+                    .push(*playlist_id);
+                all_files.push(file_path.clone());
+            }
+            scan_errors.extend(result.errors);
+        }
+    }
+
+    // 3: Parallel metadata extraction + DB import (handled inside run_scan_and_import)
+    // run_scan_and_import handles the zero-files case and emits scan-complete there.
+    let db_conn = Arc::clone(&db.conn);
+    let result = run_scan_and_import(
+        &window,
+        db_conn,
+        all_files,
+        file_playlist_map,
+        tracks_deleted,
+        scan_errors,
+        folders, // all registered folders, for timestamp update
+        ScanSource::Rescan,
+    )
+    .await?;
+ 
     // Background orphan cleanup (non-blocking)
     let db_conn_cleanup = Arc::clone(&db.conn);
     tauri::async_runtime::spawn(async move {
@@ -648,13 +853,8 @@ pub async fn rescan_music(
             let _ = cover_storage::cleanup_orphaned_covers(&conn);
         }
     });
-
-    Ok(ScanResult {
-        tracks_added,
-        tracks_updated,
-        tracks_deleted,
-        errors,
-    })
+ 
+    Ok(result)
 }
 
 #[tauri::command]
@@ -811,8 +1011,16 @@ pub async fn delete_track(track_id: i64, db: State<'_, Database>) -> Result<bool
         let _ = cover_storage::delete_track_cover_file(cover_path.as_deref());
     }
 
+    // Get track info before deletion for sync
+    let track_full_info = queries::get_track_by_id(&conn, track_id).ok().flatten();
+
     let result = queries::delete_track(&conn, track_id)
         .map_err(|e| format!("Failed to delete track: {}", e))?;
+
+    // Enqueue sync change
+    if let Some(track) = track_full_info {
+        let _ = queries::enqueue_track_sync_change(&conn, &track, "delete");
+    }
 
     // Clean up empty albums after track deletion
     let _ = queries::cleanup_empty_albums(&conn);
@@ -845,7 +1053,7 @@ pub async fn delete_album(album_id: i64, db: State<'_, Database>) -> Result<bool
         tracks.len()
     );
 
-    for track in tracks {
+    for track in &tracks {
         // Only delete file if it's a local track
         let is_local = track.source_type.is_none() || track.source_type.as_deref() == Some("local");
 
@@ -867,6 +1075,11 @@ pub async fn delete_album(album_id: i64, db: State<'_, Database>) -> Result<bool
 
     let result = queries::delete_album(&conn, album_id)
         .map_err(|e| format!("Failed to delete album: {}", e))?;
+
+    // Enqueue sync changes for deleted tracks
+    for track in &tracks {
+        let _ = queries::enqueue_track_sync_change(&conn, track, "delete");
+    }
 
     log::info!("[AUDIT] Album {} deleted from library", album_id);
     Ok(result)
@@ -935,10 +1148,18 @@ pub async fn add_external_track(
         external_id: Some(track.external_id),
         content_hash,
         local_src: None,
+        musicbrainz_recording_id: None,
+        metadata_json: None,
     };
 
     queries::insert_or_update_track(&conn, &track_insert)
-        .map(|(track_id, _was_new)| track_id)
+        .map(|(track_id, _was_new)| {
+            // Enqueue sync change
+            if let Ok(Some(track)) = queries::get_track_by_id(&conn, track_id) {
+                let _ = queries::enqueue_track_sync_change(&conn, &track, "create");
+            }
+            track_id
+        })
         .map_err(|e| format!("Failed to add external track: {}", e))
 }
 
@@ -1016,4 +1237,57 @@ pub fn get_default_music_dirs() -> Vec<String> {
     }
 
     dirs
+}
+
+#[tauri::command]
+pub async fn save_image_to_gallery(
+    app: tauri::AppHandle,
+    base64_data: String,
+    filename: String,
+) -> Result<String, String> {
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    use std::fs;
+    use tauri::Manager;
+
+    let bytes = STANDARD
+        .decode(base64_data)
+        .map_err(|e| format!("Failed to decode base64: {}", e))?;
+
+    let mut download_dir = None;
+
+    // Try to get public download/pictures directory
+    #[cfg(not(target_os = "android"))]
+    {
+        download_dir = dirs::download_dir();
+    }
+
+    #[cfg(target_os = "android")]
+    {
+        // On Android, we prefer /storage/emulated/0/Download or /storage/emulated/0/Pictures
+        let android_download = std::path::PathBuf::from("/storage/emulated/0/Download");
+        if android_download.exists() {
+            download_dir = Some(android_download);
+        } else {
+            let android_pictures = std::path::PathBuf::from("/storage/emulated/0/Pictures");
+            if android_pictures.exists() {
+                download_dir = Some(android_pictures);
+            }
+        }
+    }
+
+    let save_dir = download_dir.unwrap_or_else(|| {
+        // Fallback to app data dir if no public dir found
+        app.path()
+            .app_data_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+    });
+
+    if !save_dir.exists() {
+        fs::create_dir_all(&save_dir).map_err(|e| format!("Failed to create directory: {}", e))?;
+    }
+
+    let file_path = save_dir.join(filename);
+    fs::write(&file_path, bytes).map_err(|e| format!("Failed to write file: {}", e))?;
+
+    Ok(file_path.to_string_lossy().to_string())
 }

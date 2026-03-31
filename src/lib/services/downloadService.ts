@@ -8,6 +8,7 @@ import { pluginStore } from '$lib/stores/plugin-store';
 import { addToast } from '$lib/stores/toast';
 import { loadLibrary } from '$lib/stores/library';
 import type { Track } from '$lib/api/tauri';
+import { lyricsManager } from '$lib/lyrics';
 
 export interface DownloadProgress {
     current: number;
@@ -183,6 +184,26 @@ export async function downloadTrack(
         track.local_src = actualPath;
         track.path = actualPath;
         track.source_type = 'local';
+
+        // Fetch and save lyrics for offline use
+        try {
+            const lyrics = await lyricsManager.fetchLyrics(
+                track.title,
+                track.artist,
+                track.album,
+                track.duration
+            );
+            if (lyrics) {
+                await invoke('save_lrc_file', {
+                    musicPath: actualPath,
+                    lrcContent: lyrics.raw
+                });
+                console.log(`[DownloadService] Lyrics saved for "${track.title}" at ${actualPath}.lrc`);
+            }
+        } catch (lyricErr) {
+            console.warn(`[DownloadService] Failed to fetch lyrics for "${track.title}":`, lyricErr);
+            // Non-fatal, continue with database update
+        }
 
         // Persist to database using the actual final path
         try {

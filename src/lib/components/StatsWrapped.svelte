@@ -11,6 +11,9 @@
     import {
         getTrackCoverSrc,
         getAlbumArtSrc,
+        getTopGenresFromMb,
+        proxyFetchBytes,
+        saveImageToGallery,
         type Track,
     } from "$lib/api/tauri";
 
@@ -20,6 +23,49 @@
     let currentSlide = 0;
     let canvas: HTMLCanvasElement;
     let isExporting = false;
+
+    // Genre data from MusicBrainz
+    let topGenres: [string, number][] = [];
+    let genresLoading = false;
+    let genresFetched = false;
+
+    async function fetchGenres() {
+        if (genresFetched || genresLoading) return;
+        genresLoading = true;
+        try {
+            topGenres = await getTopGenresFromMb(5);
+        } catch (e) {
+            console.warn("[StatsWrapped] Genre fetch failed:", e);
+        } finally {
+            genresLoading = false;
+            genresFetched = true;
+        }
+    }
+
+    // Artist picture handling
+    let topArtistPictureUrl: string | null = null;
+    let failedArtistImage = false;
+
+    async function fetchArtistPicture(name: string) {
+        if (!name) return;
+        try {
+            const plugin = (window as any).tidalSearchPlugin;
+            if (plugin) {
+                const result = await plugin.searchArtistPictureForRPC(name);
+                if (result) {
+                    topArtistPictureUrl = result;
+                    failedArtistImage = false;
+                }
+            }
+        } catch (e) {
+            console.warn("[StatsWrapped] Artist picture fetch failed:", e);
+        }
+    }
+
+    // Start fetching genres and artist picture as soon as the wrapped opens
+    $: if (show && !genresFetched) fetchGenres();
+    $: if (show && $topArtists[0])
+        fetchArtistPicture($topArtists[0].artist.toString());
 
     const monthNames = [
         "January",
@@ -42,6 +88,7 @@
         { id: "top-tracks", title: "Top Tracks" },
         { id: "top-artist", title: "Top Artist" },
         { id: "summary", title: "Your Month in Music" },
+        { id: "top-genre", title: "Your Sound" },
         { id: "final-recap", title: "The Full Picture" },
     ];
 
@@ -82,13 +129,31 @@
     }
 
     // Helper to load image for canvas
-    function loadImage(src: string): Promise<HTMLImageElement> {
+    async function loadImage(src: string): Promise<HTMLImageElement> {
+        // If it's a remote URL, fetch via proxy to bypass CORS
+        let finalSrc = src;
+        if (src.startsWith("http") && !src.includes("tauri.localhost")) {
+            try {
+                const base64 = await proxyFetchBytes(src);
+                // Determine mime type from URL or default to jpeg
+                const ext = src.split(".").pop()?.toLowerCase();
+                const mime = ext === "png" ? "image/png" : "image/jpeg";
+                finalSrc = `data:${mime};base64,${base64}`;
+            } catch (e) {
+                console.warn(
+                    "[StatsWrapped] Proxy fetch failed for image:",
+                    src,
+                    e,
+                );
+            }
+        }
+
         return new Promise((resolve, reject) => {
             const img = new Image();
             img.crossOrigin = "anonymous";
             img.onload = () => resolve(img);
             img.onerror = reject;
-            img.src = src;
+            img.src = finalSrc;
         });
     }
 
@@ -146,6 +211,7 @@
             else if (currentSlide === 1) await drawTopTracks(ctx);
             else if (currentSlide === 2) await drawTopArtist(ctx);
             else if (currentSlide === 3) await drawSummary(ctx);
+            else if (currentSlide === 4) await drawGenreSlide(ctx);
             else await drawFinalRecap(ctx);
 
             // Footer
@@ -154,10 +220,11 @@
             ctx.fillText("LISTEN ON AUDIONPLAYER.COM", 540, 1820);
 
             const dataUrl = canvas.toDataURL("image/png");
-            const link = document.createElement("a");
-            link.download = `audion-wrapped-${currentMonthName.toLowerCase()}.png`;
-            link.href = dataUrl;
-            link.click();
+            const base64Data = dataUrl.split(",")[1];
+            const fileName = `audion-wrapped-${currentMonthName.toLowerCase()}.png`;
+
+            await saveImageToGallery(base64Data, fileName);
+            // Optional: You could show a "Saved to gallery" toast here if available
         } catch (error) {
             console.error("Export failed:", error);
         } finally {
@@ -256,70 +323,163 @@
         ctx.fillText("TOTAL PLAYS", 540, 1450);
     }
 
-    async function drawFinalRecap(ctx: CanvasRenderingContext2D) {
-        ctx.fillStyle = "#ffffff";
-        ctx.font = "900 100px Inter, sans-serif";
+    async function drawGenreSlide(ctx: CanvasRenderingContext2D) {
         ctx.textAlign = "center";
-        ctx.fillText("The Month", 540, 250);
-        ctx.fillText("In Review", 540, 360);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "900 90px Inter, sans-serif";
+        ctx.fillText("YOUR SOUND", 540, 350);
 
-        // Top Artist
-        if ($topArtists[0]) {
-            ctx.fillStyle = "rgba(255,255,255,0.7)";
-            ctx.font = "bold 32px Inter, sans-serif";
-            ctx.fillText("YOUR #1 ARTIST", 540, 480);
-            ctx.fillStyle = "#ffffff";
-            ctx.font = "900 80px Inter, sans-serif";
-            ctx.fillText($topArtists[0].artist.toString(), 540, 570);
-        }
+        if (topGenres.length > 0) {
+            const [topGenre] = topGenres[0];
+            ctx.font = "900 180px Inter, sans-serif";
+            ctx.fillStyle = "#a78bfa";
+            ctx.fillText(topGenre, 540, 700);
 
-        // Top Songs List
-        ctx.textAlign = "left";
-        ctx.fillStyle = "rgba(255,255,255,0.7)";
-        ctx.font = "bold 32px Inter, sans-serif";
-        ctx.fillText("TOP SONGS", 100, 720);
-
-        const tracks = $topTracks.slice(0, 5);
-        let y = 790;
-        for (let i = 0; i < tracks.length; i++) {
-            const track = tracks[i].track;
-            ctx.fillStyle = "#ffffff";
-            ctx.font = "bold 44px Inter, sans-serif";
-            ctx.fillText(`${i + 1}. ${track.title}`, 100, y);
-            ctx.fillStyle = "rgba(255,255,255,0.6)";
-            ctx.font = "32px Inter, sans-serif";
-            ctx.fillText(track.artist || "", 150, y + 45);
-            y += 110;
-        }
-
-        // Top Album
-        if ($topAlbums[0]) {
-            ctx.textAlign = "center";
-            ctx.fillStyle = "rgba(255,255,255,0.7)";
-            ctx.font = "bold 32px Inter, sans-serif";
-            ctx.fillText("TOP ALBUM", 540, 1420);
-            ctx.fillStyle = "#ffffff";
-            ctx.font = "bold 50px Inter, sans-serif";
-            ctx.fillText(String($topAlbums[0]?.album ?? "Unknown Album"), 540, 1490);
-        }
-
-        // Minutes & Plays Bottom
-        if ($statsSummary) {
-            ctx.textAlign = "center";
-            ctx.font = "900 120px Inter, sans-serif";
-            ctx.fillStyle = "#1ed760"; // Vibrant green for stats
-            ctx.fillText(
-                `${formatMinutes($statsSummary.total_duration_seconds)}`,
-                300,
-                1700,
-            );
-            ctx.fillText(`${$statsSummary.total_plays}`, 780, 1700);
-
-            ctx.font = "900 28px Inter, sans-serif";
+            if (topGenres.length > 1) {
+                ctx.font = "bold 60px Inter, sans-serif";
+                ctx.fillStyle = "rgba(255,255,255,0.7)";
+                ctx.fillText("Also into:", 540, 900);
+                topGenres.slice(1).forEach(([genre], i) => {
+                    ctx.fillText(genre, 540, 990 + i * 90);
+                });
+            }
+        } else {
+            ctx.font = "bold 70px Inter, sans-serif";
             ctx.fillStyle = "rgba(255,255,255,0.5)";
-            ctx.fillText("MINUTES", 300, 1740);
-            ctx.fillText("PLAYS", 780, 1740);
+            ctx.fillText("Play more music", 540, 600);
+            ctx.fillText("to discover your genre!", 540, 700);
         }
+    }
+
+    async function drawFinalRecap(ctx: CanvasRenderingContext2D) {
+        const year = new Date().getFullYear().toString();
+        const mainColor = "#fa243c"; // Apple Music Red
+        const bgColor = "#0a0a0a";
+
+        // 1. Smooth Mesh Gradient Background
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, 1080, 1920);
+
+        // Radial Top Left
+        const gradTL = ctx.createRadialGradient(200, 200, 0, 200, 200, 1000);
+        gradTL.addColorStop(0, "rgba(250, 36, 60, 0.4)");
+        gradTL.addColorStop(1, "rgba(0, 0, 0, 0)");
+        ctx.fillStyle = gradTL;
+        ctx.fillRect(0, 0, 1080, 1920);
+
+        // Radial Bottom Right
+        const gradBR = ctx.createRadialGradient(880, 1720, 0, 880, 1720, 1000);
+        gradBR.addColorStop(0, "rgba(64, 156, 255, 0.3)");
+        gradBR.addColorStop(1, "rgba(0, 0, 0, 0)");
+        ctx.fillStyle = gradBR;
+        ctx.fillRect(0, 0, 1080, 1920);
+
+        // 2. Centered Main Card
+        const cardWidth = 850;
+        const cardHeight = 1500;
+        const cardX = (1080 - cardWidth) / 2;
+        const cardY = (1920 - cardHeight) / 2;
+
+        ctx.save();
+        ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
+        ctx.shadowBlur = 60;
+        ctx.shadowOffsetY = 30;
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.roundRect(cardX, cardY, cardWidth, cardHeight, 60);
+        ctx.fill();
+        ctx.restore();
+
+        // 3. Card Header (Branding)
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#000000";
+        ctx.font = "900 36px Inter, sans-serif";
+        ctx.fillText("RECAP " + year, 540, cardY + 100);
+
+        try {
+            const logoImg = await loadImage("/logo.png");
+            ctx.drawImage(logoImg, 540 - 30, cardY + 130, 60, 60);
+        } catch (e) {}
+
+        // 4. Visual Piece
+        const imgSize = 580; // Reduced from 650
+        const imgX = (1080 - imgSize) / 2;
+        const imgY = cardY + 200; // Moved up slightly
+
+        if ($topArtists[0]) {
+            if (topArtistPictureUrl && !failedArtistImage) {
+                try {
+                    const img = await loadImage(topArtistPictureUrl);
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.roundRect(imgX, imgY, imgSize, imgSize, 20);
+                    ctx.clip();
+                    ctx.drawImage(img, imgX, imgY, imgSize, imgSize);
+                    ctx.restore();
+                } catch {
+                    ctx.fillStyle = mainColor;
+                    ctx.beginPath();
+                    ctx.roundRect(imgX, imgY, imgSize, imgSize, 20);
+                    ctx.fill();
+                }
+            } else {
+                ctx.fillStyle = mainColor;
+                ctx.beginPath();
+                ctx.roundRect(imgX, imgY, imgSize, imgSize, 20);
+                ctx.fill();
+            }
+        }
+
+        // 5. Grid Stats
+        ctx.textAlign = "left";
+        let textY = imgY + imgSize + 80; // Reduced gap
+
+        ctx.fillStyle = "rgba(0,0,0,0.5)";
+        ctx.font = "bold 28px Inter, sans-serif";
+        ctx.fillText("TOP ARTISTS", cardX + 80, textY);
+        ctx.fillText("TOP SONGS", cardX + 450, textY);
+
+        ctx.fillStyle = "#000000";
+        ctx.font = "900 38px Inter, sans-serif"; // Slightly smaller font
+
+        $topArtists.slice(0, 5).forEach((art, i) => {
+            const name =
+                art.artist.toString().length > 15
+                    ? art.artist.toString().substring(0, 12) + "..."
+                    : art.artist;
+            ctx.fillText(`${i + 1} ${name}`, cardX + 80, textY + 60 + i * 50); // Reduced line height
+        });
+
+        $topTracks.slice(0, 5).forEach((item, i) => {
+            const titleText = item.track.title || "Unknown Track";
+            const title =
+                titleText.length > 20
+                    ? titleText.substring(0, 17) + "..."
+                    : titleText; // More space for titles
+            ctx.fillText(`${i + 1} ${title}`, cardX + 450, textY + 60 + i * 50); // Reduced line height
+        });
+
+        // 6. Footer Stats
+        const footerY = cardY + cardHeight - 220; // Moved up more to clear buttons
+        ctx.textAlign = "center";
+
+        ctx.fillStyle = "rgba(0,0,0,0.4)";
+        ctx.font = "bold 28px Inter, sans-serif";
+        ctx.fillText("MINUTES LISTENED", 540 - 200, footerY);
+        ctx.fillText("TOP GENRE", 540 + 200, footerY);
+
+        ctx.fillStyle = "#000000";
+        ctx.font = "900 80px Inter, sans-serif";
+        ctx.fillText(
+            formatMinutes($statsSummary?.total_duration_seconds || 0),
+            540 - 200,
+            footerY + 80,
+        );
+        ctx.fillText(
+            topGenres[0] ? topGenres[0][0] : "Music",
+            540 + 200,
+            footerY + 80,
+        );
     }
 </script>
 
@@ -466,35 +626,152 @@
                         </div>
                     </div>
                 {:else if currentSlide === 4}
-                    <div class="slide final-slide" in:fade={{ duration: 600 }}>
-                        <div class="final-card">
-                            <div class="final-header">
-                                <img src="/logo.png" alt="" width="40" />
-                                <span>Wrapped</span>
+                    <!-- ── Genre slide (MusicBrainz) ── -->
+                    <div
+                        class="slide genre-slide"
+                        in:scale={{
+                            duration: 600,
+                            start: 0.8,
+                            easing: cubicOut,
+                        }}
+                    >
+                        <h2 class="slide-title">Your Sound</h2>
+                        {#if genresLoading}
+                            <div class="genre-loading">
+                                <div class="genre-spinner"></div>
+                                <span>Discovering your genres…</span>
                             </div>
-                            <div class="final-top-tracks">
-                                {#each $topTracks.slice(0, 3) as item, i}
-                                    <div class="final-track">
-                                        <span class="num">{i + 1}</span>
-                                        <span class="name"
-                                            >{item.track.title}</span
+                        {:else if topGenres.length > 0}
+                            <div
+                                class="top-genre-name"
+                                in:fly={{ y: 40, duration: 600, delay: 200 }}
+                            >
+                                {topGenres[0][0]}
+                            </div>
+                            <p
+                                class="genre-label"
+                                in:fly={{ y: 20, duration: 500, delay: 400 }}
+                            >
+                                is your #1 genre
+                            </p>
+                            {#if topGenres.length > 1}
+                                <div
+                                    class="genre-also"
+                                    in:fly={{
+                                        y: 20,
+                                        duration: 500,
+                                        delay: 600,
+                                    }}
+                                >
+                                    <span class="also-label">Also into:</span>
+                                    <div class="genre-pill-row">
+                                        {#each topGenres.slice(1) as [genre], i}
+                                            <span
+                                                class="genre-pill"
+                                                in:fly={{
+                                                    x: 20,
+                                                    delay: 700 + i * 100,
+                                                }}>{genre}</span
+                                            >
+                                        {/each}
+                                    </div>
+                                </div>
+                            {/if}
+                        {:else}
+                            <div class="genre-empty">
+                                <p>
+                                    Keep listening to uncover your genre
+                                    identity!
+                                </p>
+                            </div>
+                        {/if}
+                        <p class="mb-credit">Genres via MusicBrainz</p>
+                    </div>
+                {:else if currentSlide === 5}
+                    <div class="slide final-slide" in:fade={{ duration: 600 }}>
+                        <div class="premium-recap-container">
+                            <div class="premium-card">
+                                <div class="card-logo-row">
+                                    <h2 class="card-recap-title">
+                                        RECAP {new Date().getFullYear()}
+                                    </h2>
+                                    <img
+                                        src="/logo.png"
+                                        alt=""
+                                        class="card-logo"
+                                    />
+                                </div>
+
+                                <div class="card-image-box">
+                                    {#if topArtistPictureUrl && !failedArtistImage}
+                                        <img
+                                            src={topArtistPictureUrl}
+                                            alt=""
+                                            class="artist-img-recap"
+                                            on:error={() =>
+                                                (failedArtistImage = true)}
+                                        />
+                                    {:else if $topArtists[0]}
+                                        <div class="artist-initials">
+                                            {$topArtists[0].artist
+                                                .toString()
+                                                .substring(0, 2)}
+                                        </div>
+                                    {/if}
+                                </div>
+
+                                <div class="card-grid">
+                                    <div class="grid-col">
+                                        <span class="grid-label"
+                                            >Top Artists</span
+                                        >
+                                        {#each $topArtists.slice(0, 5) as art, i}
+                                            <div class="grid-item">
+                                                <span class="num">{i + 1}</span>
+                                                <span class="name"
+                                                    >{art.artist}</span
+                                                >
+                                            </div>
+                                        {/each}
+                                    </div>
+                                    <div class="grid-col">
+                                        <span class="grid-label">Top Songs</span
+                                        >
+                                        {#each $topTracks.slice(0, 5) as item, i}
+                                            <div class="grid-item">
+                                                <span class="num">{i + 1}</span>
+                                                <span class="name"
+                                                    >{item.track.title}</span
+                                                >
+                                            </div>
+                                        {/each}
+                                    </div>
+                                </div>
+
+                                <div class="card-footer-stats">
+                                    <div class="footer-stat">
+                                        <span class="stat-label"
+                                            >Minutes Listened</span
+                                        >
+                                        <span class="stat-value"
+                                            >{formatMinutes(
+                                                $statsSummary?.total_duration_seconds ||
+                                                    0,
+                                            )}</span
                                         >
                                     </div>
-                                {/each}
-                            </div>
-                            <div class="final-footer">
-                                <div>
-                                    {formatMinutes(
-                                        $statsSummary?.total_duration_seconds ||
-                                            0,
-                                    )} min
-                                </div>
-                                <div>
-                                    {$statsSummary?.total_plays || 0} plays
+                                    <div class="footer-stat text-right">
+                                        <span class="stat-label">Top Genre</span
+                                        >
+                                        <span class="stat-value"
+                                            >{topGenres[0]
+                                                ? topGenres[0][0]
+                                                : "Music"}</span
+                                        >
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                        <h3 class="share-prompt">Share your month!</h3>
                     </div>
                 {/if}
             </main>
@@ -530,12 +807,11 @@
                         stroke="currentColor"
                         stroke-width="2.5"
                     >
-                        <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"
-                        ></path>
-                        <polyline points="16 6 12 2 8 6"></polyline>
-                        <line x1="12" y1="2" x2="12" y2="15"></line>
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                        <polyline points="7 10 12 15 17 10" />
+                        <line x1="12" y1="15" x2="12" y2="3" />
                     </svg>
-                    <span>{isExporting ? "Saving..." : "Share Story"}</span>
+                    <span>{isExporting ? "Saving..." : "Download Image"}</span>
                 </button>
                 <button
                     class="nav-btn"
@@ -603,6 +879,9 @@
         background: radial-gradient(circle at center, #013220, #000);
     }
     .slide-4 {
+        background: radial-gradient(circle at 30% 70%, #2d1b69, #000);
+    }
+    .slide-5 {
         background: #000;
     }
 
@@ -854,136 +1133,318 @@
         text-shadow: 0 0 10px rgba(255, 0, 128, 0.3);
     }
 
-    .final-card {
-        background: white;
+    .premium-recap-container {
+        position: absolute;
+        inset: 0;
+        background: transparent;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        z-index: 1;
+    }
+
+    .apple-style {
+        background: radial-gradient(circle at 0% 0%, #fa243c, transparent 60%),
+            radial-gradient(circle at 100% 100%, #409cff, transparent 60%),
+            #0a0a0a;
+    }
+
+    .premium-card {
+        width: 85%;
+        height: 70%;
+        background: #ffffff;
+        border-radius: 32px;
         color: black;
-        padding: var(--spacing-xl);
-        border-radius: 24px;
+        padding: 24px;
         display: flex;
         flex-direction: column;
-        gap: var(--spacing-md);
+        gap: 12px;
+        position: relative;
+        z-index: 2;
         box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5);
     }
 
-    .final-header {
+    .card-logo-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 5px;
+    }
+
+    .card-recap-title {
+        font-size: 1.2rem;
+        font-weight: 900;
+        letter-spacing: 2px;
+        margin: 0;
+    }
+
+    .card-logo {
+        width: 32px;
+        height: 32px;
+    }
+
+    .card-image-box {
+        width: 85%;
+        margin: 0 auto;
+        aspect-ratio: 1;
+        background: #f0f0f0;
+        border-radius: 12px;
         display: flex;
         align-items: center;
-        gap: 10px;
+        justify-content: center;
+    }
+
+    .artist-initials {
+        font-size: 4rem;
         font-weight: 900;
-        font-size: 1.2rem;
-        margin-bottom: var(--spacing-sm);
-    }
-
-    .final-section {
-        display: flex;
-        flex-direction: column;
-    }
-
-    .section-label {
-        font-size: 0.7rem;
+        color: white;
         text-transform: uppercase;
-        font-weight: 800;
-        opacity: 0.5;
-        letter-spacing: 1px;
     }
 
-    .hero-val {
-        font-size: 1.8rem;
-        font-weight: 900;
-        line-height: 1;
-        margin: 4px 0;
+    .card-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin: 10px 0;
     }
 
-    .sub-val {
-        font-size: 1rem;
-        font-weight: 700;
-        margin: 2px 0;
-    }
-
-    .final-list {
+    .grid-col {
         display: flex;
         flex-direction: column;
         gap: 4px;
-        margin: 8px 0;
     }
 
-    .final-list-item {
+    .grid-label {
+        font-size: 0.65rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        opacity: 0.4;
+        margin-bottom: 4px;
+    }
+
+    .grid-item {
         display: flex;
-        gap: 10px;
-        font-size: 0.9rem;
-        font-weight: 700;
+        gap: 6px;
+        font-size: 0.75rem;
+        font-weight: 900;
+        white-space: nowrap;
+        overflow: hidden;
     }
 
-    .final-list-item .num {
+    .grid-item .num {
         opacity: 0.3;
-        width: 14px;
     }
 
-    .final-footer {
+    .grid-item .name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .card-footer-stats {
         display: flex;
         justify-content: space-between;
+        margin-top: auto;
+        padding-top: 15px;
         border-top: 1px solid rgba(0, 0, 0, 0.1);
-        padding-top: var(--spacing-md);
-        margin-top: var(--spacing-sm);
     }
 
-    .final-footer .stat {
+    .footer-stat {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .footer-stat .stat-label {
+        font-size: 0.6rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        opacity: 0.4;
+    }
+
+    .footer-stat .stat-value {
+        font-size: 1.2rem;
+        font-weight: 900;
+        line-height: 1.1;
+    }
+
+    .text-right {
+        text-align: right;
+    }
+
+    .card-branding {
+        font-size: 0.5rem;
+        font-weight: 900;
+        text-align: center;
+        opacity: 0.2;
+        letter-spacing: 1px;
+    }
+
+    /* ── Genre slide ── */
+    .genre-slide {
+        align-items: center;
+        text-align: center;
+        justify-content: center;
+    }
+
+    .top-genre-name {
+        font-size: 3.5rem;
+        font-weight: 900;
+        line-height: 1;
+        background: linear-gradient(135deg, #a78bfa, #60a5fa);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        margin: var(--spacing-lg) 0 var(--spacing-sm);
+        text-align: center;
+    }
+
+    .genre-label {
+        font-size: 1rem;
+        opacity: 0.7;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        margin: 0 0 var(--spacing-xl);
+    }
+
+    .genre-also {
         display: flex;
         flex-direction: column;
         align-items: center;
+        gap: var(--spacing-sm);
     }
 
-    .final-footer .val {
-        font-size: 1.5rem;
-        font-weight: 900;
-        line-height: 1;
-    }
-
-    .final-footer .lab {
-        font-size: 0.7rem;
+    .also-label {
+        font-size: 0.75rem;
         text-transform: uppercase;
-        font-weight: 800;
+        letter-spacing: 2px;
         opacity: 0.5;
     }
 
+    .genre-pill-row {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+    }
+
+    .genre-pill {
+        background: rgba(167, 139, 250, 0.2);
+        border: 1px solid rgba(167, 139, 250, 0.4);
+        color: #c4b5fd;
+        padding: 4px 14px;
+        border-radius: 20px;
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+
+    .genre-loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--spacing-md);
+        opacity: 0.6;
+        margin: var(--spacing-xl) 0;
+    }
+
+    .genre-spinner {
+        width: 32px;
+        height: 32px;
+        border: 3px solid rgba(255, 255, 255, 0.15);
+        border-top-color: #a78bfa;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .genre-empty {
+        opacity: 0.5;
+        text-align: center;
+        margin: var(--spacing-xl) 0;
+    }
+
+    .mb-credit {
+        font-size: 0.65rem;
+        opacity: 0.3;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-top: auto;
+    }
+
+    .artist-img-recap {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 8px;
+    }
+
     .footer {
-        z-index: 10;
+        z-index: 100;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: var(--spacing-lg) 0;
+        padding: 0 var(--spacing-lg) var(--spacing-xl);
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        pointer-events: none;
+    }
+
+    .footer button {
+        pointer-events: auto;
     }
 
     .nav-btn {
-        background: rgba(255, 255, 255, 0.1);
-        border: none;
+        background: rgba(255, 255, 255, 0.15);
+        backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
         color: white;
-        width: 56px;
-        height: 56px;
+        width: 60px;
+        height: 60px;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
         cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .nav-btn:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.25);
+        transform: scale(1.1);
+    }
+
+    .nav-btn:disabled {
+        opacity: 0.2;
+        cursor: not-allowed;
     }
 
     .share-btn {
         background: white;
         color: black;
         border: none;
-        padding: 0 var(--spacing-xl);
-        height: 56px;
-        border-radius: 28px;
-        font-weight: 800;
+        padding: 0 40px;
+        height: 60px;
+        border-radius: 30px;
+        font-weight: 900;
+        font-size: 1.1rem;
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
         cursor: pointer;
+        transition: all 0.2s ease;
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
     }
 
-    .share-btn:hover {
-        transform: scale(1.05);
+    .share-btn:hover:not(:disabled) {
+        transform: translateY(-4px) scale(1.02);
+        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
     }
+
     .share-btn:active {
         transform: scale(0.95);
     }

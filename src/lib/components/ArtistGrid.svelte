@@ -12,9 +12,18 @@
   import VirtualizedGrid from "./Virtualizedgrid.svelte";
   import MediaCard from "./MediaCard.svelte";
   import { onDestroy } from "svelte";
-  import { saveScroll, getScroll } from '$lib/stores/scrollMemory';
+  import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
+  import { confirm, prompt } from "$lib/stores/dialogs";
+  import {
+    pinnedItems,
+    pinItem,
+    unpinItem,
+    isPinned,
+  } from "$lib/stores/pinned";
+  import { setCustomArtwork } from "$lib/stores/customArtwork";
+  import { addToast } from "$lib/stores/toast";
 
-  let currentScrollTop = getScroll('artists');
+  let currentScrollTop = getScroll("artists");
 
   export let artists: Artist[] = [];
 
@@ -22,6 +31,15 @@
   $: playingArtistName = $currentArtistName;
   $: playing = $isPlaying;
   $: pausedArtistName = !playing ? playingArtistName : null;
+
+  // Sorting/Pinning logic
+  $: sortedArtists = [...artists].sort((a, b) => {
+    const aPinned = isPinned("artist", a.name, $pinnedItems);
+    const bPinned = isPinned("artist", b.name, $pinnedItems);
+    if (aPinned && !bPinned) return -1;
+    if (!aPinned && bPinned) return 1;
+    return 0; // Maintain original order if both same
+  });
 
   // Picture
   let resolvedPictures = new Map<string, string | null>();
@@ -54,7 +72,9 @@
     }
   }
 
-  async function fetchArtistPicture(artistName: string): Promise<string | null> {
+  async function fetchArtistPicture(
+    artistName: string,
+  ): Promise<string | null> {
     try {
       const plugin = (window as any).tidalSearchPlugin;
       if (!plugin) return null;
@@ -100,12 +120,13 @@
 
   // Click
   function handleArtistClick(artist: Artist, e: MouseEvent) {
-    // The play button inside MediaCard 
+    // The play button inside MediaCard
     if ((e.target as HTMLElement).closest("[data-mediacard-play]")) return;
     goToArtistDetail(artist.name);
   }
 
   function handleArtistContextMenu(artist: Artist, e: MouseEvent) {
+    const pinned = isPinned("artist", artist.name, $pinnedItems);
     contextMenu.set({
       visible: true,
       x: e.clientX,
@@ -114,6 +135,57 @@
         {
           label: "Play",
           action: () => playArtist(artist),
+        },
+        {
+          label: pinned ? "Unpin from Top" : "Pin to Top",
+          icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2L4.5 9L9 9L9 22L15 22L15 9L19.5 9L12 2Z"/></svg>`,
+          action: () => {
+            if (pinned) {
+              unpinItem("artist", artist.name);
+            } else {
+              pinItem("artist", artist.name);
+            }
+          },
+        },
+        { type: "separator" },
+        {
+          label: "Change Artwork",
+          submenu: [
+            {
+              label: "From File",
+              action: () => {
+                const input = document.createElement("input");
+                input.type = "file";
+                input.accept = "image/*";
+                input.onchange = (e) => {
+                  const file = (e.target as HTMLInputElement).files?.[0];
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                      const result = reader.result as string;
+                      setCustomArtwork("artist", artist.name, result);
+                      addToast("Artist artwork updated", "success");
+                    };
+                    reader.readAsDataURL(file);
+                  }
+                };
+                input.click();
+              },
+            },
+            {
+              label: "From URL",
+              action: async () => {
+                const url = await prompt("Enter image URL:", {
+                  title: "Change Artwork",
+                  placeholder: "https://example.com/image.jpg",
+                });
+                if (url && url.trim()) {
+                  setCustomArtwork("artist", artist.name, url.trim());
+                  addToast("Artist artwork updated", "success");
+                }
+              },
+            },
+          ],
         },
         { type: "separator" },
         {
@@ -136,15 +208,15 @@
   };
 
   onDestroy(() => {
-      saveScroll('artists', currentScrollTop);
-      currentRunId++;
-      resolvedPictures.clear();
-      failedImages.clear();
+    saveScroll("artists", currentScrollTop);
+    currentRunId++;
+    resolvedPictures.clear();
+    failedImages.clear();
   });
 </script>
 
 <VirtualizedGrid
-  items={artists}
+  items={sortedArtists}
   bind:currentScrollTop
   initialScrollTop={currentScrollTop}
   getItemKey={(artist: Artist) => artist.name}
@@ -164,6 +236,7 @@
   <MediaCard
     {isNowPlaying}
     {isPaused}
+    isPinned={isPinned("artist", artist.name, $pinnedItems)}
     playTooltip="Play artist"
     resumeTooltip="Resume artist"
     pauseTooltip="Pause"
@@ -206,6 +279,8 @@
   }
 
   @media (max-width: 768px) {
-    .artist-initial { font-size: 2rem; }
+    .artist-initial {
+      font-size: 2rem;
+    }
   }
 </style>

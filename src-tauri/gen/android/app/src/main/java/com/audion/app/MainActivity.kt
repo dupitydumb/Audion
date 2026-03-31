@@ -1,21 +1,27 @@
 package com.audion.app
 
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.os.Build
+import android.webkit.JavascriptInterface
 import android.webkit.WebView
-import androidx.activity.enableEdgeToEdge
-import androidx.activity.OnBackPressedCallback
 import android.Manifest
 import android.content.pm.PackageManager
-import android.os.Build
+import android.content.Context
+import androidx.activity.enableEdgeToEdge
+import androidx.activity.OnBackPressedCallback
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-
-import android.content.Context
-import android.content.Intent
-import android.webkit.JavascriptInterface
+import androidx.documentfile.provider.DocumentFile
 
 class MainActivity : TauriActivity() {
   private var webViewRef: WebView? = null
+
+  companion object {
+    const val REQUEST_FOLDER_PICKER = 1001
+  }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
@@ -62,6 +68,90 @@ class MainActivity : TauriActivity() {
     webViewRef = webView
     MediaNotificationService.webViewRef = webView
     webView.addJavascriptInterface(AudioInterface(this), "AndroidMediaNotification")
+    webView.addJavascriptInterface(FolderPickerInterface(this), "AndroidFolderPicker")
+  }
+
+  /**
+   * Launch the system folder picker (Storage Access Framework).
+   * The result is returned back via JS: window.__onAndroidFolderPicked(path)
+   */
+  fun launchFolderPicker() {
+    val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+    }
+    startActivityForResult(intent, REQUEST_FOLDER_PICKER)
+  }
+
+  override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    super.onActivityResult(requestCode, resultCode, data)
+
+    if (requestCode == REQUEST_FOLDER_PICKER) {
+      val wv = webViewRef ?: return
+      if (resultCode == Activity.RESULT_OK && data != null) {
+        val uri: Uri = data.data ?: return
+
+        // Persist permission so the app can access this folder later
+        val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        contentResolver.takePersistableUriPermission(uri, takeFlags)
+
+        // Convert the URI to a real filesystem path
+        val realPath = resolveUriToPath(uri)
+        val jsPath = realPath?.replace("'", "\\'") ?: ""
+
+        if (jsPath.isNotEmpty()) {
+          wv.post {
+            wv.evaluateJavascript("window.__onAndroidFolderPicked('$jsPath')", null)
+          }
+        } else {
+          // Fallback: pass the URI string so the app can still use it
+          val uriStr = uri.toString().replace("'", "\\'")
+          wv.post {
+            wv.evaluateJavascript("window.__onAndroidFolderPicked('$uriStr')", null)
+          }
+        }
+      } else {
+        // User cancelled
+        webViewRef?.post {
+          wv.evaluateJavascript("window.__onAndroidFolderPicked(null)", null)
+        }
+      }
+    }
+  }
+
+  /**
+   * Resolve a content:// tree URI to a real /storage/... path.
+   * Works for primary and SD card volumes on Android 5+.
+   */
+  private fun resolveUriToPath(uri: Uri): String? {
+    val docId = androidx.documentfile.provider.DocumentFile.fromTreeUri(this, uri)?.uri
+      ?.lastPathSegment ?: return null
+
+    return when {
+      // Primary storage: "primary:Music" → /storage/emulated/0/Music
+      docId.startsWith("primary:") -> {
+        val subPath = docId.removePrefix("primary:")
+        if (subPath.isEmpty()) "/storage/emulated/0"
+        else "/storage/emulated/0/$subPath"
+      }
+      // SD card or other volume: "XXXX-XXXX:Music" → /storage/XXXX-XXXX/Music
+      docId.contains(":") -> {
+        val parts = docId.split(":", limit = 2)
+        val volume = parts[0]
+        val subPath = parts[1]
+        if (subPath.isEmpty()) "/storage/$volume"
+        else "/storage/$volume/$subPath"
+      }
+      else -> null
+    }
+  }
+
+  inner class FolderPickerInterface(private val context: Context) {
+    @JavascriptInterface
+    fun pickFolder() {
+      runOnUiThread {
+        launchFolderPicker()
+      }
+    }
   }
 
   inner class AudioInterface(private val context: Context) {
@@ -72,6 +162,7 @@ class MainActivity : TauriActivity() {
       artist: String,
       album: String,
       isPlaying: Boolean,
+      isLoved: Boolean,
       artUrl: String?,
       currentTime: String?,
       duration: String?
@@ -82,6 +173,7 @@ class MainActivity : TauriActivity() {
           putExtra(MediaNotificationService.EXTRA_ARTIST, artist)
           putExtra(MediaNotificationService.EXTRA_ALBUM, album)
           putExtra(MediaNotificationService.EXTRA_IS_PLAYING, isPlaying)
+          putExtra(MediaNotificationService.EXTRA_IS_LOVED, isLoved)
           putExtra(MediaNotificationService.EXTRA_ART_URL, artUrl)
           putExtra(MediaNotificationService.EXTRA_CURRENT_TIME, currentTime)
           putExtra(MediaNotificationService.EXTRA_DURATION, duration)
@@ -99,11 +191,12 @@ class MainActivity : TauriActivity() {
       artist: String,
       album: String,
       isPlaying: Boolean,
+      isLoved: Boolean,
       artUrl: String?,
       currentTime: String?,
       duration: String?
     ) {
-      startNotification(title, artist, album, isPlaying, artUrl, currentTime, duration)
+      startNotification(title, artist, album, isPlaying, isLoved, artUrl, currentTime, duration)
     }
 
     @JavascriptInterface

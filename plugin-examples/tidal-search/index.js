@@ -23,7 +23,14 @@
       "https://arran.monochrome.tf"
     ],
     DETAILS: "https://triton.squid.wtf",         // Artist/Album details
-    STREAM: "https://katze.qqdl.site"            // Stream/playback endpoint
+    STREAM: [
+      "https://hifi-two.spotisaver.net",
+      "https://triton.squid.wtf",
+      "https://vogel.qqdl.site/",
+      "https://tidal.kinoplus.online/",
+      "https://katze.qqdl.site/",
+      "https://arran.monochrome.tf/"
+    ]
   };
 
   // Helper function to get a random search endpoint
@@ -981,87 +988,116 @@
                 /* ═══ Mobile Responsive ═══ */
                 @media (max-width: 768px) {
                     #tidal-search-panel {
+                        position: fixed;
+                        top: 0;
+                        left: 0;
                         width: 100vw;
-                        height: 100vh;
-                        max-height: 100vh;
-                        top: 0; left: 0;
-                        transform: none;
+                        height: 100dvh;
+                        transform: none !important;
                         border-radius: 0;
                         border: none;
-                        padding: 16px;
+                        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+                        box-sizing: border-box;
                     }
-                    #tidal-search-panel.open {
-                        transform: none;
+
+                    .tidal-search-header {
+                        padding: calc(8px + env(safe-area-inset-top)) 16px 8px 16px;
+                        flex-wrap: wrap;
+                        gap: 6px;
                     }
 
                     .tidal-search-header h2 {
                         font-size: 18px;
-                    }
-                    .tidal-close-btn {
-                        min-width: 44px;
-                        min-height: 44px;
-                        -webkit-tap-highlight-color: transparent;
+                        margin: 0;
                     }
 
+                    .tidal-close-btn,
+                    .tidal-back-btn {
+                        min-width: 44px;
+                        min-height: 44px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    }
+
+                    /* Sticky search controls */
                     .tidal-search-controls {
+                        position: sticky;
+                        top: 0;
+                        background: var(--bg-elevated, #181818);
+                        z-index: 10;
+                        padding: 12px 16px;
+                        margin: 0;
+                        border-bottom: 1px solid var(--border-color, #2a2a2a);
                         flex-direction: column;
                         gap: 10px;
                     }
+
                     .tidal-search-input {
                         font-size: 16px; /* prevent iOS zoom */
                         padding: 14px 16px;
                     }
+
+                    .tidal-mode-toggle {
+                        width: 100%;
+                        display: flex;
+                    }
+
                     .tidal-mode-btn {
+                        flex: 1;
+                        text-align: center;
                         padding: 12px;
                         min-height: 44px;
-                        -webkit-tap-highlight-color: transparent;
+                        font-size: 14px;
                     }
 
                     .tidal-results-container {
                         max-height: none;
                         flex: 1;
-                        padding-bottom: calc(60px + 64px); /* bottom nav + mini player */
+                        padding: 0 16px calc(16px + env(safe-area-inset-bottom));
                     }
 
-                    /* Track items: always show save btn on mobile */
                     .tidal-track-item {
                         padding: 12px 8px;
-                        -webkit-tap-highlight-color: transparent;
                     }
+
                     .tidal-play-overlay {
                         display: none;
                     }
+
                     .tidal-save-btn {
                         width: 44px;
                         height: 44px;
-                        -webkit-tap-highlight-color: transparent;
+                        opacity: 1;
                     }
 
-                    /* Artist items */
                     .tidal-artist-item {
                         padding: 12px 8px;
                         min-height: 44px;
-                        -webkit-tap-highlight-color: transparent;
                     }
 
-                    /* Quality selector */
                     .tidal-quality-selector select {
                         min-height: 44px;
                         padding: 8px 12px;
                         font-size: 14px;
                     }
 
-                    /* Toast: account for bottom nav */
                     .tidal-toast {
-                        bottom: calc(60px + 64px + 16px);
+                        bottom: calc(20px + env(safe-area-inset-bottom));
                         max-width: 90vw;
                     }
 
-                    /* Download progress: account for bottom nav */
                     .tidal-download-progress {
-                        bottom: calc(60px + 64px + 16px);
+                        bottom: calc(20px + env(safe-area-inset-bottom));
                         max-width: 90vw;
                         min-width: auto;
+                        padding: 12px 20px;
+                    }
+
+                    @media (max-width: 480px) {
+                        .tidal-badge {
+                            display: none;
+                        }
                     }
                 }
             `;
@@ -1141,9 +1177,34 @@
       panel.querySelector(".tidal-back-btn").onclick = () => this.navigateBack();
 
       const input = panel.querySelector(".tidal-search-input");
-      input.addEventListener("input", (e) => this.handleSearch(e.target.value));
+      let searchTimer;
+
+      input.addEventListener("input", (e) => {
+        const query = e.target.value.trim();
+        // Clear previous timer
+        if (searchTimer) clearTimeout(searchTimer);
+
+        if (!query) {
+          this.showEmpty();
+          return;
+        }
+
+        // Debounce search (500ms)
+        searchTimer = setTimeout(() => {
+          this.performSearch(query);
+        }, 500);
+      });
+
       input.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") this.close();
+        if (e.key === "Enter") {
+          const query = e.target.value.trim();
+          if (!query) return;
+          // Cancel debounce and search immediately
+          if (searchTimer) clearTimeout(searchTimer);
+          this.performSearch(query);
+        } else if (e.key === "Escape") {
+          this.close();
+        }
       });
 
       // Mode toggle listeners
@@ -1294,17 +1355,8 @@
     },
 
     handleSearch(query) {
-      // Debounce search
-      clearTimeout(this.searchTimeout);
-
-      if (!query.trim()) {
-        this.showEmpty();
-        return;
-      }
-
-      this.searchTimeout = setTimeout(() => {
-        this.performSearch(query.trim());
-      }, 300);
+      // This method is kept for compatibility, but now we use the inline handler
+      // We'll keep it empty or forward to performSearch
     },
 
     async performSearch(query) {
@@ -1824,17 +1876,42 @@
     },
 
     async fetchStream(trackId, quality) {
-      const url = `${API_ENDPOINTS.STREAM}/track/?id=${trackId}&quality=${quality}`;
+      const streamEndpoints = Array.isArray(API_ENDPOINTS.STREAM)
+        ? API_ENDPOINTS.STREAM
+        : [API_ENDPOINTS.STREAM];
 
-      // Use CORS-free fetch via Tauri backend
-      const response = this.api.fetch
-        ? await this.api.fetch(url)
-        : await fetch(url);
+      let lastError = null;
 
-      if (!response.ok) {
-        throw new Error(`Failed to get stream: HTTP ${response.status}`);
+      for (const endpoint of streamEndpoints) {
+        try {
+          const url = `${endpoint}/track/?id=${trackId}&quality=${quality}`;
+          console.log(`[TidalSearch] Attempting to fetch stream from: ${endpoint}`);
+
+          // Use CORS-free fetch via Tauri backend
+          const response = this.api.fetch
+            ? await this.api.fetch(url)
+            : await fetch(url);
+
+          if (!response.ok) {
+            console.warn(`[TidalSearch] Endpoint ${endpoint} failed: HTTP ${response.status}`);
+            continue;
+          }
+
+          const data = await response.json();
+          // Basic validation of the response data
+          if (data && data.success !== false) {
+            return data;
+          } else {
+            console.warn(`[TidalSearch] Endpoint ${endpoint} returned unsuccessful data`);
+            continue;
+          }
+        } catch (err) {
+          console.error(`[TidalSearch] Error fetching from ${endpoint}:`, err);
+          lastError = err;
+        }
       }
-      return await response.json();
+
+      throw lastError || new Error("Failed to get stream from any endpoint");
     },
 
     // covers for RPC

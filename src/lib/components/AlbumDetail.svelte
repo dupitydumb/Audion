@@ -8,6 +8,8 @@
         getAlbumCoverSrc,
         getTrackCoverSrc,
         formatDuration,
+        getReleaseMbInfo,
+        type MbReleaseInfo,
     } from "$lib/api/tauri";
     import { playTracks, currentTrack, isPlaying } from "$lib/stores/player";
     import { goToAlbums, goToArtistDetail } from "$lib/stores/view";
@@ -22,7 +24,7 @@
     } from "$lib/services/downloadService";
     import { addToast } from "$lib/stores/toast";
     import { goto } from "$app/navigation";
-    import { confirm } from "$lib/stores/dialogs";
+    import { confirm, prompt } from "$lib/stores/dialogs";
 
     export let albumId: number;
 
@@ -30,6 +32,10 @@
     let tracks: Track[] = [];
     let groupedTracks: { disc: number; tracks: Track[] }[] = [];
     let loading = true;
+
+    // MusicBrainz release info
+    let mbRelease: MbReleaseInfo | null = null;
+    let mbReleaseLoading = false;
 
     $: totalDuration = tracks.reduce((sum, t) => sum + (t.duration || 0), 0);
 
@@ -51,6 +57,7 @@
 
     async function loadAlbumData() {
         loading = true;
+        mbRelease = null;
         try {
             const [albumData, trackData] = await Promise.all([
                 getAlbum(albumId),
@@ -59,10 +66,24 @@
             album = albumData;
             tracks = trackData;
             groupedTracks = groupTracksByDisc(tracks);
+            // Background MB fetch — don't await so it doesn't block the UI
+            if (album) fetchMbRelease(album.name, album.artist || "");
         } catch (error) {
             console.error("Failed to load album:", error);
         } finally {
             loading = false;
+        }
+    }
+
+    async function fetchMbRelease(name: string, artist: string) {
+        if (!name) return;
+        mbReleaseLoading = true;
+        try {
+            mbRelease = await getReleaseMbInfo(name, artist);
+        } catch (e) {
+            console.warn("[AlbumDetail] MB release fetch failed:", e);
+        } finally {
+            mbReleaseLoading = false;
         }
     }
 
@@ -166,15 +187,92 @@
 
     import { contextMenu } from "$lib/stores/ui";
     import { deleteAlbum } from "$lib/api/tauri";
+    import {
+        pinnedItems,
+        pinItem,
+        unpinItem,
+        isPinned,
+    } from "$lib/stores/pinned";
+    import { setCustomArtwork } from "$lib/stores/customArtwork";
 
     function handleContextMenu(e: MouseEvent) {
         if (!album) return;
         e.preventDefault();
+        const pinned = isPinned("album", album.id, $pinnedItems);
         contextMenu.set({
             visible: true,
             x: e.clientX,
             y: e.clientY,
             items: [
+                {
+                    label: pinned ? "Unpin from Top" : "Pin to Top",
+                    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2L4.5 9L9 9L9 22L15 22L15 9L19.5 9L12 2Z"/></svg>`,
+                    action: () => {
+                        if (pinned) {
+                            unpinItem("album", album!.id);
+                        } else {
+                            pinItem("album", album!.id);
+                        }
+                    },
+                },
+                { type: "separator" },
+                {
+                    label: "Change Artwork",
+                    submenu: [
+                        {
+                            label: "From File",
+                            action: () => {
+                                const input = document.createElement("input");
+                                input.type = "file";
+                                input.accept = "image/*";
+                                input.onchange = (e) => {
+                                    const file = (e.target as HTMLInputElement)
+                                        .files?.[0];
+                                    if (file) {
+                                        const reader = new FileReader();
+                                        reader.onload = () => {
+                                            const result =
+                                                reader.result as string;
+                                            setCustomArtwork(
+                                                "album",
+                                                album!.id,
+                                                result,
+                                            );
+                                            addToast(
+                                                "Album artwork updated",
+                                                "success",
+                                            );
+                                        };
+                                        reader.readAsDataURL(file);
+                                    }
+                                };
+                                input.click();
+                            },
+                        },
+                        {
+                            label: "From URL",
+                            action: async () => {
+                                const url = await prompt("Enter image URL:", {
+                                    title: "Change Artwork",
+                                    placeholder:
+                                        "https://example.com/image.jpg",
+                                });
+                                if (url && url.trim()) {
+                                    setCustomArtwork(
+                                        "album",
+                                        album!.id,
+                                        url.trim(),
+                                    );
+                                    addToast(
+                                        "Album artwork updated",
+                                        "success",
+                                    );
+                                }
+                            },
+                        },
+                    ],
+                },
+                { type: "separator" },
                 {
                     label: "Delete Album",
                     danger: true,
@@ -214,7 +312,7 @@
         <header
             class="album-header"
             on:contextmenu={handleContextMenu}
-            role="region"
+            role="banner"
             aria-label="Album Header"
         >
             <button
@@ -334,6 +432,45 @@
                 </div>
             </div>
         </header>
+
+        <!-- MusicBrainz release info bar -->
+        {#if mbReleaseLoading}
+            <div class="mb-info-bar mb-info-loading">
+                <span class="mb-info-spinner"></span>
+                <span class="mb-info-hint">Fetching release info…</span>
+            </div>
+        {:else if mbRelease && (mbRelease.year || mbRelease.label || mbRelease.country || mbRelease.release_type)}
+            <div class="mb-info-bar">
+                {#if mbRelease.release_type}
+                    <span class="mb-chip type-chip"
+                        >{mbRelease.release_type}</span
+                    >
+                {/if}
+                {#if mbRelease.year}
+                    <span class="mb-chip">{mbRelease.year}</span>
+                {/if}
+                {#if mbRelease.label}
+                    <span class="mb-chip">
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            width="12"
+                            height="12"
+                            style="opacity:0.6;flex-shrink:0"
+                        >
+                            <path
+                                d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"
+                            />
+                        </svg>
+                        {mbRelease.label}
+                    </span>
+                {/if}
+                {#if mbRelease.country}
+                    <span class="mb-chip">{mbRelease.country}</span>
+                {/if}
+                <span class="mb-source-label">via MusicBrainz</span>
+            </div>
+        {/if}
 
         <section class="track-list-section">
             {#if groupedTracks.length > 1}
@@ -628,6 +765,65 @@
         margin: 0;
         font-size: inherit;
         font-weight: inherit;
+    }
+
+    /* ── MusicBrainz info bar ── */
+    .mb-info-bar {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 8px var(--spacing-lg);
+        border-bottom: 1px solid var(--border-color);
+        min-height: 38px;
+    }
+
+    .mb-info-loading {
+        opacity: 0.5;
+    }
+
+    .mb-info-spinner {
+        width: 14px;
+        height: 14px;
+        border: 2px solid rgba(255, 255, 255, 0.15);
+        border-top-color: var(--accent-primary);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        flex-shrink: 0;
+    }
+
+    .mb-info-hint {
+        font-size: 0.75rem;
+        color: var(--text-subdued);
+    }
+
+    .mb-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: var(--radius-full);
+        padding: 2px 10px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+        white-space: nowrap;
+    }
+
+    .type-chip {
+        background: rgba(var(--accent-primary-rgb, 30 215 96) / 0.1);
+        border-color: rgba(var(--accent-primary-rgb, 30 215 96) / 0.3);
+        color: var(--accent-primary);
+    }
+
+    .mb-source-label {
+        font-size: 0.65rem;
+        color: var(--text-subdued);
+        opacity: 0.45;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-left: auto;
     }
 
     /* ── Mobile ── */

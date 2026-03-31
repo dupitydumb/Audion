@@ -48,7 +48,7 @@
 
     function handleCancel() {
         multiSelect.deactivate();
-        goToPlaylistDetail(playlistId);
+        goToPlaylistDetail(playlistId, playlist?.name ?? '');
     }
 
     async function handleAddToPlaylist() {
@@ -82,7 +82,7 @@
 
             // Return to playlist detail
             multiSelect.deactivate();
-            goToPlaylistDetail(playlistId);
+            goToPlaylistDetail(playlistId, playlist?.name ?? '');
         } catch (error) {
             console.error("Failed to add tracks:", error);
             addToast("Failed to add tracks to playlist", "error");

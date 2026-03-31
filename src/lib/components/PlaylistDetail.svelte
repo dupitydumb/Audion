@@ -7,11 +7,17 @@
         renamePlaylist,
         formatDuration,
     } from "$lib/api/tauri";
-    import { confirm } from "$lib/stores/dialogs";
+    import { confirm, prompt } from "$lib/stores/dialogs";
+    import {
+        pinnedItems,
+        pinItem,
+        unpinItem,
+        isPinned,
+    } from "$lib/stores/pinned";
     import { contextMenu } from "$lib/stores/ui";
     import { playTracks, addToQueue } from "$lib/stores/player";
     import { goToPlaylists, goToTracksMultiSelect } from "$lib/stores/view";
-    import { loadPlaylists, playlists } from "$lib/stores/library";
+    import { loadPlaylists, playlists, playlistPendingTracks, drainPendingTracks } from "$lib/stores/library";
     import TrackList from "./TrackList.svelte";
     import {
         playlistCovers,
@@ -62,6 +68,13 @@
             `<text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='Inter, system-ui, sans-serif' font-size='${Math.floor(size / 3)}' fill='white' font-weight='700'>${initials}</text>` +
             `</svg>`;
         return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+    }
+
+    // Drain any tracks that were dropped onto this playlist while it was active
+    // it reads and clears in one update
+    // so multiple rapid drops won't double append
+    $: if ($playlistPendingTracks[playlistId]?.length) {
+        tracks = [...tracks, ...drainPendingTracks(playlistId)];
     }
 
     // Reactive cover source - updates instantly when playlistCovers changes
@@ -258,6 +271,7 @@
     function handleHeaderContextMenu(e: MouseEvent) {
         e.preventDefault();
         if (!playlist) return;
+        const pinned = isPinned("playlist", playlist.id, $pinnedItems);
 
         contextMenu.set({
             visible: true,
@@ -278,16 +292,47 @@
                 },
                 { type: "separator" },
                 {
+                    label: pinned ? "Unpin from Top" : "Pin to Top",
+                    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2L4.5 9L9 9L9 22L15 22L15 9L19.5 9L12 2Z"/></svg>`,
+                    action: () => {
+                        if (pinned) {
+                            unpinItem("playlist", playlist!.id);
+                        } else {
+                            pinItem("playlist", playlist!.id);
+                        }
+                    },
+                },
+                { type: "separator" },
+                {
                     label: "Rename",
                     action: startEditing,
                 },
                 {
                     label: "Change Cover",
-                    action: () => coverInput?.click(),
+                    submenu: [
+                        {
+                            label: "From File",
+                            action: () => coverInput?.click(),
+                        },
+                        {
+                            label: "From URL",
+                            action: async () => {
+                                const url = await prompt("Enter image URL:", {
+                                    title: "Change Cover",
+                                    placeholder:
+                                        "https://example.com/image.jpg",
+                                });
+                                if (url && url.trim()) {
+                                    setPlaylistCover(playlist!.id, url.trim());
+                                }
+                            },
+                        },
+                    ],
                 },
                 { type: "separator" },
                 {
                     label: "Delete Playlist",
+                    danger: true,
                     action: handleDelete,
                 },
             ],
@@ -312,6 +357,8 @@
         <header
             class="playlist-header"
             on:contextmenu={handleHeaderContextMenu}
+            role="region"
+            aria-label="Playlist header"
         >
             <button class="back-btn" on:click={goToPlaylists} title="Close">
                 <svg
@@ -329,6 +376,7 @@
                 class="playlist-cover"
                 on:mouseenter={() => (coverHovered = true)}
                 on:mouseleave={() => (coverHovered = false)}
+                role="presentation"
             >
                 <img src={coverSrc} alt="Playlist cover" class="cover-image" />
                 <input
@@ -386,7 +434,14 @@
                 {/if}
             </div>
             <div class="playlist-info">
-                <span class="playlist-type">Playlist</span>
+                <span class="playlist-type" title={playlist.folder_path ?? undefined}>
+                    {#if playlist.folder_path}
+                        <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12" style="vertical-align: middle; margin-right: 4px;">
+                            <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+                        </svg>
+                    {/if}
+                    Playlist
+                </span>
                 {#if isEditing}
                     <input
                         type="text"
@@ -394,7 +449,6 @@
                         on:keydown={handleKeyDown}
                         on:blur={handleRename}
                         class="edit-input"
-                        autofocus
                     />
                 {:else}
                     <h1 class="playlist-title" on:dblclick={startEditing}>
@@ -519,6 +573,7 @@
                 <TrackList
                     {tracks}
                     showAlbum={false}
+                    {playlistId}
                     playbackContext={{
                         type: "playlist",
                         playlistId,

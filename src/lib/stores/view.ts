@@ -13,12 +13,15 @@ export type ViewType =
     | 'playlist-detail'
     | 'liked-songs'
     | 'plugins'
-    | 'settings';
+    | 'settings'
+    | 'listenbrainz'
+    | 'discover';
 
 export interface ViewState {
     type: ViewType;
     id?: number;    // For album/playlist detail views
     name?: string;  // For artist detail views
+    query?: string; // For discovery search
 }
 
 const MAX_HISTORY = 50;
@@ -124,8 +127,8 @@ export function goToPlaylists(): void {
     currentView.set({ type: 'playlists' });
 }
 
-export function goToPlaylistDetail(playlistId: number): void {
-    currentView.set({ type: 'playlist-detail', id: playlistId });
+export function goToPlaylistDetail(playlistId: number, name: string): void {
+    currentView.set({ type: 'playlist-detail', id: playlistId, name });
 }
 
 export function goToPlugins(): void {
@@ -142,4 +145,12 @@ export function goToTracksMultiSelect(playlistId: number): void {
 
 export function goToLikedSongs(): void {
     currentView.set({ type: 'liked-songs' });
+}
+
+export function goToListenBrainz(): void {
+    currentView.set({ type: 'listenbrainz' });
+}
+
+export function goToDiscover(query?: string): void {
+    currentView.set({ type: 'discover', query });
 }

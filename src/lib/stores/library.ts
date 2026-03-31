@@ -2,6 +2,8 @@
 import { writable, derived, get } from 'svelte/store';
 import type { Track, Album, Artist, Playlist, ScanBatchEvent } from '$lib/api/tauri';
 import { getLibrary, getPlaylists, getAlbumCoverSrc, getAlbumArtSrc, getTracksPaginated, getAlbumsPaginated, searchLibrary, convertFileSrc } from '$lib/api/tauri';
+import { customArtworks, getCustomArtworkSync } from './customArtwork';
+import { playlistCovers, getPlaylistCoverSync } from './playlistCovers';
 
 // BLOB URL CONVERSION
 /**
@@ -207,6 +209,27 @@ export const artists = writable<Artist[]>([]);
 // Playlist store
 export const playlists = writable<Playlist[]>([]);
 
+// Map of playlistId . tracks pending UI insertion after a drag-drop.
+// arrive before the reactive in PlaylistDetail drains them.
+export const playlistPendingTracks = writable<Record<number, Track[]>>({});
+
+export function pushPendingTrack(playlistId: number, track: Track): void {
+    playlistPendingTracks.update(map => {
+        const existing = map[playlistId] ?? [];
+        return { ...map, [playlistId]: [...existing, track] };
+    });
+}
+
+export function drainPendingTracks(playlistId: number): Track[] {
+    let drained: Track[] = [];
+    playlistPendingTracks.update(map => {
+        drained = map[playlistId] ?? [];
+        const { [playlistId]: _, ...rest } = map;
+        return rest;
+    });
+    return drained;
+}
+
 // Loading state
 export const isLoading = writable(false);
 
@@ -340,6 +363,42 @@ export function addTrackToLibrary(track: Track): void {
 }
 
 
+/**
+ * Update a track's cover URL in the library (metadata, cache, and store)
+ */
+export function updateTrackCover(trackId: number, coverUrl: string): void {
+    // 1. Update metadata cache
+    const metadata = trackMetadataCache.get(trackId);
+    if (metadata) {
+        trackMetadataCache.set(trackId, {
+            ...metadata,
+            cover_url: coverUrl
+        });
+    }
+
+    // 2. Update track cover cache (blob URL or external URL)
+    trackCoverCache.set(trackId, coverUrl);
+
+    // 3. Update reactive store
+    tracks.update(current => {
+        const index = current.findIndex(t => t.id === trackId);
+        if (index >= 0) {
+            const updated = [...current];
+            updated[index] = {
+                ...updated[index],
+                cover_url: coverUrl,
+                track_cover: null // Ensure we don't use old embedded cover if it exists
+            } as Track;
+            return updated;
+        }
+        return current;
+    });
+
+    // 4. Clear full track cache to force reconstruction
+    fullTrackCache.delete(trackId);
+}
+
+
 // ingestAlbums — caches album metadata and album art separately
 // Returns lightweight Album[] for the store
 function ingestAlbums(incoming: Album[]): Album[] {
@@ -438,6 +497,10 @@ export function getFullAlbum(albumId: number): Album | null {
  * Get track cover art (for TrackList)
  */
 export function getTrackCover(trackId: number): string | null {
+    // Priority: Custom artwork -> trackCoverCache
+    const custom = getCustomArtworkSync(get(customArtworks), 'track', trackId);
+    if (custom) return custom;
+
     return trackCoverCache.get(trackId) || null;
 }
 
@@ -445,6 +508,10 @@ export function getTrackCover(trackId: number): string | null {
  * Get album art (for AlbumGrid)
  */
 export function getAlbumArt(albumId: number): string | null {
+    // Priority: Custom artwork -> albumArtCache
+    const custom = getCustomArtworkSync(get(customArtworks), 'album', albumId);
+    if (custom) return custom;
+
     return albumArtCache.get(albumId) || null;
 }
 
@@ -455,6 +522,10 @@ export function getTrackAlbumCover(trackId: number): string | null {
     const metadata = trackMetadataCache.get(trackId);
     if (!metadata) return null;
 
+    // Priority 0: Custom track artwork
+    const customTrack = getCustomArtworkSync(get(customArtworks), 'track', trackId);
+    if (customTrack) return customTrack;
+
     // Priority 1: Track's embedded cover
     const trackCover = trackCoverCache.get(trackId);
     if (trackCover) return trackCover;
@@ -462,7 +533,13 @@ export function getTrackAlbumCover(trackId: number): string | null {
     // Priority 2: External cover URL
     if (metadata.cover_url) return metadata.cover_url;
 
-    // Priority 3: Album art
+    // Priority 3: Custom album artwork
+    if (metadata.album_id) {
+        const customAlbum = getCustomArtworkSync(get(customArtworks), 'album', metadata.album_id);
+        if (customAlbum) return customAlbum;
+    }
+
+    // Priority 4: Album art
     if (metadata.album_id) {
         const albumArt = albumArtCache.get(metadata.album_id);
         if (albumArt) return albumArt;
@@ -473,6 +550,10 @@ export function getTrackAlbumCover(trackId: number): string | null {
 
 // Priority: album art cache → album metadata art_path → first track cover
 export function getAlbumCoverFromTracks(albumId: number): string | null {
+    // Priority 0: Custom album artwork
+    const customAlbum = getCustomArtworkSync(get(customArtworks), 'album', albumId);
+    if (customAlbum) return customAlbum;
+
     // Priority 1: albumArtCache (now populated by ingestAlbums)
     const cachedArt = albumArtCache.get(albumId);
     if (cachedArt) return cachedArt;

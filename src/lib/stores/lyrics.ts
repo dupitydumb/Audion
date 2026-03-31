@@ -45,69 +45,83 @@ let currentFetchId = 0;
 // Fetch lyrics for current track
 export async function fetchLyricsForTrack(): Promise<void> {
     const track = get(currentTrack);
-
-    if (!track) {
-        lyricsData.set(null);
-        return;
-    }
+    if (!track) { lyricsData.set(null); return; }
 
     const fetchId = ++currentFetchId;
-
     lyricsLoading.set(true);
     lyricsError.set(null);
 
     try {
-        // Try to load from local cache first (via Tauri)
-        const cached = await loadLrcFromCache(track.path);
-        if (cached && fetchId === currentFetchId) {
-            const lines = lyricsManager.parseLRC(cached);
+        // 1. User-imported LRC (song.lrc) . always wins
+        const userLrc = await loadLrcFromCache(track.path);
+        if (userLrc && fetchId === currentFetchId) {
             lyricsData.set({
-                lines,
+                lines: lyricsManager.parseLRC(userLrc),
                 source: 'cache',
-                hasWordSync: lines.some(l => l.words && l.words.length > 0),
-                raw: cached
+                hasWordSync: lyricsManager.parseLRC(userLrc).some(l => l.words?.length),
+                raw: userLrc
             });
             lyricsLoading.set(false);
             return;
         }
 
-        // Fetch from APIs
-        const result = await lyricsManager.fetchLyrics(
-            track.title,
-            track.artist,
-            track.album,
-            track.duration
-        );
+        // 2. Embedded tag (song has USLT/UNSYNCEDLYRICS)
+        if (track.path && !track.source_type) {
+            try {
+                const { invoke } = await import('@tauri-apps/api/core');
+                const embedded = await invoke<string | null>('get_embedded_lyrics', { musicPath: track.path });
+                if (embedded && fetchId === currentFetchId) {
+                    lyricsData.set({
+                        lines: lyricsManager.parseLRC(embedded),
+                        source: 'embedded',
+                        hasWordSync: lyricsManager.parseLRC(embedded).some(l => l.words?.length),
+                        raw: embedded
+                    });
+                    lyricsLoading.set(false);
+                    return;
+                }
+            } catch {}
+        }
 
-        // Check if this is still the current fetch
+        // 3. API-fetched LRC (song.api.lrc) .use if previously fetched
+        const apiLrc = await loadApiLrcFromCache(track.path);
+        if (apiLrc && fetchId === currentFetchId) {
+            lyricsData.set({
+                lines: lyricsManager.parseLRC(apiLrc),
+                source: 'musixmatch',   // preserve original source label
+                hasWordSync: lyricsManager.parseLRC(apiLrc).some(l => l.words?.length),
+                raw: apiLrc
+            });
+            lyricsLoading.set(false);
+            return;
+        }
+
+        // 4. Fetch from API .save to song.api.lrc, never song.lrc
+        const result = await lyricsManager.fetchLyrics(
+            track.title, track.artist, track.album, track.duration
+        );
         if (fetchId !== currentFetchId) return;
 
         if (result) {
             lyricsData.set(result);
-            // Save to local cache
-            saveLrcToCache(track.path, result.raw);
+            saveApiLrcToCache(track.path, result.raw); 
         } else {
             lyricsData.set(null);
             lyricsError.set('No lyrics found');
         }
     } catch (error) {
-        if (fetchId === currentFetchId) {
-            lyricsError.set('Failed to fetch lyrics');
-        }
+        if (fetchId === currentFetchId) lyricsError.set('Failed to fetch lyrics');
     } finally {
-        if (fetchId === currentFetchId) {
-            lyricsLoading.set(false);
-        }
+        if (fetchId === currentFetchId) lyricsLoading.set(false);
     }
 }
 
-// Save LRC file alongside music file
+// Save user-imported LRC .high priority, never overwritten by API
 async function saveLrcToCache(musicPath: string, lrcContent: string): Promise<void> {
     try {
         const { invoke } = await import('@tauri-apps/api/core');
         await invoke('save_lrc_file', { musicPath, lrcContent });
-    } catch (error) {
-    }
+    } catch (error) {}
 }
 
 // Load LRC file from cache
@@ -117,6 +131,24 @@ async function loadLrcFromCache(musicPath: string): Promise<string | null> {
         const content = await invoke<string | null>('load_lrc_file', { musicPath });
         return content;
     } catch (error) {
+        return null;
+    }
+}
+
+// Save API-fetched LRC .low priority, stored separately as song.api.lrc
+async function saveApiLrcToCache(musicPath: string, lrcContent: string): Promise<void> {
+    try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        await invoke('save_api_lrc_file', { musicPath, lrcContent });
+    } catch (error) {}
+}
+
+// Load API-fetched LRC
+async function loadApiLrcFromCache(musicPath: string): Promise<string | null> {
+    try {
+        const { invoke } = await import('@tauri-apps/api/core');
+        return await invoke<string | null>('load_api_lrc_file', { musicPath });
+    } catch {
         return null;
     }
 }

@@ -131,8 +131,12 @@
     function handleSeek(e: MouseEvent) {
         if (!seekBarElement) return;
         const rect = seekBarElement.getBoundingClientRect();
-        const pos = (e.clientX - rect.left) / rect.width;
-        seek(Math.max(0, Math.min(1, pos)));
+        const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        // Update UI immediately for smooth drag — fire-and-forget to backend
+        // i know the drag is buggy. but this is the best we can do
+        // Poller will correct position on next tick if keyframe alignment differs.
+        currentTime.set(pos * $duration);
+        seek(pos);
     }
 
     function handleSeekEnd() {

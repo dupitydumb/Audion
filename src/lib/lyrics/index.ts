@@ -21,7 +21,7 @@ export interface LyricLine {
 
 export interface LyricsResult {
     lines: LyricLine[];
-    source: 'lrclib' | 'musixmatch' | 'cache';
+    source: 'lrclib' | 'musixmatch' | 'cache' | 'embedded';
     hasWordSync: boolean;
     raw: string;
 }

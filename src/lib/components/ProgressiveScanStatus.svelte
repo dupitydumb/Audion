@@ -1,6 +1,7 @@
 <script lang="ts">
     import { 
         isScanning, 
+        scanMode,
         scanProgress, 
         scanPercentage, 
         estimatedTimeRemaining,
@@ -18,6 +19,7 @@
     $: elapsed = $elapsedTime;
     $: added = $tracksAdded;
     $: updated = $tracksUpdated;
+    $: title = $scanMode === 'folder' ? 'Importing folder...' : 'Scanning library...';
 </script>
 
 {#if $isScanning}
@@ -31,7 +33,7 @@
             <!-- Scan Info -->
             <div class="scan-info">
                 <div class="scan-title">
-                    Scanning library...
+                    {title}
                 </div>
                 <div class="scan-details">
                     {#if progress}
@@ -184,7 +186,7 @@
         color: var(--text-subdued);
     }
 
-        .scan-counts {
+    .scan-counts {
         display: flex;
         gap: 8px;
         font-size: 11px;
@@ -249,6 +251,10 @@
     }
     
     @media (max-width: 480px) {
+        .scan-counts {
+            display: none;
+        }
+
         .elapsed-text {
             display: none;
         }

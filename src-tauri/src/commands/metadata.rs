@@ -274,7 +274,14 @@ pub async fn update_track_cover_url(
 ) -> Result<(), String> {
     let conn = state.conn.lock().unwrap();
     db::queries::update_track_cover_url(&conn, track_id, cover_url.as_deref())
-        .map_err(|e| format!("Failed to update cover URL: {}", e))
+        .map_err(|e| format!("Failed to update cover URL: {}", e))?;
+
+    // Enqueue sync change
+    if let Ok(Some(track)) = db::queries::get_track_by_id(&conn, track_id) {
+        let _ = db::queries::enqueue_track_sync_change(&conn, &track, "update");
+    }
+
+    Ok(())
 }
 
 #[command]

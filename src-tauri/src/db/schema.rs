@@ -36,6 +36,8 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
             local_src TEXT,
             track_cover TEXT,
             track_cover_path TEXT,
+            metadata_json TEXT,
+            date_added TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE
         );
 
@@ -98,23 +100,55 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         ",
     )?;
 
-    // Migrations for existing databases
-    let _ = conn.execute("ALTER TABLE tracks ADD COLUMN format TEXT", []);
-    let _ = conn.execute("ALTER TABLE tracks ADD COLUMN bitrate INTEGER", []);
-    let _ = conn.execute(
-        "ALTER TABLE tracks ADD COLUMN source_type TEXT DEFAULT 'local'",
-        [],
-    );
-    let _ = conn.execute("ALTER TABLE tracks ADD COLUMN cover_url TEXT", []);
-    let _ = conn.execute("ALTER TABLE tracks ADD COLUMN external_id TEXT", []);
-    let _ = conn.execute("ALTER TABLE tracks ADD COLUMN content_hash TEXT", []);
-    let _ = conn.execute("ALTER TABLE tracks ADD COLUMN local_src TEXT", []);
-    let _ = conn.execute("ALTER TABLE tracks ADD COLUMN track_cover TEXT", []);
-    let _ = conn.execute("ALTER TABLE tracks ADD COLUMN disc_number INTEGER", []);
+    // Verify or add columns one by one for better reliability
+    let tracks_columns = [
+        ("format", "TEXT"),
+        ("bitrate", "INTEGER"),
+        ("source_type", "TEXT DEFAULT 'local'"),
+        ("cover_url", "TEXT"),
+        ("external_id", "TEXT"),
+        ("content_hash", "TEXT"),
+        ("local_src", "TEXT"),
+        ("track_cover", "TEXT"),
+        ("disc_number", "INTEGER"),
+        ("track_cover_path", "TEXT"),
+        ("musicbrainz_recording_id", "TEXT"),
+        ("date_added", "TEXT DEFAULT CURRENT_TIMESTAMP"),
+        ("genre", "TEXT"),
+        ("metadata_json", "TEXT"),
+    ];
 
-    // Add path columns for file-based cover storage
-    let _ = conn.execute("ALTER TABLE tracks ADD COLUMN track_cover_path TEXT", []);
-    let _ = conn.execute("ALTER TABLE albums ADD COLUMN art_path TEXT", []);
+    for (col_name, col_def) in tracks_columns {
+        if !column_exists(conn, "tracks", col_name)? {
+            println!(
+                "[DB] Adding missing column '{}' to tracks table...",
+                col_name
+            );
+            // SQLite limitation: ALTER TABLE cannot add a column with non-constant default like CURRENT_TIMESTAMP
+            // So we add it without the default first
+            let base_def = if col_name == "date_added" {
+                "TEXT"
+            } else {
+                col_def
+            };
+            let sql = format!("ALTER TABLE tracks ADD COLUMN {} {}", col_name, base_def);
+
+            if let Err(e) = conn.execute(&sql, []) {
+                eprintln!("[DB] Failed to add column '{}': {}", col_name, e);
+            } else {
+                println!("[DB] Successfully added column '{}'.", col_name);
+
+                // If we're adding date_added, populate existing rows with current time
+                if col_name == "date_added" {
+                    println!("[DB] Populating date_added for existing tracks...");
+                    let _ = conn.execute(
+                        "UPDATE tracks SET date_added = CURRENT_TIMESTAMP WHERE date_added IS NULL",
+                        [],
+                    );
+                }
+            }
+        }
+    }
 
     // Create index for content_hash after migration ensures column exists
     let _ = conn.execute(
@@ -122,8 +156,66 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         [],
     );
 
-    // Add cover_url to playlists table for existing databases
-    let _ = conn.execute("ALTER TABLE playlists ADD COLUMN cover_url TEXT", []);
+    // Create index for MusicBrainz ID
+    let _ = conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tracks_mbid ON tracks(musicbrainz_recording_id)",
+        [],
+    );
+
+    // Verify or add columns to albums table
+    if !column_exists(conn, "albums", "art_path")? {
+        println!("[DB] Adding missing column 'art_path' to albums table...");
+        let _ = conn.execute("ALTER TABLE albums ADD COLUMN art_path TEXT", []);
+    }
+
+    // ─── Sync infrastructure tables ──────────────────────────────────────────
+    conn.execute_batch(
+        "
+        -- Unified sync queue: all pending changes to push to server
+        CREATE TABLE IF NOT EXISTS sync_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entity_type TEXT NOT NULL,   -- 'playlist' | 'playlist_track' | 'liked_track' | 'settings'
+            entity_id TEXT NOT NULL,     -- local ID or composite key
+            operation TEXT NOT NULL,     -- 'create' | 'update' | 'delete'
+            payload TEXT,               -- JSON snapshot of the entity at time of change
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            retry_count INTEGER DEFAULT 0
+        );
+
+        -- Sync metadata: stores auth tokens, sync cursor, user info
+        CREATE TABLE IF NOT EXISTS sync_metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
+        -- Sync ID mapping: maps local integer IDs to server UUIDs
+        CREATE TABLE IF NOT EXISTS sync_id_map (
+            local_id TEXT NOT NULL,
+            entity_type TEXT NOT NULL,
+            server_id TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (local_id, entity_type)
+        );
+        CREATE INDEX IF NOT EXISTS idx_sync_id_map_server
+            ON sync_id_map(server_id, entity_type);
+        ",
+    )?;
+
+    // Add sync columns to playlists (safe migrations for existing DBs)
+    let _ = conn.execute("ALTER TABLE playlists ADD COLUMN server_id TEXT", []);
+    let _ = conn.execute(
+        "ALTER TABLE playlists ADD COLUMN version INTEGER DEFAULT 0",
+        [],
+    );
+    let _ = conn.execute(
+        "ALTER TABLE playlists ADD COLUMN deleted INTEGER DEFAULT 0",
+        [],
+    );
+    let _ = conn.execute("ALTER TABLE playlists ADD COLUMN folder_path TEXT", []);
+    let _ = conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_server_id ON playlists(server_id)",
+        [],
+    );
 
     // Initialize playlist positions for existing playlists
     initialize_playlist_positions(conn)?;
@@ -173,4 +265,17 @@ fn initialize_playlist_positions(conn: &Connection) -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Check if a column exists in a specific table
+fn column_exists(conn: &Connection, table_name: &str, column_name: &str) -> Result<bool> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table_name))?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == column_name {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }

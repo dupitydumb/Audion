@@ -5,12 +5,11 @@
         albums,
         artists,
         getAlbumCoverFromTracks,
+        getTrackAlbumCover,
         loadAlbumsAndArtists,
         loadPlaylists,
     } from "$lib/stores/library";
     import {
-        getAlbumArtSrc,
-        getTrackCoverSrc,
         selectMusicFolder,
         addFolder,
         rescanMusic,
@@ -88,10 +87,7 @@
     }
 
     function getTrackArt(track: Track): string | null {
-        if (track.track_cover_path) return getTrackCoverSrc(track);
-        if (track.track_cover) return getAlbumArtSrc(track.track_cover);
-        if (track.cover_url) return track.cover_url;
-        return null;
+        return getTrackAlbumCover(track.id);
     }
 
     function handlePlayTrack(index: number) {

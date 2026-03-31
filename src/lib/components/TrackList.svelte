@@ -38,13 +38,18 @@
   import { onDestroy, onMount } from "svelte";
   import { multiSelect } from "$lib/stores/multiselect";
   import { isMobile } from "$lib/stores/mobile";
-  import { confirm } from "$lib/stores/dialogs";
-  import { saveScroll, getScroll } from '$lib/stores/scrollMemory';
+  import { confirm, prompt } from "$lib/stores/dialogs";
+  import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
+  import { setCustomArtwork } from "$lib/stores/customArtwork";
+  import MetadataModal from "$lib/components/MetadataModal.svelte";
+
+  // MetadataModal state
+  let metadataModalTrack: Track | null = null;
 
   export let scrollKey: string | null = null;
 
   export let tracks: Track[] = [];
-  export let title: string = "Tracks";
+  // export let title = ""; // unused
   export let showAlbum: boolean = true;
   export let isTidalAvailable: boolean = true;
   export let playbackContext: PlaybackContext | undefined = undefined;
@@ -128,7 +133,7 @@
   $: filteredTracks = tracks;
 
   // Sorting state
-  type SortField = "title" | "album" | "duration" | null;
+  type SortField = "title" | "album" | "duration" | "date_added" | null;
   let sortField: SortField = null;
   let sortDirection: "asc" | "desc" = "asc";
 
@@ -142,7 +147,8 @@
       }
     } else {
       sortField = field;
-      sortDirection = "asc";
+      // For date_added, default to descending (Recently added)
+      sortDirection = field === "date_added" ? "desc" : "asc";
     }
   }
 
@@ -178,6 +184,10 @@
             case "duration":
               valA = a.duration || 0;
               valB = b.duration || 0;
+              break;
+            case "date_added":
+              valA = a.date_added || "";
+              valB = b.date_added || "";
               break;
           }
 
@@ -282,10 +292,10 @@
       updateHeight();
 
       if (scrollKey) {
-          const saved = getScroll(scrollKey);
-          if (saved > 0 && containerElement) {
-              containerElement.scrollTop = saved;
-          }
+        const saved = getScroll(scrollKey);
+        if (saved > 0 && containerElement) {
+          containerElement.scrollTop = saved;
+        }
       }
 
       window.addEventListener("resize", updateHeight);
@@ -522,7 +532,60 @@
                 },
               ],
       },
+      { type: "separator" },
+      {
+        label: "Change Artwork",
+        submenu: [
+          {
+            label: "From File",
+            action: () => {
+              const input = document.createElement("input");
+              input.type = "file";
+              input.accept = "image/*";
+              input.onchange = (e) => {
+                const file = (e.target as HTMLInputElement).files?.[0];
+                if (file) {
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    const result = reader.result as string;
+                    setCustomArtwork("track", track.id, result);
+                    addToast("Artwork updated", "success");
+                    // Refresh local cache for reactivity
+                    trackAlbumArtCache.delete(track.id);
+                  };
+                  reader.readAsDataURL(file);
+                }
+              };
+              input.click();
+            },
+          },
+          {
+            label: "From URL",
+            action: async () => {
+              const url = await prompt("Enter image URL:", {
+                title: "Change Artwork",
+                placeholder: "https://example.com/image.jpg",
+              });
+              if (url && url.trim()) {
+                setCustomArtwork("track", track.id, url.trim());
+                addToast("Artwork updated", "success");
+                trackAlbumArtCache.delete(track.id);
+              }
+            },
+          },
+        ],
+      },
     ];
+
+    menuItems.push(
+      { type: "separator" },
+      {
+        label: "Show more info",
+        action: () => {
+          metadataModalTrack = track;
+        },
+      },
+    );
 
     if (playlistId) {
       menuItems.push({
@@ -834,6 +897,15 @@
   }
 </script>
 
+{#if metadataModalTrack}
+  <MetadataModal
+    track={metadataModalTrack}
+    onClose={() => {
+      metadataModalTrack = null;
+    }}
+  />
+{/if}
+
 <div class="track-list">
   <!-- Header stays fixed -->
   <header
@@ -863,11 +935,15 @@
     {#if playlistId !== null && !multiSelectMode}
       <span class="col-header col-drag"></span>
     {/if}
-    <button class="col-header col-num" on:click={() => toggleSort(null)}>
-      {#if sortField === null}
-        <span class="sort-icon">#</span>
-      {:else}
-        #
+    <button
+      class="col-header col-num"
+      on:click={() => toggleSort("date_added")}
+    >
+      #
+      {#if sortField === "date_added"}
+        <span class="sort-icon">{sortDirection === "asc" ? "▲" : "▼"}</span>
+      {:else if sortField === null}
+        <span class="sort-icon">•</span>
       {/if}
     </button>
     <span class="col-header col-cover"></span>
@@ -1462,6 +1538,7 @@
     text-align: left;
     max-width: fit-content;
     line-height: 1.2;
+    min-height: 0;
   }
 
   .track-artist:hover:not(:disabled) {
@@ -1757,6 +1834,18 @@
       border-radius: var(--radius-sm);
     }
 
+    /* Align cover flush left in its column */
+    .list-body.mobile-playlist .col-cover {
+      justify-content: flex-start;
+      align-items: center;
+    }
+
+    /* Ensure title col aligns center without extra top shift */
+    .list-body.mobile-playlist .col-title {
+      padding-top: 0;
+      justify-content: center;
+    }
+
     /* Title + Artist stacked */
     .list-body.mobile-playlist .track-name {
       font-size: 0.9375rem;
@@ -1812,6 +1901,18 @@
       width: 48px;
       height: 48px;
       border-radius: var(--radius-sm);
+    }
+
+    /* Align cover flush left in its column */
+    .list-body.mobile-library .col-cover {
+      justify-content: flex-start;
+      align-items: center;
+    }
+
+    /* Ensure title col aligns center without extra top shift */
+    .list-body.mobile-library .col-title {
+      padding-top: 0;
+      justify-content: center;
     }
 
     /* Title + Artist stacked */

@@ -1,6 +1,6 @@
 {
   "name": "audion",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "",
   "type": "module",
   "scripts": {
@@ -21,6 +21,7 @@
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-opener": "^2",
     "@tauri-apps/plugin-os": "^2.3.2",
+    "@tauri-apps/plugin-deep-link": "^2.4.7",
     "marked": "^17.0.1"
   },
   "devDependencies": {

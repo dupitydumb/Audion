@@ -5,12 +5,14 @@
         goToAlbums,
         goToArtists,
         goToPlaylists,
+        type ViewState
     } from "$lib/stores/view";
     import {
         tracks,
         albums,
         artists,
         addTrackToLibrary,
+        pushPendingTrack,
     } from "$lib/stores/library";
     import { isScanning } from "$lib/stores/progressiveScan"; // we Only need isScanning flag
     import {
@@ -35,6 +37,8 @@
 
     import PluginManager from "./PluginManager.svelte";
     import Settings from "./Settings.svelte";
+    import Recommendations from "./Recommendations.svelte";
+    import MbDiscover from "./MbDiscover.svelte";
 
     import { tick, onMount } from "svelte";
     import { fade, fly } from "svelte/transition";
@@ -43,13 +47,14 @@
 
     import { confirm } from "$lib/stores/dialogs";
     import { get } from "svelte/store";
-    import { importAudioFile, importAudioBytes } from "$lib/api/tauri";
+    import { addTrackToPlaylist, importAudioFile, importAudioBytes, type Track } from "$lib/api/tauri";
     // Note: we prefer using the OS file path when available from the drag event.
 
     $: isSearching = $searchQuery.length > 0;
     $: isLibraryView = ["tracks", "albums", "artists", "playlists"].includes(
         $currentView.type,
     );
+    let dropTargetPlaylist: ViewState | null = null;
     import GlobalShortcuts from "./GlobalShortcuts.svelte";
     import type { SectionKey } from "./SearchResults.svelte";
 
@@ -114,6 +119,17 @@
         );
     }
 
+    async function maybeAddToPlaylist(track: Track) {
+        const view = get(currentView);
+        if (view.type !== "playlist-detail" || !view.id) return;
+        try {
+            await addTrackToPlaylist(view.id, track.id);
+            pushPendingTrack(view.id, track);
+        } catch (e) {
+            console.warn("[DND] addTrackToPlaylist failed", e);
+        }
+    }
+
     async function handleDrop(event: any) {
         try {
             if (event && typeof event.preventDefault === "function")
@@ -123,6 +139,7 @@
         isDragging = false;
         dragCounter = 0;
         dropError = "";
+        dropTargetPlaylist = null;
 
         // Normalize files: support DataTransferFile (File objects) and synthetic { name, path } objects
         let incomingFiles: any[] = [];
@@ -136,18 +153,18 @@
                 incomingFiles = event.dataTransfer;
             } else if (event?.dataTransfer && event.dataTransfer.paths) {
                 incomingFiles = event.dataTransfer.paths.map((p: string) => ({
-                    name: p.split(/[\\/]/).pop(),
+                    name: p.split(/[\\\/]/).pop(),
                     path: p,
                 }));
             } else if (event?.dataTransfer && event.dataTransfer.filesPaths) {
                 incomingFiles = event.dataTransfer.filesPaths.map(
-                    (p: string) => ({ name: p.split(/[\\/]/).pop(), path: p }),
+                    (p: string) => ({ name: p.split(/[\\\/]/).pop(), path: p }),
                 );
             } else if (Array.isArray(event)) {
                 incomingFiles = event;
-            } else if (event && event.payload && event.payload.paths) {
+            } else if (event?.payload?.paths) {
                 incomingFiles = event.payload.paths.map((p: string) => ({
-                    name: p.split(/[\\/]/).pop(),
+                    name: p.split(/[\\\/]/).pop(),
                     path: p,
                 }));
             }
@@ -165,9 +182,9 @@
             const maybePath: string | undefined =
                 (file as any).path ||
                 (file as any).filesystemPath ||
-                ((file as any).name && /[:\\/]/.test((file as any).name))
+                ((file as any).name && /[:\\/]/.test((file as any).name)
                     ? (file as any).name
-                    : undefined;
+                    : undefined);
 
             // If item is a real File-like object, it may have .name and .arrayBuffer()
             if (maybePath) {
@@ -183,15 +200,17 @@
                         if (overwrite) {
                             const r2 = await importAudioFile(maybePath, true);
                             if (typeof r2 === "object") {
-                                console.log("Imported (overwritten)", r2.title);
+                                console.log("Imported (webview, overwritten)", r2.title);
                                 addTrackToLibrary(r2);
+                                await maybeAddToPlaylist(r2);
                             } else {
                                 dropError = `Failed to import ${(file as any).name || maybePath}: ${r2}`;
                             }
                         }
                     } else if (typeof result === "object") {
-                        console.log("Imported", result.title);
+                        console.log("Imported (webview)", result.title);
                         addTrackToLibrary(result);
+                        await maybeAddToPlaylist(result);
                     } else {
                         dropError = `Failed to import ${(file as any).name || maybePath}: ${result}`;
                     }
@@ -229,6 +248,7 @@
                                     r2.title,
                                 );
                                 addTrackToLibrary(r2);
+                                await maybeAddToPlaylist(r2);
                             } else {
                                 dropError = `Failed to import ${(file as any).name}: ${r2}`;
                             }
@@ -236,6 +256,7 @@
                     } else if (typeof result === "object") {
                         console.log("Imported bytes", result.title);
                         addTrackToLibrary(result);
+                        await maybeAddToPlaylist(result);
                     } else {
                         dropError = `Failed to import ${(file as any).name}: ${result}`;
                     }
@@ -339,12 +360,19 @@
                             event.payload,
                         );
                         const p: any = event.payload;
-                        if (p.type === "over") {
-                            // The user is hovering files over the webview
+                        if (p.type === "enter") {
+                            if (dragCounter === 0) {
+                                const view = get(currentView);
+                                dropTargetPlaylist = view.type === "playlist-detail" ? view : null;
+                            }
+                            dragCounter++;
+                            isDragging = true;
+                        } else if (p.type === "over") {
                             isDragging = true;
                         } else if (p.type === "drop") {
                             isDragging = false;
-                            // event.payload.paths is an array of absolute file paths
+                            dragCounter = 0;
+                            dropTargetPlaylist = null;
                             const paths: string[] = p.paths || [];
                             for (const fp of paths) {
                                 try {
@@ -354,8 +382,7 @@
                                         false,
                                     );
                                     if (result === "duplicate") {
-                                        const name =
-                                            fp.split(/[\\/]/).pop() || fp;
+                                        const name = fp.split(/[\\\/]/).pop() || fp;
                                         const overwrite = await confirm(
                                             `File '${name}' already exists. Overwrite?`,
                                             {
@@ -364,37 +391,29 @@
                                             },
                                         );
                                         if (overwrite) {
-                                            const r2 = await importAudioFile(
-                                                fp,
-                                                true,
-                                            );
-                                            if (typeof r2 === "object")
+                                            const r2 = await importAudioFile(fp, true);
+                                            if (typeof r2 === "object") {
+                                                console.log("Imported (webview, overwritten)", r2.title);
                                                 addTrackToLibrary(r2);
+                                                await maybeAddToPlaylist(r2);
+                                            }
                                         }
                                     } else if (typeof result === "object") {
-                                        console.log(
-                                            "Imported (webview)",
-                                            result.title,
-                                        );
+                                        console.log("Imported (webview)", result.title);
                                         addTrackToLibrary(result);
+                                        await maybeAddToPlaylist(result);
                                     } else {
-                                        console.warn(
-                                            "Import result",
-                                            result,
-                                            fp,
-                                        );
+                                        console.warn("Import result", result, fp);
                                     }
                                 } catch (e) {
-                                    console.error(
-                                        "[DND] importAudioFile failed for",
-                                        fp,
-                                        e,
-                                    );
+                                    console.error("[DND] importAudioFile failed for", fp, e);
                                 }
                             }
                         } else {
                             // cancel
                             isDragging = false;
+                            dragCounter = 0;
+                            dropTargetPlaylist = null;
                         }
                     },
                 );
@@ -429,6 +448,11 @@
     function handleDragEnter(event: DragEvent) {
         if (!hasFiles(event.dataTransfer)) return;
         event.preventDefault();
+        if (dragCounter === 0) {
+            // compute once when drag starts, not on every navigation
+            const view = get(currentView);
+            dropTargetPlaylist = view.type === "playlist-detail" ? view : null;
+        }
         dragCounter++;
         isDragging = true;
     }
@@ -477,8 +501,13 @@
                         />
                     </svg>
                 </div>
-                <div class="drop-text">Drop your music here</div>
-                <div class="drop-subtext">MP3, FLAC, M4A, WAV, OGG</div>
+                {#if dropTargetPlaylist}
+                    <div class="drop-text">Add to "{dropTargetPlaylist.name}"</div>
+                    <div class="drop-subtext">Track will also be added to your library</div>
+                {:else}
+                    <div class="drop-text">Drop your music here</div>
+                    <div class="drop-subtext">MP3, FLAC, M4A, WAV, OGG</div>
+                {/if}
             </div>
         </div>
     {/if}
@@ -717,6 +746,14 @@
     {:else if $currentView.type === "liked-songs"}
         <div class="view-container no-padding">
             <LikedSongs />
+        </div>
+    {:else if $currentView.type === "listenbrainz"}
+        <div class="view-container no-padding">
+            <Recommendations />
+        </div>
+    {:else if $currentView.type === "discover"}
+        <div class="view-container no-padding">
+            <MbDiscover />
         </div>
     {:else}
         <div class="view-container">

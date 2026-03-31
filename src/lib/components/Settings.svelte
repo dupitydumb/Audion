@@ -8,6 +8,10 @@
     selectMusicFolder,
     syncCoverPathsFromFiles,
     mergeDuplicateCovers,
+    setListenbrainzToken,
+    deleteListenbrainzToken,
+    verifyListenbrainzToken,
+    isAndroid,
     type MergeCoverResult,
   } from "$lib/api/tauri";
   import { loadLibrary } from "$lib/stores/library";
@@ -15,6 +19,17 @@
   import { confirm } from "$lib/stores/dialogs";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { onMount, onDestroy } from "svelte";
+  import {
+    authState,
+    syncStatus,
+    isLoggedIn,
+    isSyncing,
+    showLoginModal,
+    logout,
+    triggerSync,
+    deleteAccount,
+  } from "$lib/stores/sync";
+  import { nativeAudioStop } from '$lib/services/native-audio';
 
   interface MigrationProgressUpdate {
     current: number;
@@ -146,6 +161,7 @@
 
     try {
       await resetDatabase();
+      handleRefresh();
 
       // Reload the library to reflect changes
       await loadLibrary();
@@ -159,9 +175,27 @@
 
   async function handleSetDownloadLocation() {
     try {
-      const selected = await selectMusicFolder();
-      if (selected) {
-        appSettings.setDownloadLocation(selected);
+      if (isAndroid()) {
+        // Use native Android SAF folder picker
+        const path = await new Promise<string | null>((resolve) => {
+          // Register one-shot callback for the result
+          (window as any).__onAndroidFolderPicked = (
+            pickedPath: string | null,
+          ) => {
+            delete (window as any).__onAndroidFolderPicked;
+            resolve(pickedPath);
+          };
+          // Launch the native picker
+          (window as any).AndroidFolderPicker?.pickFolder();
+        });
+        if (path) {
+          appSettings.setDownloadLocation(path);
+        }
+      } else {
+        const selected = await selectMusicFolder();
+        if (selected) {
+          appSettings.setDownloadLocation(selected);
+        }
       }
     } catch (error) {
       console.error("Failed to select download location:", error);
@@ -277,14 +311,41 @@
   }
 
   function formatTime(ms: number): string {
-    if (!ms || ms === 0) return "";
+    if (!ms || ms === 0) return "0s";
 
     const seconds = Math.floor(ms / 1000);
     if (seconds < 60) return `${seconds}s`;
 
     const minutes = Math.floor(seconds / 60);
     const remainingSeconds = seconds % 60;
+    if (remainingSeconds === 0) return `${minutes}m`;
     return `${minutes}m ${remainingSeconds}s`;
+  }
+
+  function formatLastSynced(isoString: string | null): string {
+    if (!isoString) return "Not synced yet";
+
+    try {
+      const date = new Date(isoString);
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffSec = Math.floor(diffMs / 1000);
+      const diffMin = Math.floor(diffSec / 60);
+      const diffHour = Math.floor(diffMin / 60);
+
+      if (diffSec < 60) return "Just now";
+      if (diffMin < 60) return `${diffMin}m ago`;
+      if (diffHour < 24) return `${diffHour}h ago`;
+
+      // Format as DD/MM/YYYY
+      const day = String(date.getDate()).padStart(2, "0");
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const year = date.getFullYear();
+      return `${day}/${month}/${year}`;
+    } catch (e) {
+      console.error("Failed to format last sync date:", e);
+      return isoString;
+    }
   }
 
   function formatBytes(bytes: number): string {
@@ -296,7 +357,73 @@
   }
 
   function handleRefresh() {
+    nativeAudioStop();
     window.location.reload();
+  }
+
+  // ── ListenBrainz ───────────────────────────────────────────────────────────
+  let lbTokenInput = "";
+  let lbIsVerifying = false;
+  let lbVerifyError = "";
+  let lbVerifySuccess = false;
+
+  async function handleVerifyLbToken() {
+    if (!lbTokenInput.trim()) return;
+    lbIsVerifying = true;
+    lbVerifyError = "";
+    lbVerifySuccess = false;
+    try {
+      const username = await verifyListenbrainzToken(lbTokenInput.trim());
+      await setListenbrainzToken(lbTokenInput.trim());
+      appSettings.setListenBrainzTokenSet(true, username);
+      lbVerifySuccess = true;
+      lbTokenInput = "";
+      setTimeout(() => {
+        lbVerifySuccess = false;
+      }, 4000);
+    } catch (e) {
+      lbVerifyError = String(e);
+    } finally {
+      lbIsVerifying = false;
+    }
+  }
+
+  async function handleRemoveLbToken() {
+    await deleteListenbrainzToken();
+    appSettings.setListenBrainzTokenSet(false, "");
+    if ($appSettings.listenBrainzEnabled) appSettings.toggleListenBrainz();
+  }
+
+  // ─── API Key ──────────────────────────────────────────────────────────────
+  import { apiKey, setApiKey } from "$lib/stores/sync";
+  let apiKeyInput = $apiKey;
+  let apiKeySaving = false;
+  let apiKeySuccess = false;
+  let apiKeyError = "";
+
+  async function handleSaveApiKey() {
+    apiKeySaving = true;
+    apiKeyError = "";
+    apiKeySuccess = false;
+    try {
+      await setApiKey(apiKeyInput.trim());
+      apiKeySuccess = true;
+      setTimeout(() => {
+        apiKeySuccess = false;
+      }, 3000);
+    } catch (e) {
+      let errorMessage = String(e);
+      if (
+        errorMessage.includes("403") ||
+        errorMessage.includes("Invalid or missing API Key")
+      ) {
+        errorMessage =
+          "Account sync is only available for supporters who donated to the project.";
+      }
+      apiKeyError = errorMessage;
+    } finally {
+      apiKeySaving = false;
+    }
   }
 </script>
 
@@ -307,6 +434,244 @@
 
   <div class="settings-content">
     <div class="settings-container">
+      <!-- Support Links -->
+      <section class="settings-section">
+        <div class="support-links">
+          <a
+            href="https://discord.gg/27XRVQsBd9"
+            target="_blank"
+            rel="noreferrer"
+            class="support-btn discord-btn"
+            aria-label="Join our Discord"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path
+                d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.03.056a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"
+              />
+            </svg>
+            Discord
+          </a>
+          <a
+            href="https://ko-fi.com/N4N5UMNR1"
+            target="_blank"
+            rel="noreferrer"
+            class="support-btn kofi-btn"
+            aria-label="Support on Ko-fi"
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+              <path
+                d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.723c-.604 0-.679.798-.679.798s-.082 7.324-.022 11.822c.164 2.424 2.586 2.672 2.586 2.672s8.267-.023 11.966-.049c2.438-.426 2.683-2.566 2.658-3.734 4.352.24 7.422-2.831 6.649-6.916zm-11.062 3.511c-1.246 1.453-4.011 3.976-4.011 3.976s-.121.119-.31.023c-.076-.057-.108-.09-.108-.09-.443-.441-3.368-3.049-4.034-3.954-.709-.965-1.041-2.7-.091-3.71.951-1.01 3.005-.995 4.032.019.152.154.16.166.152.166s.068-.112.151-.166c1.27-1.241 3.563-.78 4.346.394.886 1.318.488 2.927-.127 3.332zm4.906.658c-.375.133-1.259.053-1.259.053l.13-3.998s.932-.171 1.432.064c1.004.472.835 3.44-.303 3.881z"
+              />
+            </svg>
+            Ko-fi
+          </a>
+        </div>
+      </section>
+
+      <!-- Account & Sync -->
+      <section class="settings-section">
+        <h3 class="section-title">Account</h3>
+
+        {#if $isLoggedIn}
+          <div class="setting-item account-card">
+            <div class="account-profile">
+              {#if $authState.avatar_url}
+                <img src={$authState.avatar_url} alt="Profile" class="avatar" />
+              {:else}
+                <div class="avatar avatar-placeholder">
+                  {($authState.name || $authState.email || "U")
+                    .charAt(0)
+                    .toUpperCase()}
+                </div>
+              {/if}
+              <div class="account-info">
+                <span class="account-name">{$authState.name || "User"}</span>
+                <span class="account-email">{$authState.email || ""}</span>
+              </div>
+              <button
+                class="logout-btn"
+                on:click={async () => {
+                  const ok = await confirm(
+                      "Are you sure you want to log out? Unsynced changes will be lost.",
+                      { title: "Log Out" }
+                  );
+                  if (ok) logout();
+                }}
+                aria-label="Log out"
+              >
+                Log Out
+              </button>
+            </div>
+
+            <div class="sync-status-area">
+              <div class="sync-info">
+                <span class="setting-label">Sync Status</span>
+                <span class="setting-value">
+                  {#if $isSyncing}
+                    Syncing...
+                  {:else if $syncStatus.last_error}
+                    <span class="text-error"
+                      >Error: {$syncStatus.last_error}</span
+                    >
+                  {:else}
+                    {formatLastSynced($syncStatus.last_sync_at)}
+                  {/if}
+                </span>
+                {#if $syncStatus.pending_changes > 0}
+                  <span class="setting-hint"
+                    >{$syncStatus.pending_changes} pending change{$syncStatus.pending_changes !==
+                    1
+                      ? "s"
+                      : ""}</span
+                  >
+                {/if}
+              </div>
+              <button
+                class="btn-secondary btn-sm sync-btn"
+                on:click={() => triggerSync()}
+                disabled={$isSyncing}
+                aria-label="Sync now"
+              >
+                {#if $isSyncing}
+                  <svg
+                    class="spinner"
+                    viewBox="0 0 24 24"
+                    width="14"
+                    height="14"
+                  >
+                    <path
+                      fill="currentColor"
+                      d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"
+                    />
+                  </svg>
+                  Syncing
+                {:else}
+                  Sync Now
+                {/if}
+              </button>
+            </div>
+
+            <div
+              class="setting-item"
+              style="border-top: 1px solid var(--border-color); padding-top: var(--spacing-md); margin-top: var(--spacing-sm);"
+            >
+              <span class="setting-label">Sync API Key</span>
+              <div class="path-selector">
+                <input
+                  type="password"
+                  bind:value={apiKeyInput}
+                  placeholder="Enter your Sync API Key"
+                  class="lb-token-input"
+                  on:keydown={(e) => e.key === "Enter" && handleSaveApiKey()}
+                />
+                <button
+                  class="selector-btn"
+                  on:click={handleSaveApiKey}
+                  disabled={apiKeySaving}
+                >
+                  {apiKeySaving ? "Saving..." : "Save Key"}
+                </button>
+              </div>
+              <p class="setting-hint">
+                Account sync is available for supporters who donated to the
+                project.
+              </p>
+              {#if apiKeyError}
+                <p class="setting-hint" style="color: var(--text-error);">
+                  ✗ {apiKeyError}
+                </p>
+              {/if}
+              {#if apiKeySuccess}
+                <p class="setting-hint" style="color: var(--accent-primary);">
+                  ✓ API Key saved!
+                </p>
+              {/if}
+            </div>
+          </div>
+
+          <div class="setting-item">
+            <div class="danger-item">
+              <div class="danger-info">
+                <span class="setting-label">Delete Account</span>
+                <p class="setting-hint">
+                  Permanently delete your account and all synced data from the
+                  server. Your local library is not affected.
+                </p>
+              </div>
+              <button
+                class="danger-btn"
+                on:click={async () => {
+                  const ok = await confirm(
+                      "This will permanently delete your account and all synced data from the server. This cannot be undone. Continue?",
+                      { title: "Delete Account", danger: true }
+                  );
+                  if (ok) {
+                    try {
+                      await deleteAccount();
+                    } catch (e) {
+                      console.error("Failed to delete account:", e);
+                    }
+                  }
+                }}
+                aria-label="Delete account"
+              >
+                Delete Account
+              </button>
+            </div>
+          </div>
+        {:else}
+          <div class="setting-item">
+            <div class="account-signin">
+              <p class="setting-hint">
+                Sign in to sync your playlists, liked songs, and settings across
+                all your devices.
+              </p>
+              <button
+                class="btn-primary"
+                on:click={() => showLoginModal.set(true)}
+                aria-label="Sign in"
+              >
+                Sign In
+              </button>
+            </div>
+          </div>
+
+          <div class="setting-item">
+            <span class="setting-label">Sync API Key</span>
+            <div class="path-selector">
+              <input
+                type="password"
+                bind:value={apiKeyInput}
+                placeholder="Enter your Sync API Key"
+                class="lb-token-input"
+                on:keydown={(e) => e.key === "Enter" && handleSaveApiKey()}
+              />
+              <button
+                class="selector-btn"
+                on:click={handleSaveApiKey}
+                disabled={apiKeySaving}
+              >
+                {apiKeySaving ? "Saving..." : "Save Key"}
+              </button>
+            </div>
+            <p class="setting-hint">
+              Account sync is available for supporters who donated to the
+              project.
+            </p>
+            {#if apiKeyError}
+              <p class="setting-hint" style="color: var(--text-error);">
+                ✗ {apiKeyError}
+              </p>
+            {/if}
+            {#if apiKeySuccess}
+              <p class="setting-hint" style="color: var(--accent-primary);">
+                ✓ API Key saved!
+              </p>
+            {/if}
+          </div>
+        {/if}
+      </section>
+
       <!-- Theme Mode -->
       <section class="settings-section">
         <h3 class="section-title">Appearance</h3>
@@ -488,61 +853,63 @@
           <p class="setting-hint">Where downloaded songs will be saved</p>
         </div>
 
-        <div class="setting-item">
-          <span class="setting-label">Window Start Mode</span>
-          <div class="theme-modes">
-            <button
-              class="mode-btn"
-              class:active={$appSettings.startMode === "normal"}
-              on:click={() => appSettings.setStartMode("normal")}
-              aria-label="Start window in normal mode"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                width="24"
-                height="24"
-                fill="currentColor"
+        {#if !isAndroid()}
+          <div class="setting-item">
+            <span class="setting-label">Window Start Mode</span>
+            <div class="theme-modes">
+              <button
+                class="mode-btn"
+                class:active={$appSettings.startMode === "normal"}
+                on:click={() => appSettings.setStartMode("normal")}
+                aria-label="Start window in normal mode"
               >
-                <path
-                  d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"
-                />
-              </svg>
-              <span>Normal</span>
-            </button>
-            <button
-              class="mode-btn"
-              class:active={$appSettings.startMode === "maximized"}
-              on:click={() => appSettings.setStartMode("maximized")}
-              aria-label="Start window maximized"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                width="24"
-                height="24"
-                fill="currentColor"
+                <svg
+                  viewBox="0 0 24 24"
+                  width="24"
+                  height="24"
+                  fill="currentColor"
+                >
+                  <path
+                    d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"
+                  />
+                </svg>
+                <span>Normal</span>
+              </button>
+              <button
+                class="mode-btn"
+                class:active={$appSettings.startMode === "maximized"}
+                on:click={() => appSettings.setStartMode("maximized")}
+                aria-label="Start window maximized"
               >
-                <path d="M4 4h16v16H4V4zm2 4v10h12V8H6z" />
-              </svg>
-              <span>Maximized</span>
-            </button>
-            <button
-              class="mode-btn"
-              class:active={$appSettings.startMode === "minimized"}
-              on:click={() => appSettings.setStartMode("minimized")}
-              aria-label="Start window minimized"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                width="24"
-                height="24"
-                fill="currentColor"
+                <svg
+                  viewBox="0 0 24 24"
+                  width="24"
+                  height="24"
+                  fill="currentColor"
+                >
+                  <path d="M4 4h16v16H4V4zm2 4v10h12V8H6z" />
+                </svg>
+                <span>Maximized</span>
+              </button>
+              <button
+                class="mode-btn"
+                class:active={$appSettings.startMode === "minimized"}
+                on:click={() => appSettings.setStartMode("minimized")}
+                aria-label="Start window minimized"
               >
-                <path d="M6 19h12v2H6z" />
-              </svg>
-              <span>Minimized</span>
-            </button>
+                <svg
+                  viewBox="0 0 24 24"
+                  width="24"
+                  height="24"
+                  fill="currentColor"
+                >
+                  <path d="M6 19h12v2H6z" />
+                </svg>
+                <span>Minimized</span>
+              </button>
+            </div>
           </div>
-        </div>
+        {/if}
 
         <div class="setting-item">
           <div class="toggle-container">
@@ -648,6 +1015,106 @@
             >
               Refresh Now
             </button>
+          </div>
+        {/if}
+      </section>
+
+      <!-- Cover Management -->
+      <section class="settings-section">
+        <h3 class="section-title">ListenBrainz</h3>
+
+        <!-- Enable toggle -->
+        <div class="setting-item">
+          <div class="toggle-container">
+            <div class="toggle-info">
+              <span class="setting-label">Enable ListenBrainz</span>
+              <p class="setting-hint">
+                Submit your listening history and receive personalised
+                recommendations. Requires a free
+                <a
+                  href="https://listenbrainz.org"
+                  target="_blank"
+                  rel="noreferrer">ListenBrainz</a
+                >
+                account.
+              </p>
+            </div>
+            <button
+              class="toggle-btn"
+              class:active={$appSettings.listenBrainzEnabled}
+              on:click={() => appSettings.toggleListenBrainz()}
+              role="switch"
+              aria-checked={$appSettings.listenBrainzEnabled}
+              aria-label="Toggle ListenBrainz"
+            >
+              <div class="toggle-handle"></div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Token management -->
+        {#if !$appSettings.listenBrainzTokenSet}
+          <div class="setting-item">
+            <span class="setting-label">User Token</span>
+            <div class="path-selector">
+              <input
+                type="password"
+                bind:value={lbTokenInput}
+                placeholder="Paste your ListenBrainz token"
+                class="lb-token-input"
+                on:keydown={(e) => e.key === "Enter" && handleVerifyLbToken()}
+              />
+              <button
+                class="selector-btn"
+                on:click={handleVerifyLbToken}
+                disabled={!lbTokenInput.trim() || lbIsVerifying}
+              >
+                {lbIsVerifying ? "Verifying…" : "Verify & Save"}
+              </button>
+            </div>
+            <p class="setting-hint">
+              Find your token at
+              <a
+                href="https://listenbrainz.org/settings/"
+                target="_blank"
+                rel="noreferrer">listenbrainz.org/settings</a
+              >.
+            </p>
+            {#if lbVerifyError}
+              <p class="setting-hint" style="color: var(--text-error);">
+                ✗ {lbVerifyError}
+              </p>
+            {/if}
+            {#if lbVerifySuccess}
+              <p class="setting-hint" style="color: var(--accent-primary);">
+                ✓ Token verified and saved!
+              </p>
+            {/if}
+          </div>
+        {:else}
+          <div class="setting-item">
+            <div class="danger-item">
+              <div class="danger-info">
+                <span class="setting-label">Token Stored</span>
+                <p class="setting-hint">
+                  {#if $appSettings.listenBrainzUsername}
+                    Signed in as <strong
+                      >{$appSettings.listenBrainzUsername}</strong
+                    >.
+                  {:else}
+                    A token is saved. Enable the toggle above to start
+                    scrobbling.
+                  {/if}
+                </p>
+              </div>
+              <button
+                class="selector-btn danger-btn"
+                on:click={handleRemoveLbToken}
+                aria-label="Remove ListenBrainz token"
+              >
+                Remove Token
+              </button>
+            </div>
           </div>
         {/if}
       </section>
@@ -1327,7 +1794,52 @@
     color: var(--text-subdued);
   }
 
-  /* Toggle Switch */
+  /* Support links (Discord / Ko-fi) */
+  .support-links {
+    display: flex;
+    gap: var(--spacing-sm);
+    flex-wrap: wrap;
+  }
+
+  .support-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border-radius: var(--radius-md);
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition:
+      opacity var(--transition-fast),
+      transform var(--transition-fast);
+    flex: 1;
+    justify-content: center;
+    min-width: 120px;
+  }
+
+  .support-btn:active {
+    transform: scale(0.96);
+  }
+
+  .discord-btn {
+    background-color: #5865f2;
+    color: #fff;
+  }
+
+  .discord-btn:hover {
+    opacity: 0.9;
+  }
+
+  .kofi-btn {
+    background-color: #ff5e5b;
+    color: #fff;
+  }
+
+  .kofi-btn:hover {
+    opacity: 0.9;
+  }
+
   .toggle-container {
     display: flex;
     justify-content: space-between;
@@ -1383,10 +1895,17 @@
     transition: all 0.2s;
   }
 
+  @media (max-width: 768px) {
+    .path-selector {
+      display: flex;
+      gap: var(--spacing-sm);
+      flex-direction: column;
+    }
+  }
+
   .path-selector {
     display: flex;
     gap: var(--spacing-sm);
-    align-items: center;
   }
 
   .path-display {
@@ -1444,8 +1963,8 @@
   .danger-item {
     display: flex;
     justify-content: space-between;
-    align-items: center;
     gap: var(--spacing-md);
+    flex-direction: column;
   }
 
   .danger-info {
@@ -1467,6 +1986,148 @@
   .danger-btn:hover {
     background-color: #dc3545;
     color: white;
+  }
+
+  /* Account section */
+  .account-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    background-color: var(--bg-surface);
+    padding: var(--spacing-lg);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+  }
+
+  .account-profile {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    width: 100%;
+  }
+
+  .avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-full);
+    object-fit: cover;
+    flex-shrink: 0;
+    border: 2px solid var(--border-color);
+  }
+
+  .avatar-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-primary);
+    color: #fff;
+    font-weight: 700;
+    font-size: 1.25rem;
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-full);
+  }
+
+  .account-info {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .account-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    font-size: 1rem;
+  }
+
+  .account-email {
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .logout-btn {
+    padding: var(--spacing-xs) var(--spacing-md);
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .logout-btn:hover {
+    color: var(--error-color);
+    border-color: var(--error-color);
+    background-color: rgba(220, 53, 69, 0.05);
+  }
+
+  .account-signin {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    align-items: flex-start;
+  }
+
+  .sync-status-area {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--border-color);
+    gap: var(--spacing-md);
+  }
+
+  .sync-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+  }
+
+  .sync-info .setting-label {
+    margin-bottom: 0;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .sync-info .setting-value {
+    font-size: 0.9375rem;
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  .sync-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+  }
+
+  .spinner {
+    animation: rotate 2s linear infinite;
+  }
+
+  @keyframes rotate {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .text-error {
+    color: #dc3545;
+    font-size: 0.8125rem;
   }
 
   /* Modal */

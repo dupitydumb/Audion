@@ -3,6 +3,7 @@ use rusqlite::{params, Connection, OptionalExtension, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Instant;
+use::std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Track {
@@ -23,6 +24,8 @@ pub struct Track {
     pub track_cover: Option<String>,
     pub track_cover_path: Option<String>,
     pub disc_number: Option<i32>,
+    pub metadata_json: Option<String>,
+    pub date_added: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,6 +50,7 @@ pub struct Playlist {
     pub name: String,
     pub cover_url: Option<String>,
     pub created_at: Option<String>,
+    pub folder_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +71,8 @@ pub struct TrackInsert {
     pub external_id: Option<String>,
     pub content_hash: Option<String>,
     pub local_src: Option<String>,
+    pub musicbrainz_recording_id: Option<String>,
+    pub metadata_json: Option<String>,
 }
 
 // Track operations
@@ -126,7 +132,9 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
                 external_id = ?11,
                 content_hash = ?12,
                 local_src = ?13,
-                disc_number = ?15
+                disc_number = ?15,
+                musicbrainz_recording_id = ?16,
+                metadata_json = ?17
              WHERE id = ?14",
             params![
                 track.title,
@@ -144,6 +152,8 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
                 track.local_src,
                 track_id, // Use existing ID
                 track.disc_number,
+                track.musicbrainz_recording_id,
+                track.metadata_json,
             ],
         )?;
 
@@ -151,8 +161,8 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
     } else {
         // insert new track
         conn.execute(
-            "INSERT INTO tracks (path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, content_hash, local_src, disc_number)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+            "INSERT INTO tracks (path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, content_hash, local_src, disc_number, musicbrainz_recording_id, metadata_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
             params![
                 track.path,
                 track.title,
@@ -169,6 +179,8 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
                 track.content_hash,
                 track.local_src,
                 track.disc_number,
+                track.musicbrainz_recording_id,
+                track.metadata_json,
             ],
         )?;
 
@@ -176,10 +188,61 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
     }
 }
 
+/// Update MusicBrainz Recording ID and/or genre for a track.
+/// Uses COALESCE so that passing `None` preserves the existing DB value.
+pub fn update_track_mb_data(
+    conn: &Connection,
+    track_id: i64,
+    mbid: Option<&str>,
+    genre: Option<&str>,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE tracks
+         SET musicbrainz_recording_id = COALESCE(?1, musicbrainz_recording_id),
+             genre                    = COALESCE(?2, genre)
+         WHERE id = ?3",
+        params![mbid, genre, track_id],
+    )?;
+    Ok(())
+}
+
 /// Delete a track from the database by ID
 pub fn delete_track(conn: &Connection, track_id: i64) -> Result<bool> {
     let deleted = conn.execute("DELETE FROM tracks WHERE id = ?1", params![track_id])?;
     Ok(deleted > 0)
+}
+
+/// Get a track by its ID
+pub fn get_track_by_id(conn: &Connection, track_id: i64) -> Result<Option<Track>> {
+    conn.query_row(
+        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, track_cover, track_cover_path, disc_number, metadata_json, date_added
+         FROM tracks WHERE id = ?1",
+        params![track_id],
+        |row| {
+            Ok(Track {
+                id: row.get(0)?,
+                path: row.get(1)?,
+                title: row.get(2)?,
+                artist: row.get(3)?,
+                album: row.get(4)?,
+                track_number: row.get(5)?,
+                duration: row.get(6)?,
+                album_id: row.get(7)?,
+                format: row.get(8)?,
+                bitrate: row.get(9)?,
+                source_type: row.get(10)?,
+                cover_url: row.get(11)?,
+                external_id: row.get(12)?,
+                local_src: row.get(13)?,
+                track_cover: row.get(14)?,
+                track_cover_path: row.get(15)?,
+                disc_number: row.get(16)?,
+                metadata_json: row.get(17)?,
+                date_added: row.get(18)?,
+            })
+        },
+    )
+    .optional()
 }
 
 fn get_or_create_album(
@@ -264,7 +327,7 @@ pub fn search_tracks(
     offset: i32,
 ) -> Result<Vec<Track>> {
     let mut stmt = conn.prepare(
-        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, track_cover_path, disc_number 
+        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, track_cover_path, disc_number, metadata_json, date_added 
          FROM tracks 
          WHERE id IN (SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?1)
          ORDER BY artist, album, disc_number, track_number, title
@@ -291,6 +354,8 @@ pub fn search_tracks(
                 track_cover: None,
                 track_cover_path: row.get(14)?,
                 disc_number: row.get(15)?,
+                metadata_json: row.get(16)?,
+                date_added: row.get(17)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -301,7 +366,7 @@ pub fn search_tracks(
 /// Get paginated tracks
 pub fn get_tracks_paginated(conn: &Connection, limit: i32, offset: i32) -> Result<Vec<Track>> {
     let mut stmt = conn.prepare(
-        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, track_cover_path, disc_number 
+        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, track_cover_path, disc_number, metadata_json, date_added 
          FROM tracks 
          ORDER BY artist, album, disc_number, track_number, title
          LIMIT ?1 OFFSET ?2",
@@ -327,6 +392,8 @@ pub fn get_tracks_paginated(conn: &Connection, limit: i32, offset: i32) -> Resul
                 track_cover: None,
                 track_cover_path: row.get(14)?,
                 disc_number: row.get(15)?,
+                metadata_json: row.get(16)?,
+                date_added: row.get(17)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -340,7 +407,7 @@ pub fn get_all_tracks(conn: &Connection) -> Result<Vec<Track>> {
     println!("[DB] get_all_tracks: Preparing query...");
 
     let mut stmt = conn.prepare(
-        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, track_cover, track_cover_path, disc_number 
+        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, track_cover, track_cover_path, disc_number, metadata_json, date_added 
          FROM tracks ORDER BY artist, album, disc_number, track_number, title",
     )?;
 
@@ -368,6 +435,8 @@ pub fn get_all_tracks(conn: &Connection) -> Result<Vec<Track>> {
                 track_cover: row.get(14)?,
                 track_cover_path: row.get(15)?,
                 disc_number: row.get(16)?,
+                metadata_json: row.get(17)?,
+                date_added: row.get(18)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -390,7 +459,7 @@ pub fn get_all_tracks_lightweight(conn: &Connection) -> Result<Vec<Track>> {
     println!("[DB] get_all_tracks_lightweight: Preparing query...");
 
     let mut stmt = conn.prepare(
-        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, disc_number 
+        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, disc_number, metadata_json, date_added 
          FROM tracks ORDER BY artist, album, disc_number, track_number, title",
     )?;
 
@@ -421,6 +490,8 @@ pub fn get_all_tracks_lightweight(conn: &Connection) -> Result<Vec<Track>> {
                 track_cover: None,
                 track_cover_path: None,
                 disc_number: row.get(14)?,
+                metadata_json: row.get(15)?,
+                date_added: row.get(16)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -444,7 +515,7 @@ pub fn get_all_tracks_with_paths(conn: &Connection) -> Result<Vec<Track>> {
     let query_start = Instant::now();
 
     let mut stmt = conn.prepare(
-        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, track_cover_path, disc_number 
+        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, track_cover_path, disc_number, metadata_json, date_added 
          FROM tracks ORDER BY artist, album, disc_number, track_number, title",
     )?;
 
@@ -468,6 +539,8 @@ pub fn get_all_tracks_with_paths(conn: &Connection) -> Result<Vec<Track>> {
                 track_cover: None,
                 track_cover_path: row.get(14)?,
                 disc_number: row.get(15)?,
+                metadata_json: row.get(16)?,
+                date_added: row.get(17)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -699,7 +772,7 @@ pub fn get_all_artists(conn: &Connection) -> Result<Vec<Artist>> {
 
 pub fn get_tracks_by_album(conn: &Connection, album_id: i64) -> Result<Vec<Track>> {
     let mut stmt = conn.prepare(
-        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, track_cover, track_cover_path, disc_number 
+        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, track_cover, track_cover_path, disc_number, metadata_json, date_added 
          FROM tracks WHERE album_id = ?1 ORDER BY disc_number, track_number, title",
     )?;
 
@@ -723,6 +796,8 @@ pub fn get_tracks_by_album(conn: &Connection, album_id: i64) -> Result<Vec<Track
                 track_cover: row.get(14)?,
                 track_cover_path: row.get(15)?,
                 disc_number: row.get(16)?,
+                metadata_json: row.get(17)?,
+                date_added: row.get(18)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -732,7 +807,7 @@ pub fn get_tracks_by_album(conn: &Connection, album_id: i64) -> Result<Vec<Track
 
 pub fn get_tracks_by_artist(conn: &Connection, artist: &str) -> Result<Vec<Track>> {
     let mut stmt = conn.prepare(
-        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, track_cover, track_cover_path, disc_number 
+        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, track_cover, track_cover_path, disc_number, metadata_json, date_added 
          FROM tracks WHERE artist = ?1 ORDER BY album, disc_number, track_number, title",
     )?;
 
@@ -756,6 +831,8 @@ pub fn get_tracks_by_artist(conn: &Connection, artist: &str) -> Result<Vec<Track
                 track_cover: row.get(14)?,
                 track_cover_path: row.get(15)?,
                 disc_number: row.get(16)?,
+                metadata_json: row.get(17)?,
+                date_added: row.get(18)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -788,7 +865,7 @@ pub fn create_playlist(conn: &Connection, name: &str) -> Result<i64> {
 
 pub fn get_all_playlists(conn: &Connection) -> Result<Vec<Playlist>> {
     let mut stmt =
-        conn.prepare("SELECT id, name, cover_url, created_at FROM playlists ORDER BY name")?;
+        conn.prepare("SELECT id, name, cover_url, created_at, folder_path FROM playlists ORDER BY name")?;
 
     let playlists = stmt
         .query_map([], |row| {
@@ -797,6 +874,7 @@ pub fn get_all_playlists(conn: &Connection) -> Result<Vec<Playlist>> {
                 name: row.get(1)?,
                 cover_url: row.get(2)?,
                 created_at: row.get(3)?,
+                folder_path: row.get(4)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -806,7 +884,7 @@ pub fn get_all_playlists(conn: &Connection) -> Result<Vec<Playlist>> {
 
 pub fn get_playlist_tracks(conn: &Connection, playlist_id: i64) -> Result<Vec<Track>> {
     let mut stmt = conn.prepare(
-        "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.album_id, t.format, t.bitrate, t.source_type, t.cover_url, t.external_id, t.local_src, t.track_cover, t.track_cover_path, t.disc_number 
+        "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.album_id, t.format, t.bitrate, t.source_type, t.cover_url, t.external_id, t.local_src, t.track_cover, t.track_cover_path, t.disc_number, t.metadata_json, t.date_added 
          FROM tracks t
          INNER JOIN playlist_tracks pt ON t.id = pt.track_id
          WHERE pt.playlist_id = ?1
@@ -833,6 +911,8 @@ pub fn get_playlist_tracks(conn: &Connection, playlist_id: i64) -> Result<Vec<Tr
                 track_cover: row.get(14)?,
                 track_cover_path: row.get(15)?,
                 disc_number: row.get(16)?,
+                metadata_json: row.get(17)?,
+                date_added: row.get(18)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -892,6 +972,26 @@ pub fn update_playlist_cover(
     Ok(())
 }
 
+pub fn get_folder_playlists(conn: &Connection) -> Result<Vec<(i64, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, folder_path FROM playlists WHERE folder_path IS NOT NULL"
+    )?;
+    let rows = stmt.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    let mut result = Vec::new();
+    for row in rows {
+        result.push(row?);
+    }
+    Ok(result)
+}
+
+pub fn set_playlist_folder_path(conn: &Connection, playlist_id: i64, folder_path: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE playlists SET folder_path = ?1 WHERE id = ?2",
+        params![folder_path, playlist_id],
+    )?;
+    Ok(())
+}
+
 // Music folder operations
 pub fn add_music_folder(conn: &Connection, path: &str) -> Result<i64> {
     conn.execute(
@@ -899,6 +999,34 @@ pub fn add_music_folder(conn: &Connection, path: &str) -> Result<i64> {
         [path],
     )?;
     Ok(conn.last_insert_rowid())
+}
+
+/// Returns true if the folder was registered, false if it was already covered.
+pub fn register_music_folder(conn: &Connection, path: &str) -> Result<bool> {
+    let existing = {
+        let mut stmt = conn.prepare("SELECT path FROM music_folders")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut v = Vec::new();
+        for r in rows { v.push(r?); }
+        v
+    };
+
+    // If any existing folder is a parent
+    if existing.iter().any(|f| Path::new(path).starts_with(Path::new(f))) {
+        return Ok(false);
+    }
+
+    // Remove any existing folders that are subfolders of the new path
+    for f in existing.iter().filter(|f| Path::new(f).starts_with(Path::new(path))) {
+        conn.execute("DELETE FROM music_folders WHERE path = ?1", [f])?;
+    }
+
+    conn.execute(
+        "INSERT OR IGNORE INTO music_folders (path, last_scanned) VALUES (?1, CURRENT_TIMESTAMP)",
+        [path],
+    )?;
+
+    Ok(true)
 }
 
 pub fn get_music_folders(conn: &Connection) -> Result<Vec<String>> {
@@ -1070,7 +1198,7 @@ pub fn get_liked_track_ids(conn: &Connection) -> Result<Vec<i64>> {
 
 pub fn get_liked_tracks(conn: &Connection) -> Result<Vec<Track>> {
     let mut stmt = conn.prepare(
-        "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.album_id, t.format, t.bitrate, t.source_type, t.cover_url, t.external_id, t.local_src, t.track_cover_path, t.disc_number
+        "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.album_id, t.format, t.bitrate, t.source_type, t.cover_url, t.external_id, t.local_src, t.track_cover_path, t.disc_number, t.metadata_json, t.date_added
          FROM tracks t
          INNER JOIN liked_tracks lt ON t.id = lt.track_id
          ORDER BY lt.liked_at DESC",
@@ -1096,6 +1224,8 @@ pub fn get_liked_tracks(conn: &Connection) -> Result<Vec<Track>> {
                 track_cover: None,
                 track_cover_path: row.get(14)?,
                 disc_number: row.get(15)?,
+                metadata_json: row.get(16)?,
+                date_added: row.get(17)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -1122,7 +1252,7 @@ pub fn record_play(
 
 pub fn get_top_tracks(conn: &Connection, limit: i32) -> Result<Vec<TrackWithCount>> {
     let mut stmt = conn.prepare(
-        "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.album_id, t.format, t.bitrate, t.source_type, t.cover_url, t.external_id, t.local_src, t.track_cover_path, t.disc_number, COUNT(ph.id) as play_count
+        "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.album_id, t.format, t.bitrate, t.source_type, t.cover_url, t.external_id, t.local_src, t.track_cover_path, t.disc_number, t.metadata_json, t.date_added, COUNT(ph.id) as play_count
          FROM tracks t
          INNER JOIN play_history ph ON t.id = ph.track_id
          WHERE strftime('%Y-%m', ph.played_at) = strftime('%Y-%m', 'now')
@@ -1152,8 +1282,10 @@ pub fn get_top_tracks(conn: &Connection, limit: i32) -> Result<Vec<TrackWithCoun
                     track_cover: None,
                     track_cover_path: row.get(14)?,
                     disc_number: row.get(15)?,
+                    metadata_json: row.get(16)?,
+                    date_added: row.get(17)?,
                 },
-                play_count: row.get(16)?,
+                play_count: row.get(18)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -1193,7 +1325,7 @@ pub fn get_top_albums(conn: &Connection, limit: i32) -> Result<Vec<AlbumWithCoun
 
 pub fn get_recently_played(conn: &Connection, limit: i32) -> Result<Vec<Track>> {
     let mut stmt = conn.prepare(
-        "SELECT DISTINCT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.album_id, t.format, t.bitrate, t.source_type, t.cover_url, t.external_id, t.local_src, t.track_cover_path, t.disc_number, MAX(ph.played_at) as last_played
+        "SELECT DISTINCT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.album_id, t.format, t.bitrate, t.source_type, t.cover_url, t.external_id, t.local_src, t.track_cover_path, t.disc_number, t.metadata_json, t.date_added, MAX(ph.played_at) as last_played
          FROM tracks t
          INNER JOIN play_history ph ON t.id = ph.track_id
          GROUP BY t.id
@@ -1221,6 +1353,8 @@ pub fn get_recently_played(conn: &Connection, limit: i32) -> Result<Vec<Track>> 
                 track_cover: None,
                 track_cover_path: row.get(14)?,
                 disc_number: row.get(15)?,
+                metadata_json: row.get(16)?,
+                date_added: row.get(17)?,
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -1283,4 +1417,364 @@ pub fn get_stats_summary(conn: &Connection) -> Result<StatsSummary> {
         top_artist,
         top_genre: None,
     })
+}
+
+// =============================================================================
+// SYNC QUEUE & METADATA OPERATIONS
+// =============================================================================
+
+/// A single pending change queued for sync to the server.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncQueueEntry {
+    pub id: i64,
+    pub entity_type: String,
+    pub entity_id: String,
+    pub operation: String,
+    pub payload: Option<String>,
+    pub created_at: Option<String>,
+    pub retry_count: i32,
+}
+
+/// Enqueue a change to the sync queue.
+pub fn enqueue_sync_change(
+    conn: &Connection,
+    entity_type: &str,
+    entity_id: &str,
+    operation: &str,
+    payload: Option<&str>,
+) -> Result<i64> {
+    conn.execute(
+        "INSERT INTO sync_queue (entity_type, entity_id, operation, payload)
+         VALUES (?1, ?2, ?3, ?4)",
+        params![entity_type, entity_id, operation, payload],
+    )?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// Get all pending sync queue entries, ordered by id.
+pub fn get_sync_queue(conn: &Connection) -> Result<Vec<SyncQueueEntry>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, entity_type, entity_id, operation, payload, created_at, retry_count
+         FROM sync_queue
+         ORDER BY id",
+    )?;
+
+    let entries = stmt
+        .query_map([], |row| {
+            Ok(SyncQueueEntry {
+                id: row.get(0)?,
+                entity_type: row.get(1)?,
+                entity_id: row.get(2)?,
+                operation: row.get(3)?,
+                payload: row.get(4)?,
+                created_at: row.get(5)?,
+                retry_count: row.get(6)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok(entries)
+}
+
+/// Get the count of pending sync queue entries.
+pub fn get_sync_queue_count(conn: &Connection) -> Result<i64> {
+    conn.query_row("SELECT COUNT(*) FROM sync_queue", [], |row| row.get(0))
+}
+
+/// Delete processed sync queue entries (by their IDs).
+pub fn delete_sync_queue_entries(conn: &Connection, ids: &[i64]) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let placeholders: Vec<String> = ids.iter().map(|_| "?".to_string()).collect();
+    let sql = format!(
+        "DELETE FROM sync_queue WHERE id IN ({})",
+        placeholders.join(",")
+    );
+    let params: Vec<&dyn rusqlite::types::ToSql> = ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::types::ToSql)
+        .collect();
+    conn.execute(&sql, params.as_slice())?;
+    Ok(())
+}
+
+/// Increment retry_count for failed sync queue entries.
+pub fn increment_sync_retry(conn: &Connection, ids: &[i64]) -> Result<()> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let placeholders: Vec<String> = ids.iter().map(|_| "?".to_string()).collect();
+    let sql = format!(
+        "UPDATE sync_queue SET retry_count = retry_count + 1 WHERE id IN ({})",
+        placeholders.join(",")
+    );
+    let params: Vec<&dyn rusqlite::types::ToSql> = ids
+        .iter()
+        .map(|id| id as &dyn rusqlite::types::ToSql)
+        .collect();
+    conn.execute(&sql, params.as_slice())?;
+    Ok(())
+}
+
+/// Clear the entire sync queue (e.g., on logout).
+pub fn clear_sync_queue(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM sync_queue", [])?;
+    Ok(())
+}
+
+// ─── Sync Metadata (key-value store) ────────────────────────────────────────
+
+/// Get a sync metadata value by key.
+pub fn get_sync_meta(conn: &Connection, key: &str) -> Result<Option<String>> {
+    conn.query_row(
+        "SELECT value FROM sync_metadata WHERE key = ?1",
+        params![key],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+/// Helper: check if user is logged in (for sync enqueuing)
+pub fn is_logged_in(conn: &Connection) -> bool {
+    get_sync_meta(conn, "access_token").ok().flatten().is_some()
+        && get_sync_meta(conn, "user_id").ok().flatten().is_some()
+}
+
+/// Set a sync metadata value (upsert).
+pub fn set_sync_meta(conn: &Connection, key: &str, value: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO sync_metadata (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        params![key, value],
+    )?;
+    Ok(())
+}
+
+/// Delete a sync metadata key.
+pub fn delete_sync_meta(conn: &Connection, key: &str) -> Result<()> {
+    conn.execute("DELETE FROM sync_metadata WHERE key = ?1", params![key])?;
+    Ok(())
+}
+
+/// Clear all sync metadata (e.g., on logout).
+pub fn clear_sync_metadata(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM sync_metadata", [])?;
+    Ok(())
+}
+
+// ─── Playlist sync helpers ──────────────────────────────────────────────────
+
+/// Get a playlist's server_id mapping.
+pub fn get_playlist_server_id(conn: &Connection, local_id: i64) -> Result<Option<String>> {
+    conn.query_row(
+        "SELECT server_id FROM playlists WHERE id = ?1",
+        params![local_id],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+/// Set a playlist's server_id mapping.
+pub fn set_playlist_server_id(conn: &Connection, local_id: i64, server_id: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE playlists SET server_id = ?1 WHERE id = ?2",
+        params![server_id, local_id],
+    )?;
+    Ok(())
+}
+
+/// Find a local playlist by its server_id.
+pub fn find_playlist_by_server_id(conn: &Connection, server_id: &str) -> Result<Option<i64>> {
+    conn.query_row(
+        "SELECT id FROM playlists WHERE server_id = ?1",
+        params![server_id],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+/// Soft-delete a playlist (mark as deleted without removing from DB).
+pub fn soft_delete_playlist(conn: &Connection, playlist_id: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE playlists SET deleted = 1 WHERE id = ?1",
+        params![playlist_id],
+    )?;
+    Ok(())
+}
+
+/// Get the content_hash for a track by ID (used to identify tracks across devices).
+pub fn get_track_content_hash(conn: &Connection, track_id: i64) -> Result<Option<String>> {
+    conn.query_row(
+        "SELECT content_hash FROM tracks WHERE id = ?1",
+        params![track_id],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+/// Get basic track info for sync payload (denormalized).
+pub fn get_track_sync_info(
+    conn: &Connection,
+    track_id: i64,
+) -> Result<
+    Option<(
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<i32>,
+        Option<String>,
+    )>,
+> {
+    conn.query_row(
+        "SELECT COALESCE(content_hash, ''), title, artist, album, duration, cover_url
+         FROM tracks WHERE id = ?1",
+        params![track_id],
+        |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+            ))
+        },
+    )
+    .optional()
+}
+
+// =============================================================================
+// SYNC ID MAPPING (local integer IDs ↔ server UUIDs)
+// =============================================================================
+
+/// Get or create a server UUID for a local entity ID.
+/// If a mapping already exists, returns it; otherwise generates a new UUID.
+pub fn get_or_create_server_id(
+    conn: &Connection,
+    local_id: &str,
+    entity_type: &str,
+) -> Result<String> {
+    // Check if mapping already exists
+    let existing: Option<String> = conn
+        .query_row(
+            "SELECT server_id FROM sync_id_map WHERE local_id = ?1 AND entity_type = ?2",
+            params![local_id, entity_type],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    if let Some(server_id) = existing {
+        return Ok(server_id);
+    }
+
+    // Generate new UUID
+    let server_id = uuid::Uuid::new_v4().to_string();
+    conn.execute(
+        "INSERT INTO sync_id_map (local_id, entity_type, server_id) VALUES (?1, ?2, ?3)",
+        params![local_id, entity_type, server_id],
+    )?;
+
+    Ok(server_id)
+}
+
+/// Get server ID for a local entity (returns None if not mapped).
+pub fn get_server_id(
+    conn: &Connection,
+    local_id: &str,
+    entity_type: &str,
+) -> Result<Option<String>> {
+    conn.query_row(
+        "SELECT server_id FROM sync_id_map WHERE local_id = ?1 AND entity_type = ?2",
+        params![local_id, entity_type],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+/// Get local ID from server ID.
+pub fn get_local_id_from_server(
+    conn: &Connection,
+    server_id: &str,
+    entity_type: &str,
+) -> Result<Option<String>> {
+    conn.query_row(
+        "SELECT local_id FROM sync_id_map WHERE server_id = ?1 AND entity_type = ?2",
+        params![server_id, entity_type],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+/// Store a server-to-local ID mapping (used when applying server changes).
+pub fn store_id_mapping(
+    conn: &Connection,
+    local_id: &str,
+    entity_type: &str,
+    server_id: &str,
+) -> Result<()> {
+    conn.execute(
+        "INSERT OR REPLACE INTO sync_id_map (local_id, entity_type, server_id) VALUES (?1, ?2, ?3)",
+        params![local_id, entity_type, server_id],
+    )?;
+    Ok(())
+}
+
+/// Clear all sync ID mappings (e.g., on logout).
+pub fn clear_sync_id_map(conn: &Connection) -> Result<()> {
+    conn.execute("DELETE FROM sync_id_map", [])?;
+    Ok(())
+}
+
+/// Helper: build a track hash for sync payloads (title|artist|album)
+pub fn build_track_hash_str(
+    title: Option<&str>,
+    artist: Option<&str>,
+    album: Option<&str>,
+) -> String {
+    format!(
+        "{}|{}|{}",
+        title.unwrap_or(""),
+        artist.unwrap_or(""),
+        album.unwrap_or("")
+    )
+}
+
+/// Enqueue a library track sync change.
+pub fn enqueue_track_sync_change(conn: &Connection, track: &Track, operation: &str) -> Result<()> {
+    if !is_logged_in(conn) {
+        return Ok(());
+    }
+
+    let track_hash = build_track_hash_str(
+        track.title.as_deref(),
+        track.artist.as_deref(),
+        track.album.as_deref(),
+    );
+
+    let payload = serde_json::json!({
+        "trackHash": track_hash,
+        "title": track.title,
+        "artist": track.artist,
+        "album": track.album,
+        "duration": track.duration,
+        "externalId": track.external_id,
+        "sourceType": track.source_type,
+        "coverUrl": track.cover_url,
+        "trackNumber": track.track_number,
+        "discNumber": track.disc_number,
+        "format": track.format,
+        "bitrate": track.bitrate,
+    });
+
+    let _ = enqueue_sync_change(
+        conn,
+        "library_track",
+        &format!("local_lib_{}", track.id),
+        operation,
+        Some(&payload.to_string()),
+    );
+
+    Ok(())
 }

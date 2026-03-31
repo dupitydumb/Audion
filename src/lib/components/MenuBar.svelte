@@ -10,6 +10,7 @@
   import { lyricsStore } from "$lib/stores/lyrics";
   import { addToast } from "$lib/stores/toast";
   import { confirm } from "$lib/stores/dialogs";
+  import { nativeAudioStop } from '$lib/services/native-audio';
 
   let openMenu: string | null = null;
   let isScanning = false;
@@ -271,6 +272,7 @@
           class="menu-item"
           on:click={() => {
             closeMenus();
+            nativeAudioStop();
             window.location.reload();
           }}
         >

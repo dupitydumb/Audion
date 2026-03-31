@@ -16,10 +16,10 @@ let originalWindowState: {
     y: number;
 } | null = null;
 
-// PIP mode dimensions - compact size
-const PIP_WIDTH = 360;
-const PIP_HEIGHT = 80;
-const PIP_MARGIN = 20;
+// PIP mode dimensions - floating card size
+const PIP_WIDTH = 400;
+const PIP_HEIGHT = 148;
+const PIP_MARGIN = 16;
 
 export function toggleFullScreen() {
     isFullScreen.update(v => !v);
@@ -66,6 +66,10 @@ export async function setMiniPlayer(enable: boolean) {
                 const pipX = screenWidth - PIP_WIDTH - PIP_MARGIN;
                 const pipY = screenHeight - PIP_HEIGHT - PIP_MARGIN;
 
+                // ⚠️ Set store BEFORE resizing so that isMobile stays false
+                // when the resize event fires and isMobileViewport turns true.
+                isMiniPlayer.set(true);
+
                 // Resize and reposition
                 await appWindow.setSize(new LogicalSize(PIP_WIDTH, PIP_HEIGHT));
                 await appWindow.setPosition(new LogicalPosition(pipX, pipY));
@@ -97,16 +101,21 @@ export async function setMiniPlayer(enable: boolean) {
                     await appWindow.setMinSize(new LogicalSize(320, 480));
                     await appWindow.setSize(new LogicalSize(1280, 800));
                 }
+
+                // Set store AFTER restoring size so the desktop layout
+                // renders into the correctly-sized window.
+                isMiniPlayer.set(false);
             }
         } catch (error) {
             console.error('Failed to toggle PIP mode:', error);
-            // If window operations fail, don't update store
+            // Roll back store on failure
+            isMiniPlayer.set(currentState);
             return;
         }
+    } else {
+        // Non-Tauri: just toggle the store
+        isMiniPlayer.set(enable);
     }
-
-    // Update the store state
-    isMiniPlayer.set(enable);
 }
 
 export async function toggleMiniPlayer() {
@@ -126,6 +135,7 @@ export interface ContextMenuItem {
     label: string;
     action?: () => void;
     danger?: boolean;
+    icon?: string;
     disabled?: boolean;
     submenu?: ContextMenuItem[];
     type?: 'item' | 'separator';

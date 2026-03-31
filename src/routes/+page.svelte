@@ -115,7 +115,7 @@
 
 <svelte:window on:contextmenu={handleContextMenu} />
 
-<div class="app-container">
+<div class="app-container" class:pip={$isMiniPlayer}>
   {#if notInTauri}
     <div class="loading-screen">
       <div class="logo">
@@ -144,7 +144,9 @@
       <p>Loading your music library...</p>
     </div>
   {:else}
-    {#if $isMobile}
+    {#if $isMiniPlayer}
+      <MiniPlayer />
+    {:else if $isMobile}
       <!-- ========= MOBILE LAYOUT (Spotify-like) ========= -->
       <div class="mobile-layout">
         <div class="mobile-content">
@@ -152,8 +154,8 @@
         </div>
       </div>
 
-      <!-- PlayerBar always rendered for audio element -->
-      <PlayerBar hidden={$isMiniPlayer} />
+      <!-- PlayerBar always rendered for audio element (never hidden on mobile) -->
+      <PlayerBar />
       <MobileBottomNav />
 
       <FullScreenPlayer />
@@ -170,22 +172,25 @@
         <FullScreenPlayer />
         <ContextMenu />
       </div>
-      <PlayerBar hidden={$isMiniPlayer} />
-      <MiniPlayer />
+      <PlayerBar />
       <KeyboardShortcuts />
       <KeyboardShortcutsHelp />
     {/if}
 
-    <PluginDrawer />
-    <ToastContainer />
-    {#if $pluginStore.pendingUpdates.length > 0}
-      <PluginUpdateDialog on:close={() => pluginStore.clearPendingUpdates()} />
-    {/if}
+    {#if !$isMiniPlayer}
+      <PluginDrawer />
+      <ToastContainer />
+      {#if $pluginStore.pendingUpdates.length > 0}
+        <PluginUpdateDialog
+          on:close={() => pluginStore.clearPendingUpdates()}
+        />
+      {/if}
 
-    <StatsWrapped
-      show={$isStatsWrappedOpen}
-      onClose={() => isStatsWrappedOpen.set(false)}
-    />
+      <StatsWrapped
+        show={$isStatsWrappedOpen}
+        onClose={() => isStatsWrappedOpen.set(false)}
+      />
+    {/if}
   {/if}
 </div>
 
@@ -197,6 +202,12 @@
     flex-direction: column;
     overflow: hidden;
     background-color: var(--bg-base);
+  }
+
+  /* In PIP mode the window is just 380×148px — make the container
+     transparent so only the MiniPlayer card (position:fixed inset:0) shows */
+  .app-container.pip {
+    background: transparent;
   }
 
   .loading-screen {

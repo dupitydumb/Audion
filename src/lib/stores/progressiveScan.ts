@@ -11,36 +11,85 @@ import {
     artistCount
 } from '$lib/stores/library';
 
+export type ScanMode = 'library' | 'folder';
+
 interface ScanState {
     isScanning: boolean;
+    mode: ScanMode;
+    /** Only populated during folder imports */
+    playlistId: number | null;
     progress: ScanProgress | null;
     startTime: number | null;
     errors: string[];
 }
 
+const INITIAL_STATE: ScanState = {
+    isScanning: false,
+    mode: 'library',
+    playlistId: null,
+    progress: null,
+    startTime: null,
+    errors: [],
+};
+
 function createProgressiveScanStore() {
-    const { subscribe, set, update } = writable<ScanState>({
-        isScanning: false,
-        progress: null,
-        startTime: null,
-        errors: [],
-    });
+    const { subscribe, set, update } = writable<ScanState>(INITIAL_STATE);
 
     // Cleanup functions
     let unlistenBatch: (() => void) | null = null;
     let unlistenComplete: (() => void) | null = null;
 
+    function cleanup() {
+        if (unlistenBatch) { unlistenBatch(); unlistenBatch = null; }
+        if (unlistenComplete) { unlistenComplete(); unlistenComplete = null; }
+    }
+
+    async function attachListeners(batchEvent: string, completeEvent: string) {
+        const funcStart = performance.now();
+
+        unlistenBatch = await listen<ScanBatchEvent>(batchEvent, (event) => {
+            const batchHandlerStart = performance.now();
+            const { tracks: batchTracks, progress } = event.payload;
+
+            console.log(
+                `[ProgressiveScan] Batch ${progress.current_batch}: ` +
+                `${batchTracks.length} tracks ` +
+                `(${progress.current}/${progress.total})`
+            );
+
+            const trackUpdateStart = performance.now();
+            tracks.update(existing => [...existing, ...batchTracks]);
+
+            trackCount.update(n => n + batchTracks.length);
+            update(state => ({ ...state, progress }));
+
+        });
+
+        unlistenComplete = await listen<ScanResult>(completeEvent, (event) => {
+            const result = event.payload;
+            console.log('[ProgressiveScan] Complete!', result);
+
+            update(state => ({
+                ...state,
+                isScanning: false,
+                errors: result.errors,
+            }));
+
+            cleanup();
+        });
+    }
+
     return {
         subscribe,
 
         /**
-         * Start progressive scan
-         * Sets up event listeners for batch updates
+         * Start a full library rescan.
+         * Clears existing library data and streams batches via
+         * 'scan-batch-ready' / 'scan-complete'.
          */
         async startScan(clearExisting: boolean = true) {
             const funcStart = performance.now();
-            console.log('[ProgressiveScan] Starting progressive scan...');
-            console.log(` [TIMING] startScan called at ${funcStart.toFixed(2)}ms`);
+            console.log('[ProgressiveScan] Starting library scan...');
 
             // Clear library if requested (for full rescan)
             if (clearExisting) {
@@ -52,83 +101,14 @@ function createProgressiveScanStore() {
                 trackCount.set(0);
                 albumCount.set(0);
                 artistCount.set(0);
-                console.log(` [TIMING] Library clear took ${(performance.now() - clearStart).toFixed(2)}ms`);
             }
 
-            // Reset scan state
-            const stateStart = performance.now();
-            set({
-                isScanning: true,
-                progress: null,
-                startTime: Date.now(),
-                errors: [],
-            });
-            console.log(` [TIMING] State reset took ${(performance.now() - stateStart).toFixed(2)}ms`);
+            set({ ...INITIAL_STATE, isScanning: true, mode: 'library', startTime: Date.now() });
 
-            // Listen for batch-ready events
             try {
-                const listenStart = performance.now();
-                console.log(` [TIMING] Setting up batch listener at ${listenStart.toFixed(2)}ms`);
-
-                unlistenBatch = await listen<ScanBatchEvent>('scan-batch-ready', (event) => {
-                    const batchHandlerStart = performance.now();
-                    const { tracks: batchTracks, progress } = event.payload;
-
-                    console.log(
-                        `[ProgressiveScan] Batch ${progress.current_batch}: ` +
-                        `${batchTracks.length} tracks ` +
-                        `(${progress.current}/${progress.total})`
-                    );
-                    console.log(` [TIMING] Batch ${progress.current_batch} received at ${batchHandlerStart.toFixed(2)}ms (${(batchHandlerStart - funcStart).toFixed(2)}ms since startScan)`);
-
-                    // Update library.tracks directly (append to existing)
-                    const trackUpdateStart = performance.now();
-                    tracks.update(existing => [...existing, ...batchTracks]);
-                    console.log(` [TIMING] Track update took ${(performance.now() - trackUpdateStart).toFixed(2)}ms`);
-
-                    // Update count
-                    trackCount.update(n => n + batchTracks.length);
-
-                    // Update progress
-                    update(state => ({
-                        ...state,
-                        progress,
-                    }));
-
-                    console.log(` [TIMING] Batch ${progress.current_batch} handler total: ${(performance.now() - batchHandlerStart).toFixed(2)}ms`);
-                });
-
-                console.log(` [TIMING] Batch listener setup took ${(performance.now() - listenStart).toFixed(2)}ms`);
-
-                // Listen for completion
-                const completeListenStart = performance.now();
-                console.log(` [TIMING] Setting up completion listener at ${completeListenStart.toFixed(2)}ms`);
-
-                unlistenComplete = await listen<ScanResult>('scan-complete', (event) => {
-                    const result = event.payload;
-
-                    console.log('[ProgressiveScan] Scan complete!', result);
-
-                    update(state => ({
-                        ...state,
-                        isScanning: false,
-                        errors: result.errors,
-                    }));
-
-                    // Cleanup listeners
-                    if (unlistenBatch) {
-                        unlistenBatch();
-                        unlistenBatch = null;
-                    }
-                    if (unlistenComplete) {
-                        unlistenComplete();
-                        unlistenComplete = null;
-                    }
-                });
-
+                await attachListeners('scan-batch-ready', 'scan-complete');
             } catch (error) {
-                console.error('[ProgressiveScan] Failed to set up event listeners:', error);
-
+                console.error('[ProgressiveScan] Failed to set up scan listeners:', error);
                 update(state => ({
                     ...state,
                     isScanning: false,
@@ -138,26 +118,42 @@ function createProgressiveScanStore() {
         },
 
         /**
-         * Reset scan state and cleanup
+         * Attach folder import listeners BEFORE the backend command is invoked.
+         * Call this, then invoke beginFolderImport, then call startImport(id).
+         */
+        async prepareImport() {
+            set({ ...INITIAL_STATE, isScanning: true, mode: 'folder', playlistId: null, startTime: Date.now() });
+            try {
+                await attachListeners('folder-import-batch-ready', 'folder-import-complete');
+            } catch (error) {
+                console.error('[ProgressiveScan] Failed to set up import listeners:', error);
+                update(state => ({
+                    ...state,
+                    isScanning: false,
+                    errors: [`Failed to set up import listeners: ${error}`],
+                }));
+                throw error; // re-throw so handleImportFolder's catch fires
+            }
+        },
+
+        /**
+         * Start a folder import for a specific playlist.
+         * Appends to the existing library (no clear) and streams batches via
+         * 'folder-import-batch-ready' / 'folder-import-complete'.
+         */
+        async startImport(playlistId: number) {
+            console.log('[ProgressiveScan] Starting folder import, playlist:', playlistId);
+            // listeners already attached by prepareImport. just update state
+            update(state => ({ ...state, playlistId }));
+        },
+
+        /**
+         * Reset scan state and remove all event listeners.
          */
         reset() {
             console.log('[ProgressiveScan] Resetting scan state');
-
-            if (unlistenBatch) {
-                unlistenBatch();
-                unlistenBatch = null;
-            }
-            if (unlistenComplete) {
-                unlistenComplete();
-                unlistenComplete = null;
-            }
-
-            set({
-                isScanning: false,
-                progress: null,
-                startTime: null,
-                errors: [],
-            });
+            cleanup();
+            set(INITIAL_STATE);
         },
     };
 }
@@ -169,89 +165,54 @@ export const progressiveScan = createProgressiveScanStore();
 /**
  * Current scan progress
  */
-export const scanProgress = derived(
-    progressiveScan,
-    $scan => $scan.progress
-);
+export const scanProgress = derived(progressiveScan, $s => $s.progress);
 
 /**
  * Scan completion percentage (0-100)
  */
-export const scanPercentage = derived(
-    progressiveScan,
-    $scan => {
-        if (!$scan.progress) return 0;
-        return ($scan.progress.current / $scan.progress.total) * 100;
-    }
-);
+export const scanPercentage = derived(progressiveScan, $s => {
+    if (!$s.progress) return 0;
+    return ($s.progress.current / $s.progress.total) * 100;
+});
 
 /**
  * Estimated time remaining
  */
-export const estimatedTimeRemaining = derived(
-    progressiveScan,
-    $scan => {
-        if (!$scan.progress) return null;
-        const ms = $scan.progress.estimated_time_remaining_ms;
-        const seconds = Math.ceil(ms / 1000);
-
-        if (seconds < 60) {
-            return `${seconds}s`;
-        }
-
-        const minutes = Math.floor(seconds / 60);
-        const remainingSeconds = seconds % 60;
-
-        if (minutes < 60) {
-            return `${minutes}m ${remainingSeconds}s`;
-        }
-
-        const hours = Math.floor(minutes / 60);
-        const remainingMinutes = minutes % 60;
-        return `${hours}h ${remainingMinutes}m`;
-    }
-);
+export const estimatedTimeRemaining = derived(progressiveScan, $s => {
+    if (!$s.progress) return null;
+    const ms = $s.progress.estimated_time_remaining_ms;
+    const seconds = Math.ceil(ms / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    if (minutes < 60) return `${minutes}m ${remainingSeconds}s`;
+    const hours = Math.floor(minutes / 60);
+    return `${hours}h ${minutes % 60}m`;
+});
 
 /**
  * Is currently scanning
  */
-export const isScanning = derived(
-    progressiveScan,
-    $scan => $scan.isScanning
-);
+export const isScanning = derived(progressiveScan, $s => $s.isScanning);
+
+export const scanMode = derived(progressiveScan, $s => $s.mode);
 
 /**
  * Elapsed time since scan started
  */
-export const elapsedTime = derived(
-    progressiveScan,
-    $scan => {
-        if (!$scan.startTime) return null;
-        const elapsed = Date.now() - $scan.startTime;
-        const seconds = Math.floor(elapsed / 1000);
-
-        if (seconds < 60) {
-            return `${seconds}s`;
-        }
-
-        const minutes = Math.floor(seconds / 60);
-        const remainingSeconds = seconds % 60;
-        return `${minutes}m ${remainingSeconds}s`;
-    }
-);
+export const elapsedTime = derived(progressiveScan, $s => {
+    if (!$s.startTime) return null;
+    const seconds = Math.floor((Date.now() - $s.startTime) / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes}m ${seconds % 60}s`;
+});
 
 /**
  * Number of tracks added during current scan
  */
-export const tracksAdded = derived(
-    progressiveScan,
-    $scan => $scan.progress?.tracks_added ?? 0
-);
+export const tracksAdded = derived(progressiveScan, $s => $s.progress?.tracks_added ?? 0);
+export const tracksUpdated = derived(progressiveScan, $s => $s.progress?.tracks_updated ?? 0);
 
-/**
- * Number of tracks updated during current scan
- */
-export const tracksUpdated = derived(
-    progressiveScan,
-    $scan => $scan.progress?.tracks_updated ?? 0
-);
+/** The playlist being imported into, or null during library scans. */
+export const importPlaylistId = derived(progressiveScan, $s => $s.playlistId);

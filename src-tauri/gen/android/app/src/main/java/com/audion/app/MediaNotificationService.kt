@@ -32,14 +32,16 @@ class MediaNotificationService : Service() {
         const val NOTIFICATION_ID = 1001
 
         const val ACTION_PLAY_PAUSE = "com.audion.app.PLAY_PAUSE"
-        const val ACTION_NEXT = "com.audion.app.NEXT"
         const val ACTION_PREVIOUS = "com.audion.app.PREVIOUS"
+        const val ACTION_NEXT = "com.audion.app.NEXT"
+        const val ACTION_LOVE = "com.audion.app.LOVE"
         const val ACTION_STOP = "com.audion.app.STOP"
 
         const val EXTRA_TITLE = "title"
         const val EXTRA_ARTIST = "artist"
         const val EXTRA_ALBUM = "album"
         const val EXTRA_IS_PLAYING = "is_playing"
+        const val EXTRA_IS_LOVED = "is_loved"
         const val EXTRA_ART_URL = "art_url"
         const val EXTRA_CURRENT_TIME = "current_time"
         const val EXTRA_DURATION = "duration"
@@ -66,11 +68,14 @@ class MediaNotificationService : Service() {
             ACTION_PLAY_PAUSE -> {
                 evaluateJs("window.__audionMediaAction?.('playPause')")
             }
+            ACTION_PREVIOUS -> {
+                evaluateJs("window.__audionMediaAction?.('previous')")
+            }
             ACTION_NEXT -> {
                 evaluateJs("window.__audionMediaAction?.('next')")
             }
-            ACTION_PREVIOUS -> {
-                evaluateJs("window.__audionMediaAction?.('previous')")
+            ACTION_LOVE -> {
+                evaluateJs("window.__audionMediaAction?.('love')")
             }
             ACTION_STOP -> {
                 evaluateJs("window.__audionMediaAction?.('stop')")
@@ -83,11 +88,12 @@ class MediaNotificationService : Service() {
                 val artist = intent?.getStringExtra(EXTRA_ARTIST) ?: "Unknown Artist"
                 val album = intent?.getStringExtra(EXTRA_ALBUM) ?: ""
                 val isPlaying = intent?.getBooleanExtra(EXTRA_IS_PLAYING, false) ?: false
+                val isLoved = intent?.getBooleanExtra(EXTRA_IS_LOVED, false) ?: false
                 val artUrl = intent?.getStringExtra(EXTRA_ART_URL)
                 val currentTime = intent?.getStringExtra(EXTRA_CURRENT_TIME) ?: null
                 val duration = intent?.getStringExtra(EXTRA_DURATION) ?: null
 
-                updateNotification(title, artist, album, isPlaying, artUrl, currentTime, duration)
+                updateNotification(title, artist, album, isPlaying, isLoved, artUrl, currentTime, duration)
             }
         }
 
@@ -125,11 +131,11 @@ class MediaNotificationService : Service() {
                 override fun onPause() {
                     evaluateJs("window.__audionMediaAction?.('playPause')")
                 }
-                override fun onSkipToNext() {
-                    evaluateJs("window.__audionMediaAction?.('next')")
-                }
                 override fun onSkipToPrevious() {
                     evaluateJs("window.__audionMediaAction?.('previous')")
+                }
+                override fun onSkipToNext() {
+                    evaluateJs("window.__audionMediaAction?.('next')")
                 }
                 override fun onStop() {
                     evaluateJs("window.__audionMediaAction?.('stop')")
@@ -146,6 +152,7 @@ class MediaNotificationService : Service() {
         artist: String,
         album: String,
         isPlaying: Boolean,
+        isLoved: Boolean,
         artUrl: String?,
         currentTime: String?,
         duration: String?
@@ -162,12 +169,12 @@ class MediaNotificationService : Service() {
 
         mediaSession?.setMetadata(metadataBuilder.build())
 
-        // Update playback state
+        // Update playback state with transport controls.
         val stateBuilder = PlaybackStateCompat.Builder()
             .setActions(
                 PlaybackStateCompat.ACTION_PLAY_PAUSE or
-                PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
                 PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+                PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
                 PlaybackStateCompat.ACTION_STOP
             )
             .setState(
@@ -188,7 +195,7 @@ class MediaNotificationService : Service() {
                         currentArtBitmap = bitmap
                         // Re-update with the loaded bitmap
                         withContext(Dispatchers.Main) {
-                            updateNotification(title, artist, album, isPlaying, null, currentTime, duration)
+                            updateNotification(title, artist, album, isPlaying, isLoved, null, currentTime, duration)
                         }
                     }
                 } catch (e: Exception) {
@@ -198,7 +205,7 @@ class MediaNotificationService : Service() {
         }
 
         // Build notification
-        val notification = buildNotification(title, artist, album, isPlaying, currentTime, duration)
+        val notification = buildNotification(title, artist, album, isPlaying, isLoved, currentTime, duration)
         startForeground(NOTIFICATION_ID, notification)
     }
 
@@ -207,6 +214,7 @@ class MediaNotificationService : Service() {
         artist: String,
         album: String,
         isPlaying: Boolean,
+        isLoved: Boolean,
         currentTime: String?,
         duration: String?
     ): Notification {
@@ -219,23 +227,28 @@ class MediaNotificationService : Service() {
         }
 
         // Action intents
-        val prevIntent = PendingIntent.getService(
+        val loveIntent = PendingIntent.getService(
             this, 0,
+            Intent(this, MediaNotificationService::class.java).apply { action = ACTION_LOVE },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val previousIntent = PendingIntent.getService(
+            this, 1,
             Intent(this, MediaNotificationService::class.java).apply { action = ACTION_PREVIOUS },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val playPauseIntent = PendingIntent.getService(
-            this, 1,
+            this, 2,
             Intent(this, MediaNotificationService::class.java).apply { action = ACTION_PLAY_PAUSE },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val nextIntent = PendingIntent.getService(
-            this, 2,
+            this, 3,
             Intent(this, MediaNotificationService::class.java).apply { action = ACTION_NEXT },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         val stopIntent = PendingIntent.getService(
-            this, 3,
+            this, 4,
             Intent(this, MediaNotificationService::class.java).apply { action = ACTION_STOP },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -255,17 +268,30 @@ class MediaNotificationService : Service() {
             .setOngoing(isPlaying)
             .setShowWhen(false)
             .setPriority(NotificationCompat.PRIORITY_LOW)
-            .addAction(R.drawable.ic_skip_previous, "Previous", prevIntent)
+            .addAction(
+                R.drawable.ic_skip_previous,
+                "Previous",
+                previousIntent
+            )
+            .addAction(
+                if (isLoved) R.drawable.ic_heart_filled else R.drawable.ic_heart,
+                "Love",
+                loveIntent
+            )
             .addAction(
                 if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play,
                 if (isPlaying) "Pause" else "Play",
                 playPauseIntent
             )
-            .addAction(R.drawable.ic_skip_next, "Next", nextIntent)
+            .addAction(
+                R.drawable.ic_skip_next,
+                "Next",
+                nextIntent
+            )
             .setStyle(
                 MediaStyle()
                     .setMediaSession(mediaSession?.sessionToken)
-                    .setShowActionsInCompactView(0, 1, 2) // prev, play/pause, next
+                    .setShowActionsInCompactView(0, 2, 3) // previous, play/pause, next
                     .setShowCancelButton(true)
                     .setCancelButtonIntent(stopIntent)
             )

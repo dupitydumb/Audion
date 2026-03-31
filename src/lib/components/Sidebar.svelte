@@ -7,7 +7,10 @@
         albumCount,
         artistCount,
         loadAlbumsAndArtists,
+        getTrackAlbumCover,
+        getAlbumCoverFromTracks,
     } from "$lib/stores/library";
+    import { getAlbum } from "$lib/api/tauri";
     import {
         currentView,
         goToHome,
@@ -19,6 +22,8 @@
         goToPlugins,
         goToSettings,
         goToLikedSongs,
+        goToListenBrainz,
+        goToDiscover,
     } from "$lib/stores/view";
     import {
         isSettingsOpen as isSettingsOpenUI,
@@ -37,7 +42,7 @@
         renamePlaylist,
     } from "$lib/api/tauri";
     import { progressiveScan } from "$lib/stores/progressiveScan";
-    import { confirm } from "$lib/stores/dialogs";
+    import { confirm, prompt } from "$lib/stores/dialogs";
     import {
         playTracks,
         addToQueue,
@@ -50,8 +55,16 @@
 
     import { updates } from "$lib/stores/updates";
     import UpdatePopup from "./UpdatePopup.svelte";
+    import SyncStatus from "./SyncStatus.svelte";
 
     import { currentPlaylistId } from "$lib/stores/player";
+    import {
+        pinnedItems,
+        pinItem,
+        unpinItem,
+        isPinned,
+    } from "$lib/stores/pinned";
+    import { setCustomArtwork } from "$lib/stores/customArtwork";
 
     const dispatch = createEventDispatcher();
 
@@ -216,6 +229,7 @@
 
     function handlePlaylistContextMenu(e: MouseEvent, playlist: Playlist) {
         e.preventDefault();
+        const pinned = isPinned("playlist", playlist.id, $pinnedItems);
         contextMenu.set({
             visible: true,
             x: e.clientX,
@@ -229,14 +243,25 @@
                     label: "Add to Queue",
                     action: () => handleAddToQueue(playlist.id),
                 },
+                {
+                    label: pinned ? "Unpin from Top" : "Pin to Top",
+                    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2L4.5 9L9 9L9 22L15 22L15 9L19.5 9L12 2Z"/></svg>`,
+                    action: () => {
+                        if (pinned) {
+                            unpinItem("playlist", playlist.id);
+                        } else {
+                            pinItem("playlist", playlist.id);
+                        }
+                    },
+                },
                 { type: "separator" },
                 {
                     label: "Rename",
                     action: async () => {
-                        const newName = prompt(
-                            "Enter new name:",
-                            playlist.name,
-                        );
+                        const newName = await prompt("Enter new name:", {
+                            initialValue: playlist.name,
+                            title: "Rename Playlist",
+                        });
                         if (
                             newName &&
                             newName.trim() &&
@@ -288,6 +313,15 @@
         });
     }
 
+    // Playlist pinning logic
+    $: sortedPlaylists = [...$playlists].sort((a, b) => {
+        const aPinned = isPinned("playlist", a.id, $pinnedItems);
+        const bPinned = isPinned("playlist", b.id, $pinnedItems);
+        if (aPinned && !bPinned) return -1;
+        if (!aPinned && bPinned) return 1;
+        return 0;
+    });
+
     function isActive(viewType: string): boolean {
         return (
             $currentView.type === viewType ||
@@ -317,6 +351,7 @@
         <div class="logo">
             <img src="/logo.png" alt="Audion Logo" width="32" height="32" />
             <span class="logo-text">Audion</span>
+            <SyncStatus />
             {#if $updates.hasUpdate}
                 <div
                     class="update-badge"
@@ -377,6 +412,50 @@
                         <span class="nav-count">{$likedCount}</span>
                     </button>
                 </li>
+                <li>
+                    <button
+                        class="nav-item"
+                        class:active={isActive("discover")}
+                        on:click={() => navigateAndClose(goToDiscover)}
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            width="24"
+                            height="24"
+                        >
+                            <path
+                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"
+                            />
+                        </svg>
+                        <span>Discover</span>
+                    </button>
+                </li>
+                {#if $appSettings.listenBrainzEnabled && $appSettings.listenBrainzTokenSet}
+                    <li>
+                        <button
+                            class="nav-item"
+                            class:active={isActive("listenbrainz")}
+                            on:click={() => navigateAndClose(goToListenBrainz)}
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                width="24"
+                                height="24"
+                            >
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <line x1="21" y1="21" x2="16.65" y2="16.65"
+                                ></line>
+                                <line x1="11" y1="8" x2="11" y2="14"></line>
+                                <line x1="8" y1="11" x2="14" y2="11"></line>
+                            </svg>
+                            <span>Recommendations</span>
+                        </button>
+                    </li>
+                {/if}
                 <li>
                     <button
                         class="nav-item"
@@ -458,14 +537,14 @@
                             height="24"
                         >
                             <path
-                                d="M19 9H5V7h14v2zm0 4H5v-2h14v2zm-8 4H5v-2h6v2zm8-2v2h-2v2h-2v-2h-2v-2h2v-2h2v2h2z"
+                                d="M19 9H5V7h14v2zm0 4H5v-2h14v2zm-8 4H5v-2h6v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"
                             />
                         </svg>
                         <span>All Playlists</span>
                         <span class="nav-count">{$playlists.length}</span>
                     </button>
                 </li>
-                {#each $playlists as playlist (playlist.id)}
+                {#each sortedPlaylists as playlist (playlist.id)}
                     <li>
                         <button
                             class="nav-item playlist-item"
@@ -481,7 +560,7 @@
                             )}
                             on:click={() =>
                                 navigateAndClose(() =>
-                                    goToPlaylistDetail(playlist.id),
+                                    goToPlaylistDetail(playlist.id, playlist.name),
                                 )}
                             on:contextmenu={(e) =>
                                 handlePlaylistContextMenu(e, playlist)}
@@ -504,7 +583,26 @@
                                     />
                                 </svg>
                             {/if}
-                            <span class="truncate">{playlist.name}</span>
+                            <span class="playlist-name">
+                                {playlist.name}
+                            </span>
+                            {#if isPinned("playlist", playlist.id, $pinnedItems)}
+                                <span
+                                    class="pinned-indicator-sidebar"
+                                    title="Pinned to top"
+                                >
+                                    <svg
+                                        viewBox="0 0 24 24"
+                                        fill="currentColor"
+                                        width="12"
+                                        height="12"
+                                    >
+                                        <path
+                                            d="M16 9V4l1 0V2H7v2l1 0v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"
+                                        />
+                                    </svg>
+                                </span>
+                            {/if}
                             {#if playlistTrackCounts.has(playlist.id)}
                                 <span class="nav-count"
                                     >{playlistTrackCounts.get(
@@ -893,10 +991,24 @@
         }
     }
 
-    .truncate {
+    .playlist-name {
+        flex: 1;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+        font-size: 0.8125rem;
+    }
+
+    .pinned-indicator-sidebar {
+        color: var(--accent-primary);
+        display: flex;
+        align-items: center;
+        margin-left: var(--spacing-xs);
+        opacity: 0.8;
+    }
+
+    .playlist-item:hover .pinned-indicator-sidebar {
+        opacity: 1;
     }
 
     /* Mobile: sidebar fills its container (the drawer) */

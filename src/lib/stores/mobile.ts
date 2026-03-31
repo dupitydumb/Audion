@@ -1,4 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
+import { isMiniPlayer } from '$lib/stores/ui';
 
 /**
  * Mobile detection and responsive state management.
@@ -16,10 +17,12 @@ export const isMobileSidebarOpen = writable(false);
 // Platform detection (set once on init)
 export const isMobilePlatform = writable(false);
 
-// Combined: treat as mobile if viewport is small OR platform is mobile
+// Combined: treat as mobile if viewport is small OR platform is mobile.
+// Exception: never switch to mobile layout while PIP mini player is active
+// (Tauri resizes the window to ~360px for PIP, which would trigger the breakpoint).
 export const isMobile = derived(
-    [isMobileViewport, isMobilePlatform],
-    ([$viewport, $platform]) => $viewport || $platform
+    [isMobileViewport, isMobilePlatform, isMiniPlayer],
+    ([$viewport, $platform, $pip]) => !$pip && ($viewport || $platform)
 );
 
 let mediaQuery: MediaQueryList | null = null;

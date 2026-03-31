@@ -130,9 +130,9 @@
         goToArtistDetail(artistName);
     }
 
-    function handlePlaylistClick(playlistId: number) {
+    function handlePlaylistClick(playlistId: number, name: string) {
         clearSearch();
-        goToPlaylistDetail(playlistId);
+        goToPlaylistDetail(playlistId, name);
     }
 
     function getArtistInitial(name: string): string {
@@ -511,7 +511,7 @@
                                 {@const coverSrc = getPlaylistCover(playlist)}
                                 <button
                                     class="playlist-card"
-                                    on:click={() => handlePlaylistClick(playlist.id)}
+                                    on:click={() => handlePlaylistClick(playlist.id, playlist.name)}
                                 >
                                     <div class="playlist-cover">
                                         <img

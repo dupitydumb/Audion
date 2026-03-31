@@ -70,10 +70,13 @@ export interface EqSettings {
 /**
  * Play an audio file using the native backend
  * @param path - Absolute path to the audio file
+ * @param replayGainDb - Pre-scanned replay gain value from the database (dB).
+ *                       Pass null to fall back to reading the tag from the file.
+ *                       Once DB integration is complete, always pass track.replay_gain_db.
  */
-export async function nativeAudioPlay(path: string): Promise<void> {
+export async function nativeAudioPlay(path: string, replayGainDb: number | null = null): Promise<void> {
     console.log('[AUDIO] Native play:', path);
-    await invoke('audio_play', { path });
+    await invoke('audio_play', { path, replayGainDb });
 }
 
 /**
@@ -119,10 +122,42 @@ export async function nativeAudioGetState(): Promise<NativePlaybackState> {
 }
 
 /**
- * Check if the current track has finished playing
+ * Enable or disable repeat-one mode.
+ * When enabled, the backend loops the current track at EOF without firing TrackFinished.
  */
-export async function nativeAudioIsFinished(): Promise<boolean> {
-    return await invoke('audio_is_finished');
+export async function nativeAudioSetRepeatOne(enabled: boolean): Promise<void> {
+    await invoke('audio_set_repeat_one', { enabled });
+}
+
+// =============================================================================
+// AUDIO EVENTS
+// =============================================================================
+
+export type AudioEventType =
+    | { type: 'Idle' }
+    | { type: 'TrackFinished' }
+    | { type: 'TrackAdvanced'; data: { new_path: string } }
+    | { type: 'StateChanged'; data: { position: number } };
+
+/**
+ * Poll for the next audio event (one per call, FIFO).
+ *
+ *   Idle           — nothing happened this cycle
+ *   TrackFinished  — track ended, no next buffered. Call nextTrack() normally.
+ *   TrackAdvanced  — gapless: audio already on new track. Advance UI state only,
+ *                    do NOT call nativeAudioPlay().
+ */
+export async function nativeAudioPollEvent(): Promise<AudioEventType> {
+    return await invoke('audio_poll_event');
+}
+
+/**
+ * Preload the next track for gapless playback.
+ * The backend will decode and buffer it so the transition is seamless.
+ * @param replayGainDb — pass DB value if available, null otherwise.
+ */
+export async function nativeAudioPreload(path: string, replayGainDb: number | null = null): Promise<void> {
+    await invoke('audio_preload', { path, replayGainDb });
 }
 
 /**

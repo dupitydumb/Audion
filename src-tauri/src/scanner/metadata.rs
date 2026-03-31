@@ -1,6 +1,7 @@
 // Audio metadata extraction using lofty
 use lofty::prelude::*;
 use lofty::probe::Probe;
+use lofty::tag::Tag as LoftyTag;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
@@ -131,6 +132,14 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
                 Some(duration),
             ));
 
+            // Extract MusicBrainz Recording ID for ListenBrainz matching
+            let musicbrainz_recording_id = tag
+                .get_string(&ItemKey::MusicBrainzTrackId)
+                .map(|s| s.to_string());
+
+            // Extract all available metadata keys into JSON
+            let metadata_json = collect_all_metadata(tag);
+
             Some(TrackInsert {
                 path: path.to_string_lossy().to_string(),
                 title,
@@ -148,6 +157,8 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
                 external_id: None,
                 content_hash,
                 local_src: None,
+                musicbrainz_recording_id,
+                metadata_json,
             })
         }
         None => {
@@ -168,6 +179,48 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
     }
 }
 
+fn collect_all_metadata(tag: &LoftyTag) -> Option<String> {
+    use serde_json::{Map, Value};
+    let mut metadata = Map::new();
+
+    // Standard Lofty keys to extract
+    let keys = [
+        ItemKey::TrackTitle,
+        ItemKey::TrackArtist,
+        ItemKey::AlbumTitle,
+        ItemKey::AlbumArtist,
+        ItemKey::Composer,
+        ItemKey::Genre,
+        ItemKey::TrackNumber,
+        ItemKey::TrackTotal,
+        ItemKey::DiscNumber,
+        ItemKey::DiscTotal,
+        ItemKey::Year,
+        ItemKey::Bpm,
+        ItemKey::Isrc,
+        ItemKey::Label,
+        ItemKey::CatalogNumber,
+        ItemKey::Comment,
+        ItemKey::Lyrics,
+        ItemKey::Conductor,
+        ItemKey::Language,
+        ItemKey::Publisher,
+        ItemKey::EncoderSettings,
+    ];
+
+    for key in keys {
+        if let Some(val) = tag.get_string(&key) {
+            metadata.insert(format!("{:?}", key), Value::String(val.to_string()));
+        }
+    }
+
+    if metadata.is_empty() {
+        return None;
+    }
+
+    serde_json::to_string(&metadata).ok()
+}
+
 fn create_fallback_metadata(path: &Path) -> TrackInsert {
     TrackInsert {
         path: path.to_string_lossy().to_string(),
@@ -186,6 +239,8 @@ fn create_fallback_metadata(path: &Path) -> TrackInsert {
         external_id: None,
         content_hash: None, // Will be set later with duration
         local_src: None,
+        musicbrainz_recording_id: None,
+        metadata_json: None,
     }
 }
 
@@ -252,8 +307,10 @@ fn extract_flac_metadata_fallback(path: &Path, _duration_hint: Option<i32>) -> O
                 source_type: None,
                 cover_url: None,
                 external_id: None,
-                content_hash,
+                content_hash: content_hash,
                 local_src: None,
+                musicbrainz_recording_id: None,
+                metadata_json: None,
             })
         }
         Err(e) => {
