@@ -1,6 +1,6 @@
 [package]
 name = "audion"
-version = "1.2.6"
+version = "1.2.7"
 description = "A local Spotify-style music player"
 authors = ["AvKov"]
 edition = "2021"

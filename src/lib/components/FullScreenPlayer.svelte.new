@@ -1,0 +1,301 @@
+<script lang="ts">
+  import { fade, fly } from "svelte/transition";
+  import { derived } from "svelte/store";
+  import {
+    isFullScreen,
+    toggleFullScreen,
+    isQueueVisible,
+    toggleQueue,
+    contextMenu,
+  } from "$lib/stores/ui";
+  import {
+    currentTrack,
+    isPlaying,
+    togglePlay,
+    nextTrack,
+    previousTrack,
+    progress,
+    currentTime,
+    duration,
+    seek,
+    shuffle,
+    repeat,
+    toggleShuffle,
+    cycleRepeat,
+    volume,
+    addToQueue,
+  } from "$lib/stores/player";
+  import { isMobile } from "$lib/stores/mobile";
+  import { lyricsVisible, toggleLyrics } from "$lib/stores/lyrics";
+  import { goToArtistDetail } from "$lib/stores/view";
+  import { lyricsData, activeLine } from "$lib/stores/lyrics";
+  // Only keep the used imports
+  import {
+    getTrackCoverSrc,
+    formatDuration,
+    addTrackToPlaylist,
+    removeTrackFromPlaylist,
+    deleteTrack,
+  } from "$lib/api/tauri";
+  import { onMount, tick } from "svelte";
+  import { likedTrackIds, toggleLike } from "$lib/stores/liked";
+  import { playlists, loadLibrary } from "$lib/stores/library";
+  import { confirm } from "$lib/stores/dialogs";
+  import { addToast } from "$lib/stores/toast";
+  import QueuePanel from "./QueuePanel.svelte";
+
+  let albumArt: string | null = null;
+  let lyricsContainer: HTMLDivElement;
+  let isSeeking = false;
+
+  // Combined reactive state for word-by-word sync
+  const wordSyncState = derived(
+    [lyricsData, currentTime, activeLine],
+    ([$lyrics, $time, $activeLineIdx]) => {
+      // Guard against missing lyrics data
+      if (!$lyrics?.lines || $activeLineIdx < 0) {
+        return { activeWordIdx: -1, progress: 0 };
+      }
+
+      const line = $lyrics.lines[$activeLineIdx];
+      if (!line?.words || line.words.length === 0) {
+        return { activeWordIdx: -1, progress: 0 };
+      }
+
+      // Find the word that's currently active
+      let activeWordIdx = -1;
+      for (let i = 0; i < line.words.length; i++) {
+        const word = line.words[i];
+        if ($time >= word.time && $time <= word.endTime) {
+          activeWordIdx = i;
+          break;
+        }
+        if ($time >= word.time) {
+          const nextWord = line.words[i + 1];
+          if (!nextWord || $time < nextWord.time) {
+            activeWordIdx = i;
+          }
+        }
+      }
+
+      // Calculate progress for active word
+      let progress = 0;
+      if (activeWordIdx >= 0) {
+        const word = line.words[activeWordIdx];
+        const wordStart = word.time;
+        const wordEnd = word.endTime;
+        const duration = wordEnd - wordStart;
+
+        if (duration > 0) {
+          const elapsed = $time - wordStart;
+          progress = Math.min(100, Math.max(0, (elapsed / duration) * 100));
+        } else {
+          progress = 100;
+        }
+      }
+
+      return { activeWordIdx, progress };
+    },
+  );
+
+  // Get word state: 'past', 'highlighted', or 'future'
+  function getWordState(
+    lineIdx: number,
+    wordIdx: number,
+    currentActiveLine: number,
+    currentActiveWord: number,
+  ): string {
+    if (lineIdx < currentActiveLine) return "past";
+    if (lineIdx > currentActiveLine) return "future";
+    if (wordIdx < currentActiveWord) return "past";
+    if (wordIdx === currentActiveWord) return "highlighted";
+    return "future";
+  }
+
+  // Load album art
+  $: if ($currentTrack) {
+    const trackCover = getTrackCoverSrc($currentTrack);
+    albumArt = trackCover || null;
+  } else {
+    albumArt = null;
+  }
+
+  // Apple Music-style smooth scroll with custom easing
+  let scrollAnimationId: number | null = null;
+  let prevActiveLine = -1;
+
+  $: if (
+    $activeLine !== -1 &&
+    lyricsContainer &&
+    $activeLine !== prevActiveLine
+  ) {
+    prevActiveLine = $activeLine;
+    scrollToCurrentLine();
+  }
+
+  function easeOutExpo(t: number): number {
+    return t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+  }
+
+  async function scrollToCurrentLine() {
+    await tick();
+    if (!lyricsContainer) return;
+
+    const activeEl = lyricsContainer.querySelector(
+      ".lyric-line.active",
+    ) as HTMLElement;
+    if (!activeEl) return;
+
+    if (scrollAnimationId) {
+      cancelAnimationFrame(scrollAnimationId);
+    }
+
+    const containerRect = lyricsContainer.getBoundingClientRect();
+    const activeRect = activeEl.getBoundingClientRect();
+    const containerCenter = containerRect.height / 2;
+    const activeCenter =
+      activeRect.top - containerRect.top + activeRect.height / 2;
+    const targetScroll =
+      lyricsContainer.scrollTop + (activeCenter - containerCenter);
+
+    const startScroll = lyricsContainer.scrollTop;
+    const distance = targetScroll - startScroll;
+    const duration = 600;
+    let startTime: number | null = null;
+
+    function step(timestamp: number) {
+      if (!startTime) startTime = timestamp;
+      const elapsed = timestamp - startTime;
+      const prog = Math.min(elapsed / duration, 1);
+      const eased = easeOutExpo(prog);
+
+      lyricsContainer.scrollTop = startScroll + distance * eased;
+
+      if (prog < 1) {
+        scrollAnimationId = requestAnimationFrame(step);
+      } else {
+        scrollAnimationId = null;
+      }
+    }
+
+    scrollAnimationId = requestAnimationFrame(step);
+  }
+
+  // --- Unified pointer-based seeking ---
+  function handleSeekPointerDown(e: PointerEvent) {
+    if (e.button !== 0) return; // primary button only
+    isSeeking = true;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    handleSeekPointerMove(e);
+  }
+
+  function handleSeekPointerMove(e: PointerEvent) {
+    if (!isSeeking) return;
+    const bar = e.currentTarget as HTMLDivElement;
+    const rect = bar.getBoundingClientRect();
+    const pos = (e.clientX - rect.left) / rect.width;
+    seek(Math.max(0, Math.min(1, pos)));
+  }
+
+  function handleSeekPointerUp(e: PointerEvent) {
+    if (isSeeking) {
+      isSeeking = false;
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    }
+  }
+
+  // --- Tab Management ---
+  let activeTab: "lyrics" | "queue" = "lyrics";
+
+  // --- Volume Management ---
+  function handleVolumeChange(e: Event) {
+    const val = parseFloat((e.target as HTMLInputElement).value);
+    volume.set(val);
+  }
+
+  // --- Context Menu Management ---
+  async function showTrackMenu(e: MouseEvent | PointerEvent, onlyAddToPlaylist = false) {
+    const track = $currentTrack;
+    if (!track) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const playlistItems = $playlists.map((playlist) => ({
+      label: playlist.name,
+      action: async () => {
+        try {
+          await addTrackToPlaylist(playlist.id, track.id);
+          addToast(`Added to ${playlist.name}`, "success");
+        } catch (error) {
+          console.error("Failed to add track to playlist:", error);
+          addToast("Failed to add to playlist", "error");
+        }
+      },
+    }));
+
+    const menuItems: any[] = [
+      {
+        label: "Add to Queue",
+        action: () => {
+          addToQueue([track]);
+          addToast("Added to queue", "success");
+        },
+      },
+      { type: "separator" },
+      {
+        label: "Add to Playlist",
+        submenu:
+          playlistItems.length > 0
+            ? playlistItems
+            : [
+                {
+                  label: "No playlists",
+                  action: () => {},
+                  disabled: true,
+                },
+              ],
+      },
+      { type: "separator" },
+      {
+        label: "Delete from Library",
+        danger: true,
+        action: async () => {
+          const confirmed = await confirm(
+            `Are you sure you want to delete "${track.title}" from your library?`,
+            {
+              title: "Delete Track",
+              confirmLabel: "Delete",
+              danger: true,
+            },
+          );
+
+          if (!confirmed) return;
+
+          try {
+            await deleteTrack(track.id);
+            await loadLibrary();
+            toggleFullScreen(); // Close player if track is deleted
+          } catch (error) {
+            console.error("Failed to delete track:", error);
+          }
+        },
+      },
+    ];
+
+    contextMenu.set({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      items: onlyAddToPlaylist ? [{
+        label: "Add to Playlist",
+        submenu: playlistItems.length > 0 ? playlistItems : [{ label: "No playlists", action: () => {}, disabled: true }]
+      }] : menuItems,
+    });
+  }
+
+  onMount(() => {
+    // No global listeners needed; pointer events are attached to the element.
+    return () => {};
+  });
+</script>

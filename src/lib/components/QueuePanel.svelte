@@ -19,6 +19,9 @@
     import { albums } from "$lib/stores/library";
     import { formatDuration, getAlbumArtSrc, getTrackCoverSrc, getAlbumCoverSrc } from "$lib/api/tauri";
     import { onMount, onDestroy } from "svelte";
+    
+    export let hideheader: boolean = false;
+    export let forceVisible: boolean = false;
 
     import type { Track } from "$lib/api/tauri";
 
@@ -309,8 +312,9 @@
     }
 </script>
 
-{#if $isQueueVisible}
+{#if $isQueueVisible || forceVisible}
     <aside class="queue-panel" class:mobile={$isMobile} transition:fly={{ x: $isMobile ? 0 : 300, y: $isMobile ? 100 : 0, duration: 300 }}>
+    {#if !hideheader}
         <header class="queue-header">
             <h3>Queue</h3>
             <div class="header-actions">
@@ -342,6 +346,7 @@
                 </button>
             </div>
         </header>
+    {/if}
 
         <div class="queue-content">
             {#if $currentTrack}

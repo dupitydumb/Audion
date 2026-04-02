@@ -1,6 +1,6 @@
 # Release Notes - Audion
 
-## [v1.2.6] - 2026-03-31
+## [v1.2.7] - 2026-03-31
 
 ### 🚀 New Features
 - **Smart Playlists**: Added support for Folder-based playlists.
@@ -40,4 +40,4 @@
   - Various bugfixes and code cleanup.
 
 ---
-*Based on commits from v1.2.6 to current master.*
+*Based on commits from v1.2.7 to current master.*
