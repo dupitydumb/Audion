@@ -178,17 +178,28 @@ export async function initSync(): Promise<void> {
 
     // ─── Automatic Sync Trigger ──────────────────────────────────────────
     // Watch for pending changes and online status. Trigger sync after a short delay.
+    // Enforces a minimum 30-second cooldown between auto-syncs to avoid hammering
+    // the server (and burning D1 read rows) when the store updates rapidly.
     let syncTimeout: ReturnType<typeof setTimeout> | null = null;
+    let lastAutoSyncAt = 0;
+    const AUTO_SYNC_COOLDOWN_MS = 30_000;
 
     syncStatus.subscribe(($status) => {
-        const canSync = $status.pending_changes > 0 && !$status.is_syncing && get(isOnline) && get(isLoggedIn);
+        const now = Date.now();
+        const canSync =
+            $status.pending_changes > 0 &&
+            !$status.is_syncing &&
+            get(isOnline) &&
+            get(isLoggedIn) &&
+            now - lastAutoSyncAt >= AUTO_SYNC_COOLDOWN_MS;
 
         if (canSync) {
             if (syncTimeout) clearTimeout(syncTimeout);
             syncTimeout = setTimeout(() => {
+                lastAutoSyncAt = Date.now();
                 triggerSync();
             }, 2000); // 2 second debounce
-        } else if (syncTimeout) {
+        } else if (syncTimeout && ($status.is_syncing || $status.pending_changes === 0)) {
             clearTimeout(syncTimeout);
             syncTimeout = null;
         }
@@ -199,6 +210,7 @@ export async function initSync(): Promise<void> {
         if ($online) {
             const $status = get(syncStatus);
             if ($status.pending_changes > 0 && !$status.is_syncing && get(isLoggedIn)) {
+                lastAutoSyncAt = Date.now();
                 triggerSync();
             }
         }

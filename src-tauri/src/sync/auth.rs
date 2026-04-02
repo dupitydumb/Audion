@@ -9,18 +9,32 @@ use base64::Engine;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use std::sync::OnceLock;
 use tokio::time::sleep;
 
-/// Build a reusable HTTP client with proper timeouts and TLS config.
+static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
+
+/// Get or initialize a shared HTTP client with proper timeouts and TLS config.
 /// This avoids the overhead of a fresh TLS handshake for every single request
-/// and prevents connection hangs on Windows.
+/// and prevents connection hangs on Windows by reusing the connection pool.
 fn http_client() -> Result<Client, String> {
-    Client::builder()
+    if let Some(client) = HTTP_CLIENT.get() {
+        return Ok(client.clone());
+    }
+
+    let client = Client::builder()
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(30))
         .pool_max_idle_per_host(2)
         .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    // Try to set the global client. If another thread already set it, 
+    // set() returns an error and we just use the existing one.
+    match HTTP_CLIENT.set(client.clone()) {
+        Ok(_) => Ok(client),
+        Err(_) => Ok(HTTP_CLIENT.get().unwrap().clone()),
+    }
 }
 
 fn format_reqwest_error(context: &str, url: &str, e: &reqwest::Error) -> String {
