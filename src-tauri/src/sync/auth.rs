@@ -49,7 +49,8 @@ const META_USER_NAME: &str = "user_name";
 const META_USER_AVATAR: &str = "user_avatar";
 const META_DEVICE_ID: &str = "device_id";
 const META_SYNC_CURSOR: &str = "sync_cursor";
-const META_API_KEY: &str = "api_key";
+const META_IS_SUPPORTER: &str = "is_supporter";
+const META_SUPPORTER_UNTIL: &str = "supporter_until";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -60,6 +61,9 @@ pub struct AuthState {
     pub email: Option<String>,
     pub name: Option<String>,
     pub avatar_url: Option<String>,
+    pub is_supporter: bool,
+    /// Unix timestamp in milliseconds. None = no expiry (active subscription).
+    pub supporter_until: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -74,6 +78,11 @@ pub struct UserProfileInner {
     pub name: Option<String>,
     #[serde(rename = "avatarUrl")]
     pub avatar_url: Option<String>,
+    #[serde(rename = "isSupporter", default)]
+    pub is_supporter: bool,
+    /// ISO 8601 datetime string (Drizzle serializes timestamp columns as Date → string in JSON)
+    #[serde(rename = "supporterUntil")]
+    pub supporter_until: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -89,6 +98,11 @@ struct JwtClaims {
     picture: Option<String>,
     #[serde(rename = "avatarUrl")]
     avatar_url: Option<String>,
+    #[serde(rename = "is_supporter", default)]
+    is_supporter: bool,
+    /// Unix timestamp in milliseconds. None = no expiry.
+    #[serde(rename = "supporter_until")]
+    supporter_until: Option<i64>,
 }
 
 fn auth_state_from_access_token(db: &Database, access_token: &str) -> Result<AuthState, String> {
@@ -119,6 +133,8 @@ fn auth_state_from_access_token(db: &Database, access_token: &str) -> Result<Aut
         &email,
         claims.name.as_deref(),
         avatar.as_deref(),
+        claims.is_supporter,
+        claims.supporter_until,
     )?;
 
     Ok(AuthState {
@@ -127,6 +143,8 @@ fn auth_state_from_access_token(db: &Database, access_token: &str) -> Result<Aut
         email: Some(email),
         name: claims.name,
         avatar_url: avatar,
+        is_supporter: claims.is_supporter,
+        supporter_until: claims.supporter_until,
     })
 }
 
@@ -147,12 +165,15 @@ pub fn store_auth_tokens(
 }
 
 /// Store user profile info fetched from the server.
+#[allow(clippy::too_many_arguments)]
 pub fn store_user_profile(
     db: &Database,
     user_id: &str,
     email: &str,
     name: Option<&str>,
     avatar_url: Option<&str>,
+    is_supporter: bool,
+    supporter_until: Option<i64>,
 ) -> Result<(), String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     crate::db::queries::set_sync_meta(&conn, META_USER_ID, user_id).map_err(|e| e.to_string())?;
@@ -163,6 +184,12 @@ pub fn store_user_profile(
     }
     if let Some(avatar) = avatar_url {
         crate::db::queries::set_sync_meta(&conn, META_USER_AVATAR, avatar)
+            .map_err(|e| e.to_string())?;
+    }
+    crate::db::queries::set_sync_meta(&conn, META_IS_SUPPORTER, if is_supporter { "true" } else { "false" })
+        .map_err(|e| e.to_string())?;
+    if let Some(until) = supporter_until {
+        crate::db::queries::set_sync_meta(&conn, META_SUPPORTER_UNTIL, &until.to_string())
             .map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -195,6 +222,13 @@ pub fn get_auth_state(db: &Database) -> Result<AuthState, String> {
     let has_token = crate::db::queries::get_sync_meta(&conn, META_ACCESS_TOKEN)
         .map_err(|e| e.to_string())?
         .is_some();
+    let is_supporter = crate::db::queries::get_sync_meta(&conn, META_IS_SUPPORTER)
+        .map_err(|e| e.to_string())?
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    let supporter_until = crate::db::queries::get_sync_meta(&conn, META_SUPPORTER_UNTIL)
+        .map_err(|e| e.to_string())?
+        .and_then(|v| v.parse::<i64>().ok());
 
     Ok(AuthState {
         is_logged_in: has_token && user_id.is_some(),
@@ -202,6 +236,8 @@ pub fn get_auth_state(db: &Database) -> Result<AuthState, String> {
         email,
         name,
         avatar_url: avatar,
+        is_supporter,
+        supporter_until,
     })
 }
 
@@ -235,17 +271,7 @@ pub fn set_sync_cursor(db: &Database, cursor: i64) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
-/// Get the stored API key.
-pub fn get_api_key(db: &Database) -> Result<Option<String>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    crate::db::queries::get_sync_meta(&conn, META_API_KEY).map_err(|e| e.to_string())
-}
 
-/// Store the API key.
-pub fn set_api_key(db: &Database, api_key: &str) -> Result<(), String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    crate::db::queries::set_sync_meta(&conn, META_API_KEY, api_key).map_err(|e| e.to_string())
-}
 
 /// Clear all auth data (on logout).
 pub fn clear_auth(db: &Database) -> Result<(), String> {
@@ -358,10 +384,26 @@ pub async fn fetch_and_store_profile(
         return Err(format!("Profile fetch failed: {}", resp.status()));
     }
 
-    let profile: UserProfile = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse profile: {}", e))?;
+    // Parse the profile — if the body fails to decode (e.g. unexpected field types),
+    // fall back to extracting what we need from the JWT claims so the user is never stuck.
+    let profile: UserProfile = match resp.json().await {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(
+                "Profile JSON parse failed: {} — falling back to JWT claims",
+                e
+            );
+            return auth_state_from_access_token(db, access_token);
+        }
+    };
+
+    // supporter_until from /auth/me is a Drizzle Date → ISO 8601 string in JSON.
+    // Convert to unix milliseconds so it matches what the JWT carries.
+    let supporter_until_ms: Option<i64> = profile.user.supporter_until.as_deref().and_then(|s| {
+        chrono::DateTime::parse_from_rfc3339(s)
+            .ok()
+            .map(|dt| dt.timestamp_millis())
+    });
 
     store_user_profile(
         db,
@@ -369,6 +411,8 @@ pub async fn fetch_and_store_profile(
         &profile.user.email,
         profile.user.name.as_deref(),
         profile.user.avatar_url.as_deref(),
+        profile.user.is_supporter,
+        supporter_until_ms,
     )?;
 
     Ok(AuthState {
@@ -377,6 +421,8 @@ pub async fn fetch_and_store_profile(
         email: Some(profile.user.email),
         name: profile.user.name,
         avatar_url: profile.user.avatar_url,
+        is_supporter: profile.user.is_supporter,
+        supporter_until: supporter_until_ms,
     })
 }
 
@@ -412,11 +458,6 @@ pub async fn authenticated_request(
             .body(body.to_string());
     }
 
-    // Add API key header if available
-    if let Ok(Some(api_key)) = get_api_key(db) {
-        request = request.header("X-API-Key", api_key);
-    }
-
     let resp = request
         .send()
         .await
@@ -441,11 +482,6 @@ pub async fn authenticated_request(
             retry_request = retry_request
                 .header("Content-Type", "application/json")
                 .body(body.to_string());
-        }
-
-        // Add API key header to retry request
-        if let Ok(Some(api_key)) = get_api_key(db) {
-            retry_request = retry_request.header("X-API-Key", api_key);
         }
 
         let retry_resp = retry_request

@@ -136,18 +136,6 @@ pub async fn sync_get_server_url(sync_state: State<'_, SyncState>) -> Result<Str
     Ok(sync_state.server_url.clone())
 }
 
-/// Get the stored API key.
-#[tauri::command]
-pub async fn sync_get_api_key(db: State<'_, Database>) -> Result<Option<String>, String> {
-    auth::get_api_key(&db)
-}
-
-/// Store the API key.
-#[tauri::command]
-pub async fn sync_set_api_key(api_key: String, db: State<'_, Database>) -> Result<(), String> {
-    auth::set_api_key(&db, &api_key)
-}
-
 /// Enqueue a sync change from the frontend (e.g., when a setting changes).
 #[tauri::command]
 pub async fn sync_enqueue_change(
@@ -191,4 +179,66 @@ pub async fn sync_delete_account(
     auth::clear_auth(&db)?;
 
     Ok(())
+}
+
+/// Link a Ko-fi donation email to the current account (Flow B — email mismatch).
+/// Calls POST /auth/link-kofi via the auth-aware HTTP client (auto-refreshes token).
+/// On success, updates locally stored is_supporter + supporter_until and returns
+/// the new AuthState so the frontend can update reactively.
+#[tauri::command]
+pub async fn sync_link_kofi(
+    kofi_email: String,
+    db: State<'_, Database>,
+    sync_state: State<'_, SyncState>,
+) -> Result<auth::AuthState, String> {
+    let body = serde_json::json!({ "kofi_email": kofi_email }).to_string();
+
+    let resp_str = auth::authenticated_request(
+        &db,
+        &sync_state.server_url,
+        "POST",
+        "/auth/link-kofi",
+        Some(&body),
+    )
+    .await?;
+
+    // Parse the response to extract the new access token + supporter status
+    #[derive(serde::Deserialize)]
+    struct LinkKofiResponse {
+        access_token: String,
+        is_supporter: bool,
+        supporter_until: Option<String>,
+    }
+
+    let resp: LinkKofiResponse = serde_json::from_str(&resp_str)
+        .map_err(|e| format!("Failed to parse link-kofi response: {}", e))?;
+
+    // Store the new access token (it carries updated is_supporter claim)
+    {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        crate::db::queries::set_sync_meta(&conn, "access_token", &resp.access_token)
+            .map_err(|e| e.to_string())?;
+    }
+
+    // Update locally stored supporter status
+    {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        crate::db::queries::set_sync_meta(
+            &conn,
+            "is_supporter",
+            if resp.is_supporter { "true" } else { "false" },
+        )
+        .map_err(|e| e.to_string())?;
+        if let Some(ref until_str) = resp.supporter_until {
+            // supporter_until is ISO 8601 string, convert to unix ms
+            if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(until_str) {
+                let ms = dt.timestamp_millis();
+                crate::db::queries::set_sync_meta(&conn, "supporter_until", &ms.to_string())
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+
+    // Return updated auth state
+    auth::get_auth_state(&db)
 }

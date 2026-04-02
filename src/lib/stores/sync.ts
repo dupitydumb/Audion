@@ -22,6 +22,9 @@ export interface AuthState {
     email: string | null;
     name: string | null;
     avatar_url: string | null;
+    is_supporter: boolean;
+    /** Unix timestamp in milliseconds. null = no expiry (active subscription). */
+    supporter_until: number | null;
 }
 
 export interface SyncStatus {
@@ -46,6 +49,8 @@ const defaultAuthState: AuthState = {
     email: null,
     name: null,
     avatar_url: null,
+    is_supporter: false,
+    supporter_until: null,
 };
 
 const defaultSyncStatus: SyncStatus = {
@@ -66,10 +71,10 @@ export const authState = writable<AuthState>(defaultAuthState);
 export const syncStatus = writable<SyncStatus>(defaultSyncStatus);
 export const syncProgress = writable<SyncProgress>(defaultSyncProgress);
 export const showLoginModal = writable<boolean>(false);
-export const apiKey = writable<string>('');
 
 // Derived convenience stores
 export const isLoggedIn = derived(authState, ($auth) => $auth.is_logged_in);
+export const isSupporter = derived(authState, ($auth) => $auth.is_supporter);
 export const isSyncing = derived(syncStatus, ($status) => $status.is_syncing);
 export const userName = derived(authState, ($auth) => $auth.name || $auth.email || 'User');
 export const userAvatar = derived(authState, ($auth) => $auth.avatar_url);
@@ -96,9 +101,6 @@ export async function initSync(): Promise<void> {
 
         const status = await invoke<SyncStatus>('sync_get_status');
         syncStatus.set(status);
-
-        const key = await invoke<string | null>('sync_get_api_key');
-        if (key) apiKey.set(key);
     } catch (error) {
         console.error('[Sync] Failed to initialize:', error);
         // If we can't read auth state (e.g. database was deleted), reset to logged-out
@@ -149,21 +151,30 @@ export async function initSync(): Promise<void> {
         console.error('[Sync] Failed to set up deep link listener:', error);
     }
 
-    // Also check if the app was cold-started via a deep link
+    // Also check if the app was cold-started via a deep link.
+    // IMPORTANT: Only process if NOT already logged in.
+    // getCurrent() persists across webview refreshes (F5) and would re-login
+    // the user immediately after they log out if we didn't guard here.
     try {
         const { getCurrent } = await import('@tauri-apps/plugin-deep-link');
         const currentUrls = await getCurrent();
         if (currentUrls && currentUrls.length > 0) {
-            console.log('[Sync] App started with deep link:', currentUrls);
-            for (const url of currentUrls) {
-                if (url.startsWith('audion://auth/callback')) {
-                    await handleDeepLinkCallback(url);
+            const currentAuth = await invoke<AuthState>('sync_get_auth_state');
+            if (!currentAuth.is_logged_in) {
+                console.log('[Sync] App cold-started with deep link:', currentUrls);
+                for (const url of currentUrls) {
+                    if (url.startsWith('audion://auth/callback')) {
+                        await handleDeepLinkCallback(url);
+                    }
                 }
+            } else {
+                console.log('[Sync] Skipping getCurrent() deep link — user already logged in');
             }
         }
     } catch (error) {
         console.error('[Sync] Failed to check current deep link:', error);
     }
+
 
     // ─── Automatic Sync Trigger ──────────────────────────────────────────
     // Watch for pending changes and online status. Trigger sync after a short delay.
@@ -224,6 +235,16 @@ async function handleDeepLinkCallback(url: string): Promise<void> {
         pollSyncStatus();
     } catch (error) {
         console.error('[Sync] Failed to handle deep link callback:', error);
+        // Even if the profile fetch failed, the tokens may have been stored.
+        // Refresh auth state so the UI reflects whatever state Rust ended up in
+        // and close the modal so the user isn't stuck.
+        try {
+            const auth = await invoke<AuthState>('sync_get_auth_state');
+            authState.set(auth);
+        } catch (_) {
+            // ignore
+        }
+        showLoginModal.set(false);
     }
 }
 
@@ -357,8 +378,8 @@ export async function triggerSync(): Promise<void> {
         console.error('[Sync] Sync failed:', error);
 
         let errorMessage = String(error);
-        if (errorMessage.includes('403') || errorMessage.includes('Invalid or missing API Key')) {
-            errorMessage = 'Account sync is only available for supporters who donated to the project.';
+        if (errorMessage.includes('403') || errorMessage.includes('Ko-fi') || errorMessage.includes('supporter')) {
+            errorMessage = 'Sync is available for Ko-fi supporters. Visit your Settings to link your Ko-fi email.';
         }
 
         syncStatus.update((s) => ({
@@ -440,16 +461,29 @@ export async function refreshAuthState(): Promise<void> {
 }
 
 /**
- * Update the stored API key.
+ * Link a Ko-fi donation email to the current account (Flow B — email mismatch).
+ * Routes through the Rust sync_link_kofi command which handles auth + token refresh.
+ * Returns the updated supporter status and updates the local authState store.
  */
-export async function setApiKey(key: string): Promise<void> {
-    if (!isTauri()) return;
+export async function linkKofiEmail(kofiEmail: string): Promise<{
+    is_supporter: boolean;
+    supporter_until: string | null;
+    tier: string | null;
+}> {
+    if (!isTauri()) throw new Error('Not running in Tauri');
 
-    try {
-        await invoke('sync_set_api_key', { apiKey: key });
-        apiKey.set(key);
-    } catch (error) {
-        console.error('[Sync] Failed to set API key:', error);
-        throw error;
-    }
+    // The Rust command handles auth, calls /auth/link-kofi, stores the new token,
+    // and returns the full updated AuthState.
+    const updatedAuth = await invoke<AuthState>('sync_link_kofi', { kofiEmail });
+
+    // Update the local store so the UI reacts immediately
+    authState.set(updatedAuth);
+
+    return {
+        is_supporter: updatedAuth.is_supporter,
+        supporter_until: updatedAuth.supporter_until
+            ? new Date(updatedAuth.supporter_until).toISOString()
+            : null,
+        tier: null, // tier is not stored in AuthState; the success UI shows a generic message
+    };
 }

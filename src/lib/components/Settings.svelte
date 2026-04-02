@@ -23,11 +23,13 @@
     authState,
     syncStatus,
     isLoggedIn,
+    isSupporter,
     isSyncing,
     showLoginModal,
     logout,
     triggerSync,
     deleteAccount,
+    linkKofiEmail,
   } from "$lib/stores/sync";
   import { nativeAudioStop } from '$lib/services/native-audio';
 
@@ -394,36 +396,37 @@
     if ($appSettings.listenBrainzEnabled) appSettings.toggleListenBrainz();
   }
 
-  // ─── API Key ──────────────────────────────────────────────────────────────
-  import { apiKey, setApiKey } from "$lib/stores/sync";
-  let apiKeyInput = $apiKey;
-  let apiKeySaving = false;
-  let apiKeySuccess = false;
-  let apiKeyError = "";
+  // ─── Ko-fi Email Link (Flow B: mismatched emails) ─────────────────────────
+  let kofiEmailInput = "";
+  let kofiLinking = false;
+  let kofiLinkError = "";
+  let kofiLinkSuccess = "";
 
-  async function handleSaveApiKey() {
-    apiKeySaving = true;
-    apiKeyError = "";
-    apiKeySuccess = false;
+  async function handleLinkKofiEmail() {
+    if (!kofiEmailInput.trim()) return;
+    kofiLinking = true;
+    kofiLinkError = "";
+    kofiLinkSuccess = "";
     try {
-      await setApiKey(apiKeyInput.trim());
-      apiKeySuccess = true;
-      setTimeout(() => {
-        apiKeySuccess = false;
-      }, 3000);
-    } catch (e) {
-      let errorMessage = String(e);
-      if (
-        errorMessage.includes("403") ||
-        errorMessage.includes("Invalid or missing API Key")
-      ) {
-        errorMessage =
-          "Account sync is only available for supporters who donated to the project.";
+      const result = await linkKofiEmail(kofiEmailInput.trim());
+      if (result.is_supporter) {
+        kofiLinkSuccess = result.tier
+          ? `✓ Linked! You're a ${result.tier} supporter — sync is now unlocked.`
+          : "✓ Ko-fi donation verified — sync is now unlocked!";
+        kofiEmailInput = "";
+        setTimeout(() => { kofiLinkSuccess = ""; }, 6000);
       }
-      apiKeyError = errorMessage;
+    } catch (e) {
+      kofiLinkError = String(e).replace(/^Error:\s*/, "");
     } finally {
-      apiKeySaving = false;
+      kofiLinking = false;
     }
+  }
+
+  function formatSupporterUntil(ts: number | null): string {
+    if (ts === null) return "Active (subscription)";
+    const d = new Date(ts);
+    return d.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
   }
 </script>
 
@@ -551,42 +554,64 @@
               </button>
             </div>
 
-            <div
-              class="setting-item"
-              style="border-top: 1px solid var(--border-color); padding-top: var(--spacing-md); margin-top: var(--spacing-sm);"
-            >
-              <span class="setting-label">Sync API Key</span>
-              <div class="path-selector">
-                <input
-                  type="password"
-                  bind:value={apiKeyInput}
-                  placeholder="Enter your Sync API Key"
-                  class="lb-token-input"
-                  on:keydown={(e) => e.key === "Enter" && handleSaveApiKey()}
-                />
-                <button
-                  class="selector-btn"
-                  on:click={handleSaveApiKey}
-                  disabled={apiKeySaving}
-                >
-                  {apiKeySaving ? "Saving..." : "Save Key"}
-                </button>
+          {#if $isSupporter}
+              <div class="kofi-supporter-badge">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="color: var(--accent-primary)">
+                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                </svg>
+                <span>Active Supporter — sync unlocked</span>
+                {#if $authState.supporter_until !== null}
+                  <span class="supporter-until">Until {formatSupporterUntil($authState.supporter_until)}</span>
+                {/if}
               </div>
-              <p class="setting-hint">
-                Account sync is available for supporters who donated to the
-                project.
-              </p>
-              {#if apiKeyError}
-                <p class="setting-hint" style="color: var(--text-error);">
-                  ✗ {apiKeyError}
+            {:else}
+              <div class="kofi-not-supporter">
+                <p class="setting-hint" style="margin: 0 0 var(--spacing-xs)">
+                  ⚠ Sync is available for Ko-fi supporters.
                 </p>
-              {/if}
-              {#if apiKeySuccess}
-                <p class="setting-hint" style="color: var(--accent-primary);">
-                  ✓ API Key saved!
+                <a
+                  href="https://ko-fi.com/N4N5UMNR1"
+                  target="_blank"
+                  rel="noreferrer"
+                  class="btn-primary kofi-support-link"
+                  aria-label="Support on Ko-fi"
+                >
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                    <path d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.723c-.604 0-.679.798-.679.798s-.082 7.324-.022 11.822c.164 2.424 2.586 2.672 2.586 2.672s8.267-.023 11.966-.049c2.438-.426 2.683-2.566 2.658-3.734 4.352.24 7.422-2.831 6.649-6.916zm-11.062 3.511c-1.246 1.453-4.011 3.976-4.011 3.976s-.121.119-.31.023c-.076-.057-.108-.09-.108-.09-.443-.441-3.368-3.049-4.034-3.954-.709-.965-1.041-2.7-.091-3.71.951-1.01 3.005-.995 4.032.019.152.154.16.166.152.166s.068-.112.151-.166c1.27-1.241 3.563-.78 4.346.394.886 1.318.488 2.927-.127 3.332zm4.906.658c-.375.133-1.259.053-1.259.053l.13-3.998s.932-.171 1.432.064c1.004.472.835 3.44-.303 3.881z"/>
+                  </svg>
+                  Support on Ko-fi →
+                </a>
+                <p class="setting-hint" style="margin: var(--spacing-md) 0 var(--spacing-xs)">
+                  Already donated? Link your Ko-fi email:
                 </p>
-              {/if}
-            </div>
+                <div class="path-selector">
+                  <input
+                    type="email"
+                    bind:value={kofiEmailInput}
+                    placeholder="your@kofi-email.com"
+                    class="lb-token-input"
+                    on:keydown={(e) => e.key === "Enter" && handleLinkKofiEmail()}
+                  />
+                  <button
+                    class="selector-btn"
+                    on:click={handleLinkKofiEmail}
+                    disabled={kofiLinking || !kofiEmailInput.trim()}
+                  >
+                    {kofiLinking ? "Checking..." : "Link Email"}
+                  </button>
+                </div>
+                {#if kofiLinkError}
+                  <p class="setting-hint" style="color: var(--text-error); margin-top: var(--spacing-xs)">
+                    ✗ {kofiLinkError}
+                  </p>
+                {/if}
+                {#if kofiLinkSuccess}
+                  <p class="setting-hint" style="color: var(--accent-primary); margin-top: var(--spacing-xs)">
+                    {kofiLinkSuccess}
+                  </p>
+                {/if}
+              </div>
+            {/if}
           </div>
 
           <div class="setting-item">
@@ -634,40 +659,6 @@
                 Sign In
               </button>
             </div>
-          </div>
-
-          <div class="setting-item">
-            <span class="setting-label">Sync API Key</span>
-            <div class="path-selector">
-              <input
-                type="password"
-                bind:value={apiKeyInput}
-                placeholder="Enter your Sync API Key"
-                class="lb-token-input"
-                on:keydown={(e) => e.key === "Enter" && handleSaveApiKey()}
-              />
-              <button
-                class="selector-btn"
-                on:click={handleSaveApiKey}
-                disabled={apiKeySaving}
-              >
-                {apiKeySaving ? "Saving..." : "Save Key"}
-              </button>
-            </div>
-            <p class="setting-hint">
-              Account sync is available for supporters who donated to the
-              project.
-            </p>
-            {#if apiKeyError}
-              <p class="setting-hint" style="color: var(--text-error);">
-                ✗ {apiKeyError}
-              </p>
-            {/if}
-            {#if apiKeySuccess}
-              <p class="setting-hint" style="color: var(--accent-primary);">
-                ✓ API Key saved!
-              </p>
-            {/if}
           </div>
         {/if}
       </section>
@@ -2081,6 +2072,48 @@
     padding-top: var(--spacing-md);
     border-top: 1px solid var(--border-color);
     gap: var(--spacing-md);
+  }
+
+  /* ─── Ko-fi supporter UI ─────────────────────────────────────────────── */
+
+  .kofi-supporter-badge {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent);
+    border-radius: var(--border-radius-md);
+    margin-top: var(--spacing-md);
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--accent-primary);
+    flex-wrap: wrap;
+  }
+
+  .supporter-until {
+    margin-left: auto;
+    font-weight: 400;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+  }
+
+  .kofi-not-supporter {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--border-color);
+    margin-top: var(--spacing-sm);
+  }
+
+  .kofi-support-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    width: fit-content;
+    text-decoration: none;
+    font-size: 0.875rem;
   }
 
   .sync-info {

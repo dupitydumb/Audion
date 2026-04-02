@@ -572,8 +572,7 @@ pub fn run() {
                     commands::sync_trigger,
                     commands::sync_get_status,
                     commands::sync_get_server_url,
-                    commands::sync_get_api_key,
-                    commands::sync_set_api_key,
+                    commands::sync_link_kofi,
                     commands::sync_enqueue_change,
                     commands::sync_delete_account,
                     // =========================================================================
@@ -717,8 +716,7 @@ pub fn run() {
                     commands::sync_trigger,
                     commands::sync_get_status,
                     commands::sync_get_server_url,
-                    commands::sync_get_api_key,
-                    commands::sync_set_api_key,
+                    commands::sync_link_kofi,
                     commands::sync_enqueue_change,
                     commands::sync_delete_account,
                     // =========================================================================
