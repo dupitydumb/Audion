@@ -370,16 +370,33 @@ export async function initAudioBackend(): Promise<void> {
     nativeAudioUsed = await shouldUseNativeAudio();
     console.log(`[Player] Native audio preferred: ${nativeAudioUsed}`);
 
-    // Start/stop poller based on playback state
-    isPlaying.subscribe((playing) => {
-        if (playing) {
-            startStatePoller();
-        } else {
-            stopStatePoller();
-        }
-    });
+  // Start/stop poller based on playback state
+  isPlaying.subscribe((playing) => {
+    if (playing) {
+      startStatePoller();
+    } else {
+      stopStatePoller();
+    }
+  });
 
-    // If native backend is available, apply current EQ state once to ensure
+  // Subscribe to volume changes to keep backends in sync
+  volume.subscribe((val) => {
+    const audioVol = sliderToAudioVolume(val);
+    
+    // Update HTML5 backend
+    if (html5Audio) {
+      html5Audio.volume = audioVol;
+    }
+    
+    // Update Native backend
+    if (nativeAudioUsed) {
+      nativeAudioSetVolume(audioVol).catch(err => {
+        console.warn('[Player] Failed to set native volume:', err);
+      });
+    }
+  });
+
+  // If native backend is available, apply current EQ state once to ensure
     // native side has the latest settings (prevents mismatch / thrash on first play)
     if (nativeAudioUsed) {
         try {

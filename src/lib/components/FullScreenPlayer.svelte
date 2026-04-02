@@ -874,12 +874,13 @@
                   in:fade
                 >
                   {#if $lyricsData?.lines && $lyricsData.lines.length > 0}
-                    {#each $lyricsData.lines as line, i}
+                    {#each $lyricsData.lines as line, i (line.time || i)}
                       {@const isActiveLine = i === $activeLine}
                       {@const hasWordSync = line.words && line.words.length > 0}
                       <div
                         class="desktop-lyric-line"
                         class:active={isActiveLine}
+                        class:past-line={i < $activeLine}
                         role="button"
                         tabindex="0"
                         on:click={() => {
@@ -891,18 +892,17 @@
                             seek(line.time / $duration);
                         }}
                       >
-                        {#if hasWordSync && isActiveLine && line.words}
-                          {#each line.words as word, wordIdx}
+                        {#if hasWordSync && line.words}
+                          {#each line.words as word, wordIdx (word.time || wordIdx)}
                             {@const wordState = getWordState(
                               i,
                               wordIdx,
                               $activeLine,
                               $wordSyncState.activeWordIdx,
                             )}
-                            {@const wordProgress =
-                              wordIdx === $wordSyncState.activeWordIdx
-                                ? $wordSyncState.progress
-                                : 0}
+                            {@const isCurrentWord = i === $activeLine && wordIdx === $wordSyncState.activeWordIdx}
+                            {@const isPastWord = i < $activeLine || (i === $activeLine && wordIdx < $wordSyncState.activeWordIdx)}
+                            {@const wordProgress = isCurrentWord ? $wordSyncState.progress : (isPastWord ? 100 : 0)}
                             <span
                               class="desktop-lyric-word {wordState}"
                               style="--word-progress: {wordProgress}%;"
@@ -911,7 +911,7 @@
                             {#if wordIdx < line.words.length - 1}{" "}{/if}
                           {/each}
                         {:else}
-                          {line.text}
+                          <span class="lyric-text-fallback">{line.text}</span>
                         {/if}
                       </div>
                     {/each}
@@ -954,8 +954,9 @@
     height: 200%;
     z-index: 0;
     pointer-events: none;
-    filter: blur(80px) saturate(1.8);
-    opacity: 0.5;
+    filter: blur(100px) saturate(2);
+    opacity: 0.7;
+    transition: opacity 0.5s ease;
   }
 
   .bg-layer {
@@ -968,41 +969,41 @@
 
   .bg-layer-1 {
     opacity: 0.8;
-    animation: bg-pulse-1 20s infinite alternate linear;
+    animation: bg-pulse-1 12s infinite alternate ease-in-out;
   }
   .bg-layer-2 {
     opacity: 0.5;
-    animation: bg-pulse-2 25s infinite alternate linear;
+    animation: bg-pulse-2 15s infinite alternate ease-in-out;
     mix-blend-mode: soft-light;
   }
   .bg-layer-3 {
-    opacity: 0.3;
-    animation: bg-pulse-3 30s infinite alternate linear;
+    opacity: 0.4;
+    animation: bg-pulse-3 18s infinite alternate ease-in-out;
     mix-blend-mode: overlay;
   }
 
   @keyframes bg-pulse-1 {
     0% {
-      transform: translate(0, 0) scale(1) rotate(0deg);
+      transform: translate(-10%, -10%) scale(1) rotate(0deg);
     }
     100% {
-      transform: translate(10%, 15%) scale(1.1) rotate(5deg);
+      transform: translate(20%, 25%) scale(1.3) rotate(15deg);
     }
   }
   @keyframes bg-pulse-2 {
     0% {
-      transform: translate(0, 0) scale(1.1) rotate(0deg);
+      transform: translate(15%, -15%) scale(1.2) rotate(0deg);
     }
     100% {
-      transform: translate(-15%, 10%) scale(1) rotate(-8deg);
+      transform: translate(-25%, 20%) scale(1) rotate(-15deg);
     }
   }
   @keyframes bg-pulse-3 {
     0% {
-      transform: translate(0, 0) scale(1) rotate(0deg);
+      transform: translate(-15%, 20%) scale(1) rotate(0deg);
     }
     100% {
-      transform: translate(5%, -10%) scale(1.2) rotate(12deg);
+      transform: translate(15%, -25%) scale(1.4) rotate(20deg);
     }
   }
 
@@ -1107,7 +1108,6 @@
     height: 100%;
     border-radius: 24px;
     overflow: hidden;
-    box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5);
     background: var(--bg-surface);
   }
 
@@ -1317,12 +1317,10 @@
     background: #fff;
     color: #000;
     border-radius: 50%;
-    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
   }
 
   .control-btn.play-pause-main:hover {
     transform: scale(1.08);
-    box-shadow: 0 15px 30px rgba(0, 0, 0, 0.4);
   }
 
   .control-btn.track-active {
@@ -1427,7 +1425,6 @@
   .tab-btn.active {
     background: rgba(255, 255, 255, 0.12);
     color: #fff;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
   }
 
   .tab-content-wrapper {
@@ -1443,6 +1440,7 @@
     overflow-y: auto;
     padding: 30vh 0;
     scrollbar-width: none;
+    will-change: transform;
     mask-image: linear-gradient(
       to bottom,
       transparent,
@@ -1466,45 +1464,62 @@
   .desktop-lyric-line {
     font-size: 2.25rem;
     font-weight: 800;
-    color: rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.15);
     padding: 1.25rem 0;
     cursor: pointer;
-    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: color 0.5s ease, opacity 0.5s ease, transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), margin 0.5s ease;
     transform-origin: left;
-    filter: blur(1.5px);
     line-height: 1.3;
     letter-spacing: -0.01em;
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+  }
+
+  .desktop-lyric-line.past-line {
+    color: rgba(255, 255, 255, 0.5);
+    transform: scale(0.98);
   }
 
   .desktop-lyric-line:hover {
     color: rgba(255, 255, 255, 0.4);
-    filter: blur(0.5px);
   }
 
   .desktop-lyric-line.active {
     color: #fff;
     transform: scale(1.06);
-    filter: blur(0);
-    text-shadow: 0 4px 25px rgba(255, 255, 255, 0.25);
+    margin: 1.5rem 0;
   }
 
   .desktop-lyric-word {
     position: relative;
     display: inline-block;
-  }
-
-  .desktop-lyric-word.highlighted {
-    color: #fff;
-    text-shadow: 0 0 15px rgba(255, 255, 255, 0.4);
-    transition: all 0.2s ease;
+    /* Transition only opacity/transform, not background which updates every frame */
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    background: linear-gradient(
+      to right,
+      #fff var(--word-progress),
+      rgba(255, 255, 255, 0.2) var(--word-progress)
+    );
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
 
   .desktop-lyric-word.past {
-    color: #fff;
+    background: rgba(255, 255, 255, 0.85);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
 
   .desktop-lyric-word.future {
-    color: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.2);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
   }
 
   .no-lyrics-desktop {
@@ -1585,7 +1600,6 @@
     aspect-ratio: 1;
     border-radius: 16px;
     overflow: hidden;
-    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
   }
 
   .mobile-view .art-container img {
@@ -1667,7 +1681,6 @@
 
   .lyric-word.highlighted {
     color: #fff;
-    text-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
   }
 
   .lyric-word.past {
