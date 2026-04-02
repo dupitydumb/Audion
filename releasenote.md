@@ -1,6 +1,6 @@
 # Release Notes - Audion
 
-## [v1.2.7] - 2026-03-31
+## [v1.2.7] - 2026-04-03
 
 ### 🚀 Changes
 - Redesign Full Screen Player
