@@ -264,11 +264,9 @@ async fn perform_sync_inner(db: &Database, sync_state: &SyncState) -> Result<Syn
         sendable.len(),
     );
 
-    let response_text =
-        auth::authenticated_request(db, server_url, "POST", "/sync/push", Some(&body_json)).await?;
-
-    let response: SyncPushResponse = serde_json::from_str(&response_text)
-        .map_err(|e| format!("Failed to parse sync response: {}", e))?;
+    let resp_body = auth::authenticated_request(db, &sync_state.server_url, "POST", "/sync/push", Some(&body_json)).await?;
+    let response: SyncPushResponse = serde_json::from_str(&resp_body)
+        .map_err(|e| format!("Failed to parse sync push response: {} — Raw body: {}", e, resp_body))?;
 
     emit_progress(
         sync_state,
@@ -346,16 +344,12 @@ async fn perform_full_sync_inner(
     db: &Database,
     sync_state: &SyncState,
 ) -> Result<SyncStatus, String> {
-    let server_url = &sync_state.server_url;
-
     // ── Step 1: Pull existing data from server ──────────────────────────
     emit_progress(sync_state, "pull", "Downloading data from server...", 0, 0);
 
-    let response_text =
-        auth::authenticated_request(db, server_url, "GET", "/sync/full", None).await?;
-
-    let response: SyncFullResponse = serde_json::from_str(&response_text)
-        .map_err(|e| format!("Failed to parse full sync response: {}", e))?;
+    let resp_body = auth::authenticated_request(db, &sync_state.server_url, "GET", "/sync/full", None).await?;
+    let response: SyncFullResponse = serde_json::from_str(&resp_body)
+        .map_err(|e| format!("Failed to parse full sync response: {} — Raw body: {}", e, resp_body))?;
 
     tracing::info!(
         "Full sync pull: {} playlists, {} liked tracks, {} library tracks, cursor={}",

@@ -229,9 +229,7 @@ export async function initSync(): Promise<void> {
         if (canSync) {
             if (syncTimeout) clearTimeout(syncTimeout);
             syncTimeout = setTimeout(() => {
-                lastAutoSyncAt = Date.now();
-                localStorage.setItem(LAST_SYNC_KEY, lastAutoSyncAt.toString());
-                triggerSync();
+                triggerSync(false);
             }, 5000); // 5 second debounce for auto-sync
         } else if (syncTimeout && ($status.is_syncing || $status.pending_changes === 0)) {
             clearTimeout(syncTimeout);
@@ -248,9 +246,7 @@ export async function initSync(): Promise<void> {
                 get(isLoggedIn) && 
                 (now - lastAutoSyncAt >= AUTO_SYNC_COOLDOWN_MS) &&
                 !isBackgroundPaused()) {
-                lastAutoSyncAt = Date.now();
-                localStorage.setItem(LAST_SYNC_KEY, lastAutoSyncAt.toString());
-                triggerSync();
+                triggerSync(false);
             }
         }
     });
@@ -408,23 +404,37 @@ export async function logout(): Promise<void> {
 }
 
 /**
- * Trigger a manual sync.
+ * Trigger a sync.
+ * @param forced If true, ignores the 12-hour cooldown (manual trigger).
  */
-export async function triggerSync(): Promise<void> {
+export async function triggerSync(forced = true): Promise<void> {
     if (!isTauri()) return;
 
     const auth = get(authState);
     if (!auth.is_logged_in) return;
 
+    const LAST_SYNC_KEY = 'audion_last_auto_sync_at';
+    const lastSync = parseInt(localStorage.getItem(LAST_SYNC_KEY) || '0', 10);
+    const now = Date.now();
+    const AUTO_SYNC_COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
+
+    // Only proceed if forced (manual) or 12 hours passed
+    if (!forced && (now - lastSync < AUTO_SYNC_COOLDOWN_MS)) {
+        console.log('[Sync] Automatic sync skipped — cooldown active');
+        return;
+    }
+
     try {
-        console.log('[Sync] Triggering manual sync...');
+        console.log(`[Sync] Starting ${forced ? 'manual' : 'scheduled'} sync...`);
+        
+        // Reset the cooldown timer immediately to prevent loops if this attempt fails
+        localStorage.setItem(LAST_SYNC_KEY, now.toString());
+
         syncStatus.update((s) => ({ ...s, is_syncing: true }));
         syncProgress.set({ phase: 'sync', message: 'Starting sync...', current: 0, total: 0 });
-        const status = await invoke<SyncStatus>('sync_trigger');
-        console.log('[Sync] Manual sync completed:', status);
         
-        // Manual sync resets the auto-sync timer
-        localStorage.setItem('audion_last_auto_sync_at', Date.now().toString());
+        const status = await invoke<SyncStatus>('sync_trigger');
+        console.log('[Sync] Sync completed locally:', status);
         
         syncStatus.set(status);
         syncProgress.set(defaultSyncProgress);

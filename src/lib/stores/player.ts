@@ -43,12 +43,67 @@ let nativeStatePoller: ReturnType<typeof setInterval> | null = null;
 // HTML5 Audio element for streaming (initialized lazily)
 let html5Audio: HTMLAudioElement | null = null;
 
+// dash.js player instance for Hi-Res DASH/MPD streaming
+let dashPlayer: any | null = null;
+
 // Track which backend is currently active ('native', 'html5', or 'none')
 type ActiveBackend = 'native' | 'html5' | 'none';
 let activeBackend: ActiveBackend = 'none';
 
 // Track if we should use native audio based on platform/settings
 let nativeAudioUsed = false;
+
+type AudioPathKind = 'local' | 'stream' | 'blob' | 'custom-scheme';
+
+function classifyAudioPath(path: string): AudioPathKind {
+    if (path.startsWith('blob:')) return 'blob';
+    if (path.startsWith('http://') || path.startsWith('https://')) return 'stream';
+    if (path.startsWith('file://') || path.startsWith('asset://') || path.startsWith('tauri://')) return 'local';
+    if (path.includes('://')) return 'custom-scheme';
+    return 'local'; // absolute/relative filesystem path
+}
+
+// Lazily load dash.js and create a player instance
+async function getDashPlayer(): Promise<any> {
+    if (typeof window === 'undefined') throw new Error('No window');
+
+    // Load dash.js from CDN if not already loaded
+    if (!(window as any).dashjs) {
+        await new Promise<void>((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/dashjs/4.7.4/dash.all.min.js';
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error('Failed to load dash.js'));
+            document.head.appendChild(script);
+        });
+    }
+
+    return (window as any).dashjs;
+}
+
+async function playWithDash(blobUrl: string, audioElement: HTMLAudioElement): Promise<void> {
+
+    if (dashPlayer) {
+        try { dashPlayer.destroy(); } catch (_) { }
+        dashPlayer = null;
+    }
+
+    const mpdText = await fetch(blobUrl).then(r => r.text());
+    URL.revokeObjectURL(blobUrl);
+
+    const bytes = new TextEncoder().encode(mpdText);
+    const binary = Array.from(bytes).reduce((acc, byte) => acc + String.fromCharCode(byte), '');
+    const dataUrl = 'data:application/dash+xml;base64,' + btoa(binary);
+
+    const dashjs = await getDashPlayer();
+    dashPlayer = dashjs.MediaPlayer().create();
+    dashPlayer.initialize(audioElement, dataUrl, true);
+
+    dashPlayer.on(dashjs.MediaPlayer.events.ERROR, (e: any) => {
+        console.error('[Player] dash.js error:', e);
+        addToast(`Hi-Res playback error: ${e.error?.message || 'Unknown error'}`, 'error');
+    });
+}
 
 function getHtml5Audio(): HTMLAudioElement {
     if (!html5Audio && typeof window !== 'undefined') {
@@ -370,33 +425,41 @@ export async function initAudioBackend(): Promise<void> {
     nativeAudioUsed = await shouldUseNativeAudio();
     console.log(`[Player] Native audio preferred: ${nativeAudioUsed}`);
 
-  // Start/stop poller based on playback state
-  isPlaying.subscribe((playing) => {
-    if (playing) {
-      startStatePoller();
-    } else {
-      stopStatePoller();
-    }
-  });
+    // Start/stop poller based on playback state
+    isPlaying.subscribe((playing) => {
+        if (playing) {
+            startStatePoller();
+        } else {
+            stopStatePoller();
+        }
+    });
 
-  // Subscribe to volume changes to keep backends in sync
-  volume.subscribe((val) => {
-    const audioVol = sliderToAudioVolume(val);
-    
-    // Update HTML5 backend
-    if (html5Audio) {
-      html5Audio.volume = audioVol;
-    }
-    
-    // Update Native backend
+    // Subscribe to volume changes to keep backends in sync
+    volume.subscribe((val) => {
+        const audioVol = sliderToAudioVolume(val);
+
+        // Update HTML5 backend
+        if (html5Audio) {
+            html5Audio.volume = audioVol;
+        }
+
+        // Update Native backend
+        if (nativeAudioUsed) {
+            nativeAudioSetVolume(audioVol).catch(err => {
+                console.warn('[Player] Failed to set native volume:', err);
+            });
+        }
+    });
+
+    // Force sync initial volume to native backend so it matches
+    // the frontend's logarithmic curve from the start, before any track plays.
     if (nativeAudioUsed) {
-      nativeAudioSetVolume(audioVol).catch(err => {
-        console.warn('[Player] Failed to set native volume:', err);
-      });
+        nativeAudioSetVolume(sliderToAudioVolume(get(volume))).catch(err => {
+            console.warn('[Player] Failed to set initial native volume:', err);
+        });
     }
-  });
 
-  // If native backend is available, apply current EQ state once to ensure
+    // If native backend is available, apply current EQ state once to ensure
     // native side has the latest settings (prevents mismatch / thrash on first play)
     if (nativeAudioUsed) {
         try {
@@ -437,7 +500,7 @@ function startStatePoller(): void {
 
                 if (event.type === 'TrackFinished') {
                     // Track ended naturally, nothing was preloaded.
-    
+
                     handleTrackEnd();
                 } else if (event.type === 'TrackAdvanced') {
                     // Gapless advance: audio backend already moved to the next track.
@@ -453,7 +516,7 @@ function startStatePoller(): void {
                         updateMediaSessionPlaybackState('playing');
                     }
                 }
-                
+
 
                 // Sync isPlaying state — ignore false when duration is 0 (track still loading)
                 if (state.is_playing !== get(isPlaying)) {
@@ -513,6 +576,12 @@ export function cleanupPlayer(): void {
     console.log('[Player] Cleaning up player resources');
     stopStatePoller();
     nativeAudioStop().catch(console.error);
+
+    // Cleanup dash.js
+    if (dashPlayer) {
+        try { dashPlayer.destroy(); } catch (_) { }
+        dashPlayer = null;
+    }
 
     // Cleanup HTML5
     if (html5Audio) {
@@ -790,8 +859,8 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
             // Stop native audio
             await nativeAudioStop().catch(() => { });
 
-            // Resolve custom schemes (like tidal://) to HTTP URLs
-            if (audioPath.includes('://') && !audioPath.startsWith('http')) {
+            // Resolve custom schemes (like tidal://) to HTTP or blob URLs
+            if (classifyAudioPath(audioPath) === 'custom-scheme') {
                 const runtime = pluginStore.getRuntime();
                 if (runtime) {
                     const sourceType = track.source_type;
@@ -814,28 +883,44 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
             // Reset src to avoid overlap issues
             audio.pause();
 
-            // Resolve playlist-format URLs (.m3u, .pls, .m3u8) to direct stream URLs
-            audioPath = await resolvePlaylistUrl(audioPath);
+            // Destroy any existing dash player before switching tracks
+            if (dashPlayer) {
+                try { dashPlayer.destroy(); } catch (_) { }
+                dashPlayer = null;
+            }
 
-            audio.src = audioPath;
-            audio.volume = sliderToAudioVolume(get(volume));
+            const finalKind = classifyAudioPath(audioPath);
 
-            // Wrap play in a handler to catch AbortError (common with rapid skipping)
-            try {
-                await audio.play();
-            } catch (err) {
-                if (err instanceof DOMException && err.name === 'AbortError') {
-                    // This usually means another PLAY request came in, so we can ignore this one
-                    // or it means we paused/loaded too fast. 
-                    // If Playback was intentional, we should log it.
-                    console.warn('[Player] Playback aborted (likely replaced by new track)', err);
-                } else {
-                    throw err;
+            if (finalKind === 'blob') {
+                audio.volume = sliderToAudioVolume(get(volume));
+
+                await playWithDash(audioPath, audio);
+                console.log('[Player] dash.js DASH streaming started:', track.title);
+            } else {
+                // Resolve playlist-format URLs (.m3u, .pls, .m3u8) to direct stream URLs
+                audioPath = await resolvePlaylistUrl(audioPath);
+
+                audio.src = audioPath;
+                audio.volume = sliderToAudioVolume(get(volume));
+
+                // Wrap play in a handler to catch AbortError (common with rapid skipping)
+                try {
+                    await audio.play();
+                } catch (err) {
+                    if (err instanceof DOMException && err.name === 'AbortError') {
+                        // This usually means another PLAY request came in, so we can ignore this one
+                        // or it means we paused/loaded too fast. 
+                        // If Playback was intentional, we should log it.
+                        console.warn('[Player] Playback aborted (likely replaced by new track)', err);
+                    } else {
+                        throw err;
+                    }
                 }
+
+                console.log('[Player] HTML5 streaming started:', track.title);
             }
 
             activeBackend = 'html5';
-            console.log('[Player] HTML5 streaming started:', track.title);
         } else {
             if (!audioPath) {
                 throw new Error('No local audio path found for track');
@@ -1028,12 +1113,12 @@ export async function togglePlay(): Promise<void> {
  *              Used by _schedulePreload() to peek ahead.
  */
 function _advanceQueueIndex(dry = false): number | null {
-    const q         = get(queue);
-    const rep       = get(repeat);
-    const shuf      = get(shuffle);
+    const q = get(queue);
+    const rep = get(repeat);
+    const shuf = get(shuffle);
     const userCount = get(userQueueCount);
-    const settings  = get(appSettings);
-    let idx         = get(queueIndex);
+    const settings = get(appSettings);
+    let idx = get(queueIndex);
 
     if (q.length === 0) return null;
 
@@ -1078,7 +1163,7 @@ function _advanceQueueIndex(dry = false): number | null {
 
 // Next track
 export function nextTrack(): void {
-    const q        = get(queue);
+    const q = get(queue);
     const settings = get(appSettings);
 
     if (q.length === 0) {
@@ -1377,7 +1462,7 @@ async function _advanceUiToTrack(track: Track): Promise<void> {
 function _schedulePreload(): void {
     if (activeBackend !== 'native') return;
 
-    const q      = get(queue);
+    const q = get(queue);
     const nextIdx = _advanceQueueIndex(true); // dry run — no store writes
 
     if (nextIdx === null || nextIdx >= q.length) return;

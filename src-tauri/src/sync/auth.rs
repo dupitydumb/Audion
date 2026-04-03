@@ -26,6 +26,8 @@ fn http_client() -> Result<Client, String> {
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(30))
         .pool_max_idle_per_host(2)
+        .gzip(true)
+        .brotli(true)
         .build()
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
@@ -323,10 +325,9 @@ pub async fn refresh_access_token(db: &Database, server_url: &str) -> Result<Str
         return Err(format!("Token refresh failed ({}): {}", status, body));
     }
 
-    let data: RefreshResponse = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse refresh response: {}", e))?;
+    let body_text = resp.text().await.map_err(|e| format!("Failed to read refresh response body: {}", e))?;
+    let data: RefreshResponse = serde_json::from_str(&body_text)
+        .map_err(|e| format!("Failed to parse refresh response: {} — Raw body: {}", e, body_text))?;
 
     // Store the new access token
     {
@@ -506,6 +507,11 @@ pub async fn authenticated_request(
         if !retry_resp.status().is_success() {
             let status = retry_resp.status();
             let body = retry_resp.text().await.unwrap_or_default();
+            tracing::error!(
+                "Sync request failed even after token refresh! Status: {} — Body: {}",
+                status,
+                body
+            );
             return Err(format!(
                 "Request failed after token refresh: {} — {}",
                 status, body
