@@ -36,6 +36,7 @@
     let historyContainerHeight = 300;
     let historyScrollTop = 0;
     let historyContainerElement: HTMLDivElement;
+    let isAndroid = false;
 
     // Create album map for art lookup
     $: albumMap = new Map($albums.map((a) => [a.id, a]));
@@ -195,6 +196,9 @@
     }
 
     onMount(() => {
+        isAndroid =
+            typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
+
         const observers: ResizeObserver[] = [];
         
         // Set up ResizeObserver for upcoming container
@@ -313,7 +317,16 @@
 </script>
 
 {#if $isQueueVisible || forceVisible}
-    <aside class="queue-panel" class:mobile={$isMobile} transition:fly={{ x: $isMobile ? 0 : 300, y: $isMobile ? 100 : 0, duration: 300 }}>
+    <aside
+        class="queue-panel"
+        class:mobile={$isMobile}
+        class:android-lite={isAndroid && $isMobile}
+        transition:fly={{
+            x: $isMobile ? 0 : 300,
+            y: $isMobile ? (isAndroid ? 0 : 100) : 0,
+            duration: $isMobile && isAndroid ? 180 : 300,
+        }}
+    >
     {#if !hideheader}
         <header class="queue-header">
             <h3>Queue</h3>
@@ -963,6 +976,12 @@
         z-index: 2100;
         border-left: none;
         border-radius: 0;
+    }
+
+    .queue-panel.mobile.android-lite {
+        transform: translateZ(0);
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
     }
 
     .queue-panel.mobile .queue-header {

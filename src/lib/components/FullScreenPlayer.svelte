@@ -48,6 +48,8 @@
   let albumArt: string | null = null;
   let lyricsContainer: HTMLDivElement;
   let isSeeking = false;
+  let isAndroid = false;
+  $: hideAndroidLyricsControls = isAndroid && $isMobile && $lyricsVisible;
 
   // Combined reactive state for word-by-word sync
   const wordSyncState = derived(
@@ -325,14 +327,55 @@
     });
   }
 
+  function handleMobileLyricsToggle() {
+    const openingLyrics = !$lyricsVisible;
+
+    if (openingLyrics && $isQueueVisible) {
+      toggleQueue();
+
+      if (isAndroid) {
+        requestAnimationFrame(() => {
+          toggleLyrics();
+        });
+        return;
+      }
+    }
+
+    toggleLyrics();
+  }
+
+  function handleMobileQueueToggle() {
+    const openingQueue = !$isQueueVisible;
+
+    if (openingQueue && $lyricsVisible) {
+      lyricsVisible.set(false);
+
+      if (isAndroid) {
+        requestAnimationFrame(() => {
+          toggleQueue();
+        });
+        return;
+      }
+    }
+
+    toggleQueue();
+  }
+
   onMount(() => {
+    isAndroid =
+      typeof navigator !== "undefined" && /android/i.test(navigator.userAgent);
+
     // No global listeners needed; pointer events are attached to the element.
     return () => {};
   });
 </script>
 
 {#if $isFullScreen}
-  <div class="fullscreen-player" transition:fade={{ duration: 300 }}>
+  <div
+    class="fullscreen-player"
+    class:android-lite={isAndroid && $isMobile}
+    transition:fade={{ duration: isAndroid ? 180 : 300 }}
+  >
     <!-- Animated blurred background -->
     <div class="bg-canvas">
       <div
@@ -367,7 +410,7 @@
           <button
             class="chevron-btn"
             class:active={$lyricsVisible}
-            on:click={toggleLyrics}
+            on:click={handleMobileLyricsToggle}
             aria-label="Lyrics"
           >
             <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
@@ -376,7 +419,11 @@
               />
             </svg>
           </button>
-          <button class="chevron-btn" on:click={toggleQueue} aria-label="Queue">
+          <button
+            class="chevron-btn"
+            on:click={handleMobileQueueToggle}
+            aria-label="Queue"
+          >
             <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
               <path
                 d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"
@@ -390,7 +437,11 @@
         {#if !$lyricsVisible}
           <div
             class="art-container"
-            in:fly={{ y: 20, duration: 500, delay: 100 }}
+            in:fly={{
+              y: isAndroid ? 8 : 20,
+              duration: isAndroid ? 180 : 500,
+              delay: isAndroid ? 0 : 100,
+            }}
           >
             {#if albumArt}
               <img src={albumArt} alt="Album Art" decoding="async" />
@@ -428,7 +479,7 @@
           </div>
         {:else}
           <!-- In-place Lyrics for Mobile -->
-          <div class="mobile-lyrics-wrapper" in:fade>
+          <div class="mobile-lyrics-wrapper" in:fade={{ duration: isAndroid ? 140 : 300 }}>
             <div class="lyrics-container" bind:this={lyricsContainer}>
               {#if $lyricsData?.lines && $lyricsData.lines.length > 0}
                 {#each $lyricsData.lines as line, i}
@@ -477,124 +528,126 @@
           </div>
         {/if}
 
-        <div class="player-controls">
-          <div class="progress-bar-container">
-            <span class="time">{formatDuration($currentTime)}</span>
-            <div
-              class="progress-bar"
-              on:pointerdown={handleSeekPointerDown}
-              on:pointermove={handleSeekPointerMove}
-              on:pointerup={handleSeekPointerUp}
-              on:pointercancel={handleSeekPointerUp}
-              role="slider"
-              aria-label="Seek"
-              aria-valuenow={Math.round($progress * 100)}
-              aria-valuemin="0"
-              aria-valuemax="100"
-              tabindex="0"
-            >
-              <div class="progress-track">
+        {#if !hideAndroidLyricsControls}
+          <div class="player-controls">
+            <div class="progress-bar-container">
+              <span class="time">{formatDuration($currentTime)}</span>
+              <div
+                class="progress-bar"
+                on:pointerdown={handleSeekPointerDown}
+                on:pointermove={handleSeekPointerMove}
+                on:pointerup={handleSeekPointerUp}
+                on:pointercancel={handleSeekPointerUp}
+                role="slider"
+                aria-label="Seek"
+                aria-valuenow={Math.round($progress * 100)}
+                aria-valuemin="0"
+                aria-valuemax="100"
+                tabindex="0"
+              >
+                <div class="progress-track">
+                  <div
+                    class="progress-fill"
+                    style="width: {$progress * 100}%"
+                  ></div>
+                </div>
                 <div
-                  class="progress-fill"
-                  style="width: {$progress * 100}%"
+                  class="progress-thumb"
+                  style="left: {$progress * 100}%"
                 ></div>
               </div>
-              <div
-                class="progress-thumb"
-                style="left: {$progress * 100}%"
-              ></div>
+              <span class="time">{formatDuration($duration)}</span>
             </div>
-            <span class="time">{formatDuration($duration)}</span>
-          </div>
 
-          <div class="buttons">
-            <button
-              class="icon-btn shuffle-repeat"
-              class:active={$shuffle}
-              on:click={toggleShuffle}
-              aria-label="Shuffle"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                width="22"
-                height="22"
+            <div class="buttons">
+              <button
+                class="icon-btn shuffle-repeat"
+                class:active={$shuffle}
+                on:click={toggleShuffle}
+                aria-label="Shuffle"
               >
-                <path
-                  d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"
-                />
-              </svg>
-            </button>
-            <button
-              class="icon-btn large"
-              on:click={previousTrack}
-              aria-label="Previous"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                width="32"
-                height="32"
-              >
-                <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
-              </svg>
-            </button>
-            <button
-              class="play-btn large"
-              on:click={togglePlay}
-              aria-label={$isPlaying ? "Pause" : "Play"}
-            >
-              {#if $isPlaying}
                 <svg
                   viewBox="0 0 24 24"
                   fill="currentColor"
-                  width="40"
-                  height="40"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg
+                  width="22"
+                  height="22"
                 >
-              {:else}
+                  <path
+                    d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"
+                  />
+                </svg>
+              </button>
+              <button
+                class="icon-btn large"
+                on:click={previousTrack}
+                aria-label="Previous"
+              >
                 <svg
                   viewBox="0 0 24 24"
                   fill="currentColor"
-                  width="40"
-                  height="40"><path d="M8 5v14l11-7z" /></svg
+                  width="32"
+                  height="32"
                 >
-              {/if}
-            </button>
-            <button
-              class="icon-btn large"
-              on:click={nextTrack}
-              aria-label="Next"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                width="32"
-                height="32"
+                  <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" />
+                </svg>
+              </button>
+              <button
+                class="play-btn large"
+                on:click={togglePlay}
+                aria-label={$isPlaying ? "Pause" : "Play"}
               >
-                <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
-              </svg>
-            </button>
-            <button
-              class="icon-btn shuffle-repeat"
-              class:active={$repeat !== "none"}
-              on:click={cycleRepeat}
-              aria-label="Repeat"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                width="22"
-                height="22"
+                {#if $isPlaying}
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    width="40"
+                    height="40"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg
+                  >
+                {:else}
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    width="40"
+                    height="40"><path d="M8 5v14l11-7z" /></svg
+                  >
+                {/if}
+              </button>
+              <button
+                class="icon-btn large"
+                on:click={nextTrack}
+                aria-label="Next"
               >
-                <path
-                  d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"
-                />
-              </svg>
-              {#if $repeat === "one"}<span class="repeat-one-badge">1</span
-                >{/if}
-            </button>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  width="32"
+                  height="32"
+                >
+                  <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
+                </svg>
+              </button>
+              <button
+                class="icon-btn shuffle-repeat"
+                class:active={$repeat !== "none"}
+                on:click={cycleRepeat}
+                aria-label="Repeat"
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  width="22"
+                  height="22"
+                >
+                  <path
+                    d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"
+                  />
+                </svg>
+                {#if $repeat === "one"}<span class="repeat-one-badge">1</span
+                  >{/if}
+              </button>
+            </div>
           </div>
-        </div>
+        {/if}
 
         {#if !$lyricsVisible && $lyricsData?.lines}
           <div class="compact-lyrics-mobile" in:fade>
@@ -606,9 +659,9 @@
                 class="compact-line"
                 class:current={isCurrent}
                 class:dimmed={!isCurrent}
-                animate:flip={{ duration: 300 }}
-                in:fly={{ y: 20, duration: 300 }}
-                out:fly={{ y: -20, duration: 300 }}
+                animate:flip={{ duration: isAndroid ? 150 : 300 }}
+                in:fly={{ y: isAndroid ? 6 : 20, duration: isAndroid ? 160 : 300 }}
+                out:fly={{ y: isAndroid ? -6 : -20, duration: isAndroid ? 140 : 300 }}
               >
                   {#if isCurrent && hasWordSync && line.words}
                     {#each line.words as word, wordIdx}
@@ -1824,5 +1877,62 @@
       animation: none !important;
       transition: none !important;
     }
+  }
+
+  /* Android webview fallback: lighter composition to avoid transition glitches */
+  .fullscreen-player.android-lite .bg-canvas {
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    filter: blur(45px) saturate(1.2);
+    opacity: 0.45;
+    transform: translateZ(0);
+  }
+
+  .fullscreen-player.android-lite .bg-layer {
+    animation: none !important;
+    mix-blend-mode: normal !important;
+    will-change: auto;
+  }
+
+  .fullscreen-player.android-lite .bg-layer-2,
+  .fullscreen-player.android-lite .bg-layer-3 {
+    opacity: 0;
+  }
+
+  .fullscreen-player.android-lite .marquee-container,
+  .fullscreen-player.android-lite .desktop-lyrics-container,
+  .fullscreen-player.android-lite .mobile-lyrics-wrapper .lyrics-container {
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+
+  .fullscreen-player.android-lite .desktop-lyric-line,
+  .fullscreen-player.android-lite .mobile-lyrics-wrapper .lyric-line {
+    transform: none !important;
+    text-shadow: none;
+    transition:
+      color 0.2s ease,
+      opacity 0.2s ease;
+  }
+
+  .fullscreen-player.android-lite .compact-line {
+    transition: opacity 0.2s ease;
+  }
+
+  .fullscreen-player.android-lite .mobile-lyrics-wrapper {
+    margin-top: 0;
+    padding-bottom: 0.5rem;
+  }
+
+  .fullscreen-player.android-lite .mobile-lyrics-wrapper .lyrics-container {
+    padding: 0.75rem 0 0.75rem;
+  }
+
+  .fullscreen-player.android-lite .mobile-lyrics-wrapper .lyric-line {
+    font-size: 1.22rem;
+    line-height: 1.3;
+    padding: 0.5rem 0;
+    word-break: break-word;
   }
 </style>
