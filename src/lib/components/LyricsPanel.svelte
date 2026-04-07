@@ -13,6 +13,7 @@
         destroyLyricsSync,
         fetchLyricsForTrack,
         switchLyricsSource,
+        wordSyncState,
     } from "$lib/stores/lyrics";
     import {
         currentTrack,
@@ -23,7 +24,7 @@
     import { isMobile } from "$lib/stores/mobile";
     import { addToast } from "$lib/stores/toast";
     import { importLyricsContent } from "$lib/stores/lyrics";
-    import { LYRICS_SOURCES, type LyricsSource } from "$lib/lyrics";
+    import { LYRICS_SOURCES, type LyricsSource, type WordTiming } from "$lib/lyrics";
 
     // -------------------------------------------------------------------------
     // Smooth scroll
@@ -39,6 +40,7 @@
     }
 
     $: if (
+        !isUnsynced &&
         $activeLine >= 0 &&
         lineElements[$activeLine] &&
         lyricsContainer &&
@@ -82,48 +84,44 @@
     }
 
     // -------------------------------------------------------------------------
-    // Word sync
+    // Word / syllable progress helpers
     // -------------------------------------------------------------------------
 
-    const wordSyncState = derived(
-        [lyricsData, currentTime, activeLine],
-        ([$lyrics, $time, $activeIdx]) => {
-            if (!$lyrics || $activeIdx < 0) return { activeWordIdx: -1, progress: 0 };
-            const line = $lyrics.lines[$activeIdx];
-            if (!line?.words?.length)       return { activeWordIdx: -1, progress: 0 };
+    /**
+     * Word state for the active line only: 'past' | 'highlighted' | 'future'.
+     * Only called when rendering the active line's word spans.
+     */
+    function getWordState(wordIdx: number, activeWordIdx: number): string {
+        if (wordIdx < activeWordIdx)  return 'past';
+        if (wordIdx === activeWordIdx) return 'highlighted';
+        return 'future';
+    }
 
-            let activeWordIdx = -1;
-            for (let i = 0; i < line.words.length; i++) {
-                const w = line.words[i];
-                if ($time >= w.time && $time <= w.endTime) { activeWordIdx = i; break; }
-                if ($time >= w.time) {
-                    const next = line.words[i + 1];
-                    if (!next || $time < next.time) activeWordIdx = i;
-                }
-            }
+    /**
+     * Syllable progress (0-100) for the active word on the active line.
+     * Only called for split words on the active line.
+     */
+    function getSyllableProgress(syllableIdx: number, ws: typeof $wordSyncState): number {
+        if (syllableIdx < ws.activeSyllableIdx)   return 100;
+        if (syllableIdx === ws.activeSyllableIdx) return ws.syllableProgress;
+        return 0;
+    }
 
-            let progress = 0;
-            if (activeWordIdx >= 0) {
-                const w   = line.words[activeWordIdx];
-                const dur = w.endTime - w.time;
-                progress  = dur > 0
-                    ? Math.min(100, Math.max(0, (($time - w.time) / dur) * 100))
-                    : 100;
-            }
+    /**
+     * Background word state for the active line: 'past' | 'highlighted' | 'future'.
+     */
+    function getBgWordState(wordIdx: number, ws: typeof $wordSyncState): string {
+        if (wordIdx < ws.bgActiveWordIdx)   return 'past';
+        if (wordIdx === ws.bgActiveWordIdx) return 'highlighted';
+        return 'future';
+    }
 
-            return { activeWordIdx, progress };
-        }
-    );
-
-    function getWordPercentage(
-        lineIdx: number, wordIdx: number,
-        activeLineIdx: number, activeWordIdx: number,
-        currentWordProgress: number,
-    ): number {
-        if (lineIdx < activeLineIdx) return 100;
-        if (lineIdx > activeLineIdx) return 0;
-        if (wordIdx < activeWordIdx) return 100;
-        if (wordIdx === activeWordIdx) return currentWordProgress;
+    /**
+     * Background syllable progress (0-100) for the active bg word on the active line.
+     */
+    function getBgSyllableProgress(syllableIdx: number, ws: typeof $wordSyncState): number {
+        if (syllableIdx < ws.bgActiveSyllableIdx)   return 100;
+        if (syllableIdx === ws.bgActiveSyllableIdx) return ws.bgSyllableProgress;
         return 0;
     }
 
@@ -149,11 +147,31 @@
     $: showSourcePicker = LYRICS_SOURCES.length > 1 || $availableSources.includes('embedded');
     $: activeSourceLabel  = $lyricsData
         ? (ALL_SOURCE_LABELS[$lyricsData.source] ?? $lyricsData.source)
-        : '';
+        : ($selectedSource ? (ALL_SOURCE_LABELS[$selectedSource] ?? $selectedSource) : '');
+
+    /**
+     * True when the result has timestamped lines but no word or syllable sync.
+     * Derived from existing data
+     */
+    $: hasLineSync = !!$lyricsData
+        && !$lyricsData.hasWordSync
+        && !$lyricsData.hasSyllableSync
+        && $lyricsData.lines.some(l => l.time > 0);
+
+    /**
+     * True when displaying unsynced embedded tag lyrics . no timestamps at all.
+     * In this mode we suppress active/past/distance classes and auto-scroll.
+     */
+    $: isUnsynced = !!$lyricsData
+        && ($lyricsData.source as string) === 'embedded'
+        && !($lyricsData as any).synced;
 
     let sourceMenuOpen = false;
     function toggleSourceMenu()  { sourceMenuOpen = !sourceMenuOpen; }
     function closeSourceMenu()   { sourceMenuOpen = false; }
+
+    // Close the menu whenever a search completes (loading -> done)
+    $: if (!$lyricsLoading) sourceMenuOpen = false;
 
     async function handleSourceSelect(sourceId: string) {
         sourceMenuOpen = false;
@@ -163,11 +181,11 @@
     }
 
     // -------------------------------------------------------------------------
-    // Import (.lrc and .ttml)
+    // Import (.lrc, .ttml, .srt)
     // -------------------------------------------------------------------------
 
     /** Formats the file input accepts. */
-    const IMPORT_ACCEPT = ".lrc,.ttml,.xml,.srt";
+    const IMPORT_ACCEPT = ".lrc,.ttml,.xml,.srt,.json";
 
     async function handleImportLyrics() {
         const input = document.createElement("input");
@@ -186,9 +204,10 @@
             const content = e.target?.result as string;
             // Determine format from file extension
             const ext = file.name.split('.').pop()?.toLowerCase() ?? 'lrc';
-            const format: 'lrc' | 'ttml' | 'srt' =
+            const format: 'lrc' | 'ttml' | 'srt' | 'json' =
                 (ext === 'ttml' || ext === 'xml') ? 'ttml' :
                 ext === 'srt' ? 'srt' :
+                ext === 'json' ? 'json' :
                 'lrc';
             await importLyricsContent(content, format);
         };
@@ -218,7 +237,7 @@
             <div class="header-actions">
 
                 <!-- Source picker -->
-                {#if showSourcePicker && $lyricsData}
+                {#if showSourcePicker}
                     <div
                         class="source-picker"
                         role="none"
@@ -331,7 +350,7 @@
         </header>
 
         <!-- Content -------------------------------------------------------- -->
-        <div class="lyrics-content" bind:this={lyricsContainer}>
+        <div class="lyrics-content" class:unsynced={isUnsynced} bind:this={lyricsContainer}>
 
             {#if $lyricsLoading}
                 <div class="lyrics-status">
@@ -380,20 +399,33 @@
                 </div>
 
             {:else if $lyricsData && $lyricsData.lines.length > 0}
-                <div class="lyrics-lines">
+                <div class="lyrics-lines" class:unsynced={isUnsynced}>
                     {#each $lyricsData.lines as line, i}
                         {@const distance = Math.abs(i - $activeLine)}
                         {@const clampedDist = Math.min(distance, 6)}
-                        {@const hasWordSync = !!(line.words && line.words.length > 0)}
                         {@const isActive    = i === $activeLine}
+                        {@const hasPrimary  = !!(line.words && line.words.length > 0)}
+                        {@const hasBgWords  = !!(line.background_words && line.background_words.length > 0)}
+
+                        <!--
+                            Section label . rendered above the first line of each new section.
+                            Only present when lyrics carry structure data (Apple JSON source).
+                            i===0 guard prevents an array-out-of-bounds on the previous line lookup.
+                        -->
+                        {#if line.structure && (i === 0 || line.structure !== $lyricsData.lines[i - 1].structure)}
+                            <div class="section-label" aria-hidden="true">{line.structure}</div>
+                        {/if}
+
                         <div
                             class="lyric-line"
-                            class:active={isActive}
-                            class:near={distance === 1}
-                            class:mid={distance === 2}
-                            class:far={distance >= 3}
-                            class:past={i < $activeLine}
-
+                            class:active={!isUnsynced && isActive}
+                            class:near={!isUnsynced && distance === 1}
+                            class:mid={!isUnsynced && distance === 2}
+                            class:far={!isUnsynced && distance >= 3}
+                            class:past={!isUnsynced && i < $activeLine}
+                            class:opposite={!!line.opposite_turn && !line.is_background}
+                            class:opposite-bg={!!line.opposite_turn && !!line.is_background}
+                            class:word-sync={hasPrimary && isActive}
                             style="--line-distance: {clampedDist};"
                             bind:this={lineElements[i]}
                             on:click={() => handleLineClick(line.time)}
@@ -402,16 +434,82 @@
                             role="button"
                             tabindex="0"
                         >
-                            {#if hasWordSync && line.words}
-                                {#each line.words as word, wordIdx}
-                                    {@const progress = getWordPercentage(i, wordIdx, $activeLine, $wordSyncState.activeWordIdx, $wordSyncState.progress)}
-                                    <span class="lyric-word" style="--word-progress: {progress}%;"
-                                        >{word.word}</span
-                                    >{#if wordIdx < line.words.length - 1}{" "}{/if}
-                                {/each}
-                            {:else}
-                                {line.text}
+                            <!--
+                                Primary vocal.
+                                Word spans are only rendered on the active line — past and future
+                                lines fall through to plain text, saving DOM nodes and style recalcs.
+                                CSS handles their color via .lyric-line.past .lyric-word etc.
+
+                                Three paths on the active line:
+                                  A) Split word   → individual .lyric-syllable spans (Option B)
+                                  B) Whole word   → single .lyric-word span with state class
+                                  C) No word data → plain text
+                            -->
+                            <span class="primary-words">
+                                {#if hasPrimary && isActive && line.words}
+                                    {#each line.words as word, wIdx}
+                                        {@const wState = getWordState(wIdx, $wordSyncState.activeWordIdx)}
+                                        {#if word.is_split && word.syllables && word.syllables.length > 0}
+                                            <span class="lyric-word split-word"
+                                                >{#each word.syllables as syl, sIdx
+                                                    }<span
+                                                        class="lyric-syllable"
+                                                        class:past={wState === 'past' || (wState === 'highlighted' && sIdx < $wordSyncState.activeSyllableIdx)}
+                                                        class:highlighted={wState === 'highlighted' && sIdx === $wordSyncState.activeSyllableIdx}
+                                                        style={wState === 'highlighted' && sIdx === $wordSyncState.activeSyllableIdx ? `--syl-progress: ${$wordSyncState.syllableProgress}%` : ''}
+                                                    >{syl.text}</span
+                                                >{/each}</span
+                                            >{#if wIdx < line.words.length - 1}{" "}{/if}
+                                        {:else}
+                                            <span
+                                                class="lyric-word {wState}"
+                                                style={wState === 'highlighted' ? `--word-progress: ${$wordSyncState.wordProgress}%` : ''}
+                                            >{word.word}</span>{#if wIdx < line.words.length - 1}{" "}{/if}
+                                        {/if}
+                                    {/each}
+                                {:else}
+                                    {line.text}
+                                {/if}
+                            </span>
+
+                            <!--
+                                Background vocal overlay.
+                                Rendered when this line carries simultaneous BG words
+                                Has its own independent fill tracking via getBgProgress().
+                            -->
+                            <!--
+                                Background vocal: word spans only on the active line.
+                                Non-active lines render background_text as plain text.
+                            -->
+                            {#if hasBgWords}
+                                <span class="bg-vocal" aria-label="background vocals">
+                                    {#if isActive && line.background_words}
+                                        {#each line.background_words as bgWord, bgIdx}
+                                            {@const bgState = getBgWordState(bgIdx, $wordSyncState)}
+                                            {#if bgWord.is_split && bgWord.syllables && bgWord.syllables.length > 0}
+                                                <span class="lyric-word split-word"
+                                                    >{#each bgWord.syllables as syl, sIdx
+                                                        }<span
+                                                            class="lyric-syllable"
+                                                            class:past={bgState === 'past' || (bgState === 'highlighted' && sIdx < $wordSyncState.bgActiveSyllableIdx)}
+                                                            class:highlighted={bgState === 'highlighted' && sIdx === $wordSyncState.bgActiveSyllableIdx}
+                                                            style={bgState === 'highlighted' && sIdx === $wordSyncState.bgActiveSyllableIdx ? `--syl-progress: ${$wordSyncState.bgSyllableProgress}%` : ''}
+                                                        >{syl.text}</span
+                                                    >{/each}</span
+                                                >{#if bgIdx < line.background_words.length - 1}{" "}{/if}
+                                            {:else}
+                                                <span
+                                                    class="lyric-word {bgState}"
+                                                    style={bgState === 'highlighted' ? `--word-progress: ${$wordSyncState.bgWordProgress}%` : ''}
+                                                >{bgWord.word}</span>{#if bgIdx < line.background_words.length - 1}{" "}{/if}
+                                            {/if}
+                                        {/each}
+                                    {:else}
+                                        {line.background_text}
+                                    {/if}
+                                </span>
                             {/if}
+
                         </div>
                     {/each}
                 </div>
@@ -439,13 +537,16 @@
             <footer class="lyrics-footer">
                 <span class="lyrics-source">
                     {#if ($lyricsData.source as string) === 'user'}
-                        Imported · {$lyricsData.format.toUpperCase()}
+                        Imported · {$lyricsData.format.toUpperCase()}{#if $lyricsData.hasSyllableSync} · Syllable sync{:else if $lyricsData.hasWordSync} · Word sync{:else if hasLineSync} · Line sync{/if}
                     {:else if ($lyricsData.source as string) === 'embedded'}
-                        Embedded tag · {($lyricsData as any).synced ? 'Synced' : 'Unsynced'}
+                        Embedded tag · {($lyricsData as any).synced ? 'Line sync' : 'Unsynced'}
                     {:else}
                         {ALL_SOURCE_LABELS[$lyricsData.source] ?? $lyricsData.source}
                         · {$lyricsData.format.toUpperCase()}
-                        {#if $lyricsData.hasWordSync} · Word sync{/if}
+                        {#if $lyricsData.hasSyllableSync} · Syllable sync
+                        {:else if $lyricsData.hasWordSync} · Word sync
+                        {:else if hasLineSync} · Line sync
+                        {/if}
                     {/if}
                 </span>
             </footer>
@@ -506,6 +607,9 @@
         }
     }
 
+    /* ------------------------------------------------------------------ */
+    /* Header                                                               */
+    /* ------------------------------------------------------------------ */
     .lyrics-header {
         display: flex;
         align-items: center;
@@ -657,14 +761,19 @@
             transparent 100%
         );
         -webkit-mask-image: linear-gradient(
-            to bottom,
-            transparent 0%,
-            black 8%,
-            black 90%,
-            transparent 100%
+            to bottom, transparent 0%, black 8%, black 90%, transparent 100%
         );
     }
 
+    /* Unsynced embedded lyrics . no mask fade, starts at top */
+    .lyrics-content.unsynced {
+        mask-image: none;
+        -webkit-mask-image: none;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Status states                                                        */
+    /* ------------------------------------------------------------------ */
     .lyrics-status {
         display: flex;
         flex-direction: column;
@@ -727,10 +836,40 @@
         cursor: pointer;
         transition: all var(--transition-fast);
     }
-    .source-try-btn:hover {
-        background: var(--accent-primary);
-        color: #fff;
-        border-color: var(--accent-primary);
+    .source-try-btn:hover { background: var(--accent-primary); color: #fff; border-color: var(--accent-primary); }
+
+    /* Unsynced: no bottom padding (no centering needed), lines fully visible */
+    .lyrics-lines.unsynced {
+        padding-bottom: var(--spacing-lg);
+    }
+
+    /* All lines in unsynced mode: full opacity, no blur, no scale, active color */
+    .lyrics-lines.unsynced .lyric-line {
+        color: var(--text-primary);
+        opacity: 1;
+        filter: none;
+        transform: none;
+        cursor: default;
+    }
+    .lyrics-lines.unsynced .lyric-line:hover {
+        color: var(--text-primary);
+        filter: none;
+        opacity: 1;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Section label  (Apple Music JSON structure field)                   */
+    /* ------------------------------------------------------------------ */
+    .section-label {
+        font-size: 0.65rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-subdued);
+        opacity: 0.5;
+        padding: 16px 0 4px;
+        user-select: none;
+        pointer-events: none;
     }
 
     /* ------------------------------------------------------------------ */
@@ -766,30 +905,17 @@
         transform: scale(0.96) translateY(0);
         transform-origin: left center;
         cursor: pointer;
+        /* Stack primary words and bg-vocal as block children */
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
     }
+    .lyric-line:hover { color: var(--text-secondary); filter: blur(0px); opacity: 1; }
 
-    .lyric-line:hover {
-        color: var(--text-secondary);
-        filter: blur(0px);
-        opacity: 1;
-    }
-
-    /* Distance-based depth — progressive blur & fade */
-    .lyric-line.near {
-        color: var(--lyrics-near);
-        filter: blur(0.3px);
-        opacity: 0.85;
-        transform: scale(0.98);
-    }
-
-    .lyric-line.mid {
-        color: var(--lyrics-mid);
-        filter: blur(1px);
-        opacity: 0.65;
-        transform: scale(0.96);
-    }
-
-    .lyric-line.far {
+    .lyric-line.near { color: var(--lyrics-near);  filter: blur(0.3px);  opacity: 0.85; transform: scale(0.98); }
+    .lyric-line.mid  { color: var(--lyrics-mid);   filter: blur(1px);    opacity: 0.65; transform: scale(0.96); }
+    .lyric-line.far  {
         color: var(--lyrics-far);
         filter: blur(calc(var(--line-distance) * 0.5px));
         opacity: calc(0.55 - var(--line-distance) * 0.05);
@@ -816,25 +942,165 @@
     .lyric-line.past.far  { color: var(--lyrics-past-far);  opacity: calc(0.45 - var(--line-distance) * 0.05); filter: blur(calc(var(--line-distance) * 0.6px)); transform: scale(0.94); }
 
     /* ------------------------------------------------------------------ */
-    /* Word sync                                                            */
+    /* Opposite turn . featured / secondary vocalist                       */
     /* ------------------------------------------------------------------ */
+    /*
+     * opposite_turn=true, is_background=false
+     * Full-line delivery by the featured artist : right-aligned, italic.
+     */
+    .lyric-line.opposite {
+        align-items: flex-end;
+        text-align: right;
+        transform-origin: right center;
+        font-style: italic;
+    }
+
+    /*
+     * opposite_turn=true, is_background=true
+     * Featured artist singing background vocals : right-aligned, italic,
+     * and slightly dimmer than a full opposite-turn line.
+     */
+    .lyric-line.opposite-bg {
+        align-items: flex-end;
+        text-align: right;
+        transform-origin: right center;
+        font-style: italic;
+        font-size: 1.05rem;
+        opacity: calc((1 - var(--line-distance) * 0.1) * 0.75);
+    }
+    .lyric-line.opposite-bg.active { opacity: 0.8; }
+
+    /* ------------------------------------------------------------------ */
+    /* Word sync . non-split words                                          */
+    /* ------------------------------------------------------------------ */
+    /*
+     * Base .lyric-word is invisible by default  only rendered on the
+     * active line (.word-sync). Past/future lines render as plain text so
+     * no word spans exist there, saving DOM nodes and style recalcs.
+     */
     .lyric-word {
         display: inline;
-        background-image:
-            linear-gradient(to right, var(--text-primary), var(--text-primary)),
-            linear-gradient(to right, var(--lyrics-inactive), var(--lyrics-inactive));
-        background-repeat: no-repeat;
-        background-size: var(--word-progress, 0%) 100%, 100% 100%;
+        color: transparent;
         background-clip: text;
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        color: transparent;
-        transition: background-size 0.1s linear, text-shadow 0.2s ease;
+        transition: text-shadow 0.2s ease;
     }
 
-    :global([data-theme="dark"]) .lyric-line.active .lyric-word {
+    /* Active word being filled . feathered gradient edge (8% soft transition) */
+    .lyric-line.word-sync .lyric-word.highlighted {
+        background-image: linear-gradient(
+            to right,
+            var(--text-primary)     0%,
+            var(--text-primary)     calc(var(--word-progress, 0%) - 4%),
+            var(--lyrics-inactive)  calc(var(--word-progress, 0%) + 4%),
+            var(--lyrics-inactive)  100%
+        );
+    }
+    :global([data-theme="dark"]) .lyric-line.word-sync .lyric-word.highlighted {
         text-shadow: 0 0 12px rgba(255, 255, 255, 0.15);
     }
+
+    /* Words already sung . fully lit */
+    .lyric-line.word-sync .lyric-word.past {
+        background-image: linear-gradient(
+            to right, var(--text-primary) 0%, var(--text-primary) 100%
+        );
+    }
+
+    /* Words not yet reached . dimmed */
+    .lyric-line.word-sync .lyric-word.future {
+        background-image: linear-gradient(
+            to right, var(--lyrics-inactive) 0%, var(--lyrics-inactive) 100%
+        );
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Syllable sync . split words                             */
+    /* ------------------------------------------------------------------ */
+    /*
+     * Transparent wrapper groups syllable spans for one visual word.
+     * No fill of its own; resets -webkit-text-fill-color so child spans work.
+     */
+    .lyric-word.split-word {
+        background: none;
+        -webkit-text-fill-color: inherit;
+        color: inherit;
+        transition: none;
+        display: inline;
+    }
+
+    /*
+     * Base syllable span : invisible until given a state class.
+     * Only exists inside .word-sync (active line only).
+     */
+    .lyric-syllable {
+        display: inline;
+        color: transparent;
+        background-clip: text;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+
+    /* Active syllable feathered fill, matching the word-level feel */
+    .lyric-line.word-sync .lyric-syllable.highlighted {
+        background-image: linear-gradient(
+            to right,
+            var(--text-primary)     0%,
+            var(--text-primary)     calc(var(--syl-progress, 0%) - 4%),
+            var(--lyrics-inactive)  calc(var(--syl-progress, 0%) + 4%),
+            var(--lyrics-inactive)  100%
+        );
+        transition: background-image 0.08s linear;
+    }
+
+    :global([data-theme="dark"]) .lyric-line.word-sync .lyric-syllable.highlighted {
+        text-shadow: 0 0 12px rgba(255, 255, 255, 0.15);
+    }
+
+    /* Syllables already sung */
+    .lyric-line.word-sync .lyric-syllable.past {
+        background-image: linear-gradient(
+            to right, var(--text-primary) 0%, var(--text-primary) 100%
+        );
+    }
+
+    /* Syllables not yet reached */
+    .lyric-line.word-sync .lyric-syllable:not(.past):not(.highlighted) {
+        background-image: linear-gradient(
+            to right, var(--lyrics-inactive) 0%, var(--lyrics-inactive) 100%
+        );
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Primary words wrapper                                               */
+    /* ------------------------------------------------------------------ */
+    /*
+     * Block wrapper so flex column in .lyric-line stacks primary words
+     * and bg-vocal as separate rows, while words remain inline within
+     * their own row.
+     */
+    .primary-words {
+        display: block;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Background vocal overlay                                            */
+    /* ------------------------------------------------------------------ */
+    /*
+     * Rendered below the primary words when background_words is non-empty.
+     * Smaller font, italic, reduced opacity subordinate to primary vocal.
+     */
+    .bg-vocal {
+        display: block;
+        font-size: 0.78em;
+        font-style: italic;
+        opacity: 0.55;
+        margin-top: 1px;
+        letter-spacing: 0;
+        font-weight: 600; /* slightly lighter than parent 700/800 */
+    }
+    .lyric-line.active .bg-vocal { opacity: 0.7; }
 
     /* ------------------------------------------------------------------ */
     /* Footer                                                               */

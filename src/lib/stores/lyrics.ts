@@ -8,6 +8,7 @@ import {
     type LyricsResult,
     type LyricsFormat,
     type LyricsSource,
+    type WordTiming,
 } from '$lib/lyrics';
 import { addToast } from '$lib/stores/toast';
 
@@ -67,6 +68,138 @@ export const activeLine = derived(
             }
         }
         return activeIdx;
+    }
+);
+
+// ---------------------------------------------------------------------------
+// Word + Syllable sync state
+// ---------------------------------------------------------------------------
+
+/**
+ * Compute active word index, word progress, active syllable index, and
+ * syllable progress for a word list at a given playback time.
+ *
+ * used for both primary and background word lists
+ */
+function computeWordSyncState(
+    words: WordTiming[],
+    time: number,
+): {
+    activeWordIdx:     number;
+    wordProgress:      number;
+    activeSyllableIdx: number;
+    syllableProgress:  number;
+} {
+    let activeWordIdx = -1;
+
+    for (let i = 0; i < words.length; i++) {
+        const w = words[i];
+        if (time >= w.time && time <= w.endTime) {
+            activeWordIdx = i;
+            break;
+        }
+        if (time >= w.time) {
+            const next = words[i + 1];
+            if (!next || time < next.time) activeWordIdx = i;
+        }
+    }
+
+    if (activeWordIdx < 0) {
+        return { activeWordIdx: -1, wordProgress: 0, activeSyllableIdx: -1, syllableProgress: 0 };
+    }
+
+    const word = words[activeWordIdx];
+    const wordDur = word.endTime - word.time;
+    const wordProgress = wordDur > 0
+        ? Math.min(100, Math.max(0, ((time - word.time) / wordDur) * 100))
+        : 100;
+
+    // ── Syllable-level tracking ─────────────────────────────────────────────
+    if (!word.is_split || !word.syllables || word.syllables.length === 0) {
+        return { activeWordIdx, wordProgress, activeSyllableIdx: -1, syllableProgress: 0 };
+    }
+
+    const syls = word.syllables;
+    let activeSyllableIdx = -1;
+
+    for (let i = 0; i < syls.length; i++) {
+        const s = syls[i];
+        if (time >= s.time && time <= s.end_time) {
+            activeSyllableIdx = i;
+            break;
+        }
+        if (time >= s.time) {
+            const next = syls[i + 1];
+            if (!next || time < next.time) activeSyllableIdx = i;
+        }
+    }
+
+    let syllableProgress = 0;
+    if (activeSyllableIdx >= 0) {
+        const syl = syls[activeSyllableIdx];
+        const sylDur = syl.end_time - syl.time;
+        syllableProgress = sylDur > 0
+            ? Math.min(100, Math.max(0, ((time - syl.time) / sylDur) * 100))
+            : 100;
+    }
+
+    return { activeWordIdx, wordProgress, activeSyllableIdx, syllableProgress };
+}
+
+/**
+ * Full sync state for the currently active line.
+ * Tracks primary words and background words independently at word + syllable level.
+ */
+export const wordSyncState = derived(
+    [lyricsData, currentTime, activeLine],
+    ([$lyrics, $time, $activeIdx]) => {
+        const empty = {
+            activeWordIdx:       -1,
+            wordProgress:         0,
+            activeSyllableIdx:   -1,
+            syllableProgress:     0,
+            bgActiveWordIdx:     -1,
+            bgWordProgress:       0,
+            bgActiveSyllableIdx: -1,
+            bgSyllableProgress:   0,
+        };
+
+        if (!$lyrics || $activeIdx < 0) return empty;
+        const line = $lyrics.lines[$activeIdx];
+        if (!line) return empty;
+
+        // Primary vocal
+        const primary = line.words?.length
+            ? computeWordSyncState(line.words, $time)
+            : { activeWordIdx: -1, wordProgress: 0, activeSyllableIdx: -1, syllableProgress: 0 };
+
+        // Background vocal . independent tracking against the same clock
+        const bg = line.background_words?.length
+            ? computeWordSyncState(line.background_words, $time)
+            : { activeWordIdx: -1, wordProgress: 0, activeSyllableIdx: -1, syllableProgress: 0 };
+
+        return {
+            activeWordIdx:       primary.activeWordIdx,
+            wordProgress:        primary.wordProgress,
+            activeSyllableIdx:   primary.activeSyllableIdx,
+            syllableProgress:    primary.syllableProgress,
+            bgActiveWordIdx:     bg.activeWordIdx,
+            bgWordProgress:      bg.wordProgress,
+            bgActiveSyllableIdx: bg.activeSyllableIdx,
+            bgSyllableProgress:  bg.syllableProgress,
+        };
+    }
+);
+
+/**
+ * The current song section label (Verse / Chorus / Bridge / …).
+ * null when the active line has no structure data (LRC / TTML sources).
+ */
+export const activeStructure = derived(
+    [lyricsData, activeLine],
+    ([$lyrics, $activeIdx]) => {
+        if (!$lyrics || $activeIdx < 0) return null;
+        return $lyrics.lines[$activeIdx]?.structure ?? null;
     }
 );
 
@@ -141,17 +274,104 @@ async function refreshAvailableSources(musicPath: string, isStream = false): Pro
     }
 }
 
+// ---------------------------------------------------------------------------
+// Apple JSON types
+// ---------------------------------------------------------------------------
+
+interface AppleRawSyllable {
+    text:     string;
+    time:     number;
+    end_time: number;
+    part:     boolean;
+}
+
+interface AppleRawWord {
+    word:       string;
+    time:       number;
+    end_time:   number;
+    is_split:   boolean;
+    syllables?: AppleRawSyllable[];
+}
+
+interface AppleRawLine {
+    time:             number;
+    end_time:         number;
+    text:             string;
+    words:            AppleRawWord[];
+    structure:        string;
+    opposite_turn:    boolean;
+    is_background:    boolean;
+    background_words: AppleRawWord[];
+    background_text:  string;
+}
+
+/**
+ * Remap a single AppleRawWord to a WordTiming-compatible object.
+ * The Rust serialiser uses snake_case (end_time); WordTiming uses camelCase (endTime).
+ */
+function mapAppleWord(w: AppleRawWord): WordTiming {
+    return {
+        word:      w.word,
+        time:      w.time,
+        endTime:   w.end_time,
+        is_split:  w.is_split,
+        syllables: w.syllables,
+    };
+}
+
+/** Map the Rust-serialised Apple line array to our shared LyricLine[]. */
+function mapAppleLines(raw: AppleRawLine[]): LyricLine[] {
+    return raw.map(l => ({
+        time:             l.time,
+        endTime:          l.end_time,
+        text:             l.text,
+        words:            l.words.map(mapAppleWord),
+        structure:        l.structure      || undefined,
+        opposite_turn:    l.opposite_turn  || undefined,
+        is_background:    l.is_background  || undefined,
+        background_words: l.background_words.length
+            ? l.background_words.map(mapAppleWord)
+            : undefined,
+        background_text:  l.background_text || undefined,
+    }));
+}
+
 /**
  * Re-parse a cached file into a LyricsResult.
  * Uses the source's own parse() method
  * Falls back to raw LRC parsing for the 'user' and 'embedded' virtual sources.
+ * json is parsed via tauri invoke. hence the async
  */
-function reparseFromCache(
+async function reparseFromCache(
     raw: string,
     format: string,
     sourceId: string,
-): LyricsResult | null {
-    // Virtual sources . use format to pick the right parser
+): Promise<LyricsResult | null> {
+
+    // ── JSON (Apple Music syllable data) ───────────────────────────────────
+    if (format === 'json') {
+        try {
+            const appleLines = await invoke<AppleRawLine[]>(
+                'parse_apple_lyrics_json_cmd', { raw }
+            );
+            const lines = mapAppleLines(appleLines);
+            const hasSyllableSync = lines.some(l =>
+                l.words?.some(w => w.is_split && w.syllables?.length)
+            );
+            return {
+                lines,
+                source:          sourceId,
+                format:          'json',
+                hasWordSync:     true,
+                hasSyllableSync,
+                raw,
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    // ── Virtual sources ────────────────────────────────────────────────────
     if (sourceId === 'user' || sourceId === 'embedded') {
         if (format === 'ttml' || format === 'xml') {
             const lines = lyricsManager.parseTTML(raw);
@@ -174,7 +394,7 @@ function reparseFromCache(
         };
     }
 
-    // Registered source . delegate to its parse() so format logic is encapsulated
+    // ── Registered source ──────────────────────────────────────────────────
     return lyricsManager.parseFromSource(sourceId, raw);
 }
 
@@ -195,7 +415,7 @@ export async function fetchLyricsForTrack(): Promise<void> {
         // 1. User-imported file (any format)  always wins, never overridden
         const userFile = await loadUserLyrics(track.path);
         if (userFile && fetchId === currentFetchId) {
-            const result = reparseFromCache(userFile.content, userFile.format, 'user');
+            const result = await reparseFromCache(userFile.content, userFile.format, 'user');
             if (result) {
                 lyricsData.set(result);
                 await refreshAvailableSources(track.path, isStream);
@@ -243,12 +463,12 @@ export async function fetchLyricsForTrack(): Promise<void> {
             } catch { /* tag read failed . continue */ }
         }
 
-                // 3. Respect user's source preference if set
+        // 3. Respect user's source preference if set
         const preferred = get(selectedSource);
         if (preferred && SOURCE_IDS.includes(preferred)) {
             const cached = await loadSourceLyrics(track.path, preferred);
             if (cached && fetchId === currentFetchId) {
-                const result = reparseFromCache(cached.content, cached.format, preferred);
+                const result = await reparseFromCache(cached.content, cached.format, preferred);
                 if (result) {
                     lyricsData.set(result);
                     await refreshAvailableSources(track.path, isStream);
@@ -276,7 +496,7 @@ export async function fetchLyricsForTrack(): Promise<void> {
             const cached = await loadSourceLyrics(track.path, source.id);
             if (cached) {
                 if (fetchId !== currentFetchId) return;
-                const result = reparseFromCache(cached.content, cached.format, source.id);
+                const result = await reparseFromCache(cached.content, cached.format, source.id);
                 if (result) {
                     lyricsData.set(result);
                     await refreshAvailableSources(track.path, isStream);
@@ -398,7 +618,7 @@ export async function switchLyricsSource(sourceId: string): Promise<void> {
         // Try cache first
         const cached = await loadSourceLyrics(track.path, sourceId);
         if (cached && fetchId === currentFetchId) {
-            const result = reparseFromCache(cached.content, cached.format, sourceId);
+            const result = await reparseFromCache(cached.content, cached.format, sourceId);
             if (result) {
                 lyricsData.set(result);
                 addToast(`Switched to ${label}`, 'success');
@@ -465,23 +685,33 @@ export function destroyLyricsSync(): void {
 // Public: import a lyrics file for the current track
 // ---------------------------------------------------------------------------
 
-export async function importLyricsContent(content: string, format: 'lrc' | 'ttml' | 'srt'): Promise<void> {
+export async function importLyricsContent(content: string, format: 'lrc' | 'ttml' | 'srt' | 'json'): Promise<void> {
     const track = get(currentTrack);
     if (!track) {
         addToast('No track selected for lyrics import.', 'error');
         return;
     }
 
-    // Validate before saving
+    // Validate before saving.
+    // JSON (Apple Music) is validated by the Rust parser via Tauri invoke 
+    // we do a dry-run parse here so the user gets an error before anything is saved.
     try {
-        const testLines = format === 'ttml'
-            ? lyricsManager.parseTTML(content)
-            : format === 'srt'
-            ? lyricsManager.parseSRT(content)
-            : lyricsManager.parseLRC(content);
-        if (testLines.length === 0) {
-            addToast(`No lyric lines found in the ${format.toUpperCase()} file.`, 'error');
-            return;
+        if (format === 'json') {
+            const testLines = await invoke<unknown[]>('parse_apple_lyrics_json_cmd', { raw: content });
+            if (!testLines || testLines.length === 0) {
+                addToast('No lyric lines found in the JSON file.', 'error');
+                return;
+            }
+        } else {
+            const testLines = format === 'ttml'
+                ? lyricsManager.parseTTML(content)
+                : format === 'srt'
+                ? lyricsManager.parseSRT(content)
+                : lyricsManager.parseLRC(content);
+            if (testLines.length === 0) {
+                addToast(`No lyric lines found in the ${format.toUpperCase()} file.`, 'error');
+                return;
+            }
         }
     } catch {
         addToast(`Failed to parse the ${format.toUpperCase()} file.`, 'error');

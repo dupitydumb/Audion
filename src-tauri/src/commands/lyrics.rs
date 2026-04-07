@@ -59,13 +59,13 @@ fn resolve_source_lyrics_path(
 /// Restrict format strings to known, safe extensions. Falls back to "lrc".
 fn sanitise_format(format: &str) -> &str {
     match format {
-        "lrc" | "ttml" | "xml" | "srt" => format,
+        "lrc" | "ttml" | "xml" | "srt" | "json" => format,
         _ => "lrc",
     }
 }
 
 /// All formats we probe when searching for an existing file.
-const KNOWN_FORMATS: &[&str] = &["lrc", "ttml", "xml"];
+const KNOWN_FORMATS: &[&str] = &["lrc", "ttml", "xml", "json"];
 
 fn hash_path(music_path: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
@@ -477,11 +477,16 @@ fn parse_lrc_content(lrc: &str) -> Vec<LyricLineJson> {
 /// Find the best available LRC path for the external API commands.
 /// TTML files are skipped here as they are parsed on the frontend.
 fn resolve_best_lrc_path(app: &AppHandle, music_path: &str, source_priority: &[&str]) -> Option<PathBuf> {
+    // User-imported LRC only (JSON user-imports are not LRC-parseable)
     let user = resolve_user_lyrics_path(app, music_path, "lrc");
     if user.exists() { return Some(user); }
+ 
     for src in source_priority {
-        let p = resolve_source_lyrics_path(app, music_path, src, "lrc");
-        if p.exists() { return Some(p); }
+        // Try LRC first; if absent try other text formats but skip JSON
+        for fmt in &["lrc", "ttml", "xml"] {  // note: json deliberately excluded
+            let p = resolve_source_lyrics_path(app, music_path, src, fmt);
+            if p.exists() { return Some(p); }
+        }
     }
     None
 }

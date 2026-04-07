@@ -5,6 +5,7 @@
  * and owns its own parsing logic inside fetch().
  */
 
+import { AppleMusic } from './applemusic';
 import { LRCLib } from './lrclib';
 import { Musixmatch } from './musixmatch';
 import { FILTER_WORDS } from './constants';
@@ -17,6 +18,26 @@ export interface WordTiming {
     word: string;
     time: number;      // seconds
     endTime: number;   // seconds
+    /** True when this word was assembled from multiple API syllables */
+     is_split?: boolean;
+
+     /**
+      * Per-syllable timing for split words (is_split = true).
+      * Absent on whole words to keep payload lean.
+      * When present, always has >= 2 entries.
+      */
+     syllables?: SyllableTiming[];
+}
+
+export interface SyllableTiming {
+    /** Raw syllable string as it came from the API */
+    text:     string;
+    /** Start time in seconds */
+    time:     number;
+    /** End time in seconds */
+    end_time: number;
+    /** Mirrors API `part` flag: true = not the last syllable of this word */
+    part:     boolean;
 }
 
 export interface LyricLine {
@@ -24,10 +45,37 @@ export interface LyricLine {
     endTime?: number;   // seconds. present for SRT and TTML; absent for LRC
     text: string;
     words?: WordTiming[];
+    /** Line end time in seconds. Absent on LRC / TTML lines. */
+    end_time?: number;
+    /**
+      * Song section label: "Intro" | "Verse" | "PreChorus" | "Chorus" |
+      * "Bridge" | "Outro" | ""
+      * Absent when source has no structure data (LRC / TTML / embedded).
+      */
+    structure?: string;
+    /**
+     * True = this line belongs to the featured / secondary vocalist.
+     * Rendered right-aligned, italic.
+     */
+    opposite_turn?: boolean;
+    /**
+      * True = this line is itself a background vocal line.
+      * When combined with opposite_turn=true it means the featured artist
+      * is singing BG vocals
+      */
+    is_background?: boolean;
+    /**
+      * Background vocal words that overlap with this line's primary vocal.
+      * Absent / undefined when no simultaneous BG vocal exists.
+      */
+    background_words?: WordTiming[];
+
+     /** Plain-text assembly of background_words. Absent when no BG vocal. */
+    background_text?: string;
 }
 
 /** The raw format the content was fetched/stored in. */
-export type LyricsFormat = 'lrc' | 'ttml' | 'xml' | 'srt';
+export type LyricsFormat = 'lrc' | 'ttml' | 'xml' | 'srt' | 'json';
 
 export interface LyricsResult {
     lines:       LyricLine[];
@@ -42,6 +90,10 @@ export interface LyricsResult {
      * undefined for all API/file sources.
      */
     synced?: boolean;
+    /*
+    * Only set by the Apple JSON parser.
+    */
+    hasSyllableSync?: boolean;
 }
 
 /**
@@ -81,6 +133,7 @@ export interface LyricsSource {
         artist:    string,
         album?:    string | null,
         duration?: number | null,
+        isrc?:     string | null,
     ) => Promise<LyricsResult | null>;
 
     /**
@@ -95,6 +148,7 @@ export interface LyricsSource {
 // Provider singletons
 // ---------------------------------------------------------------------------
 
+const _applemusic = new AppleMusic();
 const _lrclib     = new LRCLib();
 const _musixmatch = new Musixmatch(null, true); // enhanced = word-by-word
 
@@ -117,6 +171,24 @@ const _musixmatch = new Musixmatch(null, true); // enhanced = word-by-word
  * }
  */
 export const LYRICS_SOURCES: LyricsSource[] = [
+    {
+        id:     'applejson',
+        label:  'Apple Music',
+        format: 'json',
+    
+        async fetch(title, artist, album, duration, isrc) {
+            return await _applemusic.getLyrics(title, artist, album, duration, isrc);
+        },
+    
+        // parse() is only called by lyricsManager.parseFromSource() for the
+        // registered-source cache branch . but reparseFromCache() intercepts
+        // format === 'json' before reaching here, so this is never actually called.
+        // It's here to satisfy the LyricsSource interface.
+        parse(raw) {
+            return { lines: [], source: 'applejson', format: 'json', hasWordSync: true, hasSyllableSync: true, raw };
+        },
+    },
+    
     {
         id:     'musixmatch',
         label:  'Musixmatch',
@@ -472,6 +544,7 @@ class LyricsManager {
         artist:   string | null,
         album?:   string | null,
         duration?: number | null,
+        isrc?:     string | null,
     ): Promise<LyricsResult | null> {
         const source = LYRICS_SOURCES.find(s => s.id === sourceId);
         if (!source) return null;
@@ -499,6 +572,7 @@ class LyricsManager {
         artist:   string | null,
         album?:   string | null,
         duration?: number | null,
+        isrc?:     string | null,
     ): Promise<LyricsResult | null> {
         const cleanedTitle  = this.cleanTitle(title ?? '');
         // lowercase artist for consistent API searches
