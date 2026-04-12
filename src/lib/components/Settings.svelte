@@ -1065,6 +1065,30 @@
         </div>
 
         <div class="setting-item">
+          <div class="toggle-container">
+            <div class="toggle-info">
+              <span class="setting-label">Remote Control & Device Connection</span>
+              <p class="setting-hint">
+                Allow this device to be discovered and controlled by your other devices. Disabling this also stops this device from controlling others.
+              </p>
+            </div>
+            <button
+              class="toggle-btn"
+              class:active={$appSettings.remoteControlEnabled}
+              on:click={() =>
+                appSettings.setRemoteControlEnabled(
+                  !$appSettings.remoteControlEnabled,
+                )}
+              role="switch"
+              aria-checked={$appSettings.remoteControlEnabled}
+              aria-label="Toggle Remote Control"
+            >
+              <div class="toggle-handle"></div>
+            </button>
+          </div>
+        </div>
+
+        <div class="setting-item">
           <span class="setting-label">Audio Backend</span>
           <div class="theme-modes">
             <button

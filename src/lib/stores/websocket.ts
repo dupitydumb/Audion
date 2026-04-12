@@ -1,6 +1,7 @@
 import { writable, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 import { authState, triggerSync, isLoggedIn } from '$lib/stores/sync';
+import { appSettings } from '$lib/stores/settings';
 
 export interface RemoteDevice {
     deviceId: string;
@@ -195,11 +196,19 @@ function createWebsocketStore() {
         set({ connected: false, devices: [], statusText: 'Disconnected' });
     }
 
-    // Auto connect/disconnect based on auth state
+    // Auto connect/disconnect based on auth state and settings
     authState.subscribe($auth => {
-        if ($auth.is_logged_in) {
+        if ($auth.is_logged_in && get(appSettings).remoteControlEnabled) {
             connect();
         } else {
+            disconnect();
+        }
+    });
+
+    appSettings.subscribe($settings => {
+        if ($settings.remoteControlEnabled && get(authState).is_logged_in) {
+            connect();
+        } else if (!$settings.remoteControlEnabled) {
             disconnect();
         }
     });
