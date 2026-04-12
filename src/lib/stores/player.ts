@@ -539,10 +539,9 @@ function handleRemotePlayerState(payload: any) {
                 }
 
                 currentTrack.set({
-                    id: remoteTrackId,
-                    title: remoteTrack.title,
-                    artist: remoteTrack.artist,
-                    album: remoteTrack.album,
+                    ...remoteTrack,
+                    ...(localTrack || {}),
+                    id: remoteTrackId, // Ensure ID is a number
                     track_cover: localTrack ? getTrackCoverSrc(localTrack) : remoteTrack.coverUrl,
                 } as any);
             }
@@ -1953,6 +1952,13 @@ export async function transferPlayback(state: any) {
 
     if (localTrack) {
         // Use local cover for better reliability
+        // We spread localTrack to have full metadata (album_id, path, etc.)
+        const trackWithLocalCover = {
+            ...state.track,
+            ...localTrack,
+            coverUrl: getTrackCoverSrc(localTrack)
+        };
+        
         await playTrack(localTrack, false, state.currentTime);
         if (!state.isPlaying) {
             await pause();

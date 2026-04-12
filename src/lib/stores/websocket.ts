@@ -126,7 +126,18 @@ function createWebsocketStore() {
                 break;
             
             case 'devices_update':
-                update(s => ({ ...s, devices: payload.devices.filter((d: any) => d.deviceId !== deviceId) }));
+                update(s => {
+                    // Filter out own device and ensure unique IDs
+                    const uniqueDevices = payload.devices.reduce((acc: RemoteDevice[], current: RemoteDevice) => {
+                        if (current.deviceId === deviceId) return acc;
+                        if (!acc.find(item => item.deviceId === current.deviceId)) {
+                            acc.push(current);
+                        }
+                        return acc;
+                    }, []);
+                    
+                    return { ...s, devices: uniqueDevices };
+                });
                 break;
 
             case 'player_state':

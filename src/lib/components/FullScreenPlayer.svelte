@@ -1025,7 +1025,7 @@
                   in:fade
                 >
                   {#if $lyricsData?.lines && $lyricsData.lines.length > 0}
-                    {#each $lyricsData.lines as line, i (line.time || i)}
+                    {#each $lyricsData.lines as line, i (`${line.time}-${i}`)}
                       {@const isActiveLine = i === $activeLine}
                       {@const hasWordSync = line.words && line.words.length > 0}
                       <div

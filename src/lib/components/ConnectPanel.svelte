@@ -1,16 +1,39 @@
 <script lang="ts">
   import { fade, fly, slide } from "svelte/transition";
-  import { wsStore, type RemoteDevice, activeRemoteDevice } from "$lib/stores/websocket";
-  import { currentTrack, isPlaying, transferPlayback, sendRemoteCommand, activeBackend } from "$lib/stores/player";
+  import {
+    wsStore,
+    type RemoteDevice,
+    activeRemoteDevice,
+  } from "$lib/stores/websocket";
+  import {
+    currentTrack,
+    isPlaying,
+    transferPlayback,
+    sendRemoteCommand,
+    activeBackend,
+  } from "$lib/stores/player";
   import { isLoggedIn } from "$lib/stores/sync";
-  import { tracks as libraryTracks, getTrackByIdSync } from "$lib/stores/library";
+  import {
+    tracks as libraryTracks,
+    getTrackByIdSync,
+  } from "$lib/stores/library";
   import { getTrackCoverSrc } from "$lib/api/tauri";
   import { get } from "svelte/store";
   import { createEventDispatcher } from "svelte";
 
   const dispatch = createEventDispatcher();
 
-  $: devices = $wsStore.devices;
+  // Deduplication and sorting (active device first)
+  $: devices = $wsStore.devices
+    .filter(
+      (device, index, self) =>
+        index === self.findIndex((t) => t.deviceId === device.deviceId),
+    )
+    .sort((a, b) => {
+      if (a.deviceId === $activeRemoteDevice) return -1;
+      if (b.deviceId === $activeRemoteDevice) return 1;
+      return 0;
+    });
 
   function close() {
     dispatch("close");
@@ -28,547 +51,729 @@
   }
 
   function toggleControl(device: RemoteDevice) {
-    if ($activeBackend === 'remote' && $activeRemoteDevice === device.deviceId) {
-      activeBackend.set('none');
+    if (
+      $activeBackend === "remote" &&
+      $activeRemoteDevice === device.deviceId
+    ) {
+      activeBackend.set("none");
       activeRemoteDevice.set(null);
     } else {
-      activeBackend.set('remote');
+      activeBackend.set("remote");
       activeRemoteDevice.set(device.deviceId);
-      
-      // Update local stores with initial state immediately
+
       if (device.playerState && device.playerState.track) {
-          const remoteTrack = device.playerState.track;
-          const remotePlaying = device.playerState.isPlaying;
-          const remoteTrackId = Number(remoteTrack.id);
+        const remoteTrack = device.playerState.track;
+        const remotePlaying = device.playerState.isPlaying;
+        const remoteTrackId = Number(remoteTrack.id);
 
-          // Try to resolve track locally for better cover art (Fast lookup)
-          let localTrack: any = getTrackByIdSync(remoteTrackId);
-          
-          if (!localTrack) {
-              const $library = get(libraryTracks);
-              localTrack = $library.find(t => 
-                  t.title === remoteTrack.title && 
-                  t.artist === remoteTrack.artist
-              );
-          }
+        let localTrack: any = getTrackByIdSync(remoteTrackId);
+        if (!localTrack) {
+          const $library = get(libraryTracks);
+          localTrack = $library.find(
+            (t) =>
+              t.title === remoteTrack.title && t.artist === remoteTrack.artist,
+          );
+        }
 
-          currentTrack.set({
-              id: remoteTrackId,
-              title: remoteTrack.title,
-              artist: remoteTrack.artist,
-              album: remoteTrack.album,
-              track_cover: localTrack ? getTrackCoverSrc(localTrack) : remoteTrack.coverUrl,
-          } as any);
-          
-          isPlaying.set(remotePlaying);
+        currentTrack.set({
+          ...remoteTrack,
+          ...(localTrack || {}),
+          id: remoteTrackId,
+          track_cover: localTrack
+            ? getTrackCoverSrc(localTrack)
+            : remoteTrack.coverUrl,
+        } as any);
+
+        isPlaying.set(remotePlaying);
       }
     }
   }
 </script>
 
-<div 
-  class="connect-overlay" 
-  on:click|self={close} 
-  on:keydown|self={(e) => e.key === 'Escape' && close()}
-  transition:fade={{ duration: 200 }}
+<div
+  class="connect-overlay"
+  on:click|self={close}
+  on:keydown|self={(e) => e.key === "Escape" && close()}
+  transition:fade={{ duration: 250 }}
   role="presentation"
 >
-  <div class="connect-panel" in:fly={{ y: 20, duration: 300, opacity: 0 }} out:fly={{ y: 20, duration: 200, opacity: 0 }}>
+  <div
+    class="connect-panel glass"
+    in:fly={{ y: 30, duration: 400, opacity: 0 }}
+    out:fly={{ y: 20, duration: 200, opacity: 0 }}
+  >
     <header>
-      <h2>Connect to a device</h2>
+      <div class="title-wrap">
+        <h2>Connect to a device</h2>
+        <div class="sync-pill" class:online={$wsStore.connected}>
+          <div class="dot"></div>
+          <span>{$wsStore.connected ? "Cloud Active" : "Offline"}</span>
+        </div>
+      </div>
       <button class="close-btn" on:click={close} aria-label="Close">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+        <svg
+          viewBox="0 0 24 24"
+          width="20"
+          height="20"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.5"
+        >
           <path d="M18 6L6 18M6 6l12 12" />
         </svg>
       </button>
     </header>
 
-    <div class="current-device">
-      <div class="device-icon">
-        <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-          <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
-        </svg>
-      </div>
-      <div class="device-info">
-        {#if $activeBackend === 'remote'}
-          <span class="device-name">Remote Session</span>
-          <span class="device-status">Controlling another device</span>
-        {:else}
-          <span class="device-name">This Device</span>
-          <span class="device-status">Listening locally</span>
+    <div class="session-section">
+      <div class="status-card" class:remote={$activeBackend === "remote"}>
+        <div class="device-icon-glow">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
+            <path
+              d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"
+            />
+          </svg>
+        </div>
+        <div class="status-info">
+          {#if $activeBackend === "remote"}
+            <span class="label">Controlling Remote</span>
+            <span class="value">Active Session</span>
+          {:else}
+            <span class="label">Local Playback</span>
+            <span class="value">This Device</span>
+          {/if}
+        </div>
+        {#if $isPlaying || $activeBackend === "remote"}
+          <div class="playing-indicator">
+            <span></span><span></span><span></span>
+          </div>
         {/if}
       </div>
-      {#if $isPlaying || $activeBackend === 'remote'}
-        <div class="playing-bars">
-          <div class="bar"></div>
-          <div class="bar"></div>
-          <div class="bar"></div>
-        </div>
-      {/if}
     </div>
 
-    <div class="divider">
-      <span>Available Devices</span>
-    </div>
+    <div class="device-section">
+      <div class="section-header">
+        <span>Available to connect</span>
+        <div class="line"></div>
+      </div>
 
-    <div class="device-list">
-      {#if devices.length === 0}
-        <div class="empty-state">
-          <p>No other devices found</p>
-          <span>Open Audion on your phone or another computer to see them here.</span>
-        </div>
-      {:else}
-        {#each devices as device}
-          <div class="device-item" class:is-playing={device.playerState?.isPlaying}>
-            <div class="device-icon-small">
-              {#if device.deviceName.toLowerCase().includes("phone") || device.deviceName.toLowerCase().includes("android") || device.deviceName.toLowerCase().includes("iphone")}
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                  <path d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"/>
-                </svg>
-              {:else if device.deviceName.toLowerCase().includes("web") || device.deviceName.toLowerCase().includes("browser")}
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                  <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zm6.93 6h-2.95c-.32-1.25-.78-2.45-1.38-3.56 1.84.63 3.37 1.91 4.33 3.56zM12 4.04c.83 1.2 1.48 2.53 1.91 3.96h-3.82c.43-1.43 1.08-2.76 1.91-3.96zM4.26 14C4.1 13.36 4 12.69 4 12s.1-1.36.26-2h3.38c-.08.66-.14 1.32-.14 2 0 .68.06 1.34.14 2H4.26zm.82 2h2.95c.32 1.25.78 2.45 1.38 3.56-1.84-.63-3.37-1.91-4.33-3.56zm2.95-8H5.08c.96-1.65 2.49-2.93 4.33-3.56-.6 1.11-1.06 2.31-1.38 3.56zM12 19.96c-.83-1.2-1.48-2.53-1.91-3.96h3.82c-.43 1.43-1.08 2.76-1.91 3.96zM14.34 14H9.66c-.09-.66-.16-1.32-.16-2 0-.68.07-1.35.16-2h4.68c.09.65.16 1.32.16 2 0 .68-.07 1.34-.16 2zm.25 5.56c.6-1.11 1.06-2.31 1.38-3.56h2.95c-.96 1.65-2.49 2.93-4.33 3.56zM16.36 14c.08-.66.14-1.32.14-2 0-.68-.06-1.34-.14-2h3.38c.16.64.26 1.31.26 2s-.1 1.36-.26 2h-3.38z"/>
-                </svg>
-              {:else}
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                  <path d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"/>
-                </svg>
-              {/if}
+      <div class="device-grid">
+        {#if devices.length === 0}
+          <div class="empty-state" in:fade>
+            <div class="empty-icon">
+              <svg
+                viewBox="0 0 24 24"
+                width="32"
+                height="32"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+              >
+                <path
+                  d="M12 18.5a6.5 6.5 0 100-13 6.5 6.5 0 000 13zM12 9v3m0 3h.01"
+                  stroke-linecap="round"
+                />
+              </svg>
             </div>
-            <div class="device-details">
-              <span class="name">{device.deviceName}</span>
-              {#if device.playerState?.track}
-                <span class="now-playing">
-                    {device.playerState.isPlaying ? "Playing:" : "Paused:"} {device.playerState.track.title}
-                </span>
-              {:else}
-                <span class="device-status">Ready to play</span>
-              {/if}
-            </div>
-
-            <div class="actions">
-              {#if device.playerState?.track}
-                <div class="remote-controls">
-                  <button on:click={() => handleRemoteCommand(device.deviceId, 'previous')} title="Previous">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
-                  </button>
-                  <button on:click={() => handleRemoteCommand(device.deviceId, device.playerState?.isPlaying ? 'pause' : 'play')} class="play-pause">
-                    {#if device.playerState?.isPlaying}
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
-                    {:else}
-                        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
-                    {/if}
-                  </button>
-                  <button on:click={() => handleRemoteCommand(device.deviceId, 'next')} title="Next">
-                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
-                  </button>
+            <p>No other devices discovered</p>
+            <span>Ensure Audion is open on your other devices.</span>
+          </div>
+        {:else}
+          {#each devices as device (device.deviceId)}
+            <div
+              class="device-card"
+              class:active={$activeRemoteDevice === device.deviceId}
+              in:fly={{ y: 20, duration: 300 }}
+            >
+              <div class="card-main">
+                <div class="platform-icon">
+                  {#if device.deviceName
+                    .toLowerCase()
+                    .includes("phone") || device.deviceName
+                      .toLowerCase()
+                      .includes("android") || device.deviceName
+                      .toLowerCase()
+                      .includes("iphone")}
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="20"
+                      height="20"
+                      fill="currentColor"
+                      ><path
+                        d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"
+                      /></svg
+                    >
+                  {:else}
+                    <svg
+                      viewBox="0 0 24 24"
+                      width="20"
+                      height="20"
+                      fill="currentColor"
+                      ><path
+                        d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"
+                      /></svg
+                    >
+                  {/if}
+                </div>
+                <div class="card-details">
+                  <span class="device-name">{device.deviceName}</span>
+                  {#if device.playerState?.track}
+                    <div class="track-info">
+                      <span
+                        class="dot"
+                        class:playing={device.playerState.isPlaying}
+                      ></span>
+                      <span class="track-text"
+                        >{device.playerState.track.title}</span
+                      >
+                    </div>
+                  {:else}
+                    <span class="idle-text">Ready to stream</span>
+                  {/if}
                 </div>
 
-                <div class="remote-actions">
-                  <button class="control-btn" class:active={$activeBackend === 'remote' && $activeRemoteDevice === device.deviceId} on:click={() => toggleControl(device)}>
-                    {$activeBackend === 'remote' && $activeRemoteDevice === device.deviceId ? 'Stop Control' : 'Control'}
+                {#if device.playerState?.track}
+                  <div class="mini-controls">
+                    <button
+                      class="icon-btn"
+                      on:click|stopPropagation={() =>
+                        handleRemoteCommand(device.deviceId, "previous")}
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="14"
+                        height="14"
+                        fill="currentColor"
+                        ><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg
+                      >
+                    </button>
+                    <button
+                      class="icon-btn highlight"
+                      on:click|stopPropagation={() =>
+                        handleRemoteCommand(
+                          device.deviceId,
+                          device.playerState?.isPlaying ? "pause" : "play",
+                        )}
+                    >
+                      {#if device.playerState?.isPlaying}
+                        <svg
+                          viewBox="0 0 24 24"
+                          width="16"
+                          height="16"
+                          fill="currentColor"
+                          ><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg
+                        >
+                      {:else}
+                        <svg
+                          viewBox="0 0 24 24"
+                          width="16"
+                          height="16"
+                          fill="currentColor"><path d="M8 5v14l11-7z" /></svg
+                        >
+                      {/if}
+                    </button>
+                    <button
+                      class="icon-btn"
+                      on:click|stopPropagation={() =>
+                        handleRemoteCommand(device.deviceId, "next")}
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        width="14"
+                        height="14"
+                        fill="currentColor"
+                        ><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg
+                      >
+                    </button>
+                  </div>
+                {/if}
+              </div>
+
+              {#if device.playerState?.track}
+                <div class="card-actions">
+                  <button
+                    class="btn secondary"
+                    class:active={$activeRemoteDevice === device.deviceId}
+                    on:click={() => toggleControl(device)}
+                  >
+                    {$activeRemoteDevice === device.deviceId
+                      ? "Stop Control"
+                      : "Remote Control"}
                   </button>
-                  <button class="transfer-btn" on:click={() => handleTransfer(device)}>
+                  <button
+                    class="btn primary"
+                    on:click={() => handleTransfer(device)}
+                  >
                     Play Here
                   </button>
                 </div>
               {/if}
             </div>
-          </div>
-        {/each}
-      {/if}
+          {/each}
+        {/if}
+      </div>
     </div>
 
-    <div class="footer">
-        <div class="sync-status" class:online={$wsStore.connected}>
-            <div class="indicator"></div>
-            <div class="status-content">
-              <span class="status-text">
-                  {$wsStore.statusText || ($wsStore.connected ? 'Real-time sync active' : 'Connecting...')}
-              </span>
-              {#if !$wsStore.connected}
-                <button class="retry-btn" on:click={() => wsStore.connect()}>
-                  Retry
-                </button>
-              {/if}
-            </div>
-        </div>
+    <footer class="glass-footer">
+      <div class="footer-content">
         {#if !$isLoggedIn}
-          <div class="login-warning">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
-            </svg>
-            <span>Please log in to use sync</span>
+          <div class="warning-box">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"
+              ><path
+                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
+              /></svg
+            >
+            <span>Guest mode: Sync limited to local network</span>
           </div>
         {/if}
-    </div>
+        <div class="server-status">
+          <span class="status-msg">{$wsStore.statusText}</span>
+          {#if !$wsStore.connected}
+            <button class="text-btn" on:click={() => wsStore.connect()}
+              >Retry Connection</button
+            >
+          {/if}
+        </div>
+      </div>
+    </footer>
   </div>
 </div>
 
 <style>
   .connect-overlay {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
+    inset: 0;
     background: rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(8px);
+    backdrop-filter: blur(12px);
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: 2000;
+  }
+
+  .glass {
+    background: rgba(22, 22, 22, 0.75);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow:
+      0 20px 50px rgba(0, 0, 0, 0.5),
+      inset 0 1px 1px rgba(255, 255, 255, 0.05);
   }
 
   .connect-panel {
-    background: var(--bg-elevated);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
-    width: 420px;
-    max-width: 90vw;
-    padding: var(--spacing-lg);
-    box-shadow: var(--shadow-lg);
+    width: 480px;
+    max-width: 92vw;
+    border-radius: 28px;
+    padding: 24px;
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-md);
+    gap: 24px;
+    max-height: 85vh;
   }
 
   header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
   }
 
-  h2 {
-    font-size: 1.25rem;
+  .title-wrap h2 {
+    font-size: 1.5rem;
+    font-weight: 850;
+    margin: 0 0 8px 0;
+    letter-spacing: -0.02em;
+    background: linear-gradient(to bottom, #fff, #999);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .sync-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 99px;
+    font-size: 0.7rem;
     font-weight: 700;
-    color: var(--text-primary);
-    margin: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #888;
+  }
+
+  .sync-pill.online {
+    color: var(--accent-primary);
+    background: rgba(29, 185, 84, 0.1);
+  }
+
+  .sync-pill .dot {
+    width: 6px;
+    height: 6px;
+    background: currentColor;
+    border-radius: 50%;
   }
 
   .close-btn {
-    background: transparent;
+    background: rgba(255, 255, 255, 0.05);
     border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    padding: var(--spacing-xs);
-    border-radius: var(--radius-full);
+    color: #999;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
     display: flex;
-    transition: all var(--transition-fast);
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: 0.2s;
   }
 
   .close-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    transform: rotate(90deg);
   }
 
-  .current-device {
-    background: linear-gradient(135deg, var(--accent-subtle), rgba(var(--accent-primary-rgb), 0.05));
-    border: 1px solid var(--accent-subtle);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-md);
+  .status-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 20px;
+    padding: 16px;
     display: flex;
     align-items: center;
-    gap: var(--spacing-md);
+    gap: 16px;
+    position: relative;
+    overflow: hidden;
   }
 
-  /* Fallback if rgb variable not present */
-  .current-device {
-    background: linear-gradient(135deg, var(--accent-subtle), rgba(29, 185, 84, 0.05));
+  .status-card.remote {
+    background: rgba(29, 185, 84, 0.08);
+    border-color: rgba(29, 185, 84, 0.2);
   }
 
-  .device-icon {
+  .device-icon-glow {
     width: 48px;
     height: 48px;
-    background: var(--accent-subtle);
-    color: var(--accent-primary);
-    border-radius: var(--radius-md);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .device-info {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .device-name {
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-
-  .device-status {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-  }
-
-  .playing-bars {
-    display: flex;
-    align-items: flex-end;
-    gap: 3px;
-    height: 16px;
-  }
-
-  .bar {
-    width: 3px;
-    background: var(--accent-primary);
-    animation: bar-dance 1s infinite alternate;
-  }
-
-  @keyframes bar-dance {
-    from { height: 4px; }
-    to { height: 16px; }
-  }
-
-  .bar:nth-child(2) { animation-delay: 0.2s; }
-  .bar:nth-child(3) { animation-delay: 0.4s; }
-
-  .divider {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    color: var(--text-subdued);
-    font-size: 0.75rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .divider::after {
-    content: "";
-    flex: 1;
-    height: 1px;
-    background: var(--border-color);
-    opacity: 0.5;
-  }
-
-  .device-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-sm);
-    max-height: 300px;
-    overflow-y: auto;
-  }
-
-  .empty-state {
-    text-align: center;
-    padding: var(--spacing-lg) var(--spacing-md);
-  }
-
-  .empty-state p {
-    color: var(--text-primary);
-    margin: 0 0 var(--spacing-xs) 0;
-    font-weight: 600;
-  }
-
-  .empty-state span {
-    font-size: 0.85rem;
-    color: var(--text-subdued);
-    line-height: 1.4;
-  }
-
-  .device-item {
-    padding: var(--spacing-sm) var(--spacing-md);
-    border-radius: var(--radius-md);
-    background: var(--bg-surface);
-    border: 1px solid transparent;
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-md);
-    transition: all var(--transition-fast);
-  }
-
-  .device-item:hover {
-    background: var(--bg-highlight);
-    border-color: var(--border-color);
-  }
-
-  .device-item.is-playing {
-    border-color: var(--accent-subtle);
-  }
-
-  .device-icon-small {
-    width: 36px;
-    height: 36px;
-    background: var(--bg-highlight);
-    color: var(--text-secondary);
-    border-radius: var(--radius-sm);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .device-details {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-
-  .name {
-    font-size: 0.95rem;
-    font-weight: 600;
-    color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .now-playing {
-    font-size: 0.75rem;
-    color: var(--accent-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .actions {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-  }
-
-  .remote-controls {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    margin-right: var(--spacing-sm);
-  }
-
-  .remote-controls button {
-    background: transparent;
-    border: none;
-    color: var(--text-secondary);
-    cursor: pointer;
-    padding: var(--spacing-xs);
-    border-radius: var(--radius-sm);
-    display: flex;
-    transition: all var(--transition-fast);
-  }
-
-  .remote-controls button:hover {
-    background: var(--accent-subtle);
-    color: var(--accent-primary);
-  }
-
-  .remote-controls .play-pause {
-    background: var(--accent-subtle);
-    color: var(--accent-primary);
-  }
-
-  .remote-actions {
-    display: flex;
-    gap: var(--spacing-xs);
-  }
-
-  .control-btn {
     background: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--border-color);
-    color: var(--text-primary);
-    padding: var(--spacing-xs) var(--spacing-sm);
-    border-radius: var(--radius-sm);
-    font-size: 0.8rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all var(--transition-fast);
+    color: white;
+    border-radius: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  .control-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: var(--text-secondary);
-  }
-
-  .control-btn.active {
+  .remote .device-icon-glow {
     background: var(--accent-primary);
-    border-color: var(--accent-primary);
+    color: black;
+    box-shadow: 0 0 20px rgba(29, 185, 84, 0.3);
+  }
+
+  .status-info {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .status-info .label {
+    font-size: 0.75rem;
+    color: #777;
+    font-weight: 600;
+  }
+
+  .remote .status-info .label {
+    color: var(--accent-primary);
+  }
+
+  .status-info .value {
+    font-size: 1.1rem;
+    font-weight: 700;
     color: white;
   }
 
-  .control-btn.active:hover {
-    background: var(--accent-dark);
-    border-color: var(--accent-dark);
+  .playing-indicator {
+    margin-left: auto;
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 18px;
   }
 
-  .transfer-btn {
+  .playing-indicator span {
+    width: 3px;
     background: var(--accent-primary);
-    color: var(--bg-base);
-    border: none;
-    padding: 6px 12px;
-    border-radius: var(--radius-full);
+    animation: bar-up 0.6s infinite alternate;
+  }
+
+  @keyframes bar-up {
+    from {
+      height: 4px;
+    }
+    to {
+      height: 18px;
+    }
+  }
+  .playing-indicator span:nth-child(2) {
+    animation-delay: 0.2s;
+  }
+  .playing-indicator span:nth-child(3) {
+    animation-delay: 0.4s;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .section-header span {
     font-size: 0.75rem;
-    font-weight: 600;
+    font-weight: 800;
+    text-transform: uppercase;
+    color: #555;
+    letter-spacing: 0.08em;
+  }
+
+  .section-header .line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, #222, transparent);
+  }
+
+  .device-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    padding-right: 4px;
+  }
+
+  .device-grid::-webkit-scrollbar {
+    width: 4px;
+  }
+  .device-grid::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+  }
+
+  .device-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 20px;
+    padding: 16px;
+    transition: 0.3s;
+  }
+
+  .device-card:hover {
+    background: rgba(255, 255, 255, 0.06);
+    transform: translateY(-2px);
+  }
+
+  .device-card.active {
+    background: rgba(29, 185, 84, 0.05);
+    border-color: rgba(29, 185, 84, 0.3);
+  }
+
+  .card-main {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+
+  .platform-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #888;
+  }
+
+  .active .platform-icon {
+    color: var(--accent-primary);
+    background: rgba(29, 185, 84, 0.1);
+  }
+
+  .card-details {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .device-name {
+    display: block;
+    font-weight: 700;
+    font-size: 1rem;
+    color: white;
+    margin-bottom: 2px;
+  }
+
+  .track-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    color: #666;
+  }
+
+  .track-info .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #444;
+  }
+
+  .track-info .dot.playing {
+    background: var(--accent-primary);
+    box-shadow: 0 0 8px var(--accent-primary);
+  }
+
+  .track-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .idle-text {
+    font-size: 0.75rem;
+    color: #444;
+  }
+
+  .mini-controls {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .icon-btn {
+    background: transparent;
+    border: none;
+    color: #666;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     cursor: pointer;
-    transition: transform var(--transition-fast), background var(--transition-fast);
+    transition: 0.2s;
   }
 
-  .transfer-btn:hover {
-    background: var(--accent-hover);
-    transform: translateY(-1px);
+  .icon-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: white;
+  }
+  .icon-btn.highlight {
+    border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
-  .footer {
-      border-top: 1px solid var(--border-color);
-      padding-top: var(--spacing-md);
-      opacity: 0.8;
+  .card-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
   }
 
-  .sync-status {
-      display: flex;
-      align-items: center;
-      gap: var(--spacing-sm);
-      font-size: 0.75rem;
-      color: var(--text-subdued);
+  .btn {
+    padding: 10px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+  }
+
+  .btn.primary {
+    background: var(--accent-primary);
+    color: black;
+  }
+  .btn.primary:hover {
+    transform: scale(1.02);
+    filter: brightness(1.1);
+  }
+
+  .btn.secondary {
+    background: rgba(255, 255, 255, 0.05);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .btn.secondary:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+  .btn.secondary.active {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: white;
+  }
+
+  footer {
+    margin-top: auto;
+    padding-top: 16px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  .warning-box {
+    background: rgba(255, 215, 0, 0.05);
+    border: 1px solid rgba(255, 215, 0, 0.15);
+    color: #daa520;
+    padding: 8px 12px;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .server-status {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.7rem;
+    color: #444;
+  }
+
+  .text-btn {
+    background: transparent;
+    border: none;
+    color: var(--accent-primary);
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 0.7rem;
+  }
+
+  .empty-state {
+    padding: 40px 20px;
+    text-align: center;
+    color: #444;
+  }
+
+  .empty-icon {
+    margin-bottom: 12px;
+    opacity: 0.3;
+  }
+
+  .empty-state p {
+    margin: 0 0 4px 0;
+    color: #888;
+    font-weight: 700;
+  }
+
+  @media (max-width: 480px) {
+    .card-actions {
+      grid-template-columns: 1fr;
+    }
+    .card-main {
+      flex-wrap: wrap;
+    }
+    .mini-controls {
+      order: 3;
       width: 100%;
-  }
-
-  .status-content {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex: 1;
-  }
-
-  .retry-btn {
-      background: transparent;
-      border: 1px solid var(--border-color);
-      color: var(--text-primary);
-      padding: 2px 8px;
-      border-radius: var(--radius-sm);
-      font-size: 0.7rem;
-      cursor: pointer;
-      transition: all var(--transition-fast);
-  }
-
-  .retry-btn:hover {
-      background: rgba(255, 255, 255, 0.1);
-      border-color: var(--text-secondary);
-  }
-
-  .login-warning {
-      display: flex;
-      align-items: center;
-      gap: var(--spacing-xs);
-      font-size: 0.7rem;
-      color: #ff4444;
-      margin-top: 4px;
-      padding-left: 14px;
-  }
-
-  .sync-status .indicator {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      background: var(--text-subdued);
-  }
-
-  .sync-status.online {
-      color: var(--accent-primary);
-  }
-
-  .sync-status.online .indicator {
-      background: var(--accent-primary);
-      box-shadow: 0 0 10px var(--accent-primary);
+      justify-content: space-around;
+      padding-top: 8px;
+      border-top: 1px solid rgba(255, 255, 255, 0.03);
+    }
   }
 </style>
