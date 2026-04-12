@@ -4,6 +4,7 @@
  */
 
 import { API } from './constants';
+import { proxyFetch } from '../network';
 
 export interface LRCLibResult {
     id: number;
@@ -36,21 +37,9 @@ export class LRCLib {
         const url = `${API.BASE_URL}${API.SEARCH_ENDPOINT}?q=${encodeURIComponent(query)}`;
 
         try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), API.TIMEOUT);
-
-            const response = await fetch(url, {
-                signal: controller.signal,
+            const data: LRCLibResult[] = await proxyFetch<LRCLibResult[]>(url, {
                 headers: { 'Accept': 'application/json' }
             });
-
-            clearTimeout(timeoutId);
-
-            if (!response.ok) {
-                throw new Error(`HTTP error: ${response.status}`);
-            }
-
-            const data: LRCLibResult[] = await response.json();
 
             // Cache the result
             this.cache.set(cacheKey, { data, timestamp: Date.now() });
@@ -71,17 +60,7 @@ export class LRCLib {
         const url = `${API.BASE_URL}${API.GET_ENDPOINT}?${params.toString()}`;
 
         try {
-            const response = await fetch(url);
-
-            if (response.status === 404) {
-                return null;
-            }
-
-            if (!response.ok) {
-                throw new Error(`HTTP error: ${response.status}`);
-            }
-
-            const data: LRCLibResult = await response.json();
+            const data = await proxyFetch<LRCLibResult | null>(url);
             return data;
 
         } catch (error) {

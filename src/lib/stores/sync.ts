@@ -445,9 +445,6 @@ export async function triggerSync(forced = true): Promise<void> {
         console.error('[Sync] Sync failed:', error);
 
         let errorMessage = String(error);
-        if (errorMessage.includes('403') || errorMessage.includes('Ko-fi') || errorMessage.includes('supporter')) {
-            errorMessage = 'Sync is available for Ko-fi supporters. Visit your Settings to link your Ko-fi email.';
-        }
 
         syncStatus.update((s) => ({
             ...s,

@@ -38,6 +38,21 @@
         return `${dd}/${mm}/${yyyy}`;
     }
 
+    function formatSyncError(error: string | null): string {
+        if (!error) return "";
+        try {
+            if (error.includes("{") && error.includes("}")) {
+                const jsonStart = error.indexOf("{");
+                const jsonEnd = error.lastIndexOf("}") + 1;
+                const jsonStr = error.substring(jsonStart, jsonEnd);
+                const parsed = JSON.parse(jsonStr);
+                if (parsed.details) return parsed.details;
+                if (parsed.error) return parsed.error;
+            }
+        } catch (e) { /* ignore */ }
+        return error.replace(/Request failed: \d+ [^—]+ — /, "");
+    }
+
     $: progressPercent =
         $syncProgress.total > 0
             ? Math.round(($syncProgress.current / $syncProgress.total) * 100)
@@ -55,7 +70,7 @@
     title={$isLoggedIn
         ? $isSyncing
             ? $syncProgress.message || "Syncing..."
-            : `Last synced: ${formatLastSync($syncStatus.last_sync_at)}${$syncStatus.pending_changes > 0 ? ` • ${$syncStatus.pending_changes} pending` : ""}${$syncStatus.last_error ? ` • Error: ${$syncStatus.last_error}` : ""}`
+            : `Last synced: ${formatLastSync($syncStatus.last_sync_at)}${$syncStatus.pending_changes > 0 ? ` • ${$syncStatus.pending_changes} pending` : ""}${$syncStatus.last_error ? ` • ${formatSyncError($syncStatus.last_error)}` : ""}`
         : "Sign in to sync"}
 >
     {#if $isLoggedIn}

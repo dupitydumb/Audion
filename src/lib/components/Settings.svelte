@@ -14,7 +14,7 @@
     isAndroid,
     type MergeCoverResult,
   } from "$lib/api/tauri";
-  import { loadLibrary } from "$lib/stores/library";
+  import { trackCount, playlists, loadLibrary } from "$lib/stores/library";
   import UpdatePopup from "./UpdatePopup.svelte";
   import { confirm } from "$lib/stores/dialogs";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -401,6 +401,32 @@
     const d = new Date(ts);
     return d.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
   }
+
+  function formatSyncError(error: string | null): string {
+    if (!error) return "";
+    
+    // Check if it's a JSON error from the server (often wrapped in Request failed message)
+    try {
+      if (error.includes("{") && error.includes("}")) {
+        const jsonStart = error.indexOf("{");
+        const jsonEnd = error.lastIndexOf("}") + 1;
+        const jsonStr = error.substring(jsonStart, jsonEnd);
+        const parsed = JSON.parse(jsonStr);
+        
+        if (parsed.details) return parsed.details;
+        if (parsed.error) return parsed.error;
+      }
+    } catch (e) {
+      console.warn("Failed to parse sync error JSON:", e);
+    }
+    
+    // Fallback cleanup: remove the "Request failed: 403 Forbidden — " prefix if present
+    return error.replace(/Request failed: \d+ [^—]+ — /, "");
+  }
+
+  // Tier limits logic
+  $: libraryProgress = Math.min(($trackCount / 100) * 100, 100);
+  $: playlistProgress = Math.min(($playlists.length / 3) * 100, 100);
 </script>
 
 <div class="settings-view">
@@ -452,7 +478,7 @@
           <div class="setting-item account-card">
             <div class="account-profile">
               {#if $authState.avatar_url}
-                <img src={$authState.avatar_url} alt="Profile" class="avatar" />
+                <img src={$authState.avatar_url} alt="Profile" class="avatar" referrerpolicy="no-referrer" crossorigin="anonymous" />
               {:else}
                 <div class="avatar avatar-placeholder">
                   {($authState.name || $authState.email || "U")
@@ -486,8 +512,8 @@
                   {#if $isSyncing}
                     Syncing...
                   {:else if $syncStatus.last_error}
-                    <span class="text-error"
-                      >Error: {$syncStatus.last_error}</span
+                    <span class="text-error" title={$syncStatus.last_error}
+                      >{formatSyncError($syncStatus.last_error)}</span
                     >
                   {:else}
                     {formatLastSynced($syncStatus.last_sync_at)}
@@ -535,46 +561,96 @@
 
           {#if $isSupporter}
               <div class="kofi-supporter-badge">
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style="color: var(--accent-primary)">
-                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                </svg>
-                <span>Active Supporter — sync unlocked</span>
-                {#if $authState.supporter_until !== null}
-                  <span class="supporter-until">Until {formatSupporterUntil($authState.supporter_until)}</span>
-                {/if}
+                <div class="badge-content">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" style="color: var(--accent-primary)">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                  </svg>
+                  <div class="badge-text">
+                    <span class="status-unlocked">Active Supporter — Sync Unlocked</span>
+                    {#if $authState.supporter_until !== null}
+                      <span class="supporter-until">Valid until {formatSupporterUntil($authState.supporter_until)}</span>
+                    {/if}
+                  </div>
+                </div>
+              </div>
+
+              <div class="supporter-benefits-mini">
+                <h4 class="benefits-title">Your Benefits</h4>
+                <ul>
+                  <li>
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                    Unlimited Library & Playlists
+                  </li>
+                  <li>
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                    Play History & Analytics Sync
+                  </li>
+                  <li>
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>
+                    Cross-device Settings Sync
+                  </li>
+                </ul>
               </div>
             {:else}
               <div class="kofi-not-supporter">
-                <p class="setting-hint" style="margin: 0 0 var(--spacing-xs)">
-                  ⚠ Sync is available for Ko-fi supporters.
-                </p>
+                <div class="tier-limits">
+                  <div class="tier-limit-item">
+                    <div class="limit-header">
+                      <span class="limit-label">Music Library</span>
+                      <span class="limit-count">{$trackCount} / 100</span>
+                    </div>
+                    <div class="limit-bar-wrap">
+                      <div class="limit-bar" style="width: {libraryProgress}%" class:at-limit={libraryProgress >= 100}></div>
+                    </div>
+                  </div>
+                  <div class="tier-limit-item">
+                    <div class="limit-header">
+                      <span class="limit-label">Playlists</span>
+                      <span class="limit-count">{$playlists.length} / 3</span>
+                    </div>
+                    <div class="limit-bar-wrap">
+                      <div class="limit-bar" style="width: {playlistProgress}%" class:at-limit={playlistProgress >= 100}></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="benefits-upsell">
+                  <h4 class="upsell-title">Unlock Unlimited Sync</h4>
+                  <p class="upsell-desc">Support Audion on Ko-fi to unlock premium features:</p>
+                  <ul class="upsell-list">
+                    <li>
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="color: var(--accent-primary)"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                      <strong>Unlimited</strong> tracks and playlists sync
+                    </li>
+                    <li>
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="color: var(--accent-primary)"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                      <strong>Sync Play History</strong> & recently played
+                    </li>
+                    <li>
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" style="color: var(--accent-primary)"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+                      Support server hosting & future development
+                    </li>
+                  </ul>
+                </div>
+
                 <a
                   href="https://ko-fi.com/N4N5UMNR1"
                   target="_blank"
                   rel="noreferrer"
                   class="btn-primary kofi-support-link"
+                  style="margin-top: var(--spacing-md); width: 100%; justify-content: center; font-weight: 600;"
                   aria-label="Support on Ko-fi"
                 >
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" style="margin-right: 8px">
                     <path d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.723c-.604 0-.679.798-.679.798s-.082 7.324-.022 11.822c.164 2.424 2.586 2.672 2.586 2.672s8.267-.023 11.966-.049c2.438-.426 2.683-2.566 2.658-3.734 4.352.24 7.422-2.831 6.649-6.916zm-11.062 3.511c-1.246 1.453-4.011 3.976-4.011 3.976s-.121.119-.31.023c-.076-.057-.108-.09-.108-.09-.443-.441-3.368-3.049-4.034-3.954-.709-.965-1.041-2.7-.091-3.71.951-1.01 3.005-.995 4.032.019.152.154.16.166.152.166s.068-.112.151-.166c1.27-1.241 3.563-.78 4.346.394.886 1.318.488 2.927-.127 3.332zm4.906.658c-.375.133-1.259.053-1.259.053l.13-3.998s.932-.171 1.432.064c1.004.472.835 3.44-.303 3.881z"/>
                   </svg>
-                  Support on Ko-fi →
+                  Link Ko-fi Account
                 </a>
-                <p class="setting-hint" style="margin: var(--spacing-md) 0 var(--spacing-xs)">
-                  Already a supporter?
+                
+                <p class="setting-hint" style="margin-top: var(--spacing-md); text-align: center;">
+                  Don't see your supporter status? 
+                  <a href="https://discord.gg/27XRVQsBd9" target="_blank" class="text-accent" style="text-decoration: underline;">Contact us</a>
                 </p>
-                <a
-                  href="https://discord.gg/27XRVQsBd9"
-                  target="_blank"
-                  rel="noreferrer"
-                  class="btn-secondary btn-sm"
-                  style="display: inline-flex; align-items: center; gap: 8px; width: fit-content;"
-                >
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                    <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057c.002.022.015.043.03.056a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z" />
-                  </svg>
-                  Contact on Discord
-                </a>
               </div>
             {/if}
           </div>
@@ -1857,6 +1933,38 @@
       gap: var(--spacing-sm);
       flex-direction: column;
     }
+
+    .account-profile {
+      flex-wrap: wrap;
+      gap: var(--spacing-sm);
+    }
+
+    .logout-btn {
+      width: 100%;
+      margin-top: var(--spacing-xs);
+    }
+
+    .sync-status-area {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--spacing-sm);
+    }
+
+    .sync-btn {
+      width: 100%;
+      justify-content: center;
+    }
+
+    .kofi-supporter-badge {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: var(--spacing-sm);
+    }
+
+    .supporter-until {
+      margin-left: 0;
+      margin-top: 4px;
+    }
   }
 
   .path-selector {
@@ -2079,6 +2187,154 @@
     width: fit-content;
     text-decoration: none;
     font-size: 0.875rem;
+  }
+
+  /* ─── Supporter Benefits & Limits Styles ─── */
+
+  .badge-content {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .badge-text {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .status-unlocked {
+    font-weight: 700;
+    font-size: 0.9375rem;
+  }
+
+  .supporter-benefits-mini {
+    margin-top: var(--spacing-md);
+    padding: var(--spacing-md);
+    background: var(--bg-highlight);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+  }
+
+  .benefits-title, .upsell-title {
+    font-size: 0.8125rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: var(--spacing-sm);
+    color: var(--text-secondary);
+  }
+
+  .supporter-benefits-mini ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .supporter-benefits-mini li, .upsell-list li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+  }
+
+  .supporter-benefits-mini li svg {
+    color: var(--accent-primary);
+  }
+
+  .tier-limits {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-lg);
+    padding: var(--spacing-md);
+    background: var(--bg-highlight);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+  }
+
+  .tier-limit-item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .limit-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+  }
+
+  .limit-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+  }
+
+  .limit-count {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-family: monospace;
+  }
+
+  .limit-bar-wrap {
+    height: 6px;
+    background: var(--border-color);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .limit-bar {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-primary), var(--accent-hover));
+    border-radius: 3px;
+    opacity: 0.8;
+    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .limit-bar.at-limit {
+    background: linear-gradient(90deg, var(--error-color), #ff4d4d);
+    opacity: 1;
+  }
+
+  .limit-value {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--accent-warning, #ffae42);
+    text-align: right;
+  }
+
+  .benefits-upsell {
+    padding: var(--spacing-sm);
+  }
+
+  .upsell-desc {
+    font-size: 0.8125rem;
+    margin-bottom: var(--spacing-sm);
+    color: var(--text-secondary);
+  }
+
+  .upsell-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+
+  .upsell-list li strong {
+    color: var(--accent-primary);
+    font-weight: 700;
+  }
+
+  .text-accent {
+    color: var(--accent-primary);
+    font-weight: 600;
   }
 
   .sync-info {

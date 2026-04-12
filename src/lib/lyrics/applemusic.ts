@@ -5,6 +5,7 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
+import { proxyFetch } from '../network';
 import type { LyricsResult, LyricLine, WordTiming } from './index';
 
 const SEARCH_BASE_URL = 'https://lyrics.paxsenix.org';
@@ -90,19 +91,10 @@ function mapAppleLines(raw: AppleRawLine[]): LyricLine[] {
 
 export class AppleMusic {
 
-    private async _fetch(url: string): Promise<unknown> {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), TIMEOUT);
-        try {
-            const response = await fetch(url, {
-                signal:  controller.signal,
-                headers: { accept: 'application/json' },
-            });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            return await response.json();
-        } finally {
-            clearTimeout(timeoutId);
-        }
+    private async _fetch<T>(url: string): Promise<T> {
+        return proxyFetch<T>(url, {
+            headers: { 'Accept': 'application/json' }
+        });
     }
 
     /**

@@ -52,6 +52,7 @@ plugin-examples/
 
 #Server
 /audion-server
+/audion-server-vps
 
 #Implementation Plan
 implementation_plan.md
