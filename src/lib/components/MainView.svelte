@@ -14,7 +14,7 @@
         addTrackToLibrary,
         pushPendingTrack,
     } from "$lib/stores/library";
-    import { isScanning } from "$lib/stores/progressiveScan"; // we Only need isScanning flag
+    import { isScanning } from "$lib/stores/progressiveScan";
     import {
         searchQuery,
         searchResults,
@@ -42,21 +42,23 @@
 
     import { tick, onMount } from "svelte";
     import { fade, fly } from "svelte/transition";
-    import { onDestroy } from "svelte";
     import { getCurrentWebview } from "@tauri-apps/api/webview";
 
     import { confirm } from "$lib/stores/dialogs";
+    import { addToast } from "$lib/stores/toast";
+    import { isDragging, dragCounter, isDraggingLyrics } from "$lib/stores/dnd";
+    import { importLyricsContent } from "$lib/stores/lyrics";
     import { get } from "svelte/store";
     import { addTrackToPlaylist, importAudioFile, importAudioBytes, type Track } from "$lib/api/tauri";
-    // Note: we prefer using the OS file path when available from the drag event.
+
+    import GlobalShortcuts from "./GlobalShortcuts.svelte";
+    import type { SectionKey } from "./SearchResults.svelte";
 
     $: isSearching = $searchQuery.length > 0;
     $: isLibraryView = ["tracks", "albums", "artists", "playlists"].includes(
         $currentView.type,
     );
     let dropTargetPlaylist: ViewState | null = null;
-    import GlobalShortcuts from "./GlobalShortcuts.svelte";
-    import type { SectionKey } from "./SearchResults.svelte";
 
     const SECTION_LABELS: Record<SectionKey, string> = {
         tracks: "Tracks",
@@ -68,15 +70,6 @@
     let sectionOrder: SectionKey[] = ["tracks", "albums", "artists", "playlists"];
     let hiddenSections = new Set<SectionKey>();
 
-    function moveSection(key: SectionKey, direction: -1 | 1) {
-        const idx = sectionOrder.indexOf(key);
-        const newIdx = idx + direction;
-        if (newIdx < 0 || newIdx >= sectionOrder.length) return;
-        const next = [...sectionOrder];
-        [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
-        sectionOrder = next;
-    }
-
     function toggleSection(key: SectionKey) {
         const next = new Set(hiddenSections);
         next.has(key) ? next.delete(key) : next.add(key);
@@ -87,7 +80,6 @@
     let mobileSearchInput = "";
     let mobileSearchInputEl: HTMLInputElement;
     let mobileSearchTimer: ReturnType<typeof setTimeout>;
-    let mobileSearchVisible = false;
 
     function handleMobileSearchInput() {
         clearTimeout(mobileSearchTimer);
@@ -96,26 +88,29 @@
         }, 200);
     }
 
-    function openMobileSearch() {
-        mobileSearchVisible = true;
-        tick().then(() => mobileSearchInputEl?.focus());
-    }
-
     function closeMobileSearch() {
-        mobileSearchVisible = false;
         mobileSearchInput = "";
         clearSearch();
     }
 
     // Drag & Drop logic
-    let isDragging = false;
-    let dragCounter = 0;
+    // isDragging and dragCounter are shared via $lib/stores/dnd
+    // so LyricsPanel can read them and show its own overlay.
     let dropError = "";
+
+    const AUDIO_EXTENSIONS  = new Set(['mp3', 'flac', 'wav', 'ogg', 'm4a', 'aac']);
+    const LYRICS_EXTENSIONS = new Set(['lrc', 'ttml', 'xml', 'srt']);
+    const UNSUPPORTED_DROP_MSG = 'Unsupported file type. Drop an audio file (MP3, FLAC, WAV, OGG, M4A, AAC).';
+    const LYRICS_DROP_MSG      = 'Drop lyrics files on the lyrics panel. Open it first with the lyrics button.';
+
+    function getExt(name: string): string {
+        return name.split('.').pop()?.toLowerCase() ?? '';
+    }
 
     function isAudioFile(file: File) {
         return (
             file.type.startsWith("audio/") ||
-            /\.(mp3|flac|wav|ogg|m4a|aac)$/i.test(file.name)
+            AUDIO_EXTENSIONS.has(getExt(file.name))
         );
     }
 
@@ -136,8 +131,8 @@
                 event.preventDefault();
         } catch (e) {}
 
-        isDragging = false;
-        dragCounter = 0;
+        isDragging.set(false);
+        dragCounter.set(0);
         dropError = "";
         dropTargetPlaylist = null;
 
@@ -178,6 +173,20 @@
         }
 
         for (const file of incomingFiles) {
+            // Extension check .it catch unsupported files before hitting the backend
+            const fileName: string = (file as any).name ?? (file as any).path ?? '';
+            if (fileName) {
+                const ext = getExt(fileName);
+                if (LYRICS_EXTENSIONS.has(ext)) {
+                    addToast(LYRICS_DROP_MSG, 'error');
+                    continue;
+                }
+                if (!isAudioFile(file as File) && !AUDIO_EXTENSIONS.has(ext)) {
+                    addToast(UNSUPPORTED_DROP_MSG, 'error');
+                    continue;
+                }
+            }
+
             // If file is a plain path object
             const maybePath: string | undefined =
                 (file as any).path ||
@@ -186,7 +195,6 @@
                     ? (file as any).name
                     : undefined);
 
-            // If item is a real File-like object, it may have .name and .arrayBuffer()
             if (maybePath) {
                 // Use backend import by path
                 try {
@@ -272,10 +280,8 @@
     function hasFiles(dt: DataTransfer | null | undefined) {
         try {
             if (!dt) return false;
-            // Some browsers expose types as DOMStringList
             const types = dt.types as any;
             if (!types) return false;
-            // Common check: 'Files' type present
             for (let i = 0; i < types.length; i++) {
                 const t = String(types[i] || "").toLowerCase();
                 if (
@@ -293,12 +299,11 @@
 
     // Add native capture-phase listeners to help when webview swallows events
     onMount(() => {
+        const isOverLyricsPanel = (e: DragEvent): boolean =>
+            e.target instanceof Element && e.target.closest('.lyrics-panel') !== null;
+
         const nativeEnter = (e: DragEvent) => {
-            console.log(
-                "[DND] native dragenter",
-                e.type,
-                e.dataTransfer?.types,
-            );
+            if (isOverLyricsPanel(e)) return;
             try {
                 if (hasFiles(e.dataTransfer)) {
                     e.preventDefault();
@@ -307,8 +312,7 @@
             } catch (err) {}
         };
         const nativeOver = (e: DragEvent) => {
-            // show logs to verify dragover
-            console.log("[DND] native dragover", e.type, e.dataTransfer?.types);
+            if (isOverLyricsPanel(e)) return;
             try {
                 if (hasFiles(e.dataTransfer)) {
                     e.preventDefault();
@@ -318,11 +322,7 @@
             } catch (err) {}
         };
         const nativeLeave = (e: DragEvent) => {
-            console.log(
-                "[DND] native dragleave",
-                e.type,
-                e.dataTransfer?.types,
-            );
+            if (isOverLyricsPanel(e)) return;
             try {
                 if (hasFiles(e.dataTransfer)) {
                     e.preventDefault();
@@ -331,7 +331,7 @@
             } catch (err) {}
         };
         const nativeDrop = (e: DragEvent) => {
-            console.log("[DND] native drop", e.type, e.dataTransfer?.types);
+            if (isOverLyricsPanel(e)) return;
             try {
                 if (hasFiles(e.dataTransfer)) {
                     e.preventDefault();
@@ -353,7 +353,6 @@
                 const webview = await getCurrentWebview();
                 unlistenWebview = await webview.onDragDropEvent(
                     async (event) => {
-                        // payload types: 'over' | 'drop' | 'cancel'
                         console.log(
                             "[DND] webview onDragDropEvent",
                             event.payload.type,
@@ -361,34 +360,52 @@
                         );
                         const p: any = event.payload;
                         if (p.type === "enter") {
-                            if (dragCounter === 0) {
-                                const view = get(currentView);
-                                dropTargetPlaylist = view.type === "playlist-detail" ? view : null;
-                            }
-                            dragCounter++;
-                            isDragging = true;
+                            dragCounter.update(n => {
+                                if (n === 0) {
+                                    const view = get(currentView);
+                                    dropTargetPlaylist = view.type === "playlist-detail" ? view : null;
+                                }
+                                return n + 1;
+                            });
+                            // Filenames available on enter in Tauri . detect lyrics early
+                            const enterPaths: string[] = p.paths || [];
+                            isDraggingLyrics.set(
+                                enterPaths.length > 0 &&
+                                enterPaths.every(fp => LYRICS_EXTENSIONS.has(getExt(fp)))
+                            );
+                            isDragging.set(true);
                         } else if (p.type === "over") {
-                            isDragging = true;
+                            isDragging.set(true);
                         } else if (p.type === "drop") {
-                            isDragging = false;
-                            dragCounter = 0;
+                            isDragging.set(false);
+                            isDraggingLyrics.set(false);
+                            dragCounter.set(0);
                             dropTargetPlaylist = null;
                             const paths: string[] = p.paths || [];
                             for (const fp of paths) {
+                                const fpExt = getExt(fp);
+                                if (LYRICS_EXTENSIONS.has(fpExt)) {
+                                    try {
+                                        const { invoke } = await import("@tauri-apps/api/core");
+                                        const content = await invoke<string>("read_lyrics_file", { path: fp });
+                                        const fmt: "lrc" | "ttml" | "srt" =
+                                            (fpExt === "ttml" || fpExt === "xml") ? "ttml" :
+                                            fpExt === "srt" ? "srt" : "lrc";
+                                        await importLyricsContent(content, fmt);
+                                    } catch (e) {
+                                        console.error("[DND] lyrics import failed", fp, e);
+                                        addToast("Failed to import lyrics file.", "error");
+                                    }
+                                    continue;
+                                }
                                 try {
                                     console.log("[DND] webview drop path:", fp);
-                                    const result = await importAudioFile(
-                                        fp,
-                                        false,
-                                    );
+                                    const result = await importAudioFile(fp, false);
                                     if (result === "duplicate") {
                                         const name = fp.split(/[\\\/]/).pop() || fp;
                                         const overwrite = await confirm(
                                             `File '${name}' already exists. Overwrite?`,
-                                            {
-                                                confirmLabel: "Overwrite",
-                                                cancelLabel: "Skip",
-                                            },
+                                            { confirmLabel: "Overwrite", cancelLabel: "Skip" },
                                         );
                                         if (overwrite) {
                                             const r2 = await importAudioFile(fp, true);
@@ -411,18 +428,15 @@
                             }
                         } else {
                             // cancel
-                            isDragging = false;
-                            dragCounter = 0;
+                            isDragging.set(false);
+                            isDraggingLyrics.set(false);
+                            dragCounter.set(0);
                             dropTargetPlaylist = null;
                         }
                     },
                 );
             } catch (e) {
-                // Ignore if not running in Tauri or API unavailable
-                console.warn(
-                    "[DND] getCurrentWebview.onDragDropEvent not available",
-                    e,
-                );
+                console.warn("[DND] getCurrentWebview.onDragDropEvent not available", e);
             }
         })();
 
@@ -432,9 +446,7 @@
             window.removeEventListener("dragleave", nativeLeave, true);
             window.removeEventListener("drop", nativeDrop, true);
             if (unlistenWebview) {
-                try {
-                    unlistenWebview();
-                } catch (e) {}
+                try { unlistenWebview(); } catch (e) {}
             }
         };
     });
@@ -442,28 +454,30 @@
     function handleDragOver(event: DragEvent) {
         if (!hasFiles(event.dataTransfer)) return;
         event.preventDefault();
-        if (!isDragging) isDragging = true;
+        isDragging.set(true);
     }
 
     function handleDragEnter(event: DragEvent) {
         if (!hasFiles(event.dataTransfer)) return;
         event.preventDefault();
-        if (dragCounter === 0) {
-            // compute once when drag starts, not on every navigation
-            const view = get(currentView);
-            dropTargetPlaylist = view.type === "playlist-detail" ? view : null;
-        }
-        dragCounter++;
-        isDragging = true;
+        dragCounter.update(n => {
+            if (n === 0) {
+                const view = get(currentView);
+                dropTargetPlaylist = view.type === "playlist-detail" ? view : null;
+            }
+            return n + 1;
+        });
+        isDragging.set(true);
     }
 
     function handleDragLeave(event: DragEvent) {
         if (!hasFiles(event.dataTransfer)) return;
         event.preventDefault();
-        dragCounter--;
-        if (dragCounter <= 0) {
-            isDragging = false;
-        }
+        dragCounter.update(n => {
+            const next = n - 1;
+            if (next <= 0) isDragging.set(false);
+            return next <= 0 ? 0 : next;
+        });
     }
 </script>
 
@@ -481,32 +495,30 @@
     on:dragleave={handleDragLeave}
     on:drop={handleDrop}
 >
-    {#if isDragging}
+    {#if $isDragging}
         <div class="drop-overlay" transition:fade={{ duration: 200 }}>
-            <div
-                class="drop-content"
-                in:fly={{ y: 20, duration: 400, delay: 100 }}
-            >
-                <div class="drop-icon">
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                    >
-                        <path
-                            d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                        />
-                    </svg>
-                </div>
-                {#if dropTargetPlaylist}
-                    <div class="drop-text">Add to "{dropTargetPlaylist.name}"</div>
-                    <div class="drop-subtext">Track will also be added to your library</div>
+            <div class="drop-content" in:fly={{ y: 20, duration: 400, delay: 100 }}>
+                {#if $isDraggingLyrics}
+                    <div class="drop-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    <div class="drop-text">Drop lyrics file</div>
+                    <div class="drop-subtext">.lrc · .ttml · .srt</div>
                 {:else}
-                    <div class="drop-text">Drop your music here</div>
-                    <div class="drop-subtext">MP3, FLAC, M4A, WAV, OGG</div>
+                    <div class="drop-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                    </div>
+                    {#if dropTargetPlaylist}
+                        <div class="drop-text">Add to "{dropTargetPlaylist.name}"</div>
+                        <div class="drop-subtext">Track will also be added to your library</div>
+                    {:else}
+                        <div class="drop-text">Drop your music here</div>
+                        <div class="drop-subtext">MP3, FLAC, M4A, WAV, OGG</div>
+                    {/if}
                 {/if}
             </div>
         </div>
@@ -543,6 +555,7 @@
             </button>
         </div>
     {/if}
+
     <GlobalShortcuts />
 
     <!-- Mobile: Search bar + library sub-tabs (Spotify pill style) -->
@@ -634,7 +647,7 @@
                 <h1>Search Results</h1>
                 {#if $searchResults.hasResults}
                     <div class="results-pills">
-                        {#each sectionOrder as key, i (key)}
+                        {#each sectionOrder as key (key)}
                             {@const hasResults =
                                 (key === "tracks"    && $searchResults.tracks.length > 0) ||
                                 (key === "albums"    && $searchResults.albums.length > 0) ||
@@ -646,15 +659,7 @@
                                     key === "albums"    ? $searchResults.albums.length :
                                     key === "artists"   ? $searchResults.artists.length :
                                     ($searchResults.playlists?.length ?? 0)}
-                                {@const visibleKeys = sectionOrder.filter(k =>
-                                    (k === "tracks"    && $searchResults.tracks.length > 0) ||
-                                    (k === "albums"    && $searchResults.albums.length > 0) ||
-                                    (k === "artists"   && $searchResults.artists.length > 0) ||
-                                    (k === "playlists" && ($searchResults.playlists?.length ?? 0) > 0)
-                                )}
-                                {@const visibleIdx = visibleKeys.indexOf(key)}
                                 <div class="pill-wrapper">
-                                        <!-- reorder arrows removed for simpler pill layout -->
                                     <button
                                         class="section-pill"
                                         class:pill-active={!hiddenSections.has(key)}
@@ -679,12 +684,9 @@
             <header class="view-header">
                 <h1>All Tracks</h1>
                 {#if $isScanning}
-                    <div class="scan-status">
-                        Scanning... {$tracks.length} tracks found
-                    </div>
+                    <div class="scan-status">Scanning... {$tracks.length} tracks found</div>
                 {/if}
             </header>
-
             <div class="view-content">
                 <TrackList tracks={$tracks} showAlbum={true} scrollKey="tracks" />
             </div>
