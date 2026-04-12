@@ -334,7 +334,7 @@
       const diffMin = Math.floor(diffSec / 60);
       const diffHour = Math.floor(diffMin / 60);
 
-      if (diffSec < 60) return "Just now";
+      if (diffSec < 60) return "just now";
       if (diffMin < 60) return `${diffMin}m ago`;
       if (diffHour < 24) return `${diffHour}h ago`;
 
@@ -348,6 +348,9 @@
       return isoString;
     }
   }
+
+  // Alias for readability in template
+  const formatLastSyncedRelative = formatLastSynced;
 
   function formatBytes(bytes: number): string {
     if (bytes === 0) return "0 B";
@@ -439,13 +442,12 @@
 
   <div class="settings-content">
     <div class="settings-container">
-      <!-- Account & Sync -->
-      <section class="settings-section">
-        <h3 class="section-title">Account</h3>
-
-        {#if $isLoggedIn}
-          <div class="setting-item account-card">
-            <div class="account-profile">
+      <!-- Section: Account -->
+      <section class="settings-section" aria-labelledby="account-heading">
+        <h2 id="account-heading" class="section-label">Account</h2>
+        <div class="settings-card">
+          {#if $isLoggedIn}
+            <div class="account-profile-row">
               {#if $authState.avatar_url}
                 <img
                   src={$authState.avatar_url}
@@ -461,12 +463,12 @@
                     .toUpperCase()}
                 </div>
               {/if}
-              <div class="account-info">
-                <span class="account-name">{$authState.name || "User"}</span>
-                <span class="account-email">{$authState.email || ""}</span>
+              <div class="account-details">
+                <span class="setting-title">{$authState.name || "User"}</span>
+                <span class="setting-description">{$authState.email || ""}</span>
               </div>
               <button
-                class="logout-btn"
+                class="btn-outline-compact"
                 on:click={async () => {
                   const ok = await confirm(
                     "Are you sure you want to log out? Unsynced changes will be lost.",
@@ -476,580 +478,93 @@
                 }}
                 aria-label="Log out"
               >
-                Log Out
+                Log out
               </button>
             </div>
-
-            <div class="sync-status-area">
-              <div class="sync-info">
-                <span class="setting-label">Sync Status</span>
-                <span class="setting-value">
-                  {#if $isSyncing}
-                    Syncing...
-                  {:else if $syncStatus.last_error}
-                    <span class="text-error" title={$syncStatus.last_error}
-                      >{formatSyncError($syncStatus.last_error)}</span
-                    >
-                  {:else}
-                    {formatLastSynced($syncStatus.last_sync_at)}
-                  {/if}
-                </span>
-                {#if $syncStatus.pending_changes > 0}
-                  <span class="setting-hint"
-                    >{$syncStatus.pending_changes} pending change{$syncStatus.pending_changes !==
-                    1
-                      ? "s"
-                      : ""}</span
-                  >
-                {/if}
-              </div>
-              <button
-                class="btn-secondary btn-sm sync-btn"
-                on:click={() => triggerSync()}
-                disabled={$isSyncing}
-                aria-label="Sync now"
-              >
-                {#if $isSyncing}
-                  <svg
-                    class="spinner"
-                    viewBox="0 0 24 24"
-                    width="14"
-                    height="14"
-                  >
-                    <path
-                      fill="currentColor"
-                      d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"
-                    />
-                  </svg>
-                  Syncing
-                {:else}
-                  Sync Now
-                {/if}
-              </button>
-            </div>
-            <p
-              class="setting-hint"
-              style="margin-top: 8px; font-size: 0.75rem; opacity: 0.8; line-height: 1.4;"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                width="12"
-                height="12"
-                fill="currentColor"
-                style="display: inline-block; vertical-align: text-bottom; margin-right: 4px; color: var(--accent-warning, #ffae42);"
-              >
-                <path
-                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
-                />
-              </svg>
-              Automatic sync occurs every 12 hours to reduce server load. Manual
-              sync is always available.
-            </p>
-
-            {#if $isSupporter}
-              <div class="kofi-supporter-badge">
-                <div class="badge-content">
-                  <svg
-                    viewBox="0 0 24 24"
-                    width="18"
-                    height="18"
-                    fill="currentColor"
-                    style="color: var(--accent-primary)"
-                  >
-                    <path
-                      d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
-                    />
-                  </svg>
-                  <div class="badge-text">
-                    <span class="status-unlocked"
-                      >Active Supporter — Sync Unlocked</span
-                    >
-                    {#if $authState.supporter_until !== null}
-                      <span class="supporter-until"
-                        >Valid until {formatSupporterUntil(
-                          $authState.supporter_until,
-                        )}</span
-                      >
-                    {/if}
-                  </div>
-                </div>
-              </div>
-
-              <div class="supporter-benefits-mini">
-                <h4 class="benefits-title">Your Benefits</h4>
-                <ul>
-                  <li>
-                    <svg
-                      viewBox="0 0 24 24"
-                      width="14"
-                      height="14"
-                      fill="currentColor"
-                      ><path
-                        d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
-                      /></svg
-                    >
-                    Unlimited Library & Playlists
-                  </li>
-                  <li>
-                    <svg
-                      viewBox="0 0 24 24"
-                      width="14"
-                      height="14"
-                      fill="currentColor"
-                      ><path
-                        d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
-                      /></svg
-                    >
-                    Play History & Analytics Sync
-                  </li>
-                  <li>
-                    <svg
-                      viewBox="0 0 24 24"
-                      width="14"
-                      height="14"
-                      fill="currentColor"
-                      ><path
-                        d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
-                      /></svg
-                    >
-                    Cross-device Settings Sync
-                  </li>
-                </ul>
-              </div>
-            {:else}
-              <div class="kofi-not-supporter">
-                <div class="tier-limits">
-                  <div class="tier-limit-item">
-                    <div class="limit-header">
-                      <span class="limit-label">Music Library</span>
-                      <span class="limit-count">{$trackCount} / 100</span>
-                    </div>
-                    <div class="limit-bar-wrap">
-                      <div
-                        class="limit-bar"
-                        style="width: {libraryProgress}%"
-                        class:at-limit={libraryProgress >= 100}
-                      ></div>
-                    </div>
-                  </div>
-                  <div class="tier-limit-item">
-                    <div class="limit-header">
-                      <span class="limit-label">Playlists</span>
-                      <span class="limit-count">{$playlists.length} / 3</span>
-                    </div>
-                    <div class="limit-bar-wrap">
-                      <div
-                        class="limit-bar"
-                        style="width: {playlistProgress}%"
-                        class:at-limit={playlistProgress >= 100}
-                      ></div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="benefits-upsell">
-                  <h4 class="upsell-title">Unlock Unlimited Sync</h4>
-                  <p class="upsell-desc">
-                    Support Audion on Ko-fi to unlock premium features:
-                  </p>
-                  <ul class="upsell-list">
-                    <li>
-                      <svg
-                        viewBox="0 0 24 24"
-                        width="14"
-                        height="14"
-                        fill="currentColor"
-                        style="color: var(--accent-primary)"
-                        ><path
-                          d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
-                        /></svg
-                      >
-                      <strong>Unlimited</strong> tracks and playlists sync
-                    </li>
-                    <li>
-                      <svg
-                        viewBox="0 0 24 24"
-                        width="14"
-                        height="14"
-                        fill="currentColor"
-                        style="color: var(--accent-primary)"
-                        ><path
-                          d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
-                        /></svg
-                      >
-                      <strong>Sync Play History</strong> & recently played
-                    </li>
-                    <li>
-                      <svg
-                        viewBox="0 0 24 24"
-                        width="14"
-                        height="14"
-                        fill="currentColor"
-                        style="color: var(--accent-primary)"
-                        ><path
-                          d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
-                        /></svg
-                      >
-                      Support server hosting & future development
-                    </li>
-                  </ul>
-                </div>
-
-                <a
-                  href="https://ko-fi.com/N4N5UMNR1"
-                  target="_blank"
-                  rel="noreferrer"
-                  class="btn-primary kofi-support-link"
-                  style="margin-top: var(--spacing-md); width: 100%; justify-content: center; font-weight: 600;"
-                  aria-label="Support on Ko-fi"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    width="18"
-                    height="18"
-                    fill="currentColor"
-                    style="margin-right: 8px"
-                  >
-                    <path
-                      d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.723c-.604 0-.679.798-.679.798s-.082 7.324-.022 11.822c.164 2.424 2.586 2.672 2.586 2.672s8.267-.023 11.966-.049c2.438-.426 2.683-2.566 2.658-3.734 4.352.24 7.422-2.831 6.649-6.916zm-11.062 3.511c-1.246 1.453-4.011 3.976-4.011 3.976s-.121.119-.31.023c-.076-.057-.108-.09-.108-.09-.443-.441-3.368-3.049-4.034-3.954-.709-.965-1.041-2.7-.091-3.71.951-1.01 3.005-.995 4.032.019.152.154.16.166.152.166s.068-.112.151-.166c1.27-1.241 3.563-.78 4.346.394.886 1.318.488 2.927-.127 3.332zm4.906.658c-.375.133-1.259.053-1.259.053l.13-3.998s.932-.171 1.432.064c1.004.472.835 3.44-.303 3.881z"
-                    />
-                  </svg>
-                  Link Ko-fi Account
-                </a>
-
-                <p
-                  class="setting-hint"
-                  style="margin-top: var(--spacing-md); text-align: center;"
-                >
-                  Don't see your supporter status?
-                  <a
-                    href="https://discord.gg/27XRVQsBd9"
-                    target="_blank"
-                    class="text-accent"
-                    style="text-decoration: underline;">Contact us</a
-                  >
-                </p>
-              </div>
-            {/if}
-          </div>
-
-          <div class="setting-item">
-            <div class="danger-item">
-              <div class="danger-info">
-                <span class="setting-label">Delete Account</span>
-                <p class="setting-hint">
-                  Permanently delete your account and all synced data from the
-                  server. Your local library is not affected.
-                </p>
-              </div>
-              <button
-                class="danger-btn"
-                on:click={async () => {
-                  const ok = await confirm(
-                    "This will permanently delete your account and all synced data from the server. This cannot be undone. Continue?",
-                    { title: "Delete Account", danger: true },
-                  );
-                  if (ok) {
-                    try {
-                      await deleteAccount();
-                    } catch (e) {
-                      console.error("Failed to delete account:", e);
-                    }
-                  }
-                }}
-                aria-label="Delete account"
-              >
-                Delete Account
-              </button>
-            </div>
-          </div>
-        {:else}
-          <div class="setting-item">
+          {:else}
             <div class="account-signin">
-              <p class="setting-hint">
-                Sign in to sync your playlists, liked songs, and settings across
-                all your devices.
-              </p>
+              <span class="setting-description">
+                Sign in to sync your library and settings across devices
+              </span>
               <button
-                class="btn-primary"
+                class="btn-outline-compact btn-full-width"
+                style="margin-top: var(--spacing-sm)"
                 on:click={() => showLoginModal.set(true)}
                 aria-label="Sign in"
               >
                 Sign In
               </button>
             </div>
-          </div>
-        {/if}
-      </section>
-
-      <!-- Theme Mode -->
-      <section class="settings-section">
-        <h3 class="section-title">Appearance</h3>
-
-        <div class="setting-item">
-          <span class="setting-label">Theme Mode</span>
-          <div class="theme-modes">
-            <button
-              class="mode-btn"
-              class:active={$theme.mode === "dark"}
-              on:click={() => handleModeChange("dark")}
-              aria-label="Dark theme"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                width="20"
-                height="20"
-                fill="currentColor"
-              >
-                <path
-                  d="M9.37 5.51c-.18.64-.27 1.31-.27 1.99 0 4.08 3.32 7.4 7.4 7.4.68 0 1.35-.09 1.99-.27C17.45 17.19 14.93 19 12 19c-3.86 0-7-3.14-7-7 0-2.93 1.81-5.45 4.37-6.49zM12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"
-                />
-              </svg>
-              <span>Dark</span>
-            </button>
-            <button
-              class="mode-btn"
-              class:active={$theme.mode === "light"}
-              on:click={() => handleModeChange("light")}
-              aria-label="Light theme"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                width="20"
-                height="20"
-                fill="currentColor"
-              >
-                <path
-                  d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79 1.42-1.41zM4 10.5H1v2h3v-2zm9-9.95h-2V3.5h2V.55zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41 1.79-1.79zm-3.21 13.7l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM20 10.5v2h3v-2h-3zm-8-5c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm-1 16.95h2V19.5h-2v2.95zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41-1.79 1.8z"
-                />
-              </svg>
-              <span>Light</span>
-            </button>
-            <button
-              class="mode-btn"
-              class:active={$theme.mode === "system"}
-              on:click={() => handleModeChange("system")}
-              aria-label="System theme"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                width="20"
-                height="20"
-                fill="currentColor"
-              >
-                <path
-                  d="M20 18c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"
-                />
-              </svg>
-              <span>System</span>
-            </button>
-          </div>
+          {/if}
         </div>
       </section>
 
-      <!-- Accent Color -->
-      <section class="settings-section">
-        <h3 class="section-title">Accent Color</h3>
-
-        <div class="setting-item">
-          <div class="color-grid">
-            {#each presetAccents as preset}
-              <button
-                class="color-swatch"
-                class:active={$theme.accentColor === preset.color}
-                style="--swatch-color: {preset.color}"
-                on:click={() => handleAccentChange(preset.color)}
-                title={preset.name}
-                aria-label="Accent color {preset.name} ({preset.color})"
-              >
-                {#if $theme.accentColor === preset.color}
-                  <svg
-                    viewBox="0 0 24 24"
-                    width="16"
-                    height="16"
-                    fill="currentColor"
-                  >
-                    <path
-                      d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
-                    />
-                  </svg>
-                {/if}
-              </button>
-            {/each}
-          </div>
-        </div>
-
-        <!-- Custom Colors -->
-        {#if $theme.customAccentColors.length > 0}
-          <div class="setting-item">
-            <span class="setting-label">Custom Colors</span>
-            <div class="color-grid small">
-              {#each $theme.customAccentColors as color}
-                <button
-                  class="color-swatch small"
-                  class:active={$theme.accentColor === color}
-                  style="--swatch-color: {color}"
-                  on:click={() => handleAccentChange(color)}
-                  aria-label="Custom accent color {color}"
-                >
-                  {#if $theme.accentColor === color}
-                    <svg
-                      viewBox="0 0 24 24"
-                      width="12"
-                      height="12"
-                      fill="currentColor"
-                    >
-                      <path
-                        d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
-                      />
-                    </svg>
+      <!-- Section: Sync -->
+      {#if $isLoggedIn}
+        <section class="settings-section" aria-labelledby="sync-heading">
+          <h2 id="sync-heading" class="section-label">Sync</h2>
+          <div class="settings-card">
+            <div class="card-header-row">
+              <div class="card-title-group">
+                <h3 class="setting-title">Library status</h3>
+                <span class="setting-description" aria-live="polite">
+                  {#if $isSyncing}
+                    <span class="animate-pulse">Syncing tracks...</span>
+                  {:else}
+                    Synced {formatLastSyncedRelative($syncStatus.last_sync_at)}
+                    {#if $syncStatus.pending_changes > 0}
+                      · {$syncStatus.pending_changes} pending
+                    {/if}
                   {/if}
-                </button>
-              {/each}
+                </span>
+              </div>
+              <div class="pill-badge">Auto every 12h</div>
             </div>
-          </div>
-        {/if}
 
-        <!-- Add Custom Color -->
-        <div class="setting-item">
-          <span class="setting-label">Add Custom Color</span>
-          <div class="custom-color-input">
-            <input
-              type="color"
-              bind:value={customColorInput}
-              class="color-picker"
-              aria-label="Pick a custom color"
-            />
-            <input
-              type="text"
-              bind:value={customColorInput}
-              placeholder="#1DB954"
-              class="color-text"
-              maxlength="7"
-              aria-label="Hex color code"
-            />
             <button
-              class="add-btn"
-              on:click={handleCustomColorAdd}
-              aria-label="Add custom color"
+              class="btn-outline-compact btn-full-width"
+              style="margin-top: var(--spacing-md);"
+              on:click={() => triggerSync()}
+              disabled={$isSyncing}
+              aria-label="Sync now"
             >
-              Add
+              {$isSyncing ? "Syncing..." : "Sync now"}
             </button>
-          </div>
-        </div>
-      </section>
 
-      <!-- General -->
-      <section class="settings-section">
-        <h3 class="section-title">General</h3>
-
-        <div class="setting-item">
-          <span class="setting-label">Download Location</span>
-          <div class="path-selector">
-            <div
-              class="path-display"
-              title={$appSettings.downloadLocation || "Not set"}
-            >
-              {$appSettings.downloadLocation || "No download location set"}
-            </div>
-            <button
-              class="selector-btn"
-              on:click={handleSetDownloadLocation}
-              aria-label="Change download location"
-            >
-              Change
-            </button>
-          </div>
-          <p class="setting-hint">Where downloaded songs will be saved</p>
-        </div>
-
-        {#if !isAndroid()}
-          <div class="setting-item">
-            <span class="setting-label">Window Start Mode</span>
-            <div class="theme-modes">
-              <button
-                class="mode-btn"
-                class:active={$appSettings.startMode === "normal"}
-                on:click={() => appSettings.setStartMode("normal")}
-                aria-label="Start window in normal mode"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  width="24"
-                  height="24"
-                  fill="currentColor"
-                >
-                  <path
-                    d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"
-                  />
-                </svg>
-                <span>Normal</span>
-              </button>
-              <button
-                class="mode-btn"
-                class:active={$appSettings.startMode === "maximized"}
-                on:click={() => appSettings.setStartMode("maximized")}
-                aria-label="Start window maximized"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  width="24"
-                  height="24"
-                  fill="currentColor"
-                >
-                  <path d="M4 4h16v16H4V4zm2 4v10h12V8H6z" />
-                </svg>
-                <span>Maximized</span>
-              </button>
-              <button
-                class="mode-btn"
-                class:active={$appSettings.startMode === "minimized"}
-                on:click={() => appSettings.setStartMode("minimized")}
-                aria-label="Start window minimized"
-              >
-                <svg
-                  viewBox="0 0 24 24"
-                  width="24"
-                  height="24"
-                  fill="currentColor"
-                >
-                  <path d="M6 19h12v2H6z" />
-                </svg>
-                <span>Minimized</span>
-              </button>
+            <div class="divider"></div>
+            <div class="tier-limits" role="group" aria-label="Usage Limits">
+              <div class="tier-limit-item">
+                <div class="limit-header">
+                  <span id="limit-label-music" class="setting-title" style="font-size: 11px; opacity: 0.8">Tracks</span>
+                  <span class="setting-title" style="font-size: 11px; opacity: 0.8">{$trackCount} / 100</span>
+                </div>
+                <div class="limit-bar-thick-wrap" role="progressbar" aria-valuenow={$trackCount} aria-valuemin="0" aria-valuemax="100" aria-labelledby="limit-label-music">
+                  <div class="limit-bar-thick" style="width: {libraryProgress}%"></div>
+                </div>
+              </div>
+              
+              <div class="tier-limit-item">
+                <div class="limit-header">
+                  <span id="limit-label-playlists" class="setting-title" style="font-size: 11px; opacity: 0.8">Playlists</span>
+                  <span class="setting-title" style="font-size: 11px; opacity: 0.8">{$playlists.length} / 3</span>
+                </div>
+                <div class="limit-bar-thick-wrap" role="progressbar" aria-valuenow={$playlists.length} aria-valuemin="0" aria-valuemax="3" aria-labelledby="limit-label-playlists">
+                  <div class="limit-bar-thick" style="width: {playlistProgress}%"></div>
+                </div>
+              </div>
             </div>
           </div>
-        {/if}
+        </section>
+      {/if}
 
-        <div class="setting-item">
+      <!-- Section: Playback -->
+      <section class="settings-section" aria-labelledby="playback-heading">
+        <h2 id="playback-heading" class="section-label">Playback</h2>
+        <div class="settings-card">
           <div class="toggle-container">
             <div class="toggle-info">
-              <span class="setting-label">Show Discord Button</span>
-              <p class="setting-hint">
-                Show a link to the community Discord in the sidebar
-              </p>
-            </div>
-            <button
-              class="toggle-btn"
-              class:active={$appSettings.showDiscord}
-              on:click={() =>
-                appSettings.setShowDiscord(!$appSettings.showDiscord)}
-              role="switch"
-              aria-checked={$appSettings.showDiscord}
-              aria-label="Toggle Discord Button"
-            >
-              <div class="toggle-handle"></div>
-            </button>
-          </div>
-        </div>
-
-        <div class="setting-item">
-          <div class="toggle-container">
-            <div class="toggle-info">
-              <span class="setting-label">Autoplay</span>
-              <p class="setting-hint">
-                Keep playing random tracks from your library when the queue ends
-              </p>
+              <span class="setting-title">Autoplay</span>
+              <span class="setting-description">Play random tracks when the queue ends</span>
             </div>
             <button
               class="toggle-btn"
@@ -1063,359 +578,73 @@
             </button>
           </div>
         </div>
-
-        <div class="setting-item">
-          <div class="toggle-container">
-            <div class="toggle-info">
-              <span class="setting-label">Remote Control & Device Connection</span>
-              <p class="setting-hint">
-                Allow this device to be discovered and controlled by your other devices. Disabling this also stops this device from controlling others.
-              </p>
-            </div>
-            <button
-              class="toggle-btn"
-              class:active={$appSettings.remoteControlEnabled}
-              on:click={() =>
-                appSettings.setRemoteControlEnabled(
-                  !$appSettings.remoteControlEnabled,
-                )}
-              role="switch"
-              aria-checked={$appSettings.remoteControlEnabled}
-              aria-label="Toggle Remote Control"
-            >
-              <div class="toggle-handle"></div>
-            </button>
-          </div>
-        </div>
-
-        <div class="setting-item">
-          <span class="setting-label">Audio Backend</span>
-          <div class="theme-modes">
-            <button
-              class="mode-btn"
-              class:active={$appSettings.audioBackend === "auto"}
-              on:click={() => appSettings.setAudioBackend("auto")}
-              aria-label="Auto audio backend"
-            >
-              <span>Auto</span>
-            </button>
-            <button
-              class="mode-btn"
-              class:active={$appSettings.audioBackend === "native"}
-              on:click={() => appSettings.setAudioBackend("native")}
-              aria-label="Native audio backend"
-            >
-              <span>Native</span>
-            </button>
-            <button
-              class="mode-btn"
-              class:active={$appSettings.audioBackend === "html5"}
-              on:click={() => appSettings.setAudioBackend("html5")}
-              aria-label="HTML5 audio backend"
-            >
-              <span>HTML5</span>
-            </button>
-          </div>
-          <p class="setting-hint">
-            <strong>Auto:</strong> Recommended. Uses Native on Linux/Android and
-            HTML5 elsewhere.<br />
-            <strong>Native:</strong> Better performance, system-wide EQ (Rust
-            backend).<br />
-            <strong>HTML5:</strong> Legacy web audio playback.
-          </p>
-        </div>
-
-        {#if showRefreshNotice}
-          <div class="setting-item refresh-notice">
-            <div class="notice-content">
-              <svg
-                viewBox="0 0 24 24"
-                width="20"
-                height="20"
-                fill="currentColor"
-              >
-                <path
-                  d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"
-                />
-              </svg>
-              <span
-                >Changing the audio backend requires a refresh to take effect.</span
-              >
-            </div>
-            <button
-              class="selector-btn refresh-btn"
-              on:click={handleRefresh}
-              aria-label="Refresh now"
-            >
-              Refresh Now
-            </button>
-          </div>
-        {/if}
       </section>
 
-      <!-- Cover Management -->
-      <section class="settings-section">
-        <h3 class="section-title">ListenBrainz</h3>
-
-        <!-- Enable toggle -->
-        <div class="setting-item">
-          <div class="toggle-container">
-            <div class="toggle-info">
-              <span class="setting-label">Enable ListenBrainz</span>
-              <p class="setting-hint">
-                Submit your listening history and receive personalised
-                recommendations. Requires a free
-                <a
-                  href="https://listenbrainz.org"
-                  target="_blank"
-                  rel="noreferrer">ListenBrainz</a
-                >
-                account.
-              </p>
-            </div>
-            <button
-              class="toggle-btn"
-              class:active={$appSettings.listenBrainzEnabled}
-              on:click={() => appSettings.toggleListenBrainz()}
-              role="switch"
-              aria-checked={$appSettings.listenBrainzEnabled}
-              aria-label="Toggle ListenBrainz"
-            >
-              <div class="toggle-handle"></div>
-            </button>
-          </div>
-        </div>
-
-        <!-- Token management -->
-        {#if !$appSettings.listenBrainzTokenSet}
-          <div class="setting-item">
-            <span class="setting-label">User Token</span>
+      <!-- Section: Storage -->
+      <section class="settings-section" aria-labelledby="storage-heading">
+        <h2 id="storage-heading" class="section-label">Storage</h2>
+        <div class="settings-card">
+          <div class="inner-section">
+            <span class="setting-title">Download location</span>
             <div class="path-selector">
-              <input
-                type="password"
-                bind:value={lbTokenInput}
-                placeholder="Paste your ListenBrainz token"
-                class="lb-token-input"
-                on:keydown={(e) => e.key === "Enter" && handleVerifyLbToken()}
-              />
-              <button
-                class="selector-btn"
-                on:click={handleVerifyLbToken}
-                disabled={!lbTokenInput.trim() || lbIsVerifying}
-              >
-                {lbIsVerifying ? "Verifying…" : "Verify & Save"}
-              </button>
-            </div>
-            <p class="setting-hint">
-              Find your token at
-              <a
-                href="https://listenbrainz.org/settings/"
-                target="_blank"
-                rel="noreferrer">listenbrainz.org/settings</a
-              >.
-            </p>
-            {#if lbVerifyError}
-              <p class="setting-hint" style="color: var(--text-error);">
-                ✗ {lbVerifyError}
-              </p>
-            {/if}
-            {#if lbVerifySuccess}
-              <p class="setting-hint" style="color: var(--accent-primary);">
-                ✓ Token verified and saved!
-              </p>
-            {/if}
-          </div>
-        {:else}
-          <div class="setting-item">
-            <div class="danger-item">
-              <div class="danger-info">
-                <span class="setting-label">Token Stored</span>
-                <p class="setting-hint">
-                  {#if $appSettings.listenBrainzUsername}
-                    Signed in as <strong
-                      >{$appSettings.listenBrainzUsername}</strong
-                    >.
-                  {:else}
-                    A token is saved. Enable the toggle above to start
-                    scrobbling.
-                  {/if}
-                </p>
+              <div class="setting-description path-display" style="margin-top: 0;" title={$appSettings.downloadLocation || "Not set"}>
+                {$appSettings.downloadLocation || "No download location set"}
               </div>
-              <button
-                class="selector-btn danger-btn"
-                on:click={handleRemoveLbToken}
-                aria-label="Remove ListenBrainz token"
-              >
-                Remove Token
-              </button>
+              <button class="selector-btn" on:click={handleSetDownloadLocation} aria-label="Change location">Change</button>
             </div>
           </div>
-        {/if}
-      </section>
 
-      <!-- Cover Management -->
-      <section class="settings-section">
-        <h3 class="section-title">Cover Management</h3>
+          <div class="divider"></div>
 
-        <!-- Sync Cover Files -->
-        <div class="setting-item">
-          <div class="danger-item">
-            <div class="danger-info">
-              <span class="setting-label">Sync Cover Files</span>
-              <p class="setting-hint">
-                Scan existing cover image files and update the database with
-                their paths. Use this if covers were created but aren't showing
-                in the app.
-              </p>
-            </div>
-            <button
-              class="selector-btn"
-              on:click={handleSyncCovers}
-              disabled={isSyncingCovers}
-              aria-label="Sync cover files"
-            >
-              {#if isSyncingCovers}
-                Syncing...
-              {:else}
-                Sync Covers
-              {/if}
+          <div class="card-title-group compact">
+            <h3 class="setting-title">Cover Management</h3>
+            <span class="setting-description">Sync or merge cover files to save space</span>
+          </div>
+
+          <div class="button-group-row">
+            <button class="btn-outline-compact" on:click={handleSyncCovers} disabled={isSyncingCovers}>
+              {isSyncingCovers ? "Syncing..." : "Sync Covers"}
+            </button>
+            <button class="btn-outline-compact" on:click={handleMergeDuplicateCovers} disabled={isMergingCovers}>
+              {isMergingCovers ? "Merging..." : "Merge Duplicates"}
             </button>
           </div>
 
-          <!-- Sync Progress Bar -->
-          {#if isSyncingCovers && syncProgress}
-            <div class="progress-container">
-              <div class="progress-header">
-                <div class="progress-info">
-                  <span class="progress-text">
-                    {syncProgress.current.toLocaleString()} of {syncProgress.total.toLocaleString()}
-                    items
-                  </span>
-                  {#if syncProgress.estimated_time_remaining_ms}
-                    <span class="progress-separator">·</span>
-                    <span class="progress-eta">
-                      {formatTime(syncProgress.estimated_time_remaining_ms)} remaining
-                    </span>
-                  {/if}
-                </div>
-                <div class="progress-percentage">{syncPercentage}%</div>
-              </div>
-              <div class="progress-bar-container">
-                <div
-                  class="progress-bar-fill"
-                  style="width: {syncPercentage}%"
-                ></div>
-              </div>
-              <div class="progress-stats">
-                <span class="stat-item">
-                  <span class="stat-label">Tracks:</span>
-                  <span class="stat-value">{syncProgress.tracks_migrated}</span>
-                </span>
-                <span class="stat-item">
-                  <span class="stat-label">Albums:</span>
-                  <span class="stat-value">{syncProgress.albums_migrated}</span>
-                </span>
-              </div>
-            </div>
-          {/if}
-
-          {#if syncMessage}
-            <p
-              class="sync-message"
-              class:success={syncSuccess}
-              class:error={!syncSuccess}
-            >
-              {syncMessage}
-            </p>
-          {/if}
-        </div>
-
-        <!-- Merge Duplicate Covers -->
-        <div class="setting-item">
-          <div class="danger-item">
-            <div class="danger-info">
-              <span class="setting-label">Merge Duplicate Covers</span>
-              <p class="setting-hint">
-                Find and merge identical album covers to save disk space and
-                improve performance
-              </p>
-            </div>
-            <button
-              class="selector-btn"
-              on:click={handleMergeDuplicateCovers}
-              disabled={isMergingCovers}
-              aria-label="Merge duplicate covers"
-            >
-              {#if isMergingCovers}
-                Merging...
-              {:else}
-                Merge Duplicates
-              {/if}
-            </button>
-          </div>
-
-          <!-- Merge Progress Bar -->
-          {#if isMergingCovers && mergeProgress}
-            <div class="progress-container">
-              <div class="progress-header">
-                <div class="progress-info">
-                  <span class="progress-text">
-                    {mergeProgress.current_album.toLocaleString()} of {mergeProgress.total_albums.toLocaleString()}
-                    albums
-                  </span>
-                  {#if mergeProgress.estimated_time_remaining_ms}
-                    <span class="progress-separator">·</span>
-                    <span class="progress-eta">
-                      {formatTime(mergeProgress.estimated_time_remaining_ms)} remaining
-                    </span>
-                  {/if}
-                </div>
-                <div class="progress-percentage">{mergePercentage}%</div>
-              </div>
-              <div class="progress-bar-container">
-                <div
-                  class="progress-bar-fill"
-                  style="width: {mergePercentage}%"
-                ></div>
-              </div>
-              <div class="progress-stats">
-                <span class="stat-item">
-                  <span class="stat-label">Covers Merged:</span>
-                  <span class="stat-value">{mergeProgress.covers_merged}</span>
-                </span>
-                <span class="stat-item">
-                  <span class="stat-label">Space Saved:</span>
-                  <span class="stat-value"
-                    >{formatBytes(mergeProgress.space_saved_bytes)}</span
-                  >
-                </span>
-              </div>
-            </div>
-          {/if}
-
-          {#if mergeMessage}
-            <p
-              class="sync-message"
-              class:success={mergeSuccess}
-              class:error={!mergeSuccess}
-            >
-              {mergeMessage}
-            </p>
+          {#if isSyncingCovers || isMergingCovers}
+             <div class="divider"></div>
+             <div class="progress-notice-inline">
+               <span class="setting-description animate-pulse">Processing covers... view details below for progress</span>
+             </div>
           {/if}
         </div>
       </section>
 
-      <!-- Equalizer -->
-      <section class="settings-section">
-        <h3 class="section-title">Equalizer</h3>
+      <!-- Section: Audio -->
+      <section class="settings-section" aria-labelledby="audio-heading">
+        <h2 id="audio-heading" class="section-label">Audio</h2>
+        <div class="settings-card">
+          <div class="inner-section">
+            <span class="setting-title">Output driver</span>
+            <span class="setting-description">Select the backend for audio playback</span>
+            <div class="segmented-pill" style="margin-top: 6px;">
+              <button class="segment-btn" class:active={$appSettings.audioBackend === 'auto'} on:click={() => appSettings.setAudioBackend('auto')}>Auto</button>
+              <button class="segment-btn" class:active={$appSettings.audioBackend === 'native'} on:click={() => appSettings.setAudioBackend('native')}>Native</button>
+              <button class="segment-btn" class:active={$appSettings.audioBackend === 'html5'} on:click={() => appSettings.setAudioBackend('html5')}>HTML5</button>
+            </div>
+            {#if showRefreshNotice}
+              <div class="refresh-notice-inline">
+                <span class="setting-description" style="color: var(--accent-primary)">Requires restart to apply</span>
+                <button class="btn-text-small" style="padding-left: 0" on:click={handleRefresh}>Restart now</button>
+              </div>
+            {/if}
+          </div>
 
-        <div class="setting-item">
+          <div class="divider"></div>
+
           <div class="toggle-container">
             <div class="toggle-info">
-              <span class="setting-label">Enable Equalizer</span>
-              <p class="setting-hint">
-                Apply audio frequency adjustments to your music
-              </p>
+              <span class="setting-title">Equalizer</span>
+              <span class="setting-description">Adjust frequency levels across multiple bands</span>
             </div>
             <button
               class="toggle-btn"
@@ -1428,88 +657,169 @@
               <div class="toggle-handle"></div>
             </button>
           </div>
-        </div>
 
-        <div class="setting-item">
-          <span class="setting-label">Preset</span>
-          <div class="preset-selector">
-            <select
-              class="preset-select"
-              value={$equalizer.currentPreset || ""}
-              on:change={(e) => equalizer.applyPreset(e.currentTarget.value)}
-              disabled={!$equalizer.enabled}
-              aria-label="Equalizer preset"
-            >
-              <option value="" disabled>Custom</option>
-              {#each EQ_PRESETS as preset}
-                <option value={preset.name}>{preset.name}</option>
-              {/each}
-            </select>
+          {#if $equalizer.enabled}
+            <div class="divider"></div>
+            <div class="eq-control-compact">
+              <select class="preset-select-pill" value={$equalizer.currentPreset || ""} on:change={(e) => equalizer.applyPreset(e.currentTarget.value)}>
+                <option value="" disabled>Custom Preset</option>
+                {#each EQ_PRESETS as preset}
+                  <option value={preset.name}>{preset.name}</option>
+                {/each}
+              </select>
+              <button class="btn-text-small" on:click={() => equalizer.reset()}>Reset to Flat</button>
+            </div>
+          {/if}
+        </div>
+      </section>
+
+      <!-- Section: Community -->
+      <section class="settings-section" aria-labelledby="community-heading">
+        <h2 id="community-heading" class="section-label">Community</h2>
+        <div class="settings-card">
+          <div class="toggle-container">
+            <div class="toggle-info">
+              <span class="setting-title">ListenBrainz</span>
+              <span class="setting-description">Submit listening history to ListenBrainz</span>
+            </div>
             <button
-              class="reset-btn"
-              on:click={() => equalizer.reset()}
-              disabled={!$equalizer.enabled}
-              title="Reset to Flat"
-              aria-label="Reset equalizer to flat"
+              class="toggle-btn"
+              class:active={$appSettings.listenBrainzEnabled}
+              on:click={() => appSettings.toggleListenBrainz()}
+              role="switch"
+              aria-checked={$appSettings.listenBrainzEnabled}
+              aria-label="Toggle ListenBrainz"
             >
-              Reset
+              <div class="toggle-handle"></div>
             </button>
           </div>
-        </div>
 
-        <div
-          class="setting-item eq-bands-container"
-          class:disabled={!$equalizer.enabled}
-        >
-          <div class="eq-bands">
-            {#each $equalizer.bands as band, i}
-              <div class="eq-band">
-                <span class="eq-gain"
-                  >{band.gain > 0 ? "+" : ""}{band.gain}</span
-                >
-                <div class="eq-slider-container">
+          {#if $appSettings.listenBrainzEnabled}
+            <div class="divider"></div>
+            <div class="inner-section">
+              {#if !$appSettings.listenBrainzTokenSet}
+                <div class="lb-token-row" style="display: flex; gap: var(--spacing-sm);">
                   <input
-                    type="range"
-                    class="eq-slider"
-                    min="-12"
-                    max="12"
-                    step="1"
-                    value={band.gain}
-                    disabled={!$equalizer.enabled}
-                    on:input={(e) =>
-                      equalizer.setBandGain(i, parseInt(e.currentTarget.value))}
-                    aria-label="{band.label} Hz"
+                    type="password"
+                    bind:value={lbTokenInput}
+                    placeholder="User Token"
+                    class="input-compact"
+                    style="flex: 1; min-width: 0;"
                   />
+                  <button class="btn-outline-compact" on:click={handleVerifyLbToken} disabled={lbIsVerifying}>
+                    {lbIsVerifying ? "..." : "Verify"}
+                  </button>
                 </div>
-                <span class="eq-label">{band.label}</span>
-              </div>
-            {/each}
+                {#if lbVerifyError}<p class="text-error" style="font-size: 0.7rem; margin-top: 4px;">{lbVerifyError}</p>{/if}
+              {:else}
+                <div class="lb-status-row" style="display: flex; justify-content: space-between; align-items: center;">
+                  <span style="font-size: 0.8125rem;">Logged in as <strong>{$appSettings.listenBrainzUsername || 'User'}</strong></span>
+                  <button class="btn-text-small" on:click={handleRemoveLbToken}>Remove</button>
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+          <div class="divider"></div>
+
+          <div class="toggle-container">
+            <div class="toggle-info">
+              <span class="setting-title">Discord button</span>
+            </div>
+            <button
+              class="toggle-btn"
+              class:active={$appSettings.showDiscord}
+              on:click={() => appSettings.setShowDiscord(!$appSettings.showDiscord)}
+              role="switch"
+              aria-checked={$appSettings.showDiscord}
+              aria-label="Toggle Discord Button"
+            >
+              <div class="toggle-handle"></div>
+            </button>
           </div>
-          <div class="eq-scale">
-            <span>+12</span>
-            <span>0</span>
-            <span>-12</span>
+          
+          <div class="button-group-row" style="margin-top: var(--spacing-sm)">
+            <a href="https://discord.gg/27XRVQsBd9" target="_blank" rel="noreferrer" class="btn-outline-compact" style="width: 100%; text-align: center;">Open Discord</a>
           </div>
         </div>
       </section>
 
-      <!-- Developer -->
-      <section class="settings-section">
-        <h3 class="section-title">Developer</h3>
+      <!-- Section: Appearance -->
+      <section class="settings-section" aria-labelledby="appearance-heading">
+        <h2 id="appearance-heading" class="section-label">Appearance</h2>
+        <div class="settings-card">
+           <div class="inner-section">
+             <span class="setting-title">Theme mode</span>
+             <div class="segmented-pill" style="margin-top: 6px;">
+               <button class="segment-btn" class:active={$theme.mode === 'dark'} on:click={() => handleModeChange('dark')}>Dark</button>
+               <button class="segment-btn" class:active={$theme.mode === 'light'} on:click={() => handleModeChange('light')}>Light</button>
+               <button class="segment-btn" class:active={$theme.mode === 'system'} on:click={() => handleModeChange('system')}>System</button>
+             </div>
+           </div>
 
-        <div class="setting-item">
+           {#if !isAndroid()}
+             <div class="divider"></div>
+             <div class="inner-section">
+               <span class="setting-title">Window start mode</span>
+               <div class="segmented-pill">
+                 <button class="segment-btn" class:active={$appSettings.startMode === 'normal'} on:click={() => appSettings.setStartMode('normal')}>Normal</button>
+                 <button class="segment-btn" class:active={$appSettings.startMode === 'maximized'} on:click={() => appSettings.setStartMode('maximized')}>Max</button>
+                 <button class="segment-btn" class:active={$appSettings.startMode === 'minimized'} on:click={() => appSettings.setStartMode('minimized')}>Min</button>
+               </div>
+             </div>
+           {/if}
+
+           <div class="divider"></div>
+
+           <div class="inner-section">
+             <span class="setting-title">Accent color</span>
+             <div class="color-grid-compact" style="margin-top: 6px;">
+               {#each presetAccents as preset}
+                 <button
+                   class="color-swatch-sm"
+                   class:active={$theme.accentColor === preset.color}
+                   style="background-color: {preset.color}"
+                   on:click={() => handleAccentChange(preset.color)}
+                   title={preset.name}
+                 ></button>
+               {/each}
+             </div>
+           </div>
+        </div>
+      </section>
+
+      <!-- Section: Privacy -->
+      <section class="settings-section" aria-labelledby="privacy-heading">
+        <h2 id="privacy-heading" class="section-label">Privacy</h2>
+        <div class="settings-card">
           <div class="toggle-container">
             <div class="toggle-info">
-              <span class="setting-label">Developer Mode</span>
-              <p class="setting-hint">
-                Enable browser right-click menu and inspection tools
-              </p>
+              <span class="setting-title">Remote control</span>
+              <span class="setting-description">Other devices can discover and control this app</span>
+            </div>
+            <button
+              class="toggle-btn"
+              class:active={$appSettings.remoteControlEnabled}
+              on:click={() => appSettings.setRemoteControlEnabled(!$appSettings.remoteControlEnabled)}
+              role="switch"
+              aria-checked={$appSettings.remoteControlEnabled}
+              aria-label="Toggle Remote Control"
+            >
+              <div class="toggle-handle"></div>
+            </button>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="toggle-container">
+            <div class="toggle-info">
+              <span class="setting-title">Developer mode</span>
+              <span class="setting-description">Enable inspection tools and debug menus</span>
             </div>
             <button
               class="toggle-btn"
               class:active={$appSettings.developerMode}
-              on:click={() =>
-                appSettings.setDeveloperMode(!$appSettings.developerMode)}
+              on:click={() => appSettings.setDeveloperMode(!$appSettings.developerMode)}
               role="switch"
               aria-checked={$appSettings.developerMode}
               aria-label="Toggle Developer Mode"
@@ -1517,82 +827,72 @@
               <div class="toggle-handle"></div>
             </button>
           </div>
+
+          <div class="divider"></div>
+
+          <div class="card-title-group compact">
+            <h3 class="setting-title" style="color: var(--error-color)">Danger zone</h3>
+            <span class="setting-description">Irreversible actions like resetting data</span>
+          </div>
+
+          <div class="button-group-row">
+            <button class="btn-outline-compact danger" on:click={openResetModal}>Reset Database</button>
+            {#if $isLoggedIn}
+              <button class="btn-outline-compact danger" on:click={async () => {
+                const ok = await confirm("Delete account permanently?", { title: "Delete Account", danger: true });
+                if (ok) await deleteAccount();
+              }}>Delete Account</button>
+            {/if}
+          </div>
         </div>
       </section>
 
-      <!-- Danger Zone -->
-      <section class="settings-section danger-zone">
-        <h3 class="section-title danger">Danger Zone</h3>
-
-        <div class="setting-item">
-          <div class="danger-item">
-            <div class="danger-info">
-              <span class="setting-label">Reset Database</span>
-              <p class="setting-hint">
-                Delete all tracks, albums, playlists, and music folder
-                references. This action cannot be undone.
-              </p>
+      <!-- Section: Upgrade -->
+      <section class="settings-section" aria-labelledby="upgrade-heading">
+        <h2 id="upgrade-heading" class="section-label">Upgrade</h2>
+        <div class="settings-card upgrade-card">
+          {#if !$isSupporter}
+            <div class="card-header-row">
+              <div class="card-title-group">
+                <h3 class="setting-title">Unlimited sync</h3>
+                <span class="setting-description">Support development and sync unlimited tracks</span>
+              </div>
+              <div class="pill-badge accent">Support</div>
             </div>
-            <button
-              class="danger-btn"
-              on:click={openResetModal}
-              aria-label="Reset database"
-            >
-              Reset Database
-            </button>
-          </div>
+            <a href="https://ko-fi.com/N4N5UMNR1" target="_blank" rel="noreferrer" class="btn-primary-compact" style="margin-top: var(--spacing-sm); text-align: center;">Support on Ko-fi</a>
+          {:else}
+            <div class="card-header-row">
+              <div class="card-title-group">
+                <h3 class="setting-title">Supporter status</h3>
+                <span class="setting-description">Pro benefits are active</span>
+              </div>
+              <div class="pill-badge accent">Pro</div>
+            </div>
+            <p class="notice-text-sm" style="margin-top: var(--spacing-sm)">
+              {#if $authState.supporter_until}
+                Valid until {formatSupporterUntil($authState.supporter_until)}
+              {:else}
+                Active perpetual support
+              {/if}
+            </p>
+          {/if}
         </div>
       </section>
 
-      <!-- About -->
-      <section class="settings-section">
-        <h3 class="section-title">About & Support</h3>
-        <div class="about-info">
-          <div class="app-logo">
-            <span>Audion</span>
+      <!-- Section: About -->
+      <section class="settings-section" aria-labelledby="about-heading">
+        <h2 id="about-heading" class="section-label">About</h2>
+        <div class="settings-card">
+          <div class="about-row">
+            <div class="app-logo-sm">Audion</div>
+            <div class="about-details">
+              <span class="setting-title">Audion {__APP_VERSION__}</span>
+              <span class="setting-description">Modern player powered by Tauri and Svelte</span>
+            </div>
           </div>
-          <p class="version">Version {__APP_VERSION__}</p>
           {#if $updates.hasUpdate}
-            <button
-              class="update-btn"
-              on:click={() => (showUpdatePopup = true)}
-              aria-label="View update"
-            >
-              Update Available
-            </button>
-          {:else if $updates.latestRelease}
-            <p class="up-to-date">You are up to date</p>
+            <button class="btn-green-compact" on:click={() => (showUpdatePopup = true)} style="margin-top: var(--spacing-sm)">Update Available</button>
           {/if}
-
-          <div
-            class="support-links-bottom"
-            style="display: flex; gap: var(--spacing-sm); margin-top: var(--spacing-md); flex-wrap: wrap; justify-content: center;"
-          >
-            <a
-              href="https://discord.gg/27XRVQsBd9"
-              target="_blank"
-              rel="noreferrer"
-              class="kofi-support-link"
-              style="background: #5865F2; color: white; padding: 8px 14px; border-radius: 8px; font-weight: 600; font-size: 0.8125rem; text-decoration: none;"
-              aria-label="Join Discord"
-            >
-              Join Discord
-            </a>
-            <a
-              href="https://ko-fi.com/N4N5UMNR1"
-              target="_blank"
-              rel="noreferrer"
-              class="kofi-support-link"
-              style="background: #FF5E5B; color: white; padding: 8px 14px; border-radius: 8px; font-weight: 600; font-size: 0.8125rem; text-decoration: none;"
-              aria-label="Support on Ko-fi"
-            >
-              Support on Ko-fi
-            </a>
-          </div>
-
-          <p class="copyright" style="margin-top: var(--spacing-lg);">
-            A modern music player built with Tauri & Svelte
-          </p>
         </div>
       </section>
     </div>
@@ -1757,20 +1057,17 @@
 
   .settings-section {
     margin-bottom: var(--spacing-xl);
-    background-color: var(--bg-elevated);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-lg);
   }
 
-  .section-title {
-    font-size: 0.875rem;
+  .section-label {
+    font-size: 0.75rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.12em;
     color: var(--text-subdued);
-    margin-bottom: var(--spacing-lg);
-    padding-bottom: var(--spacing-sm);
-    border-bottom: 1px solid var(--border-color);
+    margin-bottom: var(--spacing-sm);
+    padding-left: var(--spacing-xs);
+    opacity: 0.8;
   }
 
   .setting-item {
@@ -1781,11 +1078,20 @@
     margin-bottom: 0;
   }
 
-  .setting-label {
-    font-size: 1rem;
+  .setting-title {
+    font-size: 13px;
     font-weight: 500;
     color: var(--text-primary);
-    margin-bottom: var(--spacing-sm);
+    line-height: 1.2;
+    display: block;
+  }
+
+  .setting-description {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    margin-top: 2px;
     display: block;
   }
 
@@ -1918,285 +1224,288 @@
     background-color: var(--accent-hover);
   }
 
-  .setting-hint {
+  .inner-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+  }
+
+  .divider {
+    height: 1px;
+    background-color: var(--border-color);
+    margin: var(--spacing-xs) 0;
+    opacity: 0.5;
+  }
+
+  /* Segmented Pill Control */
+  .segmented-pill {
+    display: flex;
+    background-color: var(--bg-highlight);
+    padding: 4px;
+    border-radius: var(--radius-full);
+    gap: 2px;
+    border: 1px solid var(--border-color);
+  }
+
+  .segment-btn {
+    flex: 1;
+    padding: 8px 12px;
     font-size: 0.8125rem;
-    color: var(--text-subdued);
-    margin-top: var(--spacing-xs);
-  }
-
-  /* About */
-  .about-info {
-    text-align: center;
-    padding: var(--spacing-lg);
-    background-color: var(--bg-surface);
-    border-radius: var(--radius-md);
-    margin-top: var(--spacing-sm);
-  }
-
-  .app-logo {
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-radius: var(--radius-xl);
+    transition: all var(--transition-fast);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    min-height: 36px;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: var(--spacing-sm);
+  }
+
+  .segment-btn:hover:not(.active) {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+  }
+
+  .segment-btn.active {
+    background-color: var(--bg-surface);
     color: var(--accent-primary);
-    font-size: 1.5rem;
-    font-weight: 700;
-    margin-bottom: var(--spacing-sm);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   }
 
-  .version {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    margin-bottom: var(--spacing-xs);
-  }
-
-  .copyright {
-    font-size: 0.75rem;
-    color: var(--text-subdued);
-  }
-
-  /* Support links (Discord / Ko-fi) */
-  .support-links {
+  /* Compact Action Buttons */
+  .button-group-row {
     display: flex;
     gap: var(--spacing-sm);
     flex-wrap: wrap;
   }
 
-  .support-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 18px;
+  .btn-text-small {
+    background: none;
+    border: none;
+    color: var(--text-subdued);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 4px 8px;
+    cursor: pointer;
+    transition: color 0.2s;
+    text-decoration: underline;
+  }
+
+  .btn-text-small:hover {
+    color: var(--accent-primary);
+  }
+
+  .btn-primary-compact {
+    background-color: var(--accent-primary);
+    color: #000;
+    padding: 10px 20px;
     border-radius: var(--radius-md);
     font-size: 0.875rem;
-    font-weight: 600;
+    font-weight: 700;
     text-decoration: none;
-    transition:
-      opacity var(--transition-fast),
-      transform var(--transition-fast);
-    flex: 1;
-    justify-content: center;
-    min-width: 120px;
+    display: inline-block;
+    transition: transform 0.2s, background-color 0.2s;
   }
 
-  .support-btn:active {
-    transform: scale(0.96);
+  .btn-primary-compact:hover {
+    background-color: var(--accent-hover);
+    transform: scale(1.02);
   }
 
-  .discord-btn {
-    background-color: #5865f2;
-    color: #fff;
+  .btn-outline-compact.danger {
+    color: var(--error-color);
+    border-color: rgba(220, 53, 69, 0.3);
   }
 
-  .discord-btn:hover {
-    opacity: 0.9;
+  .btn-outline-compact.danger:hover {
+    background-color: rgba(220, 53, 69, 0.1);
+    border-color: var(--error-color);
   }
 
-  .kofi-btn {
-    background-color: #ff5e5b;
-    color: #fff;
-  }
-
-  .kofi-btn:hover {
-    opacity: 0.9;
-  }
-
-  .toggle-container {
+  /* Color Grid Refinement */
+  .color-grid-compact {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 4px 0;
   }
 
-  .toggle-btn {
-    width: 48px;
-    height: 26px;
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    border-radius: 13px;
-    position: relative;
+  .color-swatch-sm {
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-full);
     cursor: pointer;
-    transition: all var(--transition-fast);
+    border: 2px solid transparent;
+    transition: transform 0.2s, border-color 0.2s;
     padding: 0;
   }
 
-  .toggle-btn.active {
-    background-color: var(--accent-primary);
-    border-color: var(--accent-primary);
+  .color-swatch-sm:hover {
+    transform: scale(1.2);
   }
 
-  .toggle-handle {
-    width: 20px;
-    height: 20px;
-    background-color: var(--text-subdued);
-    border-radius: 50%;
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    transition:
-      transform var(--transition-fast),
-      background-color var(--transition-fast);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  .color-swatch-sm.active {
+    border-color: var(--text-primary);
+    box-shadow: 0 0 0 2px var(--bg-surface);
   }
 
-  .toggle-btn.active .toggle-handle {
-    transform: translateX(22px);
-    background-color: white;
+  /* About Section */
+  .about-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
   }
 
-  .update-btn {
-    margin: var(--spacing-sm) auto;
-    padding: 6px 12px;
-    background-color: var(--accent-primary);
-    color: white;
-    border-radius: var(--radius-sm);
-    font-size: 0.8125rem;
-    font-weight: 600;
-    cursor: pointer;
-    display: block;
-    transition: all 0.2s;
+  .app-logo-sm {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--accent-primary);
+    letter-spacing: -0.02em;
   }
 
-  @media (max-width: 768px) {
-    .path-selector {
-      display: flex;
-      gap: var(--spacing-sm);
-      flex-direction: column;
-    }
-
-    .account-profile {
-      flex-wrap: wrap;
-      gap: var(--spacing-sm);
-    }
-
-    .logout-btn {
-      width: 100%;
-      margin-top: var(--spacing-xs);
-    }
-
-    .sync-status-area {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: var(--spacing-sm);
-    }
-
-    .sync-btn {
-      width: 100%;
-      justify-content: center;
-    }
-
-    .kofi-supporter-badge {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: var(--spacing-sm);
-    }
-
-    .supporter-until {
-      margin-left: 0;
-      margin-top: 4px;
-    }
+  .about-details {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
   }
 
+  .notice-text-sm {
+    font-size: 11px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  /* Path Selector Minimal */
   .path-selector {
     display: flex;
     gap: var(--spacing-sm);
+    align-items: center;
+    width: 100%;
   }
 
   .path-display {
     flex: 1;
-    padding: var(--spacing-sm) var(--spacing-md);
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    color: var(--text-primary);
-    font-family: monospace;
-    font-size: 0.8125rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    padding: 8px 0;
+    font-family: monospace;
+    opacity: 0.8;
   }
 
   .selector-btn {
-    padding: var(--spacing-sm) var(--spacing-md);
+    background: none;
+    border: none;
+    color: var(--accent-primary);
+    font-size: 0.8125rem;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 8px;
+    text-decoration: underline;
+  }
+  .settings-card {
     background-color: var(--bg-surface);
+    border-radius: var(--radius-lg);
     border: 1px solid var(--border-color);
-    color: var(--text-primary);
-    font-weight: 500;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    white-space: nowrap;
-  }
-
-  .selector-btn:hover {
-    border-color: var(--text-primary);
-    background-color: var(--bg-highlight);
-  }
-
-  .update-btn:hover {
-    background-color: var(--accent-hover);
-    transform: translateY(-1px);
-  }
-
-  .up-to-date {
-    font-size: 0.75rem;
-    color: var(--text-subdued);
-    margin-bottom: var(--spacing-sm);
-  }
-
-  /* Danger Zone */
-  .danger-zone {
-    border: 1px solid #dc3545;
-  }
-
-  .section-title.danger {
-    color: #dc3545;
-    border-bottom-color: rgba(220, 53, 69, 0.3);
-  }
-
-  .danger-item {
-    display: flex;
-    justify-content: space-between;
-    gap: var(--spacing-md);
-    flex-direction: column;
-  }
-
-  .danger-info {
-    flex: 1;
-  }
-
-  .danger-btn {
-    padding: var(--spacing-sm) var(--spacing-lg);
-    background-color: transparent;
-    color: #dc3545;
-    border: 1px solid #dc3545;
-    border-radius: var(--radius-sm);
-    font-weight: 600;
-    cursor: pointer;
-    transition: all var(--transition-fast);
-    white-space: nowrap;
-  }
-
-  .danger-btn:hover {
-    background-color: #dc3545;
-    color: white;
-  }
-
-  /* Account section */
-  .account-card {
+    padding: var(--spacing-lg);
     display: flex;
     flex-direction: column;
     gap: var(--spacing-lg);
-    background-color: var(--bg-surface);
-    padding: var(--spacing-lg);
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
   }
 
-  .account-profile {
+  .upgrade-card {
+    background: linear-gradient(135deg, rgba(29, 185, 84, 0.08) 0%, rgba(29, 185, 84, 0.03) 100%);
+    border-color: rgba(29, 185, 84, 0.2);
+  }
+
+  .card-header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+  }
+
+  .card-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .card-title {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .card-subtitle {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+  }
+
+  .pill-badge {
+    padding: 4px 10px;
+    border-radius: var(--radius-full);
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-secondary);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .pill-badge.accent {
+    background: rgba(29, 185, 84, 0.1);
+    color: var(--accent-primary);
+    border-color: rgba(29, 185, 84, 0.2);
+  }
+
+  .btn-outline-compact {
+    padding: 8px 16px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    transition: all var(--transition-fast);
+    background: transparent;
+  }
+
+  .btn-outline-compact:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--text-secondary);
+  }
+
+  .btn-full-width {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+
+  /* Account Card Specifics */
+  .account-profile-row {
     display: flex;
     align-items: center;
     gap: var(--spacing-md);
     width: 100%;
+  }
+
+  .account-details {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .account-email-sm {
+    font-size: 0.875rem;
+    color: var(--text-subdued);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .avatar {
@@ -2204,100 +1513,61 @@
     height: 48px;
     border-radius: var(--radius-full);
     object-fit: cover;
-    flex-shrink: 0;
-    border: 2px solid var(--border-color);
+    background-color: var(--bg-highlight);
+    border: 1px solid var(--border-color);
   }
 
   .avatar-placeholder {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--accent-primary);
-    color: #fff;
-    font-weight: 700;
     font-size: 1.25rem;
-    width: 48px;
-    height: 48px;
-    border-radius: var(--radius-full);
+    font-weight: 700;
+    color: var(--accent-primary);
   }
 
-  .account-info {
+  /* Info Notice Box */
+  .info-notice-compact {
+    padding: var(--spacing-sm) 0;
     display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .account-name {
-    font-weight: 600;
-    color: var(--text-primary);
-    font-size: 1rem;
-  }
-
-  .account-email {
-    color: var(--text-secondary);
-    font-size: 0.8125rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .logout-btn {
-    padding: var(--spacing-xs) var(--spacing-md);
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-    background: transparent;
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: all var(--transition-fast);
-  }
-
-  .logout-btn:hover {
-    color: var(--error-color);
-    border-color: var(--error-color);
-    background-color: rgba(220, 53, 69, 0.05);
-  }
-
-  .account-signin {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-md);
+    gap: var(--spacing-sm);
     align-items: flex-start;
   }
 
-  .sync-status-area {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-top: var(--spacing-md);
-    border-top: 1px solid var(--border-color);
-    gap: var(--spacing-md);
+  .notice-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--radius-full);
+    background-color: var(--accent-warning, #ffae42);
+    margin-top: 5px;
+    flex-shrink: 0;
   }
 
-  /* ─── Ko-fi supporter UI ─────────────────────────────────────────────── */
-
-  .kofi-supporter-badge {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-xs);
-    padding: var(--spacing-sm) var(--spacing-md);
-    background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
-    border: 1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent);
-    border-radius: var(--border-radius-md);
-    margin-top: var(--spacing-md);
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--accent-primary);
-    flex-wrap: wrap;
-  }
-
-  .supporter-until {
-    margin-left: auto;
-    font-weight: 400;
+  .notice-text {
     font-size: 0.8125rem;
+    line-height: 1.4;
     color: var(--text-secondary);
+  }
+
+  /* Enhanced Progress Bars */
+  .tier-limit-item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+  }
+
+  .limit-bar-thick-wrap {
+    height: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .limit-bar-thick {
+    height: 100%;
+    background: var(--accent-primary);
+    border-radius: 4px;
+    transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
 
   .kofi-not-supporter {
@@ -2338,10 +1608,8 @@
 
   .supporter-benefits-mini {
     margin-top: var(--spacing-md);
-    padding: var(--spacing-md);
-    background: var(--bg-highlight);
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--border-color);
   }
 
   .benefits-title,
@@ -2381,10 +1649,7 @@
     flex-direction: column;
     gap: var(--spacing-md);
     margin-bottom: var(--spacing-lg);
-    padding: var(--spacing-md);
-    background: var(--bg-highlight);
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border-color);
+    padding-top: var(--spacing-md);
   }
 
   .tier-limit-item {
@@ -2764,9 +2029,7 @@
   .eq-bands-container {
     display: flex;
     gap: var(--spacing-md);
-    padding: var(--spacing-lg);
-    background-color: var(--bg-surface);
-    border-radius: var(--radius-md);
+    padding: var(--spacing-md) 0;
     transition: opacity var(--transition-fast);
     overflow: hidden;
   }
@@ -2804,10 +2067,92 @@
   }
 
   .eq-label {
-    font-size: 0.6rem;
-    color: var(--text-subdued);
+    font-size: 0.625rem;
+    color: var(--text-secondary);
     text-transform: uppercase;
     white-space: nowrap;
+    font-weight: 600;
+  }
+
+  /* ─── Modern Toggle Styles ─── */
+
+  .toggle-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--spacing-md);
+    width: 100%;
+  }
+
+  .toggle-btn {
+    position: relative;
+    width: 48px;
+    height: 26px;
+    background-color: var(--bg-highlight);
+    border-radius: 13px;
+    border: 1px solid var(--border-color);
+    cursor: pointer;
+    padding: 0;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    flex-shrink: 0;
+  }
+
+  .toggle-btn.active {
+    background-color: var(--accent-primary);
+    border-color: var(--accent-primary);
+  }
+
+  .toggle-handle {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    background-color: var(--text-primary);
+    border-radius: 50%;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+
+  .toggle-btn.active .toggle-handle {
+    transform: translateX(22px);
+    background-color: #000;
+  }
+
+  /* ─── Segmented Pill Control (3-segment) ─── */
+
+  .segmented-pill {
+    display: flex;
+    background-color: var(--bg-highlight);
+    border-radius: var(--radius-lg);
+    padding: 4px;
+    border: 1px solid var(--border-color);
+    width: 100%;
+  }
+
+  .segment-btn {
+    flex: 1;
+    background: none;
+    border: none;
+    padding: var(--spacing-sm);
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: calc(var(--radius-lg) - 2px);
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+    gap: 4px;
+  }
+
+  .segment-btn.active {
+    background-color: var(--bg-elevated);
+    color: var(--accent-primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 
   .eq-slider-container {
@@ -2903,31 +2248,27 @@
 
   .sync-message {
     margin-top: var(--spacing-sm);
-    padding: var(--spacing-sm) var(--spacing-md);
-    border-radius: var(--radius-sm);
-    font-size: 0.875rem;
-    text-align: center;
+    padding: var(--spacing-xs) 0;
+    font-size: 0.8125rem;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
   }
 
   .sync-message.success {
-    background-color: rgba(40, 167, 69, 0.1);
-    color: #28a745;
-    border: 1px solid rgba(40, 167, 69, 0.3);
+    color: var(--accent-primary);
   }
 
   .sync-message.error {
-    background-color: rgba(220, 53, 69, 0.1);
-    color: #dc3545;
-    border: 1px solid rgba(220, 53, 69, 0.3);
+    color: var(--error-color);
   }
 
   /* Progress Bar Styles */
   .progress-container {
     margin-top: var(--spacing-md);
-    padding: var(--spacing-md);
-    background-color: var(--bg-base);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-color);
+    padding-top: var(--spacing-md);
+    border-top: 1px solid var(--border-color);
   }
 
   .progress-header {
@@ -3014,15 +2355,13 @@
   }
 
   .refresh-notice {
-    background-color: rgba(var(--accent-primary-rgb, 30, 215, 96), 0.1);
-    border: 1px solid rgba(var(--accent-primary-rgb, 30, 215, 96), 0.3);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-md);
+    padding: var(--spacing-sm) 0;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-top: var(--spacing-md);
+    margin-top: var(--spacing-xs);
     animation: fadeIn 0.3s ease;
+    border-top: 1px solid rgba(var(--accent-primary-rgb, 30, 215, 96), 0.2);
   }
 
   .refresh-btn {
@@ -3057,11 +2396,13 @@
   @media (max-width: 768px) {
     /* Layout Spacing Adjustments */
     .view-header {
-      padding: var(--spacing-md) var(--spacing-sm);
+      padding: var(--spacing-md) 0;
+      margin-bottom: var(--spacing-sm);
     }
-
+    
     .view-header h1 {
-      padding-left: var(--spacing-sm);
+      padding-left: var(--spacing-md);
+      font-size: 1.75rem;
     }
 
     .settings-container {
@@ -3070,13 +2411,14 @@
 
     .settings-section {
       margin-bottom: var(--spacing-md);
-      padding: var(--spacing-md);
-      border-radius: var(--radius-md);
+      margin-left: -4px;
+      margin-right: -4px;
     }
 
     .section-title {
       margin-bottom: var(--spacing-md);
       padding-bottom: var(--spacing-xs);
+      font-size: 0.75rem;
     }
 
     .setting-item {
@@ -3093,8 +2435,7 @@
     .toggle-btn,
     .reset-btn,
     .preset-select {
-      min-height: 44px;
-      min-width: 44px;
+      min-height: 48px;
     }
 
     /* Mode buttons – allow wrapping and ensure touchable */
@@ -3105,19 +2446,26 @@
 
     .mode-btn {
       flex: 1 0 calc(50% - var(--spacing-sm));
-      min-width: 120px;
-      padding: var(--spacing-md);
+      min-width: 100px;
+      padding: var(--spacing-md) var(--spacing-sm);
     }
 
     /* Color grid – adjust columns to maintain touchable swatches */
     .color-grid {
       grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+      gap: var(--spacing-md);
+    }
+    
+    .color-swatch {
+      height: 44px;
+      border-radius: var(--radius-md);
     }
 
     /* Preset selector – stack on small screens */
     .preset-selector {
       flex-direction: column;
       align-items: stretch;
+      gap: var(--spacing-md);
     }
 
     .preset-select {
@@ -3158,7 +2506,7 @@
     /* Modal buttons – ensure touchable */
     .cancel-btn,
     .confirm-danger-btn {
-      min-height: 48px;
+      min-height: 52px;
     }
 
     /* Adjust bottom padding for content */
@@ -3166,6 +2514,60 @@
       padding-bottom: calc(
         var(--mobile-bottom-inset, 130px) + var(--spacing-xl)
       );
+    }
+
+    /* Account Section Mobile Fixes */
+    .account-card {
+      padding: var(--spacing-md);
+      gap: var(--spacing-md);
+    }
+
+    .account-profile {
+      align-items: flex-start;
+    }
+
+    .avatar {
+      width: 56px;
+      height: 56px;
+    }
+
+    .avatar-placeholder {
+      width: 56px;
+      height: 56px;
+      font-size: 1.5rem;
+    }
+
+    .account-info {
+      margin-top: 4px;
+    }
+
+    .logout-btn {
+      width: auto;
+      margin-top: 0;
+      align-self: flex-start;
+      margin-left: auto;
+    }
+
+    .sync-status-area {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .sync-btn {
+      width: 100%;
+      height: 48px;
+    }
+
+    .tier-limits {
+      padding: var(--spacing-md) 0;
+    }
+    
+    .progress-bar-container {
+      height: 10px;
+    }
+    
+    .limit-bar-wrap {
+      height: 10px;
     }
   }
 </style>
