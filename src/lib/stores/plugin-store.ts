@@ -119,6 +119,10 @@ function createPluginStore() {
 
         // Initialize the store
         async init() {
+            if (runtime) {
+                console.warn('[PluginStore] init() called more than once — ignoring');
+                return;
+            }
             update(s => ({ ...s, loading: true, error: null, failedPlugins: [] }));
 
             try {
@@ -422,6 +426,9 @@ function createPluginStore() {
                 // Clear permission cache before uninstalling
                 if (runtime) {
                     runtime.permissionManager.clearCache(name);
+                    if (runtime.getPlugin(name)) {
+                        await runtime.unloadPlugin(name);
+                    }
                 }
 
                 await invoke('uninstall_plugin', { name, pluginDir });
@@ -517,8 +524,8 @@ function createPluginStore() {
                 await invoke('disable_plugin', { name, pluginDir });
 
                 // Disable in runtime
-                if (runtime) {
-                    runtime.disablePlugin(name);
+                if (runtime && runtime.getPlugin(name)) {
+                    await runtime.unloadPlugin(name);
                 }
 
                 update(s => ({
