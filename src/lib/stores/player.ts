@@ -6,7 +6,7 @@ import { getAudioSrc, getAlbumArtSrc, getTrackCoverSrc, convertFileSrc } from '$
 import { invoke } from '@tauri-apps/api/core';
 import { addToast } from '$lib/stores/toast';
 import { EventEmitter, type PluginEvents } from '$lib/plugins/event-emitter';
-import { tracks as libraryTracks, getFullTrack, getAlbumCoverFromTracks, updateTrackCover } from '$lib/stores/library';
+import { tracks as libraryTracks, getFullTrack, getAlbumCoverFromTracks, updateTrackCover, getTrackByIdSync } from '$lib/stores/library';
 import { fetchTrackCover } from '$lib/services/cover-fetcher';
 import { appSettings } from '$lib/stores/settings';
 import { equalizer, EQ_FREQUENCIES } from '$lib/stores/equalizer';
@@ -521,23 +521,44 @@ function handleRemotePlayerState(payload: any) {
     // If we are tracking THIS remote device, pipe the state into the local UI variables
     if (get(activeBackend) === 'remote' && get(activeRemoteDevice) === payload.deviceId) {
         if (payload.track) {
+            const remoteTrack = payload.track;
             const currentObj = get(currentTrack);
-            if (!currentObj || currentObj.id !== payload.track.id) {
+            const remoteTrackId = Number(remoteTrack.id);
+            
+            if (!currentObj || Number(currentObj.id) !== remoteTrackId) {
+                // Try to resolve track locally for better cover art (Fast O(1) lookup)
+                let localTrack: any = getTrackByIdSync(remoteTrackId);
+                
+                // Falling back to O(N) search only if ID fails (rare in synced libraries)
+                if (!localTrack) {
+                    const $library = get(libraryTracks);
+                    localTrack = $library.find(t => 
+                        t.title === remoteTrack.title && 
+                        t.artist === remoteTrack.artist
+                    );
+                }
+
                 currentTrack.set({
-                    id: payload.track.id,
-                    title: payload.track.title,
-                    artist: payload.track.artist,
-                    album: payload.track.album,
-                    track_cover: payload.track.coverUrl,
+                    id: remoteTrackId,
+                    title: remoteTrack.title,
+                    artist: remoteTrack.artist,
+                    album: remoteTrack.album,
+                    track_cover: localTrack ? getTrackCoverSrc(localTrack) : remoteTrack.coverUrl,
                 } as any);
             }
         } else {
-            currentTrack.set(null);
+            if (get(currentTrack) !== null) currentTrack.set(null);
         }
 
         // Only update these if they changed to prevent spamming subscribers
         if (get(isPlaying) !== payload.isPlaying) isPlaying.set(payload.isPlaying);
-        currentTime.set(payload.currentTime); // Fine to spam
+        
+        // Only update time if the difference is significant (>250ms or specifically requested)
+        const currentT = get(currentTime);
+        if (Math.abs(currentT - payload.currentTime) > 0.25 || payload.isPlaying === false) {
+            currentTime.set(payload.currentTime);
+        }
+        
         if (get(duration) !== payload.duration) duration.set(payload.duration);
         
         if (payload.volume !== undefined && get(volume) !== payload.volume) volume.set(payload.volume);
@@ -647,6 +668,10 @@ function startStatePoller(): void {
 
 let lastBroadcast = 0;
 function broadcastState(force = false) {
+    // CRITICAL: Do not broadcast if this device is not the owner of the playback.
+    // This prevents infinite state "echo" loops across devices.
+    if (get(activeBackend) === 'remote') return;
+
     const now = Date.now();
     if (!force && now - lastBroadcast < 2000) return;
     
@@ -1913,22 +1938,21 @@ export async function transferPlayback(state: any) {
     // 1. Stop remote playback (by sending a command to specific device)
     // Actually, the server handles "relayToOthers", so we just need to start playing here.
     // The other device will receive our 'player_state' which says it's playing HERE.
-    // Spotify Connect logic: usually the device that STARTS playing takes over.
-
-    // 2. Resolve the local track object if possible
-    // Search library by title/artist/album or id
-    const $library = get(libraryTracks);
-    let localTrack = $library.find(t => t.id === state.track.id);
+    // 2. Resolve the local track object if possible (Fast ID lookup first)
+    const remoteTrack = state.track;
+    let localTrack: any = getTrackByIdSync(Number(remoteTrack.id));
     
     if (!localTrack) {
-        // Try fuzzy match
+        // Falling back to O(N) search
+        const $library = get(libraryTracks);
         localTrack = $library.find(t => 
-            t.title === state.track.title && 
-            t.artist === state.track.artist
+            t.title === remoteTrack.title && 
+            t.artist === remoteTrack.artist
         );
     }
 
     if (localTrack) {
+        // Use local cover for better reliability
         await playTrack(localTrack, false, state.currentTime);
         if (!state.isPlaying) {
             await pause();

@@ -3,6 +3,9 @@
   import { wsStore, type RemoteDevice, activeRemoteDevice } from "$lib/stores/websocket";
   import { currentTrack, isPlaying, transferPlayback, sendRemoteCommand, activeBackend } from "$lib/stores/player";
   import { isLoggedIn } from "$lib/stores/sync";
+  import { tracks as libraryTracks, getTrackByIdSync } from "$lib/stores/library";
+  import { getTrackCoverSrc } from "$lib/api/tauri";
+  import { get } from "svelte/store";
   import { createEventDispatcher } from "svelte";
 
   const dispatch = createEventDispatcher();
@@ -33,17 +36,31 @@
       activeRemoteDevice.set(device.deviceId);
       
       // Update local stores with initial state immediately
-      if (device.playerState) {
-          if (device.playerState.track) {
-              currentTrack.set({
-                  id: device.playerState.track.id,
-                  title: device.playerState.track.title,
-                  artist: device.playerState.track.artist,
-                  album: device.playerState.track.album,
-                  track_cover: device.playerState.track.coverUrl,
-              } as any);
+      if (device.playerState && device.playerState.track) {
+          const remoteTrack = device.playerState.track;
+          const remotePlaying = device.playerState.isPlaying;
+          const remoteTrackId = Number(remoteTrack.id);
+
+          // Try to resolve track locally for better cover art (Fast lookup)
+          let localTrack: any = getTrackByIdSync(remoteTrackId);
+          
+          if (!localTrack) {
+              const $library = get(libraryTracks);
+              localTrack = $library.find(t => 
+                  t.title === remoteTrack.title && 
+                  t.artist === remoteTrack.artist
+              );
           }
-          isPlaying.set(device.playerState.isPlaying);
+
+          currentTrack.set({
+              id: remoteTrackId,
+              title: remoteTrack.title,
+              artist: remoteTrack.artist,
+              album: remoteTrack.album,
+              track_cover: localTrack ? getTrackCoverSrc(localTrack) : remoteTrack.coverUrl,
+          } as any);
+          
+          isPlaying.set(remotePlaying);
       }
     }
   }
