@@ -1,5 +1,6 @@
 // Player store - manages audio playback state
 import { writable, derived, get } from 'svelte/store';
+import { wsStore } from './websocket';
 import type { Track } from '$lib/api/tauri';
 import { getAudioSrc, getAlbumArtSrc, getTrackCoverSrc, convertFileSrc } from '$lib/api/tauri';
 import { invoke } from '@tauri-apps/api/core';
@@ -472,6 +473,18 @@ export async function initAudioBackend(): Promise<void> {
             console.warn('[Player] Failed to apply initial EQ settings:', err);
         }
     }
+
+    // Subscribe to WebSocket messages
+    wsStore.onMessage((type, payload) => {
+        switch (type) {
+            case 'transfer_playback':
+                transferPlayback(payload);
+                break;
+            case 'remote_command':
+                handleRemoteCommand(payload);
+                break;
+        }
+    });
 }
 
 // Poll the native backend for state changes (only while playing)
@@ -558,10 +571,41 @@ function startStatePoller(): void {
             if (get(isPlaying)) {
                 updateMediaSessionPosition();
             }
+
+            // Broadcast state to WebSocket (throttled to ~2s)
+            broadcastState();
+
         } catch (e) {
             console.error('[Player] Poller error:', e);
         }
     }, POLL_INTERVAL_MS);
+}
+
+let lastBroadcast = 0;
+function broadcastState(force = false) {
+    const now = Date.now();
+    if (!force && now - lastBroadcast < 2000) return;
+    
+    const track = get(currentTrack);
+    const playing = get(isPlaying);
+    const pos = get(currentTime);
+    const dur = get(duration);
+
+    if (track || lastBroadcast === 0) {
+        wsStore.send('player_state', {
+            track: track ? {
+                id: track.id,
+                title: track.title,
+                artist: track.artist,
+                album: track.album,
+                coverUrl: getTrackCoverSrc(track)
+            } : null,
+            isPlaying: playing,
+            currentTime: pos,
+            duration: dur
+        });
+        lastBroadcast = now;
+    }
 }
 
 function stopStatePoller(): void {
@@ -1711,4 +1755,84 @@ export function isAlbumPlaying(albumId: number): boolean {
 export function isArtistPlaying(artistName: string): boolean {
     const ctx = get(playbackContext);
     return ctx?.type === 'artist' && ctx.artistName === artistName;
+}
+
+/**
+ * Transfer playback from a remote device to this one.
+ */
+export async function transferPlayback(state: any) {
+    if (!state || !state.track) return;
+
+    console.log('[Player] Transferring playback to this device...', state.track.title);
+    
+    // 1. Stop remote playback (by sending a command to specific device)
+    // Actually, the server handles "relayToOthers", so we just need to start playing here.
+    // The other device will receive our 'player_state' which says it's playing HERE.
+    // Spotify Connect logic: usually the device that STARTS playing takes over.
+
+    // 2. Resolve the local track object if possible
+    // Search library by title/artist/album or id
+    const $library = get(libraryTracks);
+    let localTrack = $library.find(t => t.id === state.track.id);
+    
+    if (!localTrack) {
+        // Try fuzzy match
+        localTrack = $library.find(t => 
+            t.title === state.track.title && 
+            t.artist === state.track.artist
+        );
+    }
+
+    if (localTrack) {
+        await playTrack(localTrack, false, state.currentTime);
+        if (!state.isPlaying) {
+            pause();
+        }
+    } else {
+        // If not found in local library, we might need to "External Track" play (later feature)
+        console.warn('[Player] Could not find local track for transfer:', state.track.title);
+        addToast(`Cannot transfer: "${state.track.title}" not found in local library`, 'error');
+    }
+}
+
+/**
+ * Control a remote device.
+ */
+export function sendRemoteCommand(targetDeviceId: string, command: string, data?: any) {
+    wsStore.send('remote_command', {
+        targetDeviceId,
+        command,
+        data
+    });
+}
+
+/**
+ * Handle a remote command received via WebSocket.
+ */
+function handleRemoteCommand(payload: any) {
+    const { command, data } = payload;
+    console.log('[Player] Received remote command:', command);
+
+    switch (command) {
+        case 'play':
+            resume();
+            break;
+        case 'pause':
+            pause();
+            break;
+        case 'next':
+            nextTrack();
+            break;
+        case 'previous':
+            previousTrack();
+            break;
+        case 'seek':
+            if (data?.position != null) {
+                const dur = get(duration);
+                if (dur > 0) {
+                    nativeAudioSeek(data.position / dur).catch(console.error);
+                }
+            }
+            break;
+    }
 }

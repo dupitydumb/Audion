@@ -39,6 +39,8 @@
     import { isMobile } from "$lib/stores/mobile";
     import type { Album } from "$lib/api/tauri";
     import { likedTrackIds, toggleLike } from "$lib/stores/liked";
+    import ConnectPanel from "./ConnectPanel.svelte";
+    import { wsStore } from "$lib/stores/websocket";
 
     $: isCurrentLiked = $currentTrack
         ? $likedTrackIds.has($currentTrack.id)
@@ -60,6 +62,9 @@
     let albumArt: string | null = null;
     let imageLoadFailed = false;
     let loadedAlbum: any = null;
+    let showConnectPanel = false;
+
+    $: connectedDevices = $wsStore.devices.length;
 
     // Slot containers
     let slotStart: HTMLDivElement;
@@ -587,6 +592,21 @@
         <div class="volume-controls">
             <!-- Plugin slot: Right -->
             <div class="plugin-slot" bind:this={slotEnd}></div>
+            
+            <button
+                class="icon-btn connect-btn"
+                class:active={connectedDevices > 0}
+                on:click={() => (showConnectPanel = !showConnectPanel)}
+                title="Connect to a device"
+            >
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                    <path d="M19,2H5A3,3,0,0,0,2,5V15a3,3,0,0,0,3,3H9.17l-1.42,1.41a1,1,0,0,0,0,1.42,1,1,0,0,0,1.42,0L11,18.99,12.83,20.83a1,1,0,0,0,1.42,0,1,1,0,0,0,0-1.42L12.83,18H19a3,3,0,0,0,3-3V5A3,3,0,0,0,19,2Zm1,13a1,1,0,0,1-1,1H5a1,1,0,0,1-1-1V5A1,1,0,0,1,5,4H19a1,1,0,0,1,1,1Z"/>
+                </svg>
+                {#if connectedDevices > 0}
+                    <div class="device-dot"></div>
+                {/if}
+            </button>
+
             <button
                 class="icon-btn"
                 class:active={$isQueueVisible}
@@ -751,6 +771,10 @@
     {/if}
 </footer>
 
+{#if showConnectPanel}
+    <ConnectPanel on:close={() => showConnectPanel = false} />
+{/if}
+
 <style>
     .player-bar {
         height: var(--player-height);
@@ -862,6 +886,25 @@
     .like-btn:hover {
         color: var(--text-primary);
         transform: scale(1.15);
+    }
+
+    .icon-btn.active {
+        color: var(--accent-color, #1db954);
+    }
+
+    .connect-btn {
+        position: relative;
+    }
+
+    .device-dot {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        width: 6px;
+        height: 6px;
+        background: var(--accent-color, #1db954);
+        border-radius: 50%;
+        box-shadow: 0 0 5px var(--accent-color, #1db954);
     }
 
     .like-btn.liked {
