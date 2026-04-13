@@ -205,6 +205,8 @@ jobs:
   # ---------------------------------------------------------------------------
   release-flatpak:
     runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
     needs: release-linux
     if: |
       always() &&
@@ -213,17 +215,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Install Flatpak tooling
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
-          flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak --user install -y flathub \
-            org.freedesktop.Platform//24.08 \
-            org.freedesktop.Sdk//24.08 \
-            org.freedesktop.Sdk.Extension.node20//24.08 \
-            org.freedesktop.Sdk.Extension.rust-stable//24.08
 
       - name: Set version and prerelease flags
         id: info
@@ -245,11 +236,18 @@ jobs:
           echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
           echo "tag_name=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Build Flatpak bundle
+      - name: Prefetch runtime
         run: |
-          VER="${{ steps.info.outputs.version }}"
-          flatpak-builder --force-clean --repo=repo build-dir packaging/flatpak/com.audion.app.yml
-          flatpak build-bundle repo "audion_${VER}_linux.flatpak" com.audion.app "$VER"
+          flatpak install -y flathub org.freedesktop.Platform//24.08
+
+      - name: Build Flatpak bundle (containerized)
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: packaging/flatpak/com.audion.app.yml
+          bundle: audion_${{ steps.info.outputs.version }}_flatpak.flatpak
+          cache-key: flatpak-builder-${{ runner.os }}-${{ hashFiles('packaging/flatpak/*.yml') }}
+          upload-artifact: false
+          verbose: true
 
       - name: Upload Flatpak to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -260,7 +258,7 @@ jobs:
           prerelease: ${{ steps.info.outputs.prerelease }}
           overwrite: ${{ inputs.overwrite }}
           files: |
-            audion_*_linux.flatpak
+            audion_*_flatpak.flatpak
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
