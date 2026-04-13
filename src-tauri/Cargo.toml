@@ -116,12 +116,26 @@ rodio = { version = "0.19", default-features = false, features = [
 ] }
 
 symphonia = { version = "0.5", default-features = false, features = [
+    # Containers
+    "isomp4",
+    "ogg",
+    "mkv",
+    "wav",
+    "aiff",
+
+    # Codecs
     "flac",
     "mp3",
+    "mp1",       # MP1 (not "opus" — opus isn't a symphonia feature in 0.5.x)
+    "mp2",       # MP2
     "aac",
-    "ogg",
-    "wav",
-    "isomp4",
+    "alac",
+    "vorbis",
+    "adpcm",
+    "pcm",
+
+    # Optimizations
+    "opt-simd",
 ] }
 
 cpal = "0.15"
