@@ -76,6 +76,7 @@ Get the latest builds from [Releases](https://github.com/dupitydumb/Audion/relea
 - **Windows:** Audion_x64-setup.exe
 - **macOS (dmg):** Audion.dmg
 - **Linux (AppImage):** Audion-x86_64.AppImage
+- **Linux (Flatpak):** audion_<version>_linux.flatpak
 
 If you prefer, download the platform-specific asset from the Releases page for your OS.
 

@@ -28,6 +28,7 @@ on:
         options:
           - windows
           - linux
+          - flatpak
           - macos
           - android
           - all
@@ -200,11 +201,84 @@ jobs:
           curl -H "Content-Type: application/json" -X POST -d "{\"embeds\": [{\"title\": \"🐧 Linux build v$VERSION\", \"description\": \"Linux release has been ${{ github.event_name == 'push' && 'created' || 'updated' }}\", \"color\": 1947988, \"url\": \"https://github.com/${{ github.repository }}/releases/tag/v$VERSION\"}]}" "$DISCORD_WEBHOOK_URL"
 
   # ---------------------------------------------------------------------------
+  # Flatpak Build
+  # ---------------------------------------------------------------------------
+  release-flatpak:
+    runs-on: ubuntu-24.04
+    needs: release-linux
+    if: |
+      always() &&
+      (github.event_name == 'push' || inputs.platform == 'flatpak' || inputs.platform == 'all') &&
+      (needs.release-linux.result == 'success' || needs.release-linux.result == 'skipped')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Flatpak tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install -y flathub \
+            org.freedesktop.Platform//24.08 \
+            org.freedesktop.Sdk//24.08 \
+            org.freedesktop.Sdk.Extension.node20//24.08 \
+            org.freedesktop.Sdk.Extension.rust-stable//24.08
+
+      - name: Set version and prerelease flags
+        id: info
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
+            PRERELEASE=false
+          elif [ "${{ inputs.release_type }}" = "beta" ]; then
+            VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)-beta
+            PRERELEASE=true
+          elif [ "${{ inputs.release_type }}" = "hotfix" ]; then
+            VERSION=$(echo "${{ inputs.tag_name }}" | sed 's/^v//')
+            PRERELEASE=false
+          else
+            VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
+            PRERELEASE=false
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
+          echo "tag_name=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Build Flatpak bundle
+        run: |
+          VER="${{ steps.info.outputs.version }}"
+          flatpak-builder --force-clean --repo=repo build-dir packaging/flatpak/com.audion.app.yml
+          flatpak build-bundle repo "audion_${VER}_linux.flatpak" com.audion.app "$VER"
+
+      - name: Upload Flatpak to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.info.outputs.version }}
+          name: ${{ inputs.release_type == 'hotfix' && steps.info.outputs.tag_name || format('v{0}', steps.info.outputs.version) }}
+          body_path: releasenote.md
+          prerelease: ${{ steps.info.outputs.prerelease }}
+          overwrite: ${{ inputs.overwrite }}
+          files: |
+            audion_*_linux.flatpak
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Discord notification
+        if: success()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          VERSION: ${{ steps.info.outputs.version }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
+          curl -H "Content-Type: application/json" -X POST -d "{\"embeds\": [{\"title\": \"📦 Flatpak build v$VERSION\", \"description\": \"Flatpak release has been ${{ github.event_name == 'push' && 'created' || 'updated' }}\", \"color\": 1947988, \"url\": \"https://github.com/${{ github.repository }}/releases/tag/v$VERSION\"}]}" "$DISCORD_WEBHOOK_URL"
+
+  # ---------------------------------------------------------------------------
   # macOS Build
   # ---------------------------------------------------------------------------
   release-macos:
     runs-on: macos-latest
-    needs: [release-windows, release-linux]
+    needs: [release-windows, release-linux, release-flatpak]
     if: |
       always() &&
       (github.event_name == 'push' || inputs.platform == 'macos' || inputs.platform == 'all') &&
