@@ -2,6 +2,7 @@
 use lofty::prelude::*;
 use lofty::probe::Probe;
 use lofty::tag::Tag as LoftyTag;
+use lofty::config::{ParseOptions, ParsingMode};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
@@ -38,7 +39,12 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
 
     // Try to read the file
     // Try to read the file with default options first
-    let tagged_file_result = Probe::open(path).and_then(|probe| probe.read());
+    let tagged_file_result = Probe::open(path)
+    .and_then(|probe| {
+        probe
+            .options(ParseOptions::new().parsing_mode(ParsingMode::Relaxed))
+            .read()
+    });
 
     let tagged_file = match tagged_file_result {
         Ok(file) => file,
