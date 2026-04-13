@@ -770,77 +770,6 @@
                     {/if}
                   </div>
                 </div>
-
-                <div class="action-buttons">
-                  <button
-                    class="action-btn"
-                    class:active={$currentTrack
-                      ? $likedTrackIds.has($currentTrack.id)
-                      : false}
-                    on:click={() =>
-                      $currentTrack && toggleLike($currentTrack.id)}
-                    aria-label="Like"
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                      width="24"
-                      height="24"
-                    >
-                      {#if $currentTrack && $likedTrackIds.has($currentTrack.id)}
-                        <path
-                          d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
-                        />
-                      {:else}
-                        <path
-                          d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5c0-3.08-2.42-5.5-5.5-5.5zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"
-                        />
-                      {/if}
-                    </svg>
-                  </button>
-                  <button
-                    class="action-btn"
-                    on:click={(e) => showTrackMenu(e, true)}
-                    aria-label="Add to Playlist"
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                      width="24"
-                      height="24"
-                      ><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg
-                    >
-                  </button>
-                  <button
-                    class="action-btn"
-                    on:click={(e) => showTrackMenu(e)}
-                    aria-label="More Options"
-                  >
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                      width="24"
-                      height="24"
-                    >
-                      <path
-                        d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"
-                      />
-                    </svg>
-                  </button>
-                  <button
-                    class="action-btn connect-btn"
-                    class:active={connectedDevices > 0}
-                    on:click={() => (showConnectPanel = !showConnectPanel)}
-                    aria-label="Connect"
-                  >
-                    <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-                      <path d="M19,2H5A3,3,0,0,0,2,5V15a3,3,0,0,0,3,3H9.17l-1.42,1.41a1,1,0,0,0,0,1.42,1,1,0,0,0,1.42,0L11,18.99,12.83,20.83a1,1,0,0,0,1.42,0,1,1,0,0,0,0-1.42L12.83,18H19a3,3,0,0,0,3-3V5A3,3,0,0,0,19,2Zm1,13a1,1,0,0,1-1,1H5a1,1,0,0,1-1-1V5A1,1,0,0,1,5,4H19a1,1,0,0,1,1,1Z"/>
-                    </svg>
-                    {#if connectedDevices > 0}
-                        <div class="device-dot"></div>
-                    {/if}
-                  </button>
-                </div>
               </div>
 
 
@@ -870,6 +799,86 @@
                     >
                   {/if}
                 </div>
+              </div>
+
+              {#if $currentTrack?.album}
+                <p
+                  class="desktop-album-context"
+                  title={$currentTrack.album}
+                >
+                  {$currentTrack.album}
+                </p>
+              {/if}
+
+              <div class="action-buttons">
+                <button
+                  class="action-btn"
+                  class:active={$currentTrack
+                    ? $likedTrackIds.has($currentTrack.id)
+                    : false}
+                  on:click={() =>
+                    $currentTrack && toggleLike($currentTrack.id)}
+                  aria-label="Like"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    width="24"
+                    height="24"
+                  >
+                    {#if $currentTrack && $likedTrackIds.has($currentTrack.id)}
+                      <path
+                        d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
+                      />
+                    {:else}
+                      <path
+                        d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5c0-3.08-2.42-5.5-5.5-5.5zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"
+                      />
+                    {/if}
+                  </svg>
+                </button>
+                <button
+                  class="action-btn"
+                  on:click={(e) => showTrackMenu(e, true)}
+                  aria-label="Add to Playlist"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    width="24"
+                    height="24"
+                    ><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg
+                  >
+                </button>
+                <button
+                  class="action-btn"
+                  on:click={(e) => showTrackMenu(e)}
+                  aria-label="More Options"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    width="24"
+                    height="24"
+                  >
+                    <path
+                      d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"
+                    />
+                  </svg>
+                </button>
+                <button
+                  class="action-btn connect-btn"
+                  class:active={connectedDevices > 0}
+                  on:click={() => (showConnectPanel = !showConnectPanel)}
+                  aria-label="Connect"
+                >
+                  <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+                    <path d="M19,2H5A3,3,0,0,0,2,5V15a3,3,0,0,0,3,3H9.17l-1.42,1.41a1,1,0,0,0,0,1.42,1,1,0,0,0,1.42,0L11,18.99,12.83,20.83a1,1,0,0,0,1.42,0,1,1,0,0,0,0-1.42L12.83,18H19a3,3,0,0,0,3-3V5A3,3,0,0,0,19,2Zm1,13a1,1,0,0,1-1,1H5a1,1,0,0,1-1-1V5A1,1,0,0,1,5,4H19a1,1,0,0,1,1,1Z"/>
+                  </svg>
+                  {#if connectedDevices > 0}
+                      <div class="device-dot"></div>
+                  {/if}
+                </button>
               </div>
             </div>
 
@@ -1025,7 +1034,7 @@
                   in:fade
                 >
                   {#if $lyricsData?.lines && $lyricsData.lines.length > 0}
-                    {#each $lyricsData.lines as line, i (`${line.time}-${i}`)}
+                    {#each $lyricsData.lines as line, i}
                       {@const isActiveLine = i === $activeLine}
                       {@const hasWordSync = line.words && line.words.length > 0}
                       <div
@@ -1044,7 +1053,7 @@
                         }}
                       >
                         {#if hasWordSync && line.words}
-                          {#each line.words as word, wordIdx (word.time || wordIdx)}
+                          {#each line.words as word, wordIdx}
                             {@const wordProgress = getWordPercentage(
                               i,
                               wordIdx,
@@ -1229,11 +1238,13 @@
   .desktop-left {
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-start;
     align-items: center; /* Center the entire block in the left column */
     height: 100%;
     max-height: 100%;
-    gap: 2.5rem;
+    gap: clamp(1rem, 2vh, 1.75rem);
+    padding-left: 24px;
+    padding-top: 0.75rem;
   }
 
   /* Each section in the left panel shares the same max-width for uniformity */
@@ -1241,15 +1252,17 @@
   .desktop-track-details,
   .desktop-playback-area {
     width: 100%;
-    max-width: 400px;
+    max-width: 500px;
   }
 
   .desktop-art-section {
     aspect-ratio: 1;
     position: relative;
     flex-shrink: 1;
-    min-height: 200px;
+    width: min(100%, min(500px, 44vh));
+    min-height: 160px;
     margin-bottom: 0;
+    align-self: flex-start;
   }
 
   .desktop-art-wrapper {
@@ -1269,15 +1282,30 @@
   .desktop-track-details {
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
+    gap: 0.35rem;
+  }
+
+  .desktop-track-details .marquee-container {
+    width: 100%;
+    flex: none;
+  }
+
+  .desktop-album-context {
+    margin: 0.15rem 0 0;
+    font-size: 0.95rem;
+    line-height: 1.2;
+    color: rgba(255, 255, 255, 0.64);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .track-info-header {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    align-items: flex-start;
+    justify-content: flex-start;
     width: 100%;
-    gap: 1.5rem;
+    gap: 0.5rem;
   }
 
   .desktop-title {
@@ -1316,15 +1344,13 @@
     margin-bottom: 0;
     mask-image: linear-gradient(
       to right,
-      transparent 0%,
-      black 5%,
+      black 0%,
       black 95%,
       transparent 100%
     );
     -webkit-mask-image: linear-gradient(
       to right,
-      transparent 0%,
-      black 5%,
+      black 0%,
       black 95%,
       transparent 100%
     );
@@ -1357,11 +1383,13 @@
     display: flex;
     gap: 0.75rem;
     flex-shrink: 0;
+    margin-top: 0.25rem;
+    justify-content: flex-start;
   }
 
   .action-btn {
-    width: 42px;
-    height: 42px;
+    width: 46px;
+    height: 46px;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.08);
     color: rgba(255, 255, 255, 0.7);
@@ -1371,6 +1399,11 @@
     border: none;
     cursor: pointer;
     transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .action-btn svg {
+    width: 22px;
+    height: 22px;
   }
 
   .action-btn:hover {
@@ -1389,7 +1422,7 @@
   }
 
   .desktop-progress-container {
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
     width: 100%;
   }
 
@@ -1435,7 +1468,7 @@
     align-items: center;
     justify-content: center;
     gap: 2.5rem;
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.6rem;
   }
 
   .control-btn {
@@ -1495,15 +1528,43 @@
   .desktop-volume-row {
     display: flex;
     align-items: center;
-    gap: 1.25rem;
+    gap: 0.9rem;
+    width: 100%;
     max-width: 280px;
-    margin: 0 auto;
+    margin: 0;
     opacity: 0.5;
     transition: opacity 0.3s;
   }
 
   .desktop-volume-row:hover {
     opacity: 1;
+  }
+
+  @media (max-height: 900px) {
+    .desktop-left {
+      gap: 0.9rem;
+      padding-top: 0.4rem;
+    }
+
+    .desktop-art-section {
+      width: min(100%, min(440px, 38vh));
+    }
+
+    .desktop-title {
+      font-size: clamp(2rem, 3.8vh, 2.35rem);
+    }
+
+    .desktop-subtitle {
+      font-size: 1.1rem;
+    }
+
+    .desktop-progress-container {
+      margin-bottom: 0.8rem;
+    }
+
+    .desktop-controls {
+      margin-bottom: 0.35rem;
+    }
   }
 
   .volume-icon {

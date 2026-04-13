@@ -617,65 +617,13 @@
                 {/if}
             </button>
 
-            <button
-                class="icon-btn"
-                class:active={$isQueueVisible}
-                on:click={toggleQueue}
-                title="Queue (Q)"
-            >
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="20"
-                    height="20"
+            <div class="utility-controls">
+                <button
+                    class="icon-btn"
+                    class:active={$isQueueVisible}
+                    on:click={toggleQueue}
+                    title="Queue (Q)"
                 >
-                    <path
-                        d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"
-                    />
-                </svg>
-            </button>
-            <button
-                class="icon-btn"
-                class:active={$lyricsVisible}
-                on:click={toggleLyrics}
-                title="Lyrics (L)"
-            >
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="20"
-                    height="20"
-                >
-                    <path
-                        d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6zm-2 16c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"
-                    />
-                </svg>
-            </button>
-            <div class="volume-separator"></div>
-            <button
-                class="icon-btn"
-                class:active={$pluginDrawerOpen}
-                on:click={() => pluginDrawerOpen.set(true)}
-                title="Plugin Actions"
-            >
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="20"
-                    height="20"
-                >
-                    <path
-                        d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"
-                    />
-                </svg>
-            </button>
-            <div class="volume-separator"></div>
-            <button
-                class="icon-btn"
-                on:click={() => setVolume($volume > 0 ? 0 : 1)}
-                title={$volume > 0 ? "Mute (M)" : "Unmute (M)"}
-            >
-                {#if $volume === 0}
                     <svg
                         viewBox="0 0 24 24"
                         fill="currentColor"
@@ -683,10 +631,16 @@
                         height="20"
                     >
                         <path
-                            d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"
+                            d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"
                         />
                     </svg>
-                {:else if $volume < 0.5}
+                </button>
+                <button
+                    class="icon-btn"
+                    class:active={$lyricsVisible}
+                    on:click={toggleLyrics}
+                    title="Lyrics (L)"
+                >
                     <svg
                         viewBox="0 0 24 24"
                         fill="currentColor"
@@ -694,10 +648,16 @@
                         height="20"
                     >
                         <path
-                            d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z"
+                            d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6zm-2 16c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"
                         />
                     </svg>
-                {:else}
+                </button>
+                <button
+                    class="icon-btn"
+                    class:active={$pluginDrawerOpen}
+                    on:click={() => pluginDrawerOpen.set(true)}
+                    title="Plugin Actions"
+                >
                     <svg
                         viewBox="0 0 24 24"
                         fill="currentColor"
@@ -705,78 +665,124 @@
                         height="20"
                     >
                         <path
-                            d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"
+                            d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"
                         />
                     </svg>
-                {/if}
-            </button>
-            <div
-                class="volume-bar"
-                bind:this={volumeBarElement}
-                on:mousedown={handleVolumeStart}
-                on:keydown={handleVolumeKey}
-                on:wheel={handleVolumeScroll}
-                role="slider"
-                aria-label="Volume"
-                aria-valuenow={Math.round($volume * 100)}
-                aria-valuemin="0"
-                aria-valuemax="100"
-                tabindex="0"
-            >
-                <div class="volume-track">
-                    <div
-                        class="volume-fill"
-                        style="width: {$volume * 100}%"
-                    ></div>
-                </div>
-                <div class="volume-thumb" style="left: {$volume * 100}%"></div>
+                </button>
             </div>
-            <button
-                class="icon-btn"
-                class:active={$isFullScreen}
-                on:click={toggleFullScreen}
-                title="Fullscreen"
-            >
-                {#if $isFullScreen}
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="20"
-                        height="20"
-                    >
-                        <path
-                            d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"
-                        />
-                    </svg>
-                {:else}
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="20"
-                        height="20"
-                    >
-                        <path
-                            d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"
-                        />
-                    </svg>
-                {/if}
-            </button>
-            <button
-                class="icon-btn"
-                on:click={toggleMiniPlayer}
-                title="Mini Player (P)"
-            >
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="20"
-                    height="20"
+
+            <div class="volume-controls-main">
+                <button
+                    class="icon-btn"
+                    on:click={() => setVolume($volume > 0 ? 0 : 1)}
+                    title={$volume > 0 ? "Mute (M)" : "Unmute (M)"}
                 >
-                    <path
-                        d="M19 11h-8v6h8v-6zm4 8V4.98C23 3.88 22.1 3 21 3H3c-1.1 0-2 .88-2 1.98V19c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H3V4.97h18v14.05z"
-                    />
-                </svg>
-            </button>
+                    {#if $volume === 0}
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            width="20"
+                            height="20"
+                        >
+                            <path
+                                d="M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z"
+                            />
+                        </svg>
+                    {:else if $volume < 0.5}
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            width="20"
+                            height="20"
+                        >
+                            <path
+                                d="M18.5 12c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM5 9v6h4l5 5V4L9 9H5z"
+                            />
+                        </svg>
+                    {:else}
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            width="20"
+                            height="20"
+                        >
+                            <path
+                                d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"
+                            />
+                        </svg>
+                    {/if}
+                </button>
+                <div
+                    class="volume-bar"
+                    bind:this={volumeBarElement}
+                    on:mousedown={handleVolumeStart}
+                    on:keydown={handleVolumeKey}
+                    on:wheel={handleVolumeScroll}
+                    role="slider"
+                    aria-label="Volume"
+                    aria-valuenow={Math.round($volume * 100)}
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    tabindex="0"
+                >
+                    <div class="volume-track">
+                        <div
+                            class="volume-fill"
+                            style="width: {$volume * 100}%"
+                        ></div>
+                    </div>
+                    <div class="volume-thumb" style="left: {$volume * 100}%"></div>
+                </div>
+            </div>
+
+            <div class="view-controls">
+                <button
+                    class="icon-btn"
+                    class:active={$isFullScreen}
+                    on:click={toggleFullScreen}
+                    title="Fullscreen"
+                >
+                    {#if $isFullScreen}
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            width="20"
+                            height="20"
+                        >
+                            <path
+                                d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"
+                            />
+                        </svg>
+                    {:else}
+                        <svg
+                            viewBox="0 0 24 24"
+                            fill="currentColor"
+                            width="20"
+                            height="20"
+                        >
+                            <path
+                                d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"
+                            />
+                        </svg>
+                    {/if}
+                </button>
+                <button
+                    class="icon-btn"
+                    on:click={toggleMiniPlayer}
+                    title="Mini Player (P)"
+                >
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        width="20"
+                        height="20"
+                    >
+                        <path
+                            d="M19 11h-8v6h8v-6zm4 8V4.98C23 3.88 22.1 3 21 3H3c-1.1 0-2 .88-2 1.98V19c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H3V4.97h18v14.05z"
+                        />
+                    </svg>
+                </button>
+            </div>
         </div>
     {/if}
 </footer>
@@ -793,8 +799,8 @@
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
         align-items: center;
-        padding: 0 var(--spacing-md);
-        gap: var(--spacing-md);
+        padding: 0 calc(var(--spacing-md) + 2px);
+        gap: clamp(20px, 2.2vw, 36px);
         /* overflow: hidden; - Removed to allow menus to popup */
     }
 
@@ -812,6 +818,10 @@
         gap: var(--spacing-sm);
         min-width: 0;
         overflow: hidden;
+    }
+
+    .desktop-track-info {
+        padding-right: var(--spacing-sm);
     }
 
     .album-art {
@@ -960,13 +970,23 @@
     .controls-buttons {
         display: flex;
         align-items: center;
-        gap: var(--spacing-sm);
+        gap: 12px;
         flex-shrink: 0;
     }
 
-    .play-btn {
+    .controls-buttons .icon-btn {
         width: 40px;
         height: 40px;
+    }
+
+    .controls-buttons .icon-btn svg {
+        width: 22px;
+        height: 22px;
+    }
+
+    .play-btn {
+        width: 52px;
+        height: 52px;
         position: relative;
         border-radius: var(--radius-full);
         background-color: var(--text-primary);
@@ -977,6 +997,11 @@
         transition: all var(--transition-fast);
         flex-shrink: 0;
         z-index: 10;
+    }
+
+    .play-btn svg {
+        width: 28px;
+        height: 28px;
     }
 
     .play-btn:hover {
@@ -1023,7 +1048,7 @@
     .progress-container {
         display: flex;
         align-items: center;
-        gap: var(--spacing-sm);
+        gap: var(--spacing-md);
         width: 100%;
         max-width: 600px;
     }
@@ -1035,7 +1060,15 @@
         text-align: center;
     }
 
-    .progress-bar,
+    .progress-bar {
+        flex: 1;
+        height: 16px;
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        position: relative;
+    }
+
     .volume-bar {
         flex: 1;
         height: 12px;
@@ -1045,7 +1078,14 @@
         position: relative;
     }
 
-    .progress-track,
+    .progress-track {
+        width: 100%;
+        height: 7px;
+        background-color: var(--bg-highlight);
+        border-radius: var(--radius-full);
+        overflow: hidden;
+    }
+
     .volume-track {
         width: 100%;
         height: 4px;
@@ -1172,16 +1212,33 @@
         display: flex;
         align-items: center;
         justify-content: flex-end;
-        gap: var(--spacing-xs);
+        gap: var(--spacing-sm);
         min-width: 0;
+        padding-left: var(--spacing-sm);
         /* overflow: hidden; - Removed to allow nested menus */
     }
 
-    .volume-separator {
-        width: 1px;
-        height: 20px;
-        background-color: var(--border-color);
-        margin: 0 var(--spacing-xs);
+    .utility-controls {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        margin-left: 2px;
+        padding-left: 12px;
+        border-left: 1px solid var(--border-color);
+    }
+
+    .volume-controls-main {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        margin-left: 2px;
+    }
+
+    .view-controls {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        margin-left: 2px;
     }
 
     .volume-bar {

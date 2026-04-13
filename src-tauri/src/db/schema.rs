@@ -150,6 +150,13 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         }
     }
 
+    // Safety backfill: some older DBs or custom insert paths may still have NULL date_added.
+    // Keep this idempotent so Date Added is always present for existing tracks.
+    let _ = conn.execute(
+        "UPDATE tracks SET date_added = CURRENT_TIMESTAMP WHERE date_added IS NULL",
+        [],
+    );
+
     // Create index for content_hash after migration ensures column exists
     let _ = conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_tracks_content_hash ON tracks(content_hash)",

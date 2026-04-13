@@ -58,11 +58,12 @@
   export let queueTracks: Track[] | null = null; // New prop for unified queue context
 
   // Virtual scrolling configuration
-  const TRACK_ROW_HEIGHT = 56; // pixels (matches min-height in CSS)
+  const TRACK_ROW_HEIGHT = 50; // pixels (matches desktop row height in CSS)
   const OVERSCAN = 5; // Extra rows to render above/below viewport
 
   let containerHeight = 600; // Will be calculated from container
   let scrollTop = 0;
+  let scrollbarWidth = 0;
   let containerElement: HTMLDivElement;
 
   // Cache structures
@@ -133,9 +134,17 @@
   $: filteredTracks = tracks;
 
   // Sorting state
-  type SortField = "title" | "album" | "duration" | "date_added" | null;
+  type SortField =
+    | "title"
+    | "track_number"
+    | "artist"
+    | "album"
+    | "duration"
+    | "date_added"
+    | null;
   let sortField: SortField = null;
   let sortDirection: "asc" | "desc" = "asc";
+  let showAdvancedMetadata = false;
 
   function toggleSort(field: SortField) {
     if (sortField === field) {
@@ -176,6 +185,14 @@
             case "title":
               valA = (a.title || "").toLowerCase();
               valB = (b.title || "").toLowerCase();
+              break;
+            case "track_number":
+              valA = a.track_number ?? a.id;
+              valB = b.track_number ?? b.id;
+              break;
+            case "artist":
+              valA = (a.artist || "").toLowerCase();
+              valB = (b.artist || "").toLowerCase();
               break;
             case "album":
               valA = (a.album || "").toLowerCase();
@@ -275,7 +292,9 @@
   ) as TrackWithMetadata[];
 
   function handleScroll(e: Event) {
-    scrollTop = (e.target as HTMLElement).scrollTop;
+    const target = e.target as HTMLElement;
+    scrollTop = target.scrollTop;
+    scrollbarWidth = Math.max(0, target.offsetWidth - target.clientWidth);
   }
 
   // Measure container height on mount
@@ -288,6 +307,10 @@
     if (containerElement) {
       const updateHeight = () => {
         containerHeight = containerElement.clientHeight;
+        scrollbarWidth = Math.max(
+          0,
+          containerElement.offsetWidth - containerElement.clientWidth,
+        );
       };
       updateHeight();
 
@@ -857,7 +880,7 @@
 
   // Helper to handle album click from event delegation
   function handleAlbumClick(e: MouseEvent) {
-    const albumButton = (e.target as HTMLElement).closest(".col-album");
+    const albumButton = (e.target as HTMLElement).closest(".col-album-cell");
     if (!albumButton) return;
 
     e.stopPropagation();
@@ -895,6 +918,27 @@
       goToArtistDetail(track.artist);
     }
   }
+
+  function formatDateAdded(dateAdded?: string | null): string {
+    if (!dateAdded) return "Unknown";
+
+    const raw = dateAdded.trim();
+    const isoLike = raw.replace(" ", "T").replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
+    const parsed = new Date(isoLike);
+    if (!isNaN(parsed.getTime())) return parsed.toLocaleDateString();
+
+    // Fallback for plain sqlite datetime (YYYY-MM-DD HH:MM:SS)
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      const [, y, m, d] = match;
+      const fallback = new Date(Number(y), Number(m) - 1, Number(d));
+      return isNaN(fallback.getTime())
+        ? `${y}-${m}-${d}`
+        : fallback.toLocaleDateString();
+    }
+
+    return raw;
+  }
 </script>
 
 {#if metadataModalTrack}
@@ -907,12 +951,32 @@
 {/if}
 
 <div class="track-list">
+  {#if !$isMobile}
+    <div class="list-toolbar">
+      <span class="toolbar-hint"
+        >{showAdvancedMetadata
+          ? "Details shown: format, bitrate, source"
+          : "Minimal view"}</span
+      >
+      <button
+        class="advanced-toggle"
+        title="Toggle extra metadata (format, bitrate, source)"
+        on:click={() => {
+          showAdvancedMetadata = !showAdvancedMetadata;
+        }}
+      >
+        {showAdvancedMetadata ? "Hide details" : "Show details"}
+      </button>
+    </div>
+  {/if}
+
   <!-- Header stays fixed -->
   <header
     class="list-header"
     class:no-album={!showAlbum}
     class:with-drag={playlistId !== null}
     class:multiselect={multiSelectMode}
+    style={`--scrollbar-width: ${scrollbarWidth}px`}
   >
     {#if multiSelectMode}
       <div class="col-header col-checkbox">
@@ -935,26 +999,26 @@
     {#if playlistId !== null && !multiSelectMode}
       <span class="col-header col-drag"></span>
     {/if}
-    <button
-      class="col-header col-num"
-      on:click={() => toggleSort("date_added")}
-    >
+    <button class="col-header col-num sortable" on:click={() => toggleSort("track_number")}>
       #
-      {#if sortField === "date_added"}
+      {#if sortField === "track_number"}
         <span class="sort-icon">{sortDirection === "asc" ? "▲" : "▼"}</span>
-      {:else if sortField === null}
-        <span class="sort-icon">•</span>
       {/if}
     </button>
-    <span class="col-header col-cover"></span>
-    <button class="col-header col-title" on:click={() => toggleSort("title")}>
+    <button
+      class="col-header col-artist sortable"
+      on:click={() => toggleSort("title")}
+    >
       Title
       {#if sortField === "title"}
         <span class="sort-icon">{sortDirection === "asc" ? "▲" : "▼"}</span>
       {/if}
     </button>
     {#if showAlbum}
-      <button class="col-header col-album" on:click={() => toggleSort("album")}>
+      <button
+        class="col-header col-album sortable"
+        on:click={() => toggleSort("album")}
+      >
         Album
         {#if sortField === "album"}
           <span class="sort-icon">{sortDirection === "asc" ? "▲" : "▼"}</span>
@@ -962,15 +1026,20 @@
       </button>
     {/if}
     <button
-      class="col-header col-duration"
+      class="col-header col-duration sortable"
       on:click={() => toggleSort("duration")}
     >
-      <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-        <path
-          d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z"
-        />
-      </svg>
+      Duration
       {#if sortField === "duration"}
+        <span class="sort-icon">{sortDirection === "asc" ? "▲" : "▼"}</span>
+      {/if}
+    </button>
+    <button
+      class="col-header col-date-added sortable"
+      on:click={() => toggleSort("date_added")}
+    >
+      Date Added
+      {#if sortField === "date_added"}
         <span class="sort-icon">{sortDirection === "asc" ? "▲" : "▼"}</span>
       {/if}
     </button>
@@ -1086,102 +1155,152 @@
                     <span class="eq-bar"></span>
                   </span>
                 {:else}
-                  {actualIndex + 1}
+                  <span class="track-index">{actualIndex + 1}</span>
+                  <span class="hover-play" aria-hidden="true">▶</span>
                 {/if}
               </span>
-              <span class="col-cover">
-                <div class="cover-wrapper">
-                  {#if albumArt && !failedImages.has(albumArt)}
-                    <img
-                      src={albumArt}
-                      alt="Album cover"
-                      class="cover-image"
-                      loading="lazy"
-                      decoding="async"
-                      on:error={() => handleImageError(albumArt)}
-                    />
-                  {:else}
-                    <div class="cover-placeholder">
+
+              {#if $isMobile}
+                <span class="col-cover">
+                  <div class="cover-wrapper">
+                    {#if albumArt && !failedImages.has(albumArt)}
+                      <img
+                        src={albumArt}
+                        alt="Album cover"
+                        class="cover-image"
+                        loading="lazy"
+                        decoding="async"
+                        on:error={() => handleImageError(albumArt)}
+                      />
+                    {:else}
+                      <div class="cover-placeholder">
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                          width="16"
+                          height="16"
+                        >
+                          <path
+                            d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
+                          />
+                        </svg>
+                      </div>
+                    {/if}
+                    <div class="cover-play-overlay">
                       <svg
                         viewBox="0 0 24 24"
                         fill="currentColor"
-                        width="16"
-                        height="16"
+                        width="18"
+                        height="18"
                       >
-                        <path
-                          d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                        />
+                        <path d="M8 5v14l11-7z" />
                       </svg>
                     </div>
-                  {/if}
-                  <div class="cover-play-overlay">
-                    <svg
-                      viewBox="0 0 24 24"
-                      fill="currentColor"
-                      width="18"
-                      height="18"
+                  </div>
+                </span>
+                <div class="col-title">
+                  <div class="title-row">
+                    <span class="track-name truncate"
+                      >{track.title || "Unknown Title"}</span
                     >
-                      <path d="M8 5v14l11-7z" />
-                    </svg>
+
+                    {#if !track.source_type || track.source_type === "local" || track.local_src}
+                      <span class="downloaded-icon" title="Downloaded">
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                          width="14"
+                          height="14"
+                        >
+                          <path
+                            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
+                          />
+                        </svg>
+                      </span>
+                    {/if}
+
+                    {#if track.format}
+                      {@const formatUpper = track.format.toUpperCase()}
+                      {@const displayFormat =
+                        formatUpper.includes("HI_RES") ||
+                        formatUpper.includes("HIRES")
+                          ? "HI-RES"
+                          : formatUpper.includes("LOSSLESS")
+                            ? "LOSSLESS"
+                            : formatUpper.replace("MPEG", "MP3")}
+                      <span
+                        class="quality-tag"
+                        class:high-quality={formatUpper.includes("FLAC") ||
+                          formatUpper.includes("WAV") ||
+                          formatUpper.includes("HI_RES") ||
+                          formatUpper.includes("HIRES") ||
+                          (track.bitrate && track.bitrate >= 320)}
+                      >
+                        {displayFormat}
+                      </span>
+                    {/if}
+                  </div>
+                  <button
+                    class="track-artist truncate"
+                    on:click={handleArtistClick}
+                    >{track.artist || "Unknown Artist"}</button
+                  >
+                </div>
+              {:else}
+                <div class="col-artist">
+                  <span class="artist-thumb">
+                    {#if albumArt && !failedImages.has(albumArt)}
+                      <img
+                        src={albumArt}
+                        alt="Album cover"
+                        class="cover-image-small"
+                        loading="lazy"
+                        decoding="async"
+                        on:error={() => handleImageError(albumArt)}
+                      />
+                    {:else}
+                      <span class="cover-placeholder-small">
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                          width="12"
+                          height="12"
+                        >
+                          <path
+                            d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
+                          />
+                        </svg>
+                      </span>
+                    {/if}
+                  </span>
+                  <div class="artist-meta">
+                    <span class="track-name truncate"
+                      >{track.title || "Unknown Title"}</span
+                    >
+                    <button class="track-artist truncate" on:click={handleArtistClick}
+                      >{track.artist || "Unknown Artist"}</button
+                    >
+                    {#if showAdvancedMetadata}
+                      <span class="media-metadata truncate">
+                        {track.format ? track.format.toUpperCase() : "Unknown format"}
+                        {#if track.bitrate} • {track.bitrate} kbps{/if}
+                        {#if track.source_type} • {track.source_type}{/if}
+                      </span>
+                    {/if}
                   </div>
                 </div>
-              </span>
-              <div class="col-title">
-                <div class="title-row">
-                  <span class="track-name truncate"
-                    >{track.title || "Unknown Title"}</span
-                  >
-
-                  {#if !track.source_type || track.source_type === "local" || track.local_src}
-                    <span class="downloaded-icon" title="Downloaded">
-                      <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="14"
-                        height="14"
-                      >
-                        <path
-                          d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
-                        />
-                      </svg>
-                    </span>
-                  {/if}
-
-                  {#if track.format}
-                    {@const formatUpper = track.format.toUpperCase()}
-                    {@const displayFormat =
-                      formatUpper.includes("HI_RES") ||
-                      formatUpper.includes("HIRES")
-                        ? "HI-RES"
-                        : formatUpper.includes("LOSSLESS")
-                          ? "LOSSLESS"
-                          : formatUpper.replace("MPEG", "MP3")}
-                    <span
-                      class="quality-tag"
-                      class:high-quality={formatUpper.includes("FLAC") ||
-                        formatUpper.includes("WAV") ||
-                        formatUpper.includes("HI_RES") ||
-                        formatUpper.includes("HIRES") ||
-                        (track.bitrate && track.bitrate >= 320)}
-                    >
-                      {displayFormat}
-                    </span>
-                  {/if}
-                </div>
-                <button
-                  class="track-artist truncate"
-                  on:click={handleArtistClick}
-                  >{track.artist || "Unknown Artist"}</button
-                >
-              </div>
+              {/if}
               {#if showAlbum}
                 <button
-                  class="col-album truncate"
+                  class="col-album-cell truncate"
                   on:click={handleAlbumClick}
                   disabled={!track.album_id}>{track.album || "-"}</button
                 >
               {/if}
               <span class="col-duration">{formatDuration(track.duration)}</span>
+              {#if !$isMobile}
+                <span class="col-date-added">{formatDateAdded(track.date_added)}</span>
+              {/if}
             </div>
           {/each}
         </div>
@@ -1210,17 +1329,48 @@
     overflow: hidden;
   }
 
+  .list-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 10px;
+    padding: 6px var(--spacing-md) 0;
+  }
+
+  .toolbar-hint {
+    font-size: 0.72rem;
+    color: var(--text-subdued);
+  }
+
+  .advanced-toggle {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    border-radius: var(--radius-sm);
+    padding: 2px 8px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .advanced-toggle:hover {
+    color: var(--text-primary);
+    border-color: var(--text-secondary);
+  }
+
   .list-header {
     display: grid;
-    grid-template-columns: 40px 48px 1fr 1fr 80px;
+    grid-template-columns: 40px 1fr 1fr 80px 130px;
     gap: var(--spacing-md);
     padding: var(--spacing-sm) var(--spacing-md);
+    padding-right: calc(var(--spacing-md) + var(--scrollbar-width, 0px));
     padding-left: var(--spacing-lg);
     border-bottom: 1px solid var(--border-color);
-    font-size: 0.75rem;
+    font-size: 0.78rem;
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.1em;
+    line-height: 1.1;
     color: var(--text-subdued);
     background-color: var(--bg-base);
     z-index: 10;
@@ -1228,15 +1378,15 @@
   }
 
   .list-header.with-drag {
-    grid-template-columns: 32px 40px 48px 1fr 1fr 80px;
+    grid-template-columns: 32px 40px 1fr 1fr 80px 130px;
   }
 
   .list-header.no-album {
-    grid-template-columns: 40px 48px 1fr 80px;
+    grid-template-columns: 40px 1fr 80px 130px;
   }
 
   .list-header.no-album.with-drag {
-    grid-template-columns: 32px 40px 48px 1fr 80px;
+    grid-template-columns: 32px 40px 1fr 80px 130px;
   }
 
   .col-header {
@@ -1247,15 +1397,24 @@
     color: inherit;
     text-transform: inherit;
     letter-spacing: inherit;
-    cursor: pointer;
+    cursor: default;
     display: flex;
     align-items: center;
     gap: 4px;
     transition: color var(--transition-fast);
     user-select: none;
+    justify-self: stretch;
+    width: 100%;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
   }
 
-  .col-header:hover {
+  .col-header.sortable {
+    cursor: pointer;
+  }
+
+  .col-header.sortable:hover {
     color: var(--text-primary);
   }
 
@@ -1267,8 +1426,9 @@
     justify-content: center;
   }
 
-  .col-header.col-title {
+  .col-header.col-artist {
     justify-content: flex-start;
+    padding-left: 36px;
   }
 
   .col-header.col-album {
@@ -1276,6 +1436,10 @@
   }
 
   .col-header.col-duration {
+    justify-content: flex-end;
+  }
+
+  .col-header.col-date-added {
     justify-content: flex-end;
   }
 
@@ -1308,37 +1472,37 @@
 
   .track-row {
     display: grid;
-    grid-template-columns: 40px 48px 1fr 1fr 80px;
+    grid-template-columns: 40px 1fr 1fr 80px 130px;
     gap: var(--spacing-md);
-    padding: var(--spacing-sm) var(--spacing-md);
+    padding: 6px var(--spacing-md);
     padding-left: var(--spacing-lg);
     align-items: center;
     border-radius: var(--radius-md);
     transition: background-color var(--transition-fast);
     width: 100%;
     text-align: left;
-    height: 56px; /* Fixed height for virtual scrolling */
+    height: 50px; /* Fixed height for virtual scrolling */
     box-sizing: border-box;
   }
 
   .list-body.with-drag .track-row {
-    grid-template-columns: 32px 40px 48px 1fr 1fr 80px;
+    grid-template-columns: 32px 40px 1fr 1fr 80px 130px;
   }
 
   .list-body.no-album .track-row {
-    grid-template-columns: 40px 48px 1fr 80px;
+    grid-template-columns: 40px 1fr 80px 130px;
   }
 
   .list-body.no-album.with-drag .track-row {
-    grid-template-columns: 32px 40px 48px 1fr 80px;
+    grid-template-columns: 32px 40px 1fr 80px 130px;
   }
 
   .list-body.multiselect .track-row {
-    grid-template-columns: 40px 40px 48px 1fr 1fr 80px;
+    grid-template-columns: 40px 40px 1fr 1fr 80px 130px;
   }
 
   .list-body.multiselect.no-album .track-row {
-    grid-template-columns: 40px 40px 48px 1fr 80px;
+    grid-template-columns: 40px 40px 1fr 80px 130px;
   }
 
   .track-row.selected {
@@ -1404,6 +1568,10 @@
   }
 
   .col-num {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     text-align: center;
     color: var(--text-subdued);
     font-size: 0.875rem;
@@ -1411,6 +1579,32 @@
 
   .track-row:hover .col-num:not(:has(.playing-icon)) {
     color: var(--text-primary);
+  }
+
+  .track-index,
+  .hover-play {
+    transition: opacity var(--transition-fast);
+  }
+
+  .hover-play {
+    position: absolute;
+    opacity: 0;
+    color: var(--text-primary);
+    font-size: 0.82rem;
+    line-height: 1;
+  }
+
+  .track-row:hover .track-index {
+    opacity: 0;
+  }
+
+  .track-row:hover .hover-play {
+    opacity: 1;
+  }
+
+  .track-row.unavailable:hover .hover-play,
+  .track-row.unavailable:hover .track-index {
+    opacity: 1;
   }
 
   .col-cover {
@@ -1489,6 +1683,48 @@
     padding-top: 1.5px;
   }
 
+  .col-artist {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 8px;
+  }
+
+  .artist-thumb {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+  }
+
+  .cover-image-small {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    object-fit: cover;
+  }
+
+  .cover-placeholder-small {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background-color: var(--bg-highlight);
+    color: var(--text-subdued);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .artist-meta {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+    gap: 1px;
+  }
+
   .title-row {
     display: flex;
     align-items: center;
@@ -1547,13 +1783,25 @@
     cursor: pointer;
   }
 
-  .col-album {
-    font-size: 0.875rem;
-    color: var(--text-secondary);
-    text-align: left;
+  .media-metadata {
+    font-size: 0.7rem;
+    color: var(--text-subdued);
+    opacity: 0.9;
   }
 
-  .col-album:hover:not(:disabled) {
+  .col-album-cell {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    background: none;
+    border: none;
+    padding: 0;
+    width: 100%;
+    justify-self: stretch;
+    text-align: left;
+    line-height: 1.2;
+  }
+
+  .col-album-cell:hover:not(:disabled) {
     color: var(--text-primary);
     text-decoration: underline;
     cursor: pointer;
@@ -1562,6 +1810,15 @@
   .col-duration {
     text-align: right;
     font-size: 0.875rem;
+    color: var(--text-subdued);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .col-date-added {
+    text-align: right;
+    font-size: 0.8125rem;
     color: var(--text-subdued);
     display: flex;
     align-items: center;
@@ -1654,11 +1911,11 @@
   }
 
   .list-header.multiselect {
-    grid-template-columns: 40px 40px 48px 1fr 1fr 80px;
+    grid-template-columns: 40px 40px 1fr 1fr 80px 130px;
   }
 
   .list-header.multiselect.no-album {
-    grid-template-columns: 40px 40px 48px 1fr 80px;
+    grid-template-columns: 40px 40px 1fr 80px 130px;
   }
 
   /* ── Equalizer bars (hidden by default, shown on mobile album view) ── */
@@ -1668,6 +1925,10 @@
 
   /* ── Mobile ── */
   @media (max-width: 768px) {
+    .list-toolbar {
+      display: none;
+    }
+
     /* Hide the entire header row on mobile */
     .list-header {
       display: none;
@@ -1723,7 +1984,7 @@
     }
 
     /* Hide album column */
-    .list-body.mobile-album .col-album {
+    .list-body.mobile-album .col-album-cell {
       display: none;
     }
 
@@ -1821,7 +2082,7 @@
     }
 
     /* Hide album column */
-    .list-body.mobile-playlist .col-album {
+    .list-body.mobile-playlist .col-album-cell {
       display: none;
     }
 
@@ -1890,7 +2151,7 @@
     }
 
     /* Hide album column (show album name under artist instead) */
-    .list-body.mobile-library .col-album {
+    .list-body.mobile-library .col-album-cell {
       display: none;
     }
 
