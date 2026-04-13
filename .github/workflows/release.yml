@@ -73,19 +73,27 @@ jobs:
           if ("${{ github.event_name }}" -eq "push") {
             $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
             $prerelease = $false
+            $tagName = "v$version"
           } elseif ("${{ inputs.release_type }}" -eq "beta") {
             $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version + "-beta"
             $prerelease = $true
+            $tagName = "v$version"
           } elseif ("${{ inputs.release_type }}" -eq "hotfix") {
             $version = "${{ inputs.tag_name }}".TrimStart('v')
             $prerelease = $false
+            if ("${{ inputs.tag_name }}".StartsWith('v')) {
+              $tagName = "${{ inputs.tag_name }}"
+            } else {
+              $tagName = "v${{ inputs.tag_name }}"
+            }
           } else {
             $version = (Get-Content src-tauri/tauri.conf.json | ConvertFrom-Json).version
             $prerelease = $false
+            $tagName = "v$version"
           }
           echo "version=$version" >> $env:GITHUB_OUTPUT
           echo "prerelease=$prerelease" >> $env:GITHUB_OUTPUT
-          echo "tag_name=$version" >> $env:GITHUB_OUTPUT
+          echo "tag_name=$tagName" >> $env:GITHUB_OUTPUT
 
       - name: Rename artifacts
         shell: pwsh
@@ -154,6 +162,7 @@ jobs:
       - name: Set version and prerelease flags
         id: info
         run: |
+          TAG_NAME=""
           if [ "${{ github.event_name }}" = "push" ]; then
             VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
             PRERELEASE=false
@@ -163,13 +172,19 @@ jobs:
           elif [ "${{ inputs.release_type }}" = "hotfix" ]; then
             VERSION=$(echo "${{ inputs.tag_name }}" | sed 's/^v//')
             PRERELEASE=false
+            TAG_NAME="${{ inputs.tag_name }}"
+            case "$TAG_NAME" in
+              v*) ;;
+              *) TAG_NAME="v$TAG_NAME" ;;
+            esac
           else
             VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
             PRERELEASE=false
           fi
+          if [ -z "$TAG_NAME" ]; then TAG_NAME="v$VERSION"; fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
-          echo "tag_name=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
 
       - name: Rename artifacts
         run: |
@@ -205,8 +220,6 @@ jobs:
   # ---------------------------------------------------------------------------
   release-flatpak:
     runs-on: ubuntu-24.04
-    container:
-      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
     needs: release-linux
     if: |
       always() &&
@@ -219,6 +232,7 @@ jobs:
       - name: Set version and prerelease flags
         id: info
         run: |
+          TAG_NAME=""
           if [ "${{ github.event_name }}" = "push" ]; then
             VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
             PRERELEASE=false
@@ -228,26 +242,34 @@ jobs:
           elif [ "${{ inputs.release_type }}" = "hotfix" ]; then
             VERSION=$(echo "${{ inputs.tag_name }}" | sed 's/^v//')
             PRERELEASE=false
+            TAG_NAME="${{ inputs.tag_name }}"
+            case "$TAG_NAME" in
+              v*) ;;
+              *) TAG_NAME="v$TAG_NAME" ;;
+            esac
           else
             VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
             PRERELEASE=false
           fi
+          if [ -z "$TAG_NAME" ]; then TAG_NAME="v$VERSION"; fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
-          echo "tag_name=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
 
-      - name: Prefetch runtime
-        run: |
-          flatpak install -y flathub org.freedesktop.Platform//24.08
-
-      - name: Build Flatpak bundle (containerized)
+      - name: Build Flatpak bundle
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           manifest-path: packaging/flatpak/com.audion.app.yml
           bundle: audion_${{ steps.info.outputs.version }}_flatpak.flatpak
-          cache-key: flatpak-builder-${{ runner.os }}-${{ hashFiles('packaging/flatpak/*.yml') }}
+          cache-key: flatpak-builder-${{ runner.os }}-${{ hashFiles('packaging/flatpak/*.yml') }}-v1
           upload-artifact: false
           verbose: true
+
+      - name: Verify Flatpak bundle
+        run: |
+          ls -la
+          ls -la *.flatpak || true
+          test -f "audion_${{ steps.info.outputs.version }}_flatpak.flatpak"
 
       - name: Upload Flatpak to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -257,8 +279,7 @@ jobs:
           body_path: releasenote.md
           prerelease: ${{ steps.info.outputs.prerelease }}
           overwrite: ${{ inputs.overwrite }}
-          files: |
-            audion_*_flatpak.flatpak
+          files: audion_${{ steps.info.outputs.version }}_flatpak.flatpak
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -297,6 +318,7 @@ jobs:
       - name: Set version and prerelease flags
         id: info
         run: |
+          TAG_NAME=""
           if [ "${{ github.event_name }}" = "push" ]; then
             VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
             PRERELEASE=false
@@ -306,13 +328,19 @@ jobs:
           elif [ "${{ inputs.release_type }}" = "hotfix" ]; then
             VERSION=$(echo "${{ inputs.tag_name }}" | sed 's/^v//')
             PRERELEASE=false
+            TAG_NAME="${{ inputs.tag_name }}"
+            case "$TAG_NAME" in
+              v*) ;;
+              *) TAG_NAME="v$TAG_NAME" ;;
+            esac
           else
             VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
             PRERELEASE=false
           fi
+          if [ -z "$TAG_NAME" ]; then TAG_NAME="v$VERSION"; fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
-          echo "tag_name=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
 
       - name: Rename artifacts
         run: |
@@ -388,6 +416,7 @@ jobs:
       - name: Set version and prerelease flags
         id: info
         run: |
+          TAG_NAME=""
           if [ "${{ github.event_name }}" = "push" ]; then
             VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
             PRERELEASE=false
@@ -397,13 +426,19 @@ jobs:
           elif [ "${{ inputs.release_type }}" = "hotfix" ]; then
             VERSION=$(echo "${{ inputs.tag_name }}" | sed 's/^v//')
             PRERELEASE=false
+            TAG_NAME="${{ inputs.tag_name }}"
+            case "$TAG_NAME" in
+              v*) ;;
+              *) TAG_NAME="v$TAG_NAME" ;;
+            esac
           else
             VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)
             PRERELEASE=false
           fi
+          if [ -z "$TAG_NAME" ]; then TAG_NAME="v$VERSION"; fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
-          echo "tag_name=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
 
       - name: Rename Android artifacts
         run: |
@@ -428,8 +463,10 @@ jobs:
       - name: Upload Android artifacts
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.tag_name }}
-          name: ${{ inputs.tag_name }}
+          tag_name: v${{ steps.info.outputs.version }}
+          name: ${{ inputs.release_type == 'hotfix' && steps.info.outputs.tag_name || format('v{0}', steps.info.outputs.version) }}
+          body_path: releasenote.md
+          prerelease: ${{ steps.info.outputs.prerelease }}
           overwrite: ${{ inputs.overwrite }}
           files: |
             src-tauri/gen/android/app/build/outputs/apk/audion_*_android.apk
