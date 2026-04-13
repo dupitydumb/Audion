@@ -1,6 +1,7 @@
 // Plugin registry and marketplace client
 import type { AudionPluginManifest } from './schema';
 import { validateManifest, validateManifests } from './schema';
+import { proxyFetch } from '../network';
 
 export interface MarketplacePlugin {
   manifest: AudionPluginManifest;
@@ -178,17 +179,9 @@ function isValidUrl(url: string): boolean {
   }
 }
 
-// Fetch with timeout
-async function fetchWithTimeout(url: string, timeout = 10000): Promise<Response> {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
-
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    return response;
-  } finally {
-    clearTimeout(id);
-  }
+// Fetch with proxy
+async function fetchWithProxy<T>(url: string): Promise<T> {
+  return proxyFetch<T>(url);
 }
 
 // Fetch curated registry
@@ -196,9 +189,7 @@ export async function fetchCuratedRegistry(): Promise<MarketplacePlugin[]> {
   // Try local registry first (for development)
   if (localRegistryPath) {
     try {
-      const response = await fetch(localRegistryPath);
-      if (response.ok) {
-        const data: RegistryData = await response.json();
+      const data: RegistryData = await fetchWithProxy<RegistryData>(localRegistryPath);
 
         // Batch validate all manifests
         const validManifests = validateManifests(data.plugins.map(p => p.manifest));
@@ -207,7 +198,6 @@ export async function fetchCuratedRegistry(): Promise<MarketplacePlugin[]> {
         return data.plugins
           .filter(p => validManifests.includes(p.manifest as AudionPluginManifest))
           .map(p => ({ ...p, curated: true }));
-      }
     } catch (err) {
       console.warn('[Marketplace] Local registry failed:', err);
     }
@@ -218,10 +208,7 @@ export async function fetchCuratedRegistry(): Promise<MarketplacePlugin[]> {
     try {
       // Append timestamp to prevent caching
       const noCacheUrl = `${url}?t=${Date.now()}`;
-      const response = await fetchWithTimeout(noCacheUrl);
-      if (!response.ok) continue;
-
-      const data: RegistryData = await response.json();
+      const data: RegistryData = await fetchWithProxy<RegistryData>(noCacheUrl);
 
       // Batch validate all manifests
       const validManifests = validateManifests(data.plugins.map(p => p.manifest));
@@ -278,12 +265,7 @@ export async function fetchCommunityPlugin(url: string): Promise<MarketplacePlug
   }
 
   try {
-    const response = await fetchWithTimeout(manifestUrl);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-
-    const manifest = await response.json();
+    const manifest = await fetchWithProxy<any>(manifestUrl);
 
     // Validate manifest
     if (!validateManifest(manifest)) {

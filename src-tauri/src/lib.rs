@@ -578,6 +578,8 @@ pub fn run() {
                     commands::sync_link_kofi,
                     commands::sync_enqueue_change,
                     commands::sync_delete_account,
+                    commands::sync_get_access_token,
+                    commands::sync_get_device_id,
                     // =========================================================================
                     // NATIVE AUDIO COMMANDS
                     // =========================================================================
@@ -725,6 +727,8 @@ pub fn run() {
                     commands::sync_link_kofi,
                     commands::sync_enqueue_change,
                     commands::sync_delete_account,
+                    commands::sync_get_access_token,
+                    commands::sync_get_device_id,
                     // =========================================================================
                     // NATIVE AUDIO COMMANDS
                     // =========================================================================

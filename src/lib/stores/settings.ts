@@ -14,6 +14,7 @@ export interface AppSettings {
     /** True when a token file exists – refreshed at startup, not persisted in localStorage */
     listenBrainzTokenSet: boolean;
     listenBrainzUsername: string;
+    remoteControlEnabled: boolean;
 }
 
 const SETTINGS_STORAGE_KEY = 'audion_settings';
@@ -30,6 +31,7 @@ const defaultSettings: AppSettings = {
     listenBrainzEnabled: false,
     listenBrainzTokenSet: false,
     listenBrainzUsername: '',
+    remoteControlEnabled: true,
 };
 
 // Load settings from localStorage
@@ -109,6 +111,14 @@ function createSettingsStore() {
         setAudioBackend(backend: 'auto' | 'native' | 'html5') {
             update(state => {
                 const newState = { ...state, audioBackend: backend };
+                saveSettings(newState);
+                return newState;
+            });
+        },
+
+        setRemoteControlEnabled(enabled: boolean) {
+            update(state => {
+                const newState = { ...state, remoteControlEnabled: enabled };
                 saveSettings(newState);
                 return newState;
             });

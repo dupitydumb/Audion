@@ -20,7 +20,9 @@
     // Format the last sync time as relative (e.g., "2m ago")
     function formatLastSync(timestamp: string | null): string {
         if (!timestamp) return "Never";
-        const seconds = parseInt(timestamp, 10);
+        
+        const date = new Date(timestamp);
+        const seconds = Math.floor(date.getTime() / 1000);
         if (isNaN(seconds)) return "Never";
 
         const now = Math.floor(Date.now() / 1000);
@@ -31,11 +33,25 @@
         if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
 
         // Format as DD/MM/YYYY for older syncs
-        const date = new Date(seconds * 1000);
         const dd = String(date.getDate()).padStart(2, "0");
         const mm = String(date.getMonth() + 1).padStart(2, "0");
         const yyyy = date.getFullYear();
         return `${dd}/${mm}/${yyyy}`;
+    }
+
+    function formatSyncError(error: string | null): string {
+        if (!error) return "";
+        try {
+            if (error.includes("{") && error.includes("}")) {
+                const jsonStart = error.indexOf("{");
+                const jsonEnd = error.lastIndexOf("}") + 1;
+                const jsonStr = error.substring(jsonStart, jsonEnd);
+                const parsed = JSON.parse(jsonStr);
+                if (parsed.details) return parsed.details;
+                if (parsed.error) return parsed.error;
+            }
+        } catch (e) { /* ignore */ }
+        return error.replace(/Request failed: \d+ [^—]+ — /, "");
     }
 
     $: progressPercent =
@@ -55,7 +71,7 @@
     title={$isLoggedIn
         ? $isSyncing
             ? $syncProgress.message || "Syncing..."
-            : `Last synced: ${formatLastSync($syncStatus.last_sync_at)}${$syncStatus.pending_changes > 0 ? ` • ${$syncStatus.pending_changes} pending` : ""}${$syncStatus.last_error ? ` • Error: ${$syncStatus.last_error}` : ""}`
+            : `Last synced: ${formatLastSync($syncStatus.last_sync_at)}${$syncStatus.pending_changes > 0 ? ` • ${$syncStatus.pending_changes} pending` : ""}${$syncStatus.last_error ? ` • ${formatSyncError($syncStatus.last_error)}` : ""}`
         : "Sign in to sync"}
 >
     {#if $isLoggedIn}

@@ -119,6 +119,36 @@ struct JwtClaims {
     /// Unix timestamp in milliseconds. None = no expiry.
     #[serde(rename = "supporter_until")]
     supporter_until: Option<i64>,
+    exp: Option<i64>,
+}
+
+pub fn is_token_expired(access_token: &str) -> bool {
+    let payload = match access_token.split('.').nth(1) {
+        Some(p) => p,
+        None => return true,
+    };
+    let decoded = match base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(payload.as_bytes()))
+    {
+        Ok(d) => d,
+        Err(_) => return true,
+    };
+    let claims: Result<JwtClaims, _> = serde_json::from_slice(&decoded);
+    match claims {
+        Ok(c) => match c.exp {
+            Some(exp) => {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs() as i64;
+                // Add a 60 second buffer
+                now + 60 >= exp
+            }
+            None => false, // no expiry claim means it doesn't expire
+        },
+        Err(_) => true,
+    }
 }
 
 fn auth_state_from_access_token(db: &Database, access_token: &str) -> Result<AuthState, String> {
@@ -473,10 +503,14 @@ pub async fn authenticated_request(
             .body(body.to_string());
     }
 
+    tracing::debug!("[Sync] Request {} {}", method, url);
     let resp = request
         .send()
         .await
         .map_err(|e| format_reqwest_error("Request failed", &url, &e))?;
+
+    let status = resp.status();
+    tracing::debug!("[Sync] Response status: {}", status);
 
     // If 401, try refreshing the token and retry once
     if resp.status().as_u16() == 401 {

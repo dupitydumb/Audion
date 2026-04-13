@@ -13,7 +13,7 @@ export interface PluginEvents {
 
 export class EventEmitter<EventMap extends Record<string, any>> {
     private listeners: Map<keyof EventMap, Set<EventListener<any>>> = new Map();
-    private requestHandlers: Map<string, (data: any) => Promise<any>> = new Map();
+    private requestHandlers: Map<string, { handler: (data: any) => Promise<any>; owner: string }> = new Map();
     // Track which plugin owns which listeners
     private listenerOwners: Map<EventListener<any>, string> = new Map();
     private maxListeners = 10;
@@ -95,19 +95,17 @@ export class EventEmitter<EventMap extends Record<string, any>> {
     /**
      * Set a handler for a request
      */
-    handleRequest(requestName: string, handler: (data: any) => Promise<any>): void {
-        this.requestHandlers.set(requestName, handler);
+    handleRequest(requestName: string, handler: (data: any) => Promise<any>, pluginName?: string): void {
+        this.requestHandlers.set(requestName, { handler, owner: pluginName ?? '' });
     }
 
     /**
      * Make a request and wait for a response
      */
     async request<T = any>(requestName: string, data: any): Promise<T> {
-        const handler = this.requestHandlers.get(requestName);
-        if (!handler) {
-            throw new Error(`No handler registered for request: ${requestName}`);
-        }
-        return await handler(data);
+        const entry = this.requestHandlers.get(requestName);
+        if (!entry) throw new Error(`No handler registered for request: ${requestName}`);
+        return await entry.handler(data);
     }
 
     /**
@@ -157,6 +155,14 @@ export class EventEmitter<EventMap extends Record<string, any>> {
         });
 
         console.log(`[EventEmitter] Removed ${listenersToRemove.length} listeners for plugin: ${pluginName}`);
+    }
+
+    removePluginRequestHandlers(pluginName: string): void {
+        this.requestHandlers.forEach((entry, key) => {
+            if (entry.owner === pluginName) {
+                this.requestHandlers.delete(key);
+            }
+        });
     }
 
     /**

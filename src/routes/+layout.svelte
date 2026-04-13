@@ -23,6 +23,7 @@
     contextMenu,
     isMiniPlayer,
   } from "$lib/stores/ui";
+  import { pluginStore } from "$lib/stores/plugin-store";
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
   import PromptDialog from "$lib/components/PromptDialog.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
@@ -239,6 +240,12 @@
     import.meta.hot.dispose(() => {
       console.log("[App] Cleaning up on hot reload");
       cleanupPlayer();
+      const runtime = pluginStore.getRuntime();
+      if (runtime) {
+        for (const plugin of runtime.getLoadedPlugins()) {
+            runtime.unloadPlugin(plugin.manifest.name);
+        }
+      }
     });
   }
 </script>

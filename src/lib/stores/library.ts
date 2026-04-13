@@ -477,6 +477,22 @@ export async function getFullTrack(trackId: number, preferBase64: boolean = fals
 }
 
 /**
+ * Synchronously get a track from memory caches (O(1))
+ * Does NOT fetch from disk or network.
+ */
+export function getTrackByIdSync(trackId: number): Track | null {
+    // Check full cache first
+    const cached = fullTrackCache.get(trackId);
+    if (cached) return cached;
+
+    // Check metadata cache
+    const metadata = trackMetadataCache.get(trackId);
+    if (!metadata) return null;
+
+    return reconstructTrack(metadata);
+}
+
+/**
  * Get full album with art data
  */
 export function getFullAlbum(albumId: number): Album | null {

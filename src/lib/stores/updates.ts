@@ -1,4 +1,5 @@
 import { writable } from 'svelte/store';
+import { proxyFetch } from '../network';
 
 interface UpdateState {
     hasUpdate: boolean;
@@ -20,9 +21,7 @@ function createUpdateStore() {
         checkUpdate: async () => {
             update(s => ({ ...s, checking: true, error: null }));
             try {
-                const response = await fetch("https://api.github.com/repos/dupitydumb/Audion/releases/latest");
-                if (response.ok) {
-                    const data = await response.json();
+                const data = await proxyFetch<any>("https://api.github.com/repos/dupitydumb/Audion/releases/latest");
 
                     // transform tag to version number (remove 'v' prefix if present)
                     const latestVersion = data.tag_name.replace(/^v/, '');
@@ -36,9 +35,6 @@ function createUpdateStore() {
                         checking: false,
                         error: null
                     });
-                } else {
-                    throw new Error(`Failed to fetch release: ${response.statusText}`);
-                }
             } catch (error) {
                 console.error("Failed to check version:", error);
                 update(s => ({

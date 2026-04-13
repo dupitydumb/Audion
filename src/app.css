@@ -15,7 +15,7 @@
 
   --text-primary: #ffffff;
   --text-secondary: #b3b3b3;
-  --text-subdued: #6a6a6a;
+  --text-subdued: #a0a0a0; /* Higher contrast for WCAG compliance (4.5:1 on #121212) */
 
   --border-color: #404040;
   --error-color: #f15e6c;

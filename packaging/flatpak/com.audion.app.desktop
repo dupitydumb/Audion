@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Audion
+Comment=Local music player
+Exec=audion
+Icon=com.audion.app
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+StartupNotify=true

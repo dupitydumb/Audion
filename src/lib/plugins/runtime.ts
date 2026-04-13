@@ -966,7 +966,7 @@ export class PluginRuntime {
     // Allow plugins to handle requests from other plugins
     // Plugins register handlers that other plugins can call via api.request()
     api.handleRequest = (requestName: string, handler: (data: any) => Promise<any>) => {
-      pluginEvents.handleRequest(requestName, handler);
+      pluginEvents.handleRequest(requestName, handler, pluginName);
       console.log(`[PluginRuntime:${pluginName}] Registered handler for request: '${requestName}'`);
     };
 
@@ -1032,6 +1032,9 @@ export class PluginRuntime {
 
       // 2. Remove all event listeners
       pluginEvents.removePluginListeners(name);
+
+      // 2b. Remove request handlers
+      pluginEvents.removePluginRequestHandlers(name);
 
       // 3. Remove all UI slot content
       try {

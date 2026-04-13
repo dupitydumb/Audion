@@ -47,7 +47,6 @@
   let installBtnEl: HTMLButtonElement;
 
   onMount(async () => {
-    await pluginStore.init();
     await pluginStore.refreshMarketplace();
     const saved = getScroll("plugins");
     if (saved > 0 && pluginContentEl) {

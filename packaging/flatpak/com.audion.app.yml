@@ -1,0 +1,43 @@
+app-id: com.audion.app
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.node20
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: audion
+
+finish-args:
+  - --share=network
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --socket=pulseaudio
+  - --device=dri
+  - --filesystem=xdg-music:rw
+  - --filesystem=xdg-download:rw
+  - --talk-name=org.freedesktop.Notifications
+
+build-options:
+  # Starter implementation for CI/local builds.
+  # NOTE: Flathub generally requires fully vendored dependencies and no network access.
+  build-args:
+    - --share=network
+  append-path: /usr/lib/sdk/node20/bin:/usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/audion/.cargo
+    npm_config_cache: /run/build/audion/.npm
+
+modules:
+  - name: audion
+    buildsystem: simple
+    build-commands:
+      - npm ci
+      - npm run build
+      - cargo build --release --locked
+      - install -Dm755 target/release/audion /app/bin/audion
+      - install -Dm644 packaging/flatpak/com.audion.app.desktop /app/share/applications/com.audion.app.desktop
+      - install -Dm644 packaging/flatpak/com.audion.app.metainfo.xml /app/share/metainfo/com.audion.app.metainfo.xml
+      - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/com.audion.app.png
+    sources:
+      - type: dir
+        path: ../../

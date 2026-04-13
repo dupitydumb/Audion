@@ -242,3 +242,43 @@ pub async fn sync_link_kofi(
     // Return updated auth state
     auth::get_auth_state(&db)
 }
+
+/// Get the current access token for WebSocket authentication.
+/// If the token is missing or expired, it will attempt to refresh it.
+#[tauri::command]
+pub async fn sync_get_access_token(
+    db: State<'_, Database>,
+    sync_state: State<'_, SyncState>,
+) -> Result<Option<String>, String> {
+    // Check if we have a refresh token (implies we're logged in)
+    let rt = auth::get_refresh_token(&db)?;
+    if rt.is_none() {
+        return Ok(None);
+    }
+
+    // Attempt to refresh the access token only if missing or expired.
+    let access_token = auth::get_access_token(&db)?;
+    if let Some(token) = &access_token {
+        if !auth::is_token_expired(token) {
+            return Ok(Some(token.clone()));
+        }
+    }
+
+    // Attempt to refresh the access token to ensure it's valid for the WS connection.
+    // If it's already fresh, the server should return a new one or the same one.
+    // This is better than returning a potentially expired token and getting a WS 401.
+    match auth::refresh_access_token(&db, &sync_state.server_url).await {
+        Ok(token) => Ok(Some(token)),
+        Err(e) => {
+            tracing::warn!("Failed to refresh token for WebSocket: {}", e);
+            // Fallback to current token if refresh fails (might still work if it's not expired)
+            Ok(auth::get_access_token(&db)?)
+        }
+    }
+}
+
+/// Get the device ID for identification.
+#[tauri::command]
+pub async fn sync_get_device_id(db: State<'_, Database>) -> Result<String, String> {
+    auth::get_or_create_device_id(&db)
+}

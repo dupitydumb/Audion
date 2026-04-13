@@ -363,6 +363,14 @@ export function getAlbumCoverSrc(album: Album): string | null {
 export function getAlbumArtSrc(artDataOrPath: string | null, isPath: boolean = false): string | null {
     if (!artDataOrPath) return null;
 
+    // If it's already a URL (HTTP, asset, blob, or data URI), return it as is
+    if (artDataOrPath.startsWith('http') || 
+        artDataOrPath.startsWith('asset:') || 
+        artDataOrPath.startsWith('blob:') || 
+        artDataOrPath.startsWith('data:')) {
+        return artDataOrPath;
+    }
+
     // If it's a file path, convert to asset URL
     if (isPath) {
         return convertFileSrc(artDataOrPath);

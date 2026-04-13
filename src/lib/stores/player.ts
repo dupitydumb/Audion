@@ -1,17 +1,19 @@
 // Player store - manages audio playback state
 import { writable, derived, get } from 'svelte/store';
+import { wsStore } from './websocket';
 import type { Track } from '$lib/api/tauri';
 import { getAudioSrc, getAlbumArtSrc, getTrackCoverSrc, convertFileSrc } from '$lib/api/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { addToast } from '$lib/stores/toast';
 import { EventEmitter, type PluginEvents } from '$lib/plugins/event-emitter';
-import { tracks as libraryTracks, getFullTrack, getAlbumCoverFromTracks, updateTrackCover } from '$lib/stores/library';
+import { tracks as libraryTracks, getFullTrack, getAlbumCoverFromTracks, updateTrackCover, getTrackByIdSync } from '$lib/stores/library';
 import { fetchTrackCover } from '$lib/services/cover-fetcher';
 import { appSettings } from '$lib/stores/settings';
 import { equalizer, EQ_FREQUENCIES } from '$lib/stores/equalizer';
 import { pluginStore } from '$lib/stores/plugin-store';
 import { recordTrackPlay } from '$lib/stores/activity';
 import { submitListenbrainzListen } from '$lib/api/tauri';
+import { activeRemoteDevice } from '$lib/stores/websocket';
 
 // =============================================================================
 // NATIVE AUDIO BACKEND
@@ -46,9 +48,9 @@ let html5Audio: HTMLAudioElement | null = null;
 // dash.js player instance for Hi-Res DASH/MPD streaming
 let dashPlayer: any | null = null;
 
-// Track which backend is currently active ('native', 'html5', or 'none')
-type ActiveBackend = 'native' | 'html5' | 'none';
-let activeBackend: ActiveBackend = 'none';
+// Track which backend is currently active ('native', 'html5', 'remote', or 'none')
+export type ActiveBackend = 'native' | 'html5' | 'remote' | 'none';
+export const activeBackend = writable<ActiveBackend>('none');
 
 // Track if we should use native audio based on platform/settings
 let nativeAudioUsed = false;
@@ -115,13 +117,13 @@ function getHtml5Audio(): HTMLAudioElement {
 
 function setupHtml5AudioListeners(audio: HTMLAudioElement): void {
     audio.addEventListener('timeupdate', () => {
-        if (activeBackend === 'html5') {
+        if (get(activeBackend) === 'html5') {
             currentTime.set(audio.currentTime);
         }
     });
 
     audio.addEventListener('durationchange', () => {
-        if (activeBackend === 'html5') {
+        if (get(activeBackend) === 'html5') {
             if (audio.duration && !isNaN(audio.duration)) {
                 duration.set(audio.duration);
             }
@@ -129,27 +131,27 @@ function setupHtml5AudioListeners(audio: HTMLAudioElement): void {
     });
 
     audio.addEventListener('play', () => {
-        if (activeBackend === 'html5') {
+        if (get(activeBackend) === 'html5') {
             isPlaying.set(true);
             updateMediaSessionPlaybackState('playing');
         }
     });
 
     audio.addEventListener('pause', () => {
-        if (activeBackend === 'html5') {
+        if (get(activeBackend) === 'html5') {
             isPlaying.set(false);
             updateMediaSessionPlaybackState('paused');
         }
     });
 
     audio.addEventListener('ended', () => {
-        if (activeBackend === 'html5') {
+        if (get(activeBackend) === 'html5') {
             handleTrackEnd();
         }
     });
 
     audio.addEventListener('error', (e) => {
-        if (activeBackend === 'html5') {
+        if (get(activeBackend) === 'html5') {
             console.error('[Player] HTML5 audio error:', audio.error);
             addToast(`Streaming playback failed: ${audio.error?.message || 'Unknown error'}`, 'error');
         }
@@ -400,7 +402,7 @@ equalizer.subscribe((state) => {
     _latestEqState = state;
 
     // Only attempt to apply when native backend is active
-    if (activeBackend !== 'native') return;
+    if (get(activeBackend) !== 'native') return;
 
     // Debounce rapid updates (200ms)
     if (_eqApplyTimer) clearTimeout(_eqApplyTimer);
@@ -425,13 +427,21 @@ export async function initAudioBackend(): Promise<void> {
     nativeAudioUsed = await shouldUseNativeAudio();
     console.log(`[Player] Native audio preferred: ${nativeAudioUsed}`);
 
-    // Start/stop poller based on playback state
+    // Start/stop poller based on playback state and notify remote devices
     isPlaying.subscribe((playing) => {
+        // Force an immediate broadcast when play/pause state changes
+        // so remote Connect Panels stay perfectly in sync
+        broadcastState(true);
         if (playing) {
             startStatePoller();
         } else {
             stopStatePoller();
         }
+    });
+
+    // Also force broadcast when the actual track changes regardless of play state
+    currentTrack.subscribe(() => {
+        broadcastState(true);
     });
 
     // Subscribe to volume changes to keep backends in sync
@@ -472,6 +482,88 @@ export async function initAudioBackend(): Promise<void> {
             console.warn('[Player] Failed to apply initial EQ settings:', err);
         }
     }
+
+    // Subscribe to WebSocket messages
+    wsStore.onMessage((type, payload) => {
+        switch (type) {
+            case 'transfer_playback':
+                transferPlayback(payload);
+                break;
+            case 'remote_command':
+                handleRemoteCommand(payload);
+                break;
+            case 'player_state':
+                handleRemotePlayerState(payload);
+                break;
+        }
+    });
+
+    // Sub due to initialization of active setting
+    activeBackend.subscribe(b => {
+        if (b === 'remote') {
+            stopStatePoller(); // Ensure local poller is off
+        }
+    });
+}
+
+function handleRemotePlayerState(payload: any) {
+    const isLocalPlaying = get(isPlaying) && get(activeBackend) !== 'remote';
+    
+    // Auto-switch to tracking the remote device if we are idle and it's playing
+    if (!isLocalPlaying && payload.isPlaying && payload.deviceId) {
+        if (get(activeBackend) !== 'remote') {
+            activeBackend.set('remote');
+            activeRemoteDevice.set(payload.deviceId);
+            console.log(`[Player] Auto-switched to remote session for device: ${payload.deviceId}`);
+        }
+    }
+
+    // If we are tracking THIS remote device, pipe the state into the local UI variables
+    if (get(activeBackend) === 'remote' && get(activeRemoteDevice) === payload.deviceId) {
+        if (payload.track) {
+            const remoteTrack = payload.track;
+            const currentObj = get(currentTrack);
+            const remoteTrackId = Number(remoteTrack.id);
+            
+            if (!currentObj || Number(currentObj.id) !== remoteTrackId) {
+                // Try to resolve track locally for better cover art (Fast O(1) lookup)
+                let localTrack: any = getTrackByIdSync(remoteTrackId);
+                
+                // Falling back to O(N) search only if ID fails (rare in synced libraries)
+                if (!localTrack) {
+                    const $library = get(libraryTracks);
+                    localTrack = $library.find(t => 
+                        t.title === remoteTrack.title && 
+                        t.artist === remoteTrack.artist
+                    );
+                }
+
+                currentTrack.set({
+                    ...remoteTrack,
+                    ...(localTrack || {}),
+                    id: remoteTrackId, // Ensure ID is a number
+                    track_cover: localTrack ? getTrackCoverSrc(localTrack) : remoteTrack.coverUrl,
+                } as any);
+            }
+        } else {
+            if (get(currentTrack) !== null) currentTrack.set(null);
+        }
+
+        // Only update these if they changed to prevent spamming subscribers
+        if (get(isPlaying) !== payload.isPlaying) isPlaying.set(payload.isPlaying);
+        
+        // Only update time if the difference is significant (>250ms or specifically requested)
+        const currentT = get(currentTime);
+        if (Math.abs(currentT - payload.currentTime) > 0.25 || payload.isPlaying === false) {
+            currentTime.set(payload.currentTime);
+        }
+        
+        if (get(duration) !== payload.duration) duration.set(payload.duration);
+        
+        if (payload.volume !== undefined && get(volume) !== payload.volume) volume.set(payload.volume);
+        if (payload.shuffle !== undefined && get(shuffle) !== payload.shuffle) shuffle.set(payload.shuffle);
+        if (payload.repeat !== undefined && get(repeat) !== payload.repeat) repeat.set(payload.repeat);
+    }
 }
 
 // Poll the native backend for state changes (only while playing)
@@ -485,7 +577,7 @@ function startStatePoller(): void {
             const track = get(currentTrack);
             if (!track) return;
 
-            if (activeBackend === 'native') {
+            if (get(activeBackend) === 'native') {
                 const state = await nativeAudioGetState();
 
                 currentTime.set(state.position);
@@ -532,7 +624,7 @@ function startStatePoller(): void {
                     currentTime: state.position,
                     duration: state.duration
                 });
-            } else if (activeBackend === 'html5' && html5Audio) {
+            } else if (get(activeBackend) === 'html5' && html5Audio) {
                 const pos = html5Audio.currentTime;
                 const dur = html5Audio.duration || 0;
 
@@ -544,7 +636,10 @@ function startStatePoller(): void {
                 // Sync isPlaying state (HTML5 events should handle this, but poller is a good fallback)
                 const playing = !html5Audio.paused && !html5Audio.ended;
                 if (playing !== get(isPlaying)) {
-                    isPlaying.set(playing);
+                    // Do not sync HTML5 state if activeBackend changed
+                    if (get(activeBackend) === 'html5') {
+                        isPlaying.set(playing);
+                    }
                 }
 
                 // Emit time update for plugins
@@ -552,16 +647,56 @@ function startStatePoller(): void {
                     currentTime: pos,
                     duration: dur
                 });
+            } else if (get(activeBackend) === 'remote') {
+                // If remote, do NOT poll native audio. We rely purely on WebSocket pushes.
             }
 
             // Sync Media Session position if something is playing
             if (get(isPlaying)) {
                 updateMediaSessionPosition();
             }
+
+            // Broadcast state to WebSocket (throttled to ~2s)
+            broadcastState();
+
         } catch (e) {
             console.error('[Player] Poller error:', e);
         }
     }, POLL_INTERVAL_MS);
+}
+
+let lastBroadcast = 0;
+function broadcastState(force = false) {
+    // CRITICAL: Do not broadcast if this device is not the owner of the playback.
+    // This prevents infinite state "echo" loops across devices.
+    if (get(activeBackend) === 'remote') return;
+
+    const now = Date.now();
+    if (!force && now - lastBroadcast < 2000) return;
+    
+    const track = get(currentTrack);
+    const playing = get(isPlaying);
+    const pos = get(currentTime);
+    const dur = get(duration);
+
+    if (track || lastBroadcast === 0) {
+        wsStore.send('player_state', {
+            track: track ? {
+                id: track.id,
+                title: track.title,
+                artist: track.artist,
+                album: track.album,
+                coverUrl: getTrackCoverSrc(track)
+            } : null,
+            isPlaying: playing,
+            currentTime: pos,
+            duration: dur,
+            volume: get(volume),
+            shuffle: get(shuffle),
+            repeat: get(repeat)
+        });
+        lastBroadcast = now;
+    }
 }
 
 function stopStatePoller(): void {
@@ -590,7 +725,7 @@ export function cleanupPlayer(): void {
     }
 
     // Reset stores
-    activeBackend = 'none';
+    activeBackend.set('none');
     isPlaying.set(false);
     currentTrack.set(null);
     currentTime.set(0);
@@ -908,19 +1043,20 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
                     await audio.play();
                 } catch (err) {
                     if (err instanceof DOMException && err.name === 'AbortError') {
-                        // This usually means another PLAY request came in, so we can ignore this one
-                        // or it means we paused/loaded too fast. 
-                        // If Playback was intentional, we should log it.
                         console.warn('[Player] Playback aborted (likely replaced by new track)', err);
                     } else {
                         throw err;
                     }
                 }
 
+                if (startTime > 0) {
+                    audio.currentTime = startTime;
+                }
+                
                 console.log('[Player] HTML5 streaming started:', track.title);
             }
 
-            activeBackend = 'html5';
+            activeBackend.set('html5');
         } else {
             if (!audioPath) {
                 throw new Error('No local audio path found for track');
@@ -940,10 +1076,15 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
                 const vol = sliderToAudioVolume(get(volume));
                 await nativeAudioSetVolume(vol);
 
+                // Seek if starting from a specific position (for playback transfer)
+                if (startTime > 0 && track.duration) {
+                    await nativeAudioSeek(startTime / track.duration);
+                }
+
                 // Preload next track for gapless playback
                 _schedulePreload();
 
-                activeBackend = 'native';
+                activeBackend.set('native');
                 console.log('[Player] Native playback started:', track.title);
             } else {
                 // Fallback to HTML5 via convertFileSrc if native is disabled (e.g. on macOS)
@@ -955,13 +1096,16 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
                 audio.volume = sliderToAudioVolume(get(volume));
 
                 await audio.play();
-                activeBackend = 'html5';
+                if (startTime > 0) {
+                    audio.currentTime = startTime;
+                }
+                activeBackend.set('html5');
                 console.log('[Player] Local playback started via HTML5:', track.title);
             }
         }
 
         currentTrack.set(trackForPlugins);
-        currentTime.set(0);
+        currentTime.set(startTime);
         duration.set(track.duration || 0);
         isPlaying.set(true);
 
@@ -1069,34 +1213,62 @@ export function playTracks(
 }
 
 export async function togglePlay(): Promise<void> {
+    if (get(isPlaying)) {
+        await pause();
+    } else {
+        await resume();
+    }
+}
+
+export async function pause(): Promise<void> {
+    if (get(activeBackend) === 'remote') {
+        const targetId = get(activeRemoteDevice);
+        if (targetId) {
+            sendRemoteCommand(targetId, 'pause');
+        }
+        return;
+    }
+
+    try {
+        if (get(activeBackend) === 'html5') {
+            getHtml5Audio().pause();
+        } else if (get(activeBackend) === 'native') {
+            await nativeAudioPause();
+        }
+        isPlaying.set(false);
+        updateMediaSessionPlaybackState('paused');
+    } catch (err) {
+        console.error('[Player] Pause failed:', err);
+    }
+}
+
+export async function resume(): Promise<void> {
+    if (get(activeBackend) === 'remote') {
+        const targetId = get(activeRemoteDevice);
+        if (targetId) {
+            sendRemoteCommand(targetId, 'resume');
+        }
+        return;
+    }
+
     try {
         const track = get(currentTrack);
+        if (!track) return;
 
-        if (get(isPlaying)) {
-            if (activeBackend === 'html5') {
-                getHtml5Audio().pause();
-            } else if (activeBackend === 'native') {
-                await nativeAudioPause();
-            }
-            isPlaying.set(false);
-            updateMediaSessionPlaybackState('paused');
-        } else {
-            if (track && (get(currentTime) === 0 || get(currentTime) >= get(duration))) {
-                // Restart if at end
-                await playTrack(track);
-            } else if (activeBackend === 'html5') {
-                await getHtml5Audio().play();
-                isPlaying.set(true);
-                updateMediaSessionPlaybackState('playing');
-            } else if (activeBackend === 'native') {
-                await nativeAudioResume();
-                isPlaying.set(true);
-                updateMediaSessionPlaybackState('playing');
-            }
-            updateMediaSessionPosition();
+        if (get(currentTime) >= get(duration) && get(duration) > 0) {
+            await playTrack(track);
+        } else if (get(activeBackend) === 'html5') {
+            await getHtml5Audio().play();
+            isPlaying.set(true);
+            updateMediaSessionPlaybackState('playing');
+        } else if (get(activeBackend) === 'native') {
+            await nativeAudioResume();
+            isPlaying.set(true);
+            updateMediaSessionPlaybackState('playing');
         }
+        updateMediaSessionPosition();
     } catch (err) {
-        console.error('[Player] Toggle failed:', err);
+        console.error('[Player] Resume failed:', err);
     }
 }
 
@@ -1163,6 +1335,14 @@ function _advanceQueueIndex(dry = false): number | null {
 
 // Next track
 export function nextTrack(): void {
+    if (get(activeBackend) === 'remote') {
+        const targetId = get(activeRemoteDevice);
+        if (targetId) {
+            sendRemoteCommand(targetId, 'next');
+        }
+        return;
+    }
+
     const q = get(queue);
     const settings = get(appSettings);
 
@@ -1217,6 +1397,14 @@ function playRandomFromLibrary(): void {
 
 // Previous track
 export async function previousTrack(): Promise<void> {
+    if (get(activeBackend) === 'remote') {
+        const targetId = get(activeRemoteDevice);
+        if (targetId) {
+            sendRemoteCommand(targetId, 'previous');
+        }
+        return;
+    }
+
     const q = get(queue);
     const shuf = get(shuffle);
     let idx = get(queueIndex);
@@ -1228,9 +1416,9 @@ export async function previousTrack(): Promise<void> {
         let pos = get(currentTime);
 
         if (pos > 3) {
-            if (activeBackend === 'html5') {
+            if (get(activeBackend) === 'html5') {
                 getHtml5Audio().currentTime = 0;
-            } else if (activeBackend === 'native') {
+            } else if (get(activeBackend) === 'native') {
                 await nativeAudioSeek(0);
             }
             return;
@@ -1264,13 +1452,21 @@ export async function previousTrack(): Promise<void> {
 
 // Seek to position (0-1)
 export async function seek(position: number): Promise<void> {
+    if (get(activeBackend) === 'remote') {
+        const targetId = get(activeRemoteDevice);
+        if (targetId) {
+            throttledRemoteCommand(targetId, 'seek', { position }, 100);
+        }
+        return;
+    }
+
     try {
-        if (activeBackend === 'html5') {
+        if (get(activeBackend) === 'html5') {
             const audio = getHtml5Audio();
             if (audio.duration) {
                 audio.currentTime = position * audio.duration;
             }
-        } else if (activeBackend === 'native') {
+        } else if (get(activeBackend) === 'native') {
             await nativeAudioSeek(position);
             // Update UI immediately — poller is stopped while paused
             if (!get(isPlaying)) {
@@ -1285,6 +1481,14 @@ export async function seek(position: number): Promise<void> {
 
 // Set volume (slider value 0-1, will be converted to logarithmic for audio)
 export async function setVolume(sliderValue: number): Promise<void> {
+    if (get(activeBackend) === 'remote') {
+        const targetId = get(activeRemoteDevice);
+        if (targetId) {
+            throttledRemoteCommand(targetId, 'volume', { volume: sliderValue }, 100);
+        }
+        return;
+    }
+
     volume.set(sliderValue);
     const vol = sliderToAudioVolume(sliderValue);
 
@@ -1304,6 +1508,14 @@ export async function setVolume(sliderValue: number): Promise<void> {
 
 // Toggle shuffle
 export function toggleShuffle(): void {
+    if (get(activeBackend) === 'remote') {
+        const targetId = get(activeRemoteDevice);
+        if (targetId) {
+            sendRemoteCommand(targetId, 'shuffle', { shuffle: !get(shuffle) });
+        }
+        return;
+    }
+
     shuffle.update(s => {
         const newState = !s;
 
@@ -1334,9 +1546,19 @@ export function toggleShuffle(): void {
 
 // Cycle repeat mode
 export function cycleRepeat(): void {
+    if (get(activeBackend) === 'remote') {
+        const targetId = get(activeRemoteDevice);
+        if (targetId) {
+            const r = get(repeat);
+            const next = r === 'none' ? 'all' : r === 'all' ? 'one' : 'none';
+            sendRemoteCommand(targetId, 'repeat', { repeat: next });
+        }
+        return;
+    }
+
     repeat.update(r => {
         const next = r === 'none' ? 'all' : r === 'all' ? 'one' : 'none';
-        if (activeBackend === 'native') {
+        if (get(activeBackend) === 'native') {
             nativeAudioSetRepeatOne(next === 'one').catch(console.error);
         }
         return next;
@@ -1460,7 +1682,7 @@ async function _advanceUiToTrack(track: Track): Promise<void> {
 // =============================================================================
 
 function _schedulePreload(): void {
-    if (activeBackend !== 'native') return;
+    if (get(activeBackend) !== 'native') return;
 
     const q = get(queue);
     const nextIdx = _advanceQueueIndex(true); // dry run — no store writes
@@ -1711,4 +1933,133 @@ export function isAlbumPlaying(albumId: number): boolean {
 export function isArtistPlaying(artistName: string): boolean {
     const ctx = get(playbackContext);
     return ctx?.type === 'artist' && ctx.artistName === artistName;
+}
+
+/**
+ * Transfer playback from a remote device to this one.
+ */
+export async function transferPlayback(state: any) {
+    if (!state || !state.track) return;
+
+    console.log('[Player] Transferring playback to this device...', state.track.title);
+    
+    // 1. Stop remote playback (by sending a command to specific device)
+    if (state.deviceId) {
+        console.log('[Player] Pausing remote device:', state.deviceId);
+        sendRemoteCommand(state.deviceId, 'pause');
+    }
+    
+    // 2. Resolve the local track object if possible (Fast ID lookup first)
+    const remoteTrack = state.track;
+    let localTrack: any = getTrackByIdSync(Number(remoteTrack.id));
+    
+    if (!localTrack) {
+        // Falling back to O(N) search
+        const $library = get(libraryTracks);
+        localTrack = $library.find(t => 
+            t.title === remoteTrack.title && 
+            t.artist === remoteTrack.artist
+        );
+    }
+
+    if (localTrack) {
+        // Use local cover for better reliability
+        // We spread localTrack to have full metadata (album_id, path, etc.)
+        const trackWithLocalCover = {
+            ...state.track,
+            ...localTrack,
+            coverUrl: getTrackCoverSrc(localTrack)
+        };
+        
+        await playTrack(localTrack, false, state.currentTime);
+        if (!state.isPlaying) {
+            await pause();
+        }
+    } else {
+        // If not found in local library, we might need to "External Track" play (later feature)
+        console.warn('[Player] Could not find local track for transfer:', state.track.title);
+        addToast(`Cannot transfer: "${state.track.title}" not found in local library`, 'error');
+    }
+}
+
+/**
+ * Control a remote device.
+ */
+export function sendRemoteCommand(targetDeviceId: string, command: string, data?: any) {
+    wsStore.send('remote_command', {
+        targetDeviceId,
+        command,
+        data
+    });
+}
+
+/**
+ * Throttled version of sendRemoteCommand for high-frequency events like seeking or volume slides.
+ */
+let remoteThrottleTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+function throttledRemoteCommand(targetDeviceId: string, command: string, data: any, delay: number) {
+    const key = `${targetDeviceId}:${command}`;
+    if (remoteThrottleTimers[key]) return;
+    
+    sendRemoteCommand(targetDeviceId, command, data);
+    
+    remoteThrottleTimers[key] = setTimeout(() => {
+        delete remoteThrottleTimers[key];
+    }, delay);
+}
+
+/**
+ * Handle a remote command received via WebSocket.
+ */
+async function handleRemoteCommand(payload: any) {
+    const { command, data } = payload;
+    console.log('[Player] Received remote command:', command);
+
+    switch (command) {
+        case 'resume':
+            await resume();
+            break;
+        case 'pause':
+            await pause();
+            break;
+        case 'next':
+            nextTrack();
+            break;
+        case 'previous':
+            previousTrack();
+            break;
+        case 'seek':
+            if (data?.position != null) {
+                seek(data.position);
+            }
+            break;
+        case 'volume':
+            if (data?.volume != null) {
+                setVolume(data.volume);
+            }
+            break;
+        case 'shuffle':
+            if (data?.shuffle != null) {
+                // If local, use toggleShuffle to handle index regeneration
+                if (get(activeBackend) !== 'remote') {
+                   if (get(shuffle) !== data.shuffle) toggleShuffle();
+                } else {
+                    shuffle.set(data.shuffle);
+                }
+            }
+            break;
+        case 'repeat':
+            if (data?.repeat != null) {
+                if (get(activeBackend) !== 'remote') {
+                    // Cycle until match? Or just set directly
+                    repeat.set(data.repeat);
+                    if (get(activeBackend) === 'native') {
+                        nativeAudioSetRepeatOne(data.repeat === 'one').catch(console.error);
+                    }
+                } else {
+                    repeat.set(data.repeat);
+                }
+            }
+            break;
+    }
 }

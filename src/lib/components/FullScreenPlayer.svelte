@@ -44,6 +44,11 @@
   import { confirm } from "$lib/stores/dialogs";
   import { addToast } from "$lib/stores/toast";
   import QueuePanel from "./QueuePanel.svelte";
+  import ConnectPanel from "./ConnectPanel.svelte";
+  import { wsStore } from "$lib/stores/websocket";
+
+  let showConnectPanel = false;
+  $: connectedDevices = $wsStore.devices.length;
 
   let albumArt: string | null = null;
   let lyricsContainer: HTMLDivElement;
@@ -407,6 +412,19 @@
         </button>
         <span class="now-playing-label">Now Playing</span>
         <div class="mobile-header-btns">
+          <button
+            class="chevron-btn connect-btn"
+            class:active={connectedDevices > 0}
+            on:click={() => (showConnectPanel = !showConnectPanel)}
+            aria-label="Connect"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
+              <path d="M19,2H5A3,3,0,0,0,2,5V15a3,3,0,0,0,3,3H9.17l-1.42,1.41a1,1,0,0,0,0,1.42,1,1,0,0,0,1.42,0L11,18.99,12.83,20.83a1,1,0,0,0,1.42,0,1,1,0,0,0,0-1.42L12.83,18H19a3,3,0,0,0,3-3V5A3,3,0,0,0,19,2Zm1,13a1,1,0,0,1-1,1H5a1,1,0,0,1-1-1V5A1,1,0,0,1,5,4H19a1,1,0,0,1,1,1Z"/>
+            </svg>
+            {#if connectedDevices > 0}
+                <div class="device-dot-fullscreen"></div>
+            {/if}
+          </button>
           <button
             class="chevron-btn"
             class:active={$lyricsVisible}
@@ -803,13 +821,28 @@
                       fill="currentColor"
                       width="24"
                       height="24"
-                      ><path
-                        d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"
-                      /></svg
                     >
+                      <path
+                        d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"
+                      />
+                    </svg>
+                  </button>
+                  <button
+                    class="action-btn connect-btn"
+                    class:active={connectedDevices > 0}
+                    on:click={() => (showConnectPanel = !showConnectPanel)}
+                    aria-label="Connect"
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
+                      <path d="M19,2H5A3,3,0,0,0,2,5V15a3,3,0,0,0,3,3H9.17l-1.42,1.41a1,1,0,0,0,0,1.42,1,1,0,0,0,1.42,0L11,18.99,12.83,20.83a1,1,0,0,0,1.42,0,1,1,0,0,0,0-1.42L12.83,18H19a3,3,0,0,0,3-3V5A3,3,0,0,0,19,2Zm1,13a1,1,0,0,1-1,1H5a1,1,0,0,1-1-1V5A1,1,0,0,1,5,4H19a1,1,0,0,1,1,1Z"/>
+                    </svg>
+                    {#if connectedDevices > 0}
+                        <div class="device-dot"></div>
+                    {/if}
                   </button>
                 </div>
               </div>
+
 
               <div
                 class="marquee-container artist"
@@ -992,7 +1025,7 @@
                   in:fade
                 >
                   {#if $lyricsData?.lines && $lyricsData.lines.length > 0}
-                    {#each $lyricsData.lines as line, i (line.time || i)}
+                    {#each $lyricsData.lines as line, i (`${line.time}-${i}`)}
                       {@const isActiveLine = i === $activeLine}
                       {@const hasWordSync = line.words && line.words.length > 0}
                       <div
@@ -1936,3 +1969,7 @@
     word-break: break-word;
   }
 </style>
+
+{#if showConnectPanel}
+  <ConnectPanel on:close={() => showConnectPanel = false} />
+{/if}

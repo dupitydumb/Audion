@@ -69,6 +69,7 @@ struct SyncPushResponse {
     #[serde(rename = "serverChanges")]
     server_changes: Vec<ServerChange>,
     conflicts: Vec<ServerChange>,
+    errors: Option<Vec<serde_json::Value>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -90,6 +91,8 @@ struct SyncFullResponse {
     #[serde(rename = "libraryTracks")]
     library_tracks: Vec<serde_json::Value>,
     settings: Option<serde_json::Value>,
+    usage: Option<serde_json::Value>,
+    limits: Option<serde_json::Value>,
 }
 
 // ─── SyncState (shared, managed by Tauri) ───────────────────────────────────
@@ -271,9 +274,9 @@ async fn perform_sync_inner(db: &Database, sync_state: &SyncState) -> Result<Syn
     emit_progress(
         sync_state,
         "sync",
-        "Applying server changes...",
-        sendable.len(),
-        sendable.len(),
+        &format!("Applying {} server changes...", response.server_changes.len()),
+        0,
+        response.server_changes.len().max(1),
     );
 
     // 4. On success — delete ALL processed queue entries (including duplicates)
@@ -441,6 +444,13 @@ async fn push_local_data_to_server(db: &Database, sync_state: &SyncState) -> Res
     for (playlist, tracks) in &playlist_tracks_map {
         let conn = db.conn.lock().map_err(|e| e.to_string())?;
         let playlist_local_id = playlist.id.to_string();
+
+        // Skip if this playlist was already mapped (meaning it was just downloaded from the server)
+        let existing = queries::get_server_id(&conn, &playlist_local_id, "playlist").unwrap_or(None);
+        if existing.is_some() {
+            continue;
+        }
+
         let playlist_server_id =
             queries::get_or_create_server_id(&conn, &playlist_local_id, "playlist")
                 .map_err(|e| e.to_string())?;
@@ -494,8 +504,17 @@ async fn push_local_data_to_server(db: &Database, sync_state: &SyncState) -> Res
         let conn = db.conn.lock().map_err(|e| e.to_string())?;
         let liked_tracks = queries::get_liked_tracks(&conn).map_err(|e| e.to_string())?;
         for track in &liked_tracks {
+            if track.path.starts_with("sync://") {
+                continue;
+            }
+
             let track_hash = build_track_hash(track);
             let liked_local_id = format!("liked_{}", track.id);
+            
+            let existing = queries::get_server_id(&conn, &liked_local_id, "liked_track").unwrap_or(None);
+            if existing.is_some() {
+                continue;
+            }
             let liked_server_id =
                 queries::get_or_create_server_id(&conn, &liked_local_id, "liked_track")
                     .map_err(|e| e.to_string())?;
@@ -523,8 +542,17 @@ async fn push_local_data_to_server(db: &Database, sync_state: &SyncState) -> Res
         let conn = db.conn.lock().map_err(|e| e.to_string())?;
         let all_tracks = queries::get_all_tracks_lightweight(&conn).map_err(|e| e.to_string())?;
         for track in &all_tracks {
+            if track.path.starts_with("sync://") {
+                continue;
+            }
+
             let track_hash = build_track_hash(track);
             let lib_local_id = format!("lib_{}", track.id);
+
+            let existing = queries::get_server_id(&conn, &lib_local_id, "library_track").unwrap_or(None);
+            if existing.is_some() {
+                continue;
+            }
             let lib_server_id =
                 queries::get_or_create_server_id(&conn, &lib_local_id, "library_track")
                     .map_err(|e| e.to_string())?;
@@ -788,6 +816,8 @@ fn apply_full_sync_liked_tracks(
         let external_id = lt.get("externalId").and_then(|v| v.as_str());
         let cover_url = lt.get("coverUrl").and_then(|v| v.as_str());
 
+        let server_id = lt.get("id").and_then(|v| v.as_str()).unwrap_or("");
+
         let local_track_id = find_or_create_synced_track(
             &conn,
             track_hash,
@@ -802,6 +832,10 @@ fn apply_full_sync_liked_tracks(
 
         if let Ok(Some(track_id)) = local_track_id {
             let _ = queries::like_track(&conn, track_id);
+            if !server_id.is_empty() {
+                let liked_local_id = format!("liked_{}", track_id);
+                let _ = queries::store_id_mapping(&conn, &liked_local_id, "liked_track", server_id);
+            }
         }
 
         if (i + 1) % 50 == 0 || i + 1 == total {
@@ -923,6 +957,7 @@ fn apply_full_sync_library_tracks(
 
     let mut imported = 0usize;
     for (i, lt) in library_tracks.iter().enumerate() {
+        let server_id = lt.get("id").and_then(|v| v.as_str()).unwrap_or("");
         let track_hash = lt.get("trackHash").and_then(|v| v.as_str()).unwrap_or("");
         let title = lt.get("title").and_then(|v| v.as_str());
         let artist = lt.get("artist").and_then(|v| v.as_str());
@@ -948,7 +983,11 @@ fn apply_full_sync_library_tracks(
 
         // Skip if a local track with this title+artist already exists
         if let (Some(t), Some(a)) = (title, artist) {
-            if find_local_track_by_metadata(&conn, t, a).is_ok() {
+            if let Ok(track_id) = find_local_track_by_metadata(&conn, t, a) {
+                if !server_id.is_empty() {
+                    let lib_local_id = format!("lib_{}", track_id);
+                    let _ = queries::store_id_mapping(&conn, &lib_local_id, "library_track", server_id);
+                }
                 continue;
             }
         }
@@ -964,6 +1003,10 @@ fn apply_full_sync_library_tracks(
             .ok();
 
         if existing.is_some() {
+            if !server_id.is_empty() {
+                let lib_local_id = format!("lib_{}", existing.unwrap());
+                let _ = queries::store_id_mapping(&conn, &lib_local_id, "library_track", server_id);
+            }
             continue;
         }
 
@@ -997,6 +1040,10 @@ fn apply_full_sync_library_tracks(
 
         match queries::insert_or_update_track(&conn, &track) {
             Ok((id, _)) if id > 0 => {
+                if !server_id.is_empty() {
+                    let lib_local_id = format!("lib_{}", id);
+                    let _ = queries::store_id_mapping(&conn, &lib_local_id, "library_track", server_id);
+                }
                 imported += 1;
                 tracing::debug!(
                     "Created library track from server: id={}, title={:?}, artist={:?}",

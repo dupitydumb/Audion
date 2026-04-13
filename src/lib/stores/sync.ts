@@ -199,11 +199,10 @@ export async function initSync(): Promise<void> {
         return backgroundDuration > 5 * 60 * 1000; // 5 minutes
     };
     
-    // Load last sync time from storage
+    // Automatic Sync Trigger constants
     const LAST_SYNC_KEY = 'audion_last_auto_sync_at';
-    let lastAutoSyncAt = parseInt(localStorage.getItem(LAST_SYNC_KEY) || '0', 10);
     const AUTO_SYNC_COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
-    
+
     // Prevent initial sync on app open
     let isInitialCheck = true;
 
@@ -216,7 +215,9 @@ export async function initSync(): Promise<void> {
         }
 
         const now = Date.now();
-        const cooldownRemaining = lastAutoSyncAt + AUTO_SYNC_COOLDOWN_MS - now;
+        // Read current cooldown timestamp from storage (don't use stale closure variable)
+        const currentLastSync = parseInt(localStorage.getItem(LAST_SYNC_KEY) || '0', 10);
+        const cooldownRemaining = currentLastSync + AUTO_SYNC_COOLDOWN_MS - now;
         
         const canSync =
             $status.pending_changes > 0 &&
@@ -242,9 +243,10 @@ export async function initSync(): Promise<void> {
         if ($online && !isInitialCheck) {
             const $status = get(syncStatus);
             const now = Date.now();
+            const currentLastSync = parseInt(localStorage.getItem(LAST_SYNC_KEY) || '0', 10);
             if ($status.pending_changes > 0 && 
                 get(isLoggedIn) && 
-                (now - lastAutoSyncAt >= AUTO_SYNC_COOLDOWN_MS) &&
+                (now - currentLastSync >= AUTO_SYNC_COOLDOWN_MS) &&
                 !isBackgroundPaused()) {
                 triggerSync(false);
             }
@@ -443,9 +445,6 @@ export async function triggerSync(forced = true): Promise<void> {
         console.error('[Sync] Sync failed:', error);
 
         let errorMessage = String(error);
-        if (errorMessage.includes('403') || errorMessage.includes('Ko-fi') || errorMessage.includes('supporter')) {
-            errorMessage = 'Sync is available for Ko-fi supporters. Visit your Settings to link your Ko-fi email.';
-        }
 
         syncStatus.update((s) => ({
             ...s,
