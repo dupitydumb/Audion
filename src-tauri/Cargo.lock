@@ -325,6 +325,7 @@ dependencies = [
  "log",
  "metaflac",
  "mp4ameta",
+ "opus-decoder",
  "ratio-metadata",
  "rayon",
  "reqwest 0.12.28",
@@ -3245,6 +3246,14 @@ name = "option-ext"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
+
+[[package]]
+name = "opus-decoder"
+version = "0.1.1"
+source = "git+https://github.com/SmileofHaven/Rusopus?rev=a9ac3b4#a9ac3b494478451245ce9b598f4fe1dd8bedb9b3"
+dependencies = [
+ "thiserror 2.0.18",
+]
 
 [[package]]
 name = "ordered-multimap"

@@ -126,8 +126,8 @@ symphonia = { version = "0.5", default-features = false, features = [
     # Codecs
     "flac",
     "mp3",
-    "mp1",       # MP1 (not "opus" — opus isn't a symphonia feature in 0.5.x)
-    "mp2",       # MP2
+    "mp1",
+    "mp2",
     "aac",
     "alac",
     "vorbis",
@@ -138,8 +138,14 @@ symphonia = { version = "0.5", default-features = false, features = [
     "opt-simd",
 ] }
 
+
 cpal = "0.15"
 rubato = "0.16"
+opus-decoder = "0.1"  # version patched via [patch.crates-io]
+[patch.crates-io]
+# patched fork: upstream panics when i >= 8 in extract_collapse_mask (vq.rs)
+# pr: https://github.com/TadeuszWolfGang/Rusopus/pull/1
+opus-decoder = { git = "https://github.com/SmileofHaven/Rusopus", rev = "a9ac3b4" }
 
 [target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
 # Discord RPC (desktop only - uses local IPC sockets)
