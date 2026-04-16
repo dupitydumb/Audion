@@ -1,7 +1,7 @@
 <script lang="ts">
   import { theme, presetAccents, type ThemeMode } from "$lib/stores/theme";
   import { appSettings } from "$lib/stores/settings";
-  import { equalizer, EQ_PRESETS } from "$lib/stores/equalizer";
+  import { equalizer, EQ_PRESETS, type FilterType } from "$lib/stores/equalizer";
   import { updates } from "$lib/stores/updates";
   import {
     resetDatabase,
@@ -84,6 +84,57 @@
   // Audio Backend state
   let initialAudioBackend = $appSettings.audioBackend;
   let showRefreshNotice = false;
+
+  // EQ band detail panel
+  let selectedBandIndex: number | null = null;
+  let presetDropdownOpen = false;
+
+  function toggleBandDetail(i: number) {
+    selectedBandIndex = selectedBandIndex === i ? null : i;
+  }
+
+  // Default band values EqSettings::default()
+  const BAND_DEFAULTS = [
+    { gain: 0, q: 0.707, filterType: 'lowShelf'  as FilterType, enabled: true },
+    { gain: 0, q: 1.41,  filterType: 'peaking'   as FilterType, enabled: true },
+    { gain: 0, q: 1.41,  filterType: 'peaking'   as FilterType, enabled: true },
+    { gain: 0, q: 1.41,  filterType: 'peaking'   as FilterType, enabled: true },
+    { gain: 0, q: 1.41,  filterType: 'peaking'   as FilterType, enabled: true },
+    { gain: 0, q: 1.41,  filterType: 'peaking'   as FilterType, enabled: true },
+    { gain: 0, q: 1.41,  filterType: 'peaking'   as FilterType, enabled: true },
+    { gain: 0, q: 1.41,  filterType: 'peaking'   as FilterType, enabled: true },
+    { gain: 0, q: 1.41,  filterType: 'peaking'   as FilterType, enabled: true },
+    { gain: 0, q: 0.707, filterType: 'highShelf' as FilterType, enabled: true },
+  ];
+
+  function resetBand(i: number) {
+    const d = BAND_DEFAULTS[i];
+    if (!d) return;
+    equalizer.setBandGain(i, d.gain);
+    equalizer.setBandQ(i, d.q);
+    equalizer.setBandFilterType(i, d.filterType);
+    equalizer.setBandEnabled(i, d.enabled);
+  }
+
+  const FILTER_TYPE_LABELS: Record<FilterType, string> = {
+    peaking:   'Peak',
+    lowShelf:  'Low Shelf',
+    highShelf: 'High Shelf',
+    lowPass:   'Low Pass',
+    highPass:  'High Pass',
+    bandPass:  'Band Pass',
+    notch:     'Notch',
+    allPass:   'All Pass',
+  };
+
+  // Filter types where gain has no effect . slider is dimmed
+  const GAINLESS_FILTERS = new Set<FilterType>(['lowPass', 'highPass', 'bandPass', 'notch', 'allPass']);
+
+  // Groups for the filter-type picker in the band detail panel
+  const FILTER_TYPE_GROUPS: { label: string; types: FilterType[] }[] = [
+    { label: 'Gain',   types: ['peaking', 'lowShelf', 'highShelf'] },
+    { label: 'Filter', types: ['lowPass', 'highPass', 'bandPass', 'notch', 'allPass'] },
+  ];
 
   $: showRefreshNotice = $appSettings.audioBackend !== initialAudioBackend;
 
@@ -781,13 +832,208 @@
           {#if $equalizer.enabled}
             <div class="divider"></div>
             <div class="eq-control-compact">
-              <select class="preset-select-pill" value={$equalizer.currentPreset || ""} on:change={(e) => equalizer.applyPreset(e.currentTarget.value)}>
-                <option value="" disabled>Custom Preset</option>
-                {#each EQ_PRESETS as preset}
-                  <option value={preset.name}>{preset.name}</option>
+              <!-- preset dropdown -->
+              <div class="eq-preset-dropdown" class:open={presetDropdownOpen}>
+                <button
+                  class="eq-preset-trigger"
+                  on:click={() => presetDropdownOpen = !presetDropdownOpen}
+                  aria-haspopup="listbox"
+                  aria-expanded={presetDropdownOpen}
+                >
+                  <span>{$equalizer.currentPreset || 'Custom'}</span>
+                  <svg class="eq-preset-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M2 4L6 8L10 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </button>
+                {#if presetDropdownOpen}
+                  <div class="eq-preset-backdrop" on:click={() => presetDropdownOpen = false}></div>
+                  <ul class="eq-preset-menu" role="listbox" aria-label="EQ Presets">
+                    {#each EQ_PRESETS as preset}
+                      <li
+                        role="option"
+                        aria-selected={$equalizer.currentPreset === preset.name}
+                        class:selected={$equalizer.currentPreset === preset.name}
+                        on:click={() => { equalizer.applyPreset(preset.name); presetDropdownOpen = false; }}
+                        on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { equalizer.applyPreset(preset.name); presetDropdownOpen = false; } }}
+                        tabindex="0"
+                      >
+                        {preset.name}
+                        {#if $equalizer.currentPreset === preset.name}
+                          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M2 6L5 9L10 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        {/if}
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
+              </div>
+              <button class="btn-text-small" on:click={() => { equalizer.reset(); selectedBandIndex = null; }}>Reset to Flat</button>
+            </div>
+
+            <div class="eq-bands-container">
+              <div class="eq-scale" aria-hidden="true">
+                <span>+12</span>
+                <span>0</span>
+                <span>-12</span>
+              </div>
+              <div class="eq-bands" role="group" aria-label="Equalizer bands">
+                {#each $equalizer.bands as band, i}
+                  <div class="eq-band">
+                    <span class="eq-gain" aria-label="{band.gain > 0 ? '+' : ''}{band.gain.toFixed(1)} dB">
+                      {band.gain > 0 ? '+' : ''}{band.gain.toFixed(1)}
+                    </span>
+                    <div class="eq-slider-container">
+                      <input
+                        type="range"
+                        class="eq-slider"
+                        min="-12"
+                        max="12"
+                        step="0.5"
+                        value={band.gain}
+                        on:input={(e) => equalizer.setBandGain(i, parseFloat(e.currentTarget.value))}
+                        aria-label="{band.label} gain"
+                        aria-valuemin="-12"
+                        aria-valuemax="12"
+                        aria-valuenow={band.gain}
+                      />
+                    </div>
+                    <button
+                      class="eq-label eq-label-btn"
+                      class:active={selectedBandIndex === i}
+                      on:click={() => toggleBandDetail(i)}
+                      title="Edit {band.label} band settings"
+                      aria-expanded={selectedBandIndex === i}
+                      aria-label="{band.label}: {FILTER_TYPE_LABELS[band.filterType]}, Q {band.q.toFixed(2)}{band.enabled ? '' : ' (bypassed)'}"
+                    >
+                      {band.label}
+                    </button>
+                  </div>
                 {/each}
-              </select>
-              <button class="btn-text-small" on:click={() => equalizer.reset()}>Reset to Flat</button>
+              </div>
+            </div>
+
+            {#if selectedBandIndex !== null}
+              {@const selBand = $equalizer.bands[selectedBandIndex]}
+              {@const gainless = GAINLESS_FILTERS.has(selBand.filterType)}
+              <div class="eq-band-detail" role="region" aria-label="Band detail for {selBand.label}">
+
+                <!-- header: band name + gain readout + bypass toggle + close -->
+                <div class="eq-band-detail-header">
+                  <div class="eq-detail-title-group">
+                    <span class="setting-title">{selBand.label}</span>
+                    <span class="eq-detail-subtitle">
+                      {#if gainless}
+                        {FILTER_TYPE_LABELS[selBand.filterType]} · Q {selBand.q.toFixed(2)}
+                      {:else}
+                        {selBand.gain > 0 ? '+' : ''}{selBand.gain.toFixed(1)} dB · Q {selBand.q.toFixed(2)}
+                      {/if}
+                    </span>
+                  </div>
+                  <div class="eq-detail-header-actions">
+                    <button
+                      class="btn-text-small eq-reset-band-btn"
+                      on:click={() => resetBand(selectedBandIndex!)}
+                      title="Reset this band to default"
+                      aria-label="Reset {selBand.label} band to default"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      class="toggle-btn toggle-btn-sm"
+                      class:active={selBand.enabled}
+                      on:click={() => equalizer.setBandEnabled(selectedBandIndex!, !selBand.enabled)}
+                      role="switch"
+                      aria-checked={selBand.enabled}
+                      aria-label="{selBand.enabled ? 'Bypass' : 'Enable'} {selBand.label} band"
+                      title="{selBand.enabled ? 'Bypass' : 'Enable'} band"
+                    >
+                      <div class="toggle-handle"></div>
+                    </button>
+                    <button class="btn-text-small" on:click={() => selectedBandIndex = null} aria-label="Close band detail">✕</button>
+                  </div>
+                </div>
+
+                <!-- filter type picker,gain types / filter types -->
+                <div class="eq-band-detail-row">
+                  <span class="eq-detail-label">Filter type</span>
+                  <div class="eq-filter-type-grid" role="group" aria-label="Filter type">
+                    {#each FILTER_TYPE_GROUPS as group}
+                      <div class="eq-filter-group">
+                        <span class="eq-filter-group-label">{group.label}</span>
+                        <div class="segmented-pill eq-filter-pill">
+                          {#each group.types as ft}
+                            <button
+                              class="segment-btn eq-segment-sm"
+                              class:active={selBand.filterType === ft}
+                              on:click={() => equalizer.setBandFilterType(selectedBandIndex!, ft)}
+                              aria-pressed={selBand.filterType === ft}
+                            >
+                              {FILTER_TYPE_LABELS[ft]}
+                            </button>
+                          {/each}
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+
+                <!-- q slider -->
+                <div class="eq-band-detail-row">
+                  <label class="eq-detail-label" for="eq-q-{selectedBandIndex}">
+                    Q factor
+                    <span class="eq-q-value">{selBand.q.toFixed(2)}</span>
+                  </label>
+                  <input
+                    id="eq-q-{selectedBandIndex}"
+                    type="range"
+                    class="eq-q-slider"
+                    min="0.1"
+                    max="10"
+                    step="0.01"
+                    value={selBand.q}
+                    on:input={(e) => equalizer.setBandQ(selectedBandIndex!, parseFloat(e.currentTarget.value))}
+                    aria-label="Q factor for {selBand.label}"
+                    aria-valuemin="0.1"
+                    aria-valuemax="10"
+                    aria-valuenow={selBand.q}
+                  />
+                  <div class="eq-q-range-labels" aria-hidden="true">
+                    <span>Wide</span>
+                    <span>Narrow</span>
+                  </div>
+                </div>
+
+                {#if gainless}
+                  <p class="eq-gainless-note">Gain slider has no effect for {FILTER_TYPE_LABELS[selBand.filterType]} — adjust frequency and Q only.</p>
+                {/if}
+              </div>
+            {/if}
+
+            <!-- preamp -->
+            <div class="eq-band-detail-row eq-preamp-row">
+              <label class="eq-detail-label" for="eq-preamp">
+                Preamp
+                <span class="eq-q-value">{$equalizer.preampDb > 0 ? '+' : ''}{$equalizer.preampDb.toFixed(1)} dB</span>
+              </label>
+              <input
+                id="eq-preamp"
+                type="range"
+                class="eq-q-slider"
+                min="-24"
+                max="6"
+                step="0.5"
+                value={$equalizer.preampDb}
+                on:input={(e) => equalizer.setPreampDb(parseFloat(e.currentTarget.value))}
+                aria-label="Preamp gain"
+                aria-valuemin="-24"
+                aria-valuemax="6"
+                aria-valuenow={$equalizer.preampDb}
+              />
+              <div class="eq-q-range-labels" aria-hidden="true">
+                <span>−24 dB</span>
+                <span>+6 dB</span>
+              </div>
             </div>
           {/if}
         </div>
@@ -2528,7 +2774,305 @@
     }
   }
 
-  /* MOBILE-SPECIFIC ENHANCEMENTS */
+  /* EQ band label btn */
+  .eq-label-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 3px 5px;
+    border-radius: var(--radius-sm);
+    transition: background-color 0.15s, color 0.15s;
+    line-height: 1;
+  }
+
+  .eq-label-btn:hover {
+    background-color: rgba(255, 255, 255, 0.07);
+    color: var(--text-primary);
+  }
+
+  .eq-label-btn.active {
+    background-color: rgba(var(--accent-rgb, 29, 185, 84), 0.15);
+    color: var(--accent-primary);
+  }
+
+  /* EQ band detail panel */
+  .eq-band-detail {
+    background-color: var(--bg-highlight);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    animation: fadeSlideIn 0.15s ease;
+  }
+
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .eq-band-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .eq-detail-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .eq-detail-subtitle {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+  }
+
+  .eq-detail-header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  /* compact toggle inside the detail header */
+  .toggle-btn-sm {
+    width: 36px;
+    height: 20px;
+  }
+
+  .toggle-btn-sm .toggle-handle {
+    width: 14px;
+    height: 14px;
+    top: 3px;
+    left: 3px;
+  }
+
+  .toggle-btn-sm.active .toggle-handle {
+    transform: translateX(16px);
+  }
+
+  .eq-band-detail-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+  }
+
+  .eq-detail-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .eq-q-value {
+    font-family: monospace;
+    color: var(--accent-primary);
+    font-weight: 700;
+  }
+
+  /* filter type grid */
+  .eq-filter-type-grid {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+  }
+
+  .eq-filter-group {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .eq-filter-group-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--text-subdued);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    width: 36px;
+    flex-shrink: 0;
+  }
+
+  /* compact filter-type pill inside the detail panel */
+  .eq-filter-pill {
+    flex: 1;
+    border-radius: var(--radius-md);
+  }
+
+  .eq-segment-sm {
+    min-height: 30px;
+    font-size: 0.7rem;
+    padding: var(--spacing-xs) var(--spacing-sm);
+  }
+
+  /* q horizontal range slider */
+  .eq-q-slider {
+    width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    background: var(--bg-surface);
+    border-radius: 3px;
+    cursor: pointer;
+    outline: none;
+    border: 1px solid var(--border-color);
+  }
+
+  .eq-q-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--accent-primary);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  .eq-q-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--accent-primary);
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  .eq-q-range-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.65rem;
+    color: var(--text-subdued);
+    padding: 0 2px;
+  }
+
+  /* gainless-filter notice */
+  .eq-gainless-note {
+    font-size: 0.7rem;
+    color: var(--text-subdued);
+    margin: 0;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: var(--bg-surface);
+    border-radius: var(--radius-sm);
+    border-left: 2px solid var(--border-color);
+  }
+
+  /* preamp row .outside the detail panel, always visible when EQ on */
+  .eq-preamp-row {
+    padding: var(--spacing-sm) 0 0;
+    border-top: 1px solid var(--border-color);
+    margin-top: var(--spacing-xs);
+  }
+
+  /* EQ preset dropdown */
+  .eq-preset-dropdown {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .eq-preset-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    width: 100%;
+    padding: 6px var(--spacing-sm);
+    background: var(--bg-highlight);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    text-align: left;
+  }
+
+  .eq-preset-trigger:hover {
+    border-color: var(--accent-primary);
+    background: var(--bg-elevated);
+  }
+
+  .eq-preset-dropdown.open .eq-preset-trigger {
+    border-color: var(--accent-primary);
+    background: var(--bg-elevated);
+  }
+
+  .eq-preset-chevron {
+    color: var(--text-subdued);
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+  }
+
+  .eq-preset-dropdown.open .eq-preset-chevron {
+    transform: rotate(180deg);
+  }
+
+  .eq-preset-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+  }
+
+  .eq-preset-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 11;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 4px;
+    list-style: none;
+    margin: 0;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+    max-height: 220px;
+    overflow-y: auto;
+    animation: fadeSlideIn 0.12s ease;
+  }
+
+  .eq-preset-menu li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px var(--spacing-sm);
+    border-radius: calc(var(--radius-md) - 2px);
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.1s, color 0.1s;
+  }
+
+  .eq-preset-menu li:hover {
+    background: var(--bg-highlight);
+    color: var(--text-primary);
+  }
+
+  .eq-preset-menu li.selected {
+    color: var(--accent-primary);
+    font-weight: 600;
+  }
+
+  /* reset band button in detail header */
+  .eq-reset-band-btn {
+    font-size: 0.7rem;
+    color: var(--text-subdued);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .eq-reset-band-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-surface);
+  }
+
   @media (max-width: 768px) {
     /* Layout Spacing Adjustments */
     .view-header {

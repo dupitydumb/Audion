@@ -102,41 +102,58 @@ use opus_decoder::OpusDecoder;
 // EQ TYPES  (serialisable — matches equalizer.ts / native-audio.ts)
 // =============================================================================
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum FilterType {
+    Peaking,
+    LowShelf,
+    HighShelf,
+    LowPass,
+    HighPass,
+    BandPass,
+    Notch,
+    AllPass,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct EqBand {
     pub frequency: f32,
-    pub gain: f32, // dB, -12..+12
+    pub gain: f32,        // dB; unused by LowPass/HighPass/BandPass/Notch/AllPass
+    pub q: f32,           // 0.1..10.0, default 1.41
+    pub filter_type: FilterType,
+    pub enabled: bool,    // false = band is bypassed without losing settings
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EqSettings {
     pub enabled: bool,
     pub bands: Vec<EqBand>,
+    /// output trim applied after all bands (dB). compensate for overall
+    /// level shift from boosted bands and avoid clipping. range: -24..+6 dB.
+    pub preamp_db: f32,
 }
 
 impl Default for EqSettings {
     fn default() -> Self {
-        let freqs = [
-            31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0,
+        let bands = vec![
+            EqBand { frequency: 31.0,    gain: 0.0, q: 0.707, filter_type: FilterType::LowShelf,  enabled: true },
+            EqBand { frequency: 62.0,    gain: 0.0, q: 1.41,  filter_type: FilterType::Peaking,   enabled: true },
+            EqBand { frequency: 125.0,   gain: 0.0, q: 1.41,  filter_type: FilterType::Peaking,   enabled: true },
+            EqBand { frequency: 250.0,   gain: 0.0, q: 1.41,  filter_type: FilterType::Peaking,   enabled: true },
+            EqBand { frequency: 500.0,   gain: 0.0, q: 1.41,  filter_type: FilterType::Peaking,   enabled: true },
+            EqBand { frequency: 1000.0,  gain: 0.0, q: 1.41,  filter_type: FilterType::Peaking,   enabled: true },
+            EqBand { frequency: 2000.0,  gain: 0.0, q: 1.41,  filter_type: FilterType::Peaking,   enabled: true },
+            EqBand { frequency: 4000.0,  gain: 0.0, q: 1.41,  filter_type: FilterType::Peaking,   enabled: true },
+            EqBand { frequency: 8000.0,  gain: 0.0, q: 1.41,  filter_type: FilterType::Peaking,   enabled: true },
+            EqBand { frequency: 16000.0, gain: 0.0, q: 0.707, filter_type: FilterType::HighShelf, enabled: true },
         ];
-        Self {
-            enabled: false,
-            bands: freqs
-                .iter()
-                .map(|&f| EqBand {
-                    frequency: f,
-                    gain: 0.0,
-                })
-                .collect(),
-        }
+        Self { enabled: false, bands, preamp_db: 0.0 }
     }
 }
 
 // =============================================================================
 // DSP: BIQUAD PEAKING FILTER
 // =============================================================================
-
-const EQ_Q: f32 = 1.41;
 
 #[derive(Clone)]
 struct BiquadFilter {
@@ -152,10 +169,10 @@ struct BiquadFilter {
 }
 
 impl BiquadFilter {
-    fn new_peaking(freq: f32, gain_db: f32, sample_rate: u32) -> Self {
+    fn new_peaking(freq: f32, gain_db: f32, q: f32, sample_rate: u32) -> Self {
         let a = 10.0f32.powf(gain_db / 40.0);
         let w0 = 2.0 * PI * freq / sample_rate as f32;
-        let alpha = w0.sin() / (2.0 * EQ_Q);
+        let alpha = w0.sin() / (2.0 * q);
         let cos = w0.cos();
 
         let b0 = 1.0 + alpha * a;
@@ -165,6 +182,122 @@ impl BiquadFilter {
         let a1 = -2.0 * cos;
         let a2 = 1.0 - alpha / a;
 
+        Self::from_coeffs(b0, b1, b2, a0, a1, a2)
+    }
+
+    fn new_low_shelf(freq: f32, gain_db: f32, q: f32, sample_rate: u32) -> Self {
+        let a = 10.0f32.powf(gain_db / 40.0);
+        let w0 = 2.0 * PI * freq / sample_rate as f32;
+        let cos = w0.cos();
+        let alpha = w0.sin() / 2.0 * (1.0 / q).sqrt();
+
+        let b0 =  a * ((a + 1.0) - (a - 1.0) * cos + 2.0 * alpha * a.sqrt());
+        let b1 =  2.0 * a * ((a - 1.0) - (a + 1.0) * cos);
+        let b2 =  a * ((a + 1.0) - (a - 1.0) * cos - 2.0 * alpha * a.sqrt());
+        let a0 =       (a + 1.0) + (a - 1.0) * cos + 2.0 * alpha * a.sqrt();
+        let a1 = -2.0 * ((a - 1.0) + (a + 1.0) * cos);
+        let a2 =        (a + 1.0) + (a - 1.0) * cos - 2.0 * alpha * a.sqrt();
+
+        Self::from_coeffs(b0, b1, b2, a0, a1, a2)
+    }
+
+    fn new_high_shelf(freq: f32, gain_db: f32, q: f32, sample_rate: u32) -> Self {
+        let a = 10.0f32.powf(gain_db / 40.0);
+        let w0 = 2.0 * PI * freq / sample_rate as f32;
+        let cos = w0.cos();
+        let alpha = w0.sin() / 2.0 * (1.0 / q).sqrt();
+
+        let b0 =  a * ((a + 1.0) + (a - 1.0) * cos + 2.0 * alpha * a.sqrt());
+        let b1 = -2.0 * a * ((a - 1.0) + (a + 1.0) * cos);
+        let b2 =  a * ((a + 1.0) + (a - 1.0) * cos - 2.0 * alpha * a.sqrt());
+        let a0 =       (a + 1.0) - (a - 1.0) * cos + 2.0 * alpha * a.sqrt();
+        let a1 =  2.0 * ((a - 1.0) - (a + 1.0) * cos);
+        let a2 =        (a + 1.0) - (a - 1.0) * cos - 2.0 * alpha * a.sqrt();
+
+        Self::from_coeffs(b0, b1, b2, a0, a1, a2)
+    }
+
+    fn new_low_pass(freq: f32, q: f32, sample_rate: u32) -> Self {
+        let w0    = 2.0 * PI * freq / sample_rate as f32;
+        let cos   = w0.cos();
+        let alpha = w0.sin() / (2.0 * q);
+
+        let b0 = (1.0 - cos) / 2.0;
+        let b1 =  1.0 - cos;
+        let b2 = (1.0 - cos) / 2.0;
+        let a0 =  1.0 + alpha;
+        let a1 = -2.0 * cos;
+        let a2 =  1.0 - alpha;
+
+        Self::from_coeffs(b0, b1, b2, a0, a1, a2)
+    }
+
+    fn new_high_pass(freq: f32, q: f32, sample_rate: u32) -> Self {
+        let w0    = 2.0 * PI * freq / sample_rate as f32;
+        let cos   = w0.cos();
+        let alpha = w0.sin() / (2.0 * q);
+
+        let b0 =  (1.0 + cos) / 2.0;
+        let b1 = -(1.0 + cos);
+        let b2 =  (1.0 + cos) / 2.0;
+        let a0 =   1.0 + alpha;
+        let a1 =  -2.0 * cos;
+        let a2 =   1.0 - alpha;
+
+        Self::from_coeffs(b0, b1, b2, a0, a1, a2)
+    }
+
+    /// BandPass (constant skirt gain, peak gain = Q).
+    fn new_band_pass(freq: f32, q: f32, sample_rate: u32) -> Self {
+        let w0    = 2.0 * PI * freq / sample_rate as f32;
+        let alpha = w0.sin() / (2.0 * q);
+
+        let b0 =  w0.sin() / 2.0;
+        let b1 =  0.0;
+        let b2 = -w0.sin() / 2.0;
+        let a0 =  1.0 + alpha;
+        let a1 = -2.0 * w0.cos();
+        let a2 =  1.0 - alpha;
+
+        Self::from_coeffs(b0, b1, b2, a0, a1, a2)
+    }
+
+    fn new_notch(freq: f32, q: f32, sample_rate: u32) -> Self {
+        let w0    = 2.0 * PI * freq / sample_rate as f32;
+        let alpha = w0.sin() / (2.0 * q);
+        let cos   = w0.cos();
+
+        let b0 =  1.0;
+        let b1 = -2.0 * cos;
+        let b2 =  1.0;
+        let a0 =  1.0 + alpha;
+        let a1 = -2.0 * cos;
+        let a2 =  1.0 - alpha;
+
+        Self::from_coeffs(b0, b1, b2, a0, a1, a2)
+    }
+
+    fn new_all_pass(freq: f32, q: f32, sample_rate: u32) -> Self {
+        let w0    = 2.0 * PI * freq / sample_rate as f32;
+        let alpha = w0.sin() / (2.0 * q);
+        let cos   = w0.cos();
+
+        let b0 =  1.0 - alpha;
+        let b1 = -2.0 * cos;
+        let b2 =  1.0 + alpha;
+        let a0 =  1.0 + alpha;
+        let a1 = -2.0 * cos;
+        let a2 =  1.0 - alpha;
+
+        Self::from_coeffs(b0, b1, b2, a0, a1, a2)
+    }
+
+    fn from_coeffs(b0: f32, b1: f32, b2: f32, a0: f32, a1: f32, a2: f32) -> Self {
+        if a0.abs() < 1e-10 {
+            // return identity filter (pass-through) rather than NaN
+            return Self { b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0,
+                        x1: 0.0, x2: 0.0, y1: 0.0, y2: 0.0 };
+        }
         Self {
             b0: b0 / a0,
             b1: b1 / a0,
@@ -182,7 +315,7 @@ impl BiquadFilter {
     fn process(&mut self, x: f32) -> f32 {
         let y = self.b0 * x + self.b1 * self.x1 + self.b2 * self.x2
             - self.a1 * self.y1
-            - self.a2 * self.y2;
+            - self.a2 * self.y2;   
         self.x2 = self.x1;
         self.x1 = x;
         self.y2 = self.y1;
@@ -212,17 +345,35 @@ impl FilterBank {
 
     fn rebuild(&mut self, settings: &EqSettings) {
         self.filters = vec![vec![]; self.channels];
-        if settings.enabled {
-            for ch in 0..self.channels {
-                for band in &settings.bands {
-                    if band.gain.abs() > 0.01 {
-                        self.filters[ch].push(BiquadFilter::new_peaking(
-                            band.frequency,
-                            band.gain,
-                            self.sample_rate,
-                        ));
-                    }
+        if !settings.enabled {
+            return;
+        }
+        for ch in 0..self.channels {
+            for band in &settings.bands {
+                if !band.enabled {
+                    continue;
                 }
+                let q = band.q.clamp(0.1, 10.0);
+                // gain-dependent filter types: skip if gain is negligible.
+                // non-gain types (LP/HP/BP/Notch/AP) are always active when enabled.
+                let needs_gain = matches!(
+                    band.filter_type,
+                    FilterType::Peaking | FilterType::LowShelf | FilterType::HighShelf
+                );
+                if needs_gain && band.gain.abs() <= 0.01 {
+                    continue;
+                }
+                let f = match band.filter_type {
+                    FilterType::Peaking   => BiquadFilter::new_peaking(band.frequency, band.gain, q, self.sample_rate),
+                    FilterType::LowShelf  => BiquadFilter::new_low_shelf(band.frequency, band.gain, q, self.sample_rate),
+                    FilterType::HighShelf => BiquadFilter::new_high_shelf(band.frequency, band.gain, q, self.sample_rate),
+                    FilterType::LowPass   => BiquadFilter::new_low_pass(band.frequency, q, self.sample_rate),
+                    FilterType::HighPass  => BiquadFilter::new_high_pass(band.frequency, q, self.sample_rate),
+                    FilterType::BandPass  => BiquadFilter::new_band_pass(band.frequency, q, self.sample_rate),
+                    FilterType::Notch     => BiquadFilter::new_notch(band.frequency, q, self.sample_rate),
+                    FilterType::AllPass   => BiquadFilter::new_all_pass(band.frequency, q, self.sample_rate),
+                };
+                self.filters[ch].push(f);
             }
         }
     }
@@ -292,6 +443,8 @@ struct EqSource<S: Source<Item = f32>> {
     sample_rate: u32,
     current_ch: usize,
     frame_count: usize,
+    /// preamp gain in linear scale, derived from eq_settings.preamp_db.
+    preamp_linear: f32,
 }
 
 impl<S: Source<Item = f32>> EqSource<S> {
@@ -300,6 +453,10 @@ impl<S: Source<Item = f32>> EqSource<S> {
         let sample_rate = inner.sample_rate();
         let mut bank = FilterBank::new(channels, sample_rate);
         bank.rebuild(settings);
+        let preamp_linear = {
+            let v = db_to_linear(settings.preamp_db);
+            if v.is_finite() { v } else { 1.0 }
+        };
         Self {
             inner,
             bank,
@@ -309,6 +466,7 @@ impl<S: Source<Item = f32>> EqSource<S> {
             sample_rate,
             current_ch: 0,
             frame_count: 0,
+            preamp_linear,
         }
     }
 }
@@ -326,6 +484,8 @@ impl<S: Source<Item = f32>> Iterator for EqSource<S> {
                 latest = Some(s);
             }
             if let Some(s) = latest {
+                let v = db_to_linear(s.preamp_db);
+                self.preamp_linear = if v.is_finite() { v } else { 1.0 };
                 self.eq_settings = s;
                 self.bank.rebuild(&self.eq_settings);
             }
@@ -354,7 +514,13 @@ impl<S: Source<Item = f32>> Iterator for EqSource<S> {
         let sample = self.inner.next()?;
         let ch = self.current_ch;
         self.current_ch = (self.current_ch + 1) % self.channels;
-        Some(self.bank.process(sample, ch))
+        // apply EQ bands then preamp trim. when preamp_db == 0 this is a
+        // multiply by 1.0 . the compiler will not eliminate it, but it is a
+        // single fmul in the hot path which is negligible.
+        Some({
+            let out = self.bank.process(sample, ch);
+            if self.eq_settings.enabled { out * self.preamp_linear } else { out }
+        })
     }
 }
 
@@ -433,6 +599,10 @@ fn parse_gain_tag(value: &symphonia::core::meta::Value) -> Option<f32> {
 
 #[inline]
 fn db_to_linear(db: f32) -> f32 {
+    if !db.is_finite() {
+        return 1.0;
+    }
+    let db = db.clamp(-24.0, 6.0);
     10.0f32.powf(db / 20.0)
 }
 

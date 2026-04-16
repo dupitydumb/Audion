@@ -17,7 +17,7 @@ import { EventEmitter, type PluginEvents } from '$lib/plugins/event-emitter';
 import { tracks as libraryTracks, getFullTrack, getAlbumCoverFromTracks, updateTrackCover, getTrackByIdSync } from '$lib/stores/library';
 import { fetchTrackCover } from '$lib/services/cover-fetcher';
 import { appSettings } from '$lib/stores/settings';
-import { equalizer, EQ_FREQUENCIES } from '$lib/stores/equalizer';
+import { equalizer, toNativeBands } from '$lib/stores/equalizer';
 import { pluginStore } from '$lib/stores/plugin-store';
 import { recordTrackPlay } from '$lib/stores/activity';
 import { submitListenbrainzListen } from '$lib/api/tauri';
@@ -417,7 +417,12 @@ equalizer.subscribe((state) => {
     if (_eqApplyTimer) clearTimeout(_eqApplyTimer);
     _eqApplyTimer = setTimeout(async () => {
         try {
-            await nativeAudioSetEq(_latestEqState);
+            const state = _latestEqState;
+            await nativeAudioSetEq({
+                enabled: state.enabled,
+                bands: toNativeBands(state.bands),
+                preamp_db: state.preampDb,
+            });
         } catch (err) {
             console.error('[EQ] Failed to apply settings:', err);
         } finally {
@@ -484,10 +489,14 @@ export async function initAudioBackend(): Promise<void> {
     // native side has the latest settings (prevents mismatch / thrash on first play)
     if (nativeAudioUsed) {
         try {
-            // Use equalizer.getState() to get the current stored state
-            const state = equalizer.getState();
+            // Use get(equalizer) to read the current store state
+            const state = get(equalizer);
             nativeAudioSetRepeatOne(get(repeat) === 'one').catch(console.error);
-            await nativeAudioSetEq(state);
+            await nativeAudioSetEq({
+                enabled: state.enabled,
+                bands: toNativeBands(state.bands),
+                preamp_db: state.preampDb,
+            });
             console.log('[Player] Applied initial EQ settings to native backend');
         } catch (err) {
             console.warn('[Player] Failed to apply initial EQ settings:', err);
