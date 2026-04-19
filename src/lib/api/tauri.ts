@@ -17,6 +17,7 @@ export function isAndroid(): boolean {
 // We detect Linux and use file:// URLs instead for audio sources.
 // =============================================================================
 let isLinuxPlatform: boolean | null = null;
+let isWindowsPlatform: boolean | null = null;
 
 async function detectLinux(): Promise<boolean> {
     if (isLinuxPlatform !== null) return isLinuxPlatform;
@@ -38,9 +39,45 @@ async function detectLinux(): Promise<boolean> {
     return isLinuxPlatform;
 }
 
+async function detectWindows(): Promise<boolean> {
+    if (isWindowsPlatform !== null) return isWindowsPlatform;
+
+    if (!isTauri()) {
+        isWindowsPlatform = false;
+        return false;
+    }
+
+    try {
+        const { platform } = await import('@tauri-apps/plugin-os');
+        const os = await platform();
+        isWindowsPlatform = os === 'windows';
+    } catch {
+        isWindowsPlatform = typeof navigator !== 'undefined' &&
+            navigator.userAgent.toLowerCase().includes('windows');
+    }
+    return isWindowsPlatform;
+}
+
 // Initialize platform detection early - call this on app startup
 export async function initPlatformDetection(): Promise<void> {
     await detectLinux();
+    await detectWindows();
+}
+
+export async function initWindowsThumbar(): Promise<boolean> {
+    if (!isTauri()) return false;
+    const onWindows = await detectWindows();
+    if (!onWindows) return false;
+
+    return await invoke<boolean>('windows_init_thumbar');
+}
+
+export async function updateWindowsThumbarState(isPlaying: boolean): Promise<void> {
+    if (!isTauri()) return;
+    const onWindows = await detectWindows();
+    if (!onWindows) return;
+
+    await invoke('windows_update_thumbar_state', { isPlaying });
 }
 
 // Dynamic imports to avoid SSR issues

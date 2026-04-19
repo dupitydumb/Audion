@@ -2,7 +2,15 @@
 import { writable, derived, get } from 'svelte/store';
 import { wsStore } from './websocket';
 import type { Track } from '$lib/api/tauri';
-import { getAudioSrc, getAlbumArtSrc, getTrackCoverSrc, convertFileSrc } from '$lib/api/tauri';
+import {
+    getAudioSrc,
+    getAlbumArtSrc,
+    getTrackCoverSrc,
+    convertFileSrc,
+    listen,
+    initWindowsThumbar,
+    updateWindowsThumbarState
+} from '$lib/api/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { addToast } from '$lib/stores/toast';
 import { EventEmitter, type PluginEvents } from '$lib/plugins/event-emitter';
@@ -430,6 +438,8 @@ export async function initAudioBackend(): Promise<void> {
 
     // Start/stop poller based on playback state and notify remote devices
     isPlaying.subscribe((playing) => {
+        updateWindowsThumbarState(playing).catch(() => { });
+
         // Force an immediate broadcast when play/pause state changes
         // so remote Connect Panels stay perfectly in sync
         broadcastState(true);
@@ -505,6 +515,8 @@ export async function initAudioBackend(): Promise<void> {
             stopStatePoller(); // Ensure local poller is off
         }
     });
+
+    await initWindowsThumbarIntegration();
 }
 
 function handleRemotePlayerState(payload: any) {
@@ -750,6 +762,40 @@ export function shutdownPlayer(): void {
 // controls, and hardware media button support.
 
 let mediaSessionInitialized = false;
+
+let windowsThumbarInitialized = false;
+
+async function initWindowsThumbarIntegration(): Promise<void> {
+    if (windowsThumbarInitialized) return;
+
+    try {
+        const initialized = await initWindowsThumbar();
+        if (!initialized) return;
+
+        await listen<{ action?: string }>('windows://thumbar-action', ({ payload }) => {
+            const action = payload?.action;
+            if (!action) return;
+
+            switch (action) {
+                case 'previous':
+                    void previousTrack();
+                    break;
+                case 'toggle_play_pause':
+                    void togglePlay();
+                    break;
+                case 'next':
+                    nextTrack();
+                    break;
+            }
+        });
+
+        windowsThumbarInitialized = true;
+        await updateWindowsThumbarState(get(isPlaying));
+        console.log('[Player] Windows taskbar thumbar initialized');
+    } catch (err) {
+        console.warn('[Player] Windows thumbar init failed:', err);
+    }
+}
 
 function initMediaSessionHandlers(): void {
     if (mediaSessionInitialized || !('mediaSession' in navigator)) return;

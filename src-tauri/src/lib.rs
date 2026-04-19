@@ -5,6 +5,8 @@ mod commands;
 mod db;
 #[cfg(desktop)]
 mod discord;
+#[cfg(desktop)]
+mod windows_thumbar;
 mod scanner;
 mod security;
 mod sync;
@@ -599,6 +601,8 @@ pub fn run() {
                     audio::audio_get_state,
                     audio::audio_set_eq,
                     audio::native_audio_available,
+                    windows_thumbar::windows_init_thumbar,
+                    windows_thumbar::windows_update_thumbar_state,
                     commands::proxy_fetch_bytes,
                     commands::save_image_to_gallery,
                 ]

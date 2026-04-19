@@ -326,6 +326,7 @@ dependencies = [
  "metaflac",
  "mp4ameta",
  "ratio-metadata",
+ "raw-window-handle",
  "rayon",
  "reqwest 0.12.28",
  "rodio",
@@ -355,6 +356,7 @@ dependencies = [
  "url",
  "uuid 1.21.0",
  "walkdir",
+ "windows 0.61.3",
 ]
 
 [[package]]
