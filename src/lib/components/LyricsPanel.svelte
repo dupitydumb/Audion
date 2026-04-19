@@ -980,11 +980,7 @@
      */
     .lyric-word {
         display: inline;
-        background-image:
-            linear-gradient(to right, var(--text-primary), var(--text-primary)),
-            linear-gradient(to right, var(--lyrics-inactive), var(--lyrics-inactive));
-        background-repeat: no-repeat;
-        background-size: var(--word-progress, 0%) 100%, 100% 100%;
+        color: transparent;
         background-clip: text;
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
