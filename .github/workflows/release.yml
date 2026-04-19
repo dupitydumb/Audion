@@ -287,8 +287,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder
-          sudo flatpak remote-add --system --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak remotes --system
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak remotes --user
+          flatpak remote-ls --user flathub | head -n 20
+
+      - name: Preinstall Flatpak SDK/runtime (user scope)
+        run: |
+          flatpak install --user -y flathub org.freedesktop.Platform//24.08
+          flatpak install --user -y flathub org.freedesktop.Sdk//24.08
 
       - name: Build Flatpak bundle
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
@@ -298,7 +304,7 @@ jobs:
           repository-url: https://flathub.org/repo/flathub.flatpakrepo
           bundle: audion_${{ steps.info.outputs.version }}_flatpak.flatpak
           cache-key: flatpak-builder-${{ runner.os }}-${{ hashFiles('packaging/flatpak/*.yml') }}-v1
-          install-dependencies: true
+          install-dependencies: false
           upload-artifact: false
           verbose: true
 
