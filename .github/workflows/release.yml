@@ -297,16 +297,9 @@ jobs:
           flatpak install --user -y flathub org.freedesktop.Sdk//24.08
 
       - name: Build Flatpak bundle
-        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
-        with:
-          manifest-path: packaging/flatpak/com.audion.app.yml
-          repository-name: flathub
-          repository-url: https://flathub.org/repo/flathub.flatpakrepo
-          bundle: audion_${{ steps.info.outputs.version }}_flatpak.flatpak
-          cache-key: flatpak-builder-${{ runner.os }}-${{ hashFiles('packaging/flatpak/*.yml') }}-v1
-          install-dependencies: false
-          upload-artifact: false
-          verbose: true
+        run: |
+          flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo flatpak_app packaging/flatpak/com.audion.app.yml
+          flatpak build-bundle repo audion_${{ steps.info.outputs.version }}_flatpak.flatpak com.audion.app
 
       - name: Verify Flatpak bundle
         run: |
