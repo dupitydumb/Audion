@@ -1340,6 +1340,11 @@ export async function resume(): Promise<void> {
             isPlaying.set(true);
             updateMediaSessionPlaybackState('playing');
         }
+        else if (get(activeBackend) === 'none') {
+            // Backend was never started . happens when restoring persisted state.
+            // playTrack will initialize the correct backend and seek to saved position.
+            await playTrack(track, false, get(currentTime));
+        }
         updateMediaSessionPosition();
     } catch (err) {
         console.error('[Player] Resume failed:', err);

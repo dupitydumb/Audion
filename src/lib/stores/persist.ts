@@ -157,8 +157,6 @@ export function initializeFromPersistedState(): void {
         if (state.currentTime > 0) {
             currentTime.set(state.currentTime);
         }
-
-        // Restore duration
         if (state.duration > 0) {
             duration.set(state.duration);
         }
