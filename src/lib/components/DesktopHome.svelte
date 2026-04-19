@@ -27,6 +27,7 @@
     import MediaCard from "./MediaCard.svelte";
     import { onDestroy } from "svelte";
     import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
+    import { fetchAllLatestCharts, type ChartData, type AudionApiTrack } from "$lib/api/audion-api";
 
     let homeEl: HTMLDivElement;
     let scrollRestored = false;
@@ -57,13 +58,23 @@
     if (hour < 12) greeting = "Good morning";
     else if (hour < 18) greeting = "Good afternoon";
 
-    onMount(() => {
+    let charts: ChartData[] = [];
+    let loadingCharts = true;
+
+    onMount(async () => {
         loadActivityData();
         const saved = getScroll("home");
         if (saved > 0 && homeEl) {
             homeEl.scrollTop = saved;
         }
         scrollRestored = true;
+
+        // Fetch charts
+        try {
+            charts = await fetchAllLatestCharts();
+        } finally {
+            loadingCharts = false;
+        }
     });
 
     // Playback state
@@ -113,6 +124,25 @@
 
     function playTopTrack(track: Track, index: number) {
         playTracks(topTrackList, index);
+    }
+
+    function playApiTrack(apiTrack: AudionApiTrack, chartItems: AudionApiTrack[]) {
+        // Convert AudionApiTrack to Track
+        const tracks = chartItems.map(t => ({
+            id: t.id,
+            title: t.title,
+            artist: t.artist,
+            album: t.album || '',
+            album_id: null,
+            duration: (t.durationMs || 0) / 1000,
+            path: t.tidalId ? `tidal://${t.tidalId}` : '', // Use scheme for stream resolver
+            cover_url: t.coverUrl,
+            source_type: 'tidal',
+            external_id: t.tidalId
+        } as unknown as Track));
+
+        const index = chartItems.findIndex(t => t.id === apiTrack.id);
+        playTracks(tracks, index);
     }
 
     // Interaction helpers
@@ -719,6 +749,52 @@
             </div>
         </section>
     {/if}
+
+    <!-- Charts Section -->
+    {#if !loadingCharts && charts.length > 0}
+        <div class="charts-container">
+            {#each charts as chart}
+                <section class="home-section chart-section">
+                    <div class="section-header">
+                        <h2 class="section-title">{chart.displayName}</h2>
+                        <button class="view-all-link">View all</button>
+                    </div>
+                    <div class="chart-list">
+                        {#if chart.items}
+                            {#each chart.items.slice(0, 5) as item, i}
+                                {@const isNowPlaying = playingTrackId === item.id && playing}
+                                <div 
+                                    class="chart-row"
+                                    class:active={isNowPlaying}
+                                    on:click={() => playApiTrack(item, chart.items)}
+                                >
+                                    <span class="chart-rank">{i + 1}</span>
+                                    <div class="chart-art">
+                                        {#if item.coverUrl}
+                                            <img src={item.coverUrl} alt={item.title} loading="lazy" />
+                                        {:else}
+                                            <div class="art-placeholder">🎵</div>
+                                        {/if}
+                                    </div>
+                                    <div class="chart-info">
+                                        <span class="chart-title">{item.title}</span>
+                                        <span class="chart-artist">{item.artist}</span>
+                                    </div>
+                                    {#if isNowPlaying}
+                                        <div class="playing-indicator">
+                                            <div class="bar"></div>
+                                            <div class="bar"></div>
+                                            <div class="bar"></div>
+                                        </div>
+                                    {/if}
+                                </div>
+                            {/each}
+                        {/if}
+                    </div>
+                </section>
+            {/each}
+        </div>
+    {/if}
 </div>
 
 <style>
@@ -726,13 +802,16 @@
         padding: 24px 32px;
         overflow-y: auto;
         height: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
     }
 
     .home-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: var(--spacing-xl);
+        margin-bottom: 8px;
     }
 
     .greeting {
@@ -740,34 +819,165 @@
         font-weight: 800;
         color: var(--text-primary);
         letter-spacing: -0.02em;
-        margin: 0;
     }
 
     .recap-launch-btn {
-        background: linear-gradient(135deg, #1ed760 0%, #17a34a 100%);
-        color: black;
-        border: none;
-        padding: 8px 20px;
-        border-radius: 20px;
-        font-size: 0.9rem;
-        font-weight: 700;
         display: flex;
         align-items: center;
         gap: 8px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        padding: 8px 16px;
+        border-radius: 20px;
+        color: var(--text-primary);
+        font-size: 0.875rem;
+        font-weight: 600;
         cursor: pointer;
-        transition:
-            transform 0.2s,
-            box-shadow 0.2s;
-        box-shadow: 0 4px 12px rgba(30, 215, 96, 0.2);
+        transition: all 0.2s ease;
     }
 
     .recap-launch-btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 16px rgba(30, 215, 96, 0.3);
+        background: rgba(255, 255, 255, 0.12);
+        transform: translateY(-1px);
+        border-color: var(--accent-primary);
     }
 
-    .recap-launch-btn:active {
-        transform: translateY(0);
+    .recap-launch-btn svg {
+        color: var(--accent-primary);
+    }
+
+    /* ── Charts Section ── */
+    .charts-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 24px;
+        margin-top: 32px;
+    }
+
+    .chart-section {
+        background: rgba(255, 255, 255, 0.03);
+        padding: 20px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+    }
+
+    .view-all-link {
+        background: none;
+        border: none;
+        color: var(--text-subdued);
+        font-size: 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
+    .view-all-link:hover {
+        color: var(--text-primary);
+        text-decoration: underline;
+    }
+
+    .chart-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .chart-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+
+    .chart-row:hover {
+        background: rgba(255, 255, 255, 0.07);
+    }
+
+    .chart-row.active {
+        background: rgba(30, 215, 96, 0.1);
+    }
+
+    .chart-rank {
+        width: 20px;
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: var(--text-subdued);
+        text-align: center;
+    }
+
+    .chart-art {
+        width: 40px;
+        height: 40px;
+        border-radius: 4px;
+        overflow: hidden;
+        background: #282828;
+    }
+
+    .chart-art img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .art-placeholder {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+    }
+
+    .chart-info {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .chart-title {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .chart-artist {
+        font-size: 0.75rem;
+        color: var(--text-subdued);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .playing-indicator {
+        display: flex;
+        align-items: flex-end;
+        gap: 2px;
+        height: 12px;
+    }
+
+    .playing-indicator .bar {
+        width: 2px;
+        height: 100%;
+        background: var(--accent-primary);
+        animation: eq 0.8s infinite ease-in-out;
+    }
+
+    @keyframes eq {
+        0%, 100% { height: 30%; }
+        50% { height: 100%; }
     }
 
     /* ── Quick Play Grid ── */

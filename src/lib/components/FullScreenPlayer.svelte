@@ -419,10 +419,12 @@
             aria-label="Connect"
           >
             <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
-              <path d="M19,2H5A3,3,0,0,0,2,5V15a3,3,0,0,0,3,3H9.17l-1.42,1.41a1,1,0,0,0,0,1.42,1,1,0,0,0,1.42,0L11,18.99,12.83,20.83a1,1,0,0,0,1.42,0,1,1,0,0,0,0-1.42L12.83,18H19a3,3,0,0,0,3-3V5A3,3,0,0,0,19,2Zm1,13a1,1,0,0,1-1,1H5a1,1,0,0,1-1-1V5A1,1,0,0,1,5,4H19a1,1,0,0,1,1,1Z"/>
+              <path
+                d="M19,2H5A3,3,0,0,0,2,5V15a3,3,0,0,0,3,3H9.17l-1.42,1.41a1,1,0,0,0,0,1.42,1,1,0,0,0,1.42,0L11,18.99,12.83,20.83a1,1,0,0,0,1.42,0,1,1,0,0,0,0-1.42L12.83,18H19a3,3,0,0,0,3-3V5A3,3,0,0,0,19,2Zm1,13a1,1,0,0,1-1,1H5a1,1,0,0,1-1-1V5A1,1,0,0,1,5,4H19a1,1,0,0,1,1,1Z"
+              />
             </svg>
             {#if connectedDevices > 0}
-                <div class="device-dot-fullscreen"></div>
+              <div class="device-dot-fullscreen"></div>
             {/if}
           </button>
           <button
@@ -497,7 +499,10 @@
           </div>
         {:else}
           <!-- In-place Lyrics for Mobile -->
-          <div class="mobile-lyrics-wrapper" in:fade={{ duration: isAndroid ? 140 : 300 }}>
+          <div
+            class="mobile-lyrics-wrapper"
+            in:fade={{ duration: isAndroid ? 140 : 300 }}
+          >
             <div class="lyrics-container" bind:this={lyricsContainer}>
               {#if $lyricsData?.lines && $lyricsData.lines.length > 0}
                 {#each $lyricsData.lines as line, i}
@@ -619,7 +624,8 @@
                     viewBox="0 0 24 24"
                     fill="currentColor"
                     width="40"
-                    height="40"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg
+                    height="40"
+                    ><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg
                   >
                 {:else}
                   <svg
@@ -678,33 +684,38 @@
                 class:current={isCurrent}
                 class:dimmed={!isCurrent}
                 animate:flip={{ duration: isAndroid ? 150 : 300 }}
-                in:fly={{ y: isAndroid ? 6 : 20, duration: isAndroid ? 160 : 300 }}
-                out:fly={{ y: isAndroid ? -6 : -20, duration: isAndroid ? 140 : 300 }}
+                in:fly={{
+                  y: isAndroid ? 6 : 20,
+                  duration: isAndroid ? 160 : 300,
+                }}
+                out:fly={{
+                  y: isAndroid ? -6 : -20,
+                  duration: isAndroid ? 140 : 300,
+                }}
               >
-                  {#if isCurrent && hasWordSync && line.words}
-                    {#each line.words as word, wordIdx}
-                      {@const wordProgress = getWordPercentage(
-                        lineIdx,
-                        wordIdx,
-                        $activeLine,
-                        $wordSyncState.activeWordIdx,
-                        $wordSyncState.progress,
-                      )}
-                      <span
-                        class="lyric-word"
-                        style="--word-progress: {wordProgress}%;"
-                        >{word.word}</span
-                      >
-                      {#if wordIdx < line.words.length - 1}{" "}{/if}
-                    {/each}
-                  {:else}
-                    {line.text}
-                  {/if}
-                </div>
+                {#if isCurrent && hasWordSync && line.words}
+                  {#each line.words as word, wordIdx}
+                    {@const wordProgress = getWordPercentage(
+                      lineIdx,
+                      wordIdx,
+                      $activeLine,
+                      $wordSyncState.activeWordIdx,
+                      $wordSyncState.progress,
+                    )}
+                    <span
+                      class="lyric-word"
+                      style="--word-progress: {wordProgress}%;"
+                      >{word.word}</span
+                    >
+                    {#if wordIdx < line.words.length - 1}{" "}{/if}
+                  {/each}
+                {:else}
+                  {line.text}
+                {/if}
+              </div>
             {/each}
           </div>
         {/if}
-
       </div>
     {:else}
       <!-- Desktop layout (enhanced 2-column) -->
@@ -772,7 +783,6 @@
                 </div>
               </div>
 
-
               <div
                 class="marquee-container artist"
                 bind:clientWidth={artistContainerWidth}
@@ -802,10 +812,7 @@
               </div>
 
               {#if $currentTrack?.album}
-                <p
-                  class="desktop-album-context"
-                  title={$currentTrack.album}
-                >
+                <p class="desktop-album-context" title={$currentTrack.album}>
                   {$currentTrack.album}
                 </p>
               {/if}
@@ -816,8 +823,7 @@
                   class:active={$currentTrack
                     ? $likedTrackIds.has($currentTrack.id)
                     : false}
-                  on:click={() =>
-                    $currentTrack && toggleLike($currentTrack.id)}
+                  on:click={() => $currentTrack && toggleLike($currentTrack.id)}
                   aria-label="Like"
                 >
                   <svg
@@ -872,11 +878,18 @@
                   on:click={() => (showConnectPanel = !showConnectPanel)}
                   aria-label="Connect"
                 >
-                  <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-                    <path d="M19,2H5A3,3,0,0,0,2,5V15a3,3,0,0,0,3,3H9.17l-1.42,1.41a1,1,0,0,0,0,1.42,1,1,0,0,0,1.42,0L11,18.99,12.83,20.83a1,1,0,0,0,1.42,0,1,1,0,0,0,0-1.42L12.83,18H19a3,3,0,0,0,3-3V5A3,3,0,0,0,19,2Zm1,13a1,1,0,0,1-1,1H5a1,1,0,0,1-1-1V5A1,1,0,0,1,5,4H19a1,1,0,0,1,1,1Z"/>
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    width="24"
+                    height="24"
+                  >
+                    <path
+                      d="M19,2H5A3,3,0,0,0,2,5V15a3,3,0,0,0,3,3H9.17l-1.42,1.41a1,1,0,0,0,0,1.42,1,1,0,0,0,1.42,0L11,18.99,12.83,20.83a1,1,0,0,0,1.42,0,1,1,0,0,0,0-1.42L12.83,18H19a3,3,0,0,0,3-3V5A3,3,0,0,0,19,2Zm1,13a1,1,0,0,1-1,1H5a1,1,0,0,1-1-1V5A1,1,0,0,1,5,4H19a1,1,0,0,1,1,1Z"
+                    />
                   </svg>
                   {#if connectedDevices > 0}
-                      <div class="device-dot"></div>
+                    <div class="device-dot"></div>
                   {/if}
                 </button>
               </div>
@@ -1092,6 +1105,10 @@
   </div>
 {/if}
 
+{#if showConnectPanel}
+  <ConnectPanel on:close={() => (showConnectPanel = false)} />
+{/if}
+
 <style>
   .fullscreen-player {
     position: fixed;
@@ -1240,11 +1257,11 @@
     flex-direction: column;
     justify-content: flex-start;
     align-items: center; /* Center the entire block in the left column */
-    height: 100%;
     max-height: 100%;
     gap: clamp(1rem, 2vh, 1.75rem);
     padding-left: 24px;
     padding-top: 0.75rem;
+    width: 25rem;
   }
 
   /* Each section in the left panel shares the same max-width for uniformity */
@@ -1467,7 +1484,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 2.5rem;
+    gap: 1rem;
     margin-bottom: 0.6rem;
   }
 
@@ -1705,7 +1722,6 @@
     text-shadow: 0 0 15px rgba(255, 255, 255, 0.1);
   }
 
-
   .desktop-lyric-word {
     position: relative;
     display: inline-block;
@@ -1719,9 +1735,15 @@
       /* Top layer: White fill */
       linear-gradient(to right, #fff, #fff),
       /* Bottom layer: Dim base color */
-      linear-gradient(to right, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.2));
+        linear-gradient(
+          to right,
+          rgba(255, 255, 255, 0.2),
+          rgba(255, 255, 255, 0.2)
+        );
     background-repeat: no-repeat;
-    background-size: var(--word-progress, 0%) 100%, 100% 100%;
+    background-size:
+      var(--word-progress, 0%) 100%,
+      100% 100%;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -1904,8 +1926,20 @@
     overflow-y: auto;
     scrollbar-width: none;
     padding: 2rem 0 25vh;
-    mask-image: linear-gradient(to bottom, transparent, black 15%, black 75%, transparent);
-    -webkit-mask-image: linear-gradient(to bottom, transparent, black 15%, black 75%, transparent);
+    mask-image: linear-gradient(
+      to bottom,
+      transparent,
+      black 15%,
+      black 75%,
+      transparent
+    );
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent,
+      black 15%,
+      black 75%,
+      transparent
+    );
   }
 
   .compact-lyrics-mobile {
@@ -1952,11 +1986,16 @@
     position: relative;
     display: inline-block;
     transition: background-size 0.1s linear;
-    background-image: 
-      linear-gradient(to right, #fff, #fff),
-      linear-gradient(to right, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.2));
+    background-image: linear-gradient(to right, #fff, #fff),
+      linear-gradient(
+        to right,
+        rgba(255, 255, 255, 0.2),
+        rgba(255, 255, 255, 0.2)
+      );
     background-repeat: no-repeat;
-    background-size: var(--word-progress, 0%) 100%, 100% 100%;
+    background-size:
+      var(--word-progress, 0%) 100%,
+      100% 100%;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -2030,7 +2069,3 @@
     word-break: break-word;
   }
 </style>
-
-{#if showConnectPanel}
-  <ConnectPanel on:close={() => showConnectPanel = false} />
-{/if}

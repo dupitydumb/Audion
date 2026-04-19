@@ -38,6 +38,7 @@
         loadActivityData,
         isLoadingActivity,
     } from "$lib/stores/activity";
+    import { fetchAllLatestCharts, type ChartData, type AudionApiTrack } from "$lib/api/audion-api";
 
     const monthNames = [
         "January",
@@ -55,8 +56,17 @@
     ];
     const currentMonthName = monthNames[new Date().getMonth()];
 
-    onMount(() => {
+    let charts: ChartData[] = [];
+    let loadingCharts = true;
+
+    onMount(async () => {
         loadActivityData();
+        
+        try {
+            charts = await fetchAllLatestCharts();
+        } finally {
+            loadingCharts = false;
+        }
     });
 
     // Greeting based on time of day
@@ -122,6 +132,24 @@
     function handlePlayTopTrack(index: number) {
         const trackList = $topTracks.map((t) => t.track);
         playTracks(trackList, index);
+    }
+
+    function playApiTrack(apiTrack: AudionApiTrack, chartItems: AudionApiTrack[]) {
+        const tracks = chartItems.map(t => ({
+            id: t.id,
+            title: t.title,
+            artist: t.artist,
+            album: t.album || '',
+            album_id: null,
+            duration: (t.durationMs || 0) / 1000,
+            path: t.tidalId ? `tidal://${t.tidalId}` : '',
+            cover_url: t.coverUrl,
+            source_type: 'tidal',
+            external_id: t.tidalId
+        } as unknown as Track));
+
+        const index = chartItems.findIndex(t => t.id === apiTrack.id);
+        playTracks(tracks, index);
     }
 
     function handleKeydown(e: KeyboardEvent, callback: () => void) {
@@ -660,6 +688,46 @@
                         >
                             {track.artist || "Unknown Artist"}
                         </button>
+                    </div>
+                {/each}
+            </div>
+        </section>
+    {/if}
+
+    <!-- Music Charts Carousel -->
+    {#if !loadingCharts && charts.length > 0}
+        <section class="carousel-section charts-section">
+            <h2 class="section-title">Music Charts</h2>
+            <div class="carousel-container">
+                {#each charts as chart}
+                    <div class="chart-card">
+                        <div class="chart-card-header">
+                            <h3>{chart.displayName}</h3>
+                        </div>
+                        <div class="chart-card-items">
+                            {#if chart.items}
+                                {#each chart.items.slice(0, 3) as item}
+                                    <div class="chart-mini-row" on:click={() => playApiTrack(item, chart.items)}>
+                                        <div class="mini-art">
+                                            {#if item.coverUrl}
+                                                <img src={item.coverUrl} alt={item.title} />
+                                            {:else}
+                                                <div class="mini-art-placeholder">🎵</div>
+                                            {/if}
+                                        </div>
+                                        <div class="mini-info">
+                                            <span class="mini-title truncate-text">{item.title}</span>
+                                            <span class="mini-artist truncate-text">{item.artist}</span>
+                                        </div>
+                                        <div class="mini-play">
+                                            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                                                <path d="M8 5v14l11-7z" />
+                                            </svg>
+                                        </div>
+                                    </div>
+                                {/each}
+                            {/if}
+                        </div>
                     </div>
                 {/each}
             </div>
@@ -1343,6 +1411,84 @@
         transform: scale(0.98);
     }
 
+    /* ===== Recap Card Style ===== */
+    .recap-card-container {
+        padding: 0 var(--spacing-md) var(--spacing-lg);
+    }
+
+    .recap-card {
+        position: relative;
+        width: 100%;
+        min-height: 160px;
+        background: linear-gradient(135deg, #fa243c 0%, #bc182d 100%);
+        border-radius: var(--radius-lg);
+        padding: 24px;
+        border: none;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        text-align: left;
+        cursor: pointer;
+        box-shadow: 0 12px 32px rgba(250, 36, 60, 0.3);
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .recap-card:active {
+        transform: scale(0.98);
+        opacity: 0.9;
+    }
+
+    .recap-card-content {
+        position: relative;
+        z-index: 2;
+    }
+
+    .recap-label {
+        font-size: 0.7rem;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        color: rgba(255, 255, 255, 0.8);
+        margin-bottom: 4px;
+        display: block;
+    }
+
+    .recap-title {
+        font-size: 1.5rem;
+        font-weight: 900;
+        color: white;
+        margin: 0 0 6px 0;
+        line-height: 1.1;
+    }
+
+    .recap-text {
+        font-size: 0.875rem;
+        color: rgba(255, 255, 255, 0.9);
+        margin: 0 0 16px 0;
+        max-width: 80%;
+    }
+
+    .recap-pill {
+        background: white;
+        color: #fa243c;
+        padding: 6px 16px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 800;
+        width: fit-content;
+    }
+
+    .recap-card-decor {
+        position: absolute;
+        top: -20px;
+        right: -20px;
+        width: 150px;
+        height: 150px;
+        opacity: 0.2;
+        z-index: 1;
+        color: white;
+    }
+
     .hero-background {
         position: absolute;
         top: 0;
@@ -1462,5 +1608,92 @@
     .link:hover {
         text-decoration: underline;
         color: var(--text-primary);
+    }
+
+    /* ── Mobile Charts Styles ── */
+    .charts-section {
+        margin-top: 8px;
+    }
+
+    .chart-card {
+        width: 280px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 12px;
+        padding: 16px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .chart-card-header h3 {
+        font-size: 1rem;
+        font-weight: 700;
+        margin: 0;
+        color: var(--text-primary);
+    }
+
+    .chart-card-items {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .chart-mini-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        cursor: pointer;
+    }
+
+    .chart-mini-row:active {
+        opacity: 0.7;
+    }
+
+    .mini-art {
+        width: 48px;
+        height: 48px;
+        border-radius: 4px;
+        overflow: hidden;
+        background: #282828;
+        flex-shrink: 0;
+    }
+
+    .mini-art img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .mini-art-placeholder {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+    }
+
+    .mini-info {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .mini-title {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .mini-artist {
+        font-size: 0.75rem;
+        color: var(--text-subdued);
+    }
+
+    .mini-play {
+        color: var(--text-subdued);
     }
 </style>
