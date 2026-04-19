@@ -1825,6 +1825,19 @@ export function removeFromQueue(index: number): void {
 // Reorder queue (move track from one position to another)
 export function reorderQueue(fromIndex: number, toIndex: number): void {
     const currentIdx = get(queueIndex);
+    const isShuffle = get(shuffle);
+
+    if (fromIndex === toIndex) return;
+
+    const queueBefore = get(queue);
+    if (
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= queueBefore.length ||
+        toIndex >= queueBefore.length
+    ) {
+        return;
+    }
 
     queue.update(q => {
         const newQueue = [...q];
@@ -1846,21 +1859,43 @@ export function reorderQueue(fromIndex: number, toIndex: number): void {
     // This is tricky. An item moved from A to B.
     // Indices between A and B shifted.
     // The item at 'fromIndex' is now at 'toIndex'.
-    if (get(shuffle)) {
+    if (isShuffle) {
         shuffledIndices.update(indices => {
-            return indices.map(i => {
+            const fromPos = indices.indexOf(fromIndex);
+            const toPos = indices.indexOf(toIndex);
+
+            // First remap numeric queue indices so they still reference
+            // the same tracks after the queue array reorder.
+            const remapped = indices.map(i => {
                 if (i === fromIndex) return toIndex;
                 if (fromIndex < toIndex) {
-                    // Moved down: items between from+1 and to shifted up (-1)
+                    // Moved down: items between from+1 and to shift up (-1)
                     if (i > fromIndex && i <= toIndex) return i - 1;
                 } else {
-                    // Moved up: items between to and from-1 shifted down (+1)
+                    // Moved up: items between to and from-1 shift down (+1)
                     if (i >= toIndex && i < fromIndex) return i + 1;
                 }
                 return i;
             });
+
+            // Then reflect manual user intent in the visible shuffled order.
+            if (fromPos !== -1 && toPos !== -1 && fromPos !== toPos) {
+                const [moved] = remapped.splice(fromPos, 1);
+                remapped.splice(toPos, 0, moved);
+            }
+
+            return remapped;
         });
+
+        // Keep shuffled cursor aligned to the currently playing queue index.
+        const currentQueueIdx = get(queueIndex);
+        const ptr = get(shuffledIndices).indexOf(currentQueueIdx);
+        if (ptr !== -1) {
+            shuffledIndex.set(ptr);
+        }
     }
+
+    pluginEvents.emit('queueChange', { queue: get(queue), index: get(queueIndex) });
     _schedulePreload();
 }
 
