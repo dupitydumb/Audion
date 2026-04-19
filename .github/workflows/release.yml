@@ -247,6 +247,9 @@ jobs:
   # ---------------------------------------------------------------------------
   release-flatpak:
     runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
+      options: --privileged
     needs: release-linux
     if: |
       always() &&
@@ -283,23 +286,22 @@ jobs:
           echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
 
-      - name: Install Flatpak and flatpak-builder
+      - name: Configure Flathub remote (system scope)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
-          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak remotes --user
-          flatpak remote-ls --user flathub | head -n 20
-
-      - name: Preinstall Flatpak SDK/runtime (user scope)
-        run: |
-          flatpak install --user -y flathub org.freedesktop.Platform//24.08
-          flatpak install --user -y flathub org.freedesktop.Sdk//24.08
+          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak remotes --system
 
       - name: Build Flatpak bundle
-        run: |
-          flatpak-builder --force-clean --user --install-deps-from=flathub --repo=repo flatpak_app packaging/flatpak/com.audion.app.yml
-          flatpak build-bundle repo audion_${{ steps.info.outputs.version }}_flatpak.flatpak com.audion.app
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: packaging/flatpak/com.audion.app.yml
+          repository-name: flathub
+          repository-url: https://flathub.org/repo/flathub.flatpakrepo
+          bundle: audion_${{ steps.info.outputs.version }}_flatpak.flatpak
+          cache-key: flatpak-builder-${{ runner.os }}-${{ hashFiles('packaging/flatpak/*.yml') }}-v1
+          install-dependencies: true
+          upload-artifact: false
+          verbose: true
 
       - name: Verify Flatpak bundle
         run: |
