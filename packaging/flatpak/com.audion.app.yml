@@ -26,6 +26,7 @@ build-options:
   env:
     CARGO_HOME: /run/build/audion/.cargo
     npm_config_cache: /run/build/audion/.npm
+    PKG_CONFIG_PATH: /app/lib/pkgconfig:/app/share/pkgconfig:/usr/lib/pkgconfig:/usr/share/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib64/pkgconfig
 
 modules:
   - name: audion
