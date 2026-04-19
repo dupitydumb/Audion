@@ -2,16 +2,7 @@
 // Search and browse tracks from the Tidal catalog with full playback integration
 
 (function () {
-  // Import appSettings from Svelte store (native app settings)
-  let appSettings = null;
-  try {
-    // Dynamically require if possible (for Tauri context)
-    appSettings =
-      window.__TAURI__ && window.appSettings ? window.appSettings : null;
-  } catch (e) {
-    appSettings = null;
-  }
-  ("use strict");
+  "use strict";
 
   // API Configuration - Multiple endpoints for different services
   const API_ENDPOINTS = {
@@ -22,21 +13,45 @@
       "https://maus.qqdl.site",
       "https://arran.monochrome.tf"
     ],
-    DETAILS: "https://triton.squid.wtf",         // Artist/Album details
+    DETAILS: "https://triton.squid.wtf",
     STREAM: [
       "https://hifi-two.spotisaver.net",
       "https://triton.squid.wtf",
-      "https://vogel.qqdl.site/",
-      "https://tidal.kinoplus.online/",
-      "https://katze.qqdl.site/",
-      "https://arran.monochrome.tf/"
+      "https://vogel.qqdl.site",
+      "https://tidal.kinoplus.online",
+      "https://katze.qqdl.site",
+      "https://arran.monochrome.tf"
     ]
   };
 
-  // Helper function to get a random search endpoint
+  // Temporary safeguard: direct DASH segment playback from TIDAL CDN is blocked
+  // by CORS in browser/dev environments and can fail with upstream 403.
+  // Keep this off until a local relay/proxy path is implemented.
+  const ENABLE_TIDAL_DASH_PLAYBACK = false;
+
+  const UPTIME_ENDPOINT_SOURCES = [
+    "https://tidal-uptime.jiffy-puffs-1j.workers.dev/",
+    "https://tidal-uptime.props-76styles.workers.dev/"
+  ];
+  const ENDPOINT_CACHE_KEY = "tidal-search:endpoint-cache:v1";
+  const ENDPOINT_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 1 day
+
+  function shuffled(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
   function getRandomSearchEndpoint() {
     const searchEndpoints = API_ENDPOINTS.SEARCH;
     return searchEndpoints[Math.floor(Math.random() * searchEndpoints.length)];
+  }
+
+  function normalizeEndpointUrl(url) {
+    return String(url || "").trim().replace(/\/+$/, "");
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -50,9 +65,20 @@
     searchMode: "track", // 'track' or 'artist'
     searchTimeout: null,
     currentResults: [],
-    isPlaying: null, // Currently playing Tidal track ID
-    libraryTracks: new Set(), // Set of external_ids or Tidal IDs already in library
-    hasNewChanges: false, // Track if we've added new songs
+    searchCache: {}, // keyed by "mode:query" e.g. "track:adele"
+    isPlaying: null,
+    libraryTracks: new Set(),
+    hasNewChanges: false,
+    endpointStatus: {
+      lastUpdated: null,
+      apiUp: 0,
+      streamingUp: 0,
+      down: 0,
+      source: "default",
+      loading: true,
+      error: null
+    },
+    endpointRefreshPromise: null,
 
     // Navigation state
     navigationStack: [], // Stack of {type, data, scrollPosition} for back navigation
@@ -72,6 +98,11 @@
       this.createSearchPanel();
       this.createPlayerBarButton();
 
+      // Load dynamic endpoint pool (cached for 1 day)
+      this.refreshEndpointConfig().catch((err) => {
+        console.warn("[TidalSearch] Endpoint refresh failed:", err);
+      });
+
       // Retry for late DOM loading
       setTimeout(() => this.createPlayerBarButton(), 500);
       setTimeout(() => this.createPlayerBarButton(), 1500);
@@ -86,19 +117,12 @@
           );
           try {
             const quality = options?.quality || "LOSSLESS";
-            let streamData = await this.fetchStream(externalId, quality);
-
-            // Handle MPD fallback
-            if (streamData?.data?.manifestMimeType === "application/dash+xml") {
-              streamData = await this.fetchStream(externalId, "LOSSLESS");
-              if (
-                streamData?.data?.manifestMimeType === "application/dash+xml"
-              ) {
-                streamData = await this.fetchStream(externalId, "HIGH");
-              }
-            }
-
+            // fetchStream handles mirror rotation and full quality fallback chain
+            const streamData = await this.fetchStream(externalId, quality);
             const streamUrl = this.decodeManifest(streamData.data);
+            if (streamUrl?.startsWith("blob:")) {
+              setTimeout(() => URL.revokeObjectURL(streamUrl), 5000);
+            }
             return streamUrl;
           } catch (err) {
             console.error("[TidalSearch] Failed to resolve stream:", err);
@@ -113,11 +137,13 @@
         api.handleRequest("searchCover", async (data) => {
           const { title, artist, trackId, requester } = data;
           console.log(
-            `[TidalSearch] Cover search requested by: ${requester || "unknown"}`,
+            `[TidalSearch] Cover search requested by: ${requester || "unknown"} | title="${title}" artist="${artist}" trackId=${trackId ?? "none"}`,
           );
 
           // Call the existing searchCoverForRPC method
-          return await this.searchCoverForRPC(title, artist, trackId);
+          const result = await this.searchCoverForRPC(title, artist, trackId);
+          console.log(`[TidalSearch] Cover search result for "${title}": ${result ?? "null (no cover found)"}`);
+          return result;
         });
         console.log("[TidalSearch] Registered 'searchCover' request handler");
       }
@@ -137,6 +163,24 @@
       style.textContent = `
                 /* Tidal Search Panel */
                 #tidal-search-panel {
+                    position: fixed;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%) scale(0.9);
+                    background: var(--bg-elevated, #181818);
+                    border: 1px solid var(--border-color, #404040);
+                    border-radius: 16px;
+                    padding: 24px;
+                    width: 650px;
+                    max-height: 80vh;
+                    z-index: 10001;
+                    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                    opacity: 0;
+                    visibility: hidden;
+                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                    display: flex;
+                    flex-direction: column;
+                }
 
                 /* Download Progress Bar */
                 .tidal-download-progress {
@@ -182,24 +226,6 @@
                 .tidal-download-progress-text {
                     font-size: 14px;
                     color: var(--text-primary, #fff);
-                }
-                    position: fixed;
-                    top: 50%;
-                    left: 50%;
-                    transform: translate(-50%, -50%) scale(0.9);
-                    background: var(--bg-elevated, #181818);
-                    border: 1px solid var(--border-color, #404040);
-                    border-radius: 16px;
-                    padding: 24px;
-                    width: 650px;
-                    max-height: 80vh;
-                    z-index: 10001;
-                    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-                    opacity: 0;
-                    visibility: hidden;
-                    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                    display: flex;
-                    flex-direction: column;
                 }
 
                 #tidal-search-panel.open {
@@ -297,6 +323,27 @@
                     display: flex;
                     gap: 12px;
                     margin-bottom: 16px;
+                }
+
+                .tidal-endpoint-status {
+                  margin-bottom: 12px;
+                  padding: 10px 12px;
+                  border: 1px solid var(--border-color, #404040);
+                  border-radius: 8px;
+                  background: var(--bg-surface, #222);
+                  display: flex;
+                  flex-direction: column;
+                  gap: 4px;
+                }
+
+                .tidal-endpoint-status-main {
+                  font-size: 12px;
+                  color: var(--text-primary, #fff);
+                }
+
+                .tidal-endpoint-status-counts {
+                  font-size: 11px;
+                  color: var(--text-subdued, #9a9a9a);
                 }
 
                 .tidal-search-input {
@@ -980,9 +1027,21 @@
                 .tidal-album-card-artist {
                     font-size: 12px;
                     color: var(--text-subdued, #6a6a6a);
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                    overflow: hidden;
+                }
+                .tidal-album-card-artist-name {
+                    white-space: nowrap;
                     overflow: hidden;
                     text-overflow: ellipsis;
+                    min-width: 0;
+                    flex: 1;
+                }
+                .tidal-album-card-track-count {
                     white-space: nowrap;
+                    flex-shrink: 0;
                 }
 
                 /* ═══ Mobile Responsive ═══ */
@@ -1032,6 +1091,10 @@
                         flex-direction: column;
                         gap: 10px;
                     }
+
+                      .tidal-endpoint-status {
+                        margin: 0 16px 10px 16px;
+                      }
 
                     .tidal-search-input {
                         font-size: 16px; /* prevent iOS zoom */
@@ -1151,6 +1214,10 @@
                     </h2>
                     <button class="tidal-close-btn" title="Close">✕</button>
                 </div>
+                  <div class="tidal-endpoint-status">
+                    <div class="tidal-endpoint-status-main">Endpoint status: loading...</div>
+                    <div class="tidal-endpoint-status-counts">API up 0 • Streaming up 0 • Down 0</div>
+                  </div>
                 <div class="tidal-search-controls">
                     <input type="text" class="tidal-search-input" placeholder="Search for music on Tidal..." autofocus>
                     <div class="tidal-mode-toggle">
@@ -1171,6 +1238,7 @@
                 </div>
             `;
       document.body.appendChild(panel);
+      this.updateEndpointStatusDisplay();
 
       // Event listeners
       panel.querySelector(".tidal-close-btn").onclick = () => this.close();
@@ -1183,12 +1251,13 @@
         const query = e.target.value.trim();
         // Clear previous timer
         if (searchTimer) clearTimeout(searchTimer);
-
+        
         if (!query) {
+          this.searchCache = {};
           this.showEmpty();
           return;
         }
-
+        
         // Debounce search (500ms)
         searchTimer = setTimeout(() => {
           this.performSearch(query);
@@ -1282,6 +1351,11 @@
 
       // Refresh library tracks cache on open to capture any external changes
       this.fetchLibraryTracks();
+
+      // Refresh endpoint list if cache is stale
+      this.refreshEndpointConfig().catch((err) => {
+        console.warn("[TidalSearch] Endpoint refresh on open failed:", err);
+      });
     },
 
     close() {
@@ -1336,6 +1410,233 @@
       }
     },
 
+    getFetcher() {
+      return this.api?.fetch ? this.api.fetch.bind(this.api) : fetch;
+    },
+
+    readEndpointCache() {
+      try {
+        const raw = localStorage.getItem(ENDPOINT_CACHE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (!parsed?.payload) return null;
+        return parsed;
+      } catch (err) {
+        console.warn("[TidalSearch] Failed to read endpoint cache:", err);
+        return null;
+      }
+    },
+
+    writeEndpointCache(payload) {
+      try {
+        localStorage.setItem(
+          ENDPOINT_CACHE_KEY,
+          JSON.stringify({
+            cachedAt: Date.now(),
+            payload,
+          }),
+        );
+      } catch (err) {
+        console.warn("[TidalSearch] Failed to write endpoint cache:", err);
+      }
+    },
+
+    isCacheFresh(cachedAt) {
+      if (!cachedAt) return false;
+      return Date.now() - Number(cachedAt) < ENDPOINT_CACHE_TTL_MS;
+    },
+
+    dedupeUrls(list) {
+      const seen = new Set();
+      const out = [];
+
+      for (const item of Array.isArray(list) ? list : []) {
+        const normalized = normalizeEndpointUrl(item?.url || item);
+        if (!normalized || seen.has(normalized)) continue;
+        seen.add(normalized);
+        out.push(normalized);
+      }
+
+      return out;
+    },
+
+    applyEndpointPayload(payload) {
+      const apiUrls = this.dedupeUrls(payload?.api || []);
+      const streamUrls = this.dedupeUrls(payload?.streaming || []);
+
+      if (apiUrls.length > 0) {
+        API_ENDPOINTS.SEARCH = apiUrls;
+        API_ENDPOINTS.DETAILS = apiUrls[0];
+      }
+
+      if (streamUrls.length > 0) {
+        API_ENDPOINTS.STREAM = streamUrls;
+      }
+    },
+
+    formatTimestamp(ts) {
+      if (!ts) return "unknown";
+      const d = new Date(ts);
+      if (Number.isNaN(d.getTime())) return "unknown";
+      return d.toLocaleString();
+    },
+
+    updateEndpointStatusDisplay() {
+      const mainEl = document.querySelector(".tidal-endpoint-status-main");
+      const countsEl = document.querySelector(".tidal-endpoint-status-counts");
+      if (!mainEl || !countsEl) return;
+
+      if (this.endpointStatus.loading) {
+        mainEl.textContent = "Endpoint status: checking...";
+        countsEl.textContent = "API up 0 • Streaming up 0 • Down 0";
+        return;
+      }
+
+      const sourceText = this.endpointStatus.source
+        ? ` (${this.endpointStatus.source})`
+        : "";
+
+      mainEl.textContent = this.endpointStatus.error
+        ? `Endpoint status: using defaults${sourceText}`
+        : `Last API update: ${this.formatTimestamp(this.endpointStatus.lastUpdated)}${sourceText}`;
+
+      countsEl.textContent = `API up ${this.endpointStatus.apiUp} • Streaming up ${this.endpointStatus.streamingUp} • Down ${this.endpointStatus.down}`;
+    },
+
+    async fetchEndpointPayloadFrom(sourceUrl) {
+      const fetcher = this.getFetcher();
+      const response = await fetcher(sourceUrl);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (!data || (!Array.isArray(data.api) && !Array.isArray(data.streaming))) {
+        throw new Error("Invalid endpoint payload");
+      }
+
+      return data;
+    },
+
+    async refreshEndpointConfig(force = false) {
+      if (this.endpointRefreshPromise && !force) {
+        return this.endpointRefreshPromise;
+      }
+
+      this.endpointStatus.loading = true;
+      this.endpointStatus.error = null;
+      this.updateEndpointStatusDisplay();
+
+      this.endpointRefreshPromise = (async () => {
+        const cached = this.readEndpointCache();
+
+        if (!force && cached?.payload && this.isCacheFresh(cached.cachedAt)) {
+          this.applyEndpointPayload(cached.payload);
+          this.endpointStatus = {
+            ...this.endpointStatus,
+            loading: false,
+            error: null,
+            source: "cache",
+            lastUpdated: cached.payload.lastUpdated || new Date(cached.cachedAt).toISOString(),
+            apiUp: Array.isArray(cached.payload.api) ? cached.payload.api.length : 0,
+            streamingUp: Array.isArray(cached.payload.streaming) ? cached.payload.streaming.length : 0,
+            down: Array.isArray(cached.payload.down) ? cached.payload.down.length : 0,
+          };
+          this.updateEndpointStatusDisplay();
+          return;
+        }
+
+        let payload = null;
+        let source = null;
+        let lastErr = null;
+
+        for (const sourceUrl of UPTIME_ENDPOINT_SOURCES) {
+          try {
+            payload = await this.fetchEndpointPayloadFrom(sourceUrl);
+            source = sourceUrl;
+            break;
+          } catch (err) {
+            lastErr = err;
+            console.warn(`[TidalSearch] Uptime source failed: ${sourceUrl}`, err);
+          }
+        }
+
+        if (!payload && cached?.payload) {
+          payload = cached.payload;
+          source = "stale-cache";
+        }
+
+        if (!payload) {
+          this.endpointStatus = {
+            ...this.endpointStatus,
+            loading: false,
+            error: lastErr ? String(lastErr.message || lastErr) : "Unable to fetch endpoint status",
+            source: "default",
+            lastUpdated: null,
+            apiUp: Array.isArray(API_ENDPOINTS.SEARCH) ? API_ENDPOINTS.SEARCH.length : 0,
+            streamingUp: Array.isArray(API_ENDPOINTS.STREAM) ? API_ENDPOINTS.STREAM.length : 0,
+            down: 0,
+          };
+          this.updateEndpointStatusDisplay();
+          return;
+        }
+
+        this.applyEndpointPayload(payload);
+        this.writeEndpointCache(payload);
+
+        this.endpointStatus = {
+          ...this.endpointStatus,
+          loading: false,
+          error: null,
+          source,
+          lastUpdated: payload.lastUpdated || new Date().toISOString(),
+          apiUp: Array.isArray(payload.api) ? payload.api.length : 0,
+          streamingUp: Array.isArray(payload.streaming) ? payload.streaming.length : 0,
+          down: Array.isArray(payload.down) ? payload.down.length : 0,
+        };
+        this.updateEndpointStatusDisplay();
+      })()
+        .finally(() => {
+          this.endpointRefreshPromise = null;
+        });
+
+      return this.endpointRefreshPromise;
+    },
+
+    getApiEndpointsForDetails() {
+      const all = [
+        API_ENDPOINTS.DETAILS,
+        ...(Array.isArray(API_ENDPOINTS.SEARCH) ? API_ENDPOINTS.SEARCH : []),
+      ].map(normalizeEndpointUrl).filter(Boolean);
+
+      return [...new Set(all)];
+    },
+
+    async fetchJsonWithApiFallback(pathnameAndQuery) {
+      const endpoints = this.getApiEndpointsForDetails();
+      let lastError = null;
+
+      for (const endpoint of endpoints) {
+        try {
+          const url = `${endpoint}${pathnameAndQuery}`;
+          const response = this.api.fetch
+            ? await this.api.fetch(url)
+            : await fetch(url);
+
+          if (!response.ok) {
+            lastError = new Error(`HTTP ${response.status}`);
+            continue;
+          }
+
+          return await response.json();
+        } catch (err) {
+          lastError = err;
+        }
+      }
+
+      throw lastError || new Error("All API endpoints failed");
+    },
+
     // ═══════════════════════════════════════════════════════════════════════
     // SEARCH FUNCTIONALITY
     // ═══════════════════════════════════════════════════════════════════════
@@ -1348,7 +1649,7 @@
       });
 
       // Re-run search with new mode
-      const query = document.querySelector(".tidal-search-input")?.value;
+      const query = document.querySelector(".tidal-search-input")?.value.trim();
       if (query) {
         this.performSearch(query);
       }
@@ -1360,6 +1661,19 @@
     },
 
     async performSearch(query) {
+      const cacheKey = `${this.searchMode}:${query}`;
+
+      // Return cached results immediately — no network call
+      if (this.searchCache[cacheKey]) {
+        console.log(`[TidalSearch] Cache hit for "${cacheKey}"`);
+        const data = this.searchCache[cacheKey];
+        this.currentResults = data;
+        if (this.searchMode === "track") this.renderTrackResults(data);
+        else if (this.searchMode === "artist") this.renderArtistResults(data);
+        else this.renderAlbumResults(data);
+        return;
+      }
+
       this.showLoading();
 
       try {
@@ -1373,18 +1687,33 @@
           param = "al"; // Album search
         }
 
-        const url = `${getRandomSearchEndpoint()}/search/?${param}=${encodeURIComponent(query)}`;
+        let data = null;
 
-        // Use CORS-free fetch via Tauri backend
-        const response = this.api.fetch
-          ? await this.api.fetch(url)
-          : await fetch(url);
+        for (const baseUrl of shuffled(API_ENDPOINTS.SEARCH)) {
+          try {
+            const url = `${baseUrl}/search/?${param}=${encodeURIComponent(query)}`;
+            // Use CORS-free fetch via Tauri backend
+            const response = this.api.fetch
+              ? await this.api.fetch(url)
+              : await fetch(url);
 
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
+            if (!response.ok) {
+              console.warn(`[TidalSearch] Search failed on ${baseUrl}: HTTP ${response.status}`);
+              continue;
+            }
+
+            data = await response.json();
+            console.log(`[TidalSearch] Search OK from ${baseUrl}`);
+            break;
+          } catch (e) {
+            console.warn(`[TidalSearch] Search error on ${baseUrl}:`, e.message);
+          }
         }
 
-        const data = await response.json();
+        if (!data) throw new Error("All search mirrors failed");
+
+        // Cache the result
+        this.searchCache[cacheKey] = data;
         this.currentResults = data;
 
         // Render based on mode
@@ -1576,7 +1905,10 @@
                alt="${this.escapeHtml(album.title)}"
                onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 160 160%22%3E%3Crect fill=%22%23282828%22 width=%22160%22 height=%22160%22/%3E%3Ctext x=%2280%22 y=%2290%22 text-anchor=%22middle%22 fill=%22%23666%22 font-size=%2240%22%3E🎵%3C/text%3E%3C/svg%3E'">
           <div class="tidal-album-card-title">${this.escapeHtml(album.title)}</div>
-          <div class="tidal-album-card-artist">${this.escapeHtml(artistName)}</div>
+          <div class="tidal-album-card-artist">
+            <span class="tidal-album-card-artist-name">${this.escapeHtml(artistName)}</span>
+            ${album.numberOfTracks ? `<span class="tidal-album-card-track-count">• ${album.numberOfTracks} tracks</span>` : ""}
+          </div>
         </div>
       `;
     },
@@ -1619,10 +1951,12 @@
       });
 
       // Add click handlers for save buttons
-      container.querySelectorAll(".tidal-save-btn").forEach((btn, index) => {
+      container.querySelectorAll(".tidal-save-btn").forEach((btn) => {
         btn.onclick = (e) => {
           e.stopPropagation();
-          this.saveTrack(items[index], btn);
+          const trackId = btn.dataset.trackId;
+          const track = items.find((t) => String(t.id) === String(trackId));
+          if (track) this.saveTrack(track, btn);
         };
       });
     },
@@ -1778,86 +2112,73 @@
 
     async playTrack(track, element) {
       console.log("[TidalSearch] Playing track:", track.title);
-
+    
       // Show loading state
       if (element) {
         element.classList.add("loading");
       }
-
+    
       try {
-        // Get selected quality
-        let quality =
+        const quality =
           document.getElementById("tidal-quality")?.value || "LOSSLESS";
-
-        // Fetch stream
-        let streamData = await this.fetchStream(track.id, quality);
-
-        // Check if it's MPD (DASH) format - native audio can't play this
-        if (streamData?.data?.manifestMimeType === "application/dash+xml") {
-          console.log("[TidalSearch] MPD detected, falling back to LOSSLESS");
-          this.showToast("Hi-Res uses DASH, trying Lossless...");
-
-          // Try LOSSLESS instead
-          if (quality === "HI_RES_LOSSLESS") {
-            quality = "LOSSLESS";
-            streamData = await this.fetchStream(track.id, quality);
-          }
-
-          // If still MPD, try HIGH
-          if (streamData?.data?.manifestMimeType === "application/dash+xml") {
-            quality = "HIGH";
-            streamData = await this.fetchStream(track.id, quality);
-          }
-        }
-
+    
+        // fetchStream handles mirror rotation and full quality fallback chain
+        const streamData = await this.fetchStream(track.id, quality);
+    
         if (!streamData?.data?.manifest) {
           throw new Error("No manifest in response");
         }
-
-        // Decode manifest to get stream URL
+    
+        // decodeManifest returns either a direct CDN URL (FLAC/AAC)
+        // or a blob: URL containing the MPD XML (Hi-Res DASH)
         const streamUrl = this.decodeManifest(streamData.data);
-
+    
         if (!streamUrl) {
           throw new Error("Could not extract stream URL");
         }
-
-        console.log("[TidalSearch] Stream URL:", streamUrl);
-
-        // Use the app's player API instead of querying a DOM <audio> element.
-        // The player will call our registered stream resolver to obtain `streamUrl`.
+    
+        const isMpd = streamData.data.manifestMimeType === "application/dash+xml";
+        const actualQuality = isMpd
+          ? "HI_RES_LOSSLESS"
+          : streamData.data.audioQuality || "LOSSLESS";
+    
+        console.log(`[TidalSearch] Stream URL (${actualQuality}):`, streamUrl);
+    
         // Update current playing track
         this.isPlaying = track.id;
-
+    
         // Create Audion-compatible track object
         const artistName =
           track.artist?.name || track.artists?.[0]?.name || "Unknown Artist";
         const coverUrl = track.album?.cover
           ? `https://resources.tidal.com/images/${track.album.cover.replace(/-/g, "/")}/320x320.jpg`
           : null;
-
+    
         const audionTrack = {
           id: track.id,
-          path: streamUrl, // Use stream URL as path (player will prefer resolving via stream resolver)
+          path: isMpd ? `tidal://${track.id}` : streamUrl,
+          source_type: 'tidal',
           title: track.title + (track.version ? ` (${track.version})` : ""),
           artist: artistName,
           album: track.album?.title || null,
           duration: track.duration || null,
           cover_url: coverUrl,
           tidal_id: track.id,
-          format: streamData?.data?.audioQuality || "LOSSLESS",
-          bitrate: streamData?.data?.sampleRate || null,
+          format: actualQuality,
+          bitrate: streamData.data.sampleRate || null,
         };
-
+    
         // Set track via the plugin API (this triggers app playback and emits trackChange)
         if (this.api?.player?.setTrack) {
           this.api.player.setTrack(audionTrack);
         } else {
           console.warn('[TidalSearch] player.setTrack not available');
         }
-
+    
         // Show toast notification
-        this.showToast(`▶ ${audionTrack.title} - ${artistName}`);
-
+        const qualityLabel = isMpd ? "Hi-Res" : actualQuality === "LOSSLESS" ? "Lossless" : actualQuality;
+        this.showToast(`▶ ${audionTrack.title} - ${artistName} [${qualityLabel}]`);
+    
         // Update track items to show playing state
         document.querySelectorAll(".tidal-track-item").forEach((el) => {
           el.classList.toggle(
@@ -1876,83 +2197,135 @@
     },
 
     async fetchStream(trackId, quality) {
+      const QUALITY_FALLBACKS = {
+        "HI_RES_LOSSLESS": ["LOSSLESS", "HIGH", "LOW"],
+        "LOSSLESS":         ["HIGH", "LOW"],
+        "HIGH":             ["LOSSLESS", "LOW"],
+        "LOW":              ["HIGH", "LOSSLESS"],
+      };
+
+      const qualitiesToTry = [quality, ...(QUALITY_FALLBACKS[quality] || [])];
       const streamEndpoints = Array.isArray(API_ENDPOINTS.STREAM)
         ? API_ENDPOINTS.STREAM
         : [API_ENDPOINTS.STREAM];
 
-      let lastError = null;
+      for (const currentQuality of qualitiesToTry) {
+        for (const baseUrl of shuffled(streamEndpoints)) {
+          const url = `${baseUrl}/track/?id=${trackId}&quality=${currentQuality}`;
+          try {
+            // Use CORS-free fetch via Tauri backend
+            const response = this.api.fetch
+              ? await this.api.fetch(url)
+              : await fetch(url);
 
-      for (const endpoint of streamEndpoints) {
-        try {
-          const url = `${endpoint}/track/?id=${trackId}&quality=${quality}`;
-          console.log(`[TidalSearch] Attempting to fetch stream from: ${endpoint}`);
+            if (!response.ok) {
+              if (response.status === 403 || response.status === 503) continue;
+              throw new Error(`HTTP ${response.status}`);
+            }
 
-          // Use CORS-free fetch via Tauri backend
-          const response = this.api.fetch
-            ? await this.api.fetch(url)
-            : await fetch(url);
+            const data = await response.json();
 
-          if (!response.ok) {
-            console.warn(`[TidalSearch] Endpoint ${endpoint} failed: HTTP ${response.status}`);
-            continue;
-          }
+            if (!data?.data?.manifest) {
+              console.warn(`[TidalSearch] No manifest from ${baseUrl} @ ${currentQuality}`);
+              continue;
+            }
 
-          const data = await response.json();
-          // Basic validation of the response data
-          if (data && data.success !== false) {
+            // Avoid MPD/DASH output until we have a local relay for segment requests.
+            // Direct browser requests to TIDAL CDN segments are frequently blocked.
+            if (
+              data?.data?.manifestMimeType === "application/dash+xml" &&
+              !ENABLE_TIDAL_DASH_PLAYBACK
+            ) {
+              console.warn(
+                `[TidalSearch] Skipping DASH manifest from ${baseUrl} @ ${currentQuality}; falling back to non-DASH quality`
+              );
+              continue;
+            }
+
+            console.log(`[TidalSearch] Stream OK: ${baseUrl} @ ${currentQuality}`);
             return data;
-          } else {
-            console.warn(`[TidalSearch] Endpoint ${endpoint} returned unsuccessful data`);
-            continue;
+
+          } catch (e) {
+            console.warn(`[TidalSearch] Mirror failed ${baseUrl} @ ${currentQuality}:`, e.message);
           }
-        } catch (err) {
-          console.error(`[TidalSearch] Error fetching from ${endpoint}:`, err);
-          lastError = err;
         }
+        console.warn(`[TidalSearch] All mirrors failed @ ${currentQuality}, trying next tier...`);
       }
 
-      throw lastError || new Error("Failed to get stream from any endpoint");
+      throw new Error("[TidalSearch] All mirrors and quality tiers exhausted");
     },
 
     // covers for RPC
 
     async searchCoverForRPC(title, artist, trackId) {
+      const tag = `[TidalSearch:searchCoverForRPC]`;
       try {
-        const query = `${title} ${artist}`;
-        const url = `${getRandomSearchEndpoint()}/search/?s=${encodeURIComponent(query)}`;
+        const query = `${title} ${artist}`.trim();
+        console.log(`${tag} Starting cover search | query="${query}" trackId=${trackId ?? "none"}`);
 
-        const response = this.api.fetch
-          ? await this.api.fetch(url)
-          : await fetch(url);
+        let data = null;
+        let successMirror = null;
 
-        if (!response.ok) {
-          console.log("[TidalSearch] Cover search failed:", response.status);
+        const mirrors = shuffled(API_ENDPOINTS.SEARCH);
+        console.log(`${tag} Trying ${mirrors.length} mirrors...`);
+
+        for (const baseUrl of mirrors) {
+          try {
+            const url = `${baseUrl}/search/?s=${encodeURIComponent(query)}`;
+            console.log(`${tag} Trying mirror: ${baseUrl}`);
+            const response = this.api.fetch
+              ? await this.api.fetch(url)
+              : await fetch(url);
+            if (!response.ok) {
+              console.warn(`${tag} Mirror ${baseUrl} returned HTTP ${response.status} - skipping`);
+              continue;
+            }
+            data = await response.json();
+            successMirror = baseUrl;
+            console.log(`${tag} Mirror succeeded: ${baseUrl}`);
+            break;
+          } catch (e) {
+            console.warn(`${tag} Mirror ${baseUrl} threw error: ${e.message}`);
+          }
+        }
+
+        if (!data) {
+          console.error(`${tag} All mirrors failed for query="${query}" - no cover available`);
           return null;
         }
 
-        const data = await response.json();
         const items = data?.data?.items || [];
+        console.log(`${tag} Search returned ${items.length} item(s) from ${successMirror}`);
 
-        if (items.length > 0 && items[0].album?.cover) {
-          const coverUrl = `https://resources.tidal.com/images/${items[0].album.cover.replace(/-/g, "/")}/640x640.jpg`;
-
-          // Update database if we have a track ID
-          if (trackId && this.api.library?.updateTrackCoverUrl) {
-            try {
-              await this.api.library.updateTrackCoverUrl(trackId, coverUrl);
-              console.log(
-                "[TidalSearch] Updated cover_url in database for track:",
-                trackId,
-              );
-            } catch (err) {
-              console.log("[TidalSearch] Could not update database:", err);
-            }
-          }
-
-          return coverUrl;
+        if (items.length === 0) {
+          console.warn(`${tag} No search results for query="${query}"`);
+          return null;
         }
+
+        const firstItem = items[0];
+        console.log(`${tag} First result: title="${firstItem.title}" artist="${firstItem.artist?.name ?? "unknown"}" album="${firstItem.album?.title ?? "unknown"}" cover=${firstItem.album?.cover ?? "MISSING"}`);
+
+        if (!firstItem.album?.cover) {
+          console.warn(`${tag} First result has no album.cover field | title="${firstItem.title}"`);
+          return null;
+        }
+
+        const coverUrl = `https://resources.tidal.com/images/${firstItem.album.cover.replace(/-/g, "/")}/640x640.jpg`;
+        console.log(`${tag} Cover URL built: ${coverUrl}`);
+
+        // Update database if we have a track ID
+        if (trackId && this.api.library?.updateTrackCoverUrl) {
+          try {
+            await this.api.library.updateTrackCoverUrl(trackId, coverUrl);
+            console.log(`${tag} Updated cover_url in database for trackId=${trackId}`);
+          } catch (err) {
+            console.warn(`${tag} Could not update database for trackId=${trackId}:`, err);
+          }
+        }
+
+        return coverUrl;
       } catch (error) {
-        console.log("[TidalSearch] Cover search error:", error);
+        console.error(`${tag} Unexpected error:`, error);
       }
 
       return null;
@@ -1998,18 +2371,23 @@
         }
 
         // Fetch from Tidal API
-        const url = `${getRandomSearchEndpoint()}/search/?a=${encodeURIComponent(artistName)}`;
+        let data = null;
 
-        const response = this.api.fetch
-          ? await this.api.fetch(url)
-          : await fetch(url);
-
-        if (!response.ok) {
-          console.log("[TidalSearch] Artist picture search failed:", response.status);
-          return null;
+        for (const baseUrl of shuffled(API_ENDPOINTS.SEARCH)) {
+          try {
+            const url = `${baseUrl}/search/?a=${encodeURIComponent(artistName)}`;
+            const response = this.api.fetch
+              ? await this.api.fetch(url)
+              : await fetch(url);
+            if (!response.ok) continue;
+            data = await response.json();
+            break;
+          } catch (e) {
+            console.warn(`[TidalSearch] Artist picture search failed on ${baseUrl}:`, e.message);
+          }
         }
 
-        const data = await response.json();
+        if (!data) return null;
         const artists = data?.data?.artists?.items || [];
 
         if (artists.length > 0 && artists[0].picture) {
@@ -2096,6 +2474,8 @@
             cover_url: coverUrl,
             source_type: "tidal",
             external_id: String(track.id), // Used to fetch stream on play
+            track_number: track.trackNumber || null,
+            disc_number: track.volumeNumber || null,
             format: track.mediaMetadata?.tags?.includes("HIRES_LOSSLESS")
               ? "HI_RES_LOSSLESS"
               : track.mediaMetadata?.tags?.includes("LOSSLESS")
@@ -2180,17 +2560,27 @@
         if (manifestMimeType === "application/vnd.tidal.bts") {
           // JSON manifest for FLAC/AAC
           const manifest = JSON.parse(manifestStr);
-          console.log("[TidalSearch] Decoded BTS manifest:", manifest);
+          console.log("[TidalSearch] Stream details:", {
+            mimeType: manifestMimeType,
+            audioQuality: data.audioQuality,
+            sampleRate: data.sampleRate,
+            bitDepth: data.bitDepth,
+            codec: manifest.codecs,
+            encryptionType: manifest.encryptionType,
+            url: manifest.urls?.[0]?.substring(0, 60) + "...",
+          });
 
           if (manifest.urls && manifest.urls.length > 0) {
             return manifest.urls[0];
           }
         } else if (manifestMimeType === "application/dash+xml") {
-          // MPD manifest for Hi-Res - can't play directly
-          console.warn(
-            "[TidalSearch] MPD manifest not supported by native audio",
-          );
-          return null;
+          if (!ENABLE_TIDAL_DASH_PLAYBACK) {
+            console.warn("[TidalSearch] DASH manifest received but DASH playback is disabled");
+            return null;
+          }
+          console.log("[TidalSearch] MPD manifest, returning as blob URL for dash.js");
+          const blob = new Blob([manifestStr], { type: "application/dash+xml" });
+          return URL.createObjectURL(blob);
         }
 
         return null;
@@ -2250,22 +2640,13 @@
     },
 
     async fetchAndRenderArtistPage(artistId) {
+      this.showAllArtistTracks = false;
+      this.showAllArtistAlbums = false;
       this.showLoading();
 
       try {
-        const url = `${API_ENDPOINTS.DETAILS}/artist/?f=${artistId}`;
-
-        const response = this.api.fetch
-          ? await this.api.fetch(url)
-          : await fetch(url);
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
+        const data = await this.fetchJsonWithApiFallback(`/artist/?f=${artistId}`);
         console.log("[TidalSearch] Artist data:", data);
-
         this.renderArtistPage(data);
       } catch (err) {
         console.error("[TidalSearch] Failed to fetch artist:", err);
@@ -2284,10 +2665,14 @@
       this.navigationStack.push({
         type: this.currentView,
         scrollPosition: scrollPosition,
-        // Store enough data to restore the view
-        data: this.currentView === "artist" ?
-          document.querySelector(".tidal-results-container").innerHTML :
-          null
+        // Store search state when navigating from search view
+        mode: this.currentView === "search" ? this.searchMode : undefined,
+        query: this.currentView === "search"
+          ? (document.querySelector(".tidal-search-input")?.value || "")
+          : undefined,
+        results: this.currentView === "search" ? this.currentResults : undefined,
+        // Store the raw data so we can re-render cleanly on back navigation
+        artistData: this.currentView === "artist" ? this.currentArtistData : null
       });
 
       // Navigate to album page
@@ -2303,19 +2688,8 @@
       this.showLoading();
 
       try {
-        const url = `${API_ENDPOINTS.DETAILS}/album/?id=${albumId}`;
-
-        const response = this.api.fetch
-          ? await this.api.fetch(url)
-          : await fetch(url);
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
+        const data = await this.fetchJsonWithApiFallback(`/album/?id=${albumId}`);
         console.log("[TidalSearch] Album data:", data);
-
         this.renderAlbumPage(data);
       } catch (err) {
         console.error("[TidalSearch] Failed to fetch album:", err);
@@ -2334,46 +2708,35 @@
         this.currentView = "search";
         this.searchMode = previousView.mode;
         this.currentResults = previousView.results;
-
+      
         // Restore search input
         const input = document.querySelector(".tidal-search-input");
-        if (input) input.value = previousView.query;
-
+        if (input) input.value = previousView.query ?? "";
+      
         // Restore results
         if (this.searchMode === "track") {
           this.renderTrackResults(previousView.results);
-        } else {
+        } else if (this.searchMode === "artist") {
           this.renderArtistResults(previousView.results);
+        } else if (this.searchMode === "album") {
+          this.renderAlbumResults(previousView.results);
         }
-
+      
         // Restore scroll position
         setTimeout(() => {
           const container = document.querySelector(".tidal-results-container");
           if (container) container.scrollTop = previousView.scrollPosition;
         }, 0);
-
+      
         this.updatePanelTitle("Tidal Search");
-      } else if (previousView.type === "artist" && previousView.data) {
+      } else if (previousView.type === "artist" && previousView.artistData) {
         // Restore artist view
         this.currentView = "artist";
-        const container = document.querySelector(".tidal-results-container");
-        if (container) {
-          container.innerHTML = previousView.data;
-
-          // Re-attach event listeners for album clicks
-          container.querySelectorAll(".tidal-album-item").forEach((el) => {
-            const albumId = el.dataset.albumId;
-            if (albumId) {
-              el.onclick = () => this.handleAlbumClick(albumId);
-            }
-          });
-
-          // Re-attach event listeners for track play/save
-          this.attachTrackEventListeners(container);
-        }
+        this.renderArtistPage(previousView.artistData);
 
         // Restore scroll position
         setTimeout(() => {
+          const container = document.querySelector(".tidal-results-container");
           if (container) container.scrollTop = previousView.scrollPosition;
         }, 0);
 
@@ -2413,13 +2776,6 @@
 
       // Extract artist info from first album or first track
       const artist = albums[0]?.artist || tracks[0]?.artists?.[0] || {};
-
-      // Store tracks in currentResults so they can be accessed for playback/saving
-      this.currentResults = {
-        data: {
-          items: tracks
-        }
-      };
 
       const artistPictureUrl = artist.picture
         ? `https://resources.tidal.com/images/${artist.picture.replace(/-/g, "/")}/480x480.jpg`
@@ -2507,7 +2863,7 @@
       container.innerHTML = html;
 
       // Attach event listeners
-      this.attachTrackEventListeners(container);
+      this.attachTrackEventListeners(container, tracks);
 
       // Attach album click listeners
       container.querySelectorAll(".tidal-album-item").forEach((el) => {
@@ -2584,13 +2940,6 @@
       console.log("[TidalSearch] Album data:", albumData);
       console.log("[TidalSearch] Tracks found:", tracks.length, tracks);
 
-      // Store tracks in currentResults so they can be accessed for playback/saving
-      this.currentResults = {
-        data: {
-          items: tracks
-        }
-      };
-
       const coverUrl = album.cover
         ? `https://resources.tidal.com/images/${album.cover.replace(/-/g, "/")}/320x320.jpg`
         : "";
@@ -2636,7 +2985,7 @@
       container.innerHTML = html;
 
       // Attach event listeners
-      this.attachTrackEventListeners(container);
+      this.attachTrackEventListeners(container, tracks);
 
       // Attach save all button listener
       const saveAllBtn = container.querySelector(".tidal-save-all-btn");
@@ -2680,40 +3029,18 @@
       `;
     },
 
-    attachTrackEventListeners(container) {
-      // Get all track items and their data
+    attachTrackEventListeners(container, tracks) {
+      // tracks is passed directly by the caller — no currentResults lookup needed.
+      // This makes playback and save work correctly regardless of navigation state.
       const trackItems = container.querySelectorAll(".tidal-track-item");
-      const tracks = [];
 
       trackItems.forEach((el) => {
-        // Find track data from currentResults or reconstruct from DOM
         const trackId = el.dataset.id;
-        if (trackId) {
-          tracks.push({ id: trackId, element: el });
-        }
-      });
+        const track = tracks.find((t) => String(t.id) === String(trackId));
+        if (!track) return;
 
-      // Add click listeners for play
-      trackItems.forEach((el, index) => {
         el.onclick = (e) => {
           if (e.target.closest(".tidal-save-btn")) return;
-
-          // Find the track in current results
-          const trackId = el.dataset.id;
-          let track = null;
-
-          // Try to find in current results
-          if (this.currentResults?.data?.items) {
-            track = this.currentResults.data.items.find((t) => String(t.id) === String(trackId));
-          }
-
-          // For artist/album pages, we need to search in the response
-          // This is a simplified approach - in production you'd store the full data
-          if (!track) {
-            console.warn("[TidalSearch] Track data not found for playback");
-            return;
-          }
-
           this.playTrack(track, el);
         };
       });
@@ -2723,16 +3050,8 @@
         btn.onclick = (e) => {
           e.stopPropagation();
           const trackId = btn.dataset.trackId;
-
-          // Find track data
-          let track = null;
-          if (this.currentResults?.data?.items) {
-            track = this.currentResults.data.items.find((t) => String(t.id) === String(trackId));
-          }
-
-          if (track) {
-            this.saveTrack(track, btn);
-          }
+          const track = tracks.find((t) => String(t.id) === String(trackId));
+          if (track) this.saveTrack(track, btn);
         };
       });
     },
@@ -2755,6 +3074,7 @@
       }
 
       let savedCount = 0;
+      let skippedCount = 0;
       let errorCount = 0;
 
       for (let i = 0; i < tracks.length; i++) {
@@ -2778,7 +3098,7 @@
         // Skip if already saved
         if (this.libraryTracks.has(String(track.id))) {
           console.log(`[TidalSearch] Skipping already saved track: ${track.title}`);
-          savedCount++;
+          skippedCount++;
           continue;
         }
 
@@ -2798,6 +3118,8 @@
             cover_url: coverUrl,
             source_type: "tidal",
             external_id: String(track.id),
+            track_number: track.trackNumber || null,
+            disc_number: track.volumeNumber || null,
             format: track.mediaMetadata?.tags?.includes("HIRES_LOSSLESS")
               ? "HI_RES_LOSSLESS"
               : track.mediaMetadata?.tags?.includes("LOSSLESS")
@@ -2827,7 +3149,11 @@
 
       // Show result
       if (errorCount === 0) {
-        this.showToast(`✓ Saved all ${savedCount} tracks to library`);
+        this.showToast(
+          skippedCount > 0
+            ? `✓ Saved ${savedCount} tracks (${skippedCount} already in library)`
+            : `✓ Saved all ${savedCount} tracks to library`,
+        );
       } else {
         this.showToast(
           `Saved ${savedCount} tracks\n${errorCount} failed`,
@@ -2836,7 +3162,9 @@
       }
 
       this.hasNewChanges = true;
-      console.log(`[TidalSearch] Bulk save complete: ${savedCount} saved, ${errorCount} errors`);
+      console.log(
+        `[TidalSearch] Bulk save complete: ${savedCount} saved, ${skippedCount} skipped, ${errorCount} errors`,
+      );
     },
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -2938,3 +3266,4 @@
     window.tidalSearchPlugin = TidalSearch;
   }
 })();
+

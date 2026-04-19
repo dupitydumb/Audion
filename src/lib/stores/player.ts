@@ -107,6 +107,7 @@ async function playWithDash(blobUrl: string, audioElement: HTMLAudioElement): Pr
     });
 }
 
+
 function getHtml5Audio(): HTMLAudioElement {
     if (!html5Audio && typeof window !== 'undefined') {
         html5Audio = new Audio();
@@ -508,7 +509,7 @@ export async function initAudioBackend(): Promise<void> {
 
 function handleRemotePlayerState(payload: any) {
     const isLocalPlaying = get(isPlaying) && get(activeBackend) !== 'remote';
-    
+
     // Auto-switch to tracking the remote device if we are idle and it's playing
     if (!isLocalPlaying && payload.isPlaying && payload.deviceId) {
         if (get(activeBackend) !== 'remote') {
@@ -524,16 +525,16 @@ function handleRemotePlayerState(payload: any) {
             const remoteTrack = payload.track;
             const currentObj = get(currentTrack);
             const remoteTrackId = Number(remoteTrack.id);
-            
+
             if (!currentObj || Number(currentObj.id) !== remoteTrackId) {
                 // Try to resolve track locally for better cover art (Fast O(1) lookup)
                 let localTrack: any = getTrackByIdSync(remoteTrackId);
-                
+
                 // Falling back to O(N) search only if ID fails (rare in synced libraries)
                 if (!localTrack) {
                     const $library = get(libraryTracks);
-                    localTrack = $library.find(t => 
-                        t.title === remoteTrack.title && 
+                    localTrack = $library.find(t =>
+                        t.title === remoteTrack.title &&
                         t.artist === remoteTrack.artist
                     );
                 }
@@ -551,15 +552,15 @@ function handleRemotePlayerState(payload: any) {
 
         // Only update these if they changed to prevent spamming subscribers
         if (get(isPlaying) !== payload.isPlaying) isPlaying.set(payload.isPlaying);
-        
+
         // Only update time if the difference is significant (>250ms or specifically requested)
         const currentT = get(currentTime);
         if (Math.abs(currentT - payload.currentTime) > 0.25 || payload.isPlaying === false) {
             currentTime.set(payload.currentTime);
         }
-        
+
         if (get(duration) !== payload.duration) duration.set(payload.duration);
-        
+
         if (payload.volume !== undefined && get(volume) !== payload.volume) volume.set(payload.volume);
         if (payload.shuffle !== undefined && get(shuffle) !== payload.shuffle) shuffle.set(payload.shuffle);
         if (payload.repeat !== undefined && get(repeat) !== payload.repeat) repeat.set(payload.repeat);
@@ -673,7 +674,7 @@ function broadcastState(force = false) {
 
     const now = Date.now();
     if (!force && now - lastBroadcast < 2000) return;
-    
+
     const track = get(currentTrack);
     const playing = get(isPlaying);
     const pos = get(currentTime);
@@ -712,7 +713,6 @@ export function cleanupPlayer(): void {
     stopStatePoller();
     nativeAudioStop().catch(console.error);
 
-    // Cleanup dash.js
     if (dashPlayer) {
         try { dashPlayer.destroy(); } catch (_) { }
         dashPlayer = null;
@@ -1052,7 +1052,7 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
                 if (startTime > 0) {
                     audio.currentTime = startTime;
                 }
-                
+
                 console.log('[Player] HTML5 streaming started:', track.title);
             }
 
@@ -1942,22 +1942,22 @@ export async function transferPlayback(state: any) {
     if (!state || !state.track) return;
 
     console.log('[Player] Transferring playback to this device...', state.track.title);
-    
+
     // 1. Stop remote playback (by sending a command to specific device)
     if (state.deviceId) {
         console.log('[Player] Pausing remote device:', state.deviceId);
         sendRemoteCommand(state.deviceId, 'pause');
     }
-    
+
     // 2. Resolve the local track object if possible (Fast ID lookup first)
     const remoteTrack = state.track;
     let localTrack: any = getTrackByIdSync(Number(remoteTrack.id));
-    
+
     if (!localTrack) {
         // Falling back to O(N) search
         const $library = get(libraryTracks);
-        localTrack = $library.find(t => 
-            t.title === remoteTrack.title && 
+        localTrack = $library.find(t =>
+            t.title === remoteTrack.title &&
             t.artist === remoteTrack.artist
         );
     }
@@ -1970,7 +1970,7 @@ export async function transferPlayback(state: any) {
             ...localTrack,
             coverUrl: getTrackCoverSrc(localTrack)
         };
-        
+
         await playTrack(localTrack, false, state.currentTime);
         if (!state.isPlaying) {
             await pause();
@@ -2000,9 +2000,9 @@ let remoteThrottleTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 function throttledRemoteCommand(targetDeviceId: string, command: string, data: any, delay: number) {
     const key = `${targetDeviceId}:${command}`;
     if (remoteThrottleTimers[key]) return;
-    
+
     sendRemoteCommand(targetDeviceId, command, data);
-    
+
     remoteThrottleTimers[key] = setTimeout(() => {
         delete remoteThrottleTimers[key];
     }, delay);
@@ -2042,7 +2042,7 @@ async function handleRemoteCommand(payload: any) {
             if (data?.shuffle != null) {
                 // If local, use toggleShuffle to handle index regeneration
                 if (get(activeBackend) !== 'remote') {
-                   if (get(shuffle) !== data.shuffle) toggleShuffle();
+                    if (get(shuffle) !== data.shuffle) toggleShuffle();
                 } else {
                     shuffle.set(data.shuffle);
                 }
