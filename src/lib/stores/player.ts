@@ -617,6 +617,7 @@ function startStatePoller(): void {
                         // Backend hasn't loaded track yet, don't trust this state
                     } else {
                         isPlaying.set(state.is_playing);
+                        updateMediaSessionPlaybackState(state.is_playing ? 'playing' : 'paused');
                     }
                 }
 
@@ -640,6 +641,7 @@ function startStatePoller(): void {
                     // Do not sync HTML5 state if activeBackend changed
                     if (get(activeBackend) === 'html5') {
                         isPlaying.set(playing);
+                        updateMediaSessionPlaybackState(playing ? 'playing' : 'paused');
                     }
                 }
 
@@ -754,11 +756,25 @@ function initMediaSessionHandlers(): void {
 
     const ms = navigator.mediaSession;
 
-    ms.setActionHandler('play', () => togglePlay());
-    ms.setActionHandler('pause', () => togglePlay());
-    ms.setActionHandler('previoustrack', () => previousTrack());
-    ms.setActionHandler('nexttrack', () => nextTrack());
-    ms.setActionHandler('seekto', (details) => {
+    const setHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+        try {
+            ms.setActionHandler(action, handler);
+        } catch (err) {
+            // Some environments/WebViews don't support every action.
+            // Keep registering the rest instead of aborting initialization.
+            console.debug(`[MediaSession] Action not supported: ${action}`, err);
+        }
+    };
+
+    // IMPORTANT: use explicit pause/resume handlers (not toggle).
+    // Some Bluetooth headsets can emit repeated pause events; toggle would
+    // accidentally resume playback and make pause appear broken.
+    setHandler('play', () => { void resume(); });
+    setHandler('pause', () => { void pause(); });
+    setHandler('stop', () => { void pause(); });
+    setHandler('previoustrack', () => { void previousTrack(); });
+    setHandler('nexttrack', () => { void nextTrack(); });
+    setHandler('seekto', (details) => {
         if (details.seekTime != null) {
             const dur = get(duration);
             if (dur > 0) {
@@ -766,7 +782,7 @@ function initMediaSessionHandlers(): void {
             }
         }
     });
-    ms.setActionHandler('seekbackward', (details) => {
+    setHandler('seekbackward', (details) => {
         const offset = details.seekOffset || 10;
         const cur = get(currentTime);
         const dur = get(duration);
@@ -774,7 +790,7 @@ function initMediaSessionHandlers(): void {
             nativeAudioSeek(Math.max(0, cur - offset) / dur).catch(console.error);
         }
     });
-    ms.setActionHandler('seekforward', (details) => {
+    setHandler('seekforward', (details) => {
         const offset = details.seekOffset || 10;
         const cur = get(currentTime);
         const dur = get(duration);
