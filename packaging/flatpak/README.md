@@ -26,4 +26,5 @@ flatpak build-bundle repo audion_dev_linux.flatpak com.audion.app
 
 - This is an implementation starter meant to unblock CI artifact generation.
 - The manifest currently allows network during build to fetch npm/cargo dependencies.
+- In GitHub Actions, add Flathub as a system remote (`flatpak remote-add --system ...`) because dependency install runs with `--system`.
 - For Flathub submission, convert this to vendored dependencies and remove network access during build.
