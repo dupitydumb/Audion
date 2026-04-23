@@ -5,7 +5,6 @@ sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.node22  
   - org.freedesktop.Sdk.Extension.rust-stable
-  - org.gnome.Sdk.WebKitGTK
 command: audion
 
 finish-args:
