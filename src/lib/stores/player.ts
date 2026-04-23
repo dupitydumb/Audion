@@ -144,6 +144,7 @@ async function playWithDash(blobUrl: string, audioElement: HTMLAudioElement): Pr
     });
 
     dashPlayer.initialize(audioElement, dataUrl, true);
+    console.log('[Player] dash.js initialized with proxy RequestModifier');
 }
 
 function getHtml5Audio(): HTMLAudioElement {
@@ -1306,6 +1307,13 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
                 // Resolve playlist-format URLs (.m3u, .pls, .m3u8) to direct stream URLs
                 audioPath = await resolvePlaylistUrl(audioPath);
                 audio = await prepareHtml5AudioForPath(audio, audioPath);
+
+                // route external stream url through local tauri proxy
+                if (audioPath.startsWith('http://') || audioPath.startsWith('https://')) {
+                    if (!audioPath.startsWith('http://localhost')) {
+                        audioPath = `http://localhost:${DASH_PROXY_PORT}/?url=${encodeURIComponent(audioPath)}`;
+                    }
+                }
 
                 audio.src = audioPath;
                 audio.volume = sliderToAudioVolume(get(volume));

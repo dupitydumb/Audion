@@ -165,6 +165,7 @@ pub fn start_dash_proxy() {
                     .unwrap_or("/");
 
                 // dash.js may send OPTIONS before the real GET
+                // handle CORS preflight
                 if raw.starts_with("OPTIONS") {
                     let resp = "HTTP/1.1 204 No Content\r\n\
                         Access-Control-Allow-Origin: *\r\n\
@@ -194,19 +195,33 @@ pub fn start_dash_proxy() {
                     return;
                 };
 
-                // log the path portion
-                tracing::debug!("[DashProxy] Fetching: {}", &url[..url.find('?').unwrap_or(url.len())]);
+                // extract range header from browser request
+                let range_header = raw
+                    .lines()
+                    .find(|l| l.to_ascii_lowercase().starts_with("range:"))
+                    .and_then(|l| l.splitn(2, ':').nth(1))
+                    .map(|v| v.trim().to_owned());
 
-                // fetch the segment
-                let result = client
+                    // log the path portion
+                tracing::debug!("[DashProxy] Fetching: {}{}", 
+                    &url[..url.find('?').unwrap_or(url.len())],
+                    range_header.as_deref().map(|r| format!(" [{r}]")).unwrap_or_default()
+                );
+
+                // fetch from cdn, forwarding range if present
+                let mut req = client
                     .get(&url)
                     .header("Accept", "*/*")
-                    .header("Accept-Language", "en-US,en;q=0.9")
-                    .send()
-                    .await;
+                    .header("Accept-Language", "en-US,en;q=0.9");
+
+                if let Some(ref range) = range_header {
+                    req = req.header("Range", range);
+                }
+
+                let result = req.send().await;
 
                 match result {
-                    Ok(resp) if resp.status().is_success() => {
+                    Ok(resp) if resp.status().is_success() || resp.status().as_u16() == 206 => {
                         let status = resp.status().as_u16();
                         let content_type = resp
                             .headers()
@@ -214,18 +229,37 @@ pub fn start_dash_proxy() {
                             .and_then(|v| v.to_str().ok())
                             .unwrap_or("application/octet-stream")
                             .to_owned();
+                        // forward range related headers
+                        let content_range = resp
+                            .headers()
+                            .get(reqwest::header::CONTENT_RANGE)
+                            .and_then(|v| v.to_str().ok())
+                            .map(|s| s.to_owned());
+                        let accept_ranges = resp
+                            .headers()
+                            .get(reqwest::header::ACCEPT_RANGES)
+                            .and_then(|v| v.to_str().ok())
+                            .map(|s| s.to_owned());
 
                         match resp.bytes().await {
                             Ok(bytes) => {
-                                let header = format!(
-                                    "HTTP/1.1 {} OK\r\n\
+                                let status_text = if status == 206 { "Partial Content" } else { "OK" };
+                                let mut header = format!(
+                                    "HTTP/1.1 {} {}\r\n\
                                      Access-Control-Allow-Origin: *\r\n\
                                      Content-Type: {}\r\n\
-                                     Content-Length: {}\r\n\r\n",
-                                    status,
-                                    content_type,
-                                    bytes.len()
+                                     Content-Length: {}\r\n",
+                                    status, status_text, content_type, bytes.len()
                                 );
+                                if let Some(cr) = content_range {
+                                    header.push_str(&format!("Content-Range: {}\r\n", cr));
+                                }
+                                if let Some(ar) = accept_ranges {
+                                    header.push_str(&format!("Accept-Ranges: {}\r\n", ar));
+                                } else {
+                                    header.push_str("Accept-Ranges: bytes\r\n");
+                                }
+                                header.push_str("\r\n");
                                 let _ = socket.write_all(header.as_bytes()).await;
                                 let _ = socket.write_all(&bytes).await;
                             }
