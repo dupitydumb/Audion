@@ -3,8 +3,9 @@ runtime: org.gnome.Platform
 runtime-version: '49'
 sdk: org.gnome.Sdk
 sdk-extensions:
-  - org.freedesktop.Sdk.Extension.node22  
+  - org.freedesktop.Sdk.Extension.node22
   - org.freedesktop.Sdk.Extension.rust-stable
+
 command: audion
 
 finish-args:
@@ -20,17 +21,19 @@ finish-args:
 build-options:
   build-args:
     - --share=network
-  append-path: /usr/lib/sdk/node20/bin:/usr/lib/sdk/rust-stable/bin
+  append-path: /usr/lib/sdk/node22/bin:/usr/lib/sdk/rust-stable/bin
+  prepend-path: /usr/lib/sdk/node22/bin
   env:
     CARGO_HOME: /run/build/audion/.cargo
     npm_config_cache: /run/build/audion/.npm
-    PKG_CONFIG_PATH: /usr/lib/sdk/WebKitGTK/lib/pkgconfig:${PKG_CONFIG_PATH}
+    NPM_CONFIG_CACHE: /run/build/audion/.npm
+    npm_config_loglevel: verbose
 
 modules:
   - name: audion
     buildsystem: simple
     build-commands:
-      - npm ci
+      - npm ci --verbose
       - npm run build
       - cargo build --manifest-path src-tauri/Cargo.toml --release --locked
       - install -Dm755 src-tauri/target/release/audion /app/bin/audion
