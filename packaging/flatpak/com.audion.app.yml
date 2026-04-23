@@ -1,11 +1,11 @@
 app-id: com.audion.app
 runtime: org.gnome.Platform
-runtime-version: '48'
+runtime-version: '49'                      # ← upgraded to supported version
 sdk: org.gnome.Sdk
 sdk-extensions:
-  - org.gnome.Sdk.Extension.node20
-  - org.gnome.Sdk.Extension.rust-stable
-  - org.gnome.Sdk.WebKitGTK
+  - org.freedesktop.Sdk.Extension.node20   # ← fixed
+  - org.freedesktop.Sdk.Extension.rust-stable  # ← fixed
+  - org.gnome.Sdk.WebKitGTK                # ← correct
 command: audion
 
 finish-args:
