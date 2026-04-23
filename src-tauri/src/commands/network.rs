@@ -23,7 +23,11 @@ pub struct ProxyFetchResponse {
 /// Proxy fetch command - makes HTTP requests from the Rust backend to bypass CORS
 #[tauri::command]
 pub async fn proxy_fetch(request: ProxyFetchRequest) -> Result<ProxyFetchResponse, String> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Failed to build client: {}", e))?;
 
     let method = request.method.unwrap_or_else(|| "GET".to_string());
     let method = method
@@ -82,7 +86,11 @@ pub async fn proxy_fetch(request: ProxyFetchRequest) -> Result<ProxyFetchRespons
 pub async fn proxy_fetch_bytes(url: String) -> Result<String, String> {
     use base64::{engine::general_purpose::STANDARD, Engine};
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Failed to build client: {}", e))?;
     let response = client
         .get(&url)
         .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
@@ -102,35 +110,48 @@ pub async fn proxy_fetch_bytes(url: String) -> Result<String, String> {
     Ok(STANDARD.encode(bytes))
 }
 
-/// port the DASH segment proxy HTTP server listens on.
-/// must match PROXY_PORT in player.ts.
-pub const DASH_PROXY_PORT: u16 = 9876;
+/// Store bound port. readable via get_proxy_port
+static DASH_PROXY_PORT: std::sync::atomic::AtomicU16 = std::sync::atomic::AtomicU16::new(0);
 
-/// create a HTTP server on localhost:DASH_PROXY_PORT that proxies DASH
+#[tauri::command]
+pub fn get_proxy_port() -> u16 {
+    DASH_PROXY_PORT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// create a HTTP server on a random free port that proxies DASH
 /// segment requests through rust's native HTTP
-/// frontend registers a dash.js RequestModifier that rewrites urls at request time.
-
 pub fn start_dash_proxy() {
     tauri::async_runtime::spawn(async move {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         use tokio::net::TcpListener;
 
-        let listener = match TcpListener::bind(("127.0.0.1", DASH_PROXY_PORT)).await {
+        // bind to port 0 . OS assigns a free port atomically
+        let listener = match TcpListener::bind("127.0.0.1:0").await {
             Ok(l) => {
-                tracing::info!("[DashProxy] Listening on 127.0.0.1:{}", DASH_PROXY_PORT);
+                let port = l.local_addr().map(|a| a.port()).unwrap_or(0);
+                tracing::info!("[DashProxy] Listening on 127.0.0.1:{}", port);
+                DASH_PROXY_PORT.store(port, std::sync::atomic::Ordering::Relaxed);
                 l
             }
             Err(e) => {
-                tracing::error!("[DashProxy] Failed to bind port {}: {}", DASH_PROXY_PORT, e);
+                tracing::error!("[DashProxy] Failed to bind: {}", e);
                 return;
             }
         };
 
         // shared reqwest client
-        let client = reqwest::Client::builder()
+        let client = match reqwest::Client::builder()
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .timeout(std::time::Duration::from_secs(60))
             .build()
-            .expect("reqwest client");
+        {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("[DashProxy] Failed to build reqwest client: {}", e);
+                return;
+            }
+        };
         let client = std::sync::Arc::new(client);
 
         loop {
@@ -158,15 +179,13 @@ pub fn start_dash_proxy() {
                 };
 
                 // extract request path from "GET /path HTTP/1.1"
-                let path = raw
-                    .lines()
-                    .next()
-                    .and_then(|line| line.split_whitespace().nth(1))
-                    .unwrap_or("/");
+                let first_line = raw.lines().next().unwrap_or("");
+                let method = first_line.split_whitespace().next().unwrap_or("");
+                let path = first_line.split_whitespace().nth(1).unwrap_or("/");
 
                 // dash.js may send OPTIONS before the real GET
                 // handle CORS preflight
-                if raw.starts_with("OPTIONS") {
+                if method == "OPTIONS" {
                     let resp = "HTTP/1.1 204 No Content\r\n\
                         Access-Control-Allow-Origin: *\r\n\
                         Access-Control-Allow-Methods: GET, OPTIONS\r\n\
@@ -241,36 +260,58 @@ pub fn start_dash_proxy() {
                             .and_then(|v| v.to_str().ok())
                             .map(|s| s.to_owned());
 
-                        match resp.bytes().await {
-                            Ok(bytes) => {
-                                let status_text = if status == 206 { "Partial Content" } else { "OK" };
-                                let mut header = format!(
-                                    "HTTP/1.1 {} {}\r\n\
-                                     Access-Control-Allow-Origin: *\r\n\
-                                     Content-Type: {}\r\n\
-                                     Content-Length: {}\r\n",
-                                    status, status_text, content_type, bytes.len()
-                                );
-                                if let Some(cr) = content_range {
-                                    header.push_str(&format!("Content-Range: {}\r\n", cr));
+                        // stream body in chunks
+                        let status_text = if status == 206 { "Partial Content" } else { "OK" };
+                        let mut header = format!(
+                            "HTTP/1.1 {} {}\r\n\
+                             Access-Control-Allow-Origin: *\r\n\
+                             Content-Type: {}\r\n\
+                             Transfer-Encoding: chunked\r\n",
+                            status, status_text, content_type
+                        );
+                        if let Some(cr) = content_range {
+                            header.push_str(&format!("Content-Range: {}\r\n", cr));
+                        }
+                        if let Some(ar) = accept_ranges {
+                            header.push_str(&format!("Accept-Ranges: {}\r\n", ar));
+                        } else {
+                            header.push_str("Accept-Ranges: bytes\r\n");
+                        }
+                        header.push_str("\r\n");
+
+                        if socket.write_all(header.as_bytes()).await.is_err() {
+                            return;
+                        }
+
+                        // forward each chunk as it arrives from the CDN
+                        use futures::StreamExt;
+                        let mut stream = resp.bytes_stream();
+                        let mut ok = true;
+                        while let Some(chunk) = stream.next().await {
+                            match chunk {
+                                Ok(bytes) if !bytes.is_empty() => {
+                                    // HTTP/1.1 chunked encoding: "<hex-len>\r\n<data>\r\n"
+                                    let chunk_header = format!("{:X}\r\n", bytes.len());
+                                    if socket.write_all(chunk_header.as_bytes()).await.is_err()
+                                        || socket.write_all(&bytes).await.is_err()
+                                        || socket.write_all(b"\r\n").await.is_err()
+                                    {
+                                        ok = false;
+                                        break;
+                                    }
                                 }
-                                if let Some(ar) = accept_ranges {
-                                    header.push_str(&format!("Accept-Ranges: {}\r\n", ar));
-                                } else {
-                                    header.push_str("Accept-Ranges: bytes\r\n");
+                                Err(e) => {
+                                    tracing::warn!("[DashProxy] Stream error mid-body: {e}");
+                                    ok = false;
+                                    break;
                                 }
-                                header.push_str("\r\n");
-                                let _ = socket.write_all(header.as_bytes()).await;
-                                let _ = socket.write_all(&bytes).await;
+                                _ => {}
                             }
-                            Err(e) => {
-                                let msg = format!("Body error: {e}");
-                                let resp = format!(
-                                    "HTTP/1.1 502 Bad Gateway\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: {}\r\n\r\n{}",
-                                    msg.len(), msg
-                                );
-                                let _ = socket.write_all(resp.as_bytes()).await;
-                            }
+                        }
+
+                        // chunked terminator
+                        if ok {
+                            let _ = socket.write_all(b"0\r\n\r\n").await;
                         }
                     }
                     Ok(resp) => {

@@ -85,7 +85,7 @@ function classifyAudioPath(path: string): AudioPathKind {
 /**
  * dynamically load the local dashjs
  */
-async function getDashPlayer(): Promise<typeof dashjs> {
+async function getDashPlayer(): Promise<typeof import('dashjs')> {
     if (typeof window === 'undefined') {
         throw new Error('dash.js cannot be initialized in a non-browser environment');
     }
@@ -95,8 +95,42 @@ async function getDashPlayer(): Promise<typeof dashjs> {
     return (dashjs as any).default || dashjs;
 }
 
-// match DASH_PROXY_PORT in network.rs
-const DASH_PROXY_PORT = 9876;
+// port is assigned by OS
+let dashProxyPort: number | null = null;
+let dashProxyPortResolvers: Array<(port: number) => void> = [];
+
+function resolveProxyPort(port: number) {
+    dashProxyPort = port;
+    dashProxyPortResolvers.forEach(resolve => resolve(port));
+    dashProxyPortResolvers = [];
+}
+
+invoke<number>('get_proxy_port').then(port => {
+    if (port > 0) {
+        console.log('[Player] Got proxy port:', port);
+        resolveProxyPort(port);
+    } else {
+        console.warn('[Player] get_proxy_port returned 0, proxy may not have started');
+    }
+}).catch(err => {
+    console.error('[Player] get_proxy_port invoke failed:', err);
+});
+
+function waitForProxyPort(): Promise<number> {
+    if (dashProxyPort !== null) return Promise.resolve(dashProxyPort);
+    console.warn('[Player] Proxy port not yet received, waiting...');
+    return new Promise(resolve => dashProxyPortResolvers.push(resolve));
+}
+
+function isExternalUrl(url: string): boolean {
+    return (url.startsWith('http://') || url.startsWith('https://'))
+        && !url.startsWith('http://localhost');
+}
+
+async function toProxiedUrl(url: string): Promise<string> {
+    const port = await waitForProxyPort();
+    return `http://localhost:${port}/?url=${encodeURIComponent(url)}`;
+}
 
 async function playWithDash(blobUrl: string, audioElement: HTMLAudioElement): Promise<void> {
 
@@ -128,7 +162,10 @@ async function playWithDash(blobUrl: string, audioElement: HTMLAudioElement): Pr
                     return url;
                 }
                 if (url.startsWith('http://') || url.startsWith('https://')) {
-                    return `http://localhost:${DASH_PROXY_PORT}/?url=${encodeURIComponent(url)}`;
+                    // port is set by the time dash.js
+                    // starts firing segment requests
+                    const port = dashProxyPort ?? 0;
+                    return `http://localhost:${port}/?url=${encodeURIComponent(url)}`;
                 }
                 return url;
             },
@@ -1144,7 +1181,7 @@ function updateMediaSessionPosition(): void {
 }
 
 // Play a specific track
-export async function playTrack(track: Track, skipLocalSrc = false, startTime = 0): Promise<void> {
+export async function playTrack(track: Track, skipLocalSrc = false, startTime = 0, useProxy = false): Promise<void> {
     const previousTrackObj = get(currentTrack);
     const sessionId = ++currentSessionId;
 
@@ -1293,10 +1330,11 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
             if (finalKind === 'blob') {
                 audio = await prepareHtml5AudioForPath(audio, audioPath);
                 audio.volume = sliderToAudioVolume(get(volume));
-                // set backend early
-                activeBackend.set('html5');
 
                 await playWithDash(audioPath, audio);
+
+                // set backend only after playWithDash resolves successfully
+                activeBackend.set('html5');
 
                 if (startTime > 0 && dashPlayer) {
                     (dashPlayer as any).seek(startTime);
@@ -1308,11 +1346,9 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
                 audioPath = await resolvePlaylistUrl(audioPath);
                 audio = await prepareHtml5AudioForPath(audio, audioPath);
 
-                // route external stream url through local tauri proxy
-                if (audioPath.startsWith('http://') || audioPath.startsWith('https://')) {
-                    if (!audioPath.startsWith('http://localhost')) {
-                        audioPath = `http://localhost:${DASH_PROXY_PORT}/?url=${encodeURIComponent(audioPath)}`;
-                    }
+                // route through local tauri proxy only if caller opts in
+                if (useProxy && isExternalUrl(audioPath)) {
+                    audioPath = await toProxiedUrl(audioPath);
                 }
 
                 audio.src = audioPath;
@@ -1396,6 +1432,8 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
     } catch (err) {
         console.error('[Player] Playback failed:', err);
         addToast(`Playback failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
+        // reset backend
+        activeBackend.set('none');
     }
 }
 

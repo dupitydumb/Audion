@@ -528,10 +528,11 @@ export class PluginRuntime {
       case 'player.setTrack':
         if (args[0]) {
           const track = args[0];
+          const useProxy = args[1]?.useProxy ?? false;
 
           // Use the main player logic to handle backend selection (HTML5 vs Native)
           // resolution of stream URLs, and UI state updates.
-          playTrack(track).catch(err => {
+          playTrack(track, false, 0, useProxy).catch(err => {
             console.error(`[PluginRuntime] player.setTrack failed:`, err);
           });
 
@@ -732,7 +733,7 @@ export class PluginRuntime {
         seek: (time: number) => this.callHost(pluginName, 'player.seek', time),
         next: () => this.callHost(pluginName, 'player.next'),
         prev: () => this.callHost(pluginName, 'player.prev'),
-        setTrack: (track: any) => this.callHost(pluginName, 'player.setTrack', track),
+        setTrack: (track: any, options?: { useProxy?: boolean }) => this.callHost(pluginName, 'player.setTrack', track, options),
         addToQueue: (tracks: any[]) => this.callHost(pluginName, 'player.addToQueue', tracks),
         removeFromQueue: (index: number) => this.callHost(pluginName, 'player.removeFromQueue', index),
         reorderQueue: (from: number, to: number) => this.callHost(pluginName, 'player.reorderQueue', from, to),
