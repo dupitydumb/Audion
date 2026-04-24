@@ -63,10 +63,11 @@
 //   AudioEvents pushed into Arc<Mutex<VecDeque>> for UI poller.
 //
 //
-//  RubatoResampler :     — high quality sinc resampler (rubato SincFixedIn).
+//  RubatoResampler :     — high quality FFT resampler
 //                          Only instantiated when the source sample rate differs
-//                          from the device rate. Bypassed
-//                          entirely when rates match (zero overhead).
+//                          from the device rate. Bypassed entirely when rates match (zero overhead).
+//                          A fresh instance is built per track during preload on the command thread,
+//                          so construction cost never blocks the audio thread or causes gaps.
 //                          Device rate queried once via cpal at engine init,
 //                          stored in AudioEngine::device_sample_rate.
 // =============================================================================
@@ -92,11 +93,11 @@ use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
 use symphonia::core::units::Time;
 
-use rubato::{
-    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
-};
+use rubato::{Fft, FixedSync, Indexing, Resampler};
+use rubato::audioadapter_buffers::direct::SequentialSliceOfVecs;
 
 use opus_decoder::OpusDecoder;
+use ogg::PacketReader as OggPacketReader;
 
 // =============================================================================
 // EQ TYPES  (serialisable — matches equalizer.ts / native-audio.ts)
@@ -189,7 +190,7 @@ impl BiquadFilter {
         let a = 10.0f32.powf(gain_db / 40.0);
         let w0 = 2.0 * PI * freq / sample_rate as f32;
         let cos = w0.cos();
-        let alpha = w0.sin() / 2.0 * (1.0 / q).sqrt();
+        let alpha = w0.sin() / 2.0 * ((a + 1.0 / a) * (1.0 / q - 1.0) + 2.0).sqrt();
 
         let b0 =  a * ((a + 1.0) - (a - 1.0) * cos + 2.0 * alpha * a.sqrt());
         let b1 =  2.0 * a * ((a - 1.0) - (a + 1.0) * cos);
@@ -205,7 +206,7 @@ impl BiquadFilter {
         let a = 10.0f32.powf(gain_db / 40.0);
         let w0 = 2.0 * PI * freq / sample_rate as f32;
         let cos = w0.cos();
-        let alpha = w0.sin() / 2.0 * (1.0 / q).sqrt();
+        let alpha = w0.sin() / 2.0 * ((a + 1.0 / a) * (1.0 / q - 1.0) + 2.0).sqrt();
 
         let b0 =  a * ((a + 1.0) + (a - 1.0) * cos + 2.0 * alpha * a.sqrt());
         let b1 = -2.0 * a * ((a - 1.0) + (a + 1.0) * cos);
@@ -867,11 +868,13 @@ impl Source for SymphoniaSource {
 const OPUS_MAX_FRAME_SIZE: usize = 5760; // 120 ms @ 48 kHz
 
 struct OpusSource {
-    format:        Box<dyn FormatReader>,
+    ogg_reader:    OggPacketReader<File>,
+    // ---- Symphonia demux (commented out — kept for seek restoration later) ----
+    // format:        Box<dyn FormatReader>,
+    // track_id:      u32,
     decoder:       OpusDecoder,
-    track_id:      u32,
     decode_scratch: Vec<f32>, // scratch buffer for audiopus
-    sample_buf:    Vec<f32>,  // exactly the valid decoded samples for the current packet
+    sample_buf:    Option<Vec<f32>>, // none until first decode
     sample_pos:    usize,
     channels:      u16,
     sample_rate:   u32,
@@ -879,6 +882,7 @@ struct OpusSource {
     replay_gain:   Option<f32>,
     done:          bool,
     pre_skip:      usize,     // remaining leading samples to discard
+    consecutive_errors: u32,  // decode error counter; reset on success, gives up at 10
     seek_rx:       Receiver<Duration>,
     volume:        Arc<AtomicU32>,
     frame_count:   usize,
@@ -898,6 +902,11 @@ impl OpusSource {
         loop_tx: Sender<Instant>,
         volume: Arc<AtomicU32>,
     ) -> Result<Self, String> {
+        // OGG path 
+        let ogg_file = File::open(path).map_err(|e| format!("Failed to open {}: {}", path, e))?;
+        let ogg_reader = OggPacketReader::new(ogg_file);
+
+        // symphonia probe (metadata ,channel/duration , replaygain , n_frames extraction ,codec)
         let file = File::open(path).map_err(|e| format!("Failed to open {}: {}", path, e))?;
         let mss = MediaSourceStream::new(Box::new(file), Default::default());
 
@@ -910,7 +919,7 @@ impl OpusSource {
             .format(
                 &hint,
                 mss,
-                &FormatOptions { enable_gapless: true, ..Default::default() },
+                &FormatOptions { enable_gapless: false, ..Default::default() },
                 &MetadataOptions {
                     limit_metadata_bytes: symphonia::core::meta::Limit::Maximum(0),
                     limit_visual_bytes:   symphonia::core::meta::Limit::Maximum(0),
@@ -926,7 +935,6 @@ impl OpusSource {
             .find(|t| t.codec_params.codec == CODEC_TYPE_OPUS)
             .ok_or_else(|| format!("No Opus track found in {}", path))?;
 
-        let track_id  = track.id;
         let sample_rate: u32 = 48_000;
         let channels = track
             .codec_params
@@ -947,17 +955,17 @@ impl OpusSource {
         tracing::info!("[AUDIO] Opus track: {}Hz {}ch — {}", sample_rate, channels, path);
 
         Ok(Self {
-            format,
+            ogg_reader,
             decoder,
-            track_id,
             decode_scratch: vec![0.0f32; max_scratch],
-            sample_buf:     Vec::new(),
+            sample_buf:     None,
             sample_pos:     0,
             channels,
             sample_rate,
             duration,
             done:           false,
             pre_skip:       0,
+            consecutive_errors: 0,
             replay_gain,
             seek_rx,
             volume,
@@ -969,55 +977,66 @@ impl OpusSource {
         })
     }
 
-    fn seek(&mut self, pos: Duration) {
-        let time = symphonia::core::units::Time {
-            seconds: pos.as_secs(),
-            frac:    pos.subsec_nanos() as f64 / 1e9,
-        };
-        match self.format.seek(
-            SeekMode::Accurate,
-            SeekTo::Time { time, track_id: Some(self.track_id) },
-        ) {
-            Ok(_)  => {}
-            Err(e) => tracing::warn!("[AUDIO] Opus seek error: {}", e),
-        }
-    
+    // ── seek (Symphonia path — disabled while testing ogg crate demux) ────────
+    // fn seek(&mut self, pos: Duration) {
+    //     let time = symphonia::core::units::Time {
+    //         seconds: pos.as_secs(),
+    //         frac:    pos.subsec_nanos() as f64 / 1e9,
+    //     };
+    //     match self.format.seek(
+    //         SeekMode::Accurate,
+    //         SeekTo::Time { time, track_id: Some(self.track_id) },
+    //     ) {
+    //         Ok(_)  => {}
+    //         Err(e) => tracing::warn!("[AUDIO] Opus seek error: {}", e),
+    //     }
+    //     self.decoder.reset();
+    //     self.sample_buf = None;
+    //     self.sample_pos = 0;
+    //     self.pre_skip   = 0;
+    //     self.done       = false;
+    // }
+
+    fn seek(&mut self, _pos: Duration) {
+        // Seek not yet implemented in the ogg crate path.
+        // Reset decoder state so we at least don't produce garbage.
         self.decoder.reset();
-        self.sample_buf.clear();
+        self.sample_buf = None;
         self.sample_pos = 0;
-        self.pre_skip   = 0; // no pre-skip after a seek
+        self.pre_skip   = 0;
         self.done       = false;
+        tracing::warn!("[AUDIO] Opus seek called but not yet implemented in ogg crate path");
     }
 
-    /// Pull the next OGG packet, decode it, and fill sample_buf with exactly
-    /// the valid samples.  Returns false when the stream is exhausted.
+    /// Pull the next OGG packet via the ogg crate, decode it, fill sample_buf.
+    /// Returns false when the stream is exhausted.
     fn refill(&mut self) -> bool {
-        #[allow(unused_assignments)]
-        let mut consecutive_errors: u32 = 0;
+        // ── Symphonia refill (commented out) ──────────────────────────────────
+        // loop {
+        //     let packet = match self.format.next_packet() {
+        //         Ok(p) => p,
+        //         Err(SymphoniaError::IoError(e)) => { tracing::warn!(...); return false; }
+        //         Err(SymphoniaError::ResetRequired) => { self.decoder.reset(); continue; }
+        //         Err(_) => return false,
+        //     };
+        //     if packet.track_id() != self.track_id { continue; }
+        //     let raw: &[u8] = &packet.data;
+        //     ... header checks, decode_float, sample_buf fill ...
+        // }
+
+        // ── ogg crate refill ──────────────────────────────────────────────────
         loop {
-            let packet = match self.format.next_packet() {
-                Ok(p) => p,
-                Err(SymphoniaError::IoError(e)) => {
-                    tracing::warn!("[AUDIO] Opus IO error: {}", e);
+            let pkt = match self.ogg_reader.read_packet() {
+                Ok(Some(p)) => p,
+                Ok(None) => return false, // clean EOF
+                Err(e) => {
+                    tracing::warn!("[AUDIO] Opus OGG read error: {}", e);
                     return false;
                 }
-                Err(SymphoniaError::ResetRequired) => {
-                    self.decoder.reset();
-                    continue;
-                }
-                Err(_) => return false,
             };
 
-            if packet.track_id() != self.track_id {
-                continue;
-            }
+            let raw: &[u8] = &pkt.data;
 
-            let raw: &[u8] = &packet.data;
-
-            // Parse pre-skip from OpusHead (only present before audio data).
-            // The value is a frame count (samples per channel) per the Opus spec —
-           //the skip logic in refill works in
-            // frames and multiplies by ch itself when advancing sample_pos.
             if raw.starts_with(b"OpusHead") {
                 if raw.len() >= 12 {
                     self.pre_skip = u16::from_le_bytes([raw[10], raw[11]]) as usize;
@@ -1030,31 +1049,22 @@ impl OpusSource {
                 continue;
             }
 
-            // Decode into scratch buffer.  decode_scratch is always
-            // OPUS_MAX_FRAME_SIZE * channels long so audiopus never returns
-            // BufferTooSmall.
             match self.decoder.decode_float(
                 raw,
                 self.decode_scratch.as_mut_slice(),
                 false,
             ) {
                 Ok(samples_per_channel) => {
-                    consecutive_errors = 0;
+                    self.consecutive_errors = 0;
                     let total = samples_per_channel * self.channels as usize;
-                    // Copy only the valid portion into sample_buf.
-                    // sample_buf.len() == total at all times; rodio never sees
-                    // stale zeros from a previous larger frame.
-                    self.sample_buf.clear();
-                    self.sample_buf.extend_from_slice(&self.decode_scratch[..total]);
+                    let mut buf = self.sample_buf.take().unwrap_or_default();
+                    buf.clear();
+                    buf.extend_from_slice(&self.decode_scratch[..total]);
+                    self.sample_buf = Some(buf);
 
-                    // Discard pre-skip as whole interleaved frames so channel
-                    // alignment is never broken. Discarding sample-by-sample in
-                    // next() risks returning a right-channel sample first if an
-                    // odd number of samples are skipped, which mis-aligns every
-                    // subsequent frame fed to RubatoResampler::fill_input.
                     if self.pre_skip > 0 {
                         let ch = self.channels as usize;
-                        let frames_in_buf = self.sample_buf.len() / ch;
+                        let frames_in_buf = self.sample_buf.as_ref().map(|b| b.len()).unwrap_or(0) / ch;
                         let frames_to_skip = self.pre_skip.min(frames_in_buf);
                         self.sample_pos = frames_to_skip * ch;
                         self.pre_skip -= frames_to_skip;
@@ -1064,12 +1074,12 @@ impl OpusSource {
                     return true;
                 }
                 Err(e) => {
-                    consecutive_errors += 1;
+                    self.consecutive_errors += 1;
                     tracing::warn!(
                         "[AUDIO] Opus decode error ({}/10): {:?} ({} bytes)",
-                        consecutive_errors, e, raw.len()
+                        self.consecutive_errors, e, raw.len()
                     );
-                    if consecutive_errors >= 10 {
+                    if self.consecutive_errors >= 10 {
                         tracing::error!("[AUDIO] Too many consecutive Opus decode errors — giving up");
                         return false;
                     }
@@ -1106,16 +1116,18 @@ impl Iterator for OpusSource {
         self.frame_count -= 1;
 
         loop {
-            if self.sample_pos < self.sample_buf.len() {
-                let s = self.sample_buf[self.sample_pos];
-                self.sample_pos += 1;
+            if let Some(ref buf) = self.sample_buf {
+                if self.sample_pos < buf.len() {
+                    let s = buf[self.sample_pos];
+                    self.sample_pos += 1;
 
-                let s = match self.replay_gain {
-                    Some(gain) => (s * gain).clamp(-1.0, 1.0),
-                    None       => s,
-                };
-                let vol = f32::from_bits(self.volume.load(Ordering::Relaxed));
-                return Some(s * vol);
+                    let s = match self.replay_gain {
+                        Some(gain) => (s * gain).clamp(-1.0, 1.0),
+                        None       => s,
+                    };
+                    let vol = f32::from_bits(self.volume.load(Ordering::Relaxed));
+                    return Some(s * vol);
+                }
             }
             if !self.refill() {
                 if self.repeat_one {
@@ -1133,10 +1145,10 @@ impl Iterator for OpusSource {
 
 impl Source for OpusSource {
     fn current_frame_len(&self) -> Option<usize> {
-        // Return exactly the samples remaining in the current decoded packet.
-        // Never expose decode_scratch . it is always OPUS_MAX_FRAME_SIZE * ch.
-        let remaining = self.sample_buf.len().saturating_sub(self.sample_pos);
-        if remaining > 0 { Some(remaining) } else { Some(480) }
+        self.sample_buf
+            .as_ref()
+            .map(|b| b.len().saturating_sub(self.sample_pos).max(1))
+            .or(Some(480))
     }
     fn channels(&self)        -> u16            { self.channels }
     fn sample_rate(&self)     -> u32            { self.sample_rate }
@@ -1200,59 +1212,54 @@ impl Source for AudioSource {
 }
 
 // =============================================================================
-// RubatoResampler .high quality sinc resampler wrapping AudioSource
+// RubatoResampler FFT resampler wrapping AudioSource
 // =============================================================================
 
 struct RubatoResampler {
-    source: AudioSource,
-    resampler: SincFixedIn<f32>,
-    input_buf: Vec<Vec<f32>>,     // [channels][frames]
-    output_buf: Vec<Vec<f32>>,    // [channels][frames]
-    output_interleaved: Vec<f32>, // flat interleaved output
-    output_pos: usize,            // current position in output_interleaved
-    channels: usize,
-    dst_rate: u32,
-    chunk_size: usize,
-    done: bool,
+    source:             AudioSource,
+    resampler:          Fft<f32>,
+    input_buf:          Vec<Vec<f32>>, // [channels][frames]
+    output_buf:         Vec<Vec<f32>>, // [channels][frames]
+    output_interleaved: Vec<f32>,      // flat interleaved, capacity = output_frames_max * channels
+    output_pos:         usize,
+    chunk_size:         usize,         // stable for Fft/FixedSync::Both
+    channels:           usize,
+    dst_rate:           u32,
+    done:               bool,
 }
 
 impl RubatoResampler {
     fn new(source: AudioSource, dst_rate: u32) -> Result<Self, String> {
         let src_rate = source.sample_rate();
         let channels = source.channels() as usize;
-        let chunk_size = 1024; // frames per processing block
 
-        let params = SincInterpolationParameters {
-            sinc_len: 256,
-            f_cutoff: 0.95,
-            interpolation: SincInterpolationType::Linear,
-            oversampling_factor: 256,
-            window: WindowFunction::BlackmanHarris2,
-        };
-
-        let resampler = SincFixedIn::<f32>::new(
-            dst_rate as f64 / src_rate as f64,
-            2.0,
-            params,
-            chunk_size,
-            channels,
+        // Fft with FixedSync::Both: rubato picks exact chunk sizes for the ratio
+        // (e.g. multiples of 147/160 for 44100→48000), eliminating internal buffering.
+        // The hint of 1024 is rounded to the nearest legal value automatically.
+        let resampler = Fft::<f32>::new(
+            src_rate as usize,  // sample_rate_input
+            dst_rate as usize,  // sample_rate_output
+            1024,               // chunk_size hint (rounded to nearest legal value for the ratio)
+            1,                  // sub_chunks (1 = no subdivision)
+            channels,           // nbr_channels
+            FixedSync::Both,
         )
         .map_err(|e| format!("Failed to create resampler: {}", e))?;
 
-        let input_buf = vec![vec![0.0f32; chunk_size]; channels];
-        let output_buf = resampler.output_buffer_allocate(true);
+        let chunk_size        = resampler.input_frames_next(); // stable for FixedSync::Both
+        let output_frames_max = resampler.output_frames_max();
 
         Ok(Self {
             source,
             resampler,
-            input_buf,
-            output_buf,
-            output_interleaved: Vec::new(),
-            output_pos: 0,
+            input_buf:          vec![vec![0.0f32; chunk_size]; channels],
+            output_buf:         vec![vec![0.0f32; output_frames_max]; channels],
+            output_interleaved: Vec::with_capacity(output_frames_max * channels),
+            output_pos:         0,
+            chunk_size,
             channels,
             dst_rate,
-            chunk_size,
-            done: false,
+            done:               false,
         })
     }
 
@@ -1260,19 +1267,16 @@ impl RubatoResampler {
     // De-interleaves L,R,L,R,... into input_buf[ch][frame] layout for rubato.
     // When the source ends mid-frame (ch > 0), the partial frame is completed
     // with zeros from `ch` onwards before zero-padding remaining frames, so
-    // rubato always receives channel-aligned input and the returned frame count is correct
+    // rubato always receives channel-aligned input and the returned frame count is correct.
     fn fill_input(&mut self) -> usize {
         for frame in 0..self.chunk_size {
             for ch in 0..self.channels {
                 match self.source.next() {
                     Some(s) => self.input_buf[ch][frame] = s,
                     None => {
-                        // Zero the rest of this frame from ch onwards so it is
-                        // complete and channel-aligned.
                         for pad_ch in ch..self.channels {
                             self.input_buf[pad_ch][frame] = 0.0;
                         }
-                        // Zero all remaining frames.
                         for pad_frame in (frame + 1)..self.chunk_size {
                             for pad_ch in 0..self.channels {
                                 self.input_buf[pad_ch][pad_frame] = 0.0;
@@ -1297,34 +1301,46 @@ impl RubatoResampler {
             return false;
         }
 
-        // process_partial_into_buffer takes the true frame count so rubato only
-        // resamples the live frames.
         let is_last = frames_read < self.chunk_size;
 
-        let result = if is_last {
-            // Truncate each channel slice to frames_read so rubato only
-            // resamples real audio frames . not the zero-padded tail.
-            let partial_input: Vec<Vec<f32>> = self.input_buf
-                .iter()
-                .map(|ch| ch[..frames_read].to_vec())
-                .collect();
-            self.resampler.process_partial_into_buffer(
-                Some(&partial_input),
-                &mut self.output_buf,
-                None,
-            )
-        } else {
-            self.resampler.process_into_buffer(
-                &self.input_buf,
-                &mut self.output_buf,
-                None,
-            )
+        // Zero output buffer before each call so stale data from the previous
+        // chunk can never bleed into the output on a short write.
+        for ch in &mut self.output_buf {
+            ch.fill(0.0);
+        }
+
+        let output_frames_max = self.resampler.output_frames_max();
+        let input_adapter = SequentialSliceOfVecs::new(
+            &self.input_buf, self.channels, self.chunk_size,
+        ).map_err(|e| format!("Input adapter error: {}", e));
+        let output_adapter = SequentialSliceOfVecs::new_mut(
+            &mut self.output_buf, self.channels, output_frames_max,
+        ).map_err(|e| format!("Output adapter error: {}", e));
+
+        let result = match (input_adapter, output_adapter) {
+            (Ok(inp), Ok(mut out)) => {
+                let indexing = if is_last {
+                    Some(Indexing {
+                        input_offset: 0,
+                        output_offset: 0,
+                        active_channels_mask: None,
+                        partial_len: Some(frames_read),
+                    })
+                } else {
+                    None
+                };
+                self.resampler.process_into_buffer(&inp, &mut out, indexing.as_ref())
+            }
+            (Err(e), _) | (_, Err(e)) => {
+                tracing::warn!("[AUDIO] Resampler adapter error: {}", e);
+                self.done = true;
+                return false;
+            }
         };
 
         match result {
             Ok((_, out_frames)) => {
                 self.output_interleaved.clear();
-                self.output_interleaved.reserve(out_frames * self.channels);
                 for frame in 0..out_frames {
                     for ch in 0..self.channels {
                         self.output_interleaved.push(self.output_buf[ch][frame]);
@@ -1366,7 +1382,8 @@ impl Iterator for RubatoResampler {
 
 impl Source for RubatoResampler {
     fn current_frame_len(&self) -> Option<usize> {
-        None
+        let remaining = self.output_interleaved.len().saturating_sub(self.output_pos);
+        if remaining > 0 { Some(remaining) } else { None }
     }
     fn channels(&self) -> u16 {
         self.channels as u16
@@ -1427,6 +1444,7 @@ struct AudioEngine {
     next_path: Option<String>,
     next_duration: Option<Option<Duration>>,
 
+
     _stream: OutputStream,
 }
 
@@ -1450,7 +1468,7 @@ impl AudioEngine {
         let (stream, stream_handle) = OutputStream::try_from_device_config(&device, config)
             .map_err(|e| format!("Failed to open audio output: {}", e))?;
 
-        tracing::info!("[AUDIO] Device sample rate: {} Hz", device_sample_rate);
+        tracing::info!("[AUDIO] Output stream opened successfully");
 
         let (queue_input, queue_output) = queue::<f32>(true);
         let paused_flag = Arc::new(AtomicBool::new(false));
@@ -1516,11 +1534,28 @@ impl AudioEngine {
         let (loop_tx, loop_rx) = unbounded::<Instant>();
         let _ = repeat_one_tx.send(self.repeat_one);
 
-        // Route .opus files to OpusSource; everything else to SymphoniaSource.
-        let is_opus = PathBuf::from(path)
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|e| e.eq_ignore_ascii_case("opus"))
+        // Route Opus tracks to OpusSource; everything else to SymphoniaSource.
+        // Probe the container to determine the actual codec rather than relying on
+        // the file extension — .ogg files may contain Opus and must be handled correctly.
+        let probe_file = File::open(path).map_err(|e| format!("Failed to open {}: {}", path, e))?;
+        let probe_mss = MediaSourceStream::new(Box::new(probe_file), Default::default());
+        let mut probe_hint = Hint::new();
+        if let Some(ext) = PathBuf::from(path).extension().and_then(|e| e.to_str()) {
+            probe_hint.with_extension(ext);
+        }
+        let is_opus = symphonia::default::get_probe()
+            .format(
+                &probe_hint,
+                probe_mss,
+                &FormatOptions { enable_gapless: true, ..Default::default() },
+                &MetadataOptions {
+                    limit_metadata_bytes: symphonia::core::meta::Limit::Maximum(0),
+                    limit_visual_bytes:   symphonia::core::meta::Limit::Maximum(0),
+                },
+            )
+            .map(|probed| {
+                probed.format.tracks().iter().any(|t| t.codec_params.codec == CODEC_TYPE_OPUS)
+            })
             .unwrap_or(false);
 
         let src: AudioSource = if is_opus {

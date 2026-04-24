@@ -140,7 +140,8 @@ symphonia = { version = "0.5", default-features = false, features = [
 
 
 cpal = "0.15"
-rubato = "0.16"
+rubato = "2.0.0"
+ogg = "0.9"
 opus-decoder = "0.1"  # version patched via [patch.crates-io]
 [patch.crates-io]
 # patched fork: upstream panics when i >= 8 in extract_collapse_mask (vq.rs)
