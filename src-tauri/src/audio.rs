@@ -60,10 +60,11 @@
 //   AudioEvents pushed into Arc<Mutex<VecDeque>> for UI poller.
 //
 //
-//  RubatoResampler :     — high quality sinc resampler (rubato SincFixedIn).
+//  RubatoResampler :     — high quality FFT resampler
 //                          Only instantiated when the source sample rate differs
-//                          from the device rate. Bypassed
-//                          entirely when rates match (zero overhead).
+//                          from the device rate. Bypassed entirely when rates match (zero overhead).
+//                          A fresh instance is built per track during preload on the command thread,
+//                          so construction cost never blocks the audio thread or causes gaps.
 //                          Device rate queried once via cpal at engine init,
 //                          stored in AudioEngine::device_sample_rate.
 // =============================================================================
@@ -87,9 +88,8 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::{MetadataOptions, RawValue, StandardTag};
 use symphonia::core::formats::probe::Hint;
 
-use rubato::{
-    Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
-};
+use rubato::{Fft, FixedSync, Indexing, Resampler};
+use rubato::audioadapter_buffers::direct::SequentialSliceOfVecs;
 
 // =============================================================================
 // EQ TYPES  (serialisable — matches equalizer.ts / native-audio.ts)
@@ -168,6 +168,122 @@ impl BiquadFilter {
         let a1 = -2.0 * cos;
         let a2 = 1.0 - alpha / a;
 
+        Self::from_coeffs(b0, b1, b2, a0, a1, a2)
+    }
+
+    fn new_low_shelf(freq: f32, gain_db: f32, q: f32, sample_rate: u32) -> Self {
+        let a = 10.0f32.powf(gain_db / 40.0);
+        let w0 = 2.0 * PI * freq / sample_rate as f32;
+        let cos = w0.cos();
+        let alpha = w0.sin() / 2.0 * ((a + 1.0 / a) * (1.0 / q - 1.0) + 2.0).sqrt();
+
+        let b0 =  a * ((a + 1.0) - (a - 1.0) * cos + 2.0 * alpha * a.sqrt());
+        let b1 =  2.0 * a * ((a - 1.0) - (a + 1.0) * cos);
+        let b2 =  a * ((a + 1.0) - (a - 1.0) * cos - 2.0 * alpha * a.sqrt());
+        let a0 =       (a + 1.0) + (a - 1.0) * cos + 2.0 * alpha * a.sqrt();
+        let a1 = -2.0 * ((a - 1.0) + (a + 1.0) * cos);
+        let a2 =        (a + 1.0) + (a - 1.0) * cos - 2.0 * alpha * a.sqrt();
+
+        Self::from_coeffs(b0, b1, b2, a0, a1, a2)
+    }
+
+    fn new_high_shelf(freq: f32, gain_db: f32, q: f32, sample_rate: u32) -> Self {
+        let a = 10.0f32.powf(gain_db / 40.0);
+        let w0 = 2.0 * PI * freq / sample_rate as f32;
+        let cos = w0.cos();
+        let alpha = w0.sin() / 2.0 * ((a + 1.0 / a) * (1.0 / q - 1.0) + 2.0).sqrt();
+
+        let b0 =  a * ((a + 1.0) + (a - 1.0) * cos + 2.0 * alpha * a.sqrt());
+        let b1 = -2.0 * a * ((a - 1.0) + (a + 1.0) * cos);
+        let b2 =  a * ((a + 1.0) + (a - 1.0) * cos - 2.0 * alpha * a.sqrt());
+        let a0 =       (a + 1.0) - (a - 1.0) * cos + 2.0 * alpha * a.sqrt();
+        let a1 =  2.0 * ((a - 1.0) - (a + 1.0) * cos);
+        let a2 =        (a + 1.0) - (a - 1.0) * cos - 2.0 * alpha * a.sqrt();
+
+        Self::from_coeffs(b0, b1, b2, a0, a1, a2)
+    }
+
+    fn new_low_pass(freq: f32, q: f32, sample_rate: u32) -> Self {
+        let w0    = 2.0 * PI * freq / sample_rate as f32;
+        let cos   = w0.cos();
+        let alpha = w0.sin() / (2.0 * q);
+
+        let b0 = (1.0 - cos) / 2.0;
+        let b1 =  1.0 - cos;
+        let b2 = (1.0 - cos) / 2.0;
+        let a0 =  1.0 + alpha;
+        let a1 = -2.0 * cos;
+        let a2 =  1.0 - alpha;
+
+        Self::from_coeffs(b0, b1, b2, a0, a1, a2)
+    }
+
+    fn new_high_pass(freq: f32, q: f32, sample_rate: u32) -> Self {
+        let w0    = 2.0 * PI * freq / sample_rate as f32;
+        let cos   = w0.cos();
+        let alpha = w0.sin() / (2.0 * q);
+
+        let b0 =  (1.0 + cos) / 2.0;
+        let b1 = -(1.0 + cos);
+        let b2 =  (1.0 + cos) / 2.0;
+        let a0 =   1.0 + alpha;
+        let a1 =  -2.0 * cos;
+        let a2 =   1.0 - alpha;
+
+        Self::from_coeffs(b0, b1, b2, a0, a1, a2)
+    }
+
+    /// BandPass (constant skirt gain, peak gain = Q).
+    fn new_band_pass(freq: f32, q: f32, sample_rate: u32) -> Self {
+        let w0    = 2.0 * PI * freq / sample_rate as f32;
+        let alpha = w0.sin() / (2.0 * q);
+
+        let b0 =  w0.sin() / 2.0;
+        let b1 =  0.0;
+        let b2 = -w0.sin() / 2.0;
+        let a0 =  1.0 + alpha;
+        let a1 = -2.0 * w0.cos();
+        let a2 =  1.0 - alpha;
+
+        Self::from_coeffs(b0, b1, b2, a0, a1, a2)
+    }
+
+    fn new_notch(freq: f32, q: f32, sample_rate: u32) -> Self {
+        let w0    = 2.0 * PI * freq / sample_rate as f32;
+        let alpha = w0.sin() / (2.0 * q);
+        let cos   = w0.cos();
+
+        let b0 =  1.0;
+        let b1 = -2.0 * cos;
+        let b2 =  1.0;
+        let a0 =  1.0 + alpha;
+        let a1 = -2.0 * cos;
+        let a2 =  1.0 - alpha;
+
+        Self::from_coeffs(b0, b1, b2, a0, a1, a2)
+    }
+
+    fn new_all_pass(freq: f32, q: f32, sample_rate: u32) -> Self {
+        let w0    = 2.0 * PI * freq / sample_rate as f32;
+        let alpha = w0.sin() / (2.0 * q);
+        let cos   = w0.cos();
+
+        let b0 =  1.0 - alpha;
+        let b1 = -2.0 * cos;
+        let b2 =  1.0 + alpha;
+        let a0 =  1.0 + alpha;
+        let a1 = -2.0 * cos;
+        let a2 =  1.0 - alpha;
+
+        Self::from_coeffs(b0, b1, b2, a0, a1, a2)
+    }
+
+    fn from_coeffs(b0: f32, b1: f32, b2: f32, a0: f32, a1: f32, a2: f32) -> Self {
+        if a0.abs() < 1e-10 {
+            // return identity filter (pass-through) rather than NaN
+            return Self { b0: 1.0, b1: 0.0, b2: 0.0, a1: 0.0, a2: 0.0,
+                        x1: 0.0, x2: 0.0, y1: 0.0, y2: 0.0 };
+        }
         Self {
             b0: b0 / a0,
             b1: b1 / a0,
@@ -694,71 +810,72 @@ impl Source for SymphoniaSource {
 }
 
 // =============================================================================
-// RubatoResampler — high quality sinc resampler wrapping SymphoniaSource
+// RubatoResampler FFT resampler wrapping AudioSource
 // =============================================================================
 
 struct RubatoResampler {
-    source: SymphoniaSource,
-    resampler: SincFixedIn<f32>,
-    input_buf: Vec<Vec<f32>>,     // [channels][frames]
-    output_buf: Vec<Vec<f32>>,    // [channels][frames]
-    output_interleaved: Vec<f32>, // flat interleaved output
-    output_pos: usize,            // current position in output_interleaved
-    channels: usize,
-    dst_rate: u32,
-    chunk_size: usize,
-    done: bool,
+    source:             SymphoniaSource,
+    resampler:          Fft<f32>,
+    input_buf:          Vec<Vec<f32>>, // [channels][frames]
+    output_buf:         Vec<Vec<f32>>, // [channels][frames]
+    output_interleaved: Vec<f32>,      // flat interleaved, capacity = output_frames_max * channels
+    output_pos:         usize,
+    chunk_size:         usize,         // stable for Fft/FixedSync::Both
+    channels:           usize,
+    dst_rate:           u32,
+    done:               bool,
 }
 
 impl RubatoResampler {
     fn new(source: SymphoniaSource, dst_rate: u32) -> Result<Self, String> {
         let src_rate = source.sample_rate();
         let channels = source.channels() as usize;
-        let chunk_size = 1024; // frames per processing block
 
-        let params = SincInterpolationParameters {
-            sinc_len: 256,
-            f_cutoff: 0.95,
-            interpolation: SincInterpolationType::Linear,
-            oversampling_factor: 256,
-            window: WindowFunction::BlackmanHarris2,
-        };
-
-        let resampler = SincFixedIn::<f32>::new(
-            dst_rate as f64 / src_rate as f64,
-            2.0,
-            params,
-            chunk_size,
-            channels,
+        // Fft with FixedSync::Both: rubato picks exact chunk sizes for the ratio
+        // (e.g. multiples of 147/160 for 44100→48000), eliminating internal buffering.
+        // The hint of 1024 is rounded to the nearest legal value automatically.
+        let resampler = Fft::<f32>::new(
+            src_rate as usize,  // sample_rate_input
+            dst_rate as usize,  // sample_rate_output
+            1024,               // chunk_size hint (rounded to nearest legal value for the ratio)
+            1,                  // sub_chunks (1 = no subdivision)
+            channels,           // nbr_channels
+            FixedSync::Both,
         )
         .map_err(|e| format!("Failed to create resampler: {}", e))?;
 
-        let input_buf = vec![vec![0.0f32; chunk_size]; channels];
-        let output_buf = resampler.output_buffer_allocate(true);
+        let chunk_size        = resampler.input_frames_next(); // stable for FixedSync::Both
+        let output_frames_max = resampler.output_frames_max();
 
         Ok(Self {
             source,
             resampler,
-            input_buf,
-            output_buf,
-            output_interleaved: Vec::new(),
-            output_pos: 0,
+            input_buf:          vec![vec![0.0f32; chunk_size]; channels],
+            output_buf:         vec![vec![0.0f32; output_frames_max]; channels],
+            output_interleaved: Vec::with_capacity(output_frames_max * channels),
+            output_pos:         0,
+            chunk_size,
             channels,
             dst_rate,
-            chunk_size,
-            done: false,
+            done:               false,
         })
     }
 
-    // Fill input_buf from source, returns number of frames read
+    // Fill input_buf from source, returns number of frames read.
+    // De-interleaves L,R,L,R,... into input_buf[ch][frame] layout for rubato.
+    // When the source ends mid-frame (ch > 0), the partial frame is completed
+    // with zeros from `ch` onwards before zero-padding remaining frames, so
+    // rubato always receives channel-aligned input and the returned frame count is correct.
     fn fill_input(&mut self) -> usize {
         for frame in 0..self.chunk_size {
             for ch in 0..self.channels {
                 match self.source.next() {
                     Some(s) => self.input_buf[ch][frame] = s,
                     None => {
-                        // Zero-pad the rest of this chunk
-                        for pad_frame in frame..self.chunk_size {
+                        for pad_ch in ch..self.channels {
+                            self.input_buf[pad_ch][frame] = 0.0;
+                        }
+                        for pad_frame in (frame + 1)..self.chunk_size {
                             for pad_ch in 0..self.channels {
                                 self.input_buf[pad_ch][pad_frame] = 0.0;
                             }
@@ -782,14 +899,46 @@ impl RubatoResampler {
             return false;
         }
 
-        match self.resampler.process_into_buffer(
-            &self.input_buf,
-            &mut self.output_buf,
-            None, // None = all channels active
-        ) {
+        let is_last = frames_read < self.chunk_size;
+
+        // Zero output buffer before each call so stale data from the previous
+        // chunk can never bleed into the output on a short write.
+        for ch in &mut self.output_buf {
+            ch.fill(0.0);
+        }
+
+        let output_frames_max = self.resampler.output_frames_max();
+        let input_adapter = SequentialSliceOfVecs::new(
+            &self.input_buf, self.channels, self.chunk_size,
+        ).map_err(|e| format!("Input adapter error: {}", e));
+        let output_adapter = SequentialSliceOfVecs::new_mut(
+            &mut self.output_buf, self.channels, output_frames_max,
+        ).map_err(|e| format!("Output adapter error: {}", e));
+
+        let result = match (input_adapter, output_adapter) {
+            (Ok(inp), Ok(mut out)) => {
+                let indexing = if is_last {
+                    Some(Indexing {
+                        input_offset: 0,
+                        output_offset: 0,
+                        active_channels_mask: None,
+                        partial_len: Some(frames_read),
+                    })
+                } else {
+                    None
+                };
+                self.resampler.process_into_buffer(&inp, &mut out, indexing.as_ref())
+            }
+            (Err(e), _) | (_, Err(e)) => {
+                tracing::warn!("[AUDIO] Resampler adapter error: {}", e);
+                self.done = true;
+                return false;
+            }
+        };
+
+        match result {
             Ok((_, out_frames)) => {
                 self.output_interleaved.clear();
-                self.output_interleaved.reserve(out_frames * self.channels);
                 for frame in 0..out_frames {
                     for ch in 0..self.channels {
                         self.output_interleaved.push(self.output_buf[ch][frame]);
@@ -831,7 +980,8 @@ impl Iterator for RubatoResampler {
 
 impl Source for RubatoResampler {
     fn current_frame_len(&self) -> Option<usize> {
-        None
+        let remaining = self.output_interleaved.len().saturating_sub(self.output_pos);
+        if remaining > 0 { Some(remaining) } else { None }
     }
     fn channels(&self) -> u16 {
         self.channels as u16
@@ -893,6 +1043,7 @@ struct AudioEngine {
     next_path: Option<String>,
     next_duration: Option<Option<Duration>>,
 
+
     _stream: OutputStream,
 }
 
@@ -948,7 +1099,7 @@ impl AudioEngine {
         let (stream, stream_handle) = OutputStream::try_from_device_config(&device, config)
             .map_err(|e| format!("Failed to open audio output: {}", e))?;
 
-        tracing::info!("[AUDIO] Device sample rate: {} Hz", device_sample_rate);
+        tracing::info!("[AUDIO] Output stream opened successfully");
 
         let (queue_input, queue_output) = queue::<f32>(true);
         let paused_flag = Arc::new(AtomicBool::new(false));
