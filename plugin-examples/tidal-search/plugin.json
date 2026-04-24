@@ -1,7 +1,7 @@
 {
   "name": "Tidal Search",
   "safe_name": "tidal-search",
-  "version": "2.0.5",
+  "version": "2.0.9",
   "author": "Audion Team",
   "description": "Search and browse tracks from the Tidal catalog",
   "repo": "https://github.com/dupitydumb/tidal-search",

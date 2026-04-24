@@ -156,8 +156,35 @@ jobs:
         with:
           platform: linux
 
+      - name: Install pinned Linux WebKit dependencies (Ubuntu 24.04)
+        shell: bash
+        run: |
+          sudo apt-get update
+          # Prefer known-good versions when available; fall back to latest 24.04 packages.
+          if ! sudo apt-get install -y \
+            libwebkit2gtk-4.1-0=2.44.0-2 \
+            libwebkit2gtk-4.1-dev=2.44.0-2 \
+            libjavascriptcoregtk-4.1-0=2.44.0-2 \
+            libjavascriptcoregtk-4.1-dev=2.44.0-2 \
+            gir1.2-javascriptcoregtk-4.1=2.44.0-2 \
+            gir1.2-webkit2-4.1=2.44.0-2; then
+            echo "Pinned WebKit versions unavailable on current runner image; using latest Ubuntu 24.04 packages."
+            sudo apt-get install -y \
+              libwebkit2gtk-4.1-0 \
+              libwebkit2gtk-4.1-dev \
+              libjavascriptcoregtk-4.1-0 \
+              libjavascriptcoregtk-4.1-dev \
+              gir1.2-javascriptcoregtk-4.1 \
+              gir1.2-webkit2-4.1
+          fi
+
       - name: Build Tauri app
-        run: xvfb-run npm run tauri build
+        env:
+          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          GALLIUM_DRIVER: llvmpipe
+          GDK_BACKEND: x11
+        run: xvfb-run -a --server-args="-screen 0 1920x1080x24 -ac +extension GLX +render -noreset" npm run tauri build
 
       - name: Set version and prerelease flags
         id: info
@@ -220,6 +247,9 @@ jobs:
   # ---------------------------------------------------------------------------
   release-flatpak:
     runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
+      options: --privileged
     needs: release-linux
     if: |
       always() &&
@@ -256,16 +286,17 @@ jobs:
           echo "prerelease=$PRERELEASE" >> $GITHUB_OUTPUT
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
 
-      - name: Install Flatpak and flatpak-builder
+      - name: Configure Flathub remote (system scope)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
-          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak remotes --system
 
       - name: Build Flatpak bundle
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           manifest-path: packaging/flatpak/com.audion.app.yml
+          repository-name: flathub
+          repository-url: https://flathub.org/repo/flathub.flatpakrepo
           bundle: audion_${{ steps.info.outputs.version }}_flatpak.flatpak
           cache-key: flatpak-builder-${{ runner.os }}-${{ hashFiles('packaging/flatpak/*.yml') }}-v1
           install-dependencies: true

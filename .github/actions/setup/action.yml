@@ -46,6 +46,11 @@ runs:
           curl wget file \
           libxdo-dev \
           libssl-dev \
+          libegl1-mesa-dev \
+          libgl1-mesa-dev \
+          libgl1-mesa-dri \
+          libgbm-dev \
+          mesa-utils \
           xvfb
 
         # Ubuntu 24.04+ prefers Ayatana appindicator package name.

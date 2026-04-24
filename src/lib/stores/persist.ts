@@ -3,7 +3,7 @@ import { get } from 'svelte/store';
 import {
     volume, currentTrack, queue, queueIndex, userQueueCount,
     shuffle, repeat, shuffledIndices, shuffledIndex,
-    playbackContext, currentTime, type PlaybackContext
+    playbackContext, currentTime, duration, type PlaybackContext
 } from './player';
 import { lyricsVisible } from './lyrics';
 import type { Track } from '$lib/api/tauri';
@@ -22,6 +22,7 @@ export interface PersistedState {
     shuffledIndex: number;
     playbackContext: PlaybackContext | null;
     currentTime: number;
+    duration: number;
     lastTrack: {
         id: number;
         path: string;
@@ -44,6 +45,7 @@ const defaultState: PersistedState = {
     shuffledIndex: 0,
     playbackContext: null,
     currentTime: 0,
+    duration: 0,
     lastTrack: null
 };
 
@@ -82,6 +84,7 @@ export function savePersistedState(): void {
             shuffledIndex: get(shuffledIndex),
             playbackContext: get(playbackContext),
             currentTime: get(currentTime),
+            duration: get(duration),
             lastTrack: track ? {
                 id: track.id,
                 path: track.path,
@@ -153,6 +156,11 @@ export function initializeFromPersistedState(): void {
         // Restore time
         if (state.currentTime > 0) {
             currentTime.set(state.currentTime);
+        }
+
+        // Restore duration
+        if (state.duration > 0) {
+            duration.set(state.duration);
         }
     }
 }

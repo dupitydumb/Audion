@@ -8,6 +8,9 @@ export const isQueueVisible = writable(false);
 export const isSettingsOpen = writable(false);
 export const isStatsWrappedOpen = writable(false);
 
+// Prevent overlapping PiP transitions that can cause inconsistent window state.
+let miniPlayerTransitionInFlight = false;
+
 // Store original window state for restoring after PIP mode
 let originalWindowState: {
     width: number;
@@ -31,8 +34,12 @@ export async function setMiniPlayer(enable: boolean) {
     // Don't do anything if state is already correct
     if (currentState === enable) return;
 
+    // Ignore re-entrant calls while a previous transition is still running.
+    if (miniPlayerTransitionInFlight) return;
+
     if (isTauri()) {
         try {
+            miniPlayerTransitionInFlight = true;
             const appWindow = getCurrentWindow();
 
             if (enable) {
@@ -77,8 +84,10 @@ export async function setMiniPlayer(enable: boolean) {
                 // Exiting PIP mode
                 await appWindow.setAlwaysOnTop(false);
 
-                // Restore window decorations (title bar)
-                await appWindow.setDecorations(true);
+                // Keep native decorations disabled.
+                // The app uses a custom desktop title bar, and enabling native
+                // decorations here causes duplicate title bars after exiting PiP.
+                await appWindow.setDecorations(false);
 
                 // Re-enable resizing
                 await appWindow.setResizable(true);
@@ -111,6 +120,8 @@ export async function setMiniPlayer(enable: boolean) {
             // Roll back store on failure
             isMiniPlayer.set(currentState);
             return;
+        } finally {
+            miniPlayerTransitionInFlight = false;
         }
     } else {
         // Non-Tauri: just toggle the store

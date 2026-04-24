@@ -452,6 +452,42 @@ pub async fn add_folder(path: String, db: State<'_, Database>) -> Result<(), Str
     Ok(())
 }
 
+/// Replace existing music folders with a single validated folder.
+/// Useful on Android where users want strict one-folder scanning.
+#[tauri::command]
+pub async fn set_single_music_folder(path: String, db: State<'_, Database>) -> Result<(), String> {
+    if path.starts_with("content://") {
+        return Err(
+            "Invalid folder path: content URIs are not supported for scanning yet".to_string(),
+        );
+    }
+
+    let path_buf = std::path::PathBuf::from(&path);
+
+    if !path_buf.exists() {
+        return Err("Invalid path: Does not exist".to_string());
+    }
+
+    if !path_buf.is_dir() {
+        return Err("Invalid path: Not a directory".to_string());
+    }
+
+    let canonical_path = path_buf
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve path: {}", e))?;
+
+    let path_str = canonical_path.to_string_lossy().to_string();
+
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM music_folders", [])
+        .map_err(|e| format!("Failed to clear existing folders: {}", e))?;
+
+    queries::register_music_folder(&conn, &path_str)
+        .map_err(|e| format!("Failed to set music folder: {}", e))?;
+
+    Ok(())
+}
+
 async fn run_scan_and_import(
     window: &tauri::Window,
     db_conn: Arc<std::sync::Mutex<rusqlite::Connection>>,

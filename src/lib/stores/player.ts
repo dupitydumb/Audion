@@ -2,7 +2,15 @@
 import { writable, derived, get } from 'svelte/store';
 import { wsStore } from './websocket';
 import type { Track } from '$lib/api/tauri';
-import { getAudioSrc, getAlbumArtSrc, getTrackCoverSrc, convertFileSrc } from '$lib/api/tauri';
+import {
+    getAudioSrc,
+    getAlbumArtSrc,
+    getTrackCoverSrc,
+    convertFileSrc,
+    listen,
+    initWindowsThumbar,
+    updateWindowsThumbarState
+} from '$lib/api/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { addToast } from '$lib/stores/toast';
 import { EventEmitter, type PluginEvents } from '$lib/plugins/event-emitter';
@@ -106,6 +114,7 @@ async function playWithDash(blobUrl: string, audioElement: HTMLAudioElement): Pr
         addToast(`Hi-Res playback error: ${e.error?.message || 'Unknown error'}`, 'error');
     });
 }
+
 
 function getHtml5Audio(): HTMLAudioElement {
     if (!html5Audio && typeof window !== 'undefined') {
@@ -429,6 +438,8 @@ export async function initAudioBackend(): Promise<void> {
 
     // Start/stop poller based on playback state and notify remote devices
     isPlaying.subscribe((playing) => {
+        updateWindowsThumbarState(playing).catch(() => { });
+
         // Force an immediate broadcast when play/pause state changes
         // so remote Connect Panels stay perfectly in sync
         broadcastState(true);
@@ -504,11 +515,13 @@ export async function initAudioBackend(): Promise<void> {
             stopStatePoller(); // Ensure local poller is off
         }
     });
+
+    await initWindowsThumbarIntegration();
 }
 
 function handleRemotePlayerState(payload: any) {
     const isLocalPlaying = get(isPlaying) && get(activeBackend) !== 'remote';
-    
+
     // Auto-switch to tracking the remote device if we are idle and it's playing
     if (!isLocalPlaying && payload.isPlaying && payload.deviceId) {
         if (get(activeBackend) !== 'remote') {
@@ -524,16 +537,16 @@ function handleRemotePlayerState(payload: any) {
             const remoteTrack = payload.track;
             const currentObj = get(currentTrack);
             const remoteTrackId = Number(remoteTrack.id);
-            
+
             if (!currentObj || Number(currentObj.id) !== remoteTrackId) {
                 // Try to resolve track locally for better cover art (Fast O(1) lookup)
                 let localTrack: any = getTrackByIdSync(remoteTrackId);
-                
+
                 // Falling back to O(N) search only if ID fails (rare in synced libraries)
                 if (!localTrack) {
                     const $library = get(libraryTracks);
-                    localTrack = $library.find(t => 
-                        t.title === remoteTrack.title && 
+                    localTrack = $library.find(t =>
+                        t.title === remoteTrack.title &&
                         t.artist === remoteTrack.artist
                     );
                 }
@@ -551,15 +564,15 @@ function handleRemotePlayerState(payload: any) {
 
         // Only update these if they changed to prevent spamming subscribers
         if (get(isPlaying) !== payload.isPlaying) isPlaying.set(payload.isPlaying);
-        
+
         // Only update time if the difference is significant (>250ms or specifically requested)
         const currentT = get(currentTime);
         if (Math.abs(currentT - payload.currentTime) > 0.25 || payload.isPlaying === false) {
             currentTime.set(payload.currentTime);
         }
-        
+
         if (get(duration) !== payload.duration) duration.set(payload.duration);
-        
+
         if (payload.volume !== undefined && get(volume) !== payload.volume) volume.set(payload.volume);
         if (payload.shuffle !== undefined && get(shuffle) !== payload.shuffle) shuffle.set(payload.shuffle);
         if (payload.repeat !== undefined && get(repeat) !== payload.repeat) repeat.set(payload.repeat);
@@ -616,6 +629,7 @@ function startStatePoller(): void {
                         // Backend hasn't loaded track yet, don't trust this state
                     } else {
                         isPlaying.set(state.is_playing);
+                        updateMediaSessionPlaybackState(state.is_playing ? 'playing' : 'paused');
                     }
                 }
 
@@ -639,6 +653,7 @@ function startStatePoller(): void {
                     // Do not sync HTML5 state if activeBackend changed
                     if (get(activeBackend) === 'html5') {
                         isPlaying.set(playing);
+                        updateMediaSessionPlaybackState(playing ? 'playing' : 'paused');
                     }
                 }
 
@@ -673,7 +688,7 @@ function broadcastState(force = false) {
 
     const now = Date.now();
     if (!force && now - lastBroadcast < 2000) return;
-    
+
     const track = get(currentTrack);
     const playing = get(isPlaying);
     const pos = get(currentTime);
@@ -712,7 +727,6 @@ export function cleanupPlayer(): void {
     stopStatePoller();
     nativeAudioStop().catch(console.error);
 
-    // Cleanup dash.js
     if (dashPlayer) {
         try { dashPlayer.destroy(); } catch (_) { }
         dashPlayer = null;
@@ -749,16 +763,64 @@ export function shutdownPlayer(): void {
 
 let mediaSessionInitialized = false;
 
+let windowsThumbarInitialized = false;
+
+async function initWindowsThumbarIntegration(): Promise<void> {
+    if (windowsThumbarInitialized) return;
+
+    try {
+        const initialized = await initWindowsThumbar();
+        if (!initialized) return;
+
+        await listen<{ action?: string }>('windows://thumbar-action', ({ payload }) => {
+            const action = payload?.action;
+            if (!action) return;
+
+            switch (action) {
+                case 'previous':
+                    void previousTrack();
+                    break;
+                case 'toggle_play_pause':
+                    void togglePlay();
+                    break;
+                case 'next':
+                    nextTrack();
+                    break;
+            }
+        });
+
+        windowsThumbarInitialized = true;
+        await updateWindowsThumbarState(get(isPlaying));
+        console.log('[Player] Windows taskbar thumbar initialized');
+    } catch (err) {
+        console.warn('[Player] Windows thumbar init failed:', err);
+    }
+}
+
 function initMediaSessionHandlers(): void {
     if (mediaSessionInitialized || !('mediaSession' in navigator)) return;
 
     const ms = navigator.mediaSession;
 
-    ms.setActionHandler('play', () => togglePlay());
-    ms.setActionHandler('pause', () => togglePlay());
-    ms.setActionHandler('previoustrack', () => previousTrack());
-    ms.setActionHandler('nexttrack', () => nextTrack());
-    ms.setActionHandler('seekto', (details) => {
+    const setHandler = (action: MediaSessionAction, handler: MediaSessionActionHandler | null) => {
+        try {
+            ms.setActionHandler(action, handler);
+        } catch (err) {
+            // Some environments/WebViews don't support every action.
+            // Keep registering the rest instead of aborting initialization.
+            console.debug(`[MediaSession] Action not supported: ${action}`, err);
+        }
+    };
+
+    // IMPORTANT: use explicit pause/resume handlers (not toggle).
+    // Some Bluetooth headsets can emit repeated pause events; toggle would
+    // accidentally resume playback and make pause appear broken.
+    setHandler('play', () => { void resume(); });
+    setHandler('pause', () => { void pause(); });
+    setHandler('stop', () => { void pause(); });
+    setHandler('previoustrack', () => { void previousTrack(); });
+    setHandler('nexttrack', () => { void nextTrack(); });
+    setHandler('seekto', (details) => {
         if (details.seekTime != null) {
             const dur = get(duration);
             if (dur > 0) {
@@ -766,7 +828,7 @@ function initMediaSessionHandlers(): void {
             }
         }
     });
-    ms.setActionHandler('seekbackward', (details) => {
+    setHandler('seekbackward', (details) => {
         const offset = details.seekOffset || 10;
         const cur = get(currentTime);
         const dur = get(duration);
@@ -774,7 +836,7 @@ function initMediaSessionHandlers(): void {
             nativeAudioSeek(Math.max(0, cur - offset) / dur).catch(console.error);
         }
     });
-    ms.setActionHandler('seekforward', (details) => {
+    setHandler('seekforward', (details) => {
         const offset = details.seekOffset || 10;
         const cur = get(currentTime);
         const dur = get(duration);
@@ -1052,7 +1114,7 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
                 if (startTime > 0) {
                     audio.currentTime = startTime;
                 }
-                
+
                 console.log('[Player] HTML5 streaming started:', track.title);
             }
 
@@ -1257,6 +1319,9 @@ export async function resume(): Promise<void> {
 
         if (get(currentTime) >= get(duration) && get(duration) > 0) {
             await playTrack(track);
+        } else if (get(activeBackend) === 'none') {
+            // App just opened, no audio loaded yet - start playback from saved position
+            await playTrack(track, false, get(currentTime));
         } else if (get(activeBackend) === 'html5') {
             await getHtml5Audio().play();
             isPlaying.set(true);
@@ -1822,6 +1887,19 @@ export function removeFromQueue(index: number): void {
 // Reorder queue (move track from one position to another)
 export function reorderQueue(fromIndex: number, toIndex: number): void {
     const currentIdx = get(queueIndex);
+    const isShuffle = get(shuffle);
+
+    if (fromIndex === toIndex) return;
+
+    const queueBefore = get(queue);
+    if (
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= queueBefore.length ||
+        toIndex >= queueBefore.length
+    ) {
+        return;
+    }
 
     queue.update(q => {
         const newQueue = [...q];
@@ -1843,21 +1921,43 @@ export function reorderQueue(fromIndex: number, toIndex: number): void {
     // This is tricky. An item moved from A to B.
     // Indices between A and B shifted.
     // The item at 'fromIndex' is now at 'toIndex'.
-    if (get(shuffle)) {
+    if (isShuffle) {
         shuffledIndices.update(indices => {
-            return indices.map(i => {
+            const fromPos = indices.indexOf(fromIndex);
+            const toPos = indices.indexOf(toIndex);
+
+            // First remap numeric queue indices so they still reference
+            // the same tracks after the queue array reorder.
+            const remapped = indices.map(i => {
                 if (i === fromIndex) return toIndex;
                 if (fromIndex < toIndex) {
-                    // Moved down: items between from+1 and to shifted up (-1)
+                    // Moved down: items between from+1 and to shift up (-1)
                     if (i > fromIndex && i <= toIndex) return i - 1;
                 } else {
-                    // Moved up: items between to and from-1 shifted down (+1)
+                    // Moved up: items between to and from-1 shift down (+1)
                     if (i >= toIndex && i < fromIndex) return i + 1;
                 }
                 return i;
             });
+
+            // Then reflect manual user intent in the visible shuffled order.
+            if (fromPos !== -1 && toPos !== -1 && fromPos !== toPos) {
+                const [moved] = remapped.splice(fromPos, 1);
+                remapped.splice(toPos, 0, moved);
+            }
+
+            return remapped;
         });
+
+        // Keep shuffled cursor aligned to the currently playing queue index.
+        const currentQueueIdx = get(queueIndex);
+        const ptr = get(shuffledIndices).indexOf(currentQueueIdx);
+        if (ptr !== -1) {
+            shuffledIndex.set(ptr);
+        }
     }
+
+    pluginEvents.emit('queueChange', { queue: get(queue), index: get(queueIndex) });
     _schedulePreload();
 }
 
@@ -1942,22 +2042,22 @@ export async function transferPlayback(state: any) {
     if (!state || !state.track) return;
 
     console.log('[Player] Transferring playback to this device...', state.track.title);
-    
+
     // 1. Stop remote playback (by sending a command to specific device)
     if (state.deviceId) {
         console.log('[Player] Pausing remote device:', state.deviceId);
         sendRemoteCommand(state.deviceId, 'pause');
     }
-    
+
     // 2. Resolve the local track object if possible (Fast ID lookup first)
     const remoteTrack = state.track;
     let localTrack: any = getTrackByIdSync(Number(remoteTrack.id));
-    
+
     if (!localTrack) {
         // Falling back to O(N) search
         const $library = get(libraryTracks);
-        localTrack = $library.find(t => 
-            t.title === remoteTrack.title && 
+        localTrack = $library.find(t =>
+            t.title === remoteTrack.title &&
             t.artist === remoteTrack.artist
         );
     }
@@ -1970,7 +2070,7 @@ export async function transferPlayback(state: any) {
             ...localTrack,
             coverUrl: getTrackCoverSrc(localTrack)
         };
-        
+
         await playTrack(localTrack, false, state.currentTime);
         if (!state.isPlaying) {
             await pause();
@@ -2000,9 +2100,9 @@ let remoteThrottleTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 function throttledRemoteCommand(targetDeviceId: string, command: string, data: any, delay: number) {
     const key = `${targetDeviceId}:${command}`;
     if (remoteThrottleTimers[key]) return;
-    
+
     sendRemoteCommand(targetDeviceId, command, data);
-    
+
     remoteThrottleTimers[key] = setTimeout(() => {
         delete remoteThrottleTimers[key];
     }, delay);
@@ -2042,7 +2142,7 @@ async function handleRemoteCommand(payload: any) {
             if (data?.shuffle != null) {
                 // If local, use toggleShuffle to handle index regeneration
                 if (get(activeBackend) !== 'remote') {
-                   if (get(shuffle) !== data.shuffle) toggleShuffle();
+                    if (get(shuffle) !== data.shuffle) toggleShuffle();
                 } else {
                     shuffle.set(data.shuffle);
                 }

@@ -134,7 +134,8 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
                 local_src = ?13,
                 disc_number = ?15,
                 musicbrainz_recording_id = ?16,
-                metadata_json = ?17
+                metadata_json = ?17,
+                date_added = COALESCE(date_added, CURRENT_TIMESTAMP)
              WHERE id = ?14",
             params![
                 track.title,
@@ -161,8 +162,8 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
     } else {
         // insert new track
         conn.execute(
-            "INSERT INTO tracks (path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, content_hash, local_src, disc_number, musicbrainz_recording_id, metadata_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)",
+            "INSERT INTO tracks (path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, content_hash, local_src, disc_number, musicbrainz_recording_id, metadata_json, date_added)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, CURRENT_TIMESTAMP)",
             params![
                 track.path,
                 track.title,

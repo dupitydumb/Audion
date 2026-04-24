@@ -6,8 +6,11 @@
   import {
     resetDatabase,
     selectMusicFolder,
+    pickAndroidFolder,
+    addFolder,
     syncCoverPathsFromFiles,
     mergeDuplicateCovers,
+    rescanMusic,
     setListenbrainzToken,
     deleteListenbrainzToken,
     verifyListenbrainzToken,
@@ -72,6 +75,11 @@
   let mergeSuccess = false;
   let mergeProgress: MergeProgressUpdate | null = null;
   let mergePercentage = 0;
+
+  // Android single music folder state
+  let isUpdatingAndroidMusicFolder = false;
+  let androidMusicFolderMessage = "";
+  let androidMusicFolderSuccess = false;
 
   // Audio Backend state
   let initialAudioBackend = $appSettings.audioBackend;
@@ -177,18 +185,7 @@
   async function handleSetDownloadLocation() {
     try {
       if (isAndroid()) {
-        // Use native Android SAF folder picker
-        const path = await new Promise<string | null>((resolve) => {
-          // Register one-shot callback for the result
-          (window as any).__onAndroidFolderPicked = (
-            pickedPath: string | null,
-          ) => {
-            delete (window as any).__onAndroidFolderPicked;
-            resolve(pickedPath);
-          };
-          // Launch the native picker
-          (window as any).AndroidFolderPicker?.pickFolder();
-        });
+        const path = await pickAndroidFolder();
         if (path) {
           appSettings.setDownloadLocation(path);
         }
@@ -200,6 +197,54 @@
       }
     } catch (error) {
       console.error("Failed to select download location:", error);
+    }
+  }
+
+  async function handleSetAndroidMusicFolder() {
+    try {
+      androidMusicFolderMessage = "";
+      androidMusicFolderSuccess = false;
+
+      const path = await pickAndroidFolder();
+      if (!path) return;
+
+      if (path.startsWith("content://")) {
+        androidMusicFolderSuccess = false;
+        androidMusicFolderMessage =
+          "Folder URI is not supported yet. Please pick a local Music folder path.";
+        return;
+      }
+
+      isUpdatingAndroidMusicFolder = true;
+
+      await addFolder(path);
+      appSettings.setAndroidMusicFolder(path);
+
+      const result = await rescanMusic();
+      await loadLibrary();
+
+      const parts = [];
+      if (result.tracks_added > 0) parts.push(`${result.tracks_added} added`);
+      if (result.tracks_updated > 0)
+        parts.push(`${result.tracks_updated} updated`);
+      if (result.tracks_deleted > 0)
+        parts.push(`${result.tracks_deleted} deleted`);
+
+      androidMusicFolderSuccess = true;
+      androidMusicFolderMessage =
+        parts.length > 0
+          ? `Music folder added: ${parts.join(", ")}`
+          : "Music folder added. No library changes detected.";
+    } catch (error) {
+      androidMusicFolderSuccess = false;
+      androidMusicFolderMessage = `Failed to add music folder: ${error}`;
+      console.error("Failed to add Android music folder:", error);
+    } finally {
+      isUpdatingAndroidMusicFolder = false;
+
+      setTimeout(() => {
+        androidMusicFolderMessage = "";
+      }, 5000);
     }
   }
 
@@ -433,6 +478,13 @@
   // Tier limits logic
   $: libraryProgress = Math.min(($trackCount / 100) * 100, 100);
   $: playlistProgress = Math.min(($playlists.length / 3) * 100, 100);
+
+  // Account display fallbacks (for users without profile name/avatar)
+  $: accountDisplayName =
+    $authState.name?.trim() ||
+    ($authState.email ? $authState.email.split("@")[0] : "User");
+  $: accountEmail = $authState.email || "No email";
+  $: accountInitial = (accountDisplayName || "U").charAt(0).toUpperCase();
 </script>
 
 <div class="settings-view">
@@ -442,6 +494,36 @@
 
   <div class="settings-content">
     <div class="settings-container">
+      <!-- Section: Support -->
+      <section class="settings-section" aria-labelledby="support-heading">
+        <h2 id="support-heading" class="section-label">Support</h2>
+        <div class="settings-card">
+          <div class="card-title-group compact">
+            <h3 class="setting-title">Support Audion</h3>
+            <span class="setting-description">Help keep development active</span>
+          </div>
+
+          <div class="button-group-row support-links-row" style="margin-top: var(--spacing-sm)">
+            <a
+              href="https://ko-fi.com/N4N5UMNR1"
+              target="_blank"
+              rel="noreferrer"
+              class="btn-primary-compact btn-support-compact"
+            >
+              Ko-fi
+            </a>
+            <a
+              href="https://www.patreon.com/AudionPlayer"
+              target="_blank"
+              rel="noreferrer"
+              class="btn-outline-compact btn-support-compact"
+            >
+              Patreon
+            </a>
+          </div>
+        </div>
+      </section>
+
       <!-- Section: Account -->
       <section class="settings-section" aria-labelledby="account-heading">
         <h2 id="account-heading" class="section-label">Account</h2>
@@ -458,14 +540,24 @@
                 />
               {:else}
                 <div class="avatar avatar-placeholder">
-                  {($authState.name || $authState.email || "U")
-                    .charAt(0)
-                    .toUpperCase()}
+                  {accountInitial}
                 </div>
               {/if}
               <div class="account-details">
-                <span class="setting-title">{$authState.name || "User"}</span>
-                <span class="setting-description">{$authState.email || ""}</span>
+                <span class="setting-title">{accountDisplayName}</span>
+                <span class="setting-description">{accountEmail}</span>
+                <span class="setting-description">
+                  {#if $isSupporter}
+                    Supporter access until
+                    {#if $authState.supporter_until}
+                      {formatSupporterUntil($authState.supporter_until)}
+                    {:else}
+                      Active (subscription)
+                    {/if}
+                  {:else}
+                    Free plan
+                  {/if}
+                </span>
               </div>
               <button
                 class="btn-outline-compact"
@@ -593,6 +685,34 @@
               <button class="selector-btn" on:click={handleSetDownloadLocation} aria-label="Change location">Change</button>
             </div>
           </div>
+
+          {#if isAndroid()}
+            <div class="divider"></div>
+
+            <div class="inner-section">
+              <span class="setting-title">Music library folder (Android)</span>
+              <span class="setting-description">Add folders to your library scan while avoiding system audio clips</span>
+              <div class="path-selector">
+                <div class="setting-description path-display" style="margin-top: 0;" title={$appSettings.androidMusicFolder || "Not set"}>
+                  {$appSettings.androidMusicFolder || "No music folder selected"}
+                </div>
+                <button
+                  class="selector-btn"
+                  on:click={handleSetAndroidMusicFolder}
+                  aria-label="Add Android music folder"
+                  disabled={isUpdatingAndroidMusicFolder}
+                >
+                  {isUpdatingAndroidMusicFolder ? "Adding..." : "Add folder"}
+                </button>
+              </div>
+
+              {#if androidMusicFolderMessage}
+                <div class="sync-message {androidMusicFolderSuccess ? 'success' : 'error'}">
+                  {androidMusicFolderMessage}
+                </div>
+              {/if}
+            </div>
+          {/if}
 
           <div class="divider"></div>
 
@@ -1282,6 +1402,11 @@
     flex-wrap: wrap;
   }
 
+  .support-links-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .btn-text-small {
     background: none;
     border: none;
@@ -1313,6 +1438,17 @@
   .btn-primary-compact:hover {
     background-color: var(--accent-hover);
     transform: scale(1.02);
+  }
+
+  .btn-support-compact {
+    width: 100%;
+    text-align: center;
+  }
+
+  @media (max-width: 520px) {
+    .support-links-row {
+      grid-template-columns: 1fr;
+    }
   }
 
   .btn-outline-compact.danger {

@@ -5,6 +5,8 @@ mod commands;
 mod db;
 #[cfg(desktop)]
 mod discord;
+#[cfg(desktop)]
+mod windows_thumbar;
 mod scanner;
 mod security;
 mod sync;
@@ -449,6 +451,7 @@ pub fn run() {
                     // Library commands
                     commands::scan_music,
                     commands::add_folder,
+                    commands::set_single_music_folder,
                     commands::rescan_music,
                     commands::get_default_music_dirs,
                     commands::get_library,
@@ -598,6 +601,8 @@ pub fn run() {
                     audio::audio_get_state,
                     audio::audio_set_eq,
                     audio::native_audio_available,
+                    windows_thumbar::windows_init_thumbar,
+                    windows_thumbar::windows_update_thumbar_state,
                     commands::proxy_fetch_bytes,
                     commands::save_image_to_gallery,
                 ]
@@ -608,6 +613,7 @@ pub fn run() {
                     // Library commands
                     commands::scan_music,
                     commands::add_folder,
+                    commands::set_single_music_folder,
                     commands::rescan_music,
                     commands::get_default_music_dirs,
                     commands::get_library,

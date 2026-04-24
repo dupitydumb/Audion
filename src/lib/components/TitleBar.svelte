@@ -417,7 +417,7 @@
         height: 48px;
         background: var(--bg-base);
         display: grid;
-        grid-template-columns: 1fr minmax(auto, 400px) 1fr;
+        grid-template-columns: 1fr auto 1fr;
         align-items: center;
         position: fixed;
         top: 0;
@@ -446,7 +446,9 @@
         align-items: center;
         justify-content: center;
         height: 100%;
-        padding: 0 8px;
+        width: min(54vw, 900px);
+        max-width: 100%;
+        padding: 0 12px;
     }
 
     .left-controls {
@@ -506,7 +508,6 @@
     [data-tauri-drag-region],
     .drag-region {
         -webkit-app-region: drag;
-        app-region: drag;
         flex-grow: 1;
         height: 100%;
         min-width: 16px;
@@ -518,10 +519,8 @@
     .titlebar .nav-group,
     .titlebar .search-input-wrapper,
     .titlebar button,
-    .titlebar input,
-    .titlebar a {
+    .titlebar input {
         -webkit-app-region: no-drag;
-        app-region: no-drag;
     }
 
     /* Search Bar */
@@ -534,13 +533,17 @@
         padding: 0 12px;
         height: 32px;
         width: 100%;
-        transition: background-color 0.2s;
-        border: 1px solid transparent;
+        transition:
+            background-color 0.2s,
+            border-color 0.2s,
+            box-shadow 0.2s;
+        border: 1px solid var(--accent-subtle);
     }
 
     .search-input-wrapper:focus-within {
         background-color: var(--bg-surface);
-        border-color: var(--accent-subtle);
+        border-color: var(--accent-primary);
+        box-shadow: 0 0 0 1px var(--accent-subtle);
     }
 
     .search-icon {
