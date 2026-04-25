@@ -15,36 +15,55 @@ With plugins, you can:
 
 ## Getting Started
 
-1.  Navigate to the `plugin-examples` directory.
-2.  Create a new folder for your plugin, e.g., `my-plugin`.
-3.  Create a `plugin.json` manifest file.
-4.  Create an `index.js` entry point file.
+1.  Create a new folder for your plugin, e.g., `my-plugin`.
+2.  Create a `plugin.json` manifest file (see structure below).
+3.  Create an `index.js` entry point file.
+4.  **Test Locally**: Move your plugin folder into Audion's active plugins directory:
+    *   **Windows**: `%APPDATA%\audion\plugins\`
+    *   **macOS**: `~/Library/Application Support/audion/plugins/`
+    *   **Linux**: `~/.config/audion/plugins/`
+
+*(If you are developing an example for the official repository, you can work directly inside the `plugin-examples/` folder).*
+
 
 ## Plugin Structure
 
 ### 1. Manifest (`plugin.json`)
 
-The manifest defines your plugin's metadata and requested permissions.
+The manifest defines your plugin's metadata, entry point, and requested permissions.
 
 ```json
 {
   "name": "My Plugin",
+  "safe_name": "my-plugin",
   "version": "1.0.0",
   "description": "A brief description of what my plugin does.",
   "author": "Your Name",
-  "main": "index.js",
+  "entry": "index.js",
   "type": "js",
   "permissions": [
     "player:read",
-    "ui:inject"
+    "ui:inject",
+    "network:fetch"
   ],
+  "repo": "https://github.com/username/my-plugin.git",
   "repository": "https://github.com/username/my-plugin.git"
 }
 ```
 
+#### Key Fields:
+- `name`: The display name of your plugin.
+- `safe_name` *(Optional)*: The folder name for your plugin. If omitted, it will be generated from the name.
+- `entry`: The entry point file (e.g., `index.js` for JS, `index.wasm` for WASM). **Required** (Replaces legacy `main` field).
+- `type`: Either `"js"` or `"wasm"`.
+- `permissions`: Array of permissions your plugin requires.
+- `repo`: The repository URL used for schema validation.
+- `repository`: The repository URL used by the `npm run sync-plugins` script.
+
+
 ### 2. Entry Point (`index.js`)
 
-The entry point must define a global object matching your plugin's name (spaces removed) or `AudionPlugin`.
+The entry point should register your plugin using the `Audion.register()` method.
 
 ```javascript
 (function() {
@@ -74,14 +93,21 @@ The entry point must define a global object matching your plugin's name (spaces 
         
         // Called when the plugin is completely unloaded
         destroy() {
-            // Clean up resources
+            console.log('My Plugin destroyed');
         }
     };
     
     // Register the plugin
-    window.MyPlugin = MyPlugin;
+    if (typeof Audion !== 'undefined' && Audion.register) {
+        Audion.register(MyPlugin);
+    } else {
+        // Fallback for legacy support
+        window.MyPlugin = MyPlugin;
+        window.AudionPlugin = MyPlugin;
+    }
 })();
 ```
+
 
 ## API Reference
 
@@ -114,6 +140,9 @@ api.on('volumeChange', ({ volume }) => { ... });
 - `api.player.seek(seconds)`
 - `api.player.setTrack(trackObject)`
 - `api.player.addToQueue(tracks)`
+- `api.player.removeFromQueue(index)`
+- `api.player.reorderQueue(from, to)`
+- `api.player.clearUpcoming()`
 
 ### Player State (`api.player`)
 *Requires `player:read` permission.*
@@ -127,7 +156,7 @@ api.on('volumeChange', ({ volume }) => { ... });
 ### Streaming & External Sources (`api.stream`)
 *Requires `player:control` permission.*
 
-Register resolvers for external music sources (e.g., Tidal, Spotify).
+Register resolvers for external music sources (e.g., Tidal, JioSaavn).
 
 ```javascript
 // Register a resolver for 'my-service' tracks
@@ -139,9 +168,21 @@ api.stream.registerResolver('my-service', async (externalId, options) => {
 ```
 
 ### Library Management (`api.library`)
-*Requires `library:write` permission.*
 
-Add external tracks to the library or initiate downloads.
+#### Read Library (*Requires `library:read` permission.*)
+
+- `api.library.getTracks()`: Returns an array of all tracks in the library.
+- `api.library.getPlaylists()`: Returns an array of all playlists.
+
+#### Modify Library (*Requires `library:write` permission.*)
+
+- `api.library.addExternalTrack(trackData)`: Add a track from an external source.
+- `api.library.downloadTrack(options)`: Download a track to local storage.
+- `api.library.refresh()`: Trigger a library refresh.
+- `api.library.createPlaylist(name)`: Create a new playlist.
+- `api.library.addTrackToPlaylist(playlistId, trackId)`: Add a track to a playlist.
+- `api.library.updatePlaylistCover(playlistId, coverUrl)`: Update playlist cover image.
+- `api.library.updateTrackCoverUrl(trackId, coverUrl)`: Update track cover image.
 
 ```javascript
 // Add an external track to the library
@@ -164,6 +205,59 @@ await api.library.downloadTrack({
         artist: "Artist"
     }
 });
+```
+
+
+### Network API (`api.fetch`)
+*Requires `network:fetch` permission.*
+
+Make CORS-free network requests routed through the backend.
+
+```javascript
+const response = await api.fetch('https://api.example.com/data', {
+    method: 'GET',
+    headers: { 'Authorization': 'Bearer token' }
+});
+const data = await response.json();
+```
+
+### Settings API (`api.settings`)
+*Requires `settings:write` or `storage:local` permission.*
+
+```javascript
+// Update the global download location
+api.settings.setDownloadLocation('/path/to/downloads');
+```
+
+### Lyrics API (`api.lyrics`)
+*Always available.*
+
+- `api.lyrics.getCurrentTrackLyrics()`: Get all lyrics for the currently playing track.
+- `api.lyrics.getCurrentTrackActiveLyric()`: Get the active lyric line for the current track.
+- `api.lyrics.getLyrics(musicPath)`: Get lyrics for a specific track file path.
+- `api.lyrics.getCurrentLyric(musicPath, currentTime)`: Get the active lyric for a track at a specific time.
+
+### Discord RPC API (`api.discord`)
+*Always available.*
+
+- `api.discord.connect()`: Connect to Discord client.
+- `api.discord.updatePresence(data)`: Update presence status.
+- `api.discord.clearPresence()`: Clear presence status.
+- `api.discord.disconnect()`: Disconnect from Discord.
+- `api.discord.reconnect()`: Reconnect to Discord.
+
+
+### Inter-Plugin Communication (`api.request` / `api.handleRequest`)
+*Requires defining `cross_plugin_access` in `plugin.json`.*
+
+```javascript
+// In Plugin A (Provider)
+api.handleRequest('getData', async (params) => {
+    return { data: 'value' };
+});
+
+// In Plugin B (Consumer)
+const result = await api.request('getData', { param: 1 });
 ```
 
 ### UI Injection (`api.ui`)
@@ -201,6 +295,8 @@ api.ui.registerSlot('mobile:home', widget);
 - Touch targets should be at least 44×44px.
 - Avoid `hover` effects for primary interactions; use `:active` for touch feedback.
 
+
+
 ### Storage (`api.storage`)
 *Requires `storage:local` permission.*
 
@@ -228,6 +324,10 @@ You must request permissions in `plugin.json` to use these features.
 | `ui:inject` | Render custom UI elements into app slots. |
 | `system:notify` | Send native system notifications. |
 | `network:fetch` | Make network requests (for streaming/metadata). |
+| `lyrics:read` | Read lyrics data. |
+| `lyrics:write` | Modify and save lyrics. |
+| `settings:write`| Access and modify app settings (e.g., download location). |
+
 
 ## CSS Styling
 
@@ -247,21 +347,25 @@ Plugins can inject their own `<style>` tags or use inline styles. Audion provide
 - Spacing: `--spacing-sm`, `--spacing-md`, `--spacing-lg`.
 - Radius: `--radius-sm`, `--radius-md`.
 
-## Publishing
+## Publishing & Marketplace
 
-Currently, plugins are installed manually by placing them in the `plugins` directory. A marketplace feature is planned for future releases.
+Audion features an automated marketplace. Plugins are automatically indexed and made available to users via a GitHub Actions runner.
 
-## Repository Synchronization
+### How to Publish Your Plugin
 
-If you are developing plugins within the `plugin-examples` directory of the main Audion repository but want to maintain separate git repositories for each plugin, you can use the built-in synchronization script.
+To make your plugin available in the Audion Marketplace, follow these steps:
 
-1.  **Configure `plugin.json`**: Ensure your plugin's `plugin.json` has a `repository` field with the remote git URL.
-    ```json
-    "repository": "https://github.com/username/my-plugin.git"
-    ```
-2.  **Run Sync Command**: From the root of the Audion repository, run:
-    ```bash
-    npm run sync-plugins
-    ```
+1.  **Create a GitHub Repository**: Host your plugin source code on GitHub.
+2.  **Add Topic**: Add the topic `audion-plugins` to your GitHub repository settings.
+3.  **Ensure Valid Manifest**: Your default branch must contain a valid `plugin.json` file.
 
-This script will iterate through all folders in `plugin-examples`, check for a `repository` field, and use `git subtree push` to sync changes to the specified remote's `main` branch.
+### Indexing Requirements
+
+The automated indexer validates the following:
+
+- **Required Fields**: `name`, `version`, `author`, `type`, `entry`, `permissions`.
+- **Valid Types**: `"js"`, `"wasm"`.
+- **Valid Categories**: `"audio"`, `"ui"`, `"lyrics"`, `"library"`, `"utility"`, `"appearance"`.
+
+Once your repository meets these criteria, the indexer will automatically detect it and add it to the global registry.
+
