@@ -35,9 +35,10 @@
         pinnedItems,
         pinItem,
         unpinItem,
-        isPinned,
+        isPinned
     } from "$lib/stores/pinned";
     import { setCustomArtwork } from "$lib/stores/customArtwork";
+    import { _, locale } from "svelte-i18n";
 
     export let artistName: string;
 
@@ -287,7 +288,7 @@
             y: e.clientY,
             items: [
                 {
-                    label: pinned ? "Unpin from Top" : "Pin to Top",
+                    label: pinned ? $_('contextMenu.unpinFromTop') : $_('contextMenu.pinToTop'),
                     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2L4.5 9L9 9L9 22L15 22L15 9L19.5 9L12 2Z"/></svg>`,
                     action: () => {
                         if (pinned) {
@@ -299,10 +300,10 @@
                 },
                 { type: "separator" },
                 {
-                    label: "Change Artwork",
+                    label: $_('contextMenu.changeArtwork'),
                     submenu: [
                         {
-                            label: "From File",
+                            label: $_('contextMenu.fromFile'),
                             action: () => {
                                 const input = document.createElement("input");
                                 input.type = "file";
@@ -332,7 +333,7 @@
                             },
                         },
                         {
-                            label: "From URL",
+                            label: $_('contextMenu.fromUrl'),
                             action: async () => {
                                 const url = await prompt("Enter image URL:", {
                                     title: "Change Artwork",
@@ -363,7 +364,7 @@
     {#if loading}
         <div class="loading">
             <div class="spinner"></div>
-            <span>Loading artist...</span>
+            <span>{$_('artist.loading')}</span>
         </div>
     {:else}
         <header
@@ -402,12 +403,12 @@
                 {/if}
             </div>
             <div class="artist-info">
-                <span class="artist-type">Artist</span>
+                <span class="artist-type">{$_('artist.type')}</span>
                 <h1 class="artist-name">{artistName}</h1>
                 <div class="artist-meta">
-                    <span>{albums.length} albums</span>
+                    <span>{$_('artist.albums', { values: { count: albums.length } })}</span>
                     <span class="separator">•</span>
-                    <span>{tracks.length} songs</span>
+                    <span>{$_('artist.songs', { values: { count: tracks.length } })}</span>
                     <span class="separator">•</span>
                     <span>{formatDuration(totalDuration)}</span>
                 </div>
@@ -424,7 +425,7 @@
                         >
                             <path d="M8 5v14l11-7z" />
                         </svg>
-                        Play All
+                        {$_('artist.playAll')}
                     </button>
 
                     {#if hasDownloadable}
@@ -447,7 +448,7 @@
                                         d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"
                                     />
                                 </svg>
-                                <span>Download All</span>
+                                <span>{$_('artist.downloadAll')}</span>
                             {/if}
                         </button>
                     {/if}
@@ -461,21 +462,21 @@
                 class:active={activeTab === "albums"}
                 on:click={() => (activeTab = "albums")}
             >
-                Albums
+                {$_('artist.tabAlbums')}
             </button>
             <button
                 class="tab"
                 class:active={activeTab === "tracks"}
                 on:click={() => (activeTab = "tracks")}
             >
-                All Songs
+                {$_('artist.tabTracks')}
             </button>
             <button
                 class="tab"
                 class:active={activeTab === "about"}
                 on:click={handleAboutTab}
             >
-                About
+                {$_('artist.tabAbout')}
             </button>
         </div>
 
@@ -498,14 +499,14 @@
                     {#if mbLoading}
                         <div class="about-loading">
                             <div class="spinner"></div>
-                            <span>Looking up on MusicBrainz…</span>
+                            <span>{$_('artist.lookingUp')}</span>
                         </div>
                     {:else if mbError}
                         <p class="about-error">{mbError}</p>
                     {:else if mbInfo}
                         {#if mbInfo.genres.length > 0}
                             <section class="about-section">
-                                <h3 class="about-heading">Genres</h3>
+                                <h3 class="about-heading">{$_('artist.genres')}</h3>
                                 <div class="genre-pills">
                                     {#each mbInfo.genres as genre}
                                         <span class="genre-pill">{genre}</span>
@@ -516,7 +517,7 @@
 
                         {#if mbInfo.bio}
                             <section class="about-section">
-                                <h3 class="about-heading">About</h3>
+                                <h3 class="about-heading">{$_('artist.about')}</h3>
                                 <p class="about-bio">{mbInfo.bio}</p>
                             </section>
                         {/if}
@@ -538,7 +539,7 @@
                                         d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15v-4H7l5-8v4h4l-5 8z"
                                     />
                                 </svg>
-                                Read on Wikipedia
+                                {$_('artist.readOnWikipedia')}
                             </a>
                         {/if}
 
@@ -548,20 +549,20 @@
                             </p>
                         {/if}
 
-                        <p class="mb-attribution">Data from MusicBrainz</p>
+                        <p class="mb-attribution">{$_('artist.dataFromMusicBrainz')}</p>
                     {:else}
                         <div class="about-empty">
-                            <p>No info found for this artist on MusicBrainz.</p>
+                            <p>{$_('artist.noInfoFound')}</p>
                         </div>
                     {/if}
 
                     <!-- ── Similar / Related Artists ── -->
                     <section class="about-section">
-                        <h3 class="about-heading">Related Artists</h3>
+                        <h3 class="about-heading">{$_('artist.relatedArtists')}</h3>
                         {#if similarLoading}
                             <div class="about-loading">
                                 <div class="spinner"></div>
-                                <span>Looking up related artists…</span>
+                                <span>{$_('artist.lookingUpRelated')}</span>
                             </div>
                         {:else if similarArtists.length > 0}
                             <div class="similar-list">
@@ -593,7 +594,7 @@
                             </div>
                         {:else if similarFetched}
                             <p class="about-empty-sm">
-                                No related artists found.
+                                {$_('artist.noRelatedFound')}
                             </p>
                         {/if}
                     </section>
@@ -602,7 +603,7 @@
                     <section class="about-section">
                         <div class="disco-section-header">
                             <h3 class="about-heading">
-                                Discography on MusicBrainz
+                                {$_('artist.discography')}
                             </h3>
                             {#if discoFetched && (hiddenDiscoCount > 0 || showAllDiscoTypes)}
                                 <button
@@ -612,15 +613,15 @@
                                             !showAllDiscoTypes)}
                                 >
                                     {showAllDiscoTypes
-                                        ? "Albums & Singles"
-                                        : `Show all (${discography.length})`}
+                                        ? $_('artist.albumsAndSingles')
+                                        : $_('artist.showAll', { values: { count: discography.length } })}
                                 </button>
                             {/if}
                         </div>
                         {#if discoLoading}
                             <div class="about-loading">
                                 <div class="spinner"></div>
-                                <span>Loading discography…</span>
+                                <span>{$_('artist.loadingDiscography')}</span>
                             </div>
                         {:else if filteredDisco.length > 0}
                             <div class="disco-grid">
@@ -728,7 +729,7 @@
                                 {/each}
                             </div>
                         {:else if discoFetched}
-                            <p class="about-empty-sm">No discography found.</p>
+                            <p class="about-empty-sm">{$_('artist.noDiscography')}</p>
                         {/if}
                     </section>
                 </div>

@@ -28,6 +28,7 @@
     import { onDestroy } from "svelte";
     import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
     import { fetchAllLatestCharts, type ChartData, type AudionApiTrack } from "$lib/api/audion-api";
+    import { _, locale } from "svelte-i18n";
 
     let homeEl: HTMLDivElement;
     let scrollRestored = false;
@@ -37,26 +38,12 @@
         saveScroll("home", currentScrollTop);
     });
 
-    const monthNames = [
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
-    ];
-    const currentMonthName = monthNames[new Date().getMonth()];
+    $: currentMonthName = new Intl.DateTimeFormat($locale || 'en', { month: 'long' }).format(new Date());
 
-    let greeting = "Good evening";
+    let greetingKey = "goodEvening";
     const hour = new Date().getHours();
-    if (hour < 12) greeting = "Good morning";
-    else if (hour < 18) greeting = "Good afternoon";
+    if (hour < 12) greetingKey = "goodMorning";
+    else if (hour < 18) greetingKey = "goodAfternoon";
 
     let charts: ChartData[] = [];
     let loadingCharts = true;
@@ -269,15 +256,15 @@
             x: e.clientX,
             y: e.clientY,
             items: [
-                { label: "Play", action: () => playTracks(trackList, index) },
-                { label: "Add to Queue", action: () => addToQueue([track]) },
+                { label: $_('contextMenu.play'), action: () => playTracks(trackList, index) },
+                { label: $_('contextMenu.addToQueue'), action: () => addToQueue([track]) },
                 { type: "separator" },
                 {
-                    label: "Go to Artist",
+                    label: $_('contextMenu.goToArtist'),
                     action: () => goToArtistDetail(track.artist || ""),
                 },
                 {
-                    label: "Go to Album",
+                    label: $_('contextMenu.goToAlbum'),
                     action: () => {
                         if (track.album_id) goToAlbumDetail(track.album_id);
                     },
@@ -300,7 +287,7 @@
 >
     <!-- Greeting -->
     <header class="home-header">
-        <h1 class="greeting">{greeting}</h1>
+        <h1 class="greeting">{$_(`home.${greetingKey}`)}</h1>
         <button
             class="recap-launch-btn"
             on:click={() => isStatsWrappedOpen.set(true)}
@@ -321,7 +308,7 @@
                     d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
                 ></path>
             </svg>
-            <span>{currentMonthName} Recap</span>
+            <span>{currentMonthName} {$_('home.recap')}</span>
         </button>
     </header>
 
@@ -497,7 +484,7 @@
     <!-- Recently Played -->
     {#if $recentlyPlayed.length > 0}
         <section class="home-section">
-            <h2 class="section-title">Jump Back In</h2>
+            <h2 class="section-title">{$_('home.jumpBackIn')}</h2>
             <div class="carousel-row">
                 {#each $recentlyPlayed.slice(0, 10) as track, i}
                     {@const isNowPlaying =
@@ -563,7 +550,7 @@
     <!-- Top Tracks -->
     {#if $topTracks.length > 0}
         <section class="home-section">
-            <h2 class="section-title">Your Top Songs</h2>
+            <h2 class="section-title">{$_('home.yourTopSongs')}</h2>
             <div class="top-tracks-list">
                 {#each $topTracks.slice(0, 10) as { track, play_count }, i}
                     {@const isNowPlaying =
@@ -659,7 +646,7 @@
     <!-- Top Albums (List View) -->
     {#if $topAlbums.length > 0}
         <section class="home-section">
-            <h2 class="section-title">Most Played Albums</h2>
+            <h2 class="section-title">{$_('home.mostPlayedAlbums')}</h2>
             <div class="top-tracks-list">
                 {#each $topAlbums.slice(0, 10) as { album, play_count }, i}
                     {@const isNowPlaying =
@@ -757,16 +744,19 @@
                 <section class="home-section chart-section">
                     <div class="section-header">
                         <h2 class="section-title">{chart.displayName}</h2>
-                        <button class="view-all-link">View all</button>
+                        <button class="view-all-link">{$_('home.viewAll')}</button>
                     </div>
                     <div class="chart-list">
                         {#if chart.items}
                             {#each chart.items.slice(0, 5) as item, i}
-                                {@const isNowPlaying = playingTrackId === item.id && playing}
+                                {@const isNowPlaying = String(playingTrackId) === String(item.id) && playing}
                                 <div 
                                     class="chart-row"
                                     class:active={isNowPlaying}
-                                    on:click={() => playApiTrack(item, chart.items)}
+                                    role="button"
+                                    tabindex="0"
+                                    on:click={(e) => handleContainerClick(e, () => playApiTrack(item, chart.items))}
+                                    on:keydown={(e) => handleKeyActivate(e, () => playApiTrack(item, chart.items))}
                                 >
                                     <span class="chart-rank">{i + 1}</span>
                                     <div class="chart-art">

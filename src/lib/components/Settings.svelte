@@ -2,6 +2,7 @@
   import { theme, presetAccents, type ThemeMode } from "$lib/stores/theme";
   import { appSettings } from "$lib/stores/settings";
   import { equalizer, EQ_PRESETS } from "$lib/stores/equalizer";
+  import { _, locale } from "svelte-i18n";
   import { updates } from "$lib/stores/updates";
   import {
     resetDatabase,
@@ -126,6 +127,11 @@
 
   function handleAccentChange(color: string) {
     theme.setAccentColor(color);
+  }
+
+  function changeLanguage(lang: string) {
+    $locale = lang;
+    localStorage.setItem("audion_language", lang);
   }
 
   function handleCustomColorAdd() {
@@ -489,18 +495,18 @@
 
 <div class="settings-view">
   <header class="view-header">
-    <h1>Settings</h1>
+    <h1>{$_('settings.title', { default: 'Settings' })}</h1>
   </header>
 
   <div class="settings-content">
     <div class="settings-container">
       <!-- Section: Support -->
       <section class="settings-section" aria-labelledby="support-heading">
-        <h2 id="support-heading" class="section-label">Support</h2>
+        <h2 id="support-heading" class="section-label">{$_('settings.support', { default: 'Support' })}</h2>
         <div class="settings-card">
           <div class="card-title-group compact">
-            <h3 class="setting-title">Support Audion</h3>
-            <span class="setting-description">Help keep development active</span>
+            <h3 class="setting-title">{$_('settings.supportAudion', { default: 'Support Audion' })}</h3>
+            <span class="setting-description">{$_('settings.supportDesc', { default: 'Help keep development active' })}</span>
           </div>
 
           <div class="button-group-row support-links-row" style="margin-top: var(--spacing-sm)">
@@ -526,7 +532,7 @@
 
       <!-- Section: Account -->
       <section class="settings-section" aria-labelledby="account-heading">
-        <h2 id="account-heading" class="section-label">Account</h2>
+        <h2 id="account-heading" class="section-label">{$_('settings.account', { default: 'Account' })}</h2>
         <div class="settings-card">
           {#if $isLoggedIn}
             <div class="account-profile-row">
@@ -548,14 +554,14 @@
                 <span class="setting-description">{accountEmail}</span>
                 <span class="setting-description">
                   {#if $isSupporter}
-                    Supporter access until
+                    {$_('settings.supporterUntil', { default: 'Supporter access until' })}
                     {#if $authState.supporter_until}
                       {formatSupporterUntil($authState.supporter_until)}
                     {:else}
-                      Active (subscription)
+                      {$_('settings.activeSubscription', { default: 'Active (subscription)' })}
                     {/if}
                   {:else}
-                    Free plan
+                    {$_('settings.freePlan', { default: 'Free plan' })}
                   {/if}
                 </span>
               </div>
@@ -564,27 +570,27 @@
                 on:click={async () => {
                   const ok = await confirm(
                     "Are you sure you want to log out? Unsynced changes will be lost.",
-                    { title: "Log Out" },
+                    { title: $_('settings.logout', { default: 'Log Out' }) },
                   );
                   if (ok) logout();
                 }}
-                aria-label="Log out"
+                aria-label={$_('settings.logout', { default: 'Log out' })}
               >
-                Log out
+                {$_('settings.logout', { default: 'Log out' })}
               </button>
             </div>
           {:else}
             <div class="account-signin">
               <span class="setting-description">
-                Sign in to sync your library and settings across devices
+                {$_('settings.signInToSync', { default: 'Sign in to sync your library and settings across devices' })}
               </span>
               <button
                 class="btn-outline-compact btn-full-width"
                 style="margin-top: var(--spacing-sm)"
                 on:click={() => showLoginModal.set(true)}
-                aria-label="Sign in"
+                aria-label={$_('settings.signIn', { default: 'Sign In' })}
               >
-                Sign In
+                {$_('settings.signIn', { default: 'Sign In' })}
               </button>
             </div>
           {/if}
@@ -594,23 +600,23 @@
       <!-- Section: Sync -->
       {#if $isLoggedIn}
         <section class="settings-section" aria-labelledby="sync-heading">
-          <h2 id="sync-heading" class="section-label">Sync</h2>
+          <h2 id="sync-heading" class="section-label">{$_('settings.sync', { default: 'Sync' })}</h2>
           <div class="settings-card">
             <div class="card-header-row">
               <div class="card-title-group">
-                <h3 class="setting-title">Library status</h3>
+                <h3 class="setting-title">{$_('settings.libraryStatus', { default: 'Library status' })}</h3>
                 <span class="setting-description" aria-live="polite">
                   {#if $isSyncing}
-                    <span class="animate-pulse">Syncing tracks...</span>
+                    <span class="animate-pulse">{$_('settings.syncingTracks', { default: 'Syncing tracks...' })}</span>
                   {:else}
-                    Synced {formatLastSyncedRelative($syncStatus.last_sync_at)}
+                    {$_('settings.synced', { default: 'Synced' })} {formatLastSyncedRelative($syncStatus.last_sync_at)}
                     {#if $syncStatus.pending_changes > 0}
-                      · {$syncStatus.pending_changes} pending
+                      · {$syncStatus.pending_changes} {$_('settings.pending', { default: 'pending' })}
                     {/if}
                   {/if}
                 </span>
               </div>
-              <div class="pill-badge">Auto every 12h</div>
+              <div class="pill-badge">{$_('settings.autoEvery12h', { default: 'Auto every 12h' })}</div>
             </div>
 
             <button
@@ -618,9 +624,9 @@
               style="margin-top: var(--spacing-md);"
               on:click={() => triggerSync()}
               disabled={$isSyncing}
-              aria-label="Sync now"
+              aria-label={$_('settings.syncNow', { default: 'Sync now' })}
             >
-              {$isSyncing ? "Syncing..." : "Sync now"}
+              {$isSyncing ? $_('settings.syncing', { default: 'Syncing...' }) : $_('settings.syncNow', { default: 'Sync now' })}
             </button>
 
             <div class="divider"></div>
@@ -651,12 +657,12 @@
 
       <!-- Section: Playback -->
       <section class="settings-section" aria-labelledby="playback-heading">
-        <h2 id="playback-heading" class="section-label">Playback</h2>
+        <h2 id="playback-heading" class="section-label">{$_('settings.playback', { default: 'Playback' })}</h2>
         <div class="settings-card">
           <div class="toggle-container">
             <div class="toggle-info">
-              <span class="setting-title">Autoplay</span>
-              <span class="setting-description">Play random tracks when the queue ends</span>
+              <span class="setting-title">{$_('settings.autoplay', { default: 'Autoplay' })}</span>
+              <span class="setting-description">{$_('settings.autoplayDesc', { default: 'Play random tracks when the queue ends' })}</span>
             </div>
             <button
               class="toggle-btn"
@@ -674,15 +680,15 @@
 
       <!-- Section: Storage -->
       <section class="settings-section" aria-labelledby="storage-heading">
-        <h2 id="storage-heading" class="section-label">Storage</h2>
+        <h2 id="storage-heading" class="section-label">{$_('settings.storage', { default: 'Storage' })}</h2>
         <div class="settings-card">
           <div class="inner-section">
-            <span class="setting-title">Download location</span>
+            <span class="setting-title">{$_('settings.downloadLocation', { default: 'Download location' })}</span>
             <div class="path-selector">
-              <div class="setting-description path-display" style="margin-top: 0;" title={$appSettings.downloadLocation || "Not set"}>
-                {$appSettings.downloadLocation || "No download location set"}
+              <div class="setting-description path-display" style="margin-top: 0;" title={$appSettings.downloadLocation || $_('settings.noDownloadLocation', { default: 'Not set' })}>
+                {$appSettings.downloadLocation || $_('settings.noDownloadLocation', { default: 'No download location set' })}
               </div>
-              <button class="selector-btn" on:click={handleSetDownloadLocation} aria-label="Change location">Change</button>
+              <button class="selector-btn" on:click={handleSetDownloadLocation} aria-label={$_('settings.change', { default: 'Change location' })}>{$_('settings.change', { default: 'Change' })}</button>
             </div>
           </div>
 
@@ -690,19 +696,19 @@
             <div class="divider"></div>
 
             <div class="inner-section">
-              <span class="setting-title">Music library folder (Android)</span>
-              <span class="setting-description">Add folders to your library scan while avoiding system audio clips</span>
+              <span class="setting-title">{$_('settings.musicLibraryFolder', { default: 'Music library folder (Android)' })}</span>
+              <span class="setting-description">{$_('settings.musicLibraryFolderDesc', { default: 'Add folders to your library scan while avoiding system audio clips' })}</span>
               <div class="path-selector">
-                <div class="setting-description path-display" style="margin-top: 0;" title={$appSettings.androidMusicFolder || "Not set"}>
-                  {$appSettings.androidMusicFolder || "No music folder selected"}
+                <div class="setting-description path-display" style="margin-top: 0;" title={$appSettings.androidMusicFolder || $_('settings.noMusicFolder', { default: 'Not set' })}>
+                  {$appSettings.androidMusicFolder || $_('settings.noMusicFolder', { default: 'No music folder selected' })}
                 </div>
                 <button
                   class="selector-btn"
                   on:click={handleSetAndroidMusicFolder}
-                  aria-label="Add Android music folder"
+                  aria-label={$_('settings.addFolder', { default: 'Add folder' })}
                   disabled={isUpdatingAndroidMusicFolder}
                 >
-                  {isUpdatingAndroidMusicFolder ? "Adding..." : "Add folder"}
+                  {isUpdatingAndroidMusicFolder ? $_('settings.adding', { default: 'Adding...' }) : $_('settings.addFolder', { default: 'Add folder' })}
                 </button>
               </div>
 
@@ -717,23 +723,23 @@
           <div class="divider"></div>
 
           <div class="card-title-group compact">
-            <h3 class="setting-title">Cover Management</h3>
-            <span class="setting-description">Sync or merge cover files to save space</span>
+            <h3 class="setting-title">{$_('settings.coverManagement', { default: 'Cover Management' })}</h3>
+            <span class="setting-description">{$_('settings.coverManagementDesc', { default: 'Sync or merge cover files to save space' })}</span>
           </div>
 
           <div class="button-group-row">
             <button class="btn-outline-compact" on:click={handleSyncCovers} disabled={isSyncingCovers}>
-              {isSyncingCovers ? "Syncing..." : "Sync Covers"}
+              {isSyncingCovers ? $_('settings.syncing', { default: 'Syncing...' }) : $_('settings.syncCovers', { default: 'Sync Covers' })}
             </button>
             <button class="btn-outline-compact" on:click={handleMergeDuplicateCovers} disabled={isMergingCovers}>
-              {isMergingCovers ? "Merging..." : "Merge Duplicates"}
+              {isMergingCovers ? $_('settings.merging', { default: 'Merging...' }) : $_('settings.mergeDuplicates', { default: 'Merge Duplicates' })}
             </button>
           </div>
 
           {#if isSyncingCovers || isMergingCovers}
              <div class="divider"></div>
              <div class="progress-notice-inline">
-               <span class="setting-description animate-pulse">Processing covers... view details below for progress</span>
+               <span class="setting-description animate-pulse">{$_('settings.processingCovers', { default: 'Processing covers... view details below for progress' })}</span>
              </div>
           {/if}
         </div>
@@ -741,20 +747,20 @@
 
       <!-- Section: Audio -->
       <section class="settings-section" aria-labelledby="audio-heading">
-        <h2 id="audio-heading" class="section-label">Audio</h2>
+        <h2 id="audio-heading" class="section-label">{$_('settings.audio', { default: 'Audio' })}</h2>
         <div class="settings-card">
           <div class="inner-section">
-            <span class="setting-title">Output driver</span>
-            <span class="setting-description">Select the backend for audio playback</span>
+            <span class="setting-title">{$_('settings.outputDriver', { default: 'Output driver' })}</span>
+            <span class="setting-description">{$_('settings.outputDriverDesc', { default: 'Select the backend for audio playback' })}</span>
             <div class="segmented-pill" style="margin-top: 6px;">
-              <button class="segment-btn" class:active={$appSettings.audioBackend === 'auto'} on:click={() => appSettings.setAudioBackend('auto')}>Auto</button>
-              <button class="segment-btn" class:active={$appSettings.audioBackend === 'native'} on:click={() => appSettings.setAudioBackend('native')}>Native</button>
-              <button class="segment-btn" class:active={$appSettings.audioBackend === 'html5'} on:click={() => appSettings.setAudioBackend('html5')}>HTML5</button>
+              <button class="segment-btn" class:active={$appSettings.audioBackend === 'auto'} on:click={() => appSettings.setAudioBackend('auto')}>{$_('settings.auto', { default: 'Auto' })}</button>
+              <button class="segment-btn" class:active={$appSettings.audioBackend === 'native'} on:click={() => appSettings.setAudioBackend('native')}>{$_('settings.native', { default: 'Native' })}</button>
+              <button class="segment-btn" class:active={$appSettings.audioBackend === 'html5'} on:click={() => appSettings.setAudioBackend('html5')}>{$_('settings.html5', { default: 'HTML5' })}</button>
             </div>
             {#if showRefreshNotice}
               <div class="refresh-notice-inline">
-                <span class="setting-description" style="color: var(--accent-primary)">Requires restart to apply</span>
-                <button class="btn-text-small" style="padding-left: 0" on:click={handleRefresh}>Restart now</button>
+                <span class="setting-description" style="color: var(--accent-primary)">{$_('settings.requiresRestart', { default: 'Requires restart to apply' })}</span>
+                <button class="btn-text-small" style="padding-left: 0" on:click={handleRefresh}>{$_('settings.restartNow', { default: 'Restart now' })}</button>
               </div>
             {/if}
           </div>
@@ -763,8 +769,8 @@
 
           <div class="toggle-container">
             <div class="toggle-info">
-              <span class="setting-title">Equalizer</span>
-              <span class="setting-description">Adjust frequency levels across multiple bands</span>
+              <span class="setting-title">{$_('settings.equalizer', { default: 'Equalizer' })}</span>
+              <span class="setting-description">{$_('settings.equalizerDesc', { default: 'Adjust frequency levels across multiple bands' })}</span>
             </div>
             <button
               class="toggle-btn"
@@ -782,12 +788,12 @@
             <div class="divider"></div>
             <div class="eq-control-compact">
               <select class="preset-select-pill" value={$equalizer.currentPreset || ""} on:change={(e) => equalizer.applyPreset(e.currentTarget.value)}>
-                <option value="" disabled>Custom Preset</option>
+                <option value="" disabled>{$_('settings.customPreset', { default: 'Custom Preset' })}</option>
                 {#each EQ_PRESETS as preset}
                   <option value={preset.name}>{preset.name}</option>
                 {/each}
               </select>
-              <button class="btn-text-small" on:click={() => equalizer.reset()}>Reset to Flat</button>
+              <button class="btn-text-small" on:click={() => equalizer.reset()}>{$_('settings.resetToFlat', { default: 'Reset to Flat' })}</button>
             </div>
           {/if}
         </div>
@@ -795,12 +801,12 @@
 
       <!-- Section: Community -->
       <section class="settings-section" aria-labelledby="community-heading">
-        <h2 id="community-heading" class="section-label">Community</h2>
+        <h2 id="community-heading" class="section-label">{$_('settings.community', { default: 'Community' })}</h2>
         <div class="settings-card">
           <div class="toggle-container">
             <div class="toggle-info">
-              <span class="setting-title">ListenBrainz</span>
-              <span class="setting-description">Submit listening history to ListenBrainz</span>
+              <span class="setting-title">{$_('settings.listenBrainz', { default: 'ListenBrainz' })}</span>
+              <span class="setting-description">{$_('settings.listenBrainzDesc', { default: 'Submit listening history to ListenBrainz' })}</span>
             </div>
             <button
               class="toggle-btn"
@@ -822,19 +828,19 @@
                   <input
                     type="password"
                     bind:value={lbTokenInput}
-                    placeholder="User Token"
+                    placeholder={$_('settings.userToken', { default: 'User Token' })}
                     class="input-compact"
                     style="flex: 1; min-width: 0;"
                   />
                   <button class="btn-outline-compact" on:click={handleVerifyLbToken} disabled={lbIsVerifying}>
-                    {lbIsVerifying ? "..." : "Verify"}
+                    {lbIsVerifying ? "..." : $_('settings.verify', { default: 'Verify' })}
                   </button>
                 </div>
                 {#if lbVerifyError}<p class="text-error" style="font-size: 0.7rem; margin-top: 4px;">{lbVerifyError}</p>{/if}
               {:else}
                 <div class="lb-status-row" style="display: flex; justify-content: space-between; align-items: center;">
-                  <span style="font-size: 0.8125rem;">Logged in as <strong>{$appSettings.listenBrainzUsername || 'User'}</strong></span>
-                  <button class="btn-text-small" on:click={handleRemoveLbToken}>Remove</button>
+                  <span style="font-size: 0.8125rem;">{$_('settings.loggedInAs', { default: 'Logged in as' })} <strong>{$appSettings.listenBrainzUsername || 'User'}</strong></span>
+                  <button class="btn-text-small" on:click={handleRemoveLbToken}>{$_('settings.remove', { default: 'Remove' })}</button>
                 </div>
               {/if}
             </div>
@@ -844,7 +850,7 @@
 
           <div class="toggle-container">
             <div class="toggle-info">
-              <span class="setting-title">Discord button</span>
+              <span class="setting-title">{$_('settings.discordButton', { default: 'Discord button' })}</span>
             </div>
             <button
               class="toggle-btn"
@@ -859,32 +865,43 @@
           </div>
           
           <div class="button-group-row" style="margin-top: var(--spacing-sm)">
-            <a href="https://discord.gg/27XRVQsBd9" target="_blank" rel="noreferrer" class="btn-outline-compact" style="width: 100%; text-align: center;">Open Discord</a>
+            <a href="https://discord.gg/27XRVQsBd9" target="_blank" rel="noreferrer" class="btn-outline-compact" style="width: 100%; text-align: center;">{$_('settings.openDiscord', { default: 'Open Discord' })}</a>
           </div>
         </div>
       </section>
 
       <!-- Section: Appearance -->
       <section class="settings-section" aria-labelledby="appearance-heading">
-        <h2 id="appearance-heading" class="section-label">Appearance</h2>
+        <h2 id="appearance-heading" class="section-label">{$_('settings.language', { default: 'Appearance' })}</h2>
         <div class="settings-card">
            <div class="inner-section">
-             <span class="setting-title">Theme mode</span>
+             <span class="setting-title">{$_('settings.selectLanguage', { default: 'Language' })}</span>
              <div class="segmented-pill" style="margin-top: 6px;">
-               <button class="segment-btn" class:active={$theme.mode === 'dark'} on:click={() => handleModeChange('dark')}>Dark</button>
-               <button class="segment-btn" class:active={$theme.mode === 'light'} on:click={() => handleModeChange('light')}>Light</button>
-               <button class="segment-btn" class:active={$theme.mode === 'system'} on:click={() => handleModeChange('system')}>System</button>
+               <button class="segment-btn" class:active={$locale === 'en'} on:click={() => changeLanguage('en')}>English</button>
+               <button class="segment-btn" class:active={$locale === 'es'} on:click={() => changeLanguage('es')}>Español</button>
+               <button class="segment-btn" class:active={$locale === 'fr'} on:click={() => changeLanguage('fr')}>Français</button>
+             </div>
+           </div>
+
+           <div class="divider"></div>
+
+           <div class="inner-section">
+             <span class="setting-title">{$_('settings.themeMode', { default: 'Theme mode' })}</span>
+             <div class="segmented-pill" style="margin-top: 6px;">
+               <button class="segment-btn" class:active={$theme.mode === 'dark'} on:click={() => handleModeChange('dark')}>{$_('settings.dark', { default: 'Dark' })}</button>
+               <button class="segment-btn" class:active={$theme.mode === 'light'} on:click={() => handleModeChange('light')}>{$_('settings.light', { default: 'Light' })}</button>
+               <button class="segment-btn" class:active={$theme.mode === 'system'} on:click={() => handleModeChange('system')}>{$_('settings.system', { default: 'System' })}</button>
              </div>
            </div>
 
            {#if !isAndroid()}
              <div class="divider"></div>
              <div class="inner-section">
-               <span class="setting-title">Window start mode</span>
+               <span class="setting-title">{$_('settings.windowStartMode', { default: 'Window start mode' })}</span>
                <div class="segmented-pill">
-                 <button class="segment-btn" class:active={$appSettings.startMode === 'normal'} on:click={() => appSettings.setStartMode('normal')}>Normal</button>
-                 <button class="segment-btn" class:active={$appSettings.startMode === 'maximized'} on:click={() => appSettings.setStartMode('maximized')}>Max</button>
-                 <button class="segment-btn" class:active={$appSettings.startMode === 'minimized'} on:click={() => appSettings.setStartMode('minimized')}>Min</button>
+                 <button class="segment-btn" class:active={$appSettings.startMode === 'normal'} on:click={() => appSettings.setStartMode('normal')}>{$_('settings.normal', { default: 'Normal' })}</button>
+                 <button class="segment-btn" class:active={$appSettings.startMode === 'maximized'} on:click={() => appSettings.setStartMode('maximized')}>{$_('settings.max', { default: 'Max' })}</button>
+                 <button class="segment-btn" class:active={$appSettings.startMode === 'minimized'} on:click={() => appSettings.setStartMode('minimized')}>{$_('settings.min', { default: 'Min' })}</button>
                </div>
              </div>
            {/if}
@@ -910,12 +927,12 @@
 
       <!-- Section: Privacy -->
       <section class="settings-section" aria-labelledby="privacy-heading">
-        <h2 id="privacy-heading" class="section-label">Privacy</h2>
+        <h2 id="privacy-heading" class="section-label">{$_('settings.privacy', { default: 'Privacy' })}</h2>
         <div class="settings-card">
           <div class="toggle-container">
             <div class="toggle-info">
-              <span class="setting-title">Remote control</span>
-              <span class="setting-description">Other devices can discover and control this app</span>
+              <span class="setting-title">{$_('settings.remoteControl', { default: 'Remote control' })}</span>
+              <span class="setting-description">{$_('settings.remoteControlDesc', { default: 'Other devices can discover and control this app' })}</span>
             </div>
             <button
               class="toggle-btn"
@@ -933,8 +950,8 @@
 
           <div class="toggle-container">
             <div class="toggle-info">
-              <span class="setting-title">Developer mode</span>
-              <span class="setting-description">Enable inspection tools and debug menus</span>
+              <span class="setting-title">{$_('settings.developerMode', { default: 'Developer mode' })}</span>
+              <span class="setting-description">{$_('settings.developerModeDesc', { default: 'Enable inspection tools and debug menus' })}</span>
             </div>
             <button
               class="toggle-btn"
@@ -951,17 +968,17 @@
           <div class="divider"></div>
 
           <div class="card-title-group compact">
-            <h3 class="setting-title" style="color: var(--error-color)">Danger zone</h3>
-            <span class="setting-description">Irreversible actions like resetting data</span>
+            <h3 class="setting-title" style="color: var(--error-color)">{$_('settings.dangerZone', { default: 'Danger zone' })}</h3>
+            <span class="setting-description">{$_('settings.dangerZoneDesc', { default: 'Irreversible actions like resetting data' })}</span>
           </div>
 
           <div class="button-group-row">
-            <button class="btn-outline-compact danger" on:click={openResetModal}>Reset Database</button>
+            <button class="btn-outline-compact danger" on:click={openResetModal}>{$_('settings.resetDatabase', { default: 'Reset Database' })}</button>
             {#if $isLoggedIn}
               <button class="btn-outline-compact danger" on:click={async () => {
-                const ok = await confirm("Delete account permanently?", { title: "Delete Account", danger: true });
+                const ok = await confirm($_('settings.deleteAccount', { default: 'Delete account permanently?' }), { title: $_('settings.deleteAccount', { default: 'Delete Account' }), danger: true });
                 if (ok) await deleteAccount();
-              }}>Delete Account</button>
+              }}>{$_('settings.deleteAccount', { default: 'Delete Account' })}</button>
             {/if}
           </div>
         </div>
@@ -969,13 +986,13 @@
 
       <!-- Section: Upgrade -->
       <section class="settings-section" aria-labelledby="upgrade-heading">
-        <h2 id="upgrade-heading" class="section-label">Upgrade</h2>
+        <h2 id="upgrade-heading" class="section-label">{$_('settings.upgrade', { default: 'Upgrade' })}</h2>
         <div class="settings-card upgrade-card">
           {#if !$isSupporter}
             <div class="card-header-row">
               <div class="card-title-group">
-                <h3 class="setting-title">Unlimited sync</h3>
-                <span class="setting-description">Support development and sync unlimited tracks</span>
+                <h3 class="setting-title">{$_('settings.unlimitedSync', { default: 'Unlimited sync' })}</h3>
+                <span class="setting-description">{$_('settings.unlimitedSyncDesc', { default: 'Support development and sync unlimited tracks' })}</span>
               </div>
               <div class="pill-badge accent">Support</div>
             </div>
@@ -983,16 +1000,16 @@
           {:else}
             <div class="card-header-row">
               <div class="card-title-group">
-                <h3 class="setting-title">Supporter status</h3>
-                <span class="setting-description">Pro benefits are active</span>
+                <h3 class="setting-title">{$_('settings.supporterStatus', { default: 'Supporter status' })}</h3>
+                <span class="setting-description">{$_('settings.proBenefitsActive', { default: 'Pro benefits are active' })}</span>
               </div>
               <div class="pill-badge accent">Pro</div>
             </div>
             <p class="notice-text-sm" style="margin-top: var(--spacing-sm)">
               {#if $authState.supporter_until}
-                Valid until {formatSupporterUntil($authState.supporter_until)}
+                {$_('settings.validUntil', { default: 'Valid until' })} {formatSupporterUntil($authState.supporter_until)}
               {:else}
-                Active perpetual support
+                {$_('settings.activePerpetual', { default: 'Active perpetual support' })}
               {/if}
             </p>
           {/if}
@@ -1001,17 +1018,17 @@
 
       <!-- Section: About -->
       <section class="settings-section" aria-labelledby="about-heading">
-        <h2 id="about-heading" class="section-label">About</h2>
+        <h2 id="about-heading" class="section-label">{$_('settings.about', { default: 'About' })}</h2>
         <div class="settings-card">
           <div class="about-row">
             <div class="app-logo-sm">Audion</div>
             <div class="about-details">
               <span class="setting-title">Audion {__APP_VERSION__}</span>
-              <span class="setting-description">Modern player powered by Tauri and Svelte</span>
+              <span class="setting-description">{$_('settings.modernPlayerDesc', { default: 'Modern player powered by Tauri and Svelte' })}</span>
             </div>
           </div>
           {#if $updates.hasUpdate}
-            <button class="btn-green-compact" on:click={() => (showUpdatePopup = true)} style="margin-top: var(--spacing-sm)">Update Available</button>
+            <button class="btn-green-compact" on:click={() => (showUpdatePopup = true)} style="margin-top: var(--spacing-sm)">{$_('settings.updateAvailable', { default: 'Update Available' })}</button>
           {/if}
         </div>
       </section>

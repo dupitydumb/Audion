@@ -184,6 +184,10 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: "1"
           GALLIUM_DRIVER: llvmpipe
           GDK_BACKEND: x11
+          XDG_SESSION_TYPE: x11
+          QT_QPA_PLATFORM: xcb
+          QT_OPENGL: software
+          WAYLAND_DISPLAY: ""
         run: xvfb-run -a --server-args="-screen 0 1920x1080x24 -ac +extension GLX +render -noreset" npm run tauri build
 
       - name: Set version and prerelease flags

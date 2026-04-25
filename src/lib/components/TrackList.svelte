@@ -42,6 +42,7 @@
   import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
   import { setCustomArtwork } from "$lib/stores/customArtwork";
   import MetadataModal from "$lib/components/MetadataModal.svelte";
+  import { _, locale } from "svelte-i18n";
 
   // MetadataModal state
   let metadataModalTrack: Track | null = null;
@@ -492,7 +493,7 @@
 
     const menuItems: any[] = [
       {
-        label: "Play",
+        label: $_('contextMenu.play'),
         action: () => {
           if (trackIndex !== undefined) {
             // Use unified queueTracks if available
@@ -512,13 +513,13 @@
       },
       { type: "separator" },
       {
-        label: "Add to Queue",
+        label: $_('contextMenu.addToQueue'),
         action: () => addToQueue([track]),
         disabled: isUnavailable,
       },
       { type: "separator" },
       {
-        label: "Download",
+        label: $_('contextMenu.download'),
         action: async () => {
           if (needsDownloadLocation()) {
             addToast(
@@ -543,13 +544,13 @@
       },
       { type: "separator" },
       {
-        label: "Add to Playlist",
+        label: $_('contextMenu.addToPlaylist'),
         submenu:
           playlistItems.length > 0
             ? playlistItems
             : [
                 {
-                  label: "No playlists",
+                  label: $_('contextMenu.noPlaylists'),
                   action: () => {},
                   disabled: true,
                 },
@@ -557,10 +558,10 @@
       },
       { type: "separator" },
       {
-        label: "Change Artwork",
+        label: $_('contextMenu.changeArtwork'),
         submenu: [
           {
-            label: "From File",
+            label: $_('contextMenu.fromFile'),
             action: () => {
               const input = document.createElement("input");
               input.type = "file";
@@ -583,7 +584,7 @@
             },
           },
           {
-            label: "From URL",
+            label: $_('contextMenu.fromUrl'),
             action: async () => {
               const url = await prompt("Enter image URL:", {
                 title: "Change Artwork",
@@ -603,7 +604,7 @@
     menuItems.push(
       { type: "separator" },
       {
-        label: "Show more info",
+        label: $_('contextMenu.showMoreInfo'),
         action: () => {
           metadataModalTrack = track;
         },
@@ -612,7 +613,7 @@
 
     if (playlistId) {
       menuItems.push({
-        label: "Remove from Playlist",
+        label: $_('contextMenu.removeFromPlaylist'),
         action: async () => {
           try {
             await removeTrackFromPlaylist(playlistId, track.id);
@@ -627,7 +628,7 @@
     menuItems.push(
       { type: "separator" },
       {
-        label: "Delete from Library",
+        label: $_('contextMenu.deleteFromLibrary'),
         danger: true,
         action: async () => {
           const confirmed = await confirm(
@@ -1009,7 +1010,7 @@
       class="col-header col-artist sortable"
       on:click={() => toggleSort("title")}
     >
-      Title
+      {$_('trackList.title')}
       {#if sortField === "title"}
         <span class="sort-icon">{sortDirection === "asc" ? "▲" : "▼"}</span>
       {/if}
@@ -1019,7 +1020,7 @@
         class="col-header col-album sortable"
         on:click={() => toggleSort("album")}
       >
-        Album
+        {$_('trackList.album')}
         {#if sortField === "album"}
           <span class="sort-icon">{sortDirection === "asc" ? "▲" : "▼"}</span>
         {/if}
@@ -1029,7 +1030,7 @@
       class="col-header col-duration sortable"
       on:click={() => toggleSort("duration")}
     >
-      Duration
+      {$_('trackList.duration')}
       {#if sortField === "duration"}
         <span class="sort-icon">{sortDirection === "asc" ? "▲" : "▼"}</span>
       {/if}
@@ -1038,7 +1039,7 @@
       class="col-header col-date-added sortable"
       on:click={() => toggleSort("date_added")}
     >
-      Date Added
+      {$_('trackList.dateAdded')}
       {#if sortField === "date_added"}
         <span class="sort-icon">{sortDirection === "asc" ? "▲" : "▼"}</span>
       {/if}
@@ -1314,8 +1315,8 @@
             d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
           />
         </svg>
-        <h3>No tracks found</h3>
-        <p>Add a music folder to get started</p>
+        <h3>{$_('trackList.noTracksFound')}</h3>
+        <p>{$_('trackList.addFolderToGetStarted')}</p>
       </div>
     </div>
   {/if}
