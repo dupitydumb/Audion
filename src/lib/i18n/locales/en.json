@@ -177,7 +177,9 @@
     "activePerpetual": "Active perpetual support",
     "about": "About",
     "modernPlayerDesc": "Modern player powered by Tauri and Svelte",
-    "updateAvailable": "Update Available"
+    "updateAvailable": "Update Available",
+    "limitExceeded": "Sync limit exceeded",
+    "limitExceededDesc": "You've reached the free tier limit of 100 tracks. Support development to get unlimited sync!"
   },
   "pluginManager": {
     "title": "Plugin Marketplace",

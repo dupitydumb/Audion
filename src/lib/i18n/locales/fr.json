@@ -177,7 +177,9 @@
     "activePerpetual": "Accès contributeur perpétuel actif",
     "about": "À propos",
     "modernPlayerDesc": "Lecteur moderne propulsé par Tauri et Svelte",
-    "updateAvailable": "Mise à jour disponible"
+    "updateAvailable": "Mise à jour disponible",
+    "limitExceeded": "Limite de synchronisation dépassée",
+    "limitExceededDesc": "Vous avez atteint la limite gratuite de 100 titres. Soutenez le développement pour une synchronisation illimitée !"
   },
   "pluginManager": {
     "title": "Marché des plugins",

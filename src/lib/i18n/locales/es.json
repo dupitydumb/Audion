@@ -177,7 +177,9 @@
     "activePerpetual": "Soporte perpetuo activo",
     "about": "Acerca de",
     "modernPlayerDesc": "Reproductor moderno con Tauri y Svelte",
-    "updateAvailable": "Actualización Disponible"
+    "updateAvailable": "Actualización Disponible",
+    "limitExceeded": "Límite de sincronización excedido",
+    "limitExceededDesc": "Has alcanzado el límite gratuito de 100 pistas. ¡Apoya el desarrollo para obtener sincronización ilimitada!"
   },
   "pluginManager": {
     "title": "Mercado de Plugins",

@@ -656,6 +656,36 @@
                 </div>
               </div>
             </div>
+
+            {#if $syncStatus.last_error}
+              <div class="sync-error-banner">
+                <div class="error-content">
+                  <svg class="error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                  <div class="error-text">
+                    <span class="error-message">
+                      {#if $syncStatus.last_error.includes("Limit Exceeded") || $syncStatus.last_error.includes("limit exceeded")}
+                        {$_('settings.limitExceeded', { default: 'Sync limit exceeded' })}
+                      {:else}
+                        {formatSyncError($syncStatus.last_error)}
+                      {/if}
+                    </span>
+                    {#if $syncStatus.last_error.includes("Limit Exceeded") || $syncStatus.last_error.includes("limit exceeded")}
+                      <p class="error-hint">
+                        {$_('settings.limitExceededDesc', { default: "You've reached the free tier limit of 100 tracks. Support development to get unlimited sync!" })}
+                        <br />
+                        <a href="https://ko-fi.com/N4N5UMNR1" target="_blank" rel="noreferrer" class="donate-link">
+                          {$_('settings.supportAudion', { default: 'Support Audion' })}
+                        </a>
+                      </p>
+                    {/if}
+                  </div>
+                </div>
+              </div>
+            {/if}
           </div>
         </section>
       {/if}
@@ -2498,6 +2528,59 @@
 
   .sync-message.error {
     color: var(--error-color);
+  }
+
+  .sync-error-banner {
+    margin-top: var(--spacing-md);
+    background-color: rgba(220, 53, 69, 0.1);
+    border: 1px solid rgba(220, 53, 69, 0.2);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+  }
+
+  .error-content {
+    display: flex;
+    gap: var(--spacing-md);
+    align-items: flex-start;
+  }
+
+  .error-icon {
+    width: 20px;
+    height: 20px;
+    color: #dc3545;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .error-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .error-message {
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-align: left;
+  }
+
+  .error-hint {
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    margin: 0;
+    line-height: 1.4;
+    text-align: left;
+  }
+
+  .donate-link {
+    color: var(--accent-primary);
+    text-decoration: underline;
+    font-weight: 600;
+  }
+  
+  .donate-link:hover {
+    color: var(--accent-hover);
   }
 
   /* Progress Bar Styles */
