@@ -141,6 +141,11 @@
     }
   }
 
+  function formatEqGain(gain: number): string {
+    const rounded = Math.round(gain * 10) / 10;
+    return `${rounded > 0 ? "+" : ""}${rounded.toFixed(1)} dB`;
+  }
+
   async function openResetModal() {
     const confirmed = await confirm(
       "Are you sure you want to reset the database? This will clear all tracks and metadata, but your music files will remain on your computer.",
@@ -771,6 +776,9 @@
             <div class="toggle-info">
               <span class="setting-title">{$_('settings.equalizer', { default: 'Equalizer' })}</span>
               <span class="setting-description">{$_('settings.equalizerDesc', { default: 'Adjust frequency levels across multiple bands' })}</span>
+              <span class="setting-description" style="color: var(--accent-warning, #ffae42);">
+                {$_('settings.equalizerLocalOnlyWarning', { default: 'Equalizer is most reliable on local playback (especially with Native driver). Some streaming sources may bypass EQ.' })}
+              </span>
             </div>
             <button
               class="toggle-btn"
@@ -787,13 +795,42 @@
           {#if $equalizer.enabled}
             <div class="divider"></div>
             <div class="eq-control-compact">
-              <select class="preset-select-pill" value={$equalizer.currentPreset || ""} on:change={(e) => equalizer.applyPreset(e.currentTarget.value)}>
+              <select class="preset-select-pill" value={$equalizer.currentPreset || ""} on:change={(e) => equalizer.applyPreset((e.currentTarget as HTMLSelectElement).value)}>
                 <option value="" disabled>{$_('settings.customPreset', { default: 'Custom Preset' })}</option>
                 {#each EQ_PRESETS as preset}
                   <option value={preset.name}>{preset.name}</option>
                 {/each}
               </select>
               <button class="btn-text-small" on:click={() => equalizer.reset()}>{$_('settings.resetToFlat', { default: 'Reset to Flat' })}</button>
+            </div>
+
+            <div class="eq-bands-container">
+              <div class="eq-scale" aria-hidden="true">
+                <span>+12</span>
+                <span>0</span>
+                <span>-12</span>
+              </div>
+
+              <div class="eq-bands">
+                {#each $equalizer.bands as band, i}
+                  <div class="eq-band">
+                    <span class="eq-gain">{formatEqGain(band.gain)}</span>
+                    <div class="eq-slider-container">
+                      <input
+                        class="eq-slider"
+                        type="range"
+                        min="-12"
+                        max="12"
+                        step="0.5"
+                        value={band.gain}
+                        aria-label={`EQ ${band.label}`}
+                        on:input={(e) => equalizer.setBandGain(i, Number((e.currentTarget as HTMLInputElement).value))}
+                      />
+                    </div>
+                    <span class="eq-label">{band.label}</span>
+                  </div>
+                {/each}
+              </div>
             </div>
           {/if}
         </div>
@@ -2144,6 +2181,31 @@
   }
 
   /* Equalizer Styles */
+  .eq-control-compact {
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .preset-select-pill {
+    flex: 1;
+    min-width: 160px;
+    max-width: 320px;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background-color: var(--bg-highlight);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+  }
+
+  .preset-select-pill:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+  }
+
   .preset-selector {
     display: flex;
     gap: var(--spacing-sm);
