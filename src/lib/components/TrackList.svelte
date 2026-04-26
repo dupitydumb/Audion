@@ -1762,7 +1762,7 @@
   .quality-tag.high-quality {
     color: var(--accent-primary);
     border-color: var(--accent-primary);
-    background-color: rgba(29, 185, 84, 0.15);
+    background-color: color-mix(in srgb, var(--accent-primary), transparent 85%);
   }
 
   .track-artist {
@@ -2245,11 +2245,11 @@
     }
 
     :global(.track-row.swipe-queue-ready)::before {
-      background-color: rgba(29, 185, 84, 0.2);
+      background-color: color-mix(in srgb, var(--accent-primary), transparent 80%);
     }
 
     :global(.track-row.swipe-queue-added)::before {
-      background-color: rgba(29, 185, 84, 0.35);
+      background-color: color-mix(in srgb, var(--accent-primary), transparent 65%);
     }
 
     /* Queue icon hint that peeks from the left while swiping */

@@ -561,14 +561,14 @@
     }
 
     .pill-active {
-        background: rgba(29, 185, 84, 0.15);
-        border-color: rgba(29, 185, 84, 0.4);
-        color: #1db154;
+        background: color-mix(in srgb, var(--accent-primary), transparent 85%);
+        border-color: color-mix(in srgb, var(--accent-primary), transparent 60%);
+        color: var(--accent-primary);
     }
 
     .pill-active:hover {
-        background: rgba(29, 185, 84, 0.25);
-        color: #1ed760;
+        background: color-mix(in srgb, var(--accent-primary), transparent 75%);
+        color: var(--accent-hover);
     }
 
     .wbtn {

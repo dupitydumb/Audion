@@ -466,7 +466,7 @@
     }
 
     .mobile-text-btn:active {
-        background-color: rgba(29, 185, 84, 0.15);
+        background-color: color-mix(in srgb, var(--accent-primary), transparent 85%);
     }
 
     .mobile-filter-bar {
@@ -540,7 +540,7 @@
         font-size: 1rem;
         font-weight: 700;
         border: none;
-        box-shadow: 0 4px 20px rgba(29, 185, 84, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
+        box-shadow: 0 4px 20px color-mix(in srgb, var(--accent-primary), transparent 60%), 0 2px 8px rgba(0, 0, 0, 0.3);
         pointer-events: auto;
         -webkit-tap-highlight-color: transparent;
         transition: all var(--transition-fast);

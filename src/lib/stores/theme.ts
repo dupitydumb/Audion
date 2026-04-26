@@ -128,6 +128,15 @@ function darkenColor(hex: string, percent: number): string {
     return `#${(1 << 24 | R << 16 | G << 8 | B).toString(16).slice(1)}`;
 }
 
+// Convert hex to RGB string (r, g, b)
+function hexToRgb(hex: string): string {
+    const num = parseInt(hex.replace('#', ''), 16);
+    const R = (num >> 16);
+    const G = ((num >> 8) & 0x00FF);
+    const B = (num & 0x0000FF);
+    return `${R}, ${G}, ${B}`;
+}
+
 // Apply theme to CSS variables
 export function applyTheme(state: ThemeState): void {
     if (typeof document === 'undefined') return;
@@ -138,6 +147,7 @@ export function applyTheme(state: ThemeState): void {
 
     // Apply accent colors
     root.style.setProperty('--accent-primary', state.accentColor);
+    root.style.setProperty('--accent-primary-rgb', hexToRgb(state.accentColor));
     root.style.setProperty('--accent-hover', lightenColor(state.accentColor, 15));
     root.style.setProperty('--accent-subtle', state.accentColor + '20');
 

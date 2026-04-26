@@ -1560,8 +1560,8 @@
   }
 
   .support-card-premium {
-    background: linear-gradient(135deg, rgba(29, 185, 84, 0.15) 0%, rgba(29, 185, 84, 0.05) 100%);
-    border: 1px solid rgba(29, 185, 84, 0.2) !important;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent-primary), transparent 85%) 0%, color-mix(in srgb, var(--accent-primary), transparent 95%) 100%);
+    border: 1px solid color-mix(in srgb, var(--accent-primary), transparent 80%) !important;
     position: relative;
     overflow: hidden;
     padding: var(--spacing-lg) !important;
@@ -1574,7 +1574,7 @@
     right: -20%;
     width: 200px;
     height: 200px;
-    background: radial-gradient(circle, rgba(29, 185, 84, 0.1) 0%, transparent 70%);
+    background: radial-gradient(circle, color-mix(in srgb, var(--accent-primary), transparent 90%) 0%, transparent 70%);
     pointer-events: none;
   }
 
@@ -1774,8 +1774,8 @@
   }
 
   .upgrade-card {
-    background: linear-gradient(135deg, rgba(29, 185, 84, 0.08) 0%, rgba(29, 185, 84, 0.03) 100%);
-    border-color: rgba(29, 185, 84, 0.2);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent-primary), transparent 92%) 0%, color-mix(in srgb, var(--accent-primary), transparent 97%) 100%);
+    border-color: color-mix(in srgb, var(--accent-primary), transparent 80%);
   }
 
   .card-header-row {
@@ -1813,9 +1813,9 @@
   }
 
   .pill-badge.accent {
-    background: rgba(29, 185, 84, 0.1);
+    background: color-mix(in srgb, var(--accent-primary), transparent 90%);
     color: var(--accent-primary);
-    border-color: rgba(29, 185, 84, 0.2);
+    border-color: color-mix(in srgb, var(--accent-primary), transparent 80%);
   }
 
   .btn-outline-compact {

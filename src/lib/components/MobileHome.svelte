@@ -806,7 +806,7 @@
     .scanning-spinner {
         width: 16px;
         height: 16px;
-        border: 2px solid rgba(29, 185, 84, 0.3);
+        border: 2px solid color-mix(in srgb, var(--accent-primary), transparent 70%);
         border-top-color: var(--accent-primary);
         border-radius: 50%;
         animation: spin 0.8s linear infinite;
@@ -1088,7 +1088,7 @@
     .recap-card {
         width: 100%;
         background: linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%);
-        border: 1px solid rgba(30, 215, 96, 0.3);
+        border: 1px solid color-mix(in srgb, var(--accent-primary), transparent 70%);
         border-radius: var(--radius-lg);
         padding: var(--spacing-lg);
         display: flex;
@@ -1116,7 +1116,7 @@
     .recap-label {
         font-size: 0.7rem;
         font-weight: 800;
-        color: #1ed760;
+        color: var(--accent-primary);
         letter-spacing: 1px;
     }
 
@@ -1134,7 +1134,7 @@
 
     .recap-pill {
         display: inline-block;
-        background: #1ed760;
+        background: var(--accent-primary);
         color: black;
         padding: 6px 16px;
         border-radius: 20px;
@@ -1500,7 +1500,7 @@
         font-weight: 800;
         letter-spacing: 0.1em;
         color: var(--accent-primary);
-        background-color: rgba(29, 185, 84, 0.1);
+        background-color: color-mix(in srgb, var(--accent-primary), transparent 90%);
         padding: 2px 8px;
         border-radius: var(--radius-full);
         width: fit-content;

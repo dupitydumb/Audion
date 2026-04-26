@@ -141,7 +141,7 @@
         background: var(--accent-primary, #1DB954);
         border-radius: 2px;
         transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 0 0 8px var(--accent-subtle, rgba(29, 185, 84, 0.3));
+        box-shadow: 0 0 8px var(--accent-subtle);
     }
 
     .percent {
