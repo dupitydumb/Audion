@@ -528,10 +528,11 @@ export class PluginRuntime {
       case 'player.setTrack':
         if (args[0]) {
           const track = args[0];
+          const useProxy = args[1]?.useProxy ?? false;
 
           // Use the main player logic to handle backend selection (HTML5 vs Native)
           // resolution of stream URLs, and UI state updates.
-          playTrack(track).catch(err => {
+          playTrack(track, false, 0, useProxy).catch(err => {
             console.error(`[PluginRuntime] player.setTrack failed:`, err);
           });
 
@@ -649,7 +650,9 @@ export class PluginRuntime {
             external_id: trackData.external_id,
             format: trackData.format || null,
             bitrate: trackData.bitrate || null,
-            stream_url: trackData.stream_url || null  // The decoded stream URL
+            stream_url: trackData.stream_url || null,  // The decoded stream URL
+            track_number: trackData.track_number || null,
+            disc_number: trackData.disc_number || null,
           }
         });
 
@@ -730,7 +733,7 @@ export class PluginRuntime {
         seek: (time: number) => this.callHost(pluginName, 'player.seek', time),
         next: () => this.callHost(pluginName, 'player.next'),
         prev: () => this.callHost(pluginName, 'player.prev'),
-        setTrack: (track: any) => this.callHost(pluginName, 'player.setTrack', track),
+        setTrack: (track: any, options?: { useProxy?: boolean }) => this.callHost(pluginName, 'player.setTrack', track, options),
         addToQueue: (tracks: any[]) => this.callHost(pluginName, 'player.addToQueue', tracks),
         removeFromQueue: (index: number) => this.callHost(pluginName, 'player.removeFromQueue', index),
         reorderQueue: (from: number, to: number) => this.callHost(pluginName, 'player.reorderQueue', from, to),

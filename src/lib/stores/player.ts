@@ -22,6 +22,7 @@ import { pluginStore } from '$lib/stores/plugin-store';
 import { recordTrackPlay } from '$lib/stores/activity';
 import { submitListenbrainzListen } from '$lib/api/tauri';
 import { activeRemoteDevice } from '$lib/stores/websocket';
+import type { MediaPlayerClass } from 'dashjs';
 
 // =============================================================================
 // NATIVE AUDIO BACKEND
@@ -61,7 +62,7 @@ let html5EqGainNode: GainNode | null = null;
 let lastEqBypassWarningHost: string | null = null;
 
 // dash.js player instance for Hi-Res DASH/MPD streaming
-let dashPlayer: any | null = null;
+let dashPlayer: MediaPlayerClass | null = null;
 
 // Track which backend is currently active ('native', 'html5', 'remote', or 'none')
 export type ActiveBackend = 'native' | 'html5' | 'remote' | 'none';
@@ -81,21 +82,54 @@ function classifyAudioPath(path: string): AudioPathKind {
 }
 
 // Lazily load dash.js and create a player instance
-async function getDashPlayer(): Promise<any> {
-    if (typeof window === 'undefined') throw new Error('No window');
-
-    // Load dash.js from CDN if not already loaded
-    if (!(window as any).dashjs) {
-        await new Promise<void>((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/dashjs/4.7.4/dash.all.min.js';
-            script.onload = () => resolve();
-            script.onerror = () => reject(new Error('Failed to load dash.js'));
-            document.head.appendChild(script);
-        });
+/**
+ * dynamically load the local dashjs
+ */
+async function getDashPlayer(): Promise<typeof import('dashjs')> {
+    if (typeof window === 'undefined') {
+        throw new Error('dash.js cannot be initialized in a non-browser environment');
     }
 
-    return (window as any).dashjs;
+    const dashjs = await import('dashjs');
+    
+    return (dashjs as any).default || dashjs;
+}
+
+// port is assigned by OS
+let dashProxyPort: number | null = null;
+let dashProxyPortResolvers: Array<(port: number) => void> = [];
+
+function resolveProxyPort(port: number) {
+    dashProxyPort = port;
+    dashProxyPortResolvers.forEach(resolve => resolve(port));
+    dashProxyPortResolvers = [];
+}
+
+invoke<number>('get_proxy_port').then(port => {
+    if (port > 0) {
+        console.log('[Player] Got proxy port:', port);
+        resolveProxyPort(port);
+    } else {
+        console.warn('[Player] get_proxy_port returned 0, proxy may not have started');
+    }
+}).catch(err => {
+    console.error('[Player] get_proxy_port invoke failed:', err);
+});
+
+function waitForProxyPort(): Promise<number> {
+    if (dashProxyPort !== null) return Promise.resolve(dashProxyPort);
+    console.warn('[Player] Proxy port not yet received, waiting...');
+    return new Promise(resolve => dashProxyPortResolvers.push(resolve));
+}
+
+function isExternalUrl(url: string): boolean {
+    return (url.startsWith('http://') || url.startsWith('https://'))
+        && !url.startsWith('http://localhost');
+}
+
+async function toProxiedUrl(url: string): Promise<string> {
+    const port = await waitForProxyPort();
+    return `http://localhost:${port}/?url=${encodeURIComponent(url)}`;
 }
 
 async function playWithDash(blobUrl: string, audioElement: HTMLAudioElement): Promise<void> {
@@ -106,22 +140,49 @@ async function playWithDash(blobUrl: string, audioElement: HTMLAudioElement): Pr
     }
 
     const mpdText = await fetch(blobUrl).then(r => r.text());
+    // revoke after reading
     URL.revokeObjectURL(blobUrl);
-
     const bytes = new TextEncoder().encode(mpdText);
     const binary = Array.from(bytes).reduce((acc, byte) => acc + String.fromCharCode(byte), '');
     const dataUrl = 'data:application/dash+xml;base64,' + btoa(binary);
 
     const dashjs = await getDashPlayer();
     dashPlayer = dashjs.MediaPlayer().create();
-    dashPlayer.initialize(audioElement, dataUrl, true);
+
+    // use RequestModifier to route all outgoing cdn requests through tauri local proxy
+    // do only after dash.js has already expanded all SegmentTemplate variables
+    // $Number$, $Time$, $Bandwidth$
+    // modifyRequestURL() is triggered right before each XHR request is sent
+    // so we can proxy the actual request url instead of dealing with templates
+    dashPlayer.extend('RequestModifier', function () {
+        return {
+            modifyRequestURL(url: string): string {
+                // only proxy external cdn urls
+                if (url.startsWith('http://localhost') || url.startsWith('data:')) {
+                    return url;
+                }
+                if (url.startsWith('http://') || url.startsWith('https://')) {
+                    // port is set by the time dash.js
+                    // starts firing segment requests
+                    const port = dashProxyPort ?? 0;
+                    return `http://localhost:${port}/?url=${encodeURIComponent(url)}`;
+                }
+                return url;
+            },
+            modifyRequestHeader(xhr: XMLHttpRequest): XMLHttpRequest {
+                return xhr;
+            }
+        };
+    }, true);
 
     dashPlayer.on(dashjs.MediaPlayer.events.ERROR, (e: any) => {
         console.error('[Player] dash.js error:', e);
         addToast(`Hi-Res playback error: ${e.error?.message || 'Unknown error'}`, 'error');
     });
-}
 
+    dashPlayer.initialize(audioElement, dataUrl, true);
+    console.log('[Player] dash.js initialized with proxy RequestModifier');
+}
 
 function getHtml5Audio(): HTMLAudioElement {
     if (!html5Audio && typeof window !== 'undefined') {
@@ -901,11 +962,12 @@ export function cleanupPlayer(): void {
     stopStatePoller();
     nativeAudioStop().catch(console.error);
 
+    // Cleanup dash.js
     if (dashPlayer) {
-        try { dashPlayer.destroy(); } catch (_) { }
+        try { dashPlayer.destroy(); } catch (_) {}
         dashPlayer = null;
     }
-
+    
     // Cleanup HTML5
     if (html5Audio) {
         html5Audio.pause();
@@ -1119,7 +1181,7 @@ function updateMediaSessionPosition(): void {
 }
 
 // Play a specific track
-export async function playTrack(track: Track, skipLocalSrc = false, startTime = 0): Promise<void> {
+export async function playTrack(track: Track, skipLocalSrc = false, startTime = 0, useProxy = false): Promise<void> {
     const previousTrackObj = get(currentTrack);
     const sessionId = ++currentSessionId;
 
@@ -1270,11 +1332,24 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
                 audio.volume = sliderToAudioVolume(get(volume));
 
                 await playWithDash(audioPath, audio);
+
+                // set backend only after playWithDash resolves successfully
+                activeBackend.set('html5');
+
+                if (startTime > 0 && dashPlayer) {
+                    (dashPlayer as any).seek(startTime);
+                }
+
                 console.log('[Player] dash.js DASH streaming started:', track.title);
             } else {
                 // Resolve playlist-format URLs (.m3u, .pls, .m3u8) to direct stream URLs
                 audioPath = await resolvePlaylistUrl(audioPath);
                 audio = await prepareHtml5AudioForPath(audio, audioPath);
+
+                // route through local tauri proxy only if caller opts in
+                if (useProxy && isExternalUrl(audioPath)) {
+                    audioPath = await toProxiedUrl(audioPath);
+                }
 
                 audio.src = audioPath;
                 audio.volume = sliderToAudioVolume(get(volume));
@@ -1295,9 +1370,8 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
                 }
 
                 console.log('[Player] HTML5 streaming started:', track.title);
+                activeBackend.set('html5');
             }
-
-            activeBackend.set('html5');
         } else {
             if (!audioPath) {
                 throw new Error('No local audio path found for track');
@@ -1358,6 +1432,8 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
     } catch (err) {
         console.error('[Player] Playback failed:', err);
         addToast(`Playback failed: ${err instanceof Error ? err.message : 'Unknown error'}`, 'error');
+        // reset backend
+        activeBackend.set('none');
     }
 }
 

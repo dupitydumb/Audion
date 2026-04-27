@@ -58,7 +58,8 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 base64 = "0.22"
 
 # HTTP client for API requests (rustls = pure-Rust TLS, no OpenSSL needed, works on Android)
-reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "stream", "rustls-tls", "gzip", "brotli"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "stream", "rustls-tls", "gzip", "brotli", "blocking"] }
+urlencoding = "2"
 futures = "0.3"
 
 # Error handling

@@ -483,6 +483,8 @@ pub fn run() {
                 tracing::info!("System tray initialized");
             }
 
+            // start the DASH segment proxy on a free port. readable via get_proxy_port
+            commands::network::start_dash_proxy();
             tracing::info!("App setup complete");
             Ok(())
         })
@@ -651,6 +653,7 @@ pub fn run() {
                     windows_thumbar::windows_init_thumbar,
                     windows_thumbar::windows_update_thumbar_state,
                     commands::proxy_fetch_bytes,
+                    commands::get_proxy_port,
                     commands::save_image_to_gallery,
                     // Window close-to-tray and minimize-to-tray commands
                     commands::window::get_close_to_tray,
@@ -804,6 +807,7 @@ pub fn run() {
                     audio::native_audio_available,
                     commands::proxy_fetch_bytes,
                     commands::save_image_to_gallery,
+                    commands::get_proxy_port,
                 ]
             }
         })
