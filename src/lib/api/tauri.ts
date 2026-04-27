@@ -278,6 +278,11 @@ export interface ExternalTrackInput {
     external_id: string;  // Source-specific ID
     format?: string;
     bitrate?: number;
+    stream_url?: string;
+    track_number?: number;
+    disc_number?: number;
+    musicbrainz_recording_id?: string;
+    metadata_json?: string;
 }
 
 export async function addExternalTrack(track: ExternalTrackInput): Promise<number> {
