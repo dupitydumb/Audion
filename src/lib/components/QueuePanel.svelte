@@ -986,7 +986,7 @@
 
     .queue-panel.mobile .queue-header {
         padding: var(--spacing-md) var(--spacing-md);
-        padding-top: calc(var(--spacing-md) + env(safe-area-inset-top, 0px));
+        padding-top: calc(var(--spacing-md) + var(--safe-area-top));
     }
 
     .queue-panel.mobile .close-btn {

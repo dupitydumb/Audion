@@ -1142,7 +1142,7 @@
     }
     .lyrics-panel.mobile .lyrics-header {
         padding: var(--spacing-md);
-        padding-top: calc(var(--spacing-md) + env(safe-area-inset-top, 0px));
+        padding-top: calc(var(--spacing-md) + var(--safe-area-top));
     }
 
     .lyrics-panel.mobile .close-btn {

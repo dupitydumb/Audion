@@ -426,7 +426,7 @@
 
   .sync-pill.online {
     color: var(--accent-primary);
-    background: rgba(29, 185, 84, 0.1);
+    background: color-mix(in srgb, var(--accent-primary), transparent 90%);
   }
 
   .sync-pill .dot {
@@ -469,8 +469,8 @@
   }
 
   .status-card.remote {
-    background: rgba(29, 185, 84, 0.08);
-    border-color: rgba(29, 185, 84, 0.2);
+    background: color-mix(in srgb, var(--accent-primary), transparent 92%);
+    border-color: color-mix(in srgb, var(--accent-primary), transparent 80%);
   }
 
   .device-icon-glow {
@@ -487,7 +487,7 @@
   .remote .device-icon-glow {
     background: var(--accent-primary);
     color: black;
-    box-shadow: 0 0 20px rgba(29, 185, 84, 0.3);
+    box-shadow: 0 0 20px color-mix(in srgb, var(--accent-primary), transparent 70%);
   }
 
   .status-info {
@@ -591,8 +591,8 @@
   }
 
   .device-card.active {
-    background: rgba(29, 185, 84, 0.05);
-    border-color: rgba(29, 185, 84, 0.3);
+    background: color-mix(in srgb, var(--accent-primary), transparent 95%);
+    border-color: color-mix(in srgb, var(--accent-primary), transparent 70%);
   }
 
   .card-main {
@@ -615,7 +615,7 @@
 
   .active .platform-icon {
     color: var(--accent-primary);
-    background: rgba(29, 185, 84, 0.1);
+    background: color-mix(in srgb, var(--accent-primary), transparent 90%);
   }
 
   .card-details {

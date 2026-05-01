@@ -17,7 +17,7 @@ import { EventEmitter, type PluginEvents } from '$lib/plugins/event-emitter';
 import { tracks as libraryTracks, getFullTrack, getAlbumCoverFromTracks, updateTrackCover, getTrackByIdSync } from '$lib/stores/library';
 import { fetchTrackCover } from '$lib/services/cover-fetcher';
 import { appSettings } from '$lib/stores/settings';
-import { equalizer, EQ_FREQUENCIES } from '$lib/stores/equalizer';
+import { equalizer, EQ_FREQUENCIES, type EqualizerState } from '$lib/stores/equalizer';
 import { pluginStore } from '$lib/stores/plugin-store';
 import { recordTrackPlay } from '$lib/stores/activity';
 import { submitListenbrainzListen } from '$lib/api/tauri';
@@ -26,9 +26,9 @@ import { activeRemoteDevice } from '$lib/stores/websocket';
 // =============================================================================
 // NATIVE AUDIO BACKEND
 // =============================================================================
-// We use a native Rust backend (rodio) for all audio playback.
-// This provides consistent performance and high-quality audio processing
-// (including EQ) across all supported platforms.
+// Native Rust backend (rodio) is used when selected/available.
+// HTML5/WebAudio is used for streaming paths and configured fallback.
+// EQ is applied consistently across both playback pipelines.
 // =============================================================================
 import {
     nativeAudioPlay,
@@ -52,6 +52,13 @@ let nativeStatePoller: ReturnType<typeof setInterval> | null = null;
 
 // HTML5 Audio element for streaming (initialized lazily)
 let html5Audio: HTMLAudioElement | null = null;
+
+// HTML5 WebAudio graph for EQ processing
+let html5AudioContext: AudioContext | null = null;
+let html5AudioSourceNode: MediaElementAudioSourceNode | null = null;
+let html5EqFilters: BiquadFilterNode[] = [];
+let html5EqGainNode: GainNode | null = null;
+let lastEqBypassWarningHost: string | null = null;
 
 // dash.js player instance for Hi-Res DASH/MPD streaming
 let dashPlayer: any | null = null;
@@ -122,6 +129,170 @@ function getHtml5Audio(): HTMLAudioElement {
         setupHtml5AudioListeners(html5Audio);
     }
     return html5Audio!;
+}
+
+function cleanupHtml5EqGraph(): void {
+    if (html5AudioSourceNode) {
+        try { html5AudioSourceNode.disconnect(); } catch (_) { }
+        html5AudioSourceNode = null;
+    }
+    html5EqFilters.forEach((filter) => {
+        try { filter.disconnect(); } catch (_) { }
+    });
+    html5EqFilters = [];
+    if (html5EqGainNode) {
+        try { html5EqGainNode.disconnect(); } catch (_) { }
+        html5EqGainNode = null;
+    }
+    if (html5AudioContext) {
+        html5AudioContext.close().catch(() => { });
+        html5AudioContext = null;
+    }
+}
+
+function recreateHtml5AudioElement(): HTMLAudioElement {
+    if (html5Audio) {
+        html5Audio.pause();
+        html5Audio.src = '';
+    }
+
+    cleanupHtml5EqGraph();
+
+    html5Audio = new Audio();
+    setupHtml5AudioListeners(html5Audio);
+    return html5Audio;
+}
+
+function canUseHtml5EqForPath(path: string): boolean {
+    if (typeof window === 'undefined') return false;
+
+    const kind = classifyAudioPath(path);
+    if (kind === 'local' || kind === 'blob') return true;
+    if (kind !== 'stream') return true;
+
+    // Cross-origin streams often block WebAudio processing without CORS headers.
+    // To avoid silent playback, only allow same-origin streams in EQ graph.
+    try {
+        const url = new URL(path);
+        return url.origin === window.location.origin;
+    } catch {
+        return false;
+    }
+}
+
+async function prepareHtml5AudioForPath(audio: HTMLAudioElement, path: string): Promise<HTMLAudioElement> {
+    const eqEnabled = get(equalizer).enabled;
+    const canUseEq = canUseHtml5EqForPath(path);
+
+    if (eqEnabled && canUseEq) {
+        if (classifyAudioPath(path) === 'stream') {
+            audio.crossOrigin = 'anonymous';
+        }
+        ensureHtml5EqGraph(audio);
+        await resumeHtml5AudioContext();
+        return audio;
+    }
+
+    // If this element is already attached to a WebAudio source node, it will stay routed
+    // through that graph. Recreate the element to restore direct output when EQ must be bypassed.
+    if (html5AudioSourceNode) {
+        const next = recreateHtml5AudioElement();
+        next.volume = audio.volume;
+        audio = next;
+    }
+
+    if (eqEnabled && !canUseEq && classifyAudioPath(path) === 'stream') {
+        try {
+            const host = new URL(path).host;
+            if (lastEqBypassWarningHost !== host) {
+                lastEqBypassWarningHost = host;
+                addToast('EQ is bypassed for this stream due to CORS restrictions', 'warning');
+            }
+        } catch {
+            addToast('EQ is bypassed for this stream due to CORS restrictions', 'warning');
+        }
+    }
+
+    return audio;
+}
+
+function ensureHtml5EqGraph(audio: HTMLAudioElement): void {
+    if (typeof window === 'undefined') return;
+    if (html5AudioSourceNode && html5EqGainNode && html5EqFilters.length > 0) return;
+
+    try {
+        if (!html5AudioContext) {
+            const AudioContextCtor = (window as any).AudioContext || (window as any).webkitAudioContext;
+            if (!AudioContextCtor) {
+                console.warn('[EQ] WebAudio AudioContext is not available');
+                return;
+            }
+            html5AudioContext = new AudioContextCtor();
+        }
+        const ctx = html5AudioContext;
+        if (!ctx) return;
+
+        if (!html5AudioSourceNode) {
+            html5AudioSourceNode = ctx.createMediaElementSource(audio);
+        }
+
+        if (!html5EqGainNode) {
+            html5EqGainNode = ctx.createGain();
+            html5EqGainNode.gain.value = 1;
+        }
+
+        if (html5EqFilters.length === 0) {
+            html5EqFilters = EQ_FREQUENCIES.map((freq) => {
+                const filter = ctx.createBiquadFilter();
+                filter.type = 'peaking';
+                filter.frequency.value = freq;
+                filter.Q.value = 1.41;
+                filter.gain.value = 0;
+                return filter;
+            });
+        }
+
+        try { html5AudioSourceNode.disconnect(); } catch (_) { }
+        html5EqFilters.forEach((filter) => {
+            try { filter.disconnect(); } catch (_) { }
+        });
+        try { html5EqGainNode.disconnect(); } catch (_) { }
+
+        html5AudioSourceNode.connect(html5EqFilters[0]);
+        for (let i = 0; i < html5EqFilters.length - 1; i++) {
+            html5EqFilters[i].connect(html5EqFilters[i + 1]);
+        }
+        html5EqFilters[html5EqFilters.length - 1].connect(html5EqGainNode);
+        html5EqGainNode.connect(ctx.destination);
+
+        applyHtml5EqState(equalizer.getState());
+    } catch (err) {
+        console.error('[EQ] Failed to initialize HTML5 EQ graph:', err);
+        html5AudioSourceNode = null;
+        html5EqFilters = [];
+        html5EqGainNode = null;
+    }
+}
+
+function applyHtml5EqState(state: EqualizerState): void {
+    if (!html5AudioContext || html5EqFilters.length === 0) return;
+
+    const now = html5AudioContext.currentTime;
+    for (let i = 0; i < html5EqFilters.length; i++) {
+        const gain = state.enabled ? (state.bands[i]?.gain ?? 0) : 0;
+        html5EqFilters[i].gain.cancelScheduledValues(now);
+        html5EqFilters[i].gain.setTargetAtTime(gain, now, 0.01);
+    }
+}
+
+async function resumeHtml5AudioContext(): Promise<void> {
+    if (!html5AudioContext || html5AudioContext.state !== 'suspended') return;
+
+    try {
+        await html5AudioContext.resume();
+    } catch (err) {
+        console.warn('[EQ] Failed to resume HTML5 AudioContext:', err);
+    }
 }
 
 function setupHtml5AudioListeners(audio: HTMLAudioElement): void {
@@ -409,6 +580,9 @@ let _eqApplyTimer: ReturnType<typeof setTimeout> | null = null;
 let _latestEqState: any = null;
 equalizer.subscribe((state) => {
     _latestEqState = state;
+
+    // Apply immediately to HTML5 WebAudio graph when available
+    applyHtml5EqState(state);
 
     // Only attempt to apply when native backend is active
     if (get(activeBackend) !== 'native') return;
@@ -737,6 +911,9 @@ export function cleanupPlayer(): void {
         html5Audio.pause();
         html5Audio.src = '';
     }
+
+    // Cleanup HTML5 WebAudio EQ graph
+    cleanupHtml5EqGraph();
 
     // Reset stores
     activeBackend.set('none');
@@ -1075,7 +1252,7 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
             }
 
             // Start HTML5
-            const audio = getHtml5Audio();
+            let audio = getHtml5Audio();
 
             // Reset src to avoid overlap issues
             audio.pause();
@@ -1089,6 +1266,7 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
             const finalKind = classifyAudioPath(audioPath);
 
             if (finalKind === 'blob') {
+                audio = await prepareHtml5AudioForPath(audio, audioPath);
                 audio.volume = sliderToAudioVolume(get(volume));
 
                 await playWithDash(audioPath, audio);
@@ -1096,6 +1274,7 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
             } else {
                 // Resolve playlist-format URLs (.m3u, .pls, .m3u8) to direct stream URLs
                 audioPath = await resolvePlaylistUrl(audioPath);
+                audio = await prepareHtml5AudioForPath(audio, audioPath);
 
                 audio.src = audioPath;
                 audio.volume = sliderToAudioVolume(get(volume));
@@ -1150,7 +1329,8 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
                 console.log('[Player] Native playback started:', track.title);
             } else {
                 // Fallback to HTML5 via convertFileSrc if native is disabled (e.g. on macOS)
-                const audio = getHtml5Audio();
+                let audio = getHtml5Audio();
+                audio = await prepareHtml5AudioForPath(audio, audioPath);
                 audio.pause();
 
                 // Use convertFileSrc to get a URL that the browser can play
@@ -1323,6 +1503,7 @@ export async function resume(): Promise<void> {
             // App just opened, no audio loaded yet - start playback from saved position
             await playTrack(track, false, get(currentTime));
         } else if (get(activeBackend) === 'html5') {
+            await resumeHtml5AudioContext();
             await getHtml5Audio().play();
             isPlaying.set(true);
             updateMediaSessionPlaybackState('playing');

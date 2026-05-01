@@ -261,7 +261,6 @@
     flex-direction: column;
     overflow: hidden;
     background-color: var(--bg-base);
-    padding-top: var(--safe-area-top);
   }
 
   .mobile-content {

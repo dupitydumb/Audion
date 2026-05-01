@@ -301,7 +301,8 @@
     }
 
     .view-header {
-        padding: var(--spacing-xl) var(--spacing-xl) var(--spacing-md);
+        padding: calc(var(--safe-area-top) + var(--spacing-xl))
+            var(--spacing-xl) var(--spacing-md);
         border-bottom: 1px solid var(--border-subtle);
         display: flex;
         align-items: baseline;

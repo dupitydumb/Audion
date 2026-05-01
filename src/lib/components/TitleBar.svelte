@@ -8,6 +8,7 @@
         searchResults,
     } from "$lib/stores/search";
     import { isMobile, toggleMobileSidebar } from "$lib/stores/mobile";
+    import { appSettings } from "$lib/stores/settings";
     import MenuBar from "./MenuBar.svelte";
     import Breadcrumbs from "./Breadcrumbs.svelte";
 
@@ -18,13 +19,21 @@
         appWindow.minimize();
     }
 
+    function minimizeToTray() {
+        appWindow.hide();
+    }
+
     async function toggleMaximize() {
         await appWindow.toggleMaximize();
         isMaximized = await appWindow.isMaximized();
     }
 
     function close() {
-        appWindow.close();
+        if ($appSettings.closeToTray) {
+            appWindow.hide();
+        } else {
+            appWindow.close();
+        }
     }
 
     let searchInput = "";
@@ -337,6 +346,25 @@
         {#if !$isMobile}
             <div class="drag-region" data-tauri-drag-region></div>
             <div class="window-controls">
+                <button
+                    class="win-btn"
+                    on:click={minimizeToTray}
+                    aria-label="Minimize to tray"
+                    title="Minimize to tray"
+                >
+                    <svg
+                        width="10"
+                        height="10"
+                        viewBox="0 0 10 10"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1"
+                        stroke-linecap="round"
+                    >
+                        <path d="M1.5 6.5v2h7v-2" />
+                        <path d="M5 1.5v5M3 4.5l2 2 2-2" />
+                    </svg>
+                </button>
                 <button
                     class="win-btn"
                     on:click={minimize}

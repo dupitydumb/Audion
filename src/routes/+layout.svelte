@@ -31,6 +31,8 @@
   import SyncProgressOverlay from "$lib/components/SyncProgressOverlay.svelte";
   import LoginModal from "$lib/components/LoginModal.svelte";
   import { initSync, destroySync } from "$lib/stores/sync";
+  import { setupI18n } from "$lib/i18n";
+  import { isLoading } from "svelte-i18n";
   import "../app.css";
 
   let handleVisibilityChange: (() => void) | null = null;
@@ -95,6 +97,11 @@
 
     appSettings.initialize();
     theme.initialize();
+    
+    // Initialize i18n with saved preference or navigator default
+    const savedLang = localStorage.getItem("audion_language");
+    setupI18n(savedLang || undefined);
+
     initMobileDetection();
     await initAudioBackend();
 
@@ -250,6 +257,7 @@
   }
 </script>
 
+{#if !$isLoading}
 {#if !$isMobile && !$isMiniPlayer}
   <TitleBar />
 {/if}
@@ -297,6 +305,7 @@
 <div class="app-content" class:mobile={$isMobile} class:pip={$isMiniPlayer}>
   <slot />
 </div>
+{/if}
 
 <style>
   .app-content {

@@ -2,6 +2,7 @@
   import { theme, presetAccents, type ThemeMode } from "$lib/stores/theme";
   import { appSettings } from "$lib/stores/settings";
   import { equalizer, EQ_PRESETS } from "$lib/stores/equalizer";
+  import { _, locale } from "svelte-i18n";
   import { updates } from "$lib/stores/updates";
   import {
     resetDatabase,
@@ -128,11 +129,21 @@
     theme.setAccentColor(color);
   }
 
+  function changeLanguage(lang: string) {
+    $locale = lang;
+    localStorage.setItem("audion_language", lang);
+  }
+
   function handleCustomColorAdd() {
     if (customColorInput && /^#[0-9A-Fa-f]{6}$/.test(customColorInput)) {
       theme.addCustomColor(customColorInput);
       theme.setAccentColor(customColorInput);
     }
+  }
+
+  function formatEqGain(gain: number): string {
+    const rounded = Math.round(gain * 10) / 10;
+    return `${rounded > 0 ? "+" : ""}${rounded.toFixed(1)} dB`;
   }
 
   async function openResetModal() {
@@ -489,36 +500,45 @@
 
 <div class="settings-view">
   <header class="view-header">
-    <h1>Settings</h1>
+    <h1>{$_('settings.title', { default: 'Settings' })}</h1>
   </header>
 
   <div class="settings-content">
     <div class="settings-container">
       <!-- Section: Support -->
       <section class="settings-section" aria-labelledby="support-heading">
-        <h2 id="support-heading" class="section-label">Support</h2>
-        <div class="settings-card">
-          <div class="card-title-group compact">
-            <h3 class="setting-title">Support Audion</h3>
-            <span class="setting-description">Help keep development active</span>
+        <h2 id="support-heading" class="section-label">{$_('settings.support', { default: 'Support' })}</h2>
+        <div class="settings-card support-card-premium">
+          <div class="support-content">
+            <div class="support-text">
+              <h3 class="support-title">{$_('settings.supportAudion', { default: 'Support Audion' })}</h3>
+              <p class="support-description">{$_('settings.supportDesc', { default: 'Help keep development active and unlock unlimited sync features.' })}</p>
+            </div>
+            <div class="support-icon-large">
+               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                 <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l8.84-8.84 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+               </svg>
+            </div>
           </div>
 
-          <div class="button-group-row support-links-row" style="margin-top: var(--spacing-sm)">
+          <div class="support-grid">
             <a
               href="https://ko-fi.com/N4N5UMNR1"
               target="_blank"
               rel="noreferrer"
-              class="btn-primary-compact btn-support-compact"
+              class="support-platform-card kofi"
             >
-              Ko-fi
+              <span class="platform-name">Ko-fi</span>
+              <span class="platform-tag">One-time / Monthly</span>
             </a>
             <a
               href="https://www.patreon.com/AudionPlayer"
               target="_blank"
               rel="noreferrer"
-              class="btn-outline-compact btn-support-compact"
+              class="support-platform-card patreon"
             >
-              Patreon
+              <span class="platform-name">Patreon</span>
+              <span class="platform-tag">Membership</span>
             </a>
           </div>
         </div>
@@ -526,7 +546,7 @@
 
       <!-- Section: Account -->
       <section class="settings-section" aria-labelledby="account-heading">
-        <h2 id="account-heading" class="section-label">Account</h2>
+        <h2 id="account-heading" class="section-label">{$_('settings.account', { default: 'Account' })}</h2>
         <div class="settings-card">
           {#if $isLoggedIn}
             <div class="account-profile-row">
@@ -548,14 +568,14 @@
                 <span class="setting-description">{accountEmail}</span>
                 <span class="setting-description">
                   {#if $isSupporter}
-                    Supporter access until
+                    {$_('settings.supporterUntil', { default: 'Supporter access until' })}
                     {#if $authState.supporter_until}
                       {formatSupporterUntil($authState.supporter_until)}
                     {:else}
-                      Active (subscription)
+                      {$_('settings.activeSubscription', { default: 'Active (subscription)' })}
                     {/if}
                   {:else}
-                    Free plan
+                    {$_('settings.freePlan', { default: 'Free plan' })}
                   {/if}
                 </span>
               </div>
@@ -564,27 +584,27 @@
                 on:click={async () => {
                   const ok = await confirm(
                     "Are you sure you want to log out? Unsynced changes will be lost.",
-                    { title: "Log Out" },
+                    { title: $_('settings.logout', { default: 'Log Out' }) },
                   );
                   if (ok) logout();
                 }}
-                aria-label="Log out"
+                aria-label={$_('settings.logout', { default: 'Log out' })}
               >
-                Log out
+                {$_('settings.logout', { default: 'Log out' })}
               </button>
             </div>
           {:else}
             <div class="account-signin">
               <span class="setting-description">
-                Sign in to sync your library and settings across devices
+                {$_('settings.signInToSync', { default: 'Sign in to sync your library and settings across devices' })}
               </span>
               <button
                 class="btn-outline-compact btn-full-width"
                 style="margin-top: var(--spacing-sm)"
                 on:click={() => showLoginModal.set(true)}
-                aria-label="Sign in"
+                aria-label={$_('settings.signIn', { default: 'Sign In' })}
               >
-                Sign In
+                {$_('settings.signIn', { default: 'Sign In' })}
               </button>
             </div>
           {/if}
@@ -594,23 +614,23 @@
       <!-- Section: Sync -->
       {#if $isLoggedIn}
         <section class="settings-section" aria-labelledby="sync-heading">
-          <h2 id="sync-heading" class="section-label">Sync</h2>
+          <h2 id="sync-heading" class="section-label">{$_('settings.sync', { default: 'Sync' })}</h2>
           <div class="settings-card">
             <div class="card-header-row">
               <div class="card-title-group">
-                <h3 class="setting-title">Library status</h3>
+                <h3 class="setting-title">{$_('settings.libraryStatus', { default: 'Library status' })}</h3>
                 <span class="setting-description" aria-live="polite">
                   {#if $isSyncing}
-                    <span class="animate-pulse">Syncing tracks...</span>
+                    <span class="animate-pulse">{$_('settings.syncingTracks', { default: 'Syncing tracks...' })}</span>
                   {:else}
-                    Synced {formatLastSyncedRelative($syncStatus.last_sync_at)}
+                    {$_('settings.synced', { default: 'Synced' })} {formatLastSyncedRelative($syncStatus.last_sync_at)}
                     {#if $syncStatus.pending_changes > 0}
-                      · {$syncStatus.pending_changes} pending
+                      · {$syncStatus.pending_changes} {$_('settings.pending', { default: 'pending' })}
                     {/if}
                   {/if}
                 </span>
               </div>
-              <div class="pill-badge">Auto every 12h</div>
+              <div class="pill-badge">{$_('settings.autoEvery12h', { default: 'Auto every 12h' })}</div>
             </div>
 
             <button
@@ -618,9 +638,9 @@
               style="margin-top: var(--spacing-md);"
               on:click={() => triggerSync()}
               disabled={$isSyncing}
-              aria-label="Sync now"
+              aria-label={$_('settings.syncNow', { default: 'Sync now' })}
             >
-              {$isSyncing ? "Syncing..." : "Sync now"}
+              {$isSyncing ? $_('settings.syncing', { default: 'Syncing...' }) : $_('settings.syncNow', { default: 'Sync now' })}
             </button>
 
             <div class="divider"></div>
@@ -645,18 +665,48 @@
                 </div>
               </div>
             </div>
+
+            {#if $syncStatus.last_error}
+              <div class="sync-error-banner">
+                <div class="error-content">
+                  <svg class="error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="8" x2="12" y2="12" />
+                    <line x1="12" y1="16" x2="12.01" y2="16" />
+                  </svg>
+                  <div class="error-text">
+                    <span class="error-message">
+                      {#if $syncStatus.last_error.includes("Limit Exceeded") || $syncStatus.last_error.includes("limit exceeded")}
+                        {$_('settings.limitExceeded', { default: 'Sync limit exceeded' })}
+                      {:else}
+                        {formatSyncError($syncStatus.last_error)}
+                      {/if}
+                    </span>
+                    {#if $syncStatus.last_error.includes("Limit Exceeded") || $syncStatus.last_error.includes("limit exceeded")}
+                      <p class="error-hint">
+                        {$_('settings.limitExceededDesc', { default: "You've reached the free tier limit of 100 tracks. Support development to get unlimited sync!" })}
+                        <br />
+                        <a href="https://ko-fi.com/N4N5UMNR1" target="_blank" rel="noreferrer" class="donate-link">
+                          {$_('settings.supportAudion', { default: 'Support Audion' })}
+                        </a>
+                      </p>
+                    {/if}
+                  </div>
+                </div>
+              </div>
+            {/if}
           </div>
         </section>
       {/if}
 
       <!-- Section: Playback -->
       <section class="settings-section" aria-labelledby="playback-heading">
-        <h2 id="playback-heading" class="section-label">Playback</h2>
+        <h2 id="playback-heading" class="section-label">{$_('settings.playback', { default: 'Playback' })}</h2>
         <div class="settings-card">
           <div class="toggle-container">
             <div class="toggle-info">
-              <span class="setting-title">Autoplay</span>
-              <span class="setting-description">Play random tracks when the queue ends</span>
+              <span class="setting-title">{$_('settings.autoplay', { default: 'Autoplay' })}</span>
+              <span class="setting-description">{$_('settings.autoplayDesc', { default: 'Play random tracks when the queue ends' })}</span>
             </div>
             <button
               class="toggle-btn"
@@ -674,15 +724,15 @@
 
       <!-- Section: Storage -->
       <section class="settings-section" aria-labelledby="storage-heading">
-        <h2 id="storage-heading" class="section-label">Storage</h2>
+        <h2 id="storage-heading" class="section-label">{$_('settings.storage', { default: 'Storage' })}</h2>
         <div class="settings-card">
           <div class="inner-section">
-            <span class="setting-title">Download location</span>
+            <span class="setting-title">{$_('settings.downloadLocation', { default: 'Download location' })}</span>
             <div class="path-selector">
-              <div class="setting-description path-display" style="margin-top: 0;" title={$appSettings.downloadLocation || "Not set"}>
-                {$appSettings.downloadLocation || "No download location set"}
+              <div class="setting-description path-display" style="margin-top: 0;" title={$appSettings.downloadLocation || $_('settings.noDownloadLocation', { default: 'Not set' })}>
+                {$appSettings.downloadLocation || $_('settings.noDownloadLocation', { default: 'No download location set' })}
               </div>
-              <button class="selector-btn" on:click={handleSetDownloadLocation} aria-label="Change location">Change</button>
+              <button class="selector-btn" on:click={handleSetDownloadLocation} aria-label={$_('settings.change', { default: 'Change location' })}>{$_('settings.change', { default: 'Change' })}</button>
             </div>
           </div>
 
@@ -690,19 +740,19 @@
             <div class="divider"></div>
 
             <div class="inner-section">
-              <span class="setting-title">Music library folder (Android)</span>
-              <span class="setting-description">Add folders to your library scan while avoiding system audio clips</span>
+              <span class="setting-title">{$_('settings.musicLibraryFolder', { default: 'Music library folder (Android)' })}</span>
+              <span class="setting-description">{$_('settings.musicLibraryFolderDesc', { default: 'Add folders to your library scan while avoiding system audio clips' })}</span>
               <div class="path-selector">
-                <div class="setting-description path-display" style="margin-top: 0;" title={$appSettings.androidMusicFolder || "Not set"}>
-                  {$appSettings.androidMusicFolder || "No music folder selected"}
+                <div class="setting-description path-display" style="margin-top: 0;" title={$appSettings.androidMusicFolder || $_('settings.noMusicFolder', { default: 'Not set' })}>
+                  {$appSettings.androidMusicFolder || $_('settings.noMusicFolder', { default: 'No music folder selected' })}
                 </div>
                 <button
                   class="selector-btn"
                   on:click={handleSetAndroidMusicFolder}
-                  aria-label="Add Android music folder"
+                  aria-label={$_('settings.addFolder', { default: 'Add folder' })}
                   disabled={isUpdatingAndroidMusicFolder}
                 >
-                  {isUpdatingAndroidMusicFolder ? "Adding..." : "Add folder"}
+                  {isUpdatingAndroidMusicFolder ? $_('settings.adding', { default: 'Adding...' }) : $_('settings.addFolder', { default: 'Add folder' })}
                 </button>
               </div>
 
@@ -717,23 +767,23 @@
           <div class="divider"></div>
 
           <div class="card-title-group compact">
-            <h3 class="setting-title">Cover Management</h3>
-            <span class="setting-description">Sync or merge cover files to save space</span>
+            <h3 class="setting-title">{$_('settings.coverManagement', { default: 'Cover Management' })}</h3>
+            <span class="setting-description">{$_('settings.coverManagementDesc', { default: 'Sync or merge cover files to save space' })}</span>
           </div>
 
           <div class="button-group-row">
             <button class="btn-outline-compact" on:click={handleSyncCovers} disabled={isSyncingCovers}>
-              {isSyncingCovers ? "Syncing..." : "Sync Covers"}
+              {isSyncingCovers ? $_('settings.syncing', { default: 'Syncing...' }) : $_('settings.syncCovers', { default: 'Sync Covers' })}
             </button>
             <button class="btn-outline-compact" on:click={handleMergeDuplicateCovers} disabled={isMergingCovers}>
-              {isMergingCovers ? "Merging..." : "Merge Duplicates"}
+              {isMergingCovers ? $_('settings.merging', { default: 'Merging...' }) : $_('settings.mergeDuplicates', { default: 'Merge Duplicates' })}
             </button>
           </div>
 
           {#if isSyncingCovers || isMergingCovers}
              <div class="divider"></div>
              <div class="progress-notice-inline">
-               <span class="setting-description animate-pulse">Processing covers... view details below for progress</span>
+               <span class="setting-description animate-pulse">{$_('settings.processingCovers', { default: 'Processing covers... view details below for progress' })}</span>
              </div>
           {/if}
         </div>
@@ -741,20 +791,20 @@
 
       <!-- Section: Audio -->
       <section class="settings-section" aria-labelledby="audio-heading">
-        <h2 id="audio-heading" class="section-label">Audio</h2>
+        <h2 id="audio-heading" class="section-label">{$_('settings.audio', { default: 'Audio' })}</h2>
         <div class="settings-card">
           <div class="inner-section">
-            <span class="setting-title">Output driver</span>
-            <span class="setting-description">Select the backend for audio playback</span>
+            <span class="setting-title">{$_('settings.outputDriver', { default: 'Output driver' })}</span>
+            <span class="setting-description">{$_('settings.outputDriverDesc', { default: 'Select the backend for audio playback' })}</span>
             <div class="segmented-pill" style="margin-top: 6px;">
-              <button class="segment-btn" class:active={$appSettings.audioBackend === 'auto'} on:click={() => appSettings.setAudioBackend('auto')}>Auto</button>
-              <button class="segment-btn" class:active={$appSettings.audioBackend === 'native'} on:click={() => appSettings.setAudioBackend('native')}>Native</button>
-              <button class="segment-btn" class:active={$appSettings.audioBackend === 'html5'} on:click={() => appSettings.setAudioBackend('html5')}>HTML5</button>
+              <button class="segment-btn" class:active={$appSettings.audioBackend === 'auto'} on:click={() => appSettings.setAudioBackend('auto')}>{$_('settings.auto', { default: 'Auto' })}</button>
+              <button class="segment-btn" class:active={$appSettings.audioBackend === 'native'} on:click={() => appSettings.setAudioBackend('native')}>{$_('settings.native', { default: 'Native' })}</button>
+              <button class="segment-btn" class:active={$appSettings.audioBackend === 'html5'} on:click={() => appSettings.setAudioBackend('html5')}>{$_('settings.html5', { default: 'HTML5' })}</button>
             </div>
             {#if showRefreshNotice}
               <div class="refresh-notice-inline">
-                <span class="setting-description" style="color: var(--accent-primary)">Requires restart to apply</span>
-                <button class="btn-text-small" style="padding-left: 0" on:click={handleRefresh}>Restart now</button>
+                <span class="setting-description" style="color: var(--accent-primary)">{$_('settings.requiresRestart', { default: 'Requires restart to apply' })}</span>
+                <button class="btn-text-small" style="padding-left: 0" on:click={handleRefresh}>{$_('settings.restartNow', { default: 'Restart now' })}</button>
               </div>
             {/if}
           </div>
@@ -763,8 +813,11 @@
 
           <div class="toggle-container">
             <div class="toggle-info">
-              <span class="setting-title">Equalizer</span>
-              <span class="setting-description">Adjust frequency levels across multiple bands</span>
+              <span class="setting-title">{$_('settings.equalizer', { default: 'Equalizer' })}</span>
+              <span class="setting-description">{$_('settings.equalizerDesc', { default: 'Adjust frequency levels across multiple bands' })}</span>
+              <span class="setting-description" style="color: var(--accent-warning, #ffae42);">
+                {$_('settings.equalizerLocalOnlyWarning', { default: 'Equalizer is most reliable on local playback (especially with Native driver). Some streaming sources may bypass EQ.' })}
+              </span>
             </div>
             <button
               class="toggle-btn"
@@ -781,13 +834,42 @@
           {#if $equalizer.enabled}
             <div class="divider"></div>
             <div class="eq-control-compact">
-              <select class="preset-select-pill" value={$equalizer.currentPreset || ""} on:change={(e) => equalizer.applyPreset(e.currentTarget.value)}>
-                <option value="" disabled>Custom Preset</option>
+              <select class="preset-select-pill" value={$equalizer.currentPreset || ""} on:change={(e) => equalizer.applyPreset((e.currentTarget as HTMLSelectElement).value)}>
+                <option value="" disabled>{$_('settings.customPreset', { default: 'Custom Preset' })}</option>
                 {#each EQ_PRESETS as preset}
                   <option value={preset.name}>{preset.name}</option>
                 {/each}
               </select>
-              <button class="btn-text-small" on:click={() => equalizer.reset()}>Reset to Flat</button>
+              <button class="btn-text-small" on:click={() => equalizer.reset()}>{$_('settings.resetToFlat', { default: 'Reset to Flat' })}</button>
+            </div>
+
+            <div class="eq-bands-container">
+              <div class="eq-scale" aria-hidden="true">
+                <span>+12</span>
+                <span>0</span>
+                <span>-12</span>
+              </div>
+
+              <div class="eq-bands">
+                {#each $equalizer.bands as band, i}
+                  <div class="eq-band">
+                    <span class="eq-gain">{formatEqGain(band.gain)}</span>
+                    <div class="eq-slider-container">
+                      <input
+                        class="eq-slider"
+                        type="range"
+                        min="-12"
+                        max="12"
+                        step="0.5"
+                        value={band.gain}
+                        aria-label={`EQ ${band.label}`}
+                        on:input={(e) => equalizer.setBandGain(i, Number((e.currentTarget as HTMLInputElement).value))}
+                      />
+                    </div>
+                    <span class="eq-label">{band.label}</span>
+                  </div>
+                {/each}
+              </div>
             </div>
           {/if}
         </div>
@@ -795,12 +877,12 @@
 
       <!-- Section: Community -->
       <section class="settings-section" aria-labelledby="community-heading">
-        <h2 id="community-heading" class="section-label">Community</h2>
+        <h2 id="community-heading" class="section-label">{$_('settings.community', { default: 'Community' })}</h2>
         <div class="settings-card">
           <div class="toggle-container">
             <div class="toggle-info">
-              <span class="setting-title">ListenBrainz</span>
-              <span class="setting-description">Submit listening history to ListenBrainz</span>
+              <span class="setting-title">{$_('settings.listenBrainz', { default: 'ListenBrainz' })}</span>
+              <span class="setting-description">{$_('settings.listenBrainzDesc', { default: 'Submit listening history to ListenBrainz' })}</span>
             </div>
             <button
               class="toggle-btn"
@@ -822,19 +904,19 @@
                   <input
                     type="password"
                     bind:value={lbTokenInput}
-                    placeholder="User Token"
+                    placeholder={$_('settings.userToken', { default: 'User Token' })}
                     class="input-compact"
                     style="flex: 1; min-width: 0;"
                   />
                   <button class="btn-outline-compact" on:click={handleVerifyLbToken} disabled={lbIsVerifying}>
-                    {lbIsVerifying ? "..." : "Verify"}
+                    {lbIsVerifying ? "..." : $_('settings.verify', { default: 'Verify' })}
                   </button>
                 </div>
                 {#if lbVerifyError}<p class="text-error" style="font-size: 0.7rem; margin-top: 4px;">{lbVerifyError}</p>{/if}
               {:else}
                 <div class="lb-status-row" style="display: flex; justify-content: space-between; align-items: center;">
-                  <span style="font-size: 0.8125rem;">Logged in as <strong>{$appSettings.listenBrainzUsername || 'User'}</strong></span>
-                  <button class="btn-text-small" on:click={handleRemoveLbToken}>Remove</button>
+                  <span style="font-size: 0.8125rem;">{$_('settings.loggedInAs', { default: 'Logged in as' })} <strong>{$appSettings.listenBrainzUsername || 'User'}</strong></span>
+                  <button class="btn-text-small" on:click={handleRemoveLbToken}>{$_('settings.remove', { default: 'Remove' })}</button>
                 </div>
               {/if}
             </div>
@@ -844,7 +926,7 @@
 
           <div class="toggle-container">
             <div class="toggle-info">
-              <span class="setting-title">Discord button</span>
+              <span class="setting-title">{$_('settings.discordButton', { default: 'Discord button' })}</span>
             </div>
             <button
               class="toggle-btn"
@@ -859,33 +941,64 @@
           </div>
           
           <div class="button-group-row" style="margin-top: var(--spacing-sm)">
-            <a href="https://discord.gg/27XRVQsBd9" target="_blank" rel="noreferrer" class="btn-outline-compact" style="width: 100%; text-align: center;">Open Discord</a>
+            <a href="https://discord.gg/27XRVQsBd9" target="_blank" rel="noreferrer" class="btn-outline-compact" style="width: 100%; text-align: center;">{$_('settings.openDiscord', { default: 'Open Discord' })}</a>
           </div>
         </div>
       </section>
 
       <!-- Section: Appearance -->
       <section class="settings-section" aria-labelledby="appearance-heading">
-        <h2 id="appearance-heading" class="section-label">Appearance</h2>
+        <h2 id="appearance-heading" class="section-label">{$_('settings.language', { default: 'Appearance' })}</h2>
         <div class="settings-card">
            <div class="inner-section">
-             <span class="setting-title">Theme mode</span>
+             <span class="setting-title">{$_('settings.selectLanguage', { default: 'Language' })}</span>
              <div class="segmented-pill" style="margin-top: 6px;">
-               <button class="segment-btn" class:active={$theme.mode === 'dark'} on:click={() => handleModeChange('dark')}>Dark</button>
-               <button class="segment-btn" class:active={$theme.mode === 'light'} on:click={() => handleModeChange('light')}>Light</button>
-               <button class="segment-btn" class:active={$theme.mode === 'system'} on:click={() => handleModeChange('system')}>System</button>
+               <button class="segment-btn" class:active={$locale === 'en'} on:click={() => changeLanguage('en')}>English</button>
+               <button class="segment-btn" class:active={$locale === 'es'} on:click={() => changeLanguage('es')}>Español</button>
+               <button class="segment-btn" class:active={$locale === 'fr'} on:click={() => changeLanguage('fr')}>Français</button>
+             </div>
+           </div>
+
+           <div class="divider"></div>
+
+           <div class="inner-section">
+             <span class="setting-title">{$_('settings.themeMode', { default: 'Theme mode' })}</span>
+             <div class="segmented-pill" style="margin-top: 6px;">
+               <button class="segment-btn" class:active={$theme.mode === 'dark'} on:click={() => handleModeChange('dark')}>{$_('settings.dark', { default: 'Dark' })}</button>
+               <button class="segment-btn" class:active={$theme.mode === 'light'} on:click={() => handleModeChange('light')}>{$_('settings.light', { default: 'Light' })}</button>
+               <button class="segment-btn" class:active={$theme.mode === 'system'} on:click={() => handleModeChange('system')}>{$_('settings.system', { default: 'System' })}</button>
              </div>
            </div>
 
            {#if !isAndroid()}
              <div class="divider"></div>
              <div class="inner-section">
-               <span class="setting-title">Window start mode</span>
+               <span class="setting-title">{$_('settings.windowStartMode', { default: 'Window start mode' })}</span>
                <div class="segmented-pill">
-                 <button class="segment-btn" class:active={$appSettings.startMode === 'normal'} on:click={() => appSettings.setStartMode('normal')}>Normal</button>
-                 <button class="segment-btn" class:active={$appSettings.startMode === 'maximized'} on:click={() => appSettings.setStartMode('maximized')}>Max</button>
-                 <button class="segment-btn" class:active={$appSettings.startMode === 'minimized'} on:click={() => appSettings.setStartMode('minimized')}>Min</button>
+                 <button class="segment-btn" class:active={$appSettings.startMode === 'normal'} on:click={() => appSettings.setStartMode('normal')}>{$_('settings.normal', { default: 'Normal' })}</button>
+                 <button class="segment-btn" class:active={$appSettings.startMode === 'maximized'} on:click={() => appSettings.setStartMode('maximized')}>{$_('settings.max', { default: 'Max' })}</button>
+                 <button class="segment-btn" class:active={$appSettings.startMode === 'minimized'} on:click={() => appSettings.setStartMode('minimized')}>{$_('settings.min', { default: 'Min' })}</button>
                </div>
+             </div>
+
+
+
+             <div class="divider"></div>
+             <div class="toggle-container">
+               <div class="toggle-info">
+                 <span class="setting-title">{$_('settings.closeToTray', { default: 'Close to tray' })}</span>
+                 <span class="setting-description">{$_('settings.closeToTrayDesc', { default: 'Hide the window to the system tray when closed' })}</span>
+               </div>
+               <button
+                 class="toggle-btn"
+                 class:active={$appSettings.closeToTray}
+                 on:click={() => appSettings.setCloseToTray(!$appSettings.closeToTray)}
+                 role="switch"
+                 aria-checked={$appSettings.closeToTray}
+                 aria-label="Toggle Close to Tray"
+               >
+                 <div class="toggle-handle"></div>
+               </button>
              </div>
            {/if}
 
@@ -910,12 +1023,12 @@
 
       <!-- Section: Privacy -->
       <section class="settings-section" aria-labelledby="privacy-heading">
-        <h2 id="privacy-heading" class="section-label">Privacy</h2>
+        <h2 id="privacy-heading" class="section-label">{$_('settings.privacy', { default: 'Privacy' })}</h2>
         <div class="settings-card">
           <div class="toggle-container">
             <div class="toggle-info">
-              <span class="setting-title">Remote control</span>
-              <span class="setting-description">Other devices can discover and control this app</span>
+              <span class="setting-title">{$_('settings.remoteControl', { default: 'Remote control' })}</span>
+              <span class="setting-description">{$_('settings.remoteControlDesc', { default: 'Other devices can discover and control this app' })}</span>
             </div>
             <button
               class="toggle-btn"
@@ -933,8 +1046,8 @@
 
           <div class="toggle-container">
             <div class="toggle-info">
-              <span class="setting-title">Developer mode</span>
-              <span class="setting-description">Enable inspection tools and debug menus</span>
+              <span class="setting-title">{$_('settings.developerMode', { default: 'Developer mode' })}</span>
+              <span class="setting-description">{$_('settings.developerModeDesc', { default: 'Enable inspection tools and debug menus' })}</span>
             </div>
             <button
               class="toggle-btn"
@@ -951,17 +1064,17 @@
           <div class="divider"></div>
 
           <div class="card-title-group compact">
-            <h3 class="setting-title" style="color: var(--error-color)">Danger zone</h3>
-            <span class="setting-description">Irreversible actions like resetting data</span>
+            <h3 class="setting-title" style="color: var(--error-color)">{$_('settings.dangerZone', { default: 'Danger zone' })}</h3>
+            <span class="setting-description">{$_('settings.dangerZoneDesc', { default: 'Irreversible actions like resetting data' })}</span>
           </div>
 
           <div class="button-group-row">
-            <button class="btn-outline-compact danger" on:click={openResetModal}>Reset Database</button>
+            <button class="btn-outline-compact danger" on:click={openResetModal}>{$_('settings.resetDatabase', { default: 'Reset Database' })}</button>
             {#if $isLoggedIn}
               <button class="btn-outline-compact danger" on:click={async () => {
-                const ok = await confirm("Delete account permanently?", { title: "Delete Account", danger: true });
+                const ok = await confirm($_('settings.deleteAccount', { default: 'Delete account permanently?' }), { title: $_('settings.deleteAccount', { default: 'Delete Account' }), danger: true });
                 if (ok) await deleteAccount();
-              }}>Delete Account</button>
+              }}>{$_('settings.deleteAccount', { default: 'Delete Account' })}</button>
             {/if}
           </div>
         </div>
@@ -969,13 +1082,13 @@
 
       <!-- Section: Upgrade -->
       <section class="settings-section" aria-labelledby="upgrade-heading">
-        <h2 id="upgrade-heading" class="section-label">Upgrade</h2>
+        <h2 id="upgrade-heading" class="section-label">{$_('settings.upgrade', { default: 'Upgrade' })}</h2>
         <div class="settings-card upgrade-card">
           {#if !$isSupporter}
             <div class="card-header-row">
               <div class="card-title-group">
-                <h3 class="setting-title">Unlimited sync</h3>
-                <span class="setting-description">Support development and sync unlimited tracks</span>
+                <h3 class="setting-title">{$_('settings.unlimitedSync', { default: 'Unlimited sync' })}</h3>
+                <span class="setting-description">{$_('settings.unlimitedSyncDesc', { default: 'Support development and sync unlimited tracks' })}</span>
               </div>
               <div class="pill-badge accent">Support</div>
             </div>
@@ -983,16 +1096,16 @@
           {:else}
             <div class="card-header-row">
               <div class="card-title-group">
-                <h3 class="setting-title">Supporter status</h3>
-                <span class="setting-description">Pro benefits are active</span>
+                <h3 class="setting-title">{$_('settings.supporterStatus', { default: 'Supporter status' })}</h3>
+                <span class="setting-description">{$_('settings.proBenefitsActive', { default: 'Pro benefits are active' })}</span>
               </div>
               <div class="pill-badge accent">Pro</div>
             </div>
             <p class="notice-text-sm" style="margin-top: var(--spacing-sm)">
               {#if $authState.supporter_until}
-                Valid until {formatSupporterUntil($authState.supporter_until)}
+                {$_('settings.validUntil', { default: 'Valid until' })} {formatSupporterUntil($authState.supporter_until)}
               {:else}
-                Active perpetual support
+                {$_('settings.activePerpetual', { default: 'Active perpetual support' })}
               {/if}
             </p>
           {/if}
@@ -1001,17 +1114,17 @@
 
       <!-- Section: About -->
       <section class="settings-section" aria-labelledby="about-heading">
-        <h2 id="about-heading" class="section-label">About</h2>
+        <h2 id="about-heading" class="section-label">{$_('settings.about', { default: 'About' })}</h2>
         <div class="settings-card">
           <div class="about-row">
             <div class="app-logo-sm">Audion</div>
             <div class="about-details">
               <span class="setting-title">Audion {__APP_VERSION__}</span>
-              <span class="setting-description">Modern player powered by Tauri and Svelte</span>
+              <span class="setting-description">{$_('settings.modernPlayerDesc', { default: 'Modern player powered by Tauri and Svelte' })}</span>
             </div>
           </div>
           {#if $updates.hasUpdate}
-            <button class="btn-green-compact" on:click={() => (showUpdatePopup = true)} style="margin-top: var(--spacing-sm)">Update Available</button>
+            <button class="btn-green-compact" on:click={() => (showUpdatePopup = true)} style="margin-top: var(--spacing-sm)">{$_('settings.updateAvailable', { default: 'Update Available' })}</button>
           {/if}
         </div>
       </section>
@@ -1134,7 +1247,8 @@
   }
 
   .view-header {
-    padding: var(--spacing-lg) var(--spacing-md);
+    padding: calc(var(--safe-area-top) + var(--spacing-lg)) var(--spacing-md)
+      var(--spacing-md);
     flex-shrink: 0;
     max-width: 800px;
     width: 100%;
@@ -1445,9 +1559,114 @@
     text-align: center;
   }
 
+  .support-card-premium {
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent-primary), transparent 85%) 0%, color-mix(in srgb, var(--accent-primary), transparent 95%) 100%);
+    border: 1px solid color-mix(in srgb, var(--accent-primary), transparent 80%) !important;
+    position: relative;
+    overflow: hidden;
+    padding: var(--spacing-lg) !important;
+  }
+
+  .support-card-premium::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -20%;
+    width: 200px;
+    height: 200px;
+    background: radial-gradient(circle, color-mix(in srgb, var(--accent-primary), transparent 90%) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .support-content {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+  }
+
+  .support-text {
+    flex: 1;
+  }
+
+  .support-title {
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin: 0 0 4px 0;
+    letter-spacing: -0.01em;
+  }
+
+  .support-description {
+    font-size: 0.9375rem;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  .support-icon-large {
+    width: 42px;
+    height: 42px;
+    color: var(--accent-primary);
+    opacity: 0.8;
+    flex-shrink: 0;
+  }
+
+  .support-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-md);
+  }
+
+  .support-platform-card {
+    display: flex;
+    flex-direction: column;
+    padding: var(--spacing-md);
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-md);
+    text-decoration: none;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    min-height: 0 !important; /* Reset touch target min-height for cards */
+  }
+
+  .support-platform-card:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: var(--accent-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    text-decoration: none;
+  }
+
+  .platform-name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+
+  .platform-tag {
+    font-size: 0.75rem;
+    color: var(--text-subdued);
+    margin-top: 2px;
+  }
+
+  .support-platform-card.kofi:hover .platform-name {
+    color: #29abe0;
+  }
+
+  .support-platform-card.patreon:hover .platform-name {
+    color: #f96854;
+  }
+
   @media (max-width: 520px) {
-    .support-links-row {
+    .support-grid {
       grid-template-columns: 1fr;
+    }
+    
+    .support-content {
+      flex-direction: row;
+      align-items: flex-start;
     }
   }
 
@@ -1555,8 +1774,8 @@
   }
 
   .upgrade-card {
-    background: linear-gradient(135deg, rgba(29, 185, 84, 0.08) 0%, rgba(29, 185, 84, 0.03) 100%);
-    border-color: rgba(29, 185, 84, 0.2);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent-primary), transparent 92%) 0%, color-mix(in srgb, var(--accent-primary), transparent 97%) 100%);
+    border-color: color-mix(in srgb, var(--accent-primary), transparent 80%);
   }
 
   .card-header-row {
@@ -1594,9 +1813,9 @@
   }
 
   .pill-badge.accent {
-    background: rgba(29, 185, 84, 0.1);
+    background: color-mix(in srgb, var(--accent-primary), transparent 90%);
     color: var(--accent-primary);
-    border-color: rgba(29, 185, 84, 0.2);
+    border-color: color-mix(in srgb, var(--accent-primary), transparent 80%);
   }
 
   .btn-outline-compact {
@@ -2107,6 +2326,31 @@
   }
 
   /* Equalizer Styles */
+  .eq-control-compact {
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .preset-select-pill {
+    flex: 1;
+    min-width: 160px;
+    max-width: 320px;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background-color: var(--bg-highlight);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+  }
+
+  .preset-select-pill:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+  }
+
   .preset-selector {
     display: flex;
     gap: var(--spacing-sm);
@@ -2398,6 +2642,59 @@
 
   .sync-message.error {
     color: var(--error-color);
+  }
+
+  .sync-error-banner {
+    margin-top: var(--spacing-md);
+    background-color: rgba(220, 53, 69, 0.1);
+    border: 1px solid rgba(220, 53, 69, 0.2);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+  }
+
+  .error-content {
+    display: flex;
+    gap: var(--spacing-md);
+    align-items: flex-start;
+  }
+
+  .error-icon {
+    width: 20px;
+    height: 20px;
+    color: #dc3545;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .error-text {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .error-message {
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-align: left;
+  }
+
+  .error-hint {
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    margin: 0;
+    line-height: 1.4;
+    text-align: left;
+  }
+
+  .donate-link {
+    color: var(--accent-primary);
+    text-decoration: underline;
+    font-weight: 600;
+  }
+  
+  .donate-link:hover {
+    color: var(--accent-hover);
   }
 
   /* Progress Bar Styles */

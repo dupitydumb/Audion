@@ -22,7 +22,12 @@ mod audio;
 
 use db::Database;
 use std::path::PathBuf;
-use tauri::{Emitter, Listener, Manager};
+use tauri::{Emitter, Listener, Manager, WindowEvent};
+#[cfg(desktop)]
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::TrayIconBuilder,
+};
 
 /// Handle a deep link URL — extract tokens, store them, fetch profile, trigger sync.
 /// Called from both the deep-link event listener (macOS) and the single-instance
@@ -436,6 +441,48 @@ pub fn run() {
                 }
             }
 
+            // =============================================================================
+            // SYSTEM TRAY SETUP (desktop only)
+            // =============================================================================
+            #[cfg(desktop)]
+            {
+                let show_i = MenuItem::with_id(app, "show", "Show Audion", true, None::<&str>)?;
+                let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
+
+                let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png")).unwrap();
+
+                let _tray = TrayIconBuilder::new()
+                    .icon(icon)
+                    .tooltip("Audion")
+                    .menu(&menu)
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                window.show().ok();
+                                window.unminimize().ok();
+                                window.set_focus().ok();
+                            }
+                        }
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let tauri::tray::TrayIconEvent::Click { .. } = event {
+                            let app = tray.app_handle();
+                            if let Some(window) = app.get_webview_window("main") {
+                                window.show().ok();
+                                window.unminimize().ok();
+                                window.set_focus().ok();
+                            }
+                        }
+                    })
+                    .build(app)?;
+                tracing::info!("System tray initialized");
+            }
+
             tracing::info!("App setup complete");
             Ok(())
         })
@@ -605,6 +652,11 @@ pub fn run() {
                     windows_thumbar::windows_update_thumbar_state,
                     commands::proxy_fetch_bytes,
                     commands::save_image_to_gallery,
+                    // Window close-to-tray and minimize-to-tray commands
+                    commands::window::get_close_to_tray,
+                    commands::window::set_close_to_tray,
+                    commands::window::get_minimize_to_tray,
+                    commands::window::set_minimize_to_tray,
                 ]
             }
             #[cfg(mobile)]
@@ -753,6 +805,18 @@ pub fn run() {
                     commands::proxy_fetch_bytes,
                     commands::save_image_to_gallery,
                 ]
+            }
+        })
+        .on_window_event(|window, event| {
+            #[cfg(desktop)]
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Check if close-to-tray is enabled
+                let config = commands::window::load_window_config(window.app_handle());
+                if config.close_to_tray {
+                    api.prevent_close();
+                    let _ = window.hide();
+                    tracing::info!("Window hidden to tray");
+                }
             }
         })
         .run(tauri::generate_context!())

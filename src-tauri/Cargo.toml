@@ -1,6 +1,6 @@
 [package]
 name = "audion"
-version = "1.3.1"
+version = "1.3.2"
 description = "A local Spotify-style music player"
 authors = ["AvKov"]
 edition = "2021"
@@ -28,7 +28,7 @@ native-audio = []
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset", "devtools"] }
+tauri = { version = "2", features = ["protocol-asset", "devtools", "tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"

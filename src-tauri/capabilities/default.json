@@ -25,6 +25,8 @@
     "core:window:allow-start-dragging",
     "core:window:allow-inner-size",
     "core:window:allow-outer-position",
+    "core:window:allow-hide",
+    "core:window:allow-show",
     "opener:default",
     "opener:allow-reveal-item-in-dir",
     "dialog:default",
