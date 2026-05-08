@@ -59,3 +59,18 @@ runs:
         else
           sudo apt-get install -y libappindicator3-dev
         fi
+
+    - name: Configure Linux headless display environment (if on Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        {
+          echo "GDK_BACKEND=x11"
+          echo "XDG_SESSION_TYPE=x11"
+          echo "QT_QPA_PLATFORM=xcb"
+          echo "QT_OPENGL=software"
+          echo "WEBKIT_DISABLE_COMPOSITING_MODE=1"
+          echo "LIBGL_ALWAYS_SOFTWARE=1"
+          echo "GALLIUM_DRIVER=llvmpipe"
+          echo "WAYLAND_DISPLAY="
+        } >> "$GITHUB_ENV"

@@ -921,7 +921,7 @@
     .header {
         position: relative;
         z-index: 10;
-        padding-top: var(--spacing-sm);
+        padding-top: calc(var(--spacing-sm) + var(--safe-area-top));
     }
 
     .progress-bars {

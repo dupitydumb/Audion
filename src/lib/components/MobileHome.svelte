@@ -41,22 +41,9 @@
         isLoadingActivity,
     } from "$lib/stores/activity";
     import { fetchAllLatestCharts, type ChartData, type AudionApiTrack } from "$lib/api/audion-api";
+    import { _, locale } from "svelte-i18n";
 
-    const monthNames = [
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
-    ];
-    const currentMonthName = monthNames[new Date().getMonth()];
+    $: currentMonthName = new Intl.DateTimeFormat($locale || 'en', { month: 'long' }).format(new Date());
 
     let charts: ChartData[] = [];
     let loadingCharts = true;
@@ -71,12 +58,11 @@
         }
     });
 
-    // Greeting based on time of day
-    function getGreeting(): string {
+    function getGreetingKey(): string {
         const hour = new Date().getHours();
-        if (hour < 12) return "Good morning";
-        if (hour < 18) return "Good afternoon";
-        return "Good evening";
+        if (hour < 12) return "goodMorning";
+        if (hour < 18) return "goodAfternoon";
+        return "goodEvening";
     }
 
     // Recently added tracks (first 20)
@@ -229,7 +215,7 @@
 <div class="mobile-home">
     <!-- Header with greeting + settings gear -->
     <header class="home-header">
-        <h1>{getGreeting()}</h1>
+        <h1>{$_(`home.${getGreetingKey()}`)}</h1>
         <div class="header-actions">
             {#if $isScanning}
                 <div class="scanning-indicator">
@@ -418,7 +404,7 @@
         >
             <div class="recap-card-content">
                 <span class="recap-label">MONTHLY</span>
-                <h2 class="recap-title">{currentMonthName} Recap</h2>
+                <h2 class="recap-title">{currentMonthName} {$_('home.recap')}</h2>
                 <p class="recap-text">Check out your music month in review</p>
                 <div class="recap-pill">View Recap</div>
             </div>
@@ -450,7 +436,7 @@
     <!-- Jump Back In (Recently Played - Wide Cards) -->
     {#if $recentlyPlayed.length > 0}
         <section class="carousel-section wide-cards">
-            <h2 class="section-title">Jump Back In</h2>
+            <h2 class="section-title">{$_('home.jumpBackIn')}</h2>
             <div class="carousel-container">
                 {#each $recentlyPlayed as track, i}
                     <div
@@ -502,7 +488,7 @@
     <!-- Your Top Songs (List View) -->
     {#if $topTracks.length > 0}
         <section class="list-section">
-            <h2 class="section-title">Your Top Songs</h2>
+            <h2 class="section-title">{$_('home.yourTopSongs')}</h2>
             <div class="top-songs-list">
                 {#each $topTracks.slice(0, 4) as { track, play_count }, i}
                     <div
@@ -556,7 +542,7 @@
     <!-- Most Played Albums (List View) -->
     {#if $topAlbums.length > 0}
         <section class="list-section">
-            <h2 class="section-title">Most Played Albums</h2>
+            <h2 class="section-title">{$_('home.mostPlayedAlbums')}</h2>
             <div class="top-songs-list">
                 {#each $topAlbums.slice(0, 4) as { album, play_count }, i}
                     <div
@@ -684,7 +670,13 @@
                         <div class="chart-card-items">
                             {#if chart.items}
                                 {#each chart.items.slice(0, 3) as item}
-                                    <div class="chart-mini-row" on:click={() => playApiTrack(item, chart.items)}>
+                                    <div 
+                                        class="chart-mini-row" 
+                                        role="button"
+                                        tabindex="0"
+                                        on:click={(e) => handleContainerClick(e, () => playApiTrack(item, chart.items))}
+                                        on:keydown={(e) => handleKeydown(e, () => playApiTrack(item, chart.items))}
+                                    >
                                         <div class="mini-art">
                                             {#if item.coverUrl}
                                                 <img src={item.coverUrl} alt={item.title} />
@@ -761,7 +753,8 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: var(--spacing-lg) var(--spacing-md) var(--spacing-md);
+        padding: calc(var(--safe-area-top) + var(--spacing-lg))
+            var(--spacing-md) var(--spacing-md);
     }
 
     .home-header h1 {
@@ -813,7 +806,7 @@
     .scanning-spinner {
         width: 16px;
         height: 16px;
-        border: 2px solid rgba(29, 185, 84, 0.3);
+        border: 2px solid color-mix(in srgb, var(--accent-primary), transparent 70%);
         border-top-color: var(--accent-primary);
         border-radius: 50%;
         animation: spin 0.8s linear infinite;
@@ -1017,10 +1010,6 @@
         position: relative;
     }
 
-    .card-art.round {
-        border-radius: 50%;
-    }
-
     .card-art img {
         width: 100%;
         height: 100%;
@@ -1099,7 +1088,7 @@
     .recap-card {
         width: 100%;
         background: linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%);
-        border: 1px solid rgba(30, 215, 96, 0.3);
+        border: 1px solid color-mix(in srgb, var(--accent-primary), transparent 70%);
         border-radius: var(--radius-lg);
         padding: var(--spacing-lg);
         display: flex;
@@ -1127,7 +1116,7 @@
     .recap-label {
         font-size: 0.7rem;
         font-weight: 800;
-        color: #1ed760;
+        color: var(--accent-primary);
         letter-spacing: 1px;
     }
 
@@ -1145,7 +1134,7 @@
 
     .recap-pill {
         display: inline-block;
-        background: #1ed760;
+        background: var(--accent-primary);
         color: black;
         padding: 6px 16px;
         border-radius: 20px;
@@ -1511,7 +1500,7 @@
         font-weight: 800;
         letter-spacing: 0.1em;
         color: var(--accent-primary);
-        background-color: rgba(29, 185, 84, 0.1);
+        background-color: color-mix(in srgb, var(--accent-primary), transparent 90%);
         padding: 2px 8px;
         border-radius: var(--radius-full);
         width: fit-content;

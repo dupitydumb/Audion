@@ -1163,7 +1163,8 @@
 
     .discover-header {
         flex-shrink: 0;
-        padding: var(--spacing-lg) var(--spacing-xl) 0;
+        padding: calc(var(--safe-area-top) + var(--spacing-lg))
+            var(--spacing-xl) 0;
     }
 
     .header-row {
@@ -1440,7 +1441,8 @@
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: var(--spacing-md) var(--spacing-lg);
+        padding: calc(var(--safe-area-top) + var(--spacing-md))
+            var(--spacing-lg) var(--spacing-md);
         border-bottom: 1px solid var(--border-color);
         flex-shrink: 0;
     }

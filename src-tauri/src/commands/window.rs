@@ -14,12 +14,18 @@ pub enum WindowStartMode {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct WindowConfig {
     pub start_mode: WindowStartMode,
+    #[serde(default)]
+    pub close_to_tray: bool,
+    #[serde(default)]
+    pub minimize_to_tray: bool,
 }
 
 impl Default for WindowConfig {
     fn default() -> Self {
         Self {
             start_mode: WindowStartMode::Normal,
+            close_to_tray: false,
+            minimize_to_tray: false,
         }
     }
 }
@@ -67,5 +73,29 @@ pub fn get_window_start_mode(app_handle: AppHandle) -> WindowStartMode {
 pub fn set_window_start_mode(app_handle: AppHandle, mode: WindowStartMode) -> Result<(), String> {
     let mut config = load_window_config(&app_handle);
     config.start_mode = mode;
+    save_window_config(&app_handle, &config)
+}
+
+#[tauri::command]
+pub fn get_close_to_tray(app_handle: AppHandle) -> bool {
+    load_window_config(&app_handle).close_to_tray
+}
+
+#[tauri::command]
+pub fn set_close_to_tray(app_handle: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut config = load_window_config(&app_handle);
+    config.close_to_tray = enabled;
+    save_window_config(&app_handle, &config)
+}
+
+#[tauri::command]
+pub fn get_minimize_to_tray(app_handle: AppHandle) -> bool {
+    load_window_config(&app_handle).minimize_to_tray
+}
+
+#[tauri::command]
+pub fn set_minimize_to_tray(app_handle: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut config = load_window_config(&app_handle);
+    config.minimize_to_tray = enabled;
     save_window_config(&app_handle, &config)
 }

@@ -1021,7 +1021,8 @@
     /* ===== Mobile Library Header (search + tabs) ===== */
     .mobile-library-header {
         flex-shrink: 0;
-        padding: var(--spacing-md) var(--spacing-md) 0;
+        padding: calc(var(--safe-area-top) + var(--spacing-md))
+            var(--spacing-md) 0;
         background-color: var(--bg-base);
     }
 
@@ -1124,7 +1125,8 @@
         }
 
         .view-header {
-            padding: var(--spacing-md);
+            padding: calc(var(--safe-area-top) + var(--spacing-md))
+                var(--spacing-md) var(--spacing-md);
         }
     }
 </style>

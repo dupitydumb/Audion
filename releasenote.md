@@ -1,33 +1,19 @@
 # Release Notes - Audion
 
-## [v1.3.1] - 2026-04-19
+## [v1.3.2] - 2026-04-27
 
-### Featured Highlights
+### New Features & Enhancements
+- **Localization Support**: Audion is now available in multiple languages, making it accessible to a wider audience.
+- **Sleep Timer**: Schedule when your music should stop, perfect for listening before bed.
+- **Minimize to Tray**: Keep Audion running in the background while keeping your taskbar clean.
+- **Sync Status & Error Handling**: Improved visibility into synchronization issues with clear error messages.
+- **Android Fullscreen Menu**: Added a secondary menu to the Android fullscreen player for easier navigation.
 
-#### Desktop Playback & Window Experience
-This patch improves day-to-day playback flow on desktop with focused quality-of-life fixes:
-- Added **Windows thumbar** support for faster media control from the taskbar.
-- Fixed duplicate title bar behavior after using **Picture-in-Picture (PiP)**.
-- Fixed fullscreen layout issues for a more consistent viewing experience.
+### Quality of Life & UI Improvements
+- **Support UI Update**: Refreshed the support interface for a better user experience.
+- **Mobile Padding Fixes**: Improved layout and padding on mobile devices for a more polished look.
+- **Player Bar & EQ**: Various fixes and improvements to the player bar and equalizer functionality.
 
-#### Android Reliability Improvements
-We resolved several Android-specific regressions to improve stability:
-- Fixed Android media handler issues.
-- Fixed Android folder handling problems.
-- Improved resume behavior to prevent playback from failing to continue.
-
-#### Queue, Library & Data Consistency
-Playback and library data handling are now more reliable:
-- Fixed queue reordering behavior.
-- Improved scanning reliability.
-- Added a `date_added` field to tracks and backfilled existing entries for better metadata consistency.
-
----
-
-### Platform, Build & Release Pipeline
-- Enhanced Linux build environment with additional WebKit dependencies.
-- Improved Flatpak and release workflow reliability in CI/CD (installation handling, tag/artifact validation, and builder setup).
-
-### Additional Fixes
-- Settings and temporary dashboard behavior refinements.
-- General under-the-hood stability improvements and cleanup.
+### Platform & Deployment
+- **Flatpak Packaging**: Significant updates to Flatpak configurations and build workflows for better Linux distribution.
+- **CI/CD Reliability**: Continuous integration improvements to ensure stable releases across all platforms.

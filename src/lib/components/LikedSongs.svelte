@@ -371,7 +371,8 @@
             flex-direction: column;
             align-items: center;
             text-align: center;
-            padding: var(--spacing-md);
+            padding: calc(var(--safe-area-top) + var(--spacing-md))
+                var(--spacing-md) var(--spacing-md);
         }
 
         .liked-gradient-bg {
