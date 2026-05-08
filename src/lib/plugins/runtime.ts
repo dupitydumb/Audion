@@ -649,7 +649,9 @@ export class PluginRuntime {
             external_id: trackData.external_id,
             format: trackData.format || null,
             bitrate: trackData.bitrate || null,
-            stream_url: trackData.stream_url || null  // The decoded stream URL
+            stream_url: trackData.stream_url || null,  // The decoded stream URL
+            track_number: trackData.track_number || null,
+            disc_number: trackData.disc_number || null,
           }
         });
 
