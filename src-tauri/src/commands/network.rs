@@ -2,6 +2,7 @@
 // These commands allow the frontend/plugins to make HTTP requests through the Rust backend,
 // bypassing browser CORS restrictions.
 
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -32,19 +33,26 @@ pub async fn proxy_fetch(request: ProxyFetchRequest) -> Result<ProxyFetchRespons
 
     let mut req_builder = client.request(method, &request.url);
 
-    // Add default browser-like headers to avoid 403 errors
-    req_builder = req_builder
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        .header("Accept", "application/json, text/plain, */*")
-        .header("Accept-Language", "en-US,en;q=0.9")
-        .header("Cache-Control", "no-cache");
+    // Build a HeaderMap so custom headers override defaults
+    let mut header_map = HeaderMap::new();
+    header_map.insert("User-Agent",      HeaderValue::from_static("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"));
+    header_map.insert("Accept",          HeaderValue::from_static("application/json, text/plain, */*"));
+    header_map.insert("Accept-Language", HeaderValue::from_static("en-US,en;q=0.9"));
+    header_map.insert("Cache-Control",   HeaderValue::from_static("no-cache"));
 
-    // Add custom headers (these will override defaults if specified)
+    // Custom headers override defaults (replaces existing keys)
     if let Some(headers) = request.headers {
         for (key, value) in headers {
-            req_builder = req_builder.header(&key, &value);
+            if let (Ok(name), Ok(val)) = (
+                HeaderName::from_bytes(key.as_bytes()),
+                HeaderValue::from_str(&value),
+            ) {
+                header_map.insert(name, val);
+            }
         }
     }
+
+    req_builder = req_builder.headers(header_map);
 
     // Add body if present
     if let Some(body) = request.body {
