@@ -93,7 +93,10 @@ export class AppleMusic {
 
     private async _fetch<T>(url: string): Promise<T> {
         return proxyFetch<T>(url, {
-            headers: { 'Accept': 'application/json' }
+            headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'applelyrics/1.0 (github.com/apple/lyrics)'
+            }
         });
     }
 
@@ -106,7 +109,8 @@ export class AppleMusic {
                 `${SEARCH_BASE_URL}/apple-music/search?q=${encodeURIComponent(query)}`
             ) as AppleMusicSearchResult[];
             return Array.isArray(data) && data.length > 0 ? data : null;
-        } catch {
+        } catch (e) {
+            console.log('[AppleMusic] _search failed:', e);
             return null;
         }
     }
@@ -220,6 +224,7 @@ export class AppleMusic {
             }
 
             // ISRC provided but matched nothing . all results are wrong, bail out
+            console.warn('[AppleMusic] ISRC provided but no match found, bailing');
             return null;
         }
 
@@ -242,7 +247,8 @@ export class AppleMusic {
 
             if (!data || data.ok === false) return null;
             return JSON.stringify(data);
-        } catch {
+        } catch (e) {
+            console.error('[AppleMusic] getRawLyrics threw for trackId:', trackId, e);
             return null;
         }
     }
@@ -282,7 +288,8 @@ export class AppleMusic {
                 hasSyllableSync,
                 raw,
             };
-        } catch {
+        } catch (e) {
+            console.error('[AppleMusic] parse_apple_lyrics_json_cmd threw:', e);
             return null;
         }
     }
