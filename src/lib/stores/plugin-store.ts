@@ -5,7 +5,7 @@ import { convertFileSrc } from '@tauri-apps/api/core';
 import type { AudionPluginManifest } from '../plugins/schema';
 import { fetchMarketplacePlugins, searchPlugins, filterByCategory, type MarketplacePlugin } from '../plugins/marketplace';
 import { PluginRuntime, setGlobalPermissionManager } from '../plugins/runtime';
-import { pingPluginInstall } from '../api/audion-api';
+import { pingPluginInstall, fetchPluginStats } from '../api/audion-api';
 
 const COMMUNITY_URLS_KEY = 'audion_community_plugin_urls';
 function loadCommunityUrls(): string[] {
@@ -47,7 +47,7 @@ export interface PluginStoreState {
     error: string | null;
     searchQuery: string;
     categoryFilter: string;
-    sortBy: 'stars' | 'downloads' | 'name';
+    sortBy: 'stars' | 'downloads' | 'name' | 'updated';
     activeTab: 'curated' | 'community' | 'installed';
     pendingUpdates: PluginUpdateInfo[];
     failedPlugins: PluginError[];  // Track plugins that failed to load
@@ -295,20 +295,26 @@ function createPluginStore() {
         // Refresh marketplace plugins
         async refreshMarketplace() {
             update(s => ({ ...s, loading: true, error: null }));
-
             try {
-                const state = get({ subscribe });
-                const marketplace = await fetchMarketplacePlugins(state.communityUrls);
+                // Fetch registry from GitHub and stats from VPS in parallel
+                const [plugins, vpsStats] = await Promise.all([
+                    fetchMarketplacePlugins(get({ subscribe }).communityUrls),
+                    fetchPluginStats()
+                ]);
 
-                update(s => ({
-                    ...s,
-                    marketplace,
-                    loading: false
-                }));
-            } catch (err) {
-                const errorMsg = 'Failed to fetch marketplace';
-                console.error(`[PluginStore] ${errorMsg}:`, err);
-                setCriticalError(errorMsg, err);
+                // Merge VPS stats into registry data
+                const mergedPlugins = plugins.map(p => {
+                    const stats = vpsStats.find(s => s.pluginName === p.manifest.name);
+                    if (stats) {
+                        // Use VPS count if it's higher (GitHub only tracks manual release downloads)
+                        p.downloads = Math.max(p.downloads || 0, stats.installCount || 0);
+                    }
+                    return p;
+                });
+
+                update(s => ({ ...s, marketplace: mergedPlugins, loading: false }));
+            } catch (err: any) {
+                update(s => ({ ...s, error: err.message, loading: false }));
             }
         },
 
@@ -606,7 +612,7 @@ function createPluginStore() {
         },
 
         // Set sort by
-        setSortBy(sort: 'stars' | 'downloads' | 'name') {
+        setSortBy(sort: 'stars' | 'downloads' | 'name' | 'updated') {
             update(s => ({ ...s, sortBy: sort }));
         },
 
@@ -678,6 +684,10 @@ export const filteredMarketplace = derived(
                 return (b.stars || 0) - (a.stars || 0);
             } else if ($store.sortBy === 'downloads') {
                 return (b.downloads || 0) - (a.downloads || 0);
+            } else if ($store.sortBy === 'updated') {
+                const dateA = a.lastUpdated ? new Date(a.lastUpdated).getTime() : 0;
+                const dateB = b.lastUpdated ? new Date(b.lastUpdated).getTime() : 0;
+                return dateB - dateA;
             } else {
                 return a.manifest.name.localeCompare(b.manifest.name);
             }

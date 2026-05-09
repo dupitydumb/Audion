@@ -316,9 +316,10 @@
             value={$pluginStore.sortBy}
             on:change={(e) => pluginStore.setSortBy(e.currentTarget.value)}
           >
-            <option value="stars">Sort by Stars</option>
-            <option value="downloads">Sort by Downloads</option>
-            <option value="name">Sort by Name</option>
+            <option value="stars">Most Stars</option>
+            <option value="downloads">Most Downloads</option>
+            <option value="updated">Recently Updated</option>
+            <option value="name">Name (A-Z)</option>
           </select>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="select-icon">
             <polyline points="6 9 12 15 18 9" />
@@ -1148,6 +1149,32 @@
     opacity: 0.9;
   }
 
+  .btn-secondary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background-color: var(--bg-highlight);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    height: 36px;
+    box-sizing: border-box;
+    transition: all var(--transition-fast);
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background-color: var(--bg-surface);
+    border-color: var(--text-subdued);
+  }
+
+  .btn-secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .btn-install {
     padding: var(--spacing-sm) var(--spacing-md);
     background-color: var(--accent-primary);
@@ -1231,24 +1258,6 @@
     }
   }
 
-  .btn-secondary {
-    padding: var(--spacing-sm) var(--spacing-md);
-    background-color: var(--bg-surface);
-    color: var(--text-primary);
-    border-radius: var(--radius-sm);
-    font-weight: 500;
-    font-size: 0.875rem;
-    transition: background-color var(--transition-fast);
-  }
-
-  .btn-secondary:hover {
-    background-color: var(--bg-highlight);
-  }
-
-  .btn-secondary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
 
   .sort-selector {
     position: relative;
@@ -1262,9 +1271,11 @@
     color: var(--text-primary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
-    padding: var(--spacing-sm) 32px var(--spacing-sm) var(--spacing-md);
+    padding: 0 32px 0 var(--spacing-md);
     font-size: 0.8125rem;
     font-weight: 500;
+    height: 36px;
+    box-sizing: border-box;
     cursor: pointer;
     transition: all var(--transition-fast);
   }
@@ -1493,15 +1504,17 @@
     .header-actions {
       width: 100%;
       flex-wrap: wrap;
-      gap: var(--spacing-xs);
+      gap: var(--spacing-sm);
     }
 
-    .header-actions button {
+    .header-actions button,
+    .sort-selector {
       flex: 1;
-      justify-content: center;
-      padding: 8px 12px;
-      font-size: 0.8125rem;
-      white-space: nowrap;
+      min-width: 140px;
+    }
+
+    .sort-selector select {
+      width: 100%;
     }
 
     .plugin-grid {

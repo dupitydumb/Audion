@@ -77,3 +77,8 @@ export async function pingPluginInstall(pluginName: string): Promise<void> {
         }
     }
 }
+
+export async function fetchPluginStats(): Promise<any[]> {
+    const data = await tryFetch('/telemetry/plugin/stats');
+    return data || [];
+}
