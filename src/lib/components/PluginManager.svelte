@@ -38,6 +38,20 @@
   // Install State
   type InstallState = "idle" | "loading" | "success" | "error";
   let installState: InstallState = "idle";
+
+  // Categories for filtering
+  const categories = [
+    { id: "all", label: "All" },
+    { id: "audio", label: "Audio" },
+    { id: "ui", label: "UI" },
+    { id: "lyrics", label: "Lyrics" },
+    { id: "library", label: "Library" },
+    { id: "utility", label: "Utility" },
+    { id: "appearance", label: "Appearance" },
+    { id: "social", label: "Social" },
+    { id: "sync", label: "Sync" },
+  ];
+
   let confettiParticles: {
     x: number;
     y: number;
@@ -295,6 +309,22 @@
           {$_('pluginManager.fetchPlugins', { default: 'Fetch Plugins' })}
         {/if}
       </button>
+
+      {#if activeTab !== "installed"}
+        <div class="sort-selector">
+          <select
+            value={$pluginStore.sortBy}
+            on:change={(e) => pluginStore.setSortBy(e.currentTarget.value)}
+          >
+            <option value="stars">Sort by Stars</option>
+            <option value="downloads">Sort by Downloads</option>
+            <option value="name">Sort by Name</option>
+          </select>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="select-icon">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </div>
+      {/if}
     </div>
   </header>
 
@@ -342,6 +372,20 @@
       <button class="btn-primary" on:click={handleAddCommunityUrl}>
         {$_('pluginManager.add', { default: 'Add' })}
       </button>
+    </div>
+  {/if}
+
+  {#if activeTab !== "installed"}
+    <div class="category-filters">
+      {#each categories as category}
+        <button
+          class="category-chip"
+          class:active={$pluginStore.categoryFilter === category.id}
+          on:click={() => pluginStore.setCategoryFilter(category.id)}
+        >
+          {category.label}
+        </button>
+      {/each}
     </div>
   {/if}
 
@@ -406,6 +450,22 @@
                 {#if plugin.verified}
                   <span class="badge badge-verified">{$_('pluginManager.verified', { default: 'Verified' })}</span>
                 {/if}
+              </div>
+              <div class="plugin-stats">
+                <div class="stat-item" title="Stars">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                    <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+                  </svg>
+                  <span>{plugin.stars || 0}</span>
+                </div>
+                <div class="stat-item" title="Downloads">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  <span>{plugin.downloads || 0}</span>
+                </div>
               </div>
             </div>
             <div class="plugin-actions">
@@ -482,6 +542,22 @@
                 {#if plugin.manifest.category}
                   <span class="badge">{plugin.manifest.category}</span>
                 {/if}
+              </div>
+              <div class="plugin-stats">
+                <div class="stat-item" title="Stars">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                    <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+                  </svg>
+                  <span>{plugin.stars || 0}</span>
+                </div>
+                <div class="stat-item" title="Downloads">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  <span>{plugin.downloads || 0}</span>
+                </div>
               </div>
             </div>
             <div class="plugin-actions">
@@ -799,7 +875,7 @@
   .tabs {
     display: flex;
     gap: var(--spacing-xs);
-    margin-bottom: var(--spacing-lg);
+    margin-bottom: var(--spacing-md);
     border-bottom: 1px solid var(--border-color);
     padding-bottom: var(--spacing-sm);
     flex-shrink: 0;
@@ -827,11 +903,47 @@
   .create-form {
     display: flex;
     gap: var(--spacing-sm);
-    margin-bottom: var(--spacing-lg);
+    margin-bottom: var(--spacing-md);
     padding: var(--spacing-md);
     background-color: var(--bg-elevated);
     border-radius: var(--radius-md);
     flex-shrink: 0;
+  }
+
+  .category-filters {
+    display: flex;
+    gap: var(--spacing-xs);
+    overflow-x: auto;
+    padding-bottom: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+    scrollbar-width: none;
+    flex-shrink: 0;
+  }
+
+  .category-filters::-webkit-scrollbar {
+    display: none;
+  }
+
+  .category-chip {
+    padding: 6px 14px;
+    border-radius: var(--radius-full);
+    background-color: var(--bg-elevated);
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: all var(--transition-fast);
+    border: 1px solid transparent;
+  }
+
+  .category-chip:hover {
+    background-color: var(--bg-highlight);
+    color: var(--text-primary);
+  }
+
+  .category-chip.active {
+    background-color: var(--accent-primary);
+    color: var(--bg-base);
   }
 
   .create-form input {
@@ -961,7 +1073,32 @@
     display: flex;
     gap: var(--spacing-xs);
     flex-wrap: wrap;
-    margin-top: var(--spacing-xs);
+    margin-top: 4px;
+  }
+
+  .plugin-stats {
+    display: flex;
+    gap: var(--spacing-md);
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  .stat-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-subdued);
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+
+  .stat-item svg {
+    color: var(--text-subdued);
+  }
+
+  .stat-item[title="Stars"] svg {
+    color: #ffd700;
   }
 
   .badge {
@@ -1111,6 +1248,37 @@
   .btn-secondary:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .sort-selector {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .sort-selector select {
+    appearance: none;
+    background-color: var(--bg-surface);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-sm) 32px var(--spacing-sm) var(--spacing-md);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+  }
+
+  .sort-selector select:hover {
+    background-color: var(--bg-highlight);
+    border-color: var(--accent-primary);
+  }
+
+  .sort-selector .select-icon {
+    position: absolute;
+    right: 12px;
+    pointer-events: none;
+    color: var(--text-subdued);
   }
 
   .btn-danger {

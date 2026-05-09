@@ -3,9 +3,9 @@ import { writable, derived, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import type { AudionPluginManifest } from '../plugins/schema';
-import type { MarketplacePlugin } from '../plugins/marketplace';
-import { fetchMarketplacePlugins, searchPlugins, filterByCategory } from '../plugins/marketplace';
+import { fetchMarketplacePlugins, searchPlugins, filterByCategory, type MarketplacePlugin } from '../plugins/marketplace';
 import { PluginRuntime, setGlobalPermissionManager } from '../plugins/runtime';
+import { pingPluginInstall } from '../api/audion-api';
 
 const COMMUNITY_URLS_KEY = 'audion_community_plugin_urls';
 function loadCommunityUrls(): string[] {
@@ -47,6 +47,7 @@ export interface PluginStoreState {
     error: string | null;
     searchQuery: string;
     categoryFilter: string;
+    sortBy: 'stars' | 'downloads' | 'name';
     activeTab: 'curated' | 'community' | 'installed';
     pendingUpdates: PluginUpdateInfo[];
     failedPlugins: PluginError[];  // Track plugins that failed to load
@@ -67,6 +68,7 @@ const initialState: PluginStoreState = {
     error: null,
     searchQuery: '',
     categoryFilter: 'all',
+    sortBy: 'stars',
     activeTab: 'curated',
     pendingUpdates: [],
     failedPlugins: []
@@ -349,6 +351,9 @@ function createPluginStore() {
                     loading: false
                 }));
 
+                // Ping telemetry (fire and forget)
+                pingPluginInstall(plugin.manifest.name);
+
                 // Auto-enable the newly installed plugin
                 try {
                     await this.enablePlugin(info.name);
@@ -600,6 +605,11 @@ function createPluginStore() {
             update(s => ({ ...s, categoryFilter: category }));
         },
 
+        // Set sort by
+        setSortBy(sort: 'stars' | 'downloads' | 'name') {
+            update(s => ({ ...s, sortBy: sort }));
+        },
+
         // Set active tab
         setActiveTab(tab: 'curated' | 'community' | 'installed') {
             update(s => ({ ...s, activeTab: tab }));
@@ -661,6 +671,17 @@ export const filteredMarketplace = derived(
 
         // Apply category filter
         plugins = filterByCategory(plugins, $store.categoryFilter);
+
+        // Apply sorting
+        plugins = [...plugins].sort((a, b) => {
+            if ($store.sortBy === 'stars') {
+                return (b.stars || 0) - (a.stars || 0);
+            } else if ($store.sortBy === 'downloads') {
+                return (b.downloads || 0) - (a.downloads || 0);
+            } else {
+                return a.manifest.name.localeCompare(b.manifest.name);
+            }
+        });
 
         return plugins;
     }
