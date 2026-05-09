@@ -1836,6 +1836,14 @@ function handleTrackEnd(): void {
         }
         playStartTime = 0; // Reset so playTrack doesn't double-record
     }
+
+    // Repeat one logic for backends that don't handle it internally (like HTML5)
+    if (get(repeat) === 'one' && track) {
+        console.log('[Player] Repeat one: restarting current track');
+        playTrack(track).catch(console.error);
+        return;
+    }
+
     nextTrack();
 }
 

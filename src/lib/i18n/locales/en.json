@@ -87,6 +87,7 @@
     "plugins": "Plugins",
     "community": "Community",
     "joinDiscord": "Join Discord",
+    "resonate": "Resonate Playlists",
     "addMusicFolder": "Add Music Folder"
   },
   "settings": {
@@ -148,6 +149,8 @@
     "remove": "Remove",
     "discordButton": "Discord button",
     "openDiscord": "Open Discord",
+    "resonateButton": "Resonate button",
+    "openResonate": "Open Resonate",
     "appearance": "Appearance",
     "selectLanguage": "Language",
     "themeMode": "Theme mode",

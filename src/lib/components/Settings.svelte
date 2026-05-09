@@ -940,8 +940,27 @@
             </button>
           </div>
           
-          <div class="button-group-row" style="margin-top: var(--spacing-sm)">
-            <a href="https://discord.gg/27XRVQsBd9" target="_blank" rel="noreferrer" class="btn-outline-compact" style="width: 100%; text-align: center;">{$_('settings.openDiscord', { default: 'Open Discord' })}</a>
+          <div class="divider"></div>
+
+          <div class="toggle-container">
+            <div class="toggle-info">
+              <span class="setting-title">{$_('settings.resonateButton', { default: 'Resonate button' })}</span>
+            </div>
+            <button
+              class="toggle-btn"
+              class:active={$appSettings.showResonate}
+              on:click={() => appSettings.setShowResonate(!$appSettings.showResonate)}
+              role="switch"
+              aria-checked={$appSettings.showResonate}
+              aria-label="Toggle Resonate Button"
+            >
+              <div class="toggle-handle"></div>
+            </button>
+          </div>
+
+          <div class="button-group-row" style="margin-top: var(--spacing-sm); gap: var(--spacing-sm);">
+            <a href="https://discord.gg/27XRVQsBd9" target="_blank" rel="noreferrer" class="btn-outline-compact" style="flex: 1; text-align: center;">{$_('settings.openDiscord', { default: 'Open Discord' })}</a>
+            <a href="https://resonate.audionplayer.com?ref=audion" target="_blank" rel="noreferrer" class="btn-outline-compact" style="flex: 1; text-align: center;">{$_('settings.openResonate', { default: 'Open Resonate' })}</a>
           </div>
         </div>
       </section>

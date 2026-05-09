@@ -715,10 +715,10 @@
             </ul>
         </section>
 
-        {#if $appSettings.showDiscord}
-            <section class="nav-section">
-                <h3 class="nav-section-title">{$_('sidebar.community', { default: 'Community' })}</h3>
-                <ul class="nav-list">
+        <section class="nav-section">
+            <h3 class="nav-section-title">{$_('sidebar.community', { default: 'Community' })}</h3>
+            <ul class="nav-list">
+                {#if $appSettings.showDiscord}
                     <li>
                         <a
                             href="https://discord.gg/27XRVQsBd9"
@@ -738,9 +738,21 @@
                             <span>{$_('sidebar.joinDiscord', { default: 'Join Discord' })}</span>
                         </a>
                     </li>
-                </ul>
-            </section>
-        {/if}
+                {/if}
+                {#if $appSettings.showResonate}
+                    <li>
+                        <a
+                            href="https://resonate.audionplayer.com?ref=audion"
+                            target="_blank"
+                            class="nav-item resonate-item"
+                        >
+                            <img src="/resonate.png" alt="Resonate" class="resonate-icon" />
+                            <span>{$_('sidebar.resonate', { default: 'Resonate Playlists' })}</span>
+                        </a>
+                    </li>
+                {/if}
+            </ul>
+        </section>
     </nav>
 
     <div class="sidebar-footer">
@@ -931,9 +943,16 @@
         color: var(--text-primary);
     }
 
-    .nav-item svg {
+    .nav-item svg,
+    .nav-item img {
         flex-shrink: 0;
         opacity: 0.7;
+    }
+
+    .resonate-icon {
+        width: 24px;
+        height: 24px;
+        object-fit: contain;
     }
 
     .nav-item.active svg {

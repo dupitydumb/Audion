@@ -18,6 +18,7 @@ export interface AppSettings {
     listenBrainzTokenSet: boolean;
     listenBrainzUsername: string;
     remoteControlEnabled: boolean;
+    showResonate: boolean;
 }
 
 const SETTINGS_STORAGE_KEY = 'audion_settings';
@@ -38,6 +39,7 @@ const defaultSettings: AppSettings = {
     listenBrainzTokenSet: false,
     listenBrainzUsername: '',
     remoteControlEnabled: true,
+    showResonate: true,
 };
 
 // Load settings from localStorage
@@ -109,6 +111,14 @@ function createSettingsStore() {
         setShowDiscord(enabled: boolean) {
             update(state => {
                 const newState = { ...state, showDiscord: enabled };
+                saveSettings(newState);
+                return newState;
+            });
+        },
+
+        setShowResonate(enabled: boolean) {
+            update(state => {
+                const newState = { ...state, showResonate: enabled };
                 saveSettings(newState);
                 return newState;
             });
