@@ -15,7 +15,7 @@
   import { addToast } from "$lib/stores/toast";
   import { confirm } from "$lib/stores/dialogs";
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
-  import { invoke } from "@tauri-apps/api/core";
+  import { invoke, convertFileSrc } from "@tauri-apps/api/core";
   import { onDestroy } from "svelte";
   import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
 
@@ -244,6 +244,40 @@
     return $pluginStore.installed.find((p) => p.name === name)?.manifest
       .version;
   }
+
+  function getIconUrl(plugin: MarketplacePlugin | PluginInfo): string | null {
+    const manifest = plugin.manifest;
+
+    // 1. Check if icon is already an absolute URL or data URL
+    if (
+      manifest.icon &&
+      (manifest.icon.startsWith("http") || manifest.icon.startsWith("data:"))
+    ) {
+      return manifest.icon;
+    }
+
+    // 1.5 Handle inline SVG strings
+    if (manifest.icon && manifest.icon.trim().startsWith("<svg")) {
+      const base64 = btoa(unescape(encodeURIComponent(manifest.icon.trim())));
+      return `data:image/svg+xml;base64,${base64}`;
+    }
+
+    // 2. Use icon_url if available (populated by marketplace for community plugins)
+    if (manifest.icon_url) {
+      return manifest.icon_url;
+    }
+
+    // 3. For installed plugins, try local path
+    if ("folder_name" in plugin && $pluginStore.pluginDir) {
+      if (manifest.icon && !manifest.icon.startsWith("http")) {
+        // Construct local path: pluginDir/folder_name/icon
+        const path = `${$pluginStore.pluginDir}/${plugin.folder_name}/${manifest.icon}`;
+        return convertFileSrc(path);
+      }
+    }
+
+    return null;
+  }
 </script>
 
 <div class="plugin-view">
@@ -424,11 +458,19 @@
         {#each $curatedPlugins as plugin}
           <div class="plugin-card">
             <div class="plugin-icon">
+              {#if getIconUrl(plugin)}
+                <img
+                  src={getIconUrl(plugin)}
+                  alt={plugin.manifest.name}
+                  on:error={(e) => (e.currentTarget.style.display = "none")}
+                />
+              {/if}
               <svg
                 viewBox="0 0 24 24"
                 fill="currentColor"
                 width="32"
                 height="32"
+                class="fallback-icon"
               >
                 <path
                   d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"
@@ -519,11 +561,19 @@
               </svg>
             </button>
             <div class="plugin-icon">
+              {#if getIconUrl(plugin)}
+                <img
+                  src={getIconUrl(plugin)}
+                  alt={plugin.manifest.name}
+                  on:error={(e) => (e.currentTarget.style.display = "none")}
+                />
+              {/if}
               <svg
                 viewBox="0 0 24 24"
                 fill="currentColor"
                 width="32"
                 height="32"
+                class="fallback-icon"
               >
                 <path
                   d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"
@@ -591,11 +641,19 @@
         {#each $pluginStore.installed as plugin}
           <div class="plugin-card">
             <div class="plugin-icon">
+              {#if getIconUrl(plugin)}
+                <img
+                  src={getIconUrl(plugin)}
+                  alt={plugin.name}
+                  on:error={(e) => (e.currentTarget.style.display = "none")}
+                />
+              {/if}
               <svg
                 viewBox="0 0 24 24"
                 fill="currentColor"
                 width="32"
                 height="32"
+                class="fallback-icon"
               >
                 <path
                   d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"
@@ -1043,6 +1101,20 @@
     align-items: center;
     justify-content: center;
     color: var(--accent-primary);
+    overflow: hidden;
+  }
+
+  .plugin-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain; /* Shows entire icon without cropping */
+    padding: 8px; /* Adds breathing room around the icon */
+    box-sizing: border-box;
+    border-radius: inherit;
+  }
+
+  .plugin-icon img + .fallback-icon {
+    display: none;
   }
 
   .plugin-info {

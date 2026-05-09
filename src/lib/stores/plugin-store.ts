@@ -30,6 +30,7 @@ export interface PluginInfo {
     enabled: boolean;
     manifest: AudionPluginManifest;
     granted_permissions: string[];
+    folder_name: string;
 }
 
 export interface PluginUpdateInfo {
@@ -51,6 +52,7 @@ export interface PluginStoreState {
     activeTab: 'curated' | 'community' | 'installed';
     pendingUpdates: PluginUpdateInfo[];
     failedPlugins: PluginError[];  // Track plugins that failed to load
+    pluginDir: string | null;      // Path to plugins directory
 }
 
 export interface PluginError {
@@ -71,7 +73,8 @@ const initialState: PluginStoreState = {
     sortBy: 'stars',
     activeTab: 'curated',
     pendingUpdates: [],
-    failedPlugins: []
+    failedPlugins: [],
+    pluginDir: null
 };
 
 // Create the store
@@ -155,7 +158,8 @@ function createPluginStore() {
                 update(s => ({
                     ...s,
                     installed,
-                    loading: false
+                    loading: false,
+                    pluginDir
                 }));
 
                 // Auto-load enabled plugins with individual try-catch
@@ -296,6 +300,10 @@ function createPluginStore() {
         async refreshMarketplace() {
             update(s => ({ ...s, loading: true, error: null }));
             try {
+                // Clear cache to force latest fetch from GitHub
+                const { clearPluginCache } = await import('../plugins/marketplace');
+                clearPluginCache();
+
                 // Fetch registry from GitHub and stats from VPS in parallel
                 const [plugins, vpsStats] = await Promise.all([
                     fetchMarketplacePlugins(get({ subscribe }).communityUrls),

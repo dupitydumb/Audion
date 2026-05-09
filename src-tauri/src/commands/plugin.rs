@@ -31,6 +31,8 @@ pub struct PluginManifest {
     #[serde(default)]
     pub icon: Option<String>,
     #[serde(default)]
+    pub icon_url: Option<String>,
+    #[serde(default)]
     pub category: Option<String>,
     #[serde(default)]
     pub tags: Option<Vec<String>>,
@@ -54,6 +56,7 @@ pub struct PluginInfo {
     pub enabled: bool,
     pub manifest: PluginManifest,
     pub granted_permissions: Vec<String>,
+    pub folder_name: String,
 }
 
 #[derive(Serialize, Deserialize, Default)]
@@ -209,6 +212,7 @@ pub fn list_plugins(plugin_dir: String) -> Vec<PluginInfo> {
                         granted_permissions: state
                             .map(|s| s.granted_permissions.clone())
                             .unwrap_or_default(),
+                        folder_name: path.file_name().unwrap().to_string_lossy().to_string(),
                     });
                 }
             }
@@ -397,6 +401,28 @@ pub async fn install_plugin(repo_url: String, plugin_dir: String) -> Result<Plug
     fs::write(plugin_path.join(&manifest.entry), &entry_bytes)
         .map_err(|e| format!("Failed to save entry file: {}", e))?;
 
+    // Fetch the icon file if it's relative
+    if let Some(icon_path) = &manifest.icon {
+        if !icon_path.starts_with("http") && !icon_path.starts_with("data:") {
+            let icon_url = format!(
+                "https://raw.githubusercontent.com/{}/{}/{}/{}",
+                owner, repo, default_branch, icon_path
+            );
+            if let Ok(icon_resp) = client
+                .get(&icon_url)
+                .header("User-Agent", "Audion-Plugin-Manager")
+                .send()
+                .await
+            {
+                if icon_resp.status().is_success() {
+                    if let Ok(icon_bytes) = icon_resp.bytes().await {
+                        let _ = fs::write(plugin_path.join(icon_path), &icon_bytes);
+                    }
+                }
+            }
+        }
+    }
+
     // Add to state
     let mut states = load_plugin_states(plugin_root.to_string_lossy().as_ref());
     let now = std::time::SystemTime::now()
@@ -422,6 +448,7 @@ pub async fn install_plugin(repo_url: String, plugin_dir: String) -> Result<Plug
         enabled: false,
         manifest,
         granted_permissions: vec![],
+        folder_name: safe_name,
     })
 }
 
@@ -797,6 +824,28 @@ pub async fn update_plugin(name: String, plugin_dir: String) -> Result<PluginInf
     fs::write(new_plugin_path.join(&new_manifest.entry), &entry_bytes)
         .map_err(|e| format!("Failed to save entry file: {}", e))?;
 
+    // Fetch the icon file if it's relative
+    if let Some(icon_path) = &new_manifest.icon {
+        if !icon_path.starts_with("http") && !icon_path.starts_with("data:") {
+            let icon_url = format!(
+                "https://raw.githubusercontent.com/{}/{}/{}/{}",
+                owner, repo, default_branch, icon_path
+            );
+            if let Ok(icon_resp) = client
+                .get(&icon_url)
+                .header("User-Agent", "Audion-Plugin-Manager")
+                .send()
+                .await
+            {
+                if icon_resp.status().is_success() {
+                    if let Ok(icon_bytes) = icon_resp.bytes().await {
+                        let _ = fs::write(new_plugin_path.join(icon_path), &icon_bytes);
+                    }
+                }
+            }
+        }
+    }
+
     // Update state, preserving enabled status and permissions from before
     let mut states = load_plugin_states(plugin_root.to_string_lossy().as_ref());
     let now = std::time::SystemTime::now()
@@ -828,6 +877,7 @@ pub async fn update_plugin(name: String, plugin_dir: String) -> Result<PluginInf
         enabled,
         manifest: new_manifest,
         granted_permissions,
+        folder_name: new_safe_name,
     })
 }
 

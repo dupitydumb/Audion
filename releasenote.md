@@ -6,6 +6,8 @@
 - **Extended Metadata Support**: Full support for `track_number`, `disc_number`, `musicbrainz_recording_id`, and additional JSON metadata for library tracks.
 - **Advanced Library Scanning**: Overhauled the library import and scanning engine to support new metadata fields and improve overall database consistency.
 - **Spotify Playlist Sync**: Enhanced cover art synchronization for Spotify-imported playlists, ensuring high-quality covers are prioritized over placeholders.
+- **Working Plugins Download Stats**: Added download stats for plugins. to make it easier to find the most popular plugins.
+-- **Added Icon for Plugins**: Added icons for plugins. to make it easier to identify them.
 
 ### UI & UX Improvements
 - **Lyrics UI Refinement**: Resolved lyrics overflow issues in the FullScreen Player. Implemented dynamic wrapping for long lines and optimized scaling to prevent text clipping.

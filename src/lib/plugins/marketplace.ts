@@ -274,6 +274,20 @@ export async function fetchCommunityPlugin(url: string): Promise<MarketplacePlug
       return null;
     }
 
+    // Resolve icon URL if it's relative
+    if (manifest.icon && 
+        !manifest.icon.startsWith('http') && 
+        !manifest.icon.startsWith('data:') &&
+        !manifest.icon.trim().startsWith('<svg')) {
+      try {
+        // manifestUrl is the direct URL to plugin.json
+        const baseUrl = manifestUrl.substring(0, manifestUrl.lastIndexOf('/') + 1);
+        manifest.icon_url = new URL(manifest.icon, baseUrl).href;
+      } catch (err) {
+        console.warn('[Marketplace] Failed to resolve icon URL:', err);
+      }
+    }
+
     const plugin: MarketplacePlugin = {
       manifest,
       curated: false,

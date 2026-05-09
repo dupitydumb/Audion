@@ -30,6 +30,7 @@ export interface AudionPluginManifest {
   cross_plugin_access?: CrossPluginAccess[];
   ui_slots?: string[]; // UI injection points
   icon?: string;
+  icon_url?: string;
   homepage?: string;
   category?: PluginCategory;
   tags?: string[];
@@ -108,6 +109,9 @@ export function validateManifest(manifest: unknown): manifest is AudionPluginMan
   }
   if (m.icon !== undefined && typeof m.icon !== 'string') {
     errors.push('Icon must be a string');
+  }
+  if (m.icon_url !== undefined && typeof m.icon_url !== 'string') {
+    errors.push('icon_url must be a string');
   }
   if (m.homepage !== undefined && typeof m.homepage !== 'string') {
     errors.push('Homepage must be a string');
