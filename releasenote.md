@@ -13,6 +13,7 @@
 - **Sidebar Enhancements**: Improved playlist cover art loading logic in the sidebar for better visual consistency.
 
 ### Bug Fixes & Stability
+- **Repeat Toggle Not Working**: Fixed the issue where the repeat toggle was not working.
 - **PR Merge Reconciliation**: Successfully resolved complex merge conflicts between the library metadata updates and core plugin runtime.
 - **Container Constraints**: Fixed layout breakage caused by long track titles and lyrics in the desktop player view.
 - **Mobile Lyric Scaling**: Fine-tuned scaling and padding for mobile lyrics to ensure no text is cut off during playback.
