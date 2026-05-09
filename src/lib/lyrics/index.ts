@@ -6,6 +6,7 @@
  */
 
 import { AppleMusic } from './applemusic';
+import { Genius } from './genius';
 import { LRCLib } from './lrclib';
 import { Musixmatch } from './musixmatch';
 import { FILTER_WORDS } from './constants';
@@ -149,6 +150,7 @@ export interface LyricsSource {
 // ---------------------------------------------------------------------------
 
 const _applemusic = new AppleMusic();
+const _genius     = new Genius();
 const _lrclib     = new LRCLib();
 const _musixmatch = new Musixmatch(null, true); // enhanced = word-by-word
 
@@ -223,7 +225,24 @@ export const LYRICS_SOURCES: LyricsSource[] = [
         parse(raw) {
             // LRCLIB only has line-level sync — skip the word-timing parser
             const lines = lyricsManager.parseLRC(raw, false);
-            return { lines, source: 'lrclib', format: 'lrc', hasWordSync: false, raw };
+            return { lines, source: 'lrclib', format: 'lrc', hasWordSync: false, hasSyllableSync: false, raw };
+        },
+    },
+
+    {
+        id:     'genius',
+        label:  'Genius',
+        format: 'json',
+
+        async fetch(title, artist, _album, _duration, _isrc) {
+            return await _genius.getLyrics(title, artist);
+        },
+
+        // satisfied here for the LyricsSource interface
+        // reparseFromCache intercepts format json
+        // this is a stub
+        parse(raw) {
+            return { lines: [], source: 'genius', format: 'json', hasWordSync: false, hasSyllableSync: false, raw };
         },
     },
 ];

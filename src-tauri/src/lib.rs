@@ -562,6 +562,7 @@ pub fn run() {
                     commands::get_cached_sources,
                     commands::read_lyrics_file,
                     commands::parse_apple_lyrics_json_cmd,
+                    commands::parse_genius_lyrics_json_cmd,
                     // Metadata commands
                     commands::download_and_save_audio,
                     commands::update_track_after_download,
@@ -729,6 +730,7 @@ pub fn run() {
                     commands::get_cached_sources,
                     commands::read_lyrics_file,
                     commands::parse_apple_lyrics_json_cmd,
+                    commands::parse_genius_lyrics_json_cmd,
                     // Metadata commands
                     commands::download_and_save_audio,
                     commands::update_track_after_download,

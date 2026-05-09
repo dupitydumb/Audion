@@ -336,6 +336,32 @@ function mapAppleLines(raw: AppleRawLine[]): LyricLine[] {
     }));
 }
 
+// ---------------------------------------------------------------------------
+// Genius JSON types
+// ---------------------------------------------------------------------------
+
+interface GeniusRawLine {
+    time:            number;
+    end_time:        number;
+    text:            string;
+    structure:       string;
+    opposite_turn:   boolean;
+    is_background:   boolean;
+    background_text: string;
+}
+
+/** map the rust Genius line array to our shared LyricLine */
+function mapGeniusLines(raw: GeniusRawLine[]): LyricLine[] {
+    return raw.map(l => ({
+        time:            l.time,
+        endTime:         l.end_time,
+        text:            l.text,
+        structure:       l.structure       || undefined,
+        opposite_turn:   l.opposite_turn   || undefined,
+        is_background:   l.is_background   || undefined,
+        background_text: l.background_text || undefined,
+    }));
+}
 /**
  * Re-parse a cached file into a LyricsResult.
  * Uses the source's own parse() method
@@ -348,27 +374,53 @@ async function reparseFromCache(
     sourceId: string,
 ): Promise<LyricsResult | null> {
 
-    // ── JSON (Apple Music syllable data) ───────────────────────────────────
+    // ── JSON: route to the correct rust parser by sourceId ─────────────────
     if (format === 'json') {
-        try {
-            const appleLines = await invoke<AppleRawLine[]>(
-                'parse_apple_lyrics_json_cmd', { raw }
-            );
-            const lines = mapAppleLines(appleLines);
-            const hasSyllableSync = lines.some(l =>
-                l.words?.some(w => w.is_split && w.syllables?.length)
-            );
-            return {
-                lines,
-                source:          sourceId,
-                format:          'json',
-                hasWordSync:     true,
-                hasSyllableSync,
-                raw,
-            };
-        } catch {
-            return null;
+        // ── Apple Music syllable JSON ───────────────────────────────────────
+        if (sourceId === 'applejson') {
+            try {
+                const appleLines = await invoke<AppleRawLine[]>(
+                    'parse_apple_lyrics_json_cmd', { raw }
+                );
+                const lines = mapAppleLines(appleLines);
+                const hasSyllableSync = lines.some(l =>
+                    l.words?.some(w => w.is_split && w.syllables?.length)
+                );
+                return {
+                    lines,
+                    source:          sourceId,
+                    format:          'json',
+                    hasWordSync:     true,
+                    hasSyllableSync,
+                    raw,
+                };
+            } catch {
+                return null;
+            }
         }
+
+        // ── Genius plain-text JSON ──────────────────────────────────────────
+        if (sourceId === 'genius') {
+            try {
+                const geniusLines = await invoke<GeniusRawLine[]>(
+                    'parse_genius_lyrics_json_cmd', { raw }
+                );
+                const lines = mapGeniusLines(geniusLines);
+                return {
+                    lines,
+                    source:          sourceId,
+                    format:          'json',
+                    hasWordSync:     false,
+                    hasSyllableSync: false,
+                    raw,
+                };
+            } catch {
+                return null;
+            }
+        }
+
+        // Unknown JSON source .bail out
+        return null;
     }
 
     // ── Virtual sources ────────────────────────────────────────────────────

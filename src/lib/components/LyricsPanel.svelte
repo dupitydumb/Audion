@@ -162,9 +162,10 @@
      * True when displaying unsynced embedded tag lyrics . no timestamps at all.
      * In this mode we suppress active/past/distance classes and auto-scroll.
      */
-    $: isUnsynced = !!$lyricsData
-        && ($lyricsData.source as string) === 'embedded'
-        && !($lyricsData as any).synced;
+     $: isUnsynced = !!$lyricsData && (
+        (($lyricsData.source as string) === 'embedded' && !($lyricsData as any).synced)
+        || (!$lyricsData.hasWordSync && !$lyricsData.hasSyllableSync && !hasLineSync)
+    );
 
     let sourceMenuOpen = false;
     function toggleSourceMenu()  { sourceMenuOpen = !sourceMenuOpen; }
@@ -173,9 +174,29 @@
     // Close the menu whenever a search completes (loading -> done)
     $: if (!$lyricsLoading) sourceMenuOpen = false;
 
+    function showPaxKeyToast() {
+        const toast = document.createElement('div');
+        toast.style.cssText = `position:fixed; bottom:100px; left:50%; transform:translateX(-50%); background:#c0392b; color:#fff; padding:10px 20px; border-radius:8px; z-index:10002; font-size:13px; box-shadow:0 4px 12px rgba(0,0,0,0.3); opacity:0; transition:0.3s; display:flex; align-items:center; gap:12px; white-space:nowrap;`;
+        const text = document.createElement('span');
+        text.textContent = 'Genius lyrics require a Paxsenix API key. Add it in the Qobuz plugin settings.';
+        toast.appendChild(text);
+        document.body.appendChild(toast);
+        requestAnimationFrame(() => toast.style.opacity = '1');
+        setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 4000);
+    }
+
     async function handleSourceSelect(sourceId: string) {
         sourceMenuOpen = false;
         if ($lyricsData?.source === sourceId) return;
+
+        if (sourceId === 'genius') {
+            const key = localStorage.getItem('qobuz_pax_api_key')?.trim() ?? '';
+            if (!key) {
+                showPaxKeyToast();
+                return;
+            }
+        }
+
         selectedSource.set(sourceId);
         await switchLyricsSource(sourceId);
     }
@@ -405,7 +426,8 @@
                         {@const clampedDist = Math.min(distance, 6)}
                         {@const isActive    = i === $activeLine}
                         {@const hasPrimary  = !!(line.words && line.words.length > 0)}
-                        {@const hasBgWords  = !!(line.background_words && line.background_words.length > 0)}
+                        {@const hasBgWords   = !!(line.background_words && line.background_words.length > 0)}
+                        {@const hasBgContent = hasBgWords || !!(line.background_text)}
 
                         <!--
                             Section label . rendered above the first line of each new section.
@@ -481,9 +503,9 @@
                                 Background vocal: word spans only on the active line.
                                 Non-active lines render background_text as plain text.
                             -->
-                            {#if hasBgWords}
+                            {#if hasBgContent}
                                 <span class="bg-vocal" aria-label="background vocals">
-                                    {#if isActive && line.background_words}
+                                    {#if isActive && line.background_words && line.background_words.length > 0}
                                         {#each line.background_words as bgWord, bgIdx}
                                             {@const bgState = getBgWordState(bgIdx, $wordSyncState)}
                                             {#if bgWord.is_split && bgWord.syllables && bgWord.syllables.length > 0}
@@ -546,6 +568,7 @@
                         {#if $lyricsData.hasSyllableSync} · Syllable sync
                         {:else if $lyricsData.hasWordSync} · Word sync
                         {:else if hasLineSync} · Line sync
+                        {:else} · Unsynced
                         {/if}
                     {/if}
                 </span>
