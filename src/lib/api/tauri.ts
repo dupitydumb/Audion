@@ -169,6 +169,7 @@ export interface Playlist {
     name: string;
     created_at: string | null;
     folder_path?: string | null;
+    cover_url?: string | null;
 }
 
 export interface Library {
@@ -440,8 +441,8 @@ export async function mergeDuplicateCovers(): Promise<MergeCoverResult> {
 
 // Playlist commands
 
-export async function createPlaylist(name: string): Promise<number> {
-    return await invoke('create_playlist', { name });
+export async function createPlaylist(name: string, coverUrl?: string | null): Promise<number> {
+    return await invoke('create_playlist', { name, coverUrl });
 }
 
 export async function getPlaylists(): Promise<Playlist[]> {

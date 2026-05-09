@@ -93,7 +93,7 @@ pub async fn begin_folder_import(
 
     let playlist_id = {
         let conn = db.conn.lock().map_err(|e| e.to_string())?;
-        let id = queries::create_playlist(&conn, &playlist_name)
+        let id = queries::create_playlist(&conn, &playlist_name, None)
             .map_err(|e| e.to_string())?;
         queries::set_playlist_folder_path(&conn, id, &folder_str)
             .map_err(|e| e.to_string())?;

@@ -80,8 +80,15 @@
     // Reactive cover source - updates instantly when playlistCovers changes
     $: coverSrc = (() => {
         if (!playlist) return generateSvgCover("Playlist");
+        
+        // 1. Check local session/custom cover overrides
         const custom = $playlistCovers && $playlistCovers[playlist.id];
         if (custom) return custom;
+        
+        // 2. Check database cover URL
+        if (playlist.cover_url) return playlist.cover_url;
+        
+        // 3. Fallback to generated SVG
         return generateSvgCover(playlist.name || "Playlist");
     })();
 

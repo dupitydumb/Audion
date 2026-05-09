@@ -41,7 +41,7 @@
         saveScroll("playlists", currentScrollTop);
     });
 
-    type Playlist = { id: number; name: string; folder_path?: string | null };
+    type Playlist = { id: number; name: string; folder_path?: string | null; cover_url?: string | null };
 
     // playlistCovers
     const typedPlaylistCovers: Writable<Record<string, string>> =
@@ -267,6 +267,7 @@
     function getCoverSrc(playlist: Playlist): string {
         return (
             $typedPlaylistCovers?.[playlist.id] ??
+            playlist.cover_url ??
             generateSvgCover(playlist.name || "Playlist", 512)
         );
     }

@@ -712,8 +712,8 @@ export class PluginRuntime {
         });
 
       case 'library.createPlaylist':
-        // args: [name]
-        return invoke('create_playlist', { name: args[0] });
+        // args: [name, coverUrl?]
+        return invoke('create_playlist', { name: args[0], coverUrl: args[1] || null });
 
       case 'library.addTrackToPlaylist':
         // args: [playlistId, trackId]
@@ -842,7 +842,7 @@ export class PluginRuntime {
       }) => this.callHost(pluginName, 'library.addExternalTrack', trackData);
 
       api.library.refresh = () => this.callHost(pluginName, 'library.refresh');
-      api.library.createPlaylist = (name: string) => this.callHost(pluginName, 'library.createPlaylist', name);
+      api.library.createPlaylist = (name: string, coverUrl?: string) => this.callHost(pluginName, 'library.createPlaylist', name, coverUrl);
       api.library.addTrackToPlaylist = (playlistId: number, trackId: number) => this.callHost(pluginName, 'library.addTrackToPlaylist', playlistId, trackId);
       api.library.updatePlaylistCover = (playlistId: number, coverUrl: string | null) => this.callHost(pluginName, 'library.updatePlaylistCover', playlistId, coverUrl);
       api.library.updateTrackCoverUrl = (trackId: number, coverUrl: string | null) => this.callHost(pluginName, 'library.updateTrackCoverUrl', trackId, coverUrl);

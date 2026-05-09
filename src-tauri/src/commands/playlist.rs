@@ -4,13 +4,22 @@ use rusqlite::params;
 use tauri::State;
 
 #[tauri::command]
-pub async fn create_playlist(name: String, db: State<'_, Database>) -> Result<i64, String> {
+pub async fn create_playlist(
+    name: String,
+    cover_url: Option<String>,
+    db: State<'_, Database>,
+) -> Result<i64, String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    let id = queries::create_playlist(&conn, &name).map_err(|e| e.to_string())?;
+    let id = queries::create_playlist(&conn, &name, cover_url.as_deref())
+        .map_err(|e| e.to_string())?;
 
     // Enqueue sync change
     if queries::is_logged_in(&conn) {
-        let payload = serde_json::json!({ "name": name }).to_string();
+        let payload = serde_json::json!({
+            "name": name,
+            "coverUrl": cover_url
+        })
+        .to_string();
         let _ = queries::enqueue_sync_change(
             &conn,
             "playlist",

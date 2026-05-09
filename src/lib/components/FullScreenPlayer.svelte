@@ -1380,8 +1380,8 @@
   .desktop-content {
     flex: 1;
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 4rem;
+    grid-template-columns: auto 1fr;
+    gap: 3rem;
     align-items: center;
     max-width: 1400px;
     margin: 0 auto;
@@ -1758,6 +1758,7 @@
     flex-direction: column;
     overflow: hidden;
     max-height: 100%;
+    min-width: 0;
   }
 
   .tab-switcher {
@@ -1797,13 +1798,16 @@
     overflow: hidden;
     position: relative;
     border-radius: 24px;
+    min-width: 0;
   }
 
   /* Lyrics Content Styling */
   .desktop-lyrics-container {
     height: 100%;
+    width: 100%;
     overflow-y: auto;
-    padding: 30vh 0;
+    overflow-x: hidden;
+    padding: 30vh 3rem 30vh 0;
     scrollbar-width: none;
     will-change: transform;
     mask-image: linear-gradient(
@@ -1842,6 +1846,11 @@
     will-change: transform, opacity;
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
+    width: 100%;
+    max-width: 90%;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    white-space: normal;
   }
 
   .desktop-lyric-line.past-line {
@@ -2061,9 +2070,11 @@
 
   .mobile-lyrics-wrapper .lyrics-container {
     height: 100%;
+    width: 100%;
     overflow-y: auto;
+    overflow-x: hidden;
     scrollbar-width: none;
-    padding: 2rem 0 25vh;
+    padding: 2rem 1.5rem 25vh;
     mask-image: linear-gradient(
       to bottom,
       transparent,
@@ -2088,6 +2099,8 @@
     padding: 0 1rem;
     line-height: 1.4;
     overflow: hidden;
+    overflow-wrap: break-word;
+    word-break: break-word;
   }
 
   .compact-line {
@@ -2113,6 +2126,11 @@
     padding: 0.75rem 0;
     color: rgba(255, 255, 255, 0.4);
     transition: all 0.3s ease;
+    width: 100%;
+    max-width: 94%;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    white-space: normal;
   }
 
   .mobile-lyrics-wrapper .lyric-line.active {

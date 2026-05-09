@@ -715,12 +715,9 @@ fn apply_full_sync_playlists(
             id
         } else {
             // Create the playlist
-            let id = queries::create_playlist(&conn, name).map_err(|e| e.to_string())?;
+            let id = queries::create_playlist(&conn, name, cover_url).map_err(|e| e.to_string())?;
             queries::set_playlist_server_id(&conn, id, server_id).map_err(|e| e.to_string())?;
             let _ = queries::store_id_mapping(&conn, &id.to_string(), "playlist", server_id);
-            if let Some(url) = cover_url {
-                queries::update_playlist_cover(&conn, id, Some(url)).map_err(|e| e.to_string())?;
-            }
             tracing::info!(
                 "Created playlist '{}' (local_id={}, server_id={})",
                 name,
@@ -1121,7 +1118,7 @@ fn apply_single_server_change(db: &Database, change: &ServerChange) -> Result<()
                     if existing.is_none() {
                         // Create the playlist locally
                         let local_id =
-                            queries::create_playlist(&conn, name).map_err(|e| e.to_string())?;
+                            queries::create_playlist(&conn, name, cover_url).map_err(|e| e.to_string())?;
                         // Map it to the server ID
                         queries::set_playlist_server_id(&conn, local_id, &change.entity_id)
                             .map_err(|e| e.to_string())?;
@@ -1132,11 +1129,6 @@ fn apply_single_server_change(db: &Database, change: &ServerChange) -> Result<()
                             "playlist",
                             &change.entity_id,
                         );
-                        // Set cover if provided
-                        if let Some(url) = cover_url {
-                            queries::update_playlist_cover(&conn, local_id, Some(url))
-                                .map_err(|e| e.to_string())?;
-                        }
                         tracing::info!(
                             "Created local playlist {} (server_id={})",
                             local_id,

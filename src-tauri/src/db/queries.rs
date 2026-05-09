@@ -859,8 +859,11 @@ pub fn get_album_by_id(conn: &Connection, album_id: i64) -> Result<Option<Album>
 }
 
 // Playlist operations
-pub fn create_playlist(conn: &Connection, name: &str) -> Result<i64> {
-    conn.execute("INSERT INTO playlists (name) VALUES (?1)", [name])?;
+pub fn create_playlist(conn: &Connection, name: &str, cover_url: Option<&str>) -> Result<i64> {
+    conn.execute(
+        "INSERT INTO playlists (name, cover_url) VALUES (?1, ?2)",
+        params![name, cover_url],
+    )?;
     Ok(conn.last_insert_rowid())
 }
 

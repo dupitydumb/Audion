@@ -41,6 +41,7 @@
         getPlaylistTracks,
         renamePlaylist,
     } from "$lib/api/tauri";
+    import { playlistCovers, setPlaylistCover } from "$lib/stores/playlistCovers";
     import { progressiveScan } from "$lib/stores/progressiveScan";
     import { confirm, prompt } from "$lib/stores/dialogs";
     import {
@@ -50,7 +51,6 @@
         isPlaying,
         queue,
     } from "$lib/stores/player";
-    import { setPlaylistCover } from "$lib/stores/playlistCovers";
     import { uiSlotManager } from "$lib/plugins/ui-slots";
 
     import { updates } from "$lib/stores/updates";
@@ -99,6 +99,40 @@
         playing: boolean,
     ): boolean {
         return currentId === playlistId && playing;
+    }
+
+    function initialsFromName(name: string): string {
+        if (!name) return "PL";
+        const parts = name.trim().split(/\s+/);
+        return (
+            parts
+                .slice(0, 2)
+                .map((p) => p[0]?.toUpperCase() ?? "")
+                .join("") || name.slice(0, 2).toUpperCase()
+        );
+    }
+
+    function hashToColor(str: string): string {
+        let h = 0;
+        for (let i = 0; i < str.length; i++)
+            h = (h << 5) - h + str.charCodeAt(i);
+        return `hsl(${Math.abs(h) % 360} 30% 30%)`;
+    }
+
+    function generateSvgCover(name: string, size = 512): string {
+        const initials = initialsFromName(name);
+        const bg = hashToColor(name || "playlist");
+        const svg =
+            `<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' viewBox='0 0 ${size} ${size}'>` +
+            `<rect width='100%' height='100%' fill='${bg}'/>` +
+            `<text x='50%' y='50%' dominant-baseline='middle' text-anchor='middle' font-family='Inter, system-ui, sans-serif' font-size='${Math.floor(size / 3)}' fill='white' font-weight='700'>${initials}</text>` +
+            `</svg>`;
+        return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+    }
+
+    function handleImageError(e: Event, playlist: Playlist) {
+        const img = e.target as HTMLImageElement;
+        img.src = generateSvgCover(playlist.name || "Playlist", 512);
     }
 
     // Load track counts for all playlists
@@ -573,16 +607,36 @@
                                     <span class="bar"></span>
                                 </div>
                             {:else}
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="24"
-                                    height="24"
-                                >
-                                    <path
-                                        d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"
-                                    />
-                                </svg>
+                                <div class="playlist-icon-container">
+                                    {#if $playlistCovers && $playlistCovers[playlist.id]}
+                                        <img
+                                            src={$playlistCovers[playlist.id]}
+                                            alt=""
+                                            class="sidebar-playlist-art"
+                                            on:error={(e) =>
+                                                handleImageError(e, playlist)}
+                                        />
+                                    {:else if playlist.cover_url}
+                                        <img
+                                            src={playlist.cover_url}
+                                            alt=""
+                                            class="sidebar-playlist-art"
+                                            on:error={(e) =>
+                                                handleImageError(e, playlist)}
+                                        />
+                                    {:else}
+                                        <svg
+                                            viewBox="0 0 24 24"
+                                            fill="currentColor"
+                                            width="24"
+                                            height="24"
+                                        >
+                                            <path
+                                                d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"
+                                            />
+                                        </svg>
+                                    {/if}
+                                </div>
                             {/if}
                             <span class="playlist-name">
                                 {playlist.name}
@@ -1028,5 +1082,21 @@
             padding: 14px var(--spacing-md);
             min-height: 48px;
         }
+    }
+    .playlist-icon-container {
+        width: 24px;
+        height: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        overflow: hidden;
+        border-radius: 4px;
+    }
+
+    .sidebar-playlist-art {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
     }
 </style>

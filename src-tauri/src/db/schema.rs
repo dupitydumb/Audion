@@ -219,6 +219,7 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         [],
     );
     let _ = conn.execute("ALTER TABLE playlists ADD COLUMN folder_path TEXT", []);
+    let _ = conn.execute("ALTER TABLE playlists ADD COLUMN cover_url TEXT", []);
     let _ = conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_server_id ON playlists(server_id)",
         [],
