@@ -111,6 +111,53 @@ class PluginPermissionManager {
   }
 }
 
+// search registry types 
+
+export interface SearchQuery {
+  title: string;
+  artist?: string;
+  isrc?: string;
+  duration_ms?: number;
+}
+
+export interface SearchResult {
+  sourceId: string;
+  status: 'success' | 'error' | 'not_found';
+
+  // on success
+  title?: string;
+  artist?: string;
+  album?: string;
+  duration?: number;
+  external_id?: string;
+  source_type?: string;
+  format?: string | null;
+  bitrate?: number | null;
+  track_number?: number | null;
+  disc_number?: number | null;
+  cover_url?: string | null;
+  // Identifiers
+  musicbrainz_recording_id?: string | null;
+
+  // Catch-all for source-specific extras that don't map to a schema column
+  // (ISRC, composer, replay gain, quality tier, source-internal flags).
+  // Stored as-is in the metadata_json column . callers can read it back via raw.
+  metadata_json?: Record<string, any> | null;
+  score?: number;
+  raw?: any;
+
+  // on error
+  error?: Error;
+}
+
+// search source handler receives query and an onResult callback
+// it must call onResult exactly once with status like success, not_found,error
+// runtime uses this guarantee to know when all sources have reported back
+export type SearchSourceHandler = (
+  query: SearchQuery,
+  onResult: (result: SearchResult) => void
+) => void;
+
 export interface WasmPluginExports {
   init?: () => void;
   start?: () => void;
@@ -150,6 +197,11 @@ export class PluginRuntime {
   // Stream resolvers: map of source_type -> resolver function
   // Resolver takes (external_id, options?) and returns Promise<string | null> (stream URL)
   streamResolvers: Map<string, (externalId: string, options?: any) => Promise<string | null>> = new Map();
+
+  // search sources: map of sourceId => handler function
+  private searchSources: Map<string, SearchSourceHandler> = new Map();
+  // track which plugin owns which source (for cleanup on unload)
+  private searchSourceOwners: Map<string, string> = new Map(); // sourceId => pluginName
 
   // permission manager
   permissionManager: PluginPermissionManager;
@@ -649,7 +701,13 @@ export class PluginRuntime {
             external_id: trackData.external_id,
             format: trackData.format || null,
             bitrate: trackData.bitrate || null,
-            stream_url: trackData.stream_url || null  // The decoded stream URL
+            stream_url: trackData.stream_url || null,  // The decoded stream URL
+            track_number: trackData.track_number || null,
+            disc_number: trackData.disc_number || null,
+            musicbrainz_recording_id: trackData.musicbrainz_recording_id || null,
+            metadata_json: trackData.metadata_json
+              ? JSON.stringify(trackData.metadata_json)
+              : null,
           }
         });
 
@@ -766,7 +824,23 @@ export class PluginRuntime {
     if (this.hasPermission(pluginName, 'library:write')) {
       if (!api.library) api.library = {};
       api.library.downloadTrack = (options: any) => this.callHost(pluginName, 'library.downloadTrack', options);
-      api.library.addExternalTrack = (trackData: any) => this.callHost(pluginName, 'library.addExternalTrack', trackData);
+      api.library.addExternalTrack = (trackData: {
+        title: string;
+        artist: string;
+        album?: string | null;
+        duration?: number | null;
+        cover_url?: string | null;
+        source_type: string;
+        external_id: string;
+        format?: string | null;
+        bitrate?: number | null;
+        stream_url?: string | null;
+        track_number?: number | null;
+        disc_number?: number | null;
+        musicbrainz_recording_id?: string | null;
+        metadata_json?: Record<string, any> | null;
+      }) => this.callHost(pluginName, 'library.addExternalTrack', trackData);
+
       api.library.refresh = () => this.callHost(pluginName, 'library.refresh');
       api.library.createPlaylist = (name: string) => this.callHost(pluginName, 'library.createPlaylist', name);
       api.library.addTrackToPlaylist = (playlistId: number, trackId: number) => this.callHost(pluginName, 'library.addTrackToPlaylist', playlistId, trackId);
@@ -815,6 +889,74 @@ export class PluginRuntime {
         }
       };
     }
+
+    // search registry
+    // sources register themselves; consumers query all sources at once and receive
+    // one search result per source via onResult, then a single onAllDone when
+    // every source has reported back (regardless of success / error / not_found).
+    api.search = {
+      // register this plugin as a searchable source.
+      // handler(query, onResult) .must call onResult exactly once.
+      registerSource: (sourceId: string, handler: SearchSourceHandler) => {
+        if (this.searchSources.has(sourceId)) {
+          console.warn(`[PluginRuntime] Search source '${sourceId}' is already registered ; overwriting (previous owner: '${this.searchSourceOwners.get(sourceId)}')`);
+        }
+        this.searchSources.set(sourceId, handler);
+        this.searchSourceOwners.set(sourceId, pluginName);
+        console.log(`[PluginRuntime] Registered search source '${sourceId}' from plugin '${pluginName}'`);
+      },
+
+      // unregister this plugin's search source.
+      // only the owning plugin can remove its own source.
+      unregisterSource: (sourceId: string) => {
+        if (this.searchSourceOwners.get(sourceId) !== pluginName) {
+          console.warn(`[PluginRuntime] Plugin '${pluginName}' tried to unregister search source '${sourceId}' it does not own`);
+          return;
+        }
+        this.searchSources.delete(sourceId);
+        this.searchSourceOwners.delete(sourceId);
+        console.log(`[PluginRuntime] Unregistered search source '${sourceId}' from plugin '${pluginName}'`);
+      },
+
+      // fan a query out to every registered source in parallel
+      // onResult is called once per source status:success, not_found,error
+      // onAllDone is called once after every source has reported back
+      // if no sources are registered, onAllDone is called immediately with an empty result set
+      query: (
+        query: SearchQuery,
+        onResult: (result: SearchResult) => void,
+        onAllDone: () => void
+      ) => {
+        if (this.searchSources.size === 0) {
+          console.warn(`[PluginRuntime] search.query called by '${pluginName}' but no search sources are registered`);
+          onAllDone();
+          return;
+        }
+
+        // track which sources are still pending
+        // runtime wraps onResult per-source
+        const pending = new Set(this.searchSources.keys());
+
+        for (const [sourceId, handler] of this.searchSources) {
+          const wrappedOnResult = (result: SearchResult) => {
+            // ensure sourceId is stamped
+            result.sourceId = sourceId;
+            onResult(result);
+            pending.delete(sourceId);
+            if (pending.size === 0) onAllDone();
+          };
+
+          try {
+            handler(query, wrappedOnResult);
+          } catch (err) {
+            // if a handler throws, treat it as error
+            // so onAllDone still fires
+            console.error(`[PluginRuntime] Search source '${sourceId}' threw synchronously:`, err);
+            wrappedOnResult({ sourceId, status: 'error', error: err as Error });
+          }
+        }
+      }
+    };
 
     // Network API - CORS-free fetch (always available for plugins with network:fetch permission)
     if (this.hasPermission(pluginName, 'network:fetch')) {
@@ -1059,6 +1201,15 @@ export class PluginRuntime {
         }
       });
 
+      // unregister search sources owned by this plugin
+      this.searchSourceOwners.forEach((owner, sourceId) => {
+        if (owner === name) {
+          this.searchSources.delete(sourceId);
+          this.searchSourceOwners.delete(sourceId);
+          console.log(`[PluginRuntime] Unregistered search source '${sourceId}' (plugin '${name}' unloaded)`);
+        }
+      });
+
       // 6. Reset and clear rate limiters
       plugin.rateLimiters.api.reset();
       plugin.rateLimiters.storage.reset();
@@ -1183,6 +1334,37 @@ export class PluginRuntime {
   // Get a specific plugin
   getPlugin(name: string): LoadedPlugin | undefined {
     return this.plugins.get(name);
+  }
+
+  // fan a search query out to all registered search sources.
+  // returns a Promise that resolves with all results once every source has reported back.
+  resolveSearch(query: SearchQuery): Promise<SearchResult[]> {
+    return new Promise((resolve) => {
+      const collected: SearchResult[] = [];
+      const pending = new Set(this.searchSources.keys());
+
+      if (pending.size === 0) {
+        console.warn(`[PluginRuntime] resolveSearch called but no search sources are registered`);
+        resolve(collected);
+        return;
+      }
+
+      for (const [sourceId, handler] of this.searchSources) {
+        const wrappedOnResult = (result: SearchResult) => {
+          result.sourceId = sourceId;
+          collected.push(result);
+          pending.delete(sourceId);
+          if (pending.size === 0) resolve(collected);
+        };
+
+        try {
+          handler(query, wrappedOnResult);
+        } catch (err) {
+          console.error(`[PluginRuntime] Search source '${sourceId}' threw synchronously:`, err);
+          wrappedOnResult({ sourceId, status: 'error', error: err as Error });
+        }
+      }
+    });
   }
 
   // Resolve stream URL for external tracks
