@@ -152,62 +152,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup (Node, Rust, cache, deps)
+        uses: ./.github/actions/setup
         with:
-          node-version: 20
-          cache: 'npm'
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: './src-tauri -> target'
-
-      - name: Install npm dependencies
-        run: npm install
-
-      - name: Install Linux system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libjavascriptcoregtk-4.1-dev \
-            librsvg2-dev \
-            patchelf \
-            libasound2-dev \
-            build-essential \
-            curl wget file \
-            libxdo-dev \
-            libssl-dev \
-            libgtk-3-dev \
-            libgdk-pixbuf2.0-dev \
-            libsoup-3.0-dev \
-            xvfb \
-            libayatana-appindicator3-dev || \
-            sudo apt-get install -y libappindicator3-dev
-
-          # Minimal EGL/GL — software rasterizer only, no GPU driver deps baked in
-          sudo apt-get install -y \
-            libgl1-mesa-dri \
-            libgl1-mesa-dev \
-            libegl1-mesa-dev \
-            libgbm-dev
+          platform: linux
 
       - name: Build Tauri app
-        env:
-          # Software rendering for the build runner (headless CI)
-          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
-          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
-          LIBGL_ALWAYS_SOFTWARE: "1"
-          GALLIUM_DRIVER: "llvmpipe"
-          GDK_BACKEND: "x11"
-          XDG_SESSION_TYPE: "x11"
-          WAYLAND_DISPLAY: ""
-          # Do NOT force software GL into the final binary env —
-          # only set for this build step so the AppImage itself stays neutral
         run: |
           xvfb-run -a \
             --server-args="-screen 0 1920x1080x24 -ac +extension GLX +render -noreset" \
@@ -216,13 +166,13 @@ jobs:
       - name: Patch AppImage with GPU-safe wrapper script
         run: |
           APPIMAGE=$(find src-tauri/target/release/bundle/appimage -name "*.AppImage" | head -1)
+          if [ -z "$APPIMAGE" ]; then echo "No AppImage found"; exit 1; fi
           echo "Patching: $APPIMAGE"
 
           # Extract AppImage
           chmod +x "$APPIMAGE"
           "$APPIMAGE" --appimage-extract
-          ls squashfs-root/
-
+          
           # Inject wrapper that auto-detects GPU environment at runtime
           cat > squashfs-root/AppRun-real << 'WRAPPER_EOF'
           #!/bin/bash
@@ -231,37 +181,46 @@ jobs:
           # ---------------------------------------------------------------------------
           # GPU / WebKit environment auto-detection
           # Bazzite and other immutable distros may have Wayland-only or broken EGL.
-          # We probe for EGL support and fall back gracefully.
           # ---------------------------------------------------------------------------
 
-          # Always disable dmabuf renderer — it fails on many Mesa/driver combos
+          # Always disable dmabuf renderer — it is the most common cause of blank screens on Mesa/NVIDIA
           export WEBKIT_DISABLE_DMABUF_RENDERER=1
 
-          # Detect if we can use hardware compositing
-          if ! command -v eglinfo &>/dev/null || ! eglinfo 2>/dev/null | grep -q "EGL_VERSION"; then
-            # No working EGL — force software compositing
-            export WEBKIT_DISABLE_COMPOSITING_MODE=1
-            export LIBGL_ALWAYS_SOFTWARE=1
-            export GALLIUM_DRIVER=llvmpipe
-          fi
-
-          # Wayland detection — prefer X11 fallback for WebKit stability
+          # Wayland detection — prefer X11 fallback for WebKitGTK 4.x stability
           if [ -n "$WAYLAND_DISPLAY" ] && [ -z "$FORCE_WAYLAND" ]; then
-            # Running under Wayland compositor — use XWayland for WebKit
             export GDK_BACKEND=x11
             export QT_QPA_PLATFORM=xcb
           fi
 
           # ALSA/audio safety
-          export ALSA_CONFIG_PATH=/usr/share/alsa/alsa.conf
+          if [ -z "$ALSA_CONFIG_PATH" ] && [ -f /usr/share/alsa/alsa.conf ]; then
+            export ALSA_CONFIG_PATH=/usr/share/alsa/alsa.conf
+          fi
 
-          exec "$HERE/usr/bin/audion" "$@"
+          # Robust binary detection
+          if [ -f "$HERE/usr/bin/Audion" ]; then
+            BIN="$HERE/usr/bin/Audion"
+          elif [ -f "$HERE/usr/bin/audion" ]; then
+            BIN="$HERE/usr/bin/audion"
+          else
+            BIN=$(find "$HERE/usr/bin" -type f -executable | head -1)
+          fi
+
+          exec "$BIN" "$@"
           WRAPPER_EOF
 
           chmod +x squashfs-root/AppRun-real
 
           # Back up original AppRun and replace
-          mv squashfs-root/AppRun squashfs-root/AppRun-original
+          if [ -L squashfs-root/AppRun ]; then
+            # If it's a symlink, resolve it and move the target
+            ORIG_TARGET=$(readlink squashfs-root/AppRun)
+            mv "squashfs-root/$ORIG_TARGET" squashfs-root/AppRun-original
+            rm squashfs-root/AppRun
+          else
+            mv squashfs-root/AppRun squashfs-root/AppRun-original
+          fi
+
           cat > squashfs-root/AppRun << 'APPRUN_EOF'
           #!/bin/bash
           HERE="$(dirname "$(readlink -f "${0}")")"
@@ -310,10 +269,16 @@ jobs:
       - name: Rename artifacts
         run: |
           VER="${{ steps.info.outputs.version }}"
-          mv src-tauri/target/release/bundle/deb/*.deb \
-            src-tauri/target/release/bundle/deb/audion_${VER}_linux.deb
-          mv src-tauri/target/release/bundle/appimage/audion-patched.AppImage \
-            src-tauri/target/release/bundle/appimage/audion_${VER}_linux.AppImage
+          # Rename DEB
+          DEB_FILE=$(find src-tauri/target/release/bundle/deb -name "*.deb" | head -1)
+          if [ -n "$DEB_FILE" ]; then
+            mv "$DEB_FILE" "src-tauri/target/release/bundle/deb/audion_${VER}_linux.deb"
+          fi
+          # Rename Patched AppImage
+          if [ -f src-tauri/target/release/bundle/appimage/audion-patched.AppImage ]; then
+            mv src-tauri/target/release/bundle/appimage/audion-patched.AppImage \
+               src-tauri/target/release/bundle/appimage/audion_${VER}_linux.AppImage
+          fi
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -339,6 +304,7 @@ jobs:
           curl -H "Content-Type: application/json" -X POST \
             -d "{\"embeds\": [{\"title\": \"🐧 Linux build v$VERSION\", \"description\": \"Linux release updated\", \"color\": 1947988, \"url\": \"https://github.com/${{ github.repository }}/releases/tag/v$VERSION\"}]}" \
             "$DISCORD_WEBHOOK_URL"
+
   # ---------------------------------------------------------------------------
   # Flatpak Build
   # ---------------------------------------------------------------------------
