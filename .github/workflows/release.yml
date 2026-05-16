@@ -137,11 +137,12 @@ jobs:
           } | ConvertTo-Json
           Invoke-RestMethod -Uri $env:DISCORD_WEBHOOK_URL -Method Post -Body $payload -ContentType "application/json"
 
-  # ---------------------------------------------------------------------------
-  # Linux Build
-  # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Linux Build — Universal AppImage (GPU-safe, Bazzite/immutable distro compat)
+# ---------------------------------------------------------------------------
   release-linux:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04        # ← 22.04, NOT 24.04 (older glibc = broader compat)
     needs: release-windows
     if: |
       always() &&
@@ -151,44 +152,133 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup (Node, Rust, cache, deps)
-        uses: ./.github/actions/setup
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          platform: linux
+          node-version: 20
+          cache: 'npm'
 
-      - name: Install pinned Linux WebKit dependencies (Ubuntu 24.04)
-        shell: bash
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Install Linux system dependencies
         run: |
           sudo apt-get update
-          # Prefer known-good versions when available; fall back to latest 24.04 packages.
-          if ! sudo apt-get install -y \
-            libwebkit2gtk-4.1-0=2.44.0-2 \
-            libwebkit2gtk-4.1-dev=2.44.0-2 \
-            libjavascriptcoregtk-4.1-0=2.44.0-2 \
-            libjavascriptcoregtk-4.1-dev=2.44.0-2 \
-            gir1.2-javascriptcoregtk-4.1=2.44.0-2 \
-            gir1.2-webkit2-4.1=2.44.0-2; then
-            echo "Pinned WebKit versions unavailable on current runner image; using latest Ubuntu 24.04 packages."
-            sudo apt-get install -y \
-              libwebkit2gtk-4.1-0 \
-              libwebkit2gtk-4.1-dev \
-              libjavascriptcoregtk-4.1-0 \
-              libjavascriptcoregtk-4.1-dev \
-              gir1.2-javascriptcoregtk-4.1 \
-              gir1.2-webkit2-4.1
-          fi
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libjavascriptcoregtk-4.1-dev \
+            librsvg2-dev \
+            patchelf \
+            libasound2-dev \
+            build-essential \
+            curl wget file \
+            libxdo-dev \
+            libssl-dev \
+            libgtk-3-dev \
+            libgdk-pixbuf2.0-dev \
+            libsoup-3.0-dev \
+            xvfb \
+            libayatana-appindicator3-dev || \
+            sudo apt-get install -y libappindicator3-dev
+
+          # Minimal EGL/GL — software rasterizer only, no GPU driver deps baked in
+          sudo apt-get install -y \
+            libgl1-mesa-dri \
+            libgl1-mesa-dev \
+            libegl1-mesa-dev \
+            libgbm-dev
 
       - name: Build Tauri app
         env:
+          # Software rendering for the build runner (headless CI)
           WEBKIT_DISABLE_COMPOSITING_MODE: "1"
+          WEBKIT_DISABLE_DMABUF_RENDERER: "1"
           LIBGL_ALWAYS_SOFTWARE: "1"
-          GALLIUM_DRIVER: llvmpipe
-          GDK_BACKEND: x11
-          XDG_SESSION_TYPE: x11
-          QT_QPA_PLATFORM: xcb
-          QT_OPENGL: software
+          GALLIUM_DRIVER: "llvmpipe"
+          GDK_BACKEND: "x11"
+          XDG_SESSION_TYPE: "x11"
           WAYLAND_DISPLAY: ""
-        run: xvfb-run -a --server-args="-screen 0 1920x1080x24 -ac +extension GLX +render -noreset" npm run tauri build
+          # Do NOT force software GL into the final binary env —
+          # only set for this build step so the AppImage itself stays neutral
+        run: |
+          xvfb-run -a \
+            --server-args="-screen 0 1920x1080x24 -ac +extension GLX +render -noreset" \
+            npm run tauri build
+
+      - name: Patch AppImage with GPU-safe wrapper script
+        run: |
+          APPIMAGE=$(find src-tauri/target/release/bundle/appimage -name "*.AppImage" | head -1)
+          echo "Patching: $APPIMAGE"
+
+          # Extract AppImage
+          chmod +x "$APPIMAGE"
+          "$APPIMAGE" --appimage-extract
+          ls squashfs-root/
+
+          # Inject wrapper that auto-detects GPU environment at runtime
+          cat > squashfs-root/AppRun-real << 'WRAPPER_EOF'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "${0}")")"
+
+          # ---------------------------------------------------------------------------
+          # GPU / WebKit environment auto-detection
+          # Bazzite and other immutable distros may have Wayland-only or broken EGL.
+          # We probe for EGL support and fall back gracefully.
+          # ---------------------------------------------------------------------------
+
+          # Always disable dmabuf renderer — it fails on many Mesa/driver combos
+          export WEBKIT_DISABLE_DMABUF_RENDERER=1
+
+          # Detect if we can use hardware compositing
+          if ! command -v eglinfo &>/dev/null || ! eglinfo 2>/dev/null | grep -q "EGL_VERSION"; then
+            # No working EGL — force software compositing
+            export WEBKIT_DISABLE_COMPOSITING_MODE=1
+            export LIBGL_ALWAYS_SOFTWARE=1
+            export GALLIUM_DRIVER=llvmpipe
+          fi
+
+          # Wayland detection — prefer X11 fallback for WebKit stability
+          if [ -n "$WAYLAND_DISPLAY" ] && [ -z "$FORCE_WAYLAND" ]; then
+            # Running under Wayland compositor — use XWayland for WebKit
+            export GDK_BACKEND=x11
+            export QT_QPA_PLATFORM=xcb
+          fi
+
+          # ALSA/audio safety
+          export ALSA_CONFIG_PATH=/usr/share/alsa/alsa.conf
+
+          exec "$HERE/usr/bin/audion" "$@"
+          WRAPPER_EOF
+
+          chmod +x squashfs-root/AppRun-real
+
+          # Back up original AppRun and replace
+          mv squashfs-root/AppRun squashfs-root/AppRun-original
+          cat > squashfs-root/AppRun << 'APPRUN_EOF'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          exec "$HERE/AppRun-real" "$@"
+          APPRUN_EOF
+          chmod +x squashfs-root/AppRun
+
+          # Repack the AppImage
+          wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
+            -O /tmp/appimagetool
+          chmod +x /tmp/appimagetool
+
+          ARCH=x86_64 /tmp/appimagetool --no-appstream squashfs-root \
+            "src-tauri/target/release/bundle/appimage/audion-patched.AppImage"
+
+          # Clean up extracted dir
+          rm -rf squashfs-root
 
       - name: Set version and prerelease flags
         id: info
@@ -220,8 +310,10 @@ jobs:
       - name: Rename artifacts
         run: |
           VER="${{ steps.info.outputs.version }}"
-          mv src-tauri/target/release/bundle/deb/*.deb src-tauri/target/release/bundle/deb/audion_${VER}_linux.deb
-          mv src-tauri/target/release/bundle/appimage/*.AppImage src-tauri/target/release/bundle/appimage/audion_${VER}_linux.AppImage
+          mv src-tauri/target/release/bundle/deb/*.deb \
+            src-tauri/target/release/bundle/deb/audion_${VER}_linux.deb
+          mv src-tauri/target/release/bundle/appimage/audion-patched.AppImage \
+            src-tauri/target/release/bundle/appimage/audion_${VER}_linux.AppImage
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -244,8 +336,9 @@ jobs:
           VERSION: ${{ steps.info.outputs.version }}
         run: |
           if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
-          curl -H "Content-Type: application/json" -X POST -d "{\"embeds\": [{\"title\": \"🐧 Linux build v$VERSION\", \"description\": \"Linux release has been ${{ github.event_name == 'push' && 'created' || 'updated' }}\", \"color\": 1947988, \"url\": \"https://github.com/${{ github.repository }}/releases/tag/v$VERSION\"}]}" "$DISCORD_WEBHOOK_URL"
-
+          curl -H "Content-Type: application/json" -X POST \
+            -d "{\"embeds\": [{\"title\": \"🐧 Linux build v$VERSION\", \"description\": \"Linux release updated\", \"color\": 1947988, \"url\": \"https://github.com/${{ github.repository }}/releases/tag/v$VERSION\"}]}" \
+            "$DISCORD_WEBHOOK_URL"
   # ---------------------------------------------------------------------------
   # Flatpak Build
   # ---------------------------------------------------------------------------
