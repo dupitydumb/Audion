@@ -229,11 +229,14 @@ jobs:
           chmod +x squashfs-root/AppRun
 
           # Repack the AppImage
+          # NOTE: appimagetool is itself an AppImage. GitHub Actions runners do not
+          # have libfuse.so.2 (FUSE 2). Setting APPIMAGE_EXTRACT_AND_RUN=1 makes the
+          # AppImage runtime self-extract to a tmpdir and exec without FUSE.
           wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
             -O /tmp/appimagetool
           chmod +x /tmp/appimagetool
 
-          ARCH=x86_64 /tmp/appimagetool --no-appstream squashfs-root \
+          APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 /tmp/appimagetool --no-appstream squashfs-root \
             "src-tauri/target/release/bundle/appimage/audion-patched.AppImage"
 
           # Clean up extracted dir
