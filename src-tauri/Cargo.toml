@@ -116,16 +116,36 @@ rodio = { version = "0.19", default-features = false, features = [
 ] }
 
 symphonia = { version = "0.5", default-features = false, features = [
+    # Containers
+    "isomp4",
+    "ogg",
+    "mkv",
+    "wav",
+    "aiff",
+
+    # Codecs
     "flac",
     "mp3",
+    "mp1",
+    "mp2",
     "aac",
-    "ogg",
-    "wav",
-    "isomp4",
+    "alac",
+    "vorbis",
+    "adpcm",
+    "pcm",
+
+    # Optimizations
+    "opt-simd",
 ] }
+
 
 cpal = "0.15"
 rubato = "0.16"
+opus-decoder = "0.1"  # version patched via [patch.crates-io]
+[patch.crates-io]
+# patched fork: upstream panics when i >= 8 in extract_collapse_mask (vq.rs)
+# pr: https://github.com/TadeuszWolfGang/Rusopus/pull/1
+opus-decoder = { git = "https://github.com/SmileofHaven/Rusopus", rev = "a9ac3b4" }
 
 [target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
 # Discord RPC (desktop only - uses local IPC sockets)
