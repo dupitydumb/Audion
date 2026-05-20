@@ -10,8 +10,7 @@
         loadPlaylists,
     } from "$lib/stores/library";
     import {
-        selectMusicFolder,
-        pickAndroidFolder,
+        pickFolder,
         addFolder,
         rescanMusic,
         isAndroid,
@@ -149,10 +148,7 @@
 
     async function handleAddFolder() {
         try {
-            const onAndroid = $isMobile && isAndroid();
-            const path = onAndroid
-                ? await pickAndroidFolder()
-                : await selectMusicFolder();
+            const path = await pickFolder();
 
             if (!path) {
                 return;
@@ -169,7 +165,7 @@
             await progressiveScan.startScan(true);
 
             await addFolder(path);
-            if (onAndroid) {
+            if ($isMobile && isAndroid()) {
                 appSettings.setAndroidMusicFolder(path);
             }
 
