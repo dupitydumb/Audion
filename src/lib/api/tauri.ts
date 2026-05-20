@@ -560,11 +560,20 @@ async function _pickFolderDesktop(): Promise<string | null> {
     return typeof selected === "string" ? selected : (selected as string[])[0] ?? null;
 }
 
+let androidFolderPickInFlight: Promise<string | null> | null = null;
+
 async function _pickFolderAndroid(): Promise<string | null> {
-    return new Promise<string | null>((resolve) => {
-        (window as any).__onAndroidFolderPicked = (pickedPath: string | null) => {
+    if (androidFolderPickInFlight) return androidFolderPickInFlight;
+
+    androidFolderPickInFlight = new Promise<string | null>((resolve) => {
+        const finish = (pickedPath: string | null) => {
             delete (window as any).__onAndroidFolderPicked;
+            androidFolderPickInFlight = null;
             resolve(pickedPath);
+        };
+
+        (window as any).__onAndroidFolderPicked = (pickedPath: string | null) => {
+            finish(pickedPath);
         };
 
         const picker = (window as any).AndroidFolderPicker;
@@ -575,8 +584,10 @@ async function _pickFolderAndroid(): Promise<string | null> {
 
         // Fallback if native bridge is unavailable
         delete (window as any).__onAndroidFolderPicked;
-        _pickFolderDesktop().then(resolve).catch(() => resolve(null));
+        _pickFolderDesktop().then(finish).catch(() => finish(null));
     });
+
+    return androidFolderPickInFlight;
 }
 
 export async function pickFolder(): Promise<string | null> {
