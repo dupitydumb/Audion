@@ -243,27 +243,22 @@ impl FilterBank {
 // =============================================================================
 //
 // frame_pos tracks how many samples into the current interleaved frame we are
-// (0 = start of a new frame, i.e. aligned on channel 0).
+// (0 = start of a new frame, i.e. aligned on channel 0)
 //
-// On pause: frame_pos increments normally with every silence sample.
-// On resume: if frame_pos != 0 we are mid-frame — keep emitting silence until
-// we reach the next frame boundary, then resume real audio.
-// This guarantees the total silence run is always a multiple of channels, so
-// EqSource::current_ch never drifts out of phase.
-//
-// Hot path (playing, frame_pos == 0): one atomic load + one usize compare.
-// Padding only runs for at most (channels - 1) samples at the resume edge.
+// On pause: frame_pos increments normally with every silence sample
+// On resume: if frame_pos != 0 we are mid-frame so keep emitting silence until we reach the next frame boundary, then resume real audio
+// so the total silence run is always a multiple of channels, so
+// EqSource::current_ch never drifts out of phase
 // =============================================================================
 
 struct PausableQueue<S: Source<Item = f32>> {
     inner: S,
     paused: Arc<AtomicBool>,
     frame_pos: usize, // position within the current interleaved frame
-    // channels is NOT cached at construction because rodio's Empty source
+    // channels is not cached at construction because rodio's Empty source
     // (which backs an idle queue) returns channels() == 1 regardless of what
-    // will actually play. We read it lazily — only during the pause silence
-    // loop and the at-most (channels-1) padding samples on resume — so the
-    // virtual dispatch cost is paid only then, never on the steady-state hot path.
+    // will actually play
+    // so read it lazily only during pause silence loop and the at-most (channels-1) padding samples on resume
 }
 
 impl<S: Source<Item = f32>> Iterator for PausableQueue<S> {
