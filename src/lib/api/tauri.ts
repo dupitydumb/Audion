@@ -549,32 +549,31 @@ export async function getStatsSummary(): Promise<StatsSummary> {
 
 // File dialog
 
-export async function selectMusicFolder(): Promise<string | null> {
+async function _pickFolderDesktop(): Promise<string | null> {
     await ensureTauriLoaded();
     const selected = await openFunc!({
         directory: true,
         multiple: false,
         title: 'Select Music Folder',
     });
-    return selected as string | null;
-}
-
-export async function pickFolder(): Promise<string | null> {
-    await ensureTauriLoaded();
-    const selected = await openFunc!({ directory: true, multiple: false, title: 'Select Playlist Folder', });
     if (!selected) return null;
     return typeof selected === "string" ? selected : (selected as string[])[0] ?? null;
 }
 
-export async function pickAndroidFolder(): Promise<string | null> {
-    if (!isAndroid()) {
-        return selectMusicFolder();
-    }
+let androidFolderPickInFlight: Promise<string | null> | null = null;
 
-    return await new Promise<string | null>((resolve) => {
-        (window as any).__onAndroidFolderPicked = (pickedPath: string | null) => {
+async function _pickFolderAndroid(): Promise<string | null> {
+    if (androidFolderPickInFlight) return androidFolderPickInFlight;
+
+    androidFolderPickInFlight = new Promise<string | null>((resolve) => {
+        const finish = (pickedPath: string | null) => {
             delete (window as any).__onAndroidFolderPicked;
+            androidFolderPickInFlight = null;
             resolve(pickedPath);
+        };
+
+        (window as any).__onAndroidFolderPicked = (pickedPath: string | null) => {
+            finish(pickedPath);
         };
 
         const picker = (window as any).AndroidFolderPicker;
@@ -583,10 +582,16 @@ export async function pickAndroidFolder(): Promise<string | null> {
             return;
         }
 
-        // Fallback in case native bridge is unavailable
+        // Fallback if native bridge is unavailable
         delete (window as any).__onAndroidFolderPicked;
-        selectMusicFolder().then(resolve).catch(() => resolve(null));
+        _pickFolderDesktop().then(finish).catch(() => finish(null));
     });
+
+    return androidFolderPickInFlight;
+}
+
+export async function pickFolder(): Promise<string | null> {
+    return isAndroid() ? _pickFolderAndroid() : _pickFolderDesktop();
 }
 
 // Ensure the correct path for downloaded files

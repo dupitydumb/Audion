@@ -6,8 +6,7 @@
   import { updates } from "$lib/stores/updates";
   import {
     resetDatabase,
-    selectMusicFolder,
-    pickAndroidFolder,
+    pickFolder,
     addFolder,
     syncCoverPathsFromFiles,
     mergeDuplicateCovers,
@@ -194,21 +193,14 @@
   }
 
   async function handleSetDownloadLocation() {
-    try {
-      if (isAndroid()) {
-        const path = await pickAndroidFolder();
+      try {
+        const path = await pickFolder();
         if (path) {
-          appSettings.setDownloadLocation(path);
+            appSettings.setDownloadLocation(path);
         }
-      } else {
-        const selected = await selectMusicFolder();
-        if (selected) {
-          appSettings.setDownloadLocation(selected);
-        }
+      } catch (error) {
+          console.error("Failed to select download location:", error);
       }
-    } catch (error) {
-      console.error("Failed to select download location:", error);
-    }
   }
 
   async function handleSetAndroidMusicFolder() {
@@ -216,7 +208,7 @@
       androidMusicFolderMessage = "";
       androidMusicFolderSuccess = false;
 
-      const path = await pickAndroidFolder();
+      const path = await pickFolder();
       if (!path) return;
 
       if (path.startsWith("content://")) {

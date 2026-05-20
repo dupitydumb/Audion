@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { selectMusicFolder, addFolder, rescanMusic } from "$lib/api/tauri";
+  import { pickFolder, addFolder, rescanMusic } from "$lib/api/tauri";
   import {
     loadLibrary,
     loadAlbumsAndArtists,
@@ -30,9 +30,9 @@
       console.log("[TIMING] handleLoadFolder started");
 
       const selectStart = performance.now();
-      const path = await selectMusicFolder();
+      const path = await pickFolder();
       console.log(
-        ` [TIMING] selectMusicFolder took ${(performance.now() - selectStart).toFixed(2)}ms`,
+        ` [TIMING] pickFolder took ${(performance.now() - selectStart).toFixed(2)}ms`,
       );
 
       if (path) {

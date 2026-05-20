@@ -241,21 +241,48 @@ impl FilterBank {
 // =============================================================================
 // PausableQueue — wraps queue output, emits silence when paused
 // =============================================================================
+//
+// frame_pos tracks how many samples into the current interleaved frame we are
+// (0 = start of a new frame, i.e. aligned on channel 0)
+//
+// On pause: frame_pos increments normally with every silence sample
+// On resume: if frame_pos != 0 we are mid-frame so keep emitting silence until we reach the next frame boundary, then resume real audio
+// so the total silence run is always a multiple of channels, so
+// EqSource::current_ch never drifts out of phase
+// =============================================================================
 
 struct PausableQueue<S: Source<Item = f32>> {
     inner: S,
     paused: Arc<AtomicBool>,
+    frame_pos: usize, // position within the current interleaved frame
+    // channels is not cached at construction because rodio's Empty source
+    // (which backs an idle queue) returns channels() == 1 regardless of what
+    // will actually play
+    // so read it lazily only during pause silence loop and the at-most (channels-1) padding samples on resume
 }
 
 impl<S: Source<Item = f32>> Iterator for PausableQueue<S> {
     type Item = f32;
     #[inline]
     fn next(&mut self) -> Option<f32> {
-        if self.paused.load(Ordering::Relaxed) {
-            Some(0.0) // emit silence, inner source untouched
-        } else {
-            self.inner.next()
+        let is_paused = self.paused.load(Ordering::Relaxed);
+
+        if is_paused {
+            let channels = self.inner.channels() as usize;
+            self.frame_pos = (self.frame_pos + 1) % channels;
+            return Some(0.0);
         }
+
+        // Just unpaused but mid-frame — pad with silence until we're back on
+        // channel 0. Runs at most (channels - 1) times per resume event.
+        // Reading channels() here is safe: a real source is now in the queue.
+        if self.frame_pos != 0 {
+            let channels = self.inner.channels() as usize;
+            self.frame_pos = (self.frame_pos + 1) % channels;
+            return Some(0.0);
+        }
+
+        self.inner.next()
     }
 }
 
@@ -907,6 +934,7 @@ impl AudioEngine {
         let pq = PausableQueue {
             inner: queue_output,
             paused: Arc::clone(&paused_flag),
+            frame_pos: 0,
         };
         let eq_src = EqSource::new(pq, eq_settings, eq_rx);
 

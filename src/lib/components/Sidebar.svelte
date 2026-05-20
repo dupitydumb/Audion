@@ -33,7 +33,7 @@
     import { appSettings } from "$lib/stores/settings";
     import { likedCount } from "$lib/stores/liked";
     import {
-        selectMusicFolder,
+        pickFolder,
         addFolder,
         rescanMusic,
         deletePlaylist,
@@ -160,7 +160,7 @@
 
     async function handleAddFolder() {
         try {
-            const path = await selectMusicFolder();
+            const path = await pickFolder();
             if (path) {
                 isScanning = true;
                 scanStatus = "Scanning...";
