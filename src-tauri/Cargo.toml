@@ -25,10 +25,10 @@ default = []
 native-audio = []
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "~2.6.0", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset", "devtools", "tray-icon", "image-png"] }
+tauri = { version = "~2.11.0", features = ["protocol-asset", "devtools", "tray-icon", "image-png"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
@@ -145,3 +145,4 @@ windows = { version = "0.61.3", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 raw-window-handle = "0.6"
+

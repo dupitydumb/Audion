@@ -137,11 +137,12 @@ jobs:
           } | ConvertTo-Json
           Invoke-RestMethod -Uri $env:DISCORD_WEBHOOK_URL -Method Post -Body $payload -ContentType "application/json"
 
-  # ---------------------------------------------------------------------------
-  # Linux Build
-  # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Linux Build — Universal AppImage (GPU-safe, Bazzite/immutable distro compat)
+# ---------------------------------------------------------------------------
   release-linux:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04        # ← 22.04, NOT 24.04 (older glibc = broader compat)
     needs: release-windows
     if: |
       always() &&
@@ -156,39 +157,90 @@ jobs:
         with:
           platform: linux
 
-      - name: Install pinned Linux WebKit dependencies (Ubuntu 24.04)
-        shell: bash
+      - name: Build Tauri app
         run: |
-          sudo apt-get update
-          # Prefer known-good versions when available; fall back to latest 24.04 packages.
-          if ! sudo apt-get install -y \
-            libwebkit2gtk-4.1-0=2.44.0-2 \
-            libwebkit2gtk-4.1-dev=2.44.0-2 \
-            libjavascriptcoregtk-4.1-0=2.44.0-2 \
-            libjavascriptcoregtk-4.1-dev=2.44.0-2 \
-            gir1.2-javascriptcoregtk-4.1=2.44.0-2 \
-            gir1.2-webkit2-4.1=2.44.0-2; then
-            echo "Pinned WebKit versions unavailable on current runner image; using latest Ubuntu 24.04 packages."
-            sudo apt-get install -y \
-              libwebkit2gtk-4.1-0 \
-              libwebkit2gtk-4.1-dev \
-              libjavascriptcoregtk-4.1-0 \
-              libjavascriptcoregtk-4.1-dev \
-              gir1.2-javascriptcoregtk-4.1 \
-              gir1.2-webkit2-4.1
+          xvfb-run -a \
+            --server-args="-screen 0 1920x1080x24 -ac +extension GLX +render -noreset" \
+            npm run tauri build
+
+      - name: Patch AppImage with GPU-safe wrapper script
+        run: |
+          APPIMAGE=$(find src-tauri/target/release/bundle/appimage -name "*.AppImage" | head -1)
+          if [ -z "$APPIMAGE" ]; then echo "No AppImage found"; exit 1; fi
+          echo "Patching: $APPIMAGE"
+
+          # Extract AppImage
+          chmod +x "$APPIMAGE"
+          "$APPIMAGE" --appimage-extract
+          
+          # Inject wrapper that auto-detects GPU environment at runtime
+          cat > squashfs-root/AppRun-real << 'WRAPPER_EOF'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "${0}")")"
+
+          # ---------------------------------------------------------------------------
+          # GPU / WebKit environment auto-detection
+          # Bazzite and other immutable distros may have Wayland-only or broken EGL.
+          # ---------------------------------------------------------------------------
+
+          # Always disable dmabuf renderer — it is the most common cause of blank screens on Mesa/NVIDIA
+          export WEBKIT_DISABLE_DMABUF_RENDERER=1
+
+          # Wayland detection — prefer X11 fallback for WebKitGTK 4.x stability
+          if [ -n "$WAYLAND_DISPLAY" ] && [ -z "$FORCE_WAYLAND" ]; then
+            export GDK_BACKEND=x11
+            export QT_QPA_PLATFORM=xcb
           fi
 
-      - name: Build Tauri app
-        env:
-          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
-          LIBGL_ALWAYS_SOFTWARE: "1"
-          GALLIUM_DRIVER: llvmpipe
-          GDK_BACKEND: x11
-          XDG_SESSION_TYPE: x11
-          QT_QPA_PLATFORM: xcb
-          QT_OPENGL: software
-          WAYLAND_DISPLAY: ""
-        run: xvfb-run -a --server-args="-screen 0 1920x1080x24 -ac +extension GLX +render -noreset" npm run tauri build
+          # ALSA/audio safety
+          if [ -z "$ALSA_CONFIG_PATH" ] && [ -f /usr/share/alsa/alsa.conf ]; then
+            export ALSA_CONFIG_PATH=/usr/share/alsa/alsa.conf
+          fi
+
+          # Robust binary detection
+          if [ -f "$HERE/usr/bin/Audion" ]; then
+            BIN="$HERE/usr/bin/Audion"
+          elif [ -f "$HERE/usr/bin/audion" ]; then
+            BIN="$HERE/usr/bin/audion"
+          else
+            BIN=$(find "$HERE/usr/bin" -type f -executable | head -1)
+          fi
+
+          exec "$BIN" "$@"
+          WRAPPER_EOF
+
+          chmod +x squashfs-root/AppRun-real
+
+          # Back up original AppRun and replace
+          if [ -L squashfs-root/AppRun ]; then
+            # If it's a symlink, resolve it and move the target
+            ORIG_TARGET=$(readlink squashfs-root/AppRun)
+            mv "squashfs-root/$ORIG_TARGET" squashfs-root/AppRun-original
+            rm squashfs-root/AppRun
+          else
+            mv squashfs-root/AppRun squashfs-root/AppRun-original
+          fi
+
+          cat > squashfs-root/AppRun << 'APPRUN_EOF'
+          #!/bin/bash
+          HERE="$(dirname "$(readlink -f "${0}")")"
+          exec "$HERE/AppRun-real" "$@"
+          APPRUN_EOF
+          chmod +x squashfs-root/AppRun
+
+          # Repack the AppImage
+          # NOTE: appimagetool is itself an AppImage. GitHub Actions runners do not
+          # have libfuse.so.2 (FUSE 2). Setting APPIMAGE_EXTRACT_AND_RUN=1 makes the
+          # AppImage runtime self-extract to a tmpdir and exec without FUSE.
+          wget -q "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
+            -O /tmp/appimagetool
+          chmod +x /tmp/appimagetool
+
+          APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 /tmp/appimagetool --no-appstream squashfs-root \
+            "src-tauri/target/release/bundle/appimage/audion-patched.AppImage"
+
+          # Clean up extracted dir
+          rm -rf squashfs-root
 
       - name: Set version and prerelease flags
         id: info
@@ -220,8 +272,16 @@ jobs:
       - name: Rename artifacts
         run: |
           VER="${{ steps.info.outputs.version }}"
-          mv src-tauri/target/release/bundle/deb/*.deb src-tauri/target/release/bundle/deb/audion_${VER}_linux.deb
-          mv src-tauri/target/release/bundle/appimage/*.AppImage src-tauri/target/release/bundle/appimage/audion_${VER}_linux.AppImage
+          # Rename DEB
+          DEB_FILE=$(find src-tauri/target/release/bundle/deb -name "*.deb" | head -1)
+          if [ -n "$DEB_FILE" ]; then
+            mv "$DEB_FILE" "src-tauri/target/release/bundle/deb/audion_${VER}_linux.deb"
+          fi
+          # Rename Patched AppImage
+          if [ -f src-tauri/target/release/bundle/appimage/audion-patched.AppImage ]; then
+            mv src-tauri/target/release/bundle/appimage/audion-patched.AppImage \
+               src-tauri/target/release/bundle/appimage/audion_${VER}_linux.AppImage
+          fi
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -244,7 +304,9 @@ jobs:
           VERSION: ${{ steps.info.outputs.version }}
         run: |
           if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
-          curl -H "Content-Type: application/json" -X POST -d "{\"embeds\": [{\"title\": \"🐧 Linux build v$VERSION\", \"description\": \"Linux release has been ${{ github.event_name == 'push' && 'created' || 'updated' }}\", \"color\": 1947988, \"url\": \"https://github.com/${{ github.repository }}/releases/tag/v$VERSION\"}]}" "$DISCORD_WEBHOOK_URL"
+          curl -H "Content-Type: application/json" -X POST \
+            -d "{\"embeds\": [{\"title\": \"🐧 Linux build v$VERSION\", \"description\": \"Linux release updated\", \"color\": 1947988, \"url\": \"https://github.com/${{ github.repository }}/releases/tag/v$VERSION\"}]}" \
+            "$DISCORD_WEBHOOK_URL"
 
   # ---------------------------------------------------------------------------
   # Flatpak Build
