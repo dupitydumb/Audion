@@ -247,15 +247,6 @@ pub fn run() {
     // Initialize security audit logging
     security::init_logger();
 
-    
-    // try disabling gpu acceleration
-    //TODO
-    #[cfg(target_os = "linux")]
-    {
-        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-        tracing::info!("Linux: disabled WebKitGTK DMABuf renderer (EGL crash workaround)");
-    }
-
     let mut builder = tauri::Builder::default();
 
     // ==========================================================================
