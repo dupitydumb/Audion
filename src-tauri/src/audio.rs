@@ -128,6 +128,16 @@ impl Default for EqSettings {
 }
 
 // =============================================================================
+// DEVICE LIST  (serialisable , returned by audio_list_output_devices)
+// =============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceList {
+    pub devices: Vec<String>,
+    pub default: Option<String>,
+}
+
+// =============================================================================
 // DSP: BIQUAD PEAKING FILTER
 // =============================================================================
 
@@ -889,10 +899,10 @@ struct AudioEngine {
     volume_atomic: Arc<AtomicU32>,
     volume: f32,
     eq_tx: Sender<EqSettings>,
+    eq_settings: EqSettings,
     event_tx: Sender<AudioEvent>,
     device_sample_rate: u32,
     replay_gain_enabled: Arc<AtomicBool>,
-
     seek_tx: Option<Sender<Duration>>,
     current_finish_rx: Option<crossbeam::channel::Receiver<()>>,
     repeat_one_tx: Option<Sender<bool>>,
@@ -913,19 +923,51 @@ struct AudioEngine {
 impl AudioEngine {
     fn new(
         eq_settings: &EqSettings,
-    ) -> Result<(Self, crossbeam::channel::Receiver<AudioEvent>), String> {
+        preferred_device_name: Option<String>,
+    ) -> Result<(Self, crossbeam::channel::Receiver<AudioEvent>, DeviceList), String> {
         use cpal::traits::{DeviceTrait, HostTrait};
 
         let host = cpal::default_host();
-        let device = host
+
+        // reuse the results for both device selection and building the cached DeviceList
+        let all_devices: Vec<_> = host
+            .output_devices()
+            .map_err(|e| format!("Failed to enumerate devices: {}", e))?
+            .collect();
+
+        let device_names: Vec<String> = all_devices
+            .iter()
+            .filter_map(|d| d.name().ok())
+            .collect();
+
+        let default_device_name = host
             .default_output_device()
-            .ok_or("No default output device found")?;
+            .and_then(|d| d.name().ok());
+
+        let cached_device_list = DeviceList {
+            devices: device_names.clone(),
+            default: default_device_name.clone(),
+        };
+
+        let device = if let Some(ref name) = preferred_device_name {
+            all_devices
+                .into_iter()
+                .find(|d| d.name().map(|n| n == *name).unwrap_or(false))
+                .ok_or_else(|| format!("Output device '{}' not found, using default", name))
+                .or_else(|e| {
+                    tracing::warn!("[AUDIO] {}", e);
+                    host.default_output_device().ok_or_else(|| "No default output device found".to_string())
+                })?
+        } else {
+            host.default_output_device()
+                .ok_or("No default output device found")?
+        };
+
         let config = device
             .default_output_config()
             .map_err(|e| format!("Failed to get output config: {}", e))?;
 
         let device_sample_rate = config.sample_rate().0;
-        tracing::info!("[AUDIO] Device sample rate: {} Hz", device_sample_rate);
 
         let (stream, stream_handle) = OutputStream::try_from_device_config(&device, config)
             .map_err(|e| format!("Failed to open audio output: {}", e))?;
@@ -958,6 +1000,7 @@ impl AudioEngine {
                 volume_atomic,
                 volume: 0.7,
                 eq_tx,
+                eq_settings: eq_settings.clone(),
                 event_tx,
                 device_sample_rate,
                 replay_gain_enabled,
@@ -976,6 +1019,7 @@ impl AudioEngine {
                 _stream: stream,
             },
             event_rx,
+            cached_device_list,
         ))
     }
 
@@ -1183,6 +1227,7 @@ impl AudioEngine {
 
     // ── EQ ───────────────────────────────────────────────────────────────────
     fn set_eq(&mut self, settings: &EqSettings) {
+        self.eq_settings = settings.clone();
         let _ = self.eq_tx.send(settings.clone());
     }
 
@@ -1191,6 +1236,83 @@ impl AudioEngine {
         self.replay_gain_enabled
             .store(enabled, Ordering::Relaxed);
         tracing::info!("[AUDIO] Replay gain enabled: {}", enabled);
+    }
+
+    // output device switch
+    fn set_output_device(
+        &mut self,
+        device_name: Option<String>,
+        event_rx_slot: &mut Option<crossbeam::channel::Receiver<AudioEvent>>,
+        device_list_cache: &Arc<Mutex<DeviceList>>,
+    ) -> Result<(), String> {
+        // snapshot current playback state before tearing down
+        let snapshot = self.current_info.as_ref().map(|info| {
+            (info.path.clone(), Duration::from_secs_f64(info.position_secs()))
+        });
+        let was_paused = self.paused_flag.load(Ordering::Relaxed);
+        let volume = self.volume;
+        let repeat_one = self.repeat_one;
+        let replay_gain_enabled = self.replay_gain_enabled.load(Ordering::Relaxed);
+        let eq_settings = self.eq_settings.clone();
+
+        // clear all pending/preloaded sources
+        self.queue_input.clear();
+        if let Some(ref tx) = self.seek_tx {
+            let _ = tx.send(Duration::MAX);
+        }
+        if let Some(ref tx) = self.next_seek_tx {
+            let _ = tx.send(Duration::MAX);
+        }
+
+        // build new engine on the selected device, carrying all current settings
+        let (mut new_engine, new_event_rx, new_device_list) =
+            AudioEngine::new(&eq_settings, device_name.clone())?;
+
+        // update cached device list so audio_get_device_info reflects the new device set
+        if let Ok(mut cached) = device_list_cache.lock() {
+            *cached = new_device_list;
+        }
+
+        // transfer all live settings to the new engine
+        new_engine.set_volume(volume);
+        new_engine.replay_gain_enabled.store(replay_gain_enabled, Ordering::Relaxed);
+        new_engine.repeat_one = repeat_one;
+
+        // resume track at the snapshotted position if one was playing
+        if let Some((path, position)) = snapshot {
+            // replay_gain_db: None  re-read from file tags
+            // TODO db gain field addition
+            if let Err(e) = new_engine.play(&path, None) {
+                tracing::warn!("[AUDIO] Device switch: failed to reopen track: {}", e);
+            } else {
+                // seek to the saved position
+                if let Some(ref tx) = new_engine.seek_tx {
+                    let _ = tx.send(position);
+                }
+                // sync TrackInfo
+                if let Some(ref mut info) = new_engine.current_info {
+                    info.offset = position;
+                    info.started = Instant::now();
+                }
+                // restore pause state
+                if was_paused {
+                    new_engine.paused_flag.store(true, Ordering::Relaxed);
+                }
+            }
+        }
+
+        // swap event receiver slot so the command loop drains the new channel
+        *event_rx_slot = Some(new_event_rx);
+
+        if let Some(ref path) = self.next_path {
+            tracing::warn!("[AUDIO] Device switch: discarding preloaded track: {}", path);
+        }
+
+        // replace self so that the old _stream is dropped here, killing the old pipeline
+        *self = new_engine;
+
+        tracing::info!("[AUDIO] Output device switched successfully");
+        Ok(())
     }
 
     // ── repeat one ───────────────────────────────────────────────────────────
@@ -1314,6 +1436,7 @@ enum AudioCommand {
     SetEq(EqSettings),
     SetRepeatOne(bool),
     SetReplayGainEnabled(bool),
+    SetOutputDevice(Option<String>),
 }
 
 // =============================================================================
@@ -1324,6 +1447,7 @@ pub struct PlaybackStateSync {
     command_tx: Sender<AudioCommand>,
     shared_state: Arc<Mutex<PlaybackState>>,
     event_queue: Arc<Mutex<std::collections::VecDeque<AudioEvent>>>,
+    pub device_list: Arc<Mutex<DeviceList>>,
 }
 
 impl PlaybackStateSync {
@@ -1338,9 +1462,14 @@ impl PlaybackStateSync {
             is_initialized: false,
         }));
         let event_queue = Arc::new(Mutex::new(std::collections::VecDeque::<AudioEvent>::new()));
+        let device_list = Arc::new(Mutex::new(DeviceList {
+            devices: Vec::new(),
+            default: None,
+        }));
 
         let state_clone = Arc::clone(&shared_state);
         let events_clone = Arc::clone(&event_queue);
+        let device_list_clone = Arc::clone(&device_list);
 
         std::thread::spawn(move || {
             let mut engine_opt: Option<AudioEngine> = None;
@@ -1351,12 +1480,15 @@ impl PlaybackStateSync {
                 match rx.recv_timeout(Duration::from_millis(100)) {
                     Ok(cmd) => {
                         if engine_opt.is_none() {
-                            match AudioEngine::new(&eq_settings) {
-                                Ok((e, evt_rx)) => {
+                            match AudioEngine::new(&eq_settings, None) {
+                                Ok((e, evt_rx, dl)) => {
                                     event_rx_opt = Some(evt_rx);
                                     engine_opt = Some(e);
                                     if let Ok(mut s) = state_clone.lock() {
                                         s.is_initialized = true;
+                                    }
+                                    if let Ok(mut cached) = device_list_clone.lock() {
+                                        *cached = dl;
                                     }
                                 }
                                 Err(e) => {
@@ -1404,6 +1536,11 @@ impl PlaybackStateSync {
                             AudioCommand::SetReplayGainEnabled(v) => {
                                 engine.set_replay_gain_enabled(v)
                             }
+                            AudioCommand::SetOutputDevice(name) => {
+                                if let Err(e) = engine.set_output_device(name, &mut event_rx_opt, &device_list_clone) {
+                                    tracing::error!("[AUDIO] Device switch failed: {}", e);
+                                }
+                            }
                         }
                     }
                     Err(crossbeam::channel::RecvTimeoutError::Disconnected) => break,
@@ -1438,6 +1575,7 @@ impl PlaybackStateSync {
             command_tx: tx,
             shared_state,
             event_queue,
+            device_list,
         }
     }
 
@@ -1546,4 +1684,39 @@ pub fn audio_set_replay_gain_enabled(
 #[tauri::command]
 pub fn native_audio_available(_state: tauri::State<'_, PlaybackStateSync>) -> bool {
     true
+}
+
+#[tauri::command]
+pub fn audio_list_output_devices() -> Result<DeviceList, String> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+    let host = cpal::default_host();
+    let devices = host
+        .output_devices()
+        .map_err(|e| format!("Failed to enumerate devices: {}", e))?;
+    let names = devices
+        .filter_map(|d| d.name().ok())
+        .collect();
+    let default = host
+        .default_output_device()
+        .and_then(|d| d.name().ok());
+    Ok(DeviceList { devices: names, default })
+}
+
+#[tauri::command]
+pub fn audio_get_device_info(
+    state: tauri::State<'_, PlaybackStateSync>,
+) -> Result<DeviceList, String> {
+    state
+        .device_list
+        .lock()
+        .map(|dl| dl.clone())
+        .map_err(|_| "Device list lock poisoned".into())
+}
+
+#[tauri::command]
+pub fn audio_set_output_device(
+    device_name: Option<String>,
+    state: tauri::State<'_, PlaybackStateSync>,
+) -> Result<(), String> {
+    state.send(AudioCommand::SetOutputDevice(device_name))
 }

@@ -44,6 +44,7 @@ import {
     type AudioEventType,
     nativeAudioSetEq,
     nativeAudioSetReplayGainEnabled,
+    nativeAudioSetOutputDevice,
     shouldUseNativeAudio,
     type NativePlaybackState
 } from '$lib/services/native-audio';
@@ -659,7 +660,6 @@ export async function initAudioBackend(): Promise<void> {
     // native side has the latest settings (prevents mismatch / thrash on first play)
     if (nativeAudioUsed) {
         try {
-            // Use equalizer.getState() to get the current stored state
             const state = equalizer.getState();
             nativeAudioSetRepeatOne(get(repeat) === 'one').catch(console.error);
             await nativeAudioSetEq(state);
@@ -667,6 +667,13 @@ export async function initAudioBackend(): Promise<void> {
             console.log('[Player] Applied initial EQ settings to native backend');
         } catch (err) {
             console.warn('[Player] Failed to apply initial EQ settings:', err);
+        }
+
+        const savedDevice = get(appSettings).outputDevice;
+        if (savedDevice) {
+            nativeAudioSetOutputDevice(savedDevice).catch(err =>
+                console.warn('[Player] Failed to restore output device:', err)
+            );
         }
     }
 

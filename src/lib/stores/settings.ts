@@ -20,6 +20,7 @@ export interface AppSettings {
     remoteControlEnabled: boolean;
     showResonate: boolean;
     replayGainEnabled: boolean;
+    outputDevice: string | null;
 }
 
 const SETTINGS_STORAGE_KEY = 'audion_settings';
@@ -42,6 +43,7 @@ const defaultSettings: AppSettings = {
     remoteControlEnabled: true,
     showResonate: true,
     replayGainEnabled: true,
+    outputDevice: null,
 };
 
 // Load settings from localStorage
@@ -153,6 +155,14 @@ function createSettingsStore() {
         setReplayGainEnabled(enabled: boolean) {
             update(state => {
                 const newState = { ...state, replayGainEnabled: enabled };
+                saveSettings(newState);
+                return newState;
+            });
+        },
+
+        setOutputDevice(device: string | null) {
+            update(state => {
+                const newState = { ...state, outputDevice: device };
                 saveSettings(newState);
                 return newState;
             });
