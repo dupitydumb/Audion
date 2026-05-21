@@ -43,6 +43,7 @@ import {
     nativeAudioPollEvent,
     type AudioEventType,
     nativeAudioSetEq,
+    nativeAudioSetReplayGainEnabled,
     shouldUseNativeAudio,
     type NativePlaybackState
 } from '$lib/services/native-audio';
@@ -662,6 +663,7 @@ export async function initAudioBackend(): Promise<void> {
             const state = equalizer.getState();
             nativeAudioSetRepeatOne(get(repeat) === 'one').catch(console.error);
             await nativeAudioSetEq(state);
+            nativeAudioSetReplayGainEnabled(get(appSettings).replayGainEnabled).catch(console.error);
             console.log('[Player] Applied initial EQ settings to native backend');
         } catch (err) {
             console.warn('[Player] Failed to apply initial EQ settings:', err);

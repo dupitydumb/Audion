@@ -476,6 +476,7 @@ struct SymphoniaSource {
     sample_rate: u32,
     duration: Option<Duration>,
     replay_gain: Option<f32>,
+    replay_gain_enabled: Arc<AtomicBool>, // shared with AudioEngine and toggled at runtime
     done: bool,
     seek_rx: Receiver<Duration>,
     volume: Arc<AtomicU32>, // shared with AudioEngine — f32 bits, Relaxed
@@ -495,6 +496,7 @@ impl SymphoniaSource {
         event_tx: Sender<AudioEvent>,
         loop_tx: Sender<Instant>,
         volume: Arc<AtomicU32>,
+        replay_gain_enabled: Arc<AtomicBool>,
     ) -> Result<Self, String> {
         let file = File::open(path).map_err(|e| format!("Failed to open {}: {}", path, e))?;
 
@@ -559,6 +561,7 @@ impl SymphoniaSource {
             duration,
             done: false,
             replay_gain,
+            replay_gain_enabled,
             seek_rx,
             volume,
             frame_count: 0,
@@ -657,10 +660,14 @@ impl Iterator for SymphoniaSource {
                 if self.sample_pos < buf.samples().len() {
                     let s = buf.samples()[self.sample_pos];
                     self.sample_pos += 1;
-                    // Apply replay gain then volume — both scalar multiplies, no locks.
-                    let s = match self.replay_gain {
-                        Some(gain) => (s * gain).clamp(-1.0, 1.0),
-                        None => s,
+                    // Apply replay gain (if present and enabled) then volume — both scalar multiplies, no locks.
+                    let s = if self.replay_gain_enabled.load(Ordering::Relaxed) {
+                        match self.replay_gain {
+                            Some(gain) => (s * gain).clamp(-1.0, 1.0),
+                            None => s,
+                        }
+                    } else {
+                        s
                     };
                     let vol = f32::from_bits(self.volume.load(Ordering::Relaxed));
                     return Some(s * vol);
@@ -884,6 +891,7 @@ struct AudioEngine {
     eq_tx: Sender<EqSettings>,
     event_tx: Sender<AudioEvent>,
     device_sample_rate: u32,
+    replay_gain_enabled: Arc<AtomicBool>,
 
     seek_tx: Option<Sender<Duration>>,
     current_finish_rx: Option<crossbeam::channel::Receiver<()>>,
@@ -927,6 +935,7 @@ impl AudioEngine {
         let (queue_input, queue_output) = queue::<f32>(true);
         let paused_flag = Arc::new(AtomicBool::new(false));
         let volume_atomic = Arc::new(AtomicU32::new(1.0f32.to_bits()));
+        let replay_gain_enabled = Arc::new(AtomicBool::new(true));
 
         let (eq_tx, eq_rx) = unbounded::<EqSettings>();
         let (event_tx, event_rx) = unbounded::<AudioEvent>();
@@ -951,6 +960,7 @@ impl AudioEngine {
                 eq_tx,
                 event_tx,
                 device_sample_rate,
+                replay_gain_enabled,
                 seek_tx: None,
                 current_finish_rx: None,
                 repeat_one_tx: None,
@@ -997,6 +1007,7 @@ impl AudioEngine {
             self.event_tx.clone(),
             loop_tx,
             Arc::clone(&self.volume_atomic),
+            Arc::clone(&self.replay_gain_enabled),
         )?;
         let dur = src.duration;
 
@@ -1175,6 +1186,13 @@ impl AudioEngine {
         let _ = self.eq_tx.send(settings.clone());
     }
 
+    // replay gain enable/disable
+    fn set_replay_gain_enabled(&mut self, enabled: bool) {
+        self.replay_gain_enabled
+            .store(enabled, Ordering::Relaxed);
+        tracing::info!("[AUDIO] Replay gain enabled: {}", enabled);
+    }
+
     // ── repeat one ───────────────────────────────────────────────────────────
     fn set_repeat_one(&mut self, enabled: bool) {
         self.repeat_one = enabled;
@@ -1295,6 +1313,7 @@ enum AudioCommand {
     SetVolume(f32),
     SetEq(EqSettings),
     SetRepeatOne(bool),
+    SetReplayGainEnabled(bool),
 }
 
 // =============================================================================
@@ -1382,6 +1401,9 @@ impl PlaybackStateSync {
                                 engine.set_eq(&s);
                             }
                             AudioCommand::SetRepeatOne(v) => engine.set_repeat_one(v),
+                            AudioCommand::SetReplayGainEnabled(v) => {
+                                engine.set_replay_gain_enabled(v)
+                            }
                         }
                     }
                     Err(crossbeam::channel::RecvTimeoutError::Disconnected) => break,
@@ -1511,6 +1533,14 @@ pub fn audio_set_repeat_one(
     state: tauri::State<'_, PlaybackStateSync>,
 ) -> Result<(), String> {
     state.send(AudioCommand::SetRepeatOne(enabled))
+}
+
+#[tauri::command]
+pub fn audio_set_replay_gain_enabled(
+    enabled: bool,
+    state: tauri::State<'_, PlaybackStateSync>,
+) -> Result<(), String> {
+    state.send(AudioCommand::SetReplayGainEnabled(enabled))
 }
 
 #[tauri::command]

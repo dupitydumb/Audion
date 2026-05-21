@@ -33,7 +33,7 @@
     triggerSync,
     deleteAccount,
   } from "$lib/stores/sync";
-  import { nativeAudioStop } from "$lib/services/native-audio";
+  import { nativeAudioStop, nativeAudioSetReplayGainEnabled } from "$lib/services/native-audio";
 
   interface MigrationProgressUpdate {
     current: number;
@@ -86,6 +86,20 @@
   let showRefreshNotice = false;
 
   $: showRefreshNotice = $appSettings.audioBackend !== initialAudioBackend;
+
+  // replay gain is only supported on the native backend
+  $: replayGainDisabled = $appSettings.audioBackend === 'html5';
+
+  async function handleToggleReplayGain() {
+    if (replayGainDisabled) return;
+    const next = !$appSettings.replayGainEnabled;
+    appSettings.setReplayGainEnabled(next);
+    try {
+      await nativeAudioSetReplayGainEnabled(next);
+    } catch (e) {
+      console.warn('[Settings] Failed to set replay gain:', e);
+    }
+  }
 
   // Event listeners
   let unlistenSync: UnlistenFn | null = null;
@@ -864,6 +878,30 @@
               </div>
             </div>
           {/if}
+
+          <div class="divider"></div>
+
+          <div class="toggle-container" class:dimmed={replayGainDisabled}>
+            <div class="toggle-info">
+              <span class="setting-title">Replay Gain</span>
+              <span class="setting-description">
+                {replayGainDisabled
+                  ? 'Only supported with the Native audio driver'
+                  : 'Normalize track loudness using embedded or pre-scanned replay gain values'}
+              </span>
+            </div>
+            <button
+              class="toggle-btn"
+              class:active={$appSettings.replayGainEnabled && !replayGainDisabled}
+              on:click={handleToggleReplayGain}
+              disabled={replayGainDisabled}
+              role="switch"
+              aria-checked={$appSettings.replayGainEnabled && !replayGainDisabled}
+              aria-label="Toggle Replay Gain"
+            >
+              <div class="toggle-handle"></div>
+            </button>
+          </div>
         </div>
       </section>
 
@@ -2473,6 +2511,11 @@
     align-items: center;
     gap: var(--spacing-md);
     width: 100%;
+  }
+
+  .toggle-container.dimmed {
+    opacity: 0.4;
+    pointer-events: none;
   }
 
   .toggle-btn {

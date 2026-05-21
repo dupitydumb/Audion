@@ -167,6 +167,15 @@ export async function nativeAudioSetEq(settings: EqSettings): Promise<void> {
     await invoke('audio_set_eq', { settings });
 }
 
+/**
+ * enable or disable replay gain
+ * when disabled, all tracks play at their original level regardless of
+ * any stored or embedded replay gain values
+ */
+export async function nativeAudioSetReplayGainEnabled(enabled: boolean): Promise<void> {
+    await invoke('audio_set_replay_gain_enabled', { enabled });
+}
+
 // =============================================================================
 // HELPER: Check if native audio backend should be used
 // =============================================================================
