@@ -150,11 +150,13 @@
   }
 
   async function handleSetOutputDevice(device: string | null) {
+    const previous = $appSettings.outputDevice;
     appSettings.setOutputDevice(device);
     try {
       await nativeAudioSetOutputDevice(device);
     } catch (e) {
       console.warn('[Settings] Failed to set output device:', e);
+      appSettings.setOutputDevice(previous);
     }
   }
 
@@ -166,6 +168,7 @@
       await nativeAudioSetReplayGainEnabled(next);
     } catch (e) {
       console.warn('[Settings] Failed to set replay gain:', e);
+      appSettings.setReplayGainEnabled(!next);
     }
   }
 
