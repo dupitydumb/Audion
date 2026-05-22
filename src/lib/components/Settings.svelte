@@ -1028,7 +1028,7 @@
               </button>
 
               {#if deviceDropdownOpen}
-                <div class="device-dropdown-menu" role="listbox" aria-label="Output devices">
+                <div class="device-dropdown-menu" role="listbox" aria-label={$_('settings.outputDevices')}>
                   {#if isLoadingDevices}
                     <div class="device-dropdown-loading">
                       <span class="device-loading-dot"></span>

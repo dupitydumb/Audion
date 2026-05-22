@@ -193,7 +193,8 @@
     "selectOutputDevice": "Select output device",
     "systemDefault": "System default",
     "systemDefaultNamed": "System default ({name})",
-    "defaultBadge": "Default"
+    "defaultBadge": "Default",
+    "outputDevices": "Output devices"
   },
   "pluginManager": {
     "title": "Plugin Marketplace",

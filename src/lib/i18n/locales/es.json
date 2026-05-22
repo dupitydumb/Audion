@@ -190,7 +190,8 @@
     "selectOutputDevice": "Seleccionar dispositivo de salida",
     "systemDefault": "Predeterminado del sistema",
     "systemDefaultNamed": "Predeterminado del sistema ({name})",
-    "defaultBadge": "Predeterminado"
+    "defaultBadge": "Predeterminado",
+    "outputDevices": "Dispositivos de salida"
   },
   "pluginManager": {
     "title": "Mercado de Plugins",

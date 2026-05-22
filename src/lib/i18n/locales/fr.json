@@ -190,7 +190,8 @@
     "selectOutputDevice": "Sélectionner le périphérique de sortie",
     "systemDefault": "Défaut du système",
     "systemDefaultNamed": "Défaut du système ({name})",
-    "defaultBadge": "Défaut"
+    "defaultBadge": "Défaut",
+    "outputDevices": "Périphériques de sortie"
   },
   "pluginManager": {
     "title": "Marché des plugins",
