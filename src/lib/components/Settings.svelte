@@ -126,7 +126,7 @@
 
   $: selectedDeviceLabel = (() => {
     if (effectiveDevice) return effectiveDevice;
-    return deviceList?.default ? `System default (${deviceList.default})` : 'System default';
+    return deviceList?.default ? $_('settings.systemDefaultNamed', { values: { name: deviceList.default } }) : $_('settings.systemDefault');
   })();
 
   // effective device: null if saved device is no longer present in the list
@@ -974,11 +974,11 @@
 
           <div class="toggle-container" class:dimmed={replayGainDisabled}>
             <div class="toggle-info">
-              <span class="setting-title">Replay Gain</span>
+              <span class="setting-title">{$_('settings.replayGain')}</span>
               <span class="setting-description">
                 {replayGainDisabled
-                  ? 'Only supported with the Native audio driver'
-                  : 'Normalize track loudness using embedded or pre-scanned replay gain values'}
+                  ? $_('settings.replayGainUnsupported')
+                  : $_('settings.replayGainDesc')}
               </span>
             </div>
             <button
@@ -988,7 +988,7 @@
               disabled={replayGainDisabled}
               role="switch"
               aria-checked={$appSettings.replayGainEnabled && !replayGainDisabled}
-              aria-label="Toggle Replay Gain"
+              aria-label={$_('settings.toggleReplayGain')}
             >
               <div class="toggle-handle"></div>
             </button>
@@ -997,11 +997,11 @@
           <div class="divider"></div>
 
           <div class="inner-section" class:dimmed={outputDeviceDisabled}>
-            <span class="setting-title">Output device</span>
+            <span class="setting-title">{$_('settings.outputDevice')}</span>
             <span class="setting-description">
               {outputDeviceDisabled
-                ? 'Only supported with the Native audio driver'
-                : 'Select the audio output device for playback'}
+                ? $_('settings.outputDeviceUnsupported')
+                : $_('settings.outputDeviceDesc')}
             </span>
             <div class="device-dropdown-wrap" style="margin-top: 6px;" bind:this={deviceDropdownRef}>
               <button
@@ -1013,7 +1013,7 @@
                 on:keydown={handleDeviceDropdownKeydown}
                 aria-haspopup="listbox"
                 aria-expanded={deviceDropdownOpen}
-                aria-label="Select output device"
+                aria-label={$_('settings.selectOutputDevice')}
               >
                 <span class="device-dropdown-icon">
                   <Icon name={selectedDeviceType === 'headphone' ? 'headphone' : 'speaker'} size={20} />
@@ -1049,9 +1049,9 @@
                         <Icon name={getDeviceType(deviceList?.default ?? null) === 'headphone' ? 'headphone' : 'speaker'} size={16} />
                       </span>
                       <span class="device-item-name">
-                        {deviceList?.default ? `System default (${deviceList.default})` : 'System default'}
+                        {deviceList?.default ? $_('settings.systemDefaultNamed', { values: { name: deviceList.default } }) : $_('settings.systemDefault')}
                       </span>
-                      <span class="device-item-badge">Default</span>
+                      <span class="device-item-badge">{$_('settings.defaultBadge')}</span>
                     </button>
 
                     {#if (deviceList?.devices ?? []).length > 0}

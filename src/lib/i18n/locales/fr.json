@@ -179,7 +179,18 @@
     "modernPlayerDesc": "Lecteur moderne propulsé par Tauri et Svelte",
     "updateAvailable": "Mise à jour disponible",
     "limitExceeded": "Limite de synchronisation dépassée",
-    "limitExceededDesc": "Vous avez atteint la limite gratuite de 100 titres. Soutenez le développement pour une synchronisation illimitée !"
+    "limitExceededDesc": "Vous avez atteint la limite gratuite de 100 titres. Soutenez le développement pour une synchronisation illimitée !",
+    "replayGain": "Replay Gain",
+    "replayGainDesc": "Normalise le volume des pistes à l'aide des valeurs de replay gain intégrées ou pré-scannées",
+    "replayGainUnsupported": "Uniquement compatible avec le pilote audio natif",
+    "toggleReplayGain": "Activer/désactiver le Replay Gain",
+    "outputDevice": "Périphérique de sortie",
+    "outputDeviceDesc": "Sélectionnez le périphérique de sortie audio pour la lecture",
+    "outputDeviceUnsupported": "Uniquement compatible avec le pilote audio natif",
+    "selectOutputDevice": "Sélectionner le périphérique de sortie",
+    "systemDefault": "Défaut du système",
+    "systemDefaultNamed": "Défaut du système ({name})",
+    "defaultBadge": "Défaut"
   },
   "pluginManager": {
     "title": "Marché des plugins",
