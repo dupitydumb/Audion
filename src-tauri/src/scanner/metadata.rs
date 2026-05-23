@@ -50,14 +50,26 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
     let tagged_file = match tagged_file_result {
         Ok(file) => file,
         Err(e) => {
-            // Check if it's a FLAC file that failed
+            // Check if it's a FLAC or ALAC file that failed
             if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                if ext.to_lowercase() == "flac" {
-                    eprintln!(
-                        "[Scanner] Lofty failed for FLAC {:?}: {}. Trying metaflac fallback...",
-                        path, e
-                    );
-                    return extract_flac_metadata_fallback(path, None);
+                match ext.to_lowercase().as_str() {
+                    "flac" => {
+                        eprintln!(
+                            "[Scanner] Lofty failed for FLAC {:?}: {}. Trying metaflac fallback...",
+                            path, e
+                        );
+                        return extract_flac_metadata_fallback(path, None);
+                    }
+                    "alac" => {
+                        // Lofty doesn't recognise .alac extension so we open directly
+                        // as an MP4 container
+                        eprintln!(
+                            "[Scanner] Lofty failed for ALAC {:?}: {}. Trying Mp4File fallback...",
+                            path, e
+                        );
+                        return extract_alac_metadata_fallback(path);
+                    }
+                    _ => {}
                 }
             }
     
@@ -79,7 +91,7 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
             .to_lowercase();
     
         match ext.as_str() {
-            "m4a" | "m4b" | "m4p" | "mp4" => {
+            "m4a" | "m4b" | "m4p" | "mp4" | "alac" => {
                 std::fs::File::open(path)
                     .ok()
                     .and_then(|mut f| {
@@ -265,6 +277,72 @@ fn get_filename_without_ext(path: &Path) -> Option<String> {
     path.file_stem()
         .and_then(|s| s.to_str())
         .map(|s| s.to_string())
+}
+
+fn extract_alac_metadata_fallback(path: &Path) -> Option<TrackInsert> {
+    let mut file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("[Scanner] Failed to open ALAC file {:?}: {}", path, e);
+            return Some(create_fallback_metadata(path));
+        }
+    };
+
+    let mp4 = match Mp4File::read_from(&mut file, ParseOptions::new().parsing_mode(ParsingMode::Relaxed)) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("[Scanner] Mp4File fallback also failed for {:?}: {}", path, e);
+            return Some(create_fallback_metadata(path));
+        }
+    };
+
+    let properties = mp4.properties();
+    let duration = Some(properties.duration().as_secs() as i32);
+    let bitrate = Some(properties.audio_bitrate() as i32).filter(|&b| b > 0);
+    let format = Some("ALAC".to_string());
+
+    let ilst = mp4.ilst();
+
+    let title = ilst
+        .and_then(|t| t.title().map(|s| s.to_string()))
+        .or_else(|| get_filename_without_ext(path));
+    let artist = ilst.and_then(|t| t.artist().map(|s| s.to_string()));
+    let album = ilst.and_then(|t| t.album().map(|s| s.to_string()));
+    let track_number = ilst.and_then(|t| t.track()).map(|n| n as i32);
+    let disc_number  = ilst.and_then(|t| t.disk()).map(|n| n as i32);
+
+    let album_art = ilst.and_then(|t| {
+        t.pictures().and_then(|mut iter| iter.next())
+            .map(|p: &lofty::picture::Picture| p.data().to_vec())
+    });
+
+    let content_hash = Some(generate_content_hash(
+        title.as_deref(),
+        artist.as_deref(),
+        album.as_deref(),
+        duration,
+    ));
+
+    Some(TrackInsert {
+        path: path.to_string_lossy().to_string(),
+        title,
+        artist,
+        album,
+        track_number,
+        disc_number,
+        duration,
+        album_art: album_art.clone(),
+        track_cover: album_art,
+        format,
+        bitrate,
+        source_type: None,
+        cover_url: None,
+        external_id: None,
+        content_hash,
+        local_src: None,
+        musicbrainz_recording_id: None,
+        metadata_json: None,
+    })
 }
 
 fn extract_flac_metadata_fallback(path: &Path, _duration_hint: Option<i32>) -> Option<TrackInsert> {
