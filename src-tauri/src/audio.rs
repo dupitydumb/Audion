@@ -80,14 +80,12 @@ use rodio::queue::queue;
 use rodio::{OutputStream, Source};
 use serde::{Deserialize, Serialize};
 
-use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
+use symphonia::core::codecs::audio::AudioDecoderOptions;
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo};
 use symphonia::core::io::MediaSourceStream;
-use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
-use symphonia::core::units::Time;
+use symphonia::core::meta::{MetadataOptions, RawValue, StandardTag};
+use symphonia::core::formats::probe::Hint;
 
 use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
@@ -421,28 +419,32 @@ fn resolve_replay_gain(
     }
 
     let metadata = format.metadata();
-    let tags_iter = metadata.current().map(|m| m.tags()).into_iter().flatten();
+    let tags_iter = metadata.current()
+        .map(|m| m.media.tags.as_slice())
+        .unwrap_or_default()
+        .iter();
 
     let mut track_gain_db: Option<f32> = None;
     let mut album_gain_db: Option<f32> = None;
     let mut r128_gain: Option<f32> = None;
 
     for tag in tags_iter {
-        match tag.std_key {
-            Some(symphonia::core::meta::StandardTagKey::ReplayGainTrackGain) => {
-                track_gain_db = parse_gain_tag(&tag.value);
+        if let Some(ref std_tag) = tag.std {
+            match std_tag {
+                StandardTag::ReplayGainTrackGain(s) => {
+                    track_gain_db = parse_gain_str(s);
+                }
+                StandardTag::ReplayGainAlbumGain(s) => {
+                    album_gain_db = parse_gain_str(s);
+                }
+                _ => {}
             }
-            Some(symphonia::core::meta::StandardTagKey::ReplayGainAlbumGain) => {
-                album_gain_db = parse_gain_tag(&tag.value);
-            }
-            None if tag.key.eq_ignore_ascii_case("R128_TRACK_GAIN") => {
-                if let symphonia::core::meta::Value::String(ref s) = tag.value {
-                    if let Ok(raw) = s.trim().parse::<i32>() {
-                        r128_gain = Some((raw as f32 / 256.0) + 5.0);
-                    }
+        } else if tag.raw.key.eq_ignore_ascii_case("R128_TRACK_GAIN") {
+            if let RawValue::String(ref s) = tag.raw.value {
+                if let Ok(raw) = s.trim().parse::<i32>() {
+                    r128_gain = Some((raw as f32 / 256.0) + 5.0);
                 }
             }
-            _ => {}
         }
     }
 
@@ -450,17 +452,13 @@ fn resolve_replay_gain(
     Some(db_to_linear(db))
 }
 
-fn parse_gain_tag(value: &symphonia::core::meta::Value) -> Option<f32> {
-    if let symphonia::core::meta::Value::String(ref s) = value {
-        let cleaned = s
-            .trim()
-            .trim_end_matches(|c: char| c == 'B' || c == 'b')
-            .trim_end_matches(|c: char| c == 'd' || c == 'D')
-            .trim();
-        cleaned.parse::<f32>().ok()
-    } else {
-        None
-    }
+fn parse_gain_str(s: &str) -> Option<f32> {
+    let cleaned = s
+        .trim()
+        .trim_end_matches(|c: char| c == 'B' || c == 'b')
+        .trim_end_matches(|c: char| c == 'd' || c == 'D')
+        .trim();
+    cleaned.parse::<f32>().ok()
 }
 
 #[inline]
@@ -478,9 +476,9 @@ fn db_to_linear(db: f32) -> f32 {
 
 struct SymphoniaSource {
     format: Box<dyn FormatReader>,
-    decoder: Box<dyn symphonia::core::codecs::Decoder>,
+    decoder: Box<dyn symphonia::core::codecs::audio::AudioDecoder>,
     track_id: u32,
-    sample_buf: Option<SampleBuffer<f32>>,
+    sample_buf: Option<Vec<f32>>,
     sample_pos: usize,
     channels: u16,
     sample_rate: u32,
@@ -517,44 +515,26 @@ impl SymphoniaSource {
             hint.with_extension(ext);
         }
 
-        let probed = symphonia::default::get_probe()
-            .format(
-                &hint,
-                mss,
-                &FormatOptions {
-                    enable_gapless: true,
-                    ..Default::default()
-                },
-                &MetadataOptions {
-                    limit_metadata_bytes: symphonia::core::meta::Limit::Maximum(0),
-                    limit_visual_bytes: symphonia::core::meta::Limit::Maximum(0),
-                },
-            )
+        let mut format = symphonia::default::get_probe()
+            .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
             .map_err(|e| format!("Failed to probe {}: {}", path, e))?;
-
-        let mut format = probed.format;
-        let track = format
-            .tracks()
-            .iter()
-            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
-            .ok_or_else(|| format!("No audio track found in {}", path))?;
-
+        let track = format.default_track(symphonia::core::formats::TrackType::Audio)
+        .ok_or_else(|| format!("No audio track found in {}", path))?;
+        let audio_params = match &track.codec_params {
+            Some(symphonia::core::codecs::CodecParameters::Audio(p)) => p,
+            _ => return Err(format!("No audio codec params in {}", path)),
+        };
         let track_id = track.id;
-        let sample_rate = track.codec_params.sample_rate.unwrap_or(44100);
-        let channels = track
-            .codec_params
-            .channels
-            .map(|c| c.count() as u16)
-            .unwrap_or(2);
-        let duration = track.codec_params.n_frames.and_then(|f| {
-            track
-                .codec_params
-                .sample_rate
-                .map(|r| Duration::from_secs_f64(f as f64 / r as f64))
+        let sample_rate = audio_params.sample_rate.unwrap_or(44100);
+        let channels = audio_params.channels.as_ref().map(|c| c.count() as u16).unwrap_or(2);
+        let duration = track.time_base.and_then(|tb| {
+            track.duration.and_then(|d| {
+                let time = tb.calc_time(symphonia::core::units::Timestamp::from(d.get() as i64))?;
+                Some(std::time::Duration::from_secs_f64(time.as_secs_f64()))
+            })
         });
-
         let decoder = symphonia::default::get_codecs()
-            .make(&track.codec_params, &DecoderOptions::default())
+            .make_audio_decoder(audio_params, &AudioDecoderOptions::default())
             .map_err(|e| format!("Failed to create decoder for {}: {}", path, e))?;
 
         let replay_gain = resolve_replay_gain(replay_gain_db, &mut format);
@@ -583,17 +563,15 @@ impl SymphoniaSource {
     }
 
     fn seek(&mut self, pos: Duration) {
-        let time = Time {
-            seconds: pos.as_secs(),
-            frac: pos.subsec_nanos() as f64 / 1e9,
+        let secs = pos.as_secs_f64();
+        let Some(time) = symphonia::core::units::Time::try_from_secs_f64(secs) else {
+            tracing::warn!("[AUDIO] seek: invalid position {:?}", pos);
+            return;
         };
-        match self.format.seek(
-            SeekMode::Accurate,
-            SeekTo::Time {
-                time,
-                track_id: Some(self.track_id),
-            },
-        ) {
+        match self.format.seek(SeekMode::Accurate, SeekTo::Time {
+            time,
+            track_id: Some(self.track_id),
+        }) {
             Ok(_) => {}
             Err(e) => tracing::warn!("[AUDIO] seek error: {}", e),
         }
@@ -606,7 +584,8 @@ impl SymphoniaSource {
     fn refill(&mut self) -> bool {
         loop {
             let packet = match self.format.next_packet() {
-                Ok(p) => p,
+                Ok(Some(p)) => p,
+                Ok(None) => return false,
                 Err(SymphoniaError::IoError(_)) => return false,
                 Err(SymphoniaError::ResetRequired) => {
                     self.decoder.reset();
@@ -614,17 +593,14 @@ impl SymphoniaSource {
                 }
                 Err(_) => return false,
             };
-            if packet.track_id() != self.track_id {
+            if packet.track_id != self.track_id {
                 continue;
             }
             match self.decoder.decode(&packet) {
                 Ok(decoded) => {
-                    let spec = *decoded.spec();
-                    let frames = decoded.capacity() as u64;
-                    let buf = self
-                        .sample_buf
-                        .get_or_insert_with(|| SampleBuffer::<f32>::new(frames, spec));
-                    buf.copy_interleaved_ref(decoded);
+                    let buf = self.sample_buf.get_or_insert_with(Vec::new);
+                    buf.clear();
+                    decoded.copy_to_vec_interleaved(buf);
                     self.sample_pos = 0;
                     return true;
                 }
@@ -667,8 +643,8 @@ impl Iterator for SymphoniaSource {
 
         loop {
             if let Some(ref buf) = self.sample_buf {
-                if self.sample_pos < buf.samples().len() {
-                    let s = buf.samples()[self.sample_pos];
+                if self.sample_pos < buf.len() {
+                    let s = buf[self.sample_pos];
                     self.sample_pos += 1;
                     // Apply replay gain (if present and enabled) then volume — both scalar multiplies, no locks.
                     let s = if self.replay_gain_enabled.load(Ordering::Relaxed) {
@@ -703,7 +679,7 @@ impl Source for SymphoniaSource {
     fn current_frame_len(&self) -> Option<usize> {
         self.sample_buf
             .as_ref()
-            .map(|b| b.samples().len().saturating_sub(self.sample_pos).max(1))
+            .map(|b| b.len().saturating_sub(self.sample_pos).max(1))
             .or(Some(441))
     }
     fn channels(&self) -> u16 {
