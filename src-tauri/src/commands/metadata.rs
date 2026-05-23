@@ -152,7 +152,7 @@ pub async fn download_and_save_audio(
     }
 
     match final_ext.as_str() {
-        "m4a" | "mp4" => match write_m4a_metadata(&final_path, &input, cover_data).await {
+        "m4a" | "mp4" | "alac" => match write_m4a_metadata(&final_path, &input, cover_data).await {
             Ok(()) => println!("[Metadata] Successfully wrote M4A metadata"),
             Err(e) => eprintln!("[Metadata] Warning: Could not write M4A metadata: {}", e),
         },

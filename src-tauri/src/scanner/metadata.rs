@@ -1,6 +1,7 @@
 // Audio metadata extraction using lofty
 use lofty::prelude::*;
 use lofty::probe::Probe;
+use lofty::mp4::{Mp4Codec, Mp4File};
 use lofty::tag::Tag as LoftyTag;
 use lofty::config::{ParseOptions, ParsingMode};
 use std::collections::hash_map::DefaultHasher;
@@ -59,35 +60,45 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
                     return extract_flac_metadata_fallback(path, None);
                 }
             }
-
-            // Try relaxed parsing as a general fallback
-            match Probe::open(path) {
-                Ok(mut probe) => {
-                    // Configure allowed tag types to be more permissive if possible,
-                    // but lofty's read() is already quite permissive.
-                    // We can try to explicitly specific options if the API allows,
-                    // but for now we'll rely on the specific FLAC fallback.
-                    eprintln!(
-                        "[Scanner] Failed to read audio file {:?}: {}. Returning fallback.",
-                        path, e
-                    );
-                    return Some(create_fallback_metadata(path));
-                }
-                Err(e) => {
-                    eprintln!(
-                        "[Scanner] Failed to open audio file {:?}: {}. Returning fallback.",
-                        path, e
-                    );
-                    return Some(create_fallback_metadata(path));
-                }
-            }
+    
+            eprintln!(
+                "[Scanner] Failed to read audio file {:?}: {}. Returning fallback.",
+                path, e
+            );
+            return Some(create_fallback_metadata(path));
         }
     };
 
     let properties = tagged_file.properties();
     let duration = properties.duration().as_secs() as i32;
     let bitrate = properties.audio_bitrate().map(|b| b as i32);
-    let format = Some(format!("{:?}", tagged_file.file_type()));
+    let format = {
+        let ext = path.extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+    
+        match ext.as_str() {
+            "m4a" | "m4b" | "m4p" | "mp4" => {
+                std::fs::File::open(path)
+                    .ok()
+                    .and_then(|mut f| {
+                        Mp4File::read_from(
+                            &mut f,
+                            ParseOptions::new().parsing_mode(ParsingMode::Relaxed)
+                        ).ok()
+                    })
+                    .map(|mp4| match mp4.properties().codec() {
+                        Mp4Codec::ALAC => "ALAC".to_string(),
+                        Mp4Codec::AAC  => "AAC".to_string(),
+                        Mp4Codec::FLAC => "FLAC".to_string(),
+                        Mp4Codec::MP3  => "MP3".to_string(),
+                        _              => "Mp4".to_string(),
+                    })
+            }
+            _ => Some(format!("{:?}", tagged_file.file_type())),
+        }
+    };
 
     // Try to get tags
     let tag = tagged_file

@@ -2,7 +2,7 @@
 use std::path::Path;
 use walkdir::WalkDir;
 
-const SUPPORTED_EXTENSIONS: &[&str] = &["flac", "mp3", "wav", "ogg", "m4a", "aac"];
+const SUPPORTED_EXTENSIONS: &[&str] = &["flac", "mp3", "wav", "ogg", "m4a", "aac", "alac"];
 
 pub struct ScanResult {
     pub audio_files: Vec<String>,
@@ -61,8 +61,10 @@ mod tests {
         assert!(is_supported_audio_file(Path::new("song.ogg")));
         assert!(is_supported_audio_file(Path::new("song.m4a")));
         assert!(is_supported_audio_file(Path::new("song.M4A")));
-        assert!(is_supported_audio_file(Path::new("song.aac"))); // Added test for AAC
-        assert!(is_supported_audio_file(Path::new("song.AAC"))); // Added test for uppercase AAC
+        assert!(is_supported_audio_file(Path::new("song.aac")));
+        assert!(is_supported_audio_file(Path::new("song.AAC")));
+        assert!(is_supported_audio_file(Path::new("song.alac")));
+        assert!(is_supported_audio_file(Path::new("song.ALAC")));
         assert!(!is_supported_audio_file(Path::new("song.mp4")));
         assert!(!is_supported_audio_file(Path::new("song.txt")));
     }

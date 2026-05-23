@@ -3,7 +3,7 @@
 // =============================================================================
 // Architecture:
 //
-//   SymphoniaSource      — decodes FLAC/MP3/AAC/OGG/WAV via symphonia directly.
+//   SymphoniaSource      — decodes FLAC/MP3/AAC/ALAC/OGG/WAV via symphonia directly.
 //                          Supports instant seek via format.seek + decoder.reset.
 //                          Seek requests arrive via a crossbeam channel, checked
 //                          at ~10ms frame boundaries. Volume applied per-sample
