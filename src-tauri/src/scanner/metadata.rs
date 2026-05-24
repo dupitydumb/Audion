@@ -231,6 +231,7 @@ fn collect_all_metadata(tag: &LoftyTag) -> Option<String> {
         ItemKey::CatalogNumber,
         ItemKey::Comment,
         ItemKey::Lyrics,
+        ItemKey::UnsyncLyrics, // added in lofty 0.23.0 . both of them are viable hence both of them are kept
         ItemKey::Conductor,
         ItemKey::Language,
         ItemKey::Publisher,

@@ -717,11 +717,21 @@ pub fn get_embedded_lyrics(music_path: String) -> Result<Option<EmbeddedLyricsRe
         }
     };
 
-    if let Some(content) = tag.get_string(ItemKey::Lyrics).map(|s| s.trim().to_string()) {
-        if !content.is_empty() {
-            let synced = looks_like_lrc(&content);
-            return Ok(Some(EmbeddedLyricsResult { content, synced }));
+    let lyrics_content = tag.get_string(ItemKey::Lyrics).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let unsynced_content = tag.get_string(ItemKey::UnsyncLyrics).map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+
+    let result = match (lyrics_content, unsynced_content) {
+        (Some(l), _) if looks_like_lrc(&l) => Some(EmbeddedLyricsResult { content: l, synced: true }),
+        (_, Some(u)) => {
+            let synced = looks_like_lrc(&u);
+            Some(EmbeddedLyricsResult { content: u, synced })
         }
+        (Some(l), None) => Some(EmbeddedLyricsResult { content: l, synced: false }),
+        (None, None) => None,
+    };
+
+    if result.is_some() {
+        return Ok(result);
     }
 
     // lofty found tags but no lyrics field .try format-specific fallbacks
