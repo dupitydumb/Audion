@@ -717,7 +717,7 @@ pub fn get_embedded_lyrics(music_path: String) -> Result<Option<EmbeddedLyricsRe
         }
     };
 
-    if let Some(content) = tag.get_string(&ItemKey::Lyrics).map(|s| s.trim().to_string()) {
+    if let Some(content) = tag.get_string(ItemKey::Lyrics).map(|s| s.trim().to_string()) {
         if !content.is_empty() {
             let synced = looks_like_lrc(&content);
             return Ok(Some(EmbeddedLyricsResult { content, synced }));

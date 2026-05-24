@@ -129,7 +129,7 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
             // Extract track number, handling both simple numbers and "X/Y" format
             let track_number = tag.track().map(|n| n as i32).or_else(|| {
                 // If tag.track() fails, try to parse track number from text
-                tag.get_string(&ItemKey::TrackNumber).and_then(|s| {
+                tag.get_string(ItemKey::TrackNumber).and_then(|s| {
                     // Handle "1/19" format - take only the first number
                     s.split('/')
                         .next()
@@ -139,7 +139,7 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
 
             // Extract disc number
             let disc_number = tag.disk().map(|n| n as i32).or_else(|| {
-                tag.get_string(&ItemKey::DiscNumber).and_then(|s| {
+                tag.get_string(ItemKey::DiscNumber).and_then(|s| {
                     // Handle "1/2" format
                     s.split('/')
                         .next()
@@ -163,7 +163,7 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
 
             // Extract MusicBrainz Recording ID for ListenBrainz matching
             let musicbrainz_recording_id = tag
-                .get_string(&ItemKey::MusicBrainzTrackId)
+                .get_string(ItemKey::MusicBrainzTrackId)
                 .map(|s| s.to_string());
 
             // Extract all available metadata keys into JSON
@@ -238,8 +238,9 @@ fn collect_all_metadata(tag: &LoftyTag) -> Option<String> {
     ];
 
     for key in keys {
-        if let Some(val) = tag.get_string(&key) {
-            metadata.insert(format!("{:?}", key), Value::String(val.to_string()));
+        let key_name = format!("{:?}", key);
+        if let Some(val) = tag.get_string(key) {
+            metadata.insert(key_name, Value::String(val.to_string()));
         }
     }
 

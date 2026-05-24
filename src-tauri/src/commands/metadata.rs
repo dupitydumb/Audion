@@ -419,7 +419,10 @@ async fn write_metadata_to_file(
             };
             if let Some(mime) = mime_type {
                 let picture =
-                    Picture::new_unchecked(PictureType::CoverFront, Some(mime), None, cover_data);
+                    Picture::unchecked(cover_data)
+                        .pic_type(PictureType::CoverFront)
+                        .mime_type(mime)
+                        .into();
                 tag.push_picture(picture);
                 println!("[Metadata] Added cover art to file");
             } else {
