@@ -79,7 +79,7 @@ url = "2"
 sha2 = "0.10"
 
 # Parallel processing
-rayon = "1.10" 
+rayon = "1.12" 
 
  # Thread-safe channels
 crossbeam = "0.8"
