@@ -132,7 +132,7 @@ symphonia = { version = "0.6", default-features = false, features = [
 ] }
 
 cpal = "0.15"
-rubato = "2.0.0"
+rubato = "3.0.0"
 
 [target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
 # Discord RPC (desktop only - uses local IPC sockets)
