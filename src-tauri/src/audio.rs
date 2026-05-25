@@ -75,10 +75,11 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use std::num::NonZero;
 
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use rodio::queue::queue;
-use rodio::{OutputStream, Source};
+use rodio::{Source};
 use serde::{Deserialize, Serialize};
 
 use symphonia::core::codecs::audio::AudioDecoderOptions;
@@ -155,9 +156,9 @@ struct BiquadFilter {
 }
 
 impl BiquadFilter {
-    fn new_peaking(freq: f32, gain_db: f32, sample_rate: u32) -> Self {
+    fn new_peaking(freq: f32, gain_db: f32, sample_rate: NonZero<u32>) -> Self {
         let a = 10.0f32.powf(gain_db / 40.0);
-        let w0 = 2.0 * PI * freq / sample_rate as f32;
+        let w0 = 2.0 * PI * freq / sample_rate.get() as f32;
         let alpha = w0.sin() / (2.0 * EQ_Q);
         let cos = w0.cos();
 
@@ -171,9 +172,9 @@ impl BiquadFilter {
         Self::from_coeffs(b0, b1, b2, a0, a1, a2)
     }
 
-    fn new_low_shelf(freq: f32, gain_db: f32, q: f32, sample_rate: u32) -> Self {
+    fn new_low_shelf(freq: f32, gain_db: f32, q: f32, sample_rate: NonZero<u32>) -> Self {
         let a = 10.0f32.powf(gain_db / 40.0);
-        let w0 = 2.0 * PI * freq / sample_rate as f32;
+        let w0 = 2.0 * PI * freq / sample_rate.get() as f32;
         let cos = w0.cos();
         let alpha = w0.sin() / 2.0 * ((a + 1.0 / a) * (1.0 / q - 1.0) + 2.0).sqrt();
 
@@ -187,9 +188,9 @@ impl BiquadFilter {
         Self::from_coeffs(b0, b1, b2, a0, a1, a2)
     }
 
-    fn new_high_shelf(freq: f32, gain_db: f32, q: f32, sample_rate: u32) -> Self {
+    fn new_high_shelf(freq: f32, gain_db: f32, q: f32, sample_rate: NonZero<u32>) -> Self {
         let a = 10.0f32.powf(gain_db / 40.0);
-        let w0 = 2.0 * PI * freq / sample_rate as f32;
+        let w0 = 2.0 * PI * freq / sample_rate.get() as f32;
         let cos = w0.cos();
         let alpha = w0.sin() / 2.0 * ((a + 1.0 / a) * (1.0 / q - 1.0) + 2.0).sqrt();
 
@@ -203,8 +204,8 @@ impl BiquadFilter {
         Self::from_coeffs(b0, b1, b2, a0, a1, a2)
     }
 
-    fn new_low_pass(freq: f32, q: f32, sample_rate: u32) -> Self {
-        let w0    = 2.0 * PI * freq / sample_rate as f32;
+    fn new_low_pass(freq: f32, q: f32, sample_rate: NonZero<u32>) -> Self {
+        let w0    = 2.0 * PI * freq / sample_rate.get() as f32;
         let cos   = w0.cos();
         let alpha = w0.sin() / (2.0 * q);
 
@@ -218,8 +219,8 @@ impl BiquadFilter {
         Self::from_coeffs(b0, b1, b2, a0, a1, a2)
     }
 
-    fn new_high_pass(freq: f32, q: f32, sample_rate: u32) -> Self {
-        let w0    = 2.0 * PI * freq / sample_rate as f32;
+    fn new_high_pass(freq: f32, q: f32, sample_rate: NonZero<u32>) -> Self {
+        let w0    = 2.0 * PI * freq / sample_rate.get() as f32;
         let cos   = w0.cos();
         let alpha = w0.sin() / (2.0 * q);
 
@@ -234,8 +235,8 @@ impl BiquadFilter {
     }
 
     /// BandPass (constant skirt gain, peak gain = Q).
-    fn new_band_pass(freq: f32, q: f32, sample_rate: u32) -> Self {
-        let w0    = 2.0 * PI * freq / sample_rate as f32;
+    fn new_band_pass(freq: f32, q: f32, sample_rate: NonZero<u32>) -> Self {
+        let w0    = 2.0 * PI * freq / sample_rate.get() as f32;
         let alpha = w0.sin() / (2.0 * q);
 
         let b0 =  w0.sin() / 2.0;
@@ -248,8 +249,8 @@ impl BiquadFilter {
         Self::from_coeffs(b0, b1, b2, a0, a1, a2)
     }
 
-    fn new_notch(freq: f32, q: f32, sample_rate: u32) -> Self {
-        let w0    = 2.0 * PI * freq / sample_rate as f32;
+    fn new_notch(freq: f32, q: f32, sample_rate: NonZero<u32>) -> Self {
+        let w0    = 2.0 * PI * freq / sample_rate.get() as f32;
         let alpha = w0.sin() / (2.0 * q);
         let cos   = w0.cos();
 
@@ -263,8 +264,8 @@ impl BiquadFilter {
         Self::from_coeffs(b0, b1, b2, a0, a1, a2)
     }
 
-    fn new_all_pass(freq: f32, q: f32, sample_rate: u32) -> Self {
-        let w0    = 2.0 * PI * freq / sample_rate as f32;
+    fn new_all_pass(freq: f32, q: f32, sample_rate: NonZero<u32>) -> Self {
+        let w0    = 2.0 * PI * freq / sample_rate.get() as f32;
         let alpha = w0.sin() / (2.0 * q);
         let cos   = w0.cos();
 
@@ -317,11 +318,11 @@ impl BiquadFilter {
 struct FilterBank {
     filters: Vec<Vec<BiquadFilter>>,
     channels: usize,
-    sample_rate: u32,
+    sample_rate: NonZero<u32>,
 }
 
 impl FilterBank {
-    fn new(channels: usize, sample_rate: u32) -> Self {
+    fn new(channels: usize, sample_rate: NonZero<u32>) -> Self {
         Self {
             filters: vec![vec![]; channels],
             channels,
@@ -346,7 +347,7 @@ impl FilterBank {
         }
     }
 
-    fn rebuild_for_rate(&mut self, channels: usize, sample_rate: u32, settings: &EqSettings) {
+    fn rebuild_for_rate(&mut self, channels: usize, sample_rate: NonZero<u32>, settings: &EqSettings) {
         self.channels = channels;
         self.sample_rate = sample_rate;
         self.rebuild(settings);
@@ -392,7 +393,7 @@ impl<S: Source<Item = f32>> Iterator for PausableQueue<S> {
         let is_paused = self.paused.load(Ordering::Relaxed);
 
         if is_paused {
-            let channels = self.inner.channels() as usize;
+            let channels = self.inner.channels().get() as usize;
             self.frame_pos = (self.frame_pos + 1) % channels;
             return Some(0.0);
         }
@@ -401,7 +402,7 @@ impl<S: Source<Item = f32>> Iterator for PausableQueue<S> {
         // channel 0. Runs at most (channels - 1) times per resume event.
         // Reading channels() here is safe: a real source is now in the queue.
         if self.frame_pos != 0 {
-            let channels = self.inner.channels() as usize;
+            let channels = self.inner.channels().get() as usize;
             self.frame_pos = (self.frame_pos + 1) % channels;
             return Some(0.0);
         }
@@ -411,13 +412,13 @@ impl<S: Source<Item = f32>> Iterator for PausableQueue<S> {
 }
 
 impl<S: Source<Item = f32>> Source for PausableQueue<S> {
-    fn current_frame_len(&self) -> Option<usize> {
-        self.inner.current_frame_len()
+    fn current_span_len(&self) -> Option<usize> {
+        self.inner.current_span_len()
     }
-    fn channels(&self) -> u16 {
+    fn channels(&self) -> NonZero<u16> {
         self.inner.channels()
     }
-    fn sample_rate(&self) -> u32 {
+    fn sample_rate(&self) -> NonZero<u32> {
         self.inner.sample_rate()
     }
     fn total_duration(&self) -> Option<Duration> {
@@ -435,14 +436,14 @@ struct EqSource<S: Source<Item = f32>> {
     eq_settings: EqSettings,
     eq_rx: Receiver<EqSettings>,
     channels: usize,
-    sample_rate: u32,
+    sample_rate: NonZero<u32>,
     current_ch: usize,
     frame_count: usize,
 }
 
 impl<S: Source<Item = f32>> EqSource<S> {
     fn new(inner: S, settings: &EqSettings, eq_rx: Receiver<EqSettings>) -> Self {
-        let channels = inner.channels() as usize;
+        let channels = inner.channels().get() as usize;
         let sample_rate = inner.sample_rate();
         let mut bank = FilterBank::new(channels, sample_rate);
         bank.rebuild(settings);
@@ -484,12 +485,12 @@ impl<S: Source<Item = f32>> Iterator for EqSource<S> {
                     .rebuild_for_rate(self.channels, new_rate, &self.eq_settings);
             }
 
-            self.frame_count = (self.sample_rate as usize / 100).max(1) * self.channels;
+            self.frame_count = (self.sample_rate.get() as usize / 100).max(1) * self.channels;
         }
         self.frame_count -= 1;
 
         // Cheap: check channel count every sample to stay phase-correct.
-        let ch_now = self.inner.channels() as usize;
+        let ch_now = self.inner.channels().get() as usize;
         if ch_now != self.channels {
             self.channels = ch_now;
             self.current_ch = 0;
@@ -505,13 +506,13 @@ impl<S: Source<Item = f32>> Iterator for EqSource<S> {
 }
 
 impl<S: Source<Item = f32>> Source for EqSource<S> {
-    fn current_frame_len(&self) -> Option<usize> {
-        self.inner.current_frame_len()
+    fn current_span_len(&self) -> Option<usize> {
+        self.inner.current_span_len()
     }
-    fn channels(&self) -> u16 {
+    fn channels(&self) -> NonZero<u16> {
         self.inner.channels()
     }
-    fn sample_rate(&self) -> u32 {
+    fn sample_rate(&self) -> NonZero<u32> {
         self.inner.sample_rate()
     }
     fn total_duration(&self) -> Option<Duration> {
@@ -596,8 +597,8 @@ struct SymphoniaSource {
     track_id: u32,
     sample_buf: Option<Vec<f32>>,
     sample_pos: usize,
-    channels: u16,
-    sample_rate: u32,
+    channels: NonZero<u16>,
+    sample_rate: NonZero<u32>,
     duration: Option<Duration>,
     replay_gain: Option<f32>,
     replay_gain_enabled: Arc<AtomicBool>, // shared with AudioEngine and toggled at runtime
@@ -641,8 +642,11 @@ impl SymphoniaSource {
             _ => return Err(format!("No audio codec params in {}", path)),
         };
         let track_id = track.id;
-        let sample_rate = audio_params.sample_rate.unwrap_or(44100);
-        let channels = audio_params.channels.as_ref().map(|c| c.count() as u16).unwrap_or(2);
+        let sample_rate = NonZero::new(audio_params.sample_rate.unwrap_or(44100))
+            .ok_or("Sample rate is 0")?;
+        let channels = NonZero::new(
+            audio_params.channels.as_ref().map(|c| c.count() as u16).unwrap_or(2)
+        ).ok_or("Channel count is 0")?;
         let duration = track.time_base.and_then(|tb| {
             track.duration.and_then(|d| {
                 let time = tb.calc_time(symphonia::core::units::Timestamp::from(d.get() as i64))?;
@@ -753,7 +757,7 @@ impl Iterator for SymphoniaSource {
             while let Ok(v) = self.repeat_one_rx.try_recv() {
                 self.repeat_one = v;
             }
-            self.frame_count = (self.sample_rate as usize / 100) * self.channels as usize;
+            self.frame_count = (self.sample_rate.get() as usize / 100) * self.channels.get() as usize;
         }
         self.frame_count -= 1;
 
@@ -792,16 +796,16 @@ impl Iterator for SymphoniaSource {
 }
 
 impl Source for SymphoniaSource {
-    fn current_frame_len(&self) -> Option<usize> {
+    fn current_span_len(&self) -> Option<usize> {
         self.sample_buf
             .as_ref()
             .map(|b| b.len().saturating_sub(self.sample_pos).max(1))
             .or(Some(441))
     }
-    fn channels(&self) -> u16 {
+    fn channels(&self) -> NonZero<u16> {
         self.channels
     }
-    fn sample_rate(&self) -> u32 {
+    fn sample_rate(&self) -> NonZero<u32> {
         self.sample_rate
     }
     fn total_duration(&self) -> Option<Duration> {
@@ -822,21 +826,21 @@ struct RubatoResampler {
     output_pos:         usize,
     chunk_size:         usize,         // stable for Fft/FixedSync::Both
     channels:           usize,
-    dst_rate:           u32,
+    dst_rate:           NonZero<u32>,
     done:               bool,
 }
 
 impl RubatoResampler {
-    fn new(source: SymphoniaSource, dst_rate: u32) -> Result<Self, String> {
+    fn new(source: SymphoniaSource, dst_rate: NonZero<u32>) -> Result<Self, String> {
         let src_rate = source.sample_rate();
-        let channels = source.channels() as usize;
+        let channels = source.channels().get() as usize;
 
         // Fft with FixedSync::Both: rubato picks exact chunk sizes for the ratio
         // (e.g. multiples of 147/160 for 44100→48000), eliminating internal buffering.
         // The hint of 1024 is rounded to the nearest legal value automatically.
         let resampler = Fft::<f32>::new(
-            src_rate as usize,  // sample_rate_input
-            dst_rate as usize,  // sample_rate_output
+            src_rate.get() as usize,  // sample_rate_input
+            dst_rate.get() as usize,  // sample_rate_output
             1024,               // chunk_size hint (rounded to nearest legal value for the ratio)
             1,                  // sub_chunks (1 = no subdivision)
             channels,           // nbr_channels
@@ -979,14 +983,14 @@ impl Iterator for RubatoResampler {
 }
 
 impl Source for RubatoResampler {
-    fn current_frame_len(&self) -> Option<usize> {
+    fn current_span_len(&self) -> Option<usize> {
         let remaining = self.output_interleaved.len().saturating_sub(self.output_pos);
         if remaining > 0 { Some(remaining) } else { None }
     }
-    fn channels(&self) -> u16 {
-        self.channels as u16
+    fn channels(&self) -> NonZero<u16> {
+        NonZero::new(self.channels as u16).unwrap()
     }
-    fn sample_rate(&self) -> u32 {
+    fn sample_rate(&self) -> NonZero<u32> {
         self.dst_rate
     }
     fn total_duration(&self) -> Option<Duration> {
@@ -1020,14 +1024,14 @@ impl TrackInfo {
 // =============================================================================
 
 struct AudioEngine {
-    queue_input: Arc<rodio::queue::SourcesQueueInput<f32>>,
+    queue_input: Arc<rodio::queue::SourcesQueueInput>,
     paused_flag: Arc<AtomicBool>,
     volume_atomic: Arc<AtomicU32>,
     volume: f32,
     eq_tx: Sender<EqSettings>,
     eq_settings: EqSettings,
     event_tx: Sender<AudioEvent>,
-    device_sample_rate: u32,
+    device_sample_rate: NonZero<u32>,
     replay_gain_enabled: Arc<AtomicBool>,
     seek_tx: Option<Sender<Duration>>,
     current_finish_rx: Option<crossbeam::channel::Receiver<()>>,
@@ -1044,7 +1048,7 @@ struct AudioEngine {
     next_duration: Option<Option<Duration>>,
 
 
-    _stream: OutputStream,
+    _stream: rodio::MixerDeviceSink,
 }
 
 impl AudioEngine {
@@ -1094,14 +1098,18 @@ impl AudioEngine {
             .default_output_config()
             .map_err(|e| format!("Failed to get output config: {}", e))?;
 
-        let device_sample_rate = config.sample_rate().0;
+            let stream = rodio::DeviceSinkBuilder::from_device(device)
+            .map_err(|e| format!("Failed to open audio output: {}", e))?
+            .with_supported_config(&config)
+            .open_stream()
+            .map_err(|e| format!("Failed to open audio output: {}", e))?;   
 
-        let (stream, stream_handle) = OutputStream::try_from_device_config(&device, config)
-            .map_err(|e| format!("Failed to open audio output: {}", e))?;
+        let device_sample_rate = NonZero::new(config.sample_rate())
+            .ok_or("Device reported sample rate of 0")?;
 
         tracing::info!("[AUDIO] Output stream opened successfully");
 
-        let (queue_input, queue_output) = queue::<f32>(true);
+        let (queue_input, queue_output) = queue(true);
         let paused_flag = Arc::new(AtomicBool::new(false));
         let volume_atomic = Arc::new(AtomicU32::new(1.0f32.to_bits()));
         let replay_gain_enabled = Arc::new(AtomicBool::new(true));
@@ -1116,9 +1124,7 @@ impl AudioEngine {
         };
         let eq_src = EqSource::new(pq, eq_settings, eq_rx);
 
-        stream_handle
-            .play_raw(eq_src.convert_samples())
-            .map_err(|e| format!("play_raw failed: {}", e))?;
+        stream.mixer().add(eq_src);
 
         Ok((
             Self {
@@ -1437,6 +1443,9 @@ impl AudioEngine {
 
         // replace self so that the old _stream is dropped here, killing the old pipeline
         *self = new_engine;
+        // on startup, if a saved output device preference exists, the frontend sends
+        // SetOutputDevice which calls AudioEngine::new() a second time, dropping the first (default) engine here
+        // Rodio logs this drop. this is intentional and harmless
 
         tracing::info!("[AUDIO] Output device switched successfully");
         Ok(())

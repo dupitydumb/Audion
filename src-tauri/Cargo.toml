@@ -104,7 +104,7 @@ tracing-appender = "0.2"
 # We use rodio to provide native audio playback that bypasses the WebView
 # for better performance and reliability across all platforms.
 # =============================================================================
-rodio = { version = "0.19", default-features = false, features = [
+rodio = { version = "0.22.2", default-features = false, features = [
     "vorbis",
     "symphonia-flac",
     "symphonia-mp3",
@@ -112,7 +112,9 @@ rodio = { version = "0.19", default-features = false, features = [
     "symphonia-aac",
     "symphonia-isomp4",
     "symphonia-all",
-    "crossbeam-channel"
+    "crossbeam-channel",
+    "playback",
+    "tracing"
 ] }
 
 symphonia = { version = "0.6", default-features = false, features = [
@@ -131,7 +133,7 @@ symphonia = { version = "0.6", default-features = false, features = [
     "vorbis",   # Vorbis => required for OGG audio
 ] }
 
-cpal = "0.15"
+cpal = "0.17"
 rubato = "3.0.0"
 
 [target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
