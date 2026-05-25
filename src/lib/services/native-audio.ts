@@ -176,9 +176,20 @@ export async function nativeAudioSetReplayGainEnabled(enabled: boolean): Promise
     await invoke('audio_set_replay_gain_enabled', { enabled });
 }
 
+export interface AudioDeviceInfo {
+    id: string;
+    name: string;
+    manufacturer: string | null;
+    driver: string | null;
+    device_type: string;
+    interface_type: string;
+    address: string | null;
+    extended: string[];
+    is_default: boolean;
+}
+
 export interface DeviceList {
-    devices: string[];
-    default: string | null;
+    devices: AudioDeviceInfo[];
 }
 
 /**
@@ -202,8 +213,8 @@ export async function nativeAudioGetDeviceInfo(): Promise<DeviceList> {
  * pass null to revert to the system default
  * the backend will rebuild the pipeline and resume playback on the new device
  */
-export async function nativeAudioSetOutputDevice(deviceName: string | null): Promise<void> {
-    await invoke('audio_set_output_device', { deviceName });
+export async function nativeAudioSetOutputDevice(deviceId: string | null): Promise<void> {
+    await invoke('audio_set_output_device', { deviceId });
 }
 
 // =============================================================================

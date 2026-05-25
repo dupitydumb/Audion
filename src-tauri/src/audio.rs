@@ -80,6 +80,8 @@ use std::num::NonZero;
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use rodio::queue::queue;
 use rodio::{Source};
+use std::str::FromStr;
+use cpal::DeviceId;
 use serde::{Deserialize, Serialize};
 
 use symphonia::core::codecs::audio::AudioDecoderOptions;
@@ -131,9 +133,21 @@ impl Default for EqSettings {
 // =============================================================================
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioDeviceInfo {
+    pub id: String,
+    pub name: String,
+    pub manufacturer: Option<String>,
+    pub driver: Option<String>,
+    pub device_type: String,
+    pub interface_type: String,
+    pub address: Option<String>,
+    pub extended: Vec<String>,
+    pub is_default: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceList {
-    pub devices: Vec<String>,
-    pub default: Option<String>,
+    pub devices: Vec<AudioDeviceInfo>,
 }
 
 // =============================================================================
@@ -1054,8 +1068,8 @@ struct AudioEngine {
 impl AudioEngine {
     fn new(
         eq_settings: &EqSettings,
-        preferred_device_name: Option<String>,
-    ) -> Result<(Self, crossbeam::channel::Receiver<AudioEvent>, DeviceList), String> {
+        preferred_device_id: Option<String>,
+    ) -> Result<(Self, crossbeam::channel::Receiver<AudioEvent>, DeviceList), String> {    
         use cpal::traits::{DeviceTrait, HostTrait};
 
         let host = cpal::default_host();
@@ -1066,29 +1080,49 @@ impl AudioEngine {
             .map_err(|e| format!("Failed to enumerate devices: {}", e))?
             .collect();
 
-        let device_names: Vec<String> = all_devices
-            .iter()
-            .filter_map(|d| d.name().ok())
-            .collect();
-
-        let default_device_name = host
+        let default_device_id = host
             .default_output_device()
-            .and_then(|d| d.name().ok());
+            .and_then(|d| d.id().ok())
+            .map(|id| id.to_string());
 
-        let cached_device_list = DeviceList {
-            devices: device_names.clone(),
-            default: default_device_name.clone(),
+        let cached_device_list = {
+            let infos = all_devices.iter().filter_map(|d| {
+                let id = d.id().ok()?.to_string();
+                let desc = d.description().ok()?;
+                let is_default = Some(&id) == default_device_id.as_ref();
+                Some(AudioDeviceInfo {
+                    id,
+                    name: desc.name().to_string(),
+                    manufacturer: desc.manufacturer().map(|s| s.to_string()),
+                    driver: desc.driver().map(|s| s.to_string()),
+                    device_type: desc.device_type().to_string(),
+                    interface_type: desc.interface_type().to_string(),
+                    address: desc.address().map(|s| s.to_string()),
+                    extended: desc.extended().to_vec(),
+                    is_default,
+                })
+            }).collect();
+            DeviceList { devices: infos }
         };
 
-        let device = if let Some(ref name) = preferred_device_name {
-            all_devices
-                .into_iter()
-                .find(|d| d.name().map(|n| n == *name).unwrap_or(false))
-                .ok_or_else(|| format!("Output device '{}' not found, using default", name))
-                .or_else(|e| {
-                    tracing::warn!("[AUDIO] {}", e);
-                    host.default_output_device().ok_or_else(|| "No default output device found".to_string())
-                })?
+        let device = if let Some(ref id_str) = preferred_device_id {
+            match DeviceId::from_str(id_str) {
+                Ok(id) => {
+                    match host.device_by_id(&id) {
+                        Some(d) => d,
+                        None => {
+                            tracing::warn!("[AUDIO] Device id '{}' not found, using default", id_str);
+                            host.default_output_device()
+                                .ok_or("No default output device found")?
+                        }
+                    }
+                }
+                Err(_) => {
+                    tracing::warn!("[AUDIO] Invalid device id '{}', using default", id_str);
+                    host.default_output_device()
+                        .ok_or("No default output device found")?
+                }
+            }
         } else {
             host.default_output_device()
                 .ok_or("No default output device found")?
@@ -1445,6 +1479,7 @@ impl AudioEngine {
         *self = new_engine;
         // on startup, if a saved output device preference exists, the frontend sends
         // SetOutputDevice which calls AudioEngine::new() a second time, dropping the first (default) engine here
+        // carries device id
         // Rodio logs this drop. this is intentional and harmless
 
         tracing::info!("[AUDIO] Output device switched successfully");
@@ -1600,7 +1635,6 @@ impl PlaybackStateSync {
         let event_queue = Arc::new(Mutex::new(std::collections::VecDeque::<AudioEvent>::new()));
         let device_list = Arc::new(Mutex::new(DeviceList {
             devices: Vec::new(),
-            default: None,
         }));
 
         let state_clone = Arc::clone(&shared_state);
@@ -1990,16 +2024,31 @@ pub fn native_audio_available(_state: tauri::State<'_, PlaybackStateSync>) -> bo
 pub fn audio_list_output_devices() -> Result<DeviceList, String> {
     use cpal::traits::{DeviceTrait, HostTrait};
     let host = cpal::default_host();
-    let devices = host
+    let all_devices: Vec<_> = host
         .output_devices()
-        .map_err(|e| format!("Failed to enumerate devices: {}", e))?;
-    let names = devices
-        .filter_map(|d| d.name().ok())
+        .map_err(|e| format!("Failed to enumerate devices: {}", e))?
         .collect();
-    let default = host
+    let default_device_id = host
         .default_output_device()
-        .and_then(|d| d.name().ok());
-    Ok(DeviceList { devices: names, default })
+        .and_then(|d| d.id().ok())
+        .map(|id| id.to_string());
+    let devices = all_devices.iter().filter_map(|d| {
+        let id = d.id().ok()?.to_string();
+        let desc = d.description().ok()?;
+        let is_default = Some(&id) == default_device_id.as_ref();
+        Some(AudioDeviceInfo {
+            id,
+            name: desc.name().to_string(),
+            manufacturer: desc.manufacturer().map(|s| s.to_string()),
+            driver: desc.driver().map(|s| s.to_string()),
+            device_type: desc.device_type().to_string(),
+            interface_type: desc.interface_type().to_string(),
+            address: desc.address().map(|s| s.to_string()),
+            extended: desc.extended().to_vec(),
+            is_default,
+        })
+    }).collect();
+    Ok(DeviceList { devices })
 }
 
 #[tauri::command]
@@ -2015,10 +2064,10 @@ pub fn audio_get_device_info(
 
 #[tauri::command]
 pub fn audio_set_output_device(
-    device_name: Option<String>,
+    device_id: Option<String>,
     state: tauri::State<'_, PlaybackStateSync>,
 ) -> Result<(), String> {
-    state.send(AudioCommand::SetOutputDevice(device_name))
+    state.send(AudioCommand::SetOutputDevice(device_id))
 }
 
 #[tauri::command]
@@ -2040,7 +2089,6 @@ pub async fn audio_get_stream_url(
 ) -> Result<String, String> {
     use rusqlite::OptionalExtension;
 
-    // 1. Look up track in local database
     let track_opt = {
         let conn = db.conn.lock().map_err(|e| e.to_string())?;
         conn.query_row(
