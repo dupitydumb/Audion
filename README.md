@@ -77,6 +77,20 @@ Get the latest builds from [Releases](https://github.com/dupitydumb/Audion/relea
 - **macOS (dmg):** Audion.dmg
 - **Linux (AppImage):** Audion-x86_64.AppImage
 - **Linux (Flatpak):** audion_<version>_linux.flatpak
+- **Arch Linux (AUR):** `yay -S audion-bin` (Community maintained, auto-updating binary)
+
+### Installation Notes
+
+#### Arch Linux / Arch-based Distros
+You can install Audion directly from the Arch User Repository (AUR) using your preferred AUR helper:
+
+```bash
+# Using yay
+yay -S audion-bin
+
+# Using paru
+paru -S audion-bin
+```
 
 If you prefer, download the platform-specific asset from the Releases page for your OS.
 
