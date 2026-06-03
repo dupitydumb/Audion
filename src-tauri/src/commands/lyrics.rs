@@ -611,6 +611,7 @@ pub fn get_embedded_lyrics(music_path: String) -> Result<Option<EmbeddedLyricsRe
 
     let tagged = Probe::open(path)
         .map_err(|e| e.to_string())?
+        .options(ParseOptions::new().read_properties(false))
         .read()
         .map_err(|e| e.to_string())?;
 
@@ -619,93 +620,102 @@ pub fn get_embedded_lyrics(music_path: String) -> Result<Option<EmbeddedLyricsRe
         // Re-open as a typed MpegFile so we can get &Id3v2Tag directly.
         // For non-MPEG files that happen to have an ID3v2 tag (e.g. AIFF),
         // we fall through to the generic path below which covers USLT via ItemKey::Lyrics.
-        let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
-        if let Ok(mpeg) = MpegFile::read_from(&mut file, ParseOptions::new()) {
-            // Compute these once for MPEG-frame SYLT conversion
-            let properties = mpeg.properties();
-            let sr = properties.sample_rate() as u64;
-            let sr = if sr > 0 { sr } else { 44100 };
-            let spf = mpeg_samples_per_frame(properties);
-            if let Some(id3) = mpeg.id3v2() {
-                let mut sylt_best: Option<String> = None;
-                let mut uslt_best: Option<String> = None;
+        //
+        // WAV files are explicitly skipped here: lofty can misidentify them as MPEG
+        let is_wav = path.extension()
+            .and_then(|e| e.to_str())
+            .map(|e| e.eq_ignore_ascii_case("wav"))
+            .unwrap_or(false);
 
-                for frame in id3 {
-                    match frame {
-                        Frame::Binary(bin) if bin.id().as_str() == "SYLT" => {
-                            // Parse the raw SYLT bytes
-                            let parsed = match SynchronizedTextFrame::parse(
-                                &bin.data,
-                                FrameFlags::default(),
-                            ) {
-                                Ok(p) => p,
-                                Err(_) => continue,
-                            };
+        if !is_wav {
+            let mut file = std::fs::File::open(path).map_err(|e| e.to_string())?;
+            if let Ok(mpeg) = MpegFile::read_from(&mut file, ParseOptions::new()) {
+                // Compute these once for MPEG-frame SYLT conversion
+                let properties = mpeg.properties();
+                let sr = properties.sample_rate() as u64;
+                let sr = if sr > 0 { sr } else { 44100 };
+                let spf = mpeg_samples_per_frame(properties);
+                if let Some(id3) = mpeg.id3v2() {
+                    let mut sylt_best: Option<String> = None;
+                    let mut uslt_best: Option<String> = None;
 
-                            let lrc = if parsed.timestamp_format == TimestampFormat::MPEG {
-                                let converted: Vec<(u32, String)> = parsed.content
-                                    .iter()
-                                    .map(|(frame_num, text)| {
-                                        let ms = (*frame_num as u64 * spf * 1000) / sr;
-                                        (ms as u32, text.clone())
-                                    })
-                                    .collect();
-                                sylt_to_lrc(&converted)
-                            } else {
-                                sylt_to_lrc(&parsed.content)
-                            };
+                    for frame in id3 {
+                        match frame {
+                            Frame::Binary(bin) if bin.id().as_str() == "SYLT" => {
+                                // Parse the raw SYLT bytes
+                                let parsed = match SynchronizedTextFrame::parse(
+                                    &bin.data,
+                                    FrameFlags::default(),
+                                ) {
+                                    Ok(p) => p,
+                                    Err(_) => continue,
+                                };
 
-                            if lrc.is_empty() {
-                                continue;
+                                let lrc = if parsed.timestamp_format == TimestampFormat::MPEG {
+                                    let converted: Vec<(u32, String)> = parsed.content
+                                        .iter()
+                                        .map(|(frame_num, text)| {
+                                            let ms = (*frame_num as u64 * spf * 1000) / sr;
+                                            (ms as u32, text.clone())
+                                        })
+                                        .collect();
+                                    sylt_to_lrc(&converted)
+                                } else {
+                                    sylt_to_lrc(&parsed.content)
+                                };
+
+                                if lrc.is_empty() {
+                                    continue;
+                                }
+
+                                let lang = std::str::from_utf8(&parsed.language)
+                                    .unwrap_or("")
+                                    .to_lowercase();
+                                let is_eng = lang == "eng" || lang.starts_with("en");
+
+                                if is_eng || sylt_best.is_none() {
+                                    sylt_best = Some(lrc);
+                                }
+                                if is_eng {
+                                    break; // English SYLT found. no need to keep scanning
+                                }
                             }
 
-                            let lang = std::str::from_utf8(&parsed.language)
-                                .unwrap_or("")
-                                .to_lowercase();
-                            let is_eng = lang == "eng" || lang.starts_with("en");
+                            Frame::UnsynchronizedText(uslt) => {
+                                let content = uslt.content.trim().to_string();
+                                if content.is_empty() {
+                                    continue;
+                                }
 
-                            if is_eng || sylt_best.is_none() {
-                                sylt_best = Some(lrc);
+                                let lang = std::str::from_utf8(&uslt.language)
+                                    .unwrap_or("")
+                                    .to_lowercase();
+                                let is_eng = lang == "eng" || lang.starts_with("en");
+
+                                if is_eng || uslt_best.is_none() {
+                                    uslt_best = Some(content);
+                                }
+                                // Don't break. a later SYLT frame may still appear
                             }
-                            if is_eng {
-                                break; // English SYLT found. no need to keep scanning
-                            }
+
+                            _ => {}
                         }
-
-                        Frame::UnsynchronizedText(uslt) => {
-                            let content = uslt.content.trim().to_string();
-                            if content.is_empty() {
-                                continue;
-                            }
-
-                            let lang = std::str::from_utf8(&uslt.language)
-                                .unwrap_or("")
-                                .to_lowercase();
-                            let is_eng = lang == "eng" || lang.starts_with("en");
-
-                            if is_eng || uslt_best.is_none() {
-                                uslt_best = Some(content);
-                            }
-                            // Don't break. a later SYLT frame may still appear
-                        }
-
-                        _ => {}
                     }
-                }
 
-                // SYLT wins over USLT when both are present
-                if let Some(lrc) = sylt_best {
-                    return Ok(Some(EmbeddedLyricsResult { content: lrc, synced: true }));
-                }
+                    // SYLT wins over USLT when both are present
+                    if let Some(lrc) = sylt_best {
+                        return Ok(Some(EmbeddedLyricsResult { content: lrc, synced: true }));
+                    }
 
-                if let Some(content) = uslt_best {
-                    let synced = looks_like_lrc(&content);
-                    return Ok(Some(EmbeddedLyricsResult { content, synced }));
-                }
+                    if let Some(content) = uslt_best {
+                        let synced = looks_like_lrc(&content);
+                        return Ok(Some(EmbeddedLyricsResult { content, synced }));
+                    }
 
-                return Ok(None);
+                    return Ok(None);
+                }
             }
-        }
+        } // if !is_wav
     }
 
     // ---- Path 2: non-ID3v2 tags (FLAC, MP4, APEv2, …) via lofty ----------
