@@ -8,6 +8,12 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
 
+use symphonia::core::formats::FormatOptions;
+use symphonia::core::io::MediaSourceStream;
+use symphonia::core::meta::MetadataOptions;
+use symphonia::core::formats::probe::Hint;
+use symphonia::default::get_probe;
+
 use crate::db::queries::TrackInsert;
 
 /// Generate a content hash based on metadata for duplicate detection
@@ -33,6 +39,45 @@ fn generate_content_hash(
 
     combined.hash(&mut hasher);
     format!("{:016x}", hasher.finish())
+}
+
+/// probe a file's duration using Symphonia
+/// fallback when lofty returns zero duration due to our patch
+fn get_duration_via_symphonia(path: &Path) -> i32 {
+    let file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return 0,
+    };
+
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        hint.with_extension(ext);
+    }
+
+    let format = match get_probe().probe(
+        &hint,
+        mss,
+        FormatOptions::default(),
+        MetadataOptions::default(),
+    ) {
+        Ok(f) => f,
+        Err(_) => return 0,
+    };
+
+    let track = match format.default_track(symphonia::core::formats::TrackType::Audio) {
+        Some(t) => t,
+        None => return 0,
+    };
+
+    if let (Some(tb), Some(d)) = (track.time_base, track.duration) {
+        use symphonia::core::units::Timestamp;
+        if let Some(time) = tb.calc_time(Timestamp::from(d.get() as i64)) {
+            return time.as_secs_f64() as i32;
+        }
+    }
+
+    0
 }
 
 pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
@@ -82,7 +127,17 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
     };
 
     let properties = tagged_file.properties();
-    let duration = properties.duration().as_secs() as i32;
+    // lofty returns zero duration for VBR MP3s without a Xing header (our patched
+    // lofty skips the slow backwards file scan in that case)
+    // WAV files also get the Symphonia path since lofty can misidentify them as MPEG
+    let duration = {
+        let lofty_duration = properties.duration().as_secs() as i32;
+        if lofty_duration == 0 {
+            get_duration_via_symphonia(path)
+        } else {
+            lofty_duration
+        }
+    };
     let bitrate = properties.audio_bitrate().map(|b| b as i32);
     let format = {
         let ext = path.extension()
