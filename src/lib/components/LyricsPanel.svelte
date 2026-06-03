@@ -174,15 +174,24 @@
     // Close the menu whenever a search completes (loading -> done)
     $: if (!$lyricsLoading) sourceMenuOpen = false;
 
-    function showPaxKeyToast() {
+    function showPaxKeyToast(message: string) {
         const toast = document.createElement('div');
         toast.style.cssText = `position:fixed; bottom:100px; left:50%; transform:translateX(-50%); background:#c0392b; color:#fff; padding:10px 20px; border-radius:8px; z-index:10002; font-size:13px; box-shadow:0 4px 12px rgba(0,0,0,0.3); opacity:0; transition:0.3s; display:flex; align-items:center; gap:12px; white-space:nowrap;`;
         const text = document.createElement('span');
-        text.textContent = 'Genius lyrics require a Paxsenix API key. Add it in the Qobuz plugin settings.';
+        text.textContent = message;
         toast.appendChild(text);
         document.body.appendChild(toast);
         requestAnimationFrame(() => toast.style.opacity = '1');
         setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 4000);
+    }
+
+    let _appleKeyToastShown = false;
+    $: if ($selectedSource === 'applejson' && !$lyricsLoading) {
+        const key = localStorage.getItem('qobuz_pax_api_key')?.trim() ?? '';
+        if (!key && !_appleKeyToastShown) {
+            _appleKeyToastShown = true;
+            showPaxKeyToast('It is advised that you install the Qobuz plugin and configure your Paxsenix key in its settings for reliable Apple Music lyrics.');
+        }
     }
 
     async function handleSourceSelect(sourceId: string) {
@@ -192,8 +201,15 @@
         if (sourceId === 'genius') {
             const key = localStorage.getItem('qobuz_pax_api_key')?.trim() ?? '';
             if (!key) {
-                showPaxKeyToast();
+                showPaxKeyToast('Genius lyrics require a Paxsenix API key. Add it in the Qobuz plugin settings.');
                 return;
+            }
+        }
+
+        if (sourceId === 'applejson') {
+            const key = localStorage.getItem('qobuz_pax_api_key')?.trim() ?? '';
+            if (!key) {
+                showPaxKeyToast('It is advised that you install the Qobuz plugin and configure your Paxsenix key in its settings for reliable Apple Music lyrics.');
             }
         }
 
