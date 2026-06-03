@@ -182,7 +182,19 @@
     "modernPlayerDesc": "Modern player powered by Tauri and Svelte",
     "updateAvailable": "Update Available",
     "limitExceeded": "Sync limit exceeded",
-    "limitExceededDesc": "You've reached the free tier limit of 100 tracks. Support development to get unlimited sync!"
+    "limitExceededDesc": "You've reached the free tier limit of 100 tracks. Support development to get unlimited sync!",
+    "replayGain": "Replay Gain",
+    "replayGainDesc": "Normalize track loudness using embedded or pre-scanned replay gain values",
+    "replayGainUnsupported": "Only supported with the Native audio driver",
+    "toggleReplayGain": "Toggle Replay Gain",
+    "outputDevice": "Output device",
+    "outputDeviceDesc": "Select the audio output device for playback",
+    "outputDeviceUnsupported": "Only supported with the Native audio driver",
+    "selectOutputDevice": "Select output device",
+    "systemDefault": "System default",
+    "systemDefaultNamed": "System default ({name})",
+    "defaultBadge": "Default",
+    "outputDevices": "Output devices"
   },
   "pluginManager": {
     "title": "Plugin Marketplace",

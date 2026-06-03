@@ -33,7 +33,8 @@
     triggerSync,
     deleteAccount,
   } from "$lib/stores/sync";
-  import { nativeAudioStop } from "$lib/services/native-audio";
+  import { nativeAudioStop, nativeAudioSetReplayGainEnabled, nativeAudioListDevices, nativeAudioGetDeviceInfo, nativeAudioSetOutputDevice, type DeviceList } from "$lib/services/native-audio";
+  import Icon from "$lib/components/Icon.svelte";
 
   interface MigrationProgressUpdate {
     current: number;
@@ -87,6 +88,90 @@
 
   $: showRefreshNotice = $appSettings.audioBackend !== initialAudioBackend;
 
+  // replay gain is only supported on the native backend
+  $: replayGainDisabled = $appSettings.audioBackend === 'html5';
+
+  // output device selection is only supported on the native backend
+  $: outputDeviceDisabled = $appSettings.audioBackend === 'html5';
+
+  let deviceList: DeviceList | null = null;
+  let isLoadingDevices = false;
+
+  // output device dropdown state
+  let deviceDropdownOpen = false;
+  let deviceDropdownRef: HTMLDivElement;
+
+  function handleDeviceDropdownToggle() {
+    if (outputDeviceDisabled) return;
+    deviceDropdownOpen = !deviceDropdownOpen;
+    if (deviceDropdownOpen) {
+      handleLoadDevices();
+    }
+  }
+
+  function handleDeviceSelect(device: string | null) {
+    handleSetOutputDevice(device);
+    deviceDropdownOpen = false;
+  }
+
+  function handleDeviceDropdownKeydown(e: KeyboardEvent) {
+    if (e.key === 'Escape') deviceDropdownOpen = false;
+  }
+
+  function handleDeviceDropdownOutside(e: MouseEvent) {
+    if (deviceDropdownRef && !deviceDropdownRef.contains(e.target as Node)) {
+      deviceDropdownOpen = false;
+    }
+  }
+
+  $: selectedDeviceLabel = (() => {
+    if (effectiveDevice) return effectiveDevice;
+    return deviceList?.default ? $_('settings.systemDefaultNamed', { values: { name: deviceList.default } }) : $_('settings.systemDefault');
+  })();
+
+  // effective device: null if saved device is no longer present in the list
+  $: effectiveDevice = (() => {
+    const saved = $appSettings.outputDevice;
+    if (!saved) return null;
+    if (!deviceList) return null;
+    return deviceList.devices.includes(saved) ? saved : null;
+  })();
+
+  async function handleLoadDevices() {
+    if (outputDeviceDisabled) return;
+    isLoadingDevices = true;
+    try {
+      deviceList = await nativeAudioListDevices();
+    } catch (e) {
+      console.warn('[Settings] Failed to list output devices:', e);
+    } finally {
+      isLoadingDevices = false;
+    }
+  }
+
+  async function handleSetOutputDevice(device: string | null) {
+    const previous = $appSettings.outputDevice;
+    appSettings.setOutputDevice(device);
+    try {
+      await nativeAudioSetOutputDevice(device);
+    } catch (e) {
+      console.warn('[Settings] Failed to set output device:', e);
+      appSettings.setOutputDevice(previous);
+    }
+  }
+
+  async function handleToggleReplayGain() {
+    if (replayGainDisabled) return;
+    const next = !$appSettings.replayGainEnabled;
+    appSettings.setReplayGainEnabled(next);
+    try {
+      await nativeAudioSetReplayGainEnabled(next);
+    } catch (e) {
+      console.warn('[Settings] Failed to set replay gain:', e);
+      appSettings.setReplayGainEnabled(!next);
+    }
+  }
+
   // Event listeners
   let unlistenSync: UnlistenFn | null = null;
   let unlistenMerge: UnlistenFn | null = null;
@@ -113,6 +198,15 @@
         );
       }
     });
+
+    // populate device list from cache (no OS call)
+    if (!outputDeviceDisabled) {
+      try {
+        deviceList = await nativeAudioGetDeviceInfo();
+      } catch (e) {
+        console.warn('[Settings] Failed to load cached device info:', e);
+      }
+    }
   });
 
   onDestroy(() => {
@@ -400,6 +494,18 @@
   // Alias for readability in template
   const formatLastSyncedRelative = formatLastSynced;
 
+  // Returns headphone, speaker or none based on device name
+  function getDeviceType(name: string | null): 'headphone' | 'speaker' | null {
+    if (!name) return null;
+    const lower = name.toLowerCase();
+    if (lower.includes('headphone') || lower.includes('headset') || lower.includes('earphone') || lower.includes('earbuds')) return 'headphone';
+    if (lower.includes('speaker')) return 'speaker';
+    return null;
+  }
+
+  // device type of currently selected device
+  $: selectedDeviceType = getDeviceType(selectedDeviceLabel);
+
   function formatBytes(bytes: number): string {
     if (bytes === 0) return "0 B";
     const k = 1024;
@@ -489,6 +595,8 @@
   $: accountEmail = $authState.email || "No email";
   $: accountInitial = (accountDisplayName || "U").charAt(0).toUpperCase();
 </script>
+
+<svelte:window on:mousedown={handleDeviceDropdownOutside} />
 
 <div class="settings-view">
   <header class="view-header">
@@ -864,6 +972,120 @@
               </div>
             </div>
           {/if}
+
+          <div class="divider"></div>
+
+          <div class="toggle-container" class:dimmed={replayGainDisabled}>
+            <div class="toggle-info">
+              <span class="setting-title">{$_('settings.replayGain')}</span>
+              <span class="setting-description">
+                {replayGainDisabled
+                  ? $_('settings.replayGainUnsupported')
+                  : $_('settings.replayGainDesc')}
+              </span>
+            </div>
+            <button
+              class="toggle-btn"
+              class:active={$appSettings.replayGainEnabled && !replayGainDisabled}
+              on:click={handleToggleReplayGain}
+              disabled={replayGainDisabled}
+              role="switch"
+              aria-checked={$appSettings.replayGainEnabled && !replayGainDisabled}
+              aria-label={$_('settings.toggleReplayGain')}
+            >
+              <div class="toggle-handle"></div>
+            </button>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="inner-section" class:dimmed={outputDeviceDisabled}>
+            <span class="setting-title">{$_('settings.outputDevice')}</span>
+            <span class="setting-description">
+              {outputDeviceDisabled
+                ? $_('settings.outputDeviceUnsupported')
+                : $_('settings.outputDeviceDesc')}
+            </span>
+            <div class="device-dropdown-wrap" style="margin-top: 6px;" bind:this={deviceDropdownRef}>
+              <button
+                class="device-dropdown-trigger"
+                class:open={deviceDropdownOpen}
+                class:disabled={outputDeviceDisabled}
+                disabled={outputDeviceDisabled}
+                on:click={handleDeviceDropdownToggle}
+                on:keydown={handleDeviceDropdownKeydown}
+                aria-haspopup="listbox"
+                aria-expanded={deviceDropdownOpen}
+                aria-label={$_('settings.selectOutputDevice')}
+              >
+                <span class="device-dropdown-icon">
+                  <Icon name={selectedDeviceType === 'headphone' ? 'headphone' : 'speaker'} size={20} />
+                </span>
+                <span class="device-dropdown-label">{selectedDeviceLabel}</span>
+                <span class="device-dropdown-chevron" class:rotated={deviceDropdownOpen}>
+                  <Icon name="chevron-down" size={12} />
+                </span>
+              </button>
+
+              {#if deviceDropdownOpen}
+                <div class="device-dropdown-menu" role="listbox" aria-label={$_('settings.outputDevices')}>
+                  {#if isLoadingDevices}
+                    <div class="device-dropdown-loading">
+                      <span class="device-loading-dot"></span>
+                      <span class="device-loading-dot"></span>
+                      <span class="device-loading-dot"></span>
+                    </div>
+                  {:else}
+                    <button
+                      class="device-dropdown-item"
+                      class:selected={!effectiveDevice}
+                      role="option"
+                      aria-selected={!effectiveDevice}
+                      on:click={() => handleDeviceSelect(null)}
+                    >
+                      <span class="device-item-check">
+                        {#if !effectiveDevice}
+                          <Icon name="check" size={12} />
+                        {/if}
+                      </span>
+                      <span class="device-item-icon">
+                        <Icon name={getDeviceType(deviceList?.default ?? null) === 'headphone' ? 'headphone' : 'speaker'} size={16} />
+                      </span>
+                      <span class="device-item-name">
+                        {deviceList?.default ? $_('settings.systemDefaultNamed', { values: { name: deviceList.default } }) : $_('settings.systemDefault')}
+                      </span>
+                      <span class="device-item-badge">{$_('settings.defaultBadge')}</span>
+                    </button>
+
+                    {#if (deviceList?.devices ?? []).length > 0}
+                      <div class="device-dropdown-separator"></div>
+                      {#each deviceList?.devices ?? [] as device}
+                        <button
+                          class="device-dropdown-item"
+                          class:selected={effectiveDevice === device}
+                          role="option"
+                          aria-selected={effectiveDevice === device}
+                          on:click={() => handleDeviceSelect(device)}
+                        >
+                          <span class="device-item-check">
+                            {#if effectiveDevice === device}
+                            <Icon name="check" size={12} />
+                            {/if}
+                          </span>
+                          <span class="device-item-icon">
+                            {#if getDeviceType(device) !== null}
+                              <Icon name={getDeviceType(device) === 'headphone' ? 'headphone' : 'speaker'} size={16} />
+                            {/if}
+                          </span>
+                          <span class="device-item-name">{device}</span>
+                        </button>
+                      {/each}
+                    {/if}
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          </div>
         </div>
       </section>
 
@@ -2475,6 +2697,11 @@
     width: 100%;
   }
 
+  .toggle-container.dimmed {
+    opacity: 0.4;
+    pointer-events: none;
+  }
+
   .toggle-btn {
     position: relative;
     width: 48px;
@@ -2837,6 +3064,227 @@
   }
 
   /* MOBILE-SPECIFIC ENHANCEMENTS */
+  /* Output Device Dropdown ─────────────────────────────────────── */
+
+  .device-dropdown-wrap {
+    position: relative;
+    width: 100%;
+    max-width: 360px;
+  }
+
+  .device-dropdown-trigger {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 9px 12px;
+    background-color: var(--bg-highlight);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition:
+      border-color 0.15s ease,
+      background-color 0.15s ease,
+      box-shadow 0.15s ease;
+    text-align: left;
+  }
+
+  .device-dropdown-trigger:hover:not(.disabled) {
+    border-color: var(--accent-primary);
+    background-color: var(--bg-surface);
+  }
+
+  .device-dropdown-trigger.open {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 2px rgba(var(--accent-primary-rgb, 30, 215, 96), 0.15);
+    background-color: var(--bg-surface);
+  }
+
+  .device-dropdown-trigger.disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .device-dropdown-icon {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    color: var(--accent-primary);
+    width: 16px;
+    height: 16px;
+  }
+
+  .device-dropdown-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .device-dropdown-label {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-primary);
+  }
+
+  .device-dropdown-chevron {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    color: var(--text-subdued);
+    width: 12px;
+    height: 12px;
+    transition: transform 0.2s ease;
+  }
+
+  .device-dropdown-chevron svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .device-dropdown-chevron.rotated {
+    transform: rotate(180deg);
+  }
+
+  .device-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 5px);
+    left: 0;
+    right: 0;
+    z-index: 200;
+    background-color: var(--bg-card, var(--bg-surface));
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow:
+      0 8px 24px rgba(0, 0, 0, 0.25),
+      0 2px 6px rgba(0, 0, 0, 0.15);
+    overflow: hidden;
+    animation: deviceDropdownIn 0.15s ease;
+  }
+
+  @keyframes deviceDropdownIn {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .device-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 9px 12px;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 0.1s ease;
+  }
+
+  .device-dropdown-item:hover {
+    background-color: var(--bg-highlight);
+  }
+
+  .device-dropdown-item.selected {
+    color: var(--accent-primary);
+    background-color: rgba(var(--accent-primary-rgb, 30, 215, 96), 0.06);
+  }
+
+  .device-item-check {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    color: var(--accent-primary);
+  }
+
+  .device-item-check svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .device-item-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    color: var(--text-subdued);
+  }
+
+  .device-item-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .device-item-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .device-item-badge {
+    flex-shrink: 0;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--text-subdued);
+    background-color: var(--bg-highlight);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+
+  .device-dropdown-separator {
+    height: 1px;
+    background-color: var(--border-color);
+    opacity: 0.5;
+    margin: 2px 0;
+  }
+
+  .device-dropdown-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 16px 12px;
+  }
+
+  .device-loading-dot {
+    display: inline-block;
+    width: 5px;
+    height: 5px;
+    background-color: var(--accent-primary);
+    border-radius: 50%;
+    opacity: 0.4;
+    animation: deviceLoadingPulse 1.2s ease-in-out infinite;
+  }
+
+  .device-loading-dot:nth-child(1) { animation-delay: 0s; }
+  .device-loading-dot:nth-child(2) { animation-delay: 0.2s; }
+  .device-loading-dot:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes deviceLoadingPulse {
+    0%, 80%, 100% { opacity: 0.2; transform: scale(0.85); }
+    40% { opacity: 1; transform: scale(1); }
+  }
+
   @media (max-width: 768px) {
     /* Layout Spacing Adjustments */
     .view-header {

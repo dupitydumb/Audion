@@ -98,9 +98,9 @@
     // so LyricsPanel can read them and show its own overlay.
     let dropError = "";
 
-    const AUDIO_EXTENSIONS  = new Set(['mp3', 'flac', 'wav', 'ogg', 'm4a', 'aac']);
+    const AUDIO_EXTENSIONS  = new Set(['mp3', 'flac', 'wav', 'ogg', 'm4a', 'aac', 'alac']);
     const LYRICS_EXTENSIONS = new Set(['lrc', 'ttml', 'xml', 'srt']);
-    const UNSUPPORTED_DROP_MSG = 'Unsupported file type. Drop an audio file (MP3, FLAC, WAV, OGG, M4A, AAC).';
+    const UNSUPPORTED_DROP_MSG = 'Unsupported file type. Drop an audio file (MP3, FLAC, WAV, OGG, M4A, AAC, ALAC).';
     const LYRICS_DROP_MSG      = 'Drop lyrics files on the lyrics panel. Open it first with the lyrics button.';
 
     function getExt(name: string): string {
@@ -517,7 +517,7 @@
                         <div class="drop-subtext">Track will also be added to your library</div>
                     {:else}
                         <div class="drop-text">Drop your music here</div>
-                        <div class="drop-subtext">MP3, FLAC, M4A, WAV, OGG</div>
+                        <div class="drop-subtext">MP3, FLAC, M4A, WAV, OGG, ALAC</div>
                     {/if}
                 {/if}
             </div>

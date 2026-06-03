@@ -167,6 +167,45 @@ export async function nativeAudioSetEq(settings: EqSettings): Promise<void> {
     await invoke('audio_set_eq', { settings });
 }
 
+/**
+ * enable or disable replay gain
+ * when disabled, all tracks play at their original level regardless of
+ * any stored or embedded replay gain values
+ */
+export async function nativeAudioSetReplayGainEnabled(enabled: boolean): Promise<void> {
+    await invoke('audio_set_replay_gain_enabled', { enabled });
+}
+
+export interface DeviceList {
+    devices: string[];
+    default: string | null;
+}
+
+/**
+ * list all available audio output devices
+ * returns device names and the current system default as reported by the OS
+ */
+export async function nativeAudioListDevices(): Promise<DeviceList> {
+    return await invoke('audio_list_output_devices');
+}
+
+/**
+ * get the cached device list (no OS call)
+ * use nativeAudioListDevices() when fresh re-enumeration is needed
+ */
+export async function nativeAudioGetDeviceInfo(): Promise<DeviceList> {
+    return await invoke('audio_get_device_info');
+}
+
+/**
+ * switch the audio output device
+ * pass null to revert to the system default
+ * the backend will rebuild the pipeline and resume playback on the new device
+ */
+export async function nativeAudioSetOutputDevice(deviceName: string | null): Promise<void> {
+    await invoke('audio_set_output_device', { deviceName });
+}
+
 // =============================================================================
 // HELPER: Check if native audio backend should be used
 // =============================================================================

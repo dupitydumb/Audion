@@ -761,8 +761,8 @@ fn get_embedded_lyrics_fallback(path: &Path) -> Result<Option<EmbeddedLyricsResu
             }
         }
  
-        // ---- M4A / MP4: read lyrics atom via mp4ameta ---------------------
-        "m4a" | "mp4" => {
+        // ---- M4A / MP4 / ALAC: read lyrics atom via mp4ameta ---------------
+        "m4a" | "mp4" | "alac" => {
             match Mp4Tag::read_from_path(path) {
                 Ok(tag) => {
                     if let Some(content) = tag.lyrics() {

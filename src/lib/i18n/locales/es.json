@@ -179,7 +179,19 @@
     "modernPlayerDesc": "Reproductor moderno con Tauri y Svelte",
     "updateAvailable": "Actualización Disponible",
     "limitExceeded": "Límite de sincronización excedido",
-    "limitExceededDesc": "Has alcanzado el límite gratuito de 100 pistas. ¡Apoya el desarrollo para obtener sincronización ilimitada!"
+    "limitExceededDesc": "Has alcanzado el límite gratuito de 100 pistas. ¡Apoya el desarrollo para obtener sincronización ilimitada!",
+    "replayGain": "Replay Gain",
+    "replayGainDesc": "Normaliza el volumen de las pistas usando valores de replay gain integrados o escaneados",
+    "replayGainUnsupported": "Solo compatible con el controlador de audio nativo",
+    "toggleReplayGain": "Activar/desactivar Replay Gain",
+    "outputDevice": "Dispositivo de salida",
+    "outputDeviceDesc": "Selecciona el dispositivo de salida de audio para la reproducción",
+    "outputDeviceUnsupported": "Solo compatible con el controlador de audio nativo",
+    "selectOutputDevice": "Seleccionar dispositivo de salida",
+    "systemDefault": "Predeterminado del sistema",
+    "systemDefaultNamed": "Predeterminado del sistema ({name})",
+    "defaultBadge": "Predeterminado",
+    "outputDevices": "Dispositivos de salida"
   },
   "pluginManager": {
     "title": "Mercado de Plugins",

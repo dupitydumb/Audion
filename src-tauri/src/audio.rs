@@ -3,7 +3,7 @@
 // =============================================================================
 // Architecture:
 //
-//   SymphoniaSource      — decodes FLAC/MP3/AAC/OGG/WAV via symphonia directly.
+//   SymphoniaSource      — decodes FLAC/MP3/AAC/ALAC/OGG/WAV via symphonia directly.
 //                          Supports instant seek via format.seek + decoder.reset.
 //                          Seek requests arrive via a crossbeam channel, checked
 //                          at ~10ms frame boundaries. Volume applied per-sample
@@ -80,14 +80,12 @@ use rodio::queue::queue;
 use rodio::{OutputStream, Source};
 use serde::{Deserialize, Serialize};
 
-use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
+use symphonia::core::codecs::audio::AudioDecoderOptions;
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo};
 use symphonia::core::io::MediaSourceStream;
-use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::Hint;
-use symphonia::core::units::Time;
+use symphonia::core::meta::{MetadataOptions, RawValue, StandardTag};
+use symphonia::core::formats::probe::Hint;
 
 use rubato::{
     Resampler, SincFixedIn, SincInterpolationParameters, SincInterpolationType, WindowFunction,
@@ -125,6 +123,16 @@ impl Default for EqSettings {
                 .collect(),
         }
     }
+}
+
+// =============================================================================
+// DEVICE LIST  (serialisable , returned by audio_list_output_devices)
+// =============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceList {
+    pub devices: Vec<String>,
+    pub default: Option<String>,
 }
 
 // =============================================================================
@@ -411,28 +419,32 @@ fn resolve_replay_gain(
     }
 
     let metadata = format.metadata();
-    let tags_iter = metadata.current().map(|m| m.tags()).into_iter().flatten();
+    let tags_iter = metadata.current()
+        .map(|m| m.media.tags.as_slice())
+        .unwrap_or_default()
+        .iter();
 
     let mut track_gain_db: Option<f32> = None;
     let mut album_gain_db: Option<f32> = None;
     let mut r128_gain: Option<f32> = None;
 
     for tag in tags_iter {
-        match tag.std_key {
-            Some(symphonia::core::meta::StandardTagKey::ReplayGainTrackGain) => {
-                track_gain_db = parse_gain_tag(&tag.value);
+        if let Some(ref std_tag) = tag.std {
+            match std_tag {
+                StandardTag::ReplayGainTrackGain(s) => {
+                    track_gain_db = parse_gain_str(s);
+                }
+                StandardTag::ReplayGainAlbumGain(s) => {
+                    album_gain_db = parse_gain_str(s);
+                }
+                _ => {}
             }
-            Some(symphonia::core::meta::StandardTagKey::ReplayGainAlbumGain) => {
-                album_gain_db = parse_gain_tag(&tag.value);
-            }
-            None if tag.key.eq_ignore_ascii_case("R128_TRACK_GAIN") => {
-                if let symphonia::core::meta::Value::String(ref s) = tag.value {
-                    if let Ok(raw) = s.trim().parse::<i32>() {
-                        r128_gain = Some((raw as f32 / 256.0) + 5.0);
-                    }
+        } else if tag.raw.key.eq_ignore_ascii_case("R128_TRACK_GAIN") {
+            if let RawValue::String(ref s) = tag.raw.value {
+                if let Ok(raw) = s.trim().parse::<i32>() {
+                    r128_gain = Some((raw as f32 / 256.0) + 5.0);
                 }
             }
-            _ => {}
         }
     }
 
@@ -440,17 +452,13 @@ fn resolve_replay_gain(
     Some(db_to_linear(db))
 }
 
-fn parse_gain_tag(value: &symphonia::core::meta::Value) -> Option<f32> {
-    if let symphonia::core::meta::Value::String(ref s) = value {
-        let cleaned = s
-            .trim()
-            .trim_end_matches(|c: char| c == 'B' || c == 'b')
-            .trim_end_matches(|c: char| c == 'd' || c == 'D')
-            .trim();
-        cleaned.parse::<f32>().ok()
-    } else {
-        None
-    }
+fn parse_gain_str(s: &str) -> Option<f32> {
+    let cleaned = s
+        .trim()
+        .trim_end_matches(|c: char| c == 'B' || c == 'b')
+        .trim_end_matches(|c: char| c == 'd' || c == 'D')
+        .trim();
+    cleaned.parse::<f32>().ok()
 }
 
 #[inline]
@@ -468,14 +476,15 @@ fn db_to_linear(db: f32) -> f32 {
 
 struct SymphoniaSource {
     format: Box<dyn FormatReader>,
-    decoder: Box<dyn symphonia::core::codecs::Decoder>,
+    decoder: Box<dyn symphonia::core::codecs::audio::AudioDecoder>,
     track_id: u32,
-    sample_buf: Option<SampleBuffer<f32>>,
+    sample_buf: Option<Vec<f32>>,
     sample_pos: usize,
     channels: u16,
     sample_rate: u32,
     duration: Option<Duration>,
     replay_gain: Option<f32>,
+    replay_gain_enabled: Arc<AtomicBool>, // shared with AudioEngine and toggled at runtime
     done: bool,
     seek_rx: Receiver<Duration>,
     volume: Arc<AtomicU32>, // shared with AudioEngine — f32 bits, Relaxed
@@ -495,6 +504,7 @@ impl SymphoniaSource {
         event_tx: Sender<AudioEvent>,
         loop_tx: Sender<Instant>,
         volume: Arc<AtomicU32>,
+        replay_gain_enabled: Arc<AtomicBool>,
     ) -> Result<Self, String> {
         let file = File::open(path).map_err(|e| format!("Failed to open {}: {}", path, e))?;
 
@@ -505,44 +515,26 @@ impl SymphoniaSource {
             hint.with_extension(ext);
         }
 
-        let probed = symphonia::default::get_probe()
-            .format(
-                &hint,
-                mss,
-                &FormatOptions {
-                    enable_gapless: true,
-                    ..Default::default()
-                },
-                &MetadataOptions {
-                    limit_metadata_bytes: symphonia::core::meta::Limit::Maximum(0),
-                    limit_visual_bytes: symphonia::core::meta::Limit::Maximum(0),
-                },
-            )
+        let mut format = symphonia::default::get_probe()
+            .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
             .map_err(|e| format!("Failed to probe {}: {}", path, e))?;
-
-        let mut format = probed.format;
-        let track = format
-            .tracks()
-            .iter()
-            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
-            .ok_or_else(|| format!("No audio track found in {}", path))?;
-
+        let track = format.default_track(symphonia::core::formats::TrackType::Audio)
+        .ok_or_else(|| format!("No audio track found in {}", path))?;
+        let audio_params = match &track.codec_params {
+            Some(symphonia::core::codecs::CodecParameters::Audio(p)) => p,
+            _ => return Err(format!("No audio codec params in {}", path)),
+        };
         let track_id = track.id;
-        let sample_rate = track.codec_params.sample_rate.unwrap_or(44100);
-        let channels = track
-            .codec_params
-            .channels
-            .map(|c| c.count() as u16)
-            .unwrap_or(2);
-        let duration = track.codec_params.n_frames.and_then(|f| {
-            track
-                .codec_params
-                .sample_rate
-                .map(|r| Duration::from_secs_f64(f as f64 / r as f64))
+        let sample_rate = audio_params.sample_rate.unwrap_or(44100);
+        let channels = audio_params.channels.as_ref().map(|c| c.count() as u16).unwrap_or(2);
+        let duration = track.time_base.and_then(|tb| {
+            track.duration.and_then(|d| {
+                let time = tb.calc_time(symphonia::core::units::Timestamp::from(d.get() as i64))?;
+                Some(std::time::Duration::from_secs_f64(time.as_secs_f64()))
+            })
         });
-
         let decoder = symphonia::default::get_codecs()
-            .make(&track.codec_params, &DecoderOptions::default())
+            .make_audio_decoder(audio_params, &AudioDecoderOptions::default())
             .map_err(|e| format!("Failed to create decoder for {}: {}", path, e))?;
 
         let replay_gain = resolve_replay_gain(replay_gain_db, &mut format);
@@ -559,6 +551,7 @@ impl SymphoniaSource {
             duration,
             done: false,
             replay_gain,
+            replay_gain_enabled,
             seek_rx,
             volume,
             frame_count: 0,
@@ -570,17 +563,15 @@ impl SymphoniaSource {
     }
 
     fn seek(&mut self, pos: Duration) {
-        let time = Time {
-            seconds: pos.as_secs(),
-            frac: pos.subsec_nanos() as f64 / 1e9,
+        let secs = pos.as_secs_f64();
+        let Some(time) = symphonia::core::units::Time::try_from_secs_f64(secs) else {
+            tracing::warn!("[AUDIO] seek: invalid position {:?}", pos);
+            return;
         };
-        match self.format.seek(
-            SeekMode::Accurate,
-            SeekTo::Time {
-                time,
-                track_id: Some(self.track_id),
-            },
-        ) {
+        match self.format.seek(SeekMode::Accurate, SeekTo::Time {
+            time,
+            track_id: Some(self.track_id),
+        }) {
             Ok(_) => {}
             Err(e) => tracing::warn!("[AUDIO] seek error: {}", e),
         }
@@ -593,7 +584,8 @@ impl SymphoniaSource {
     fn refill(&mut self) -> bool {
         loop {
             let packet = match self.format.next_packet() {
-                Ok(p) => p,
+                Ok(Some(p)) => p,
+                Ok(None) => return false,
                 Err(SymphoniaError::IoError(_)) => return false,
                 Err(SymphoniaError::ResetRequired) => {
                     self.decoder.reset();
@@ -601,17 +593,14 @@ impl SymphoniaSource {
                 }
                 Err(_) => return false,
             };
-            if packet.track_id() != self.track_id {
+            if packet.track_id != self.track_id {
                 continue;
             }
             match self.decoder.decode(&packet) {
                 Ok(decoded) => {
-                    let spec = *decoded.spec();
-                    let frames = decoded.capacity() as u64;
-                    let buf = self
-                        .sample_buf
-                        .get_or_insert_with(|| SampleBuffer::<f32>::new(frames, spec));
-                    buf.copy_interleaved_ref(decoded);
+                    let buf = self.sample_buf.get_or_insert_with(Vec::new);
+                    buf.clear();
+                    decoded.copy_to_vec_interleaved(buf);
                     self.sample_pos = 0;
                     return true;
                 }
@@ -654,13 +643,17 @@ impl Iterator for SymphoniaSource {
 
         loop {
             if let Some(ref buf) = self.sample_buf {
-                if self.sample_pos < buf.samples().len() {
-                    let s = buf.samples()[self.sample_pos];
+                if self.sample_pos < buf.len() {
+                    let s = buf[self.sample_pos];
                     self.sample_pos += 1;
-                    // Apply replay gain then volume — both scalar multiplies, no locks.
-                    let s = match self.replay_gain {
-                        Some(gain) => (s * gain).clamp(-1.0, 1.0),
-                        None => s,
+                    // Apply replay gain (if present and enabled) then volume — both scalar multiplies, no locks.
+                    let s = if self.replay_gain_enabled.load(Ordering::Relaxed) {
+                        match self.replay_gain {
+                            Some(gain) => (s * gain).clamp(-1.0, 1.0),
+                            None => s,
+                        }
+                    } else {
+                        s
                     };
                     let vol = f32::from_bits(self.volume.load(Ordering::Relaxed));
                     return Some(s * vol);
@@ -686,7 +679,7 @@ impl Source for SymphoniaSource {
     fn current_frame_len(&self) -> Option<usize> {
         self.sample_buf
             .as_ref()
-            .map(|b| b.samples().len().saturating_sub(self.sample_pos).max(1))
+            .map(|b| b.len().saturating_sub(self.sample_pos).max(1))
             .or(Some(441))
     }
     fn channels(&self) -> u16 {
@@ -882,9 +875,10 @@ struct AudioEngine {
     volume_atomic: Arc<AtomicU32>,
     volume: f32,
     eq_tx: Sender<EqSettings>,
+    eq_settings: EqSettings,
     event_tx: Sender<AudioEvent>,
     device_sample_rate: u32,
-
+    replay_gain_enabled: Arc<AtomicBool>,
     seek_tx: Option<Sender<Duration>>,
     current_finish_rx: Option<crossbeam::channel::Receiver<()>>,
     repeat_one_tx: Option<Sender<bool>>,
@@ -905,19 +899,51 @@ struct AudioEngine {
 impl AudioEngine {
     fn new(
         eq_settings: &EqSettings,
-    ) -> Result<(Self, crossbeam::channel::Receiver<AudioEvent>), String> {
+        preferred_device_name: Option<String>,
+    ) -> Result<(Self, crossbeam::channel::Receiver<AudioEvent>, DeviceList), String> {
         use cpal::traits::{DeviceTrait, HostTrait};
 
         let host = cpal::default_host();
-        let device = host
+
+        // reuse the results for both device selection and building the cached DeviceList
+        let all_devices: Vec<_> = host
+            .output_devices()
+            .map_err(|e| format!("Failed to enumerate devices: {}", e))?
+            .collect();
+
+        let device_names: Vec<String> = all_devices
+            .iter()
+            .filter_map(|d| d.name().ok())
+            .collect();
+
+        let default_device_name = host
             .default_output_device()
-            .ok_or("No default output device found")?;
+            .and_then(|d| d.name().ok());
+
+        let cached_device_list = DeviceList {
+            devices: device_names.clone(),
+            default: default_device_name.clone(),
+        };
+
+        let device = if let Some(ref name) = preferred_device_name {
+            all_devices
+                .into_iter()
+                .find(|d| d.name().map(|n| n == *name).unwrap_or(false))
+                .ok_or_else(|| format!("Output device '{}' not found, using default", name))
+                .or_else(|e| {
+                    tracing::warn!("[AUDIO] {}", e);
+                    host.default_output_device().ok_or_else(|| "No default output device found".to_string())
+                })?
+        } else {
+            host.default_output_device()
+                .ok_or("No default output device found")?
+        };
+
         let config = device
             .default_output_config()
             .map_err(|e| format!("Failed to get output config: {}", e))?;
 
         let device_sample_rate = config.sample_rate().0;
-        tracing::info!("[AUDIO] Device sample rate: {} Hz", device_sample_rate);
 
         let (stream, stream_handle) = OutputStream::try_from_device_config(&device, config)
             .map_err(|e| format!("Failed to open audio output: {}", e))?;
@@ -927,6 +953,7 @@ impl AudioEngine {
         let (queue_input, queue_output) = queue::<f32>(true);
         let paused_flag = Arc::new(AtomicBool::new(false));
         let volume_atomic = Arc::new(AtomicU32::new(1.0f32.to_bits()));
+        let replay_gain_enabled = Arc::new(AtomicBool::new(true));
 
         let (eq_tx, eq_rx) = unbounded::<EqSettings>();
         let (event_tx, event_rx) = unbounded::<AudioEvent>();
@@ -949,8 +976,10 @@ impl AudioEngine {
                 volume_atomic,
                 volume: 0.7,
                 eq_tx,
+                eq_settings: eq_settings.clone(),
                 event_tx,
                 device_sample_rate,
+                replay_gain_enabled,
                 seek_tx: None,
                 current_finish_rx: None,
                 repeat_one_tx: None,
@@ -966,6 +995,7 @@ impl AudioEngine {
                 _stream: stream,
             },
             event_rx,
+            cached_device_list,
         ))
     }
 
@@ -997,6 +1027,7 @@ impl AudioEngine {
             self.event_tx.clone(),
             loop_tx,
             Arc::clone(&self.volume_atomic),
+            Arc::clone(&self.replay_gain_enabled),
         )?;
         let dur = src.duration;
 
@@ -1172,7 +1203,92 @@ impl AudioEngine {
 
     // ── EQ ───────────────────────────────────────────────────────────────────
     fn set_eq(&mut self, settings: &EqSettings) {
+        self.eq_settings = settings.clone();
         let _ = self.eq_tx.send(settings.clone());
+    }
+
+    // replay gain enable/disable
+    fn set_replay_gain_enabled(&mut self, enabled: bool) {
+        self.replay_gain_enabled
+            .store(enabled, Ordering::Relaxed);
+        tracing::info!("[AUDIO] Replay gain enabled: {}", enabled);
+    }
+
+    // output device switch
+    fn set_output_device(
+        &mut self,
+        device_name: Option<String>,
+        event_rx_slot: &mut Option<crossbeam::channel::Receiver<AudioEvent>>,
+        device_list_cache: &Arc<Mutex<DeviceList>>,
+    ) -> Result<(), String> {
+        // snapshot current playback state before tearing down
+        let snapshot = self.current_info.as_ref().map(|info| {
+            (info.path.clone(), Duration::from_secs_f64(info.position_secs()))
+        });
+        let was_paused = self.paused_flag.load(Ordering::Relaxed);
+        let volume = self.volume;
+        let repeat_one = self.repeat_one;
+        let replay_gain_enabled = self.replay_gain_enabled.load(Ordering::Relaxed);
+        let eq_settings = self.eq_settings.clone();
+
+        // clear all pending/preloaded sources
+        self.queue_input.clear();
+        if let Some(ref tx) = self.seek_tx {
+            let _ = tx.send(Duration::MAX);
+        }
+        if let Some(ref tx) = self.next_seek_tx {
+            let _ = tx.send(Duration::MAX);
+        }
+
+        // build new engine on the selected device, carrying all current settings
+        let (mut new_engine, new_event_rx, new_device_list) =
+            AudioEngine::new(&eq_settings, device_name.clone())?;
+
+        // update cached device list so audio_get_device_info reflects the new device set
+        if let Ok(mut cached) = device_list_cache.lock() {
+            *cached = new_device_list;
+        }
+
+        // transfer all live settings to the new engine
+        new_engine.set_volume(volume);
+        new_engine.replay_gain_enabled.store(replay_gain_enabled, Ordering::Relaxed);
+        new_engine.repeat_one = repeat_one;
+
+        // resume track at the snapshotted position if one was playing
+        if let Some((path, position)) = snapshot {
+            // replay_gain_db: None  re-read from file tags
+            // TODO db gain field addition
+            if let Err(e) = new_engine.play(&path, None) {
+                tracing::warn!("[AUDIO] Device switch: failed to reopen track: {}", e);
+            } else {
+                // seek to the saved position
+                if let Some(ref tx) = new_engine.seek_tx {
+                    let _ = tx.send(position);
+                }
+                // sync TrackInfo
+                if let Some(ref mut info) = new_engine.current_info {
+                    info.offset = position;
+                    info.started = Instant::now();
+                }
+                // restore pause state
+                if was_paused {
+                    new_engine.paused_flag.store(true, Ordering::Relaxed);
+                }
+            }
+        }
+
+        // swap event receiver slot so the command loop drains the new channel
+        *event_rx_slot = Some(new_event_rx);
+
+        if let Some(ref path) = self.next_path {
+            tracing::warn!("[AUDIO] Device switch: discarding preloaded track: {}", path);
+        }
+
+        // replace self so that the old _stream is dropped here, killing the old pipeline
+        *self = new_engine;
+
+        tracing::info!("[AUDIO] Output device switched successfully");
+        Ok(())
     }
 
     // ── repeat one ───────────────────────────────────────────────────────────
@@ -1295,6 +1411,8 @@ enum AudioCommand {
     SetVolume(f32),
     SetEq(EqSettings),
     SetRepeatOne(bool),
+    SetReplayGainEnabled(bool),
+    SetOutputDevice(Option<String>),
 }
 
 // =============================================================================
@@ -1305,6 +1423,7 @@ pub struct PlaybackStateSync {
     command_tx: Sender<AudioCommand>,
     shared_state: Arc<Mutex<PlaybackState>>,
     event_queue: Arc<Mutex<std::collections::VecDeque<AudioEvent>>>,
+    pub device_list: Arc<Mutex<DeviceList>>,
 }
 
 impl PlaybackStateSync {
@@ -1319,9 +1438,14 @@ impl PlaybackStateSync {
             is_initialized: false,
         }));
         let event_queue = Arc::new(Mutex::new(std::collections::VecDeque::<AudioEvent>::new()));
+        let device_list = Arc::new(Mutex::new(DeviceList {
+            devices: Vec::new(),
+            default: None,
+        }));
 
         let state_clone = Arc::clone(&shared_state);
         let events_clone = Arc::clone(&event_queue);
+        let device_list_clone = Arc::clone(&device_list);
 
         std::thread::spawn(move || {
             let mut engine_opt: Option<AudioEngine> = None;
@@ -1332,12 +1456,15 @@ impl PlaybackStateSync {
                 match rx.recv_timeout(Duration::from_millis(100)) {
                     Ok(cmd) => {
                         if engine_opt.is_none() {
-                            match AudioEngine::new(&eq_settings) {
-                                Ok((e, evt_rx)) => {
+                            match AudioEngine::new(&eq_settings, None) {
+                                Ok((e, evt_rx, dl)) => {
                                     event_rx_opt = Some(evt_rx);
                                     engine_opt = Some(e);
                                     if let Ok(mut s) = state_clone.lock() {
                                         s.is_initialized = true;
+                                    }
+                                    if let Ok(mut cached) = device_list_clone.lock() {
+                                        *cached = dl;
                                     }
                                 }
                                 Err(e) => {
@@ -1382,6 +1509,14 @@ impl PlaybackStateSync {
                                 engine.set_eq(&s);
                             }
                             AudioCommand::SetRepeatOne(v) => engine.set_repeat_one(v),
+                            AudioCommand::SetReplayGainEnabled(v) => {
+                                engine.set_replay_gain_enabled(v)
+                            }
+                            AudioCommand::SetOutputDevice(name) => {
+                                if let Err(e) = engine.set_output_device(name, &mut event_rx_opt, &device_list_clone) {
+                                    tracing::error!("[AUDIO] Device switch failed: {}", e);
+                                }
+                            }
                         }
                     }
                     Err(crossbeam::channel::RecvTimeoutError::Disconnected) => break,
@@ -1416,6 +1551,7 @@ impl PlaybackStateSync {
             command_tx: tx,
             shared_state,
             event_queue,
+            device_list,
         }
     }
 
@@ -1514,6 +1650,49 @@ pub fn audio_set_repeat_one(
 }
 
 #[tauri::command]
+pub fn audio_set_replay_gain_enabled(
+    enabled: bool,
+    state: tauri::State<'_, PlaybackStateSync>,
+) -> Result<(), String> {
+    state.send(AudioCommand::SetReplayGainEnabled(enabled))
+}
+
+#[tauri::command]
 pub fn native_audio_available(_state: tauri::State<'_, PlaybackStateSync>) -> bool {
     true
+}
+
+#[tauri::command]
+pub fn audio_list_output_devices() -> Result<DeviceList, String> {
+    use cpal::traits::{DeviceTrait, HostTrait};
+    let host = cpal::default_host();
+    let devices = host
+        .output_devices()
+        .map_err(|e| format!("Failed to enumerate devices: {}", e))?;
+    let names = devices
+        .filter_map(|d| d.name().ok())
+        .collect();
+    let default = host
+        .default_output_device()
+        .and_then(|d| d.name().ok());
+    Ok(DeviceList { devices: names, default })
+}
+
+#[tauri::command]
+pub fn audio_get_device_info(
+    state: tauri::State<'_, PlaybackStateSync>,
+) -> Result<DeviceList, String> {
+    state
+        .device_list
+        .lock()
+        .map(|dl| dl.clone())
+        .map_err(|_| "Device list lock poisoned".into())
+}
+
+#[tauri::command]
+pub fn audio_set_output_device(
+    device_name: Option<String>,
+    state: tauri::State<'_, PlaybackStateSync>,
+) -> Result<(), String> {
+    state.send(AudioCommand::SetOutputDevice(device_name))
 }

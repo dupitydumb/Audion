@@ -107,7 +107,7 @@ If you prefer, download the platform-specific asset from the Releases page for y
 ### Music Management
 - Auto-scan local music folders with metadata extraction
 - Smart playlists and queue management
-- Support for all major audio formats (FLAC, MP3, AAC, etc.)
+- Support for all major audio formats (FLAC, MP3, AAC, ALAC etc.)
 
 ### Lyrics
 - Real-time synced lyrics from LRCLIB and Musixmatch
