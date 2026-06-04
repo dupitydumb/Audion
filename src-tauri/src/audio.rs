@@ -602,6 +602,54 @@ fn db_to_linear(db: f32) -> f32 {
 }
 
 // =============================================================================
+// channel_map => re-interleave a decoded audio buffer to a target channel count
+// =============================================================================
+// called from SymphoniaSource::refill whenever the file's channel count differs from the device channel count advertised to rodio
+//
+// mapping rules:
+//   mono -> any    : duplicate the single sample into all N channels
+//   fewer -> more  : copy the available channels, fill the rest with silence
+//                   (stereo->7.1: front L/R populated, centre/LFE/surround silent;
+//                    the driver and receiver handle spatial expansion from there)
+//   more -> fewer  : keep only the first dst_ch channels (simple truncation)
+//                   good enough for stereo output from a surround source
+fn channel_map(buf: &mut Vec<f32>, src_ch: u16, dst_ch: u16) {
+    if src_ch == dst_ch {
+        return;
+    }
+    let src = src_ch as usize;
+    let dst = dst_ch as usize;
+    let frames = buf.len() / src;
+
+    if src == 1 {
+        // mono -> any: duplicate in-place back-to-front (no allocation after first call)
+        buf.resize(frames * dst, 0.0);
+        for i in (0..frames).rev() {
+            let s = buf[i];
+            for c in 0..dst {
+                buf[i * dst + c] = s;
+            }
+        }
+    } else if dst > src {
+        // upmix: front channels filled, remainder silent
+        let old: Vec<f32> = buf.drain(..).collect();
+        buf.reserve(frames * dst);
+        for frame in old.chunks_exact(src) {
+            for c in 0..dst {
+                buf.push(if c < src { frame[c] } else { 0.0 });
+            }
+        }
+    } else {
+        // downmix: keep first dst_ch channels per frame
+        let old: Vec<f32> = buf.drain(..).collect();
+        buf.reserve(frames * dst);
+        for frame in old.chunks_exact(src) {
+            buf.extend_from_slice(&frame[..dst]);
+        }
+    }
+}
+
+// =============================================================================
 // SymphoniaSource — decodes audio, handles seek + stop via channel, volume via atomic
 // =============================================================================
 // Hot path: zero locks. Volume is an AtomicU32 (f32 bits), read with Relaxed ordering.
@@ -643,6 +691,7 @@ impl SymphoniaSource {
         generation: u64,
         volume: Arc<AtomicU32>,
         replay_gain_enabled: Arc<AtomicBool>,
+        device_channels: NonZero<u16>,
     ) -> Result<Self, String> {
         let file = File::open(path).map_err(|e| format!("Failed to open {}: {}", path, e))?;
 
@@ -665,9 +714,10 @@ impl SymphoniaSource {
         let track_id = track.id;
         let sample_rate = NonZero::new(audio_params.sample_rate.unwrap_or(44100))
             .ok_or("Sample rate is 0")?;
-        let channels = NonZero::new(
-            audio_params.channels.as_ref().map(|c| c.count() as u16).unwrap_or(2)
-        ).ok_or("Channel count is 0")?;
+        let source_channels = audio_params.channels.as_ref().map(|c| c.count() as u16).unwrap_or(2);
+        // always advertise the device channel count to rodio's mixer
+        // refill() will channel_map the decoded buffer to match
+        let channels = device_channels;
         let duration = track.time_base.and_then(|tb| {
             track.duration.and_then(|d| {
                 let time = tb.calc_time(symphonia::core::units::Timestamp::from(d.get() as i64))?;
@@ -696,7 +746,7 @@ impl SymphoniaSource {
             );
         }
 
-        tracing::info!("[AUDIO] Track: {}Hz {}ch — {}", sample_rate, channels, path);
+        tracing::info!("[AUDIO] Track: {}Hz {}ch (device {}ch) — {}", sample_rate, source_channels, channels, path);
         Ok(Self {
             format,
             decoder,
@@ -765,6 +815,14 @@ impl SymphoniaSource {
                     let buf = self.sample_buf.get_or_insert_with(Vec::new);
                     buf.clear();
                     decoded.copy_to_vec_interleaved(buf);
+
+                    // channel mapping: expand/contract buffer to match the advertised device channel count
+                    let decoded_ch = decoded.spec().channels().count() as u16;
+                    let dst_ch = self.channels.get();
+                    if decoded_ch != dst_ch {
+                        channel_map(buf, decoded_ch, dst_ch);
+                    }
+
                     self.sample_pos = 0;
                     return true;
                 }
@@ -1080,6 +1138,7 @@ struct AudioEngine {
     eq_settings: EqSettings,
     event_tx: Sender<AudioEvent>,
     device_sample_rate: NonZero<u32>,
+    device_channels: NonZero<u16>,
     replay_gain_enabled: Arc<AtomicBool>,
     seek_tx: Option<Sender<Duration>>,
     repeat_one_tx: Option<Sender<bool>>,
@@ -1195,8 +1254,13 @@ impl AudioEngine {
 
         let device_sample_rate = NonZero::new(config.sample_rate())
             .ok_or("Device reported sample rate of 0")?;
+        let device_channels = NonZero::new(config.channels())
+            .ok_or("Device reported channel count of 0")?;
 
-        tracing::info!("[AUDIO] Output stream opened successfully");
+        tracing::info!(
+            "[AUDIO] Output stream opened ({}Hz {}ch)",
+            device_sample_rate, device_channels
+        );
 
         let (queue_input, queue_output) = queue(true);
         let paused_flag = Arc::new(AtomicBool::new(false));
@@ -1230,6 +1294,7 @@ impl AudioEngine {
                         task.generation,
                         task.volume,
                         task.replay_gain_enabled,
+                        task.device_channels,
                     );
 
                     let src = match src {
@@ -1300,6 +1365,7 @@ impl AudioEngine {
                 eq_settings: eq_settings.clone(),
                 event_tx,
                 device_sample_rate,
+                device_channels,
                 replay_gain_enabled,
                 seek_tx: None,
                 repeat_one_tx: None,
@@ -1349,6 +1415,7 @@ impl AudioEngine {
             volume: Arc::clone(&self.volume_atomic),
             replay_gain_enabled: Arc::clone(&self.replay_gain_enabled),
             device_sample_rate: self.device_sample_rate,
+            device_channels: self.device_channels,
             abort: abort_flag,
             seek_tx,
             repeat_one_tx,
@@ -1642,6 +1709,7 @@ struct OpenTask {
     volume: Arc<AtomicU32>,
     replay_gain_enabled: Arc<AtomicBool>,
     device_sample_rate: NonZero<u32>,
+    device_channels: NonZero<u16>,
     abort: Arc<AtomicBool>,
 }
 
