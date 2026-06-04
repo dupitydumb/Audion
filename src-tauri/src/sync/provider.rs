@@ -1,0 +1,875 @@
+use std::sync::{Arc, Mutex};
+use crate::db::{queries, Database};
+use crate::sync::auth;
+use serde::{Deserialize, Serialize};
+use rusqlite::params;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProviderMode {
+    Local,
+    Server,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Library {
+    pub tracks: Vec<queries::Track>,
+    pub albums: Vec<queries::Album>,
+    pub artists: Vec<queries::Artist>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TrackResponse {
+    pub id: i64,
+    pub path: String,
+    pub title: Option<String>,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub track_number: Option<i32>,
+    pub disc_number: Option<i32>,
+    pub duration: Option<i32>,
+    pub album_id: Option<i64>,
+    pub format: Option<String>,
+    pub bitrate: Option<i32>,
+    pub source_type: Option<String>,
+    pub cover_url: Option<String>,
+    pub external_id: Option<String>,
+    pub local_src: Option<String>,
+    pub track_cover_path: Option<String>,
+    pub genre: Option<String>,
+    pub metadata_json: Option<String>,
+    pub date_added: Option<String>,
+}
+
+impl TrackResponse {
+    pub fn to_track(&self, server_url: &str) -> queries::Track {
+        // Resolve cover_url and track_cover_path to point to the server!
+        // Svelte will render it using standard img tag
+        let resolved_cover_url = Some(format!("{}/api/tracks/{}/cover", server_url, self.id));
+        
+        queries::Track {
+            id: self.id,
+            path: self.path.clone(),
+            title: self.title.clone(),
+            artist: self.artist.clone(),
+            album: self.album.clone(),
+            track_number: self.track_number,
+            duration: self.duration,
+            album_id: self.album_id,
+            format: self.format.clone(),
+            bitrate: self.bitrate,
+            source_type: Some("server".to_string()),
+            cover_url: resolved_cover_url,
+            external_id: self.external_id.clone(),
+            local_src: self.local_src.clone(),
+            track_cover: None,
+            track_cover_path: None, // force use of cover_url
+            disc_number: self.disc_number,
+            metadata_json: self.metadata_json.clone(),
+            date_added: self.date_added.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AlbumResponse {
+    pub id: i64,
+    pub name: String,
+    pub artist: Option<String>,
+    pub art_path: Option<String>,
+}
+
+impl AlbumResponse {
+    pub fn to_album(&self, server_url: &str) -> queries::Album {
+        // Resolve art_path as a full HTTP URL in art_data so getAlbumCoverSrc returns it directly!
+        let resolved_art_url = Some(format!("{}/api/albums/{}/artwork", server_url, self.id));
+        queries::Album {
+            id: self.id,
+            name: self.name.clone(),
+            artist: self.artist.clone(),
+            art_data: resolved_art_url, // passed in art_data to bypass tauri local asset URL converter
+            art_path: None,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ArtistResponse {
+    pub name: String,
+    pub track_count: i32,
+    pub album_count: i32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PlaylistResponse {
+    pub id: i64,
+    pub name: String,
+    pub cover_url: Option<String>,
+    pub created_at: Option<String>,
+}
+
+impl PlaylistResponse {
+    pub fn to_playlist(&self) -> queries::Playlist {
+        queries::Playlist {
+            id: self.id,
+            name: self.name.clone(),
+            created_at: self.created_at.clone(),
+            folder_path: None,
+            cover_url: self.cover_url.clone(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SearchResults {
+    pub tracks: Vec<TrackResponse>,
+    pub albums: Vec<AlbumResponse>,
+    pub artists: Vec<ArtistResponse>,
+}
+
+pub trait LibraryProvider: Send + Sync {
+    // Tracks
+    async fn get_tracks_paginated(&self, limit: i32, offset: i32) -> Result<Vec<queries::Track>, String>;
+    async fn get_albums_paginated(&self, limit: i32, offset: i32) -> Result<Vec<queries::Album>, String>;
+    async fn search_library(&self, query: &str, limit: i32, offset: i32) -> Result<Vec<queries::Track>, String>;
+    async fn get_tracks_by_album(&self, album_id: i64) -> Result<Vec<queries::Track>, String>;
+    async fn get_tracks_by_artist(&self, artist: &str) -> Result<Vec<queries::Track>, String>;
+    async fn get_album(&self, album_id: i64) -> Result<Option<queries::Album>, String>;
+    async fn get_albums_by_artist(&self, artist: &str) -> Result<Vec<queries::Album>, String>;
+    async fn get_library(&self) -> Result<Library, String>;
+    async fn delete_track(&self, track_id: i64) -> Result<bool, String>;
+    async fn delete_album(&self, album_id: i64) -> Result<bool, String>;
+
+    // Playlists
+    async fn create_playlist(&self, name: &str, cover_url: Option<&str>) -> Result<i64, String>;
+    async fn get_playlists(&self) -> Result<Vec<queries::Playlist>, String>;
+    async fn get_playlist_tracks(&self, playlist_id: i64) -> Result<Vec<queries::Track>, String>;
+    async fn add_track_to_playlist(&self, playlist_id: i64, track_id: i64) -> Result<(), String>;
+    async fn remove_track_from_playlist(&self, playlist_id: i64, track_id: i64) -> Result<(), String>;
+    async fn delete_playlist(&self, playlist_id: i64) -> Result<(), String>;
+    async fn rename_playlist(&self, playlist_id: i64, new_name: &str) -> Result<(), String>;
+    async fn update_playlist_cover(&self, playlist_id: i64, cover_url: Option<&str>) -> Result<(), String>;
+    async fn reorder_playlist_tracks(&self, playlist_id: i64, from_index: i64, to_index: i64) -> Result<(), String>;
+
+    // Liked tracks (Activity)
+    async fn like_track(&self, track_id: i64) -> Result<(), String>;
+    async fn unlike_track(&self, track_id: i64) -> Result<(), String>;
+    async fn is_track_liked(&self, track_id: i64) -> Result<bool, String>;
+    async fn get_liked_track_ids(&self) -> Result<Vec<i64>, String>;
+    async fn get_liked_tracks(&self) -> Result<Vec<queries::Track>, String>;
+}
+
+pub struct LocalProvider {
+    pub db: Database,
+}
+
+impl LibraryProvider for LocalProvider {
+    async fn get_tracks_paginated(&self, limit: i32, offset: i32) -> Result<Vec<queries::Track>, String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::get_tracks_paginated(&conn, limit, offset).map_err(|e| e.to_string())
+    }
+
+    async fn get_albums_paginated(&self, limit: i32, offset: i32) -> Result<Vec<queries::Album>, String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::get_albums_paginated(&conn, limit, offset).map_err(|e| e.to_string())
+    }
+
+    async fn search_library(&self, query: &str, limit: i32, offset: i32) -> Result<Vec<queries::Track>, String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::search_tracks(&conn, query, limit, offset).map_err(|e| e.to_string())
+    }
+
+    async fn get_tracks_by_album(&self, album_id: i64) -> Result<Vec<queries::Track>, String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::get_tracks_by_album(&conn, album_id).map_err(|e| e.to_string())
+    }
+
+    async fn get_tracks_by_artist(&self, artist: &str) -> Result<Vec<queries::Track>, String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::get_tracks_by_artist(&conn, artist).map_err(|e| e.to_string())
+    }
+
+    async fn get_album(&self, album_id: i64) -> Result<Option<queries::Album>, String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::get_album_by_id(&conn, album_id).map_err(|e| e.to_string())
+    }
+
+    async fn get_albums_by_artist(&self, artist: &str) -> Result<Vec<queries::Album>, String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT a.id, a.name, a.artist, a.art_data, a.art_path 
+                 FROM albums a
+                 INNER JOIN tracks t ON t.album_id = a.id
+                 WHERE t.artist = ?1
+                 ORDER BY a.name",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let albums = stmt
+            .query_map([artist], |row| {
+                Ok(queries::Album {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    artist: row.get(2)?,
+                    art_data: row.get(3)?,
+                    art_path: row.get(4)?,
+                })
+            })
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+
+        Ok(albums)
+    }
+
+    async fn get_library(&self) -> Result<Library, String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        let tracks = queries::get_all_tracks_with_paths(&conn).map_err(|e| e.to_string())?;
+        let albums = queries::get_all_albums_with_paths(&conn).map_err(|e| e.to_string())?;
+        let artists = queries::get_all_artists(&conn).map_err(|e| e.to_string())?;
+        Ok(Library { tracks, albums, artists })
+    }
+
+    async fn delete_track(&self, track_id: i64) -> Result<bool, String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::delete_track(&conn, track_id).map_err(|e| e.to_string())
+    }
+
+    async fn delete_album(&self, album_id: i64) -> Result<bool, String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::delete_album(&conn, album_id).map_err(|e| e.to_string())
+    }
+
+    async fn create_playlist(&self, name: &str, cover_url: Option<&str>) -> Result<i64, String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        let id = queries::create_playlist(&conn, name, cover_url).map_err(|e| e.to_string())?;
+
+        // Enqueue sync change
+        if queries::is_logged_in(&conn) {
+            let payload = serde_json::json!({
+                "name": name,
+                "coverUrl": cover_url
+            })
+            .to_string();
+            let _ = queries::enqueue_sync_change(
+                &conn,
+                "playlist",
+                &format!("local_{}", id),
+                "create",
+                Some(&payload),
+            );
+        }
+        Ok(id)
+    }
+
+    async fn get_playlists(&self) -> Result<Vec<queries::Playlist>, String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::get_all_playlists(&conn).map_err(|e| e.to_string())
+    }
+
+    async fn get_playlist_tracks(&self, playlist_id: i64) -> Result<Vec<queries::Track>, String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::get_playlist_tracks(&conn, playlist_id).map_err(|e| e.to_string())
+    }
+
+    async fn add_track_to_playlist(&self, playlist_id: i64, track_id: i64) -> Result<(), String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::add_track_to_playlist(&conn, playlist_id, track_id).map_err(|e| e.to_string())?;
+
+        // Enqueue sync change
+        if queries::is_logged_in(&conn) {
+            let position: i32 = conn.query_row(
+                "SELECT COALESCE(position, 0) FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2",
+                params![playlist_id, track_id],
+                |row| row.get(0),
+            ).unwrap_or(0);
+
+            let mut payload = serde_json::json!({
+                "playlistId": format!("local_{}", playlist_id),
+                "position": position,
+            });
+            if let Ok(Some(track)) = queries::get_track_by_id(&conn, track_id) {
+                let track_hash = queries::build_track_hash_str(
+                    track.title.as_deref(),
+                    track.artist.as_deref(),
+                    track.album.as_deref(),
+                );
+                payload["trackHash"] = serde_json::Value::String(track_hash);
+                payload["title"] = serde_json::json!(track.title);
+                payload["artist"] = serde_json::json!(track.artist);
+                payload["album"] = serde_json::json!(track.album);
+                payload["duration"] = serde_json::json!(track.duration);
+                payload["externalId"] = serde_json::json!(track.external_id);
+                payload["sourceType"] = serde_json::json!(track.source_type);
+                payload["coverUrl"] = serde_json::json!(track.cover_url);
+            }
+            let _ = queries::enqueue_sync_change(
+                &conn,
+                "playlist_track",
+                &format!("local_{}_{}", playlist_id, track_id),
+                "create",
+                Some(&payload.to_string()),
+            );
+        }
+        Ok(())
+    }
+
+    async fn remove_track_from_playlist(&self, playlist_id: i64, track_id: i64) -> Result<(), String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::remove_track_from_playlist(&conn, playlist_id, track_id).map_err(|e| e.to_string())?;
+
+        // Enqueue sync change
+        if queries::is_logged_in(&conn) {
+            let payload = serde_json::json!({
+                "playlistId": format!("local_{}", playlist_id),
+            })
+            .to_string();
+            let _ = queries::enqueue_sync_change(
+                &conn,
+                "playlist_track",
+                &format!("local_{}_{}", playlist_id, track_id),
+                "delete",
+                Some(&payload),
+            );
+        }
+        Ok(())
+    }
+
+    async fn delete_playlist(&self, playlist_id: i64) -> Result<(), String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::delete_playlist(&conn, playlist_id).map_err(|e| e.to_string())?;
+
+        // Enqueue sync change
+        if queries::is_logged_in(&conn) {
+            let _ = queries::enqueue_sync_change(
+                &conn,
+                "playlist",
+                &format!("local_{}", playlist_id),
+                "delete",
+                None,
+            );
+        }
+        Ok(())
+    }
+
+    async fn rename_playlist(&self, playlist_id: i64, new_name: &str) -> Result<(), String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::rename_playlist(&conn, playlist_id, new_name).map_err(|e| e.to_string())?;
+
+        // Enqueue sync change
+        if queries::is_logged_in(&conn) {
+            let payload = serde_json::json!({ "name": new_name }).to_string();
+            let _ = queries::enqueue_sync_change(
+                &conn,
+                "playlist",
+                &format!("local_{}", playlist_id),
+                "update",
+                Some(&payload),
+            );
+        }
+        Ok(())
+    }
+
+    async fn update_playlist_cover(&self, playlist_id: i64, cover_url: Option<&str>) -> Result<(), String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::update_playlist_cover(&conn, playlist_id, cover_url).map_err(|e| e.to_string())?;
+
+        // Enqueue sync change
+        if queries::is_logged_in(&conn) {
+            let payload = serde_json::json!({ "coverUrl": cover_url }).to_string();
+            let _ = queries::enqueue_sync_change(
+                &conn,
+                "playlist",
+                &format!("local_{}", playlist_id),
+                "update",
+                Some(&payload),
+            );
+        }
+        Ok(())
+    }
+
+    async fn reorder_playlist_tracks(&self, playlist_id: i64, from_index: i64, to_index: i64) -> Result<(), String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT track_id, position FROM playlist_tracks 
+             WHERE playlist_id = ?1 
+             ORDER BY position",
+            )
+            .map_err(|e| e.to_string())?;
+
+        let tracks: Vec<(i64, i64)> = stmt
+            .query_map([playlist_id], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+
+        if tracks.is_empty() {
+            return Err("Playlist is empty".to_string());
+        }
+
+        let mut track_ids: Vec<i64> = tracks.iter().map(|(id, _)| *id).collect();
+        let moved_track_id = track_ids.remove(from_index as usize);
+        track_ids.insert(to_index as usize, moved_track_id);
+
+        conn.execute("BEGIN TRANSACTION", []).map_err(|e| e.to_string())?;
+        for (new_position, track_id) in track_ids.iter().enumerate() {
+            conn.execute(
+                "UPDATE playlist_tracks 
+                 SET position = ?1 
+                 WHERE playlist_id = ?2 AND track_id = ?3",
+                params![new_position as i64, playlist_id, track_id],
+            )
+            .map_err(|e| {
+                let _ = conn.execute("ROLLBACK", []);
+                e.to_string()
+            })?;
+        }
+        conn.execute("COMMIT", []).map_err(|e| e.to_string())?;
+
+        // Enqueue sync change
+        if queries::is_logged_in(&conn) {
+            let payload = serde_json::json!({
+                "playlistId": format!("local_{}", playlist_id),
+                "fromIndex": from_index,
+                "toIndex": to_index,
+            })
+            .to_string();
+            let _ = queries::enqueue_sync_change(
+                &conn,
+                "playlist_track",
+                &format!("local_{}_reorder", playlist_id),
+                "update",
+                Some(&payload),
+            );
+        }
+        Ok(())
+    }
+
+    async fn like_track(&self, track_id: i64) -> Result<(), String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::like_track(&conn, track_id).map_err(|e| e.to_string())?;
+
+        // Enqueue sync change
+        if queries::is_logged_in(&conn) {
+            let mut payload = serde_json::json!({});
+            if let Ok(Some(track)) = queries::get_track_by_id(&conn, track_id) {
+                let track_hash = queries::build_track_hash_str(
+                    track.title.as_deref(),
+                    track.artist.as_deref(),
+                    track.album.as_deref(),
+                );
+                payload["trackHash"] = serde_json::Value::String(track_hash);
+                payload["title"] = serde_json::json!(track.title);
+                payload["artist"] = serde_json::json!(track.artist);
+                payload["album"] = serde_json::json!(track.album);
+                payload["duration"] = serde_json::json!(track.duration);
+                payload["externalId"] = serde_json::json!(track.external_id);
+                payload["sourceType"] = serde_json::json!(track.source_type);
+                payload["coverUrl"] = serde_json::json!(track.cover_url);
+            }
+            let _ = queries::enqueue_sync_change(
+                &conn,
+                "liked_track",
+                &format!("local_liked_{}", track_id),
+                "create",
+                Some(&payload.to_string()),
+            );
+        }
+        Ok(())
+    }
+
+    async fn unlike_track(&self, track_id: i64) -> Result<(), String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+
+        let mut payload = serde_json::json!({});
+        let logged_in = queries::is_logged_in(&conn);
+        if logged_in {
+            if let Ok(Some(track)) = queries::get_track_by_id(&conn, track_id) {
+                let track_hash = queries::build_track_hash_str(
+                    track.title.as_deref(),
+                    track.artist.as_deref(),
+                    track.album.as_deref(),
+                );
+                payload["trackHash"] = serde_json::Value::String(track_hash);
+            }
+        }
+
+        queries::unlike_track(&conn, track_id).map_err(|e| e.to_string())?;
+
+        if logged_in {
+            let _ = queries::enqueue_sync_change(
+                &conn,
+                "liked_track",
+                &format!("local_liked_{}", track_id),
+                "delete",
+                Some(&payload.to_string()),
+            );
+        }
+        Ok(())
+    }
+
+    async fn is_track_liked(&self, track_id: i64) -> Result<bool, String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::is_track_liked(&conn, track_id).map_err(|e| e.to_string())
+    }
+
+    async fn get_liked_track_ids(&self) -> Result<Vec<i64>, String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::get_liked_track_ids(&conn).map_err(|e| e.to_string())
+    }
+
+    async fn get_liked_tracks(&self) -> Result<Vec<queries::Track>, String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        queries::get_liked_tracks(&conn).map_err(|e| e.to_string())
+    }
+}
+
+pub struct ServerProvider {
+    pub db: Database,
+    pub server_url: String,
+}
+
+impl ServerProvider {
+    async fn request_json<T: serde::de::DeserializeOwned>(&self, method: &str, path: &str, body: Option<&str>) -> Result<T, String> {
+        let resp = auth::authenticated_request(&self.db, &self.server_url, method, path, body).await?;
+        serde_json::from_str(&resp).map_err(|e| format!("Failed to parse JSON response: {} — Raw response: {}", e, resp))
+    }
+    
+    async fn request_empty(&self, method: &str, path: &str, body: Option<&str>) -> Result<(), String> {
+        let _ = auth::authenticated_request(&self.db, &self.server_url, method, path, body).await?;
+        Ok(())
+    }
+}
+
+fn encode_path_segment(segment: &str) -> String {
+    url::form_urlencoded::byte_serialize(segment.as_bytes()).collect::<String>()
+}
+
+impl LibraryProvider for ServerProvider {
+    async fn get_tracks_paginated(&self, limit: i32, offset: i32) -> Result<Vec<queries::Track>, String> {
+        let page = (offset / limit) + 1;
+        let path = format!("/api/tracks?page={}&limit={}", page, limit);
+        let res: Vec<TrackResponse> = self.request_json("GET", &path, None).await?;
+        Ok(res.iter().map(|t| t.to_track(&self.server_url)).collect())
+    }
+
+    async fn get_albums_paginated(&self, limit: i32, offset: i32) -> Result<Vec<queries::Album>, String> {
+        let page = (offset / limit) + 1;
+        let path = format!("/api/albums?page={}&limit={}", page, limit);
+        let res: Vec<AlbumResponse> = self.request_json("GET", &path, None).await?;
+        Ok(res.iter().map(|a| a.to_album(&self.server_url)).collect())
+    }
+
+    async fn search_library(&self, query: &str, _limit: i32, _offset: i32) -> Result<Vec<queries::Track>, String> {
+        let url_encoded = encode_path_segment(query);
+        let path = format!("/api/search?q={}", url_encoded);
+        let res: SearchResults = self.request_json("GET", &path, None).await?;
+        Ok(res.tracks.iter().map(|t| t.to_track(&self.server_url)).collect())
+    }
+
+    async fn get_tracks_by_album(&self, album_id: i64) -> Result<Vec<queries::Track>, String> {
+        let path = format!("/api/albums/{}/tracks", album_id);
+        let res: Vec<TrackResponse> = self.request_json("GET", &path, None).await?;
+        Ok(res.iter().map(|t| t.to_track(&self.server_url)).collect())
+    }
+
+    async fn get_tracks_by_artist(&self, artist: &str) -> Result<Vec<queries::Track>, String> {
+        let artist_encoded = encode_path_segment(artist);
+        let path = format!("/api/artists/{}/tracks", artist_encoded);
+        let res: Vec<TrackResponse> = self.request_json("GET", &path, None).await?;
+        Ok(res.iter().map(|t| t.to_track(&self.server_url)).collect())
+    }
+
+    async fn get_album(&self, album_id: i64) -> Result<Option<queries::Album>, String> {
+        let path = format!("/api/albums/{}", album_id);
+        let res: AlbumResponse = match self.request_json("GET", &path, None).await {
+            Ok(a) => a,
+            Err(_) => return Ok(None),
+        };
+        Ok(Some(res.to_album(&self.server_url)))
+    }
+
+    async fn get_albums_by_artist(&self, artist: &str) -> Result<Vec<queries::Album>, String> {
+        let artist_encoded = encode_path_segment(artist);
+        let path = format!("/api/artists/{}/albums", artist_encoded);
+        let res: Vec<AlbumResponse> = self.request_json("GET", &path, None).await?;
+        Ok(res.iter().map(|a| a.to_album(&self.server_url)).collect())
+    }
+
+    async fn get_library(&self) -> Result<Library, String> {
+        let tracks: Vec<TrackResponse> = self.request_json("GET", "/api/tracks?limit=10000", None).await?;
+        let albums: Vec<AlbumResponse> = self.request_json("GET", "/api/albums?limit=10000", None).await?;
+        let artists: Vec<ArtistResponse> = self.request_json("GET", "/api/artists", None).await?;
+        
+        Ok(Library {
+            tracks: tracks.iter().map(|t| t.to_track(&self.server_url)).collect(),
+            albums: albums.iter().map(|a| a.to_album(&self.server_url)).collect(),
+            artists: artists.iter().map(|a| queries::Artist {
+                name: a.name.clone(),
+                track_count: a.track_count,
+                album_count: a.album_count,
+            }).collect(),
+        })
+    }
+
+    async fn delete_track(&self, track_id: i64) -> Result<bool, String> {
+        let path = format!("/api/tracks/{}", track_id);
+        self.request_empty("DELETE", &path, None).await?;
+        Ok(true)
+    }
+
+    async fn delete_album(&self, _album_id: i64) -> Result<bool, String> {
+        Ok(true)
+    }
+
+    async fn create_playlist(&self, name: &str, cover_url: Option<&str>) -> Result<i64, String> {
+        let body = serde_json::json!({
+            "name": name,
+            "cover_url": cover_url
+        }).to_string();
+        let res: PlaylistResponse = self.request_json("POST", "/api/playlists", Some(&body)).await?;
+        Ok(res.id)
+    }
+
+    async fn get_playlists(&self) -> Result<Vec<queries::Playlist>, String> {
+        let res: Vec<PlaylistResponse> = self.request_json("GET", "/api/playlists", None).await?;
+        Ok(res.iter().map(|p| p.to_playlist()).collect())
+    }
+
+    async fn get_playlist_tracks(&self, playlist_id: i64) -> Result<Vec<queries::Track>, String> {
+        let path = format!("/api/playlists/{}/tracks", playlist_id);
+        let res: Vec<TrackResponse> = self.request_json("GET", &path, None).await?;
+        Ok(res.iter().map(|t| t.to_track(&self.server_url)).collect())
+    }
+
+    async fn add_track_to_playlist(&self, playlist_id: i64, track_id: i64) -> Result<(), String> {
+        let path = format!("/api/playlists/{}/tracks", playlist_id);
+        let body = serde_json::json!({
+            "track_id": track_id
+        }).to_string();
+        self.request_empty("POST", &path, Some(&body)).await
+    }
+
+    async fn remove_track_from_playlist(&self, playlist_id: i64, track_id: i64) -> Result<(), String> {
+        let path = format!("/api/playlists/{}/tracks/{}", playlist_id, track_id);
+        self.request_empty("DELETE", &path, None).await
+    }
+
+    async fn delete_playlist(&self, playlist_id: i64) -> Result<(), String> {
+        let path = format!("/api/playlists/{}", playlist_id);
+        self.request_empty("DELETE", &path, None).await
+    }
+
+    async fn rename_playlist(&self, playlist_id: i64, new_name: &str) -> Result<(), String> {
+        let playlist: PlaylistResponse = self.request_json("GET", &format!("/api/playlists/{}", playlist_id), None).await?;
+        let body = serde_json::json!({
+            "name": new_name,
+            "cover_url": playlist.cover_url
+        }).to_string();
+        let path = format!("/api/playlists/{}", playlist_id);
+        self.request_json::<PlaylistResponse>("PUT", &path, Some(&body)).await?;
+        Ok(())
+    }
+
+    async fn update_playlist_cover(&self, playlist_id: i64, cover_url: Option<&str>) -> Result<(), String> {
+        let playlist: PlaylistResponse = self.request_json("GET", &format!("/api/playlists/{}", playlist_id), None).await?;
+        let body = serde_json::json!({
+            "name": playlist.name,
+            "cover_url": cover_url
+        }).to_string();
+        let path = format!("/api/playlists/{}", playlist_id);
+        self.request_json::<PlaylistResponse>("PUT", &path, Some(&body)).await?;
+        Ok(())
+    }
+
+    async fn reorder_playlist_tracks(&self, playlist_id: i64, from_index: i64, to_index: i64) -> Result<(), String> {
+        let path = format!("/api/playlists/{}/tracks/reorder", playlist_id);
+        let body = serde_json::json!({
+            "from_index": from_index,
+            "to_index": to_index
+        }).to_string();
+        self.request_empty("PUT", &path, Some(&body)).await
+    }
+
+    async fn like_track(&self, track_id: i64) -> Result<(), String> {
+        let path = format!("/api/liked/{}", track_id);
+        self.request_empty("POST", &path, None).await
+    }
+
+    async fn unlike_track(&self, track_id: i64) -> Result<(), String> {
+        let path = format!("/api/liked/{}", track_id);
+        self.request_empty("DELETE", &path, None).await
+    }
+
+    async fn is_track_liked(&self, track_id: i64) -> Result<bool, String> {
+        let liked: Vec<TrackResponse> = self.request_json("GET", "/api/liked", None).await?;
+        Ok(liked.iter().any(|t| t.id == track_id))
+    }
+
+    async fn get_liked_track_ids(&self) -> Result<Vec<i64>, String> {
+        let liked: Vec<TrackResponse> = self.request_json("GET", "/api/liked", None).await?;
+        Ok(liked.iter().map(|t| t.id).collect())
+    }
+
+    async fn get_liked_tracks(&self) -> Result<Vec<queries::Track>, String> {
+        let liked: Vec<TrackResponse> = self.request_json("GET", "/api/liked", None).await?;
+        Ok(liked.iter().map(|t| t.to_track(&self.server_url)).collect())
+    }
+}
+
+// ─── Enum Dispatch ────────────────────────────────────────────────────────────
+// async fn in traits makes LibraryProvider not object-safe (no Box<dyn ...>).
+// Use an enum instead so callers can hold a single owned value.
+
+pub enum ProviderEnum {
+    Local(LocalProvider),
+    Server(ServerProvider),
+}
+
+impl ProviderEnum {
+    pub async fn get_tracks_paginated(&self, limit: i32, offset: i32) -> Result<Vec<queries::Track>, String> {
+        match self {
+            Self::Local(p) => p.get_tracks_paginated(limit, offset).await,
+            Self::Server(p) => p.get_tracks_paginated(limit, offset).await,
+        }
+    }
+    pub async fn get_albums_paginated(&self, limit: i32, offset: i32) -> Result<Vec<queries::Album>, String> {
+        match self {
+            Self::Local(p) => p.get_albums_paginated(limit, offset).await,
+            Self::Server(p) => p.get_albums_paginated(limit, offset).await,
+        }
+    }
+    pub async fn search_library(&self, query: &str, limit: i32, offset: i32) -> Result<Vec<queries::Track>, String> {
+        match self {
+            Self::Local(p) => p.search_library(query, limit, offset).await,
+            Self::Server(p) => p.search_library(query, limit, offset).await,
+        }
+    }
+    pub async fn get_tracks_by_album(&self, album_id: i64) -> Result<Vec<queries::Track>, String> {
+        match self {
+            Self::Local(p) => p.get_tracks_by_album(album_id).await,
+            Self::Server(p) => p.get_tracks_by_album(album_id).await,
+        }
+    }
+    pub async fn get_tracks_by_artist(&self, artist: &str) -> Result<Vec<queries::Track>, String> {
+        match self {
+            Self::Local(p) => p.get_tracks_by_artist(artist).await,
+            Self::Server(p) => p.get_tracks_by_artist(artist).await,
+        }
+    }
+    pub async fn get_album(&self, album_id: i64) -> Result<Option<queries::Album>, String> {
+        match self {
+            Self::Local(p) => p.get_album(album_id).await,
+            Self::Server(p) => p.get_album(album_id).await,
+        }
+    }
+    pub async fn get_albums_by_artist(&self, artist: &str) -> Result<Vec<queries::Album>, String> {
+        match self {
+            Self::Local(p) => p.get_albums_by_artist(artist).await,
+            Self::Server(p) => p.get_albums_by_artist(artist).await,
+        }
+    }
+    pub async fn get_library(&self) -> Result<Library, String> {
+        match self {
+            Self::Local(p) => p.get_library().await,
+            Self::Server(p) => p.get_library().await,
+        }
+    }
+    pub async fn delete_track(&self, track_id: i64) -> Result<bool, String> {
+        match self {
+            Self::Local(p) => p.delete_track(track_id).await,
+            Self::Server(p) => p.delete_track(track_id).await,
+        }
+    }
+    pub async fn delete_album(&self, album_id: i64) -> Result<bool, String> {
+        match self {
+            Self::Local(p) => p.delete_album(album_id).await,
+            Self::Server(p) => p.delete_album(album_id).await,
+        }
+    }
+    pub async fn create_playlist(&self, name: &str, cover_url: Option<&str>) -> Result<i64, String> {
+        match self {
+            Self::Local(p) => p.create_playlist(name, cover_url).await,
+            Self::Server(p) => p.create_playlist(name, cover_url).await,
+        }
+    }
+    pub async fn get_playlists(&self) -> Result<Vec<queries::Playlist>, String> {
+        match self {
+            Self::Local(p) => p.get_playlists().await,
+            Self::Server(p) => p.get_playlists().await,
+        }
+    }
+    pub async fn get_playlist_tracks(&self, playlist_id: i64) -> Result<Vec<queries::Track>, String> {
+        match self {
+            Self::Local(p) => p.get_playlist_tracks(playlist_id).await,
+            Self::Server(p) => p.get_playlist_tracks(playlist_id).await,
+        }
+    }
+    pub async fn add_track_to_playlist(&self, playlist_id: i64, track_id: i64) -> Result<(), String> {
+        match self {
+            Self::Local(p) => p.add_track_to_playlist(playlist_id, track_id).await,
+            Self::Server(p) => p.add_track_to_playlist(playlist_id, track_id).await,
+        }
+    }
+    pub async fn remove_track_from_playlist(&self, playlist_id: i64, track_id: i64) -> Result<(), String> {
+        match self {
+            Self::Local(p) => p.remove_track_from_playlist(playlist_id, track_id).await,
+            Self::Server(p) => p.remove_track_from_playlist(playlist_id, track_id).await,
+        }
+    }
+    pub async fn delete_playlist(&self, playlist_id: i64) -> Result<(), String> {
+        match self {
+            Self::Local(p) => p.delete_playlist(playlist_id).await,
+            Self::Server(p) => p.delete_playlist(playlist_id).await,
+        }
+    }
+    pub async fn rename_playlist(&self, playlist_id: i64, new_name: &str) -> Result<(), String> {
+        match self {
+            Self::Local(p) => p.rename_playlist(playlist_id, new_name).await,
+            Self::Server(p) => p.rename_playlist(playlist_id, new_name).await,
+        }
+    }
+    pub async fn update_playlist_cover(&self, playlist_id: i64, cover_url: Option<&str>) -> Result<(), String> {
+        match self {
+            Self::Local(p) => p.update_playlist_cover(playlist_id, cover_url).await,
+            Self::Server(p) => p.update_playlist_cover(playlist_id, cover_url).await,
+        }
+    }
+    pub async fn reorder_playlist_tracks(&self, playlist_id: i64, from_index: i64, to_index: i64) -> Result<(), String> {
+        match self {
+            Self::Local(p) => p.reorder_playlist_tracks(playlist_id, from_index, to_index).await,
+            Self::Server(p) => p.reorder_playlist_tracks(playlist_id, from_index, to_index).await,
+        }
+    }
+    pub async fn like_track(&self, track_id: i64) -> Result<(), String> {
+        match self {
+            Self::Local(p) => p.like_track(track_id).await,
+            Self::Server(p) => p.like_track(track_id).await,
+        }
+    }
+    pub async fn unlike_track(&self, track_id: i64) -> Result<(), String> {
+        match self {
+            Self::Local(p) => p.unlike_track(track_id).await,
+            Self::Server(p) => p.unlike_track(track_id).await,
+        }
+    }
+    pub async fn is_track_liked(&self, track_id: i64) -> Result<bool, String> {
+        match self {
+            Self::Local(p) => p.is_track_liked(track_id).await,
+            Self::Server(p) => p.is_track_liked(track_id).await,
+        }
+    }
+    pub async fn get_liked_track_ids(&self) -> Result<Vec<i64>, String> {
+        match self {
+            Self::Local(p) => p.get_liked_track_ids().await,
+            Self::Server(p) => p.get_liked_track_ids().await,
+        }
+    }
+    pub async fn get_liked_tracks(&self) -> Result<Vec<queries::Track>, String> {
+        match self {
+            Self::Local(p) => p.get_liked_tracks().await,
+            Self::Server(p) => p.get_liked_tracks().await,
+        }
+    }
+}

@@ -894,33 +894,15 @@ pub async fn rescan_music(
 }
 
 #[tauri::command]
-pub async fn get_library(db: State<'_, Database>) -> Result<Library, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-
-    // Ensure FTS is initialized on first load
-    let _ = queries::init_fts(&conn);
-
-    // Fetch tracks WITHOUT cover data (ultra-fast)
-    let tracks = queries::get_all_tracks_with_paths(&conn).map_err(|e| e.to_string())?;
-
-    // Fetch albums WITHOUT art data (fast)
-    let albums = queries::get_all_albums_with_paths(&conn).map_err(|e| e.to_string())?;
-
-    // Fetch artists
-    let artists = queries::get_all_artists(&conn).map_err(|e| e.to_string())?;
-
-    // Background orphan cleanup
-    let db_conn_cleanup = db.conn.clone();
-    tauri::async_runtime::spawn(async move {
-        if let Ok(conn) = db_conn_cleanup.lock() {
-            let _ = cover_storage::cleanup_orphaned_covers(&conn);
-        }
-    });
-
+pub async fn get_library(
+    sync_state: State<'_, crate::sync::SyncState>,
+) -> Result<Library, String> {
+    let provider = sync_state.active_provider();
+    let lib = provider.get_library().await?;
     Ok(Library {
-        tracks,
-        albums,
-        artists,
+        tracks: lib.tracks,
+        albums: lib.albums,
+        artists: lib.artists,
     })
 }
 
@@ -928,20 +910,20 @@ pub async fn get_library(db: State<'_, Database>) -> Result<Library, String> {
 pub async fn get_tracks_paginated(
     limit: i32,
     offset: i32,
-    db: State<'_, Database>,
+    sync_state: State<'_, crate::sync::SyncState>,
 ) -> Result<Vec<queries::Track>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::get_tracks_paginated(&conn, limit, offset).map_err(|e| e.to_string())
+    let provider = sync_state.active_provider();
+    provider.get_tracks_paginated(limit, offset).await
 }
 
 #[tauri::command]
 pub async fn get_albums_paginated(
     limit: i32,
     offset: i32,
-    db: State<'_, Database>,
+    sync_state: State<'_, crate::sync::SyncState>,
 ) -> Result<Vec<queries::Album>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::get_albums_paginated(&conn, limit, offset).map_err(|e| e.to_string())
+    let provider = sync_state.active_provider();
+    provider.get_albums_paginated(limit, offset).await
 }
 
 #[tauri::command]
@@ -949,176 +931,66 @@ pub async fn search_library(
     query: String,
     limit: i32,
     offset: i32,
-    db: State<'_, Database>,
+    sync_state: State<'_, crate::sync::SyncState>,
 ) -> Result<Vec<queries::Track>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::search_tracks(&conn, &query, limit, offset).map_err(|e| e.to_string())
+    let provider = sync_state.active_provider();
+    provider.search_library(&query, limit, offset).await
 }
 
 #[tauri::command]
 pub async fn get_tracks_by_album(
     album_id: i64,
-    db: State<'_, Database>,
+    sync_state: State<'_, crate::sync::SyncState>,
 ) -> Result<Vec<queries::Track>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::get_tracks_by_album(&conn, album_id).map_err(|e| e.to_string())
+    let provider = sync_state.active_provider();
+    provider.get_tracks_by_album(album_id).await
 }
 
 #[tauri::command]
 pub async fn get_tracks_by_artist(
     artist: String,
-    db: State<'_, Database>,
+    sync_state: State<'_, crate::sync::SyncState>,
 ) -> Result<Vec<queries::Track>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::get_tracks_by_artist(&conn, &artist).map_err(|e| e.to_string())
+    let provider = sync_state.active_provider();
+    provider.get_tracks_by_artist(&artist).await
 }
 
 #[tauri::command]
 pub async fn get_album(
     album_id: i64,
-    db: State<'_, Database>,
+    sync_state: State<'_, crate::sync::SyncState>,
 ) -> Result<Option<queries::Album>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::get_album_by_id(&conn, album_id).map_err(|e| e.to_string())
+    let provider = sync_state.active_provider();
+    provider.get_album(album_id).await
 }
 
 #[tauri::command]
 pub async fn get_albums_by_artist(
     artist: String,
-    db: State<'_, Database>,
+    sync_state: State<'_, crate::sync::SyncState>,
 ) -> Result<Vec<queries::Album>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-
-    let mut stmt = conn
-        .prepare(
-            "SELECT DISTINCT a.id, a.name, a.artist, a.art_data, a.art_path 
-             FROM albums a
-             INNER JOIN tracks t ON t.album_id = a.id
-             WHERE t.artist = ?1
-             ORDER BY a.name",
-        )
-        .map_err(|e| e.to_string())?;
-
-    let albums = stmt
-        .query_map([&artist], |row| {
-            Ok(queries::Album {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                artist: row.get(2)?,
-                art_data: row.get(3)?,
-                art_path: row.get(4)?,
-            })
-        })
-        .map_err(|e| e.to_string())?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?;
-
-    Ok(albums)
+    let provider = sync_state.active_provider();
+    provider.get_albums_by_artist(&artist).await
 }
 
 /// Delete a track from the library (moves file to trash for safety)
 #[tauri::command]
-pub async fn delete_track(track_id: i64, db: State<'_, Database>) -> Result<bool, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-
-    // Get track info before deletion
-    let track_info: Option<(String, Option<String>, Option<String>)> = conn
-        .query_row(
-            "SELECT path, source_type, track_cover_path FROM tracks WHERE id = ?1",
-            [track_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .ok();
-
-    if let Some((path, source_type, cover_path)) = track_info {
-        // Only delete file if it's a local track
-        let is_local = source_type.is_none() || source_type.as_deref() == Some("local");
-
-        if is_local {
-            let path_obj = std::path::Path::new(&path);
-            // Use secure deletion (moves to trash with path validation)
-            if let Err(e) = security::safe_delete_file(path_obj) {
-                log::error!("[AUDIT] Failed to delete track file {}: {}", path, e);
-                // Continue to delete from DB even if file deletion fails
-            }
-        }
-
-        // Delete cover file
-        let _ = cover_storage::delete_track_cover_file(cover_path.as_deref());
-    }
-
-    // Get track info before deletion for sync
-    let track_full_info = queries::get_track_by_id(&conn, track_id).ok().flatten();
-
-    let result = queries::delete_track(&conn, track_id)
-        .map_err(|e| format!("Failed to delete track: {}", e))?;
-
-    // Enqueue sync change
-    if let Some(track) = track_full_info {
-        let _ = queries::enqueue_track_sync_change(&conn, &track, "delete");
-    }
-
-    // Clean up empty albums after track deletion
-    let _ = queries::cleanup_empty_albums(&conn);
-
-    log::info!("[AUDIT] Track {} deleted from library", track_id);
-    Ok(result)
+pub async fn delete_track(
+    track_id: i64,
+    sync_state: State<'_, crate::sync::SyncState>,
+) -> Result<bool, String> {
+    let provider = sync_state.active_provider();
+    provider.delete_track(track_id).await
 }
 
 /// Delete an album and all its tracks (moves files to trash for safety)
 #[tauri::command]
-pub async fn delete_album(album_id: i64, db: State<'_, Database>) -> Result<bool, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-
-    // Get album art path before deletion
-    let art_path: Option<String> = conn
-        .query_row(
-            "SELECT art_path FROM albums WHERE id = ?1",
-            [album_id],
-            |row| row.get(0),
-        )
-        .ok()
-        .flatten();
-
-    // Get all tracks for this album to delete files
-    let tracks = queries::get_tracks_by_album(&conn, album_id).map_err(|e| e.to_string())?;
-
-    log::info!(
-        "[AUDIT] Deleting album {} with {} tracks",
-        album_id,
-        tracks.len()
-    );
-
-    for track in &tracks {
-        // Only delete file if it's a local track
-        let is_local = track.source_type.is_none() || track.source_type.as_deref() == Some("local");
-
-        if is_local {
-            let path_obj = std::path::Path::new(&track.path);
-            // Use secure deletion (moves to trash with path validation)
-            if let Err(e) = security::safe_delete_file(path_obj) {
-                log::error!("[AUDIT] Failed to delete track file {}: {}", track.path, e);
-                // Continue with other tracks
-            }
-        }
-
-        // Delete track cover file
-        let _ = cover_storage::delete_track_cover_file(track.track_cover_path.as_deref());
-    }
-
-    // Delete album art file
-    let _ = cover_storage::delete_album_art_file(art_path.as_deref());
-
-    let result = queries::delete_album(&conn, album_id)
-        .map_err(|e| format!("Failed to delete album: {}", e))?;
-
-    // Enqueue sync changes for deleted tracks
-    for track in &tracks {
-        let _ = queries::enqueue_track_sync_change(&conn, track, "delete");
-    }
-
-    log::info!("[AUDIT] Album {} deleted from library", album_id);
-    Ok(result)
+pub async fn delete_album(
+    album_id: i64,
+    sync_state: State<'_, crate::sync::SyncState>,
+) -> Result<bool, String> {
+    let provider = sync_state.active_provider();
+    provider.delete_album(album_id).await
 }
 
 /// Input for adding an external (streaming) track to the library

@@ -7,90 +7,46 @@ use tauri::State;
 // ============================================================================
 
 #[tauri::command]
-pub async fn like_track(track_id: i64, db: State<'_, Database>) -> Result<(), String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::like_track(&conn, track_id).map_err(|e| e.to_string())?;
-
-    // Enqueue sync change
-    if queries::is_logged_in(&conn) {
-        let mut payload = serde_json::json!({});
-        if let Ok(Some(track)) = queries::get_track_by_id(&conn, track_id) {
-            let track_hash = queries::build_track_hash_str(
-                track.title.as_deref(),
-                track.artist.as_deref(),
-                track.album.as_deref(),
-            );
-            payload["trackHash"] = serde_json::Value::String(track_hash);
-            payload["title"] = serde_json::json!(track.title);
-            payload["artist"] = serde_json::json!(track.artist);
-            payload["album"] = serde_json::json!(track.album);
-            payload["duration"] = serde_json::json!(track.duration);
-            payload["externalId"] = serde_json::json!(track.external_id);
-            payload["sourceType"] = serde_json::json!(track.source_type);
-            payload["coverUrl"] = serde_json::json!(track.cover_url);
-        }
-        let _ = queries::enqueue_sync_change(
-            &conn,
-            "liked_track",
-            &format!("local_liked_{}", track_id),
-            "create",
-            Some(&payload.to_string()),
-        );
-    }
-
-    Ok(())
+pub async fn like_track(
+    track_id: i64,
+    sync_state: State<'_, crate::sync::SyncState>,
+) -> Result<(), String> {
+    let provider = sync_state.active_provider();
+    provider.like_track(track_id).await
 }
 
 #[tauri::command]
-pub async fn unlike_track(track_id: i64, db: State<'_, Database>) -> Result<(), String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-
-    // Build payload before deleting (need track info for the hash)
-    let mut payload = serde_json::json!({});
-    let logged_in = queries::is_logged_in(&conn);
-    if logged_in {
-        if let Ok(Some(track)) = queries::get_track_by_id(&conn, track_id) {
-            let track_hash = queries::build_track_hash_str(
-                track.title.as_deref(),
-                track.artist.as_deref(),
-                track.album.as_deref(),
-            );
-            payload["trackHash"] = serde_json::Value::String(track_hash);
-        }
-    }
-
-    queries::unlike_track(&conn, track_id).map_err(|e| e.to_string())?;
-
-    // Enqueue sync change
-    if logged_in {
-        let _ = queries::enqueue_sync_change(
-            &conn,
-            "liked_track",
-            &format!("local_liked_{}", track_id),
-            "delete",
-            Some(&payload.to_string()),
-        );
-    }
-
-    Ok(())
+pub async fn unlike_track(
+    track_id: i64,
+    sync_state: State<'_, crate::sync::SyncState>,
+) -> Result<(), String> {
+    let provider = sync_state.active_provider();
+    provider.unlike_track(track_id).await
 }
 
 #[tauri::command]
-pub async fn is_track_liked(track_id: i64, db: State<'_, Database>) -> Result<bool, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::is_track_liked(&conn, track_id).map_err(|e| e.to_string())
+pub async fn is_track_liked(
+    track_id: i64,
+    sync_state: State<'_, crate::sync::SyncState>,
+) -> Result<bool, String> {
+    let provider = sync_state.active_provider();
+    provider.is_track_liked(track_id).await
 }
 
 #[tauri::command]
-pub async fn get_liked_track_ids(db: State<'_, Database>) -> Result<Vec<i64>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::get_liked_track_ids(&conn).map_err(|e| e.to_string())
+pub async fn get_liked_track_ids(
+    sync_state: State<'_, crate::sync::SyncState>,
+) -> Result<Vec<i64>, String> {
+    let provider = sync_state.active_provider();
+    provider.get_liked_track_ids().await
 }
 
 #[tauri::command]
-pub async fn get_liked_tracks(db: State<'_, Database>) -> Result<Vec<queries::Track>, String> {
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::get_liked_tracks(&conn).map_err(|e| e.to_string())
+pub async fn get_liked_tracks(
+    sync_state: State<'_, crate::sync::SyncState>,
+) -> Result<Vec<queries::Track>, String> {
+    let provider = sync_state.active_provider();
+    provider.get_liked_tracks().await
 }
 
 // ============================================================================
