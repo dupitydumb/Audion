@@ -115,13 +115,6 @@ export async function nativeAudioSeek(position: number): Promise<void> {
 }
 
 /**
- * Get current playback state
- */
-export async function nativeAudioGetState(): Promise<NativePlaybackState> {
-    return await invoke('audio_get_state');
-}
-
-/**
  * Enable or disable repeat-one mode.
  * When enabled, the backend loops the current track at EOF without firing TrackFinished.
  */
@@ -134,22 +127,11 @@ export async function nativeAudioSetRepeatOne(enabled: boolean): Promise<void> {
 // =============================================================================
 
 export type AudioEventType =
-    | { type: 'Idle' }
     | { type: 'TrackFinished' }
     | { type: 'TrackAdvanced'; data: { new_path: string } }
-    | { type: 'StateChanged'; data: { position: number } };
-
-/**
- * Poll for the next audio event (one per call, FIFO).
- *
- *   Idle           — nothing happened this cycle
- *   TrackFinished  — track ended, no next buffered. Call nextTrack() normally.
- *   TrackAdvanced  — gapless: audio already on new track. Advance UI state only,
- *                    do NOT call nativeAudioPlay().
- */
-export async function nativeAudioPollEvent(): Promise<AudioEventType> {
-    return await invoke('audio_poll_event');
-}
+    | { type: 'StateChanged'; data: { position: number } }
+    | { type: 'DeviceListChanged'; data: { devices: DeviceList } }
+    | { type: 'Error'; data: { message: string } };
 
 /**
  * Preload the next track for gapless playback.

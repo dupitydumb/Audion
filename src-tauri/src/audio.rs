@@ -30,7 +30,7 @@
 //   1. queue_input.clear()          — wipes all pending sources instantly
 //   2. seek_tx.send(Duration::MAX)  — sentinel tells current source to stop
 //                                     within ~10ms (next frame boundary)
-//   3. queue_input.append_with_signal(new_source) — queued immediately
+//   3. queue_input.append(new_source) — queued immediately
 //
 // Seek flow (zero locks):
 //   AudioEngine::seek() → seek_tx.send(Duration)
@@ -40,24 +40,27 @@
 //   SetRepeatOne(true) → repeat_one_rx → SymphoniaSource.repeat_one = true
 //   At EOF: seek(Duration::ZERO) instead of returning None.
 //   TrackFinished never fires. Frontend nextTrack() is never called.
-//   loop_tx fires on each loop → AudioEngine resets TrackInfo → snapshot()
-//   returns correct position. StateChanged event also pushed for immediate UI sync.
+//   StateChanged { position: 0.0 } emitted on loop => command loop resets TrackInfo.
 //   IMPORTANT: nextTrack() has no repeat-one handling — the backend owns looping.
 //   Clicking next sends Duration::MAX sentinel, killing the source, bypassing
 //   the loop. The preloaded next track then plays gaplessly as normal.
 //
-// Event system (backend → frontend, zero polling overhead):
-//   SymphoniaSource pushes AudioEvent::StateChanged via event_tx on:
-//     - seek executed (confirmed position after keyframe alignment)
-//     - repeat-one loop (position 0)
-//   Events flow: event_tx → event_rx (drained in command thread) → VecDeque
-//   Frontend polls nativeAudioPollEvent() every 50ms — same queue as
-//   TrackFinished / TrackAdvanced. No extra infrastructure.
+// Event system (backend → frontend, fully event-driven, zero polling):
+//   SymphoniaSource pushes AudioEvent directly onto event_tx on:
+//     - seek executed (StateChanged with confirmed position)
+//     - repeat-one loop (StateChanged { position: 0.0 } , doubles as loop signal)
+//     - track EOF (TrackFinished { generation } => stamped with source generation)
+//   command loop selects on both command_rx and event_rx simultaneously
+//   TrackFinished with a stale generation is silently discarded => prevents
+//   wrong-song bug under rapid skipping on fast hardware
+//   TrackAdvanced promotion happens in the event arm with zero polling delay
+//   No VecDeque, no Mutex, no poll_event, no recv_timeout
 //
 // Command architecture:
 //   Tauri commands → crossbeam channel → audio thread (owns AudioEngine).
-//   PlaybackState snapshotted into Arc<Mutex<>> every 100ms for UI reads.
-//   AudioEvents pushed into Arc<Mutex<VecDeque>> for UI poller.
+//   frontend dead-reckons position locally between events
+// Arc<Mutex<>> remains for the device list (on-demand
+//   reads from audio_get_device_info; eliminated when device changes push via events)
 //
 //
 //  RubatoResampler :     — high quality FFT resampler
@@ -76,6 +79,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use std::num::NonZero;
+use tauri::Emitter;
 
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use rodio::queue::queue;
@@ -615,15 +619,18 @@ struct SymphoniaSource {
     sample_rate: NonZero<u32>,
     duration: Option<Duration>,
     replay_gain: Option<f32>,
-    replay_gain_enabled: Arc<AtomicBool>, // shared with AudioEngine and toggled at runtime
+    replay_gain_enabled: Arc<AtomicBool>,
     done: bool,
     seek_rx: Receiver<Duration>,
-    volume: Arc<AtomicU32>, // shared with AudioEngine — f32 bits, Relaxed
+    volume: Arc<AtomicU32>,
     frame_count: usize,
     repeat_one_rx: Receiver<bool>,
     repeat_one: bool,
     event_tx: Sender<AudioEvent>,
-    loop_tx: Sender<Instant>,
+    // stamped onto TrackFinished/TrackAdvanced so the command loop can discard signals from sources that were superseded before their finish event arrived
+    generation: u64,
+    // True when the container has non-audio streams
+    use_coarse_seek: bool,
 }
 
 impl SymphoniaSource {
@@ -633,7 +640,7 @@ impl SymphoniaSource {
         seek_rx: Receiver<Duration>,
         repeat_one_rx: Receiver<bool>,
         event_tx: Sender<AudioEvent>,
-        loop_tx: Sender<Instant>,
+        generation: u64,
         volume: Arc<AtomicU32>,
         replay_gain_enabled: Arc<AtomicBool>,
     ) -> Result<Self, String> {
@@ -673,6 +680,22 @@ impl SymphoniaSource {
 
         let replay_gain = resolve_replay_gain(replay_gain_db, &mut format);
 
+        // detect non-audio streams. some third party tools embed album art as a timed MJPEG video stream rather than a static metadata blob
+        // this causes SeekMode::Accurate to scan through large video packets, freezing for seconds
+        let non_audio_tracks: Vec<_> = format.tracks()
+            .iter()
+            .filter(|t| !matches!(t.track_type(), Some(symphonia::core::formats::TrackType::Audio)))
+            .collect();
+        let use_coarse_seek = !non_audio_tracks.is_empty();
+
+        if use_coarse_seek {
+            tracing::warn!(
+                "[AUDIO] '{}' has {} non-audio stream(s) — using coarse seek",
+                path,
+                non_audio_tracks.len()
+            );
+        }
+
         tracing::info!("[AUDIO] Track: {}Hz {}ch — {}", sample_rate, channels, path);
         Ok(Self {
             format,
@@ -692,7 +715,8 @@ impl SymphoniaSource {
             repeat_one_rx,
             repeat_one: false,
             event_tx,
-            loop_tx,
+            generation,
+            use_coarse_seek,
         })
     }
 
@@ -702,7 +726,13 @@ impl SymphoniaSource {
             tracing::warn!("[AUDIO] seek: invalid position {:?}", pos);
             return;
         };
-        match self.format.seek(SeekMode::Accurate, SeekTo::Time {
+        let seek_mode = if self.use_coarse_seek {
+            tracing::debug!("[AUDIO] seek: using Coarse mode (non-audio streams present)");
+            SeekMode::Coarse
+        } else {
+            SeekMode::Accurate
+        };
+        match self.format.seek(seek_mode, SeekTo::Time {
             time,
             track_id: Some(self.track_id),
         }) {
@@ -796,13 +826,17 @@ impl Iterator for SymphoniaSource {
             if !self.refill() {
                 if self.repeat_one {
                     self.seek(Duration::ZERO);
-                    let _ = self.loop_tx.try_send(Instant::now());
+                    // StateChanged { position: 0.0 } tells the command loop to reset TrackInfo
                     let _ = self
                         .event_tx
                         .try_send(AudioEvent::StateChanged { position: 0.0 });
                     continue;
                 }
                 self.done = true;
+                // emit finish directly. command loop receives it instantly via select!
+                let _ = self.event_tx.try_send(AudioEvent::TrackFinished {
+                    generation: self.generation,
+                });
                 return None;
             }
         }
@@ -1048,19 +1082,40 @@ struct AudioEngine {
     device_sample_rate: NonZero<u32>,
     replay_gain_enabled: Arc<AtomicBool>,
     seek_tx: Option<Sender<Duration>>,
-    current_finish_rx: Option<crossbeam::channel::Receiver<()>>,
     repeat_one_tx: Option<Sender<bool>>,
     repeat_one: bool,
-    loop_rx: Option<Receiver<Instant>>,
     current_info: Option<TrackInfo>,
+    // generation counter . incremented on every open_and_append call
+    // stamped into each source so finish events can be matched to the correct track
+    generation_counter: u64,
+    current_generation: u64,
 
     next_seek_tx: Option<Sender<Duration>>,
-    next_finish_rx: Option<crossbeam::channel::Receiver<()>>,
     next_repeat_one_tx: Option<Sender<bool>>,
-    next_loop_rx: Option<Receiver<Instant>>,
     next_path: Option<String>,
     next_duration: Option<Option<Duration>>,
+    next_generation: u64,
 
+    // worker thread for off-thread open_and_append
+    // single persistent thread receives OpenTask, does all blocking I/O and FFT construction, then sends back an OpenResult
+    // two separate abort flags with asymmetric cancellation rules:
+    //   play_abort   . set by a new Play command; cancels any in-flight Play or Preload
+    //   preload_abort . set by a new Preload command; cancels only in-flight Preload tasks
+    // this ensures a Preload dispatched right after a Play never aborts the Play task
+    worker_tx: Sender<OpenTask>,
+    play_abort: Arc<AtomicBool>,
+    preload_abort: Arc<AtomicBool>,
+
+    // set during device switch: absolute position to seek to once the worker result arrives
+    pending_seek: Option<Duration>,
+    // set when seek() is called before the worker has finished opening the source
+    // stored as a fraction since duration isn't known yet; converted in open_result arm
+    pending_seek_fraction: Option<f64>,
+    // set during device switch: whether to re-pause once the worker result arrives
+    pending_paused: bool,
+    // set when TrackFinished fires while the preload worker is still in flight
+    // open_result arm emits TrackAdvanced once the source is actually ready
+    pending_track_advanced: bool,
 
     _stream: rodio::MixerDeviceSink,
 }
@@ -1069,7 +1124,7 @@ impl AudioEngine {
     fn new(
         eq_settings: &EqSettings,
         preferred_device_id: Option<String>,
-    ) -> Result<(Self, crossbeam::channel::Receiver<AudioEvent>, DeviceList), String> {    
+    ) -> Result<(Self, crossbeam::channel::Receiver<AudioEvent>, crossbeam::channel::Receiver<OpenResult>, DeviceList), String> {    
         use cpal::traits::{DeviceTrait, HostTrait};
 
         let host = cpal::default_host();
@@ -1151,6 +1206,81 @@ impl AudioEngine {
         let (eq_tx, eq_rx) = unbounded::<EqSettings>();
         let (event_tx, event_rx) = unbounded::<AudioEvent>();
 
+        // ── worker thread ────────────────────────────────────────────────────
+        // receives OpenTask messages, does all blocking I/O + FFT construction off the command thread, sends back OpenResult
+        // one persistent thread; abort flag lets it exit early when superseded
+        let (worker_tx, worker_rx) = unbounded::<OpenTask>();
+        let (open_result_tx, open_result_rx) = unbounded::<OpenResult>();
+        {
+            let open_result_tx = open_result_tx.clone();
+            std::thread::spawn(move || {
+                while let Ok(task) = worker_rx.recv() {
+                    // Abort flag set by command thread when a newer command supersedes us.
+                    if task.abort.load(Ordering::Relaxed) {
+                        continue;
+                    }
+
+                    // ── blocking I/O ─────────────────────────────────────────
+                    let src = SymphoniaSource::open(
+                        &task.path,
+                        task.replay_gain_db,
+                        task.seek_rx,
+                        task.repeat_one_rx,
+                        task.event_tx,
+                        task.generation,
+                        task.volume,
+                        task.replay_gain_enabled,
+                    );
+
+                    let src = match src {
+                        Ok(s) => s,
+                        Err(e) => {
+                            let _ = open_result_tx.send(OpenResult {
+                                generation: task.generation,
+                                seek_tx: {
+                                    // seek_tx is already created by the command thread and passed via task
+                                    // but on error we have nothing useful to send; create a dummy disconnected one
+                                    let (tx, _) = unbounded::<Duration>();
+                                    tx
+                                },
+                                repeat_one_tx: {
+                                    let (tx, _) = unbounded::<bool>();
+                                    tx
+                                },
+                                duration: None,
+                                source: Err(e),
+                            });
+                            continue;
+                        }
+                    };
+
+                    // checkpoint: abort before the expensive FFT construction
+                    if task.abort.load(Ordering::Relaxed) {
+                        continue;
+                    }
+
+                    // ── FFT resampler (expensive) ─────────────────────────────
+                    let duration = src.duration;
+                    let needs_resample = src.sample_rate() != task.device_sample_rate;
+
+                    let ready = if needs_resample {
+                        RubatoResampler::new(src, task.device_sample_rate)
+                            .map(ReadySource::Resampled)
+                    } else {
+                        Ok(ReadySource::Raw(src))
+                    };
+
+                    let _ = open_result_tx.send(OpenResult {
+                        generation: task.generation,
+                        seek_tx: task.seek_tx,
+                        repeat_one_tx: task.repeat_one_tx,
+                        duration,
+                        source: ready,
+                    });
+                }
+            });
+        }
+
         let pq = PausableQueue {
             inner: queue_output,
             paused: Arc::clone(&paused_flag),
@@ -1172,88 +1302,79 @@ impl AudioEngine {
                 device_sample_rate,
                 replay_gain_enabled,
                 seek_tx: None,
-                current_finish_rx: None,
                 repeat_one_tx: None,
                 repeat_one: false,
-                loop_rx: None,
                 current_info: None,
+                generation_counter: 0,
+                current_generation: 0,
                 next_seek_tx: None,
-                next_finish_rx: None,
                 next_repeat_one_tx: None,
-                next_loop_rx: None,
                 next_path: None,
                 next_duration: None,
+                next_generation: 0,
+                worker_tx,
+                play_abort: Arc::new(AtomicBool::new(false)),
+                preload_abort: Arc::new(AtomicBool::new(false)),
+                pending_seek: None,
+                pending_seek_fraction: None,
+                pending_paused: false,
+                pending_track_advanced: false,
                 _stream: stream,
             },
             event_rx,
+            open_result_rx,
             cached_device_list,
         ))
     }
 
-    // ── open_and_append ──────────────────────────────────────────────────────
-    fn open_and_append(
-        &mut self,
-        path: &str,
-        replay_gain_db: Option<f32>,
-    ) -> Result<
-        (
-            crossbeam::channel::Receiver<()>,
-            Sender<Duration>,
-            Sender<bool>,
-            Receiver<Instant>,
-            Option<Duration>,
-        ),
-        String,
-    > {
+    // ── dispatch_open ──────────────────────────────────────────────────────
+    // sends an OpenTask to the worker thread and returns immediately
+    // worker does all blocking I/O + FFT construction off the command thread
+    // command thread receives the OpenResult via the open_result_rx arm in select!
+    fn dispatch_open(&mut self, path: &str, replay_gain_db: Option<f32>, abort_flag: Arc<AtomicBool>) -> u64 {
+        self.generation_counter += 1;
+        let generation = self.generation_counter;
+
         let (seek_tx, seek_rx) = unbounded::<Duration>();
         let (repeat_one_tx, repeat_one_rx) = unbounded::<bool>();
-        let (loop_tx, loop_rx) = unbounded::<Instant>();
         let _ = repeat_one_tx.send(self.repeat_one);
 
-        let src = SymphoniaSource::open(
-            path,
+        let _ = self.worker_tx.send(OpenTask {
+            path: path.to_string(),
             replay_gain_db,
+            generation,
             seek_rx,
             repeat_one_rx,
-            self.event_tx.clone(),
-            loop_tx,
-            Arc::clone(&self.volume_atomic),
-            Arc::clone(&self.replay_gain_enabled),
-        )?;
-        let dur = src.duration;
+            event_tx: self.event_tx.clone(),
+            volume: Arc::clone(&self.volume_atomic),
+            replay_gain_enabled: Arc::clone(&self.replay_gain_enabled),
+            device_sample_rate: self.device_sample_rate,
+            abort: abort_flag,
+            seek_tx,
+            repeat_one_tx,
+        });
 
-        tracing::info!(
-            "[AUDIO] Source format: sample_rate={}, channels={}, duration={:?}",
-            src.sample_rate(),
-            src.channels(),
-            dur
-        );
-        tracing::info!(
-            "[AUDIO] Device format: sample_rate={}, channels=2",
-            self.device_sample_rate
-        );
+        generation
+    }
 
-        let needs_resample = src.sample_rate() != self.device_sample_rate;
-        tracing::info!("[AUDIO] Resampling needed: {}", needs_resample);
-
-        let finish_rx = if needs_resample {
-            let resampled = RubatoResampler::new(src, self.device_sample_rate)?;
-            self.queue_input.append_with_signal(resampled)
-        } else {
-            self.queue_input.append_with_signal(src)
-        };
-
-        Ok((finish_rx, seek_tx, repeat_one_tx, loop_rx, dur))
+    // ── append_ready_source ───────────────────────────────────────────────────
+    // called from the select! open_result arm when a worker result arrives
+    // appends the built source to the queue
+    fn append_ready_source(&mut self, source: ReadySource) {
+        match source {
+            ReadySource::Raw(src) => self.queue_input.append(src),
+            ReadySource::Resampled(r) => self.queue_input.append(r),
+        }
     }
 
     // ── play ─────────────────────────────────────────────────────────────────
-    fn play(&mut self, path: &str, replay_gain_db: Option<f32>) -> Result<(), String> {
+    // dispatches the open to the worker and returns immediately
+    // when the worker result arrives (select! open_result arm), the source is appended and engine state is updated
+    fn play(&mut self, path: &str, replay_gain_db: Option<f32>) {
         // Clear all pending sources from the queue instantly.
         self.queue_input.clear();
 
-        // Send stop sentinel to the currently-playing source.
-        // It will set done=true within ~10ms (next frame boundary) and yield None,
-        // causing the queue to move on to the new source we're about to append.
+        // Send stop sentinel to the currently-playing source and the preloaded one
         if let Some(ref tx) = self.seek_tx {
             let _ = tx.send(Duration::MAX);
         }
@@ -1262,33 +1383,40 @@ impl AudioEngine {
         }
 
         self.seek_tx = None;
-        self.current_finish_rx = None;
         self.repeat_one_tx = None;
-        self.loop_rx = None;
-        self.current_info = None;
         self.next_seek_tx = None;
-        self.next_finish_rx = None;
         self.next_repeat_one_tx = None;
-        self.next_loop_rx = None;
         self.next_path = None;
         self.next_duration = None;
+        self.next_generation = 0; // prevent stale preload results from matching after play()
 
-        let (finish_rx, seek_tx, repeat_one_tx, loop_rx, duration) =
-            self.open_and_append(path, replay_gain_db)?;
-        self.seek_tx = Some(seek_tx);
-        self.repeat_one_tx = Some(repeat_one_tx);
-        self.loop_rx = Some(loop_rx);
-        self.current_finish_rx = Some(finish_rx);
+        // mark current_info with the pending path so the UI can update immediately,
+        // duration unknown until the worker result arrives
         self.current_info = Some(TrackInfo {
             path: path.to_string(),
-            duration,
+            duration: None,
             started: Instant::now(),
             offset: Duration::ZERO,
         });
         self.paused_flag.store(false, Ordering::Relaxed);
+        // clear any pending flags from a previous in-flight preload
+        // they belong to a different track transition and must not fire for this one
+        self.pending_track_advanced = false;
+        self.pending_seek = None;
+        self.pending_seek_fraction = None;
+        self.pending_paused = false;
 
-        tracing::info!("[AUDIO] Playing: {}", path);
-        Ok(())
+        // cancel any in-flight Play AND Preload cuz a new explicit Play overrides everything
+        // must happen before dispatch_open so the worker sees the flag before checking it
+        self.play_abort.store(true, Ordering::Relaxed);
+        self.preload_abort.store(true, Ordering::Relaxed);
+        let new_play_abort = Arc::new(AtomicBool::new(false));
+        self.play_abort = Arc::clone(&new_play_abort);
+
+        let generation = self.dispatch_open(path, replay_gain_db, new_play_abort);
+        self.current_generation = generation;
+
+        tracing::info!("[AUDIO] Play dispatched (gen {}): {}", generation, path);
     }
 
     // ── preload ───────────────────────────────────────────────────────────────
@@ -1303,35 +1431,44 @@ impl AudioEngine {
             self.next_path
         );
 
-        if self.next_finish_rx.is_some() {
+        if self.next_seek_tx.is_some() {
             // Kill the stale preloaded source and remove it from the queue.
-            // queue_input.clear() only removes pending sources — the currently
-            // playing source on the audio thread side is not touched.
             if let Some(ref tx) = self.next_seek_tx {
                 let _ = tx.send(Duration::MAX);
             }
             self.queue_input.clear();
             self.next_seek_tx = None;
-            self.next_finish_rx = None;
             self.next_repeat_one_tx = None;
-            self.next_loop_rx = None;
         }
 
-        let (finish_rx, seek_tx, repeat_one_tx, loop_rx, duration) =
-            self.open_and_append(path, replay_gain_db)?;
-        self.next_finish_rx = Some(finish_rx);
-        self.next_seek_tx = Some(seek_tx);
-        self.next_repeat_one_tx = Some(repeat_one_tx);
-        self.next_loop_rx = Some(loop_rx);
+        // Cancel ONLY any in-flight Preload , never an in-flight Play
+        // a Preload dispatched right after Play must not abort the Play task that is already running in the worker
+        self.preload_abort.store(true, Ordering::Relaxed);
+        let new_preload_abort = Arc::new(AtomicBool::new(false));
+        self.preload_abort = Arc::clone(&new_preload_abort);
+
+        // preload still dispatches to the worker
+        // result arrives via open_result_rx and is handled in select!
+        // we tag it with a negative sentinel by storing the path now so the result arm knows this was a preload, not a play
         self.next_path = Some(path.to_string());
-        self.next_duration = Some(duration);
-        tracing::debug!("[AUDIO] Preloaded: {}", path);
+        self.next_duration = None;
+        let generation = self.dispatch_open(path, replay_gain_db, new_preload_abort);
+        self.next_generation = generation;
+        tracing::debug!("[AUDIO] Preload dispatched (gen {}): {}", generation, path);
         Ok(())
     }
 
     // ── seek ─────────────────────────────────────────────────────────────────
     fn seek(&mut self, position_fraction: f64) -> Result<(), String> {
         let info = self.current_info.as_mut().ok_or("No track loaded")?;
+
+        // worker hasn't finished yet means no seek_tx and no duration
+        // store the fraction and apply it in the open_result arm once the source is built and duration is known
+        if self.seek_tx.is_none() {
+            self.pending_seek_fraction = Some(position_fraction.clamp(0.0, 1.0));
+            return Ok(());
+        }
+
         let duration = info.duration.ok_or("Track duration unknown")?;
 
         let pos =
@@ -1371,14 +1508,10 @@ impl AudioEngine {
             let _ = tx.send(Duration::MAX);
         }
         self.seek_tx = None;
-        self.current_finish_rx = None;
         self.repeat_one_tx = None;
-        self.loop_rx = None;
         self.current_info = None;
         self.next_seek_tx = None;
-        self.next_finish_rx = None;
         self.next_repeat_one_tx = None;
-        self.next_loop_rx = None;
         self.next_path = None;
         self.next_duration = None;
         self.paused_flag.store(false, Ordering::Relaxed);
@@ -1409,9 +1542,9 @@ impl AudioEngine {
     fn set_output_device(
         &mut self,
         device_name: Option<String>,
-        event_rx_slot: &mut Option<crossbeam::channel::Receiver<AudioEvent>>,
-        device_list_cache: &Arc<Mutex<DeviceList>>,
-    ) -> Result<(), String> {
+        event_rx_slot: &mut crossbeam::channel::Receiver<AudioEvent>,
+        open_result_rx_slot: &mut crossbeam::channel::Receiver<OpenResult>,
+    ) -> Result<DeviceList, String> {
         // snapshot current playback state before tearing down
         let snapshot = self.current_info.as_ref().map(|info| {
             (info.path.clone(), Duration::from_secs_f64(info.position_secs()))
@@ -1432,13 +1565,8 @@ impl AudioEngine {
         }
 
         // build new engine on the selected device, carrying all current settings
-        let (mut new_engine, new_event_rx, new_device_list) =
+        let (mut new_engine, new_event_rx, new_open_result_rx, new_device_list) =
             AudioEngine::new(&eq_settings, device_name.clone())?;
-
-        // update cached device list so audio_get_device_info reflects the new device set
-        if let Ok(mut cached) = device_list_cache.lock() {
-            *cached = new_device_list;
-        }
 
         // transfer all live settings to the new engine
         new_engine.set_volume(volume);
@@ -1446,30 +1574,17 @@ impl AudioEngine {
         new_engine.repeat_one = repeat_one;
 
         // resume track at the snapshotted position if one was playing
+        // play() is now non-blocking
+        // seek and pause are applied when worker result arrives via pending_seek / pending_paused
         if let Some((path, position)) = snapshot {
-            // replay_gain_db: None  re-read from file tags
-            // TODO db gain field addition
-            if let Err(e) = new_engine.play(&path, None) {
-                tracing::warn!("[AUDIO] Device switch: failed to reopen track: {}", e);
-            } else {
-                // seek to the saved position
-                if let Some(ref tx) = new_engine.seek_tx {
-                    let _ = tx.send(position);
-                }
-                // sync TrackInfo
-                if let Some(ref mut info) = new_engine.current_info {
-                    info.offset = position;
-                    info.started = Instant::now();
-                }
-                // restore pause state
-                if was_paused {
-                    new_engine.paused_flag.store(true, Ordering::Relaxed);
-                }
-            }
+            new_engine.pending_seek = Some(position);
+            new_engine.pending_paused = was_paused;
+            new_engine.play(&path, None);
         }
 
-        // swap event receiver slot so the command loop drains the new channel
-        *event_rx_slot = Some(new_event_rx);
+        // swap channel slots so the command loop uses the new engine's channels
+        *event_rx_slot = new_event_rx;
+        *open_result_rx_slot = new_open_result_rx;
 
         if let Some(ref path) = self.next_path {
             tracing::warn!("[AUDIO] Device switch: discarding preloaded track: {}", path);
@@ -1477,13 +1592,9 @@ impl AudioEngine {
 
         // replace self so that the old _stream is dropped here, killing the old pipeline
         *self = new_engine;
-        // on startup, if a saved output device preference exists, the frontend sends
-        // SetOutputDevice which calls AudioEngine::new() a second time, dropping the first (default) engine here
-        // carries device id
-        // Rodio logs this drop. this is intentional and harmless
 
         tracing::info!("[AUDIO] Output device switched successfully");
-        Ok(())
+        Ok(new_device_list)
     }
 
     // ── repeat one ───────────────────────────────────────────────────────────
@@ -1494,102 +1605,59 @@ impl AudioEngine {
         }
     }
 
-    // ── poll_event ────────────────────────────────────────────────────────────
-    fn poll_event(&mut self) -> AudioEvent {
-        // Drain loop notifications — reset TrackInfo so snapshot() returns correct position.
-        if let Some(ref loop_rx) = self.loop_rx {
-            let mut looped = false;
-            while loop_rx.try_recv().is_ok() {
-                looped = true;
-            }
-            if looped {
-                if let Some(ref mut info) = self.current_info {
-                    info.offset = Duration::ZERO;
-                    info.started = Instant::now();
-                }
-            }
-        }
-
-        let Some(ref rx) = self.current_finish_rx else {
-            return AudioEvent::Idle;
-        };
-        match rx.try_recv() {
-            Err(_) => AudioEvent::Idle,
-            Ok(_) => {
-                if self.next_finish_rx.is_some() {
-                    self.seek_tx = self.next_seek_tx.take();
-                    self.repeat_one_tx = self.next_repeat_one_tx.take();
-                    self.loop_rx = self.next_loop_rx.take();
-                    self.current_finish_rx = self.next_finish_rx.take();
-                    let duration = self.next_duration.take().flatten();
-                    let path = self.next_path.take().unwrap_or_default();
-                    self.current_info = Some(TrackInfo {
-                        path: path.clone(),
-                        duration,
-                        started: Instant::now(),
-                        offset: Duration::ZERO,
-                    });
-                    return AudioEvent::TrackAdvanced { new_path: path };
-                }
-                self.seek_tx = None;
-                self.repeat_one_tx = None;
-                self.current_finish_rx = None;
-                self.current_info = None;
-                AudioEvent::TrackFinished
-            }
-        }
-    }
-
-    // ── snapshot ──────────────────────────────────────────────────────────────
-    fn snapshot(&self) -> PlaybackState {
-        let paused = self.paused_flag.load(Ordering::Relaxed);
-        let playing = self.current_info.is_some() && !paused;
-
-        let (position, duration, current_path) = match &self.current_info {
-            Some(info) => (
-                info.position_secs(),
-                info.duration.map(|d| d.as_secs_f64()).unwrap_or(0.0),
-                info.path.clone(),
-            ),
-            None => (0.0, 0.0, String::new()),
-        };
-
-        PlaybackState {
-            is_playing: playing,
-            position,
-            duration,
-            volume: self.volume,
-            current_path,
-            is_initialized: true,
-        }
-    }
 }
 
 // =============================================================================
-// AUDIO EVENTS
+// AUDIO EVENTS  (backend -> frontend via app_handle.emit)
+// =============================================================================
+// all variants are pushed immediately when the condition occurs
+// frontend registers listen('audio://event', handler) once on init
 // =============================================================================
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", content = "data")]
 pub enum AudioEvent {
-    Idle,
-    TrackFinished,
-    TrackAdvanced { new_path: String },
+    TrackFinished { generation: u64 },
+    TrackAdvanced { generation: u64, new_path: String, duration: Option<Duration> },
     StateChanged { position: f64 },
+    DeviceListChanged { devices: DeviceList },
+    Error { message: String },
 }
 
 // =============================================================================
-// PLAYBACK STATE
+// WORKER TYPES  (open_and_append offloaded to a single persistent worker thread)
 // =============================================================================
 
-#[derive(Debug, Clone, Serialize)]
-pub struct PlaybackState {
-    pub is_playing: bool,
-    pub position: f64,
-    pub duration: f64,
-    pub volume: f32,
-    pub current_path: String,
-    pub is_initialized: bool,
+// task sent to worker thread
+struct OpenTask {
+    path: String,
+    replay_gain_db: Option<f32>,
+    generation: u64,
+    seek_rx: crossbeam::channel::Receiver<Duration>,
+    repeat_one_rx: crossbeam::channel::Receiver<bool>,
+    // tx halves are passed through so the worker can include them in OpenResult without the command thread needing to track them separately
+    seek_tx: Sender<Duration>,
+    repeat_one_tx: Sender<bool>,
+    event_tx: Sender<AudioEvent>,
+    volume: Arc<AtomicU32>,
+    replay_gain_enabled: Arc<AtomicBool>,
+    device_sample_rate: NonZero<u32>,
+    abort: Arc<AtomicBool>,
+}
+
+// fully built source ready to be appended to the queue, returned by the worker
+enum ReadySource {
+    Raw(SymphoniaSource),
+    Resampled(RubatoResampler),
+}
+
+// Result sent back from the worker to the command thread
+struct OpenResult {
+    generation: u64,
+    seek_tx: Sender<Duration>,
+    repeat_one_tx: Sender<bool>,
+    duration: Option<Duration>,
+    source: Result<ReadySource, String>,
 }
 
 // =============================================================================
@@ -1616,53 +1684,64 @@ enum AudioCommand {
 
 pub struct PlaybackStateSync {
     command_tx: Sender<AudioCommand>,
-    shared_state: Arc<Mutex<PlaybackState>>,
-    event_queue: Arc<Mutex<std::collections::VecDeque<AudioEvent>>>,
     pub device_list: Arc<Mutex<DeviceList>>,
 }
 
 impl PlaybackStateSync {
-    pub fn new() -> Self {
+    pub fn new(app_handle: tauri::AppHandle) -> Self {
         let (tx, rx) = unbounded::<AudioCommand>();
-        let shared_state = Arc::new(Mutex::new(PlaybackState {
-            is_playing: false,
-            position: 0.0,
-            duration: 0.0,
-            volume: 0.7,
-            current_path: String::new(),
-            is_initialized: false,
-        }));
-        let event_queue = Arc::new(Mutex::new(std::collections::VecDeque::<AudioEvent>::new()));
         let device_list = Arc::new(Mutex::new(DeviceList {
             devices: Vec::new(),
         }));
 
-        let state_clone = Arc::clone(&shared_state);
-        let events_clone = Arc::clone(&event_queue);
         let device_list_clone = Arc::clone(&device_list);
 
         std::thread::spawn(move || {
             let mut engine_opt: Option<AudioEngine> = None;
             let mut eq_settings = EqSettings::default();
-            let mut event_rx_opt: Option<crossbeam::channel::Receiver<AudioEvent>> = None;
+
+            // before the engine is initialised there are no event/open-result channels yet
+            // permanently disconnected receivers act as silent placeholders:
+            // crossbeam::select! will never fire on a disconnected receiver
+            let (_dead_tx, dead_rx) = crossbeam::channel::bounded::<AudioEvent>(0);
+            drop(_dead_tx);
+            let mut event_rx: crossbeam::channel::Receiver<AudioEvent> = dead_rx;
+
+            let (_dead_open_tx, dead_open_rx) = crossbeam::channel::bounded::<OpenResult>(0);
+            drop(_dead_open_tx);
+            let mut open_result_rx: crossbeam::channel::Receiver<OpenResult> = dead_open_rx;
+
+            // emit a backend event to the frontend
+            // errors here are non-fatal as the window may be closing
+            let emit = |evt: AudioEvent| {
+                if let Err(e) = app_handle.emit("audio://event", &evt) {
+                    tracing::warn!("[AUDIO] Failed to emit event: {}", e);
+                }
+            };
 
             loop {
-                match rx.recv_timeout(Duration::from_millis(100)) {
-                    Ok(cmd) => {
+                // block until a command, an audio-thread event, or a worker result arrives
+                crossbeam::select! {
+                    recv(rx) -> msg => {
+                        let cmd = match msg {
+                            Ok(c) => c,
+                            Err(_) => break, // command channel disconnected
+                        };
+
+                        // lazy engine init, only on the first command
                         if engine_opt.is_none() {
                             match AudioEngine::new(&eq_settings, None) {
-                                Ok((e, evt_rx, dl)) => {
-                                    event_rx_opt = Some(evt_rx);
+                                Ok((e, evt_rx, open_rx, dl)) => {
+                                    event_rx = evt_rx;
+                                    open_result_rx = open_rx;
                                     engine_opt = Some(e);
-                                    if let Ok(mut s) = state_clone.lock() {
-                                        s.is_initialized = true;
-                                    }
                                     if let Ok(mut cached) = device_list_clone.lock() {
                                         *cached = dl;
                                     }
                                 }
                                 Err(e) => {
                                     tracing::error!("[AUDIO] Engine init failed: {}", e);
+                                    emit(AudioEvent::Error { message: e });
                                     continue;
                                 }
                             }
@@ -1672,12 +1751,8 @@ impl PlaybackStateSync {
 
                         match cmd {
                             AudioCommand::Play(path, rg) => {
-                                if let Ok(mut q) = events_clone.lock() {
-                                    q.clear();
-                                }
-                                if let Err(e) = engine.play(&path, rg) {
-                                    tracing::error!("[AUDIO] play error: {}", e);
-                                }
+                                // non-blocking: dispatches to worker, returns immediately
+                                engine.play(&path, rg);
                             }
                             AudioCommand::Preload(path, rg) => {
                                 if let Err(e) = engine.preload(&path, rg) {
@@ -1686,12 +1761,7 @@ impl PlaybackStateSync {
                             }
                             AudioCommand::Pause => engine.pause(),
                             AudioCommand::Resume => engine.resume(),
-                            AudioCommand::Stop => {
-                                if let Ok(mut q) = events_clone.lock() {
-                                    q.clear();
-                                }
-                                engine.stop();
-                            }
+                            AudioCommand::Stop => engine.stop(),
                             AudioCommand::Seek(f) => {
                                 if let Err(e) = engine.seek(f) {
                                     tracing::warn!("[AUDIO] seek error: {}", e);
@@ -1704,38 +1774,249 @@ impl PlaybackStateSync {
                             }
                             AudioCommand::SetRepeatOne(v) => engine.set_repeat_one(v),
                             AudioCommand::SetReplayGainEnabled(v) => {
-                                engine.set_replay_gain_enabled(v)
+                                engine.set_replay_gain_enabled(v);
                             }
                             AudioCommand::SetOutputDevice(name) => {
-                                if let Err(e) = engine.set_output_device(name, &mut event_rx_opt, &device_list_clone) {
-                                    tracing::error!("[AUDIO] Device switch failed: {}", e);
+                                match engine.set_output_device(name, &mut event_rx, &mut open_result_rx) {
+                                    Ok(new_device_list) => {
+                                        if let Ok(mut cached) = device_list_clone.lock() {
+                                            *cached = new_device_list.clone();
+                                        }
+                                        emit(AudioEvent::DeviceListChanged { devices: new_device_list });
+                                    }
+                                    Err(e) => {
+                                        tracing::error!("[AUDIO] Device switch failed: {}", e);
+                                        emit(AudioEvent::Error { message: e });
+                                    }
                                 }
                             }
                         }
                     }
-                    Err(crossbeam::channel::RecvTimeoutError::Disconnected) => break,
-                    Err(crossbeam::channel::RecvTimeoutError::Timeout) => {}
-                }
 
-                // Drain backend-pushed events (seek confirmations, loops).
-                if let Some(ref event_rx) = event_rx_opt {
-                    while let Ok(evt) = event_rx.try_recv() {
-                        if let Ok(mut q) = events_clone.lock() {
-                            q.push_back(evt);
+                    // ── worker result arm ─────────────────────────────────────────────
+                    // worker has finished opening + building the source (or failed)
+                    // discard stale results (superseded Play commands); apply current ones
+                    recv(open_result_rx) -> msg => {
+                        let result = match msg {
+                            Ok(r) => r,
+                            Err(_) => {
+                                // channel disconnected (engine dropped/replaced)
+                                let (_dead_tx, dead_rx) = crossbeam::channel::bounded::<OpenResult>(0);
+                                drop(_dead_tx);
+                                open_result_rx = dead_rx;
+                                continue;
+                            }
+                        };
+
+                        let engine = match engine_opt.as_mut() {
+                            Some(e) => e,
+                            None => continue,
+                        };
+
+                        // Check if this is a Play result or a Preload result
+                        // Play results match current_generation
+                        // Preload results match next_generation
+                        let is_play   = result.generation == engine.current_generation;
+                        let is_preload = result.generation == engine.next_generation
+                            && result.generation != engine.current_generation;
+
+                        if !is_play && !is_preload {
+                            tracing::debug!(
+                                "[AUDIO] Discarding stale open result (gen {} — current {}, next {})",
+                                result.generation, engine.current_generation, engine.next_generation
+                            );
+                            continue;
+                        }
+
+                        match result.source {
+                            Err(e) => {
+                                tracing::error!("[AUDIO] open error: {}", e);
+                                emit(AudioEvent::Error { message: e });
+                                if is_play {
+                                    engine.current_info = None;
+                                } else {
+                                    engine.next_path = None;
+                                    engine.next_duration = None;
+                                }
+                            }
+                            Ok(source) => {
+                                if is_play {
+                                    // clear queue and kill any currently-playing source
+                                    // play() already did this but for safety
+                                    engine.queue_input.clear();
+                                    if let Some(ref tx) = engine.seek_tx {
+                                        let _ = tx.send(Duration::MAX);
+                                    }
+
+                                    engine.append_ready_source(source);
+                                    engine.seek_tx = Some(result.seek_tx);
+                                    engine.repeat_one_tx = Some(result.repeat_one_tx);
+
+                                    // apply pending seek/pause from device switch if set
+                                    if let Some(pos) = engine.pending_seek.take() {
+                                        if let Some(ref tx) = engine.seek_tx {
+                                            let _ = tx.send(pos);
+                                        }
+                                        if let Some(ref mut info) = engine.current_info {
+                                            info.offset = pos;
+                                            info.started = Instant::now();
+                                        }
+                                    }
+
+                                    // apply pending seek from a seek() call that arrived before the worker finished
+                                    // convert fraction to duration now that we have the real duration
+                                    if let Some(fraction) = engine.pending_seek_fraction.take() {
+                                        if let Some(duration) = result.duration {
+                                            let pos = Duration::from_secs_f64(
+                                                duration.as_secs_f64() * fraction
+                                            );
+                                            if let Some(ref tx) = engine.seek_tx {
+                                                let _ = tx.send(pos);
+                                            }
+                                            if let Some(ref mut info) = engine.current_info {
+                                                info.offset = pos;
+                                                info.started = Instant::now();
+                                            }
+                                        }
+                                    }
+                                    if engine.pending_paused {
+                                        engine.pending_paused = false;
+                                        engine.paused_flag.store(true, Ordering::Relaxed);
+                                    }
+
+                                    // update duration now that the worker has probed it
+                                    if let Some(ref mut info) = engine.current_info {
+                                        info.duration = result.duration;
+                                    }
+
+                                    // if TrackFinished fired while this source was still being
+                                    // built (in-flight preload case), emit TrackAdvanced now that we have the real duration and the source is appended
+                                    if engine.pending_track_advanced {
+                                        engine.pending_track_advanced = false;
+                                        if let Some(ref info) = engine.current_info {
+                                            emit(AudioEvent::TrackAdvanced {
+                                                generation: engine.current_generation,
+                                                new_path: info.path.clone(),
+                                                duration: info.duration,
+                                            });
+                                        }
+                                    }
+
+                                    tracing::info!(
+                                        "[AUDIO] Source ready and appended (gen {}), duration={:?}",
+                                        result.generation, result.duration
+                                    );
+                                } else {
+                                    // preload result => append after the current source
+                                    engine.append_ready_source(source);
+                                    engine.next_seek_tx = Some(result.seek_tx);
+                                    engine.next_repeat_one_tx = Some(result.repeat_one_tx);
+                                    engine.next_duration = Some(result.duration);
+                                    tracing::debug!(
+                                        "[AUDIO] Preloaded source ready and appended (gen {})",
+                                        result.generation
+                                    );
+                                }
+                            }
                         }
                     }
-                }
 
-                // Poll + snapshot every 100ms.
-                if let Some(engine) = engine_opt.as_mut() {
-                    let event = engine.poll_event();
-                    if !matches!(event, AudioEvent::Idle) {
-                        if let Ok(mut q) = events_clone.lock() {
-                            q.push_back(event);
+                    recv(event_rx) -> msg => {
+                        match msg {
+                            Ok(evt) => {
+                                let engine = match engine_opt.as_mut() {
+                                    Some(e) => e,
+                                    None => { emit(evt); continue; }
+                                };
+
+                                match evt {
+                                    // ── track finished naturally ──────────────────────────────
+                                    // only act if this signal belongs to the current generation
+                                    // a stale finish from a source killed by Play() is discarded
+                                    AudioEvent::TrackFinished { generation } => {
+                                        if generation != engine.current_generation {
+                                            tracing::debug!(
+                                                "[AUDIO] Discarding stale TrackFinished \
+                                                 (gen {} != current {})",
+                                                generation, engine.current_generation
+                                            );
+                                            continue;
+                                        }
+                                        if engine.next_path.is_some() && engine.next_seek_tx.is_some() {
+                                            // Gapless handoff => promote preloaded track
+                                            // next_seek_tx.is_some confirms the worker has finished and the source is already appended to the queue
+                                            engine.seek_tx = engine.next_seek_tx.take();
+                                            engine.repeat_one_tx = engine.next_repeat_one_tx.take();
+                                            engine.current_generation = engine.next_generation;
+                                            let duration = engine.next_duration.take().flatten();
+                                            let path = engine.next_path.take().unwrap_or_default();
+                                            engine.current_info = Some(TrackInfo {
+                                                path: path.clone(),
+                                                duration,
+                                                started: Instant::now(),
+                                                offset: Duration::ZERO,
+                                            });
+                                            emit(AudioEvent::TrackAdvanced {
+                                                generation: engine.current_generation,
+                                                new_path: path,
+                                                duration,
+                                            });
+                                        } else if engine.next_path.is_some() {
+                                            // preload was dispatched but the worker hasn't finished yet
+                                            // open_result arm will do the handoff when it arrives
+                                            // for now promote the generation so the result arm knows
+                                            // this is now a play result, not a preload
+                                            tracing::debug!(
+                                                "[AUDIO] TrackFinished but preload worker still in flight \
+                                                 (gen {}), waiting for result",
+                                                engine.next_generation
+                                            );
+                                            engine.current_generation = engine.next_generation;
+                                            engine.seek_tx = None;
+                                            engine.repeat_one_tx = None;
+                                            // update current_info to the preloaded path so the
+                                            // open_result arm finds the right track when it arrives
+                                            let path = engine.next_path.take().unwrap_or_default();
+                                            engine.current_info = Some(TrackInfo {
+                                                path: path.clone(),
+                                                duration: None, // filled in by open_result arm
+                                                started: Instant::now(),
+                                                offset: Duration::ZERO,
+                                            });
+                                            engine.next_duration = None;
+                                            // signal the open_result arm to emit TrackAdvanced
+                                            // once the source is ready and duration is known
+                                            engine.pending_track_advanced = true;
+                                        } else {
+                                            engine.seek_tx = None;
+                                            engine.repeat_one_tx = None;
+                                            engine.current_info = None;
+                                            emit(AudioEvent::TrackFinished { generation });
+                                        }
+                                    }
+
+                                    // repeat-one loop ───────────────────────────────────────
+                                    // StateChanged { position: 0.0 } doubles as the loop signal
+                                    // reset TrackInfo so position_secs reads from the new zero
+                                    AudioEvent::StateChanged { position } if position == 0.0 => {
+                                        if let Some(ref mut info) = engine.current_info {
+                                            info.offset = Duration::ZERO;
+                                            info.started = Instant::now();
+                                        }
+                                        emit(AudioEvent::StateChanged { position });
+                                    }
+
+                                    // all other events pass through
+                                    other => emit(other),
+                                }
+                            }
+                            Err(_) => {
+                                // event channel disconnected (engine dropped)
+                                let (_dead_tx, dead_rx) = crossbeam::channel::bounded::<AudioEvent>(0);
+                                drop(_dead_tx);
+                                event_rx = dead_rx;
+                            }
                         }
-                    }
-                    if let Ok(mut s) = state_clone.lock() {
-                        *s = engine.snapshot();
                     }
                 }
             }
@@ -1743,8 +2024,6 @@ impl PlaybackStateSync {
 
         Self {
             command_tx: tx,
-            shared_state,
-            event_queue,
             device_list,
         }
     }
@@ -1752,8 +2031,6 @@ impl PlaybackStateSync {
     fn send(&self, cmd: AudioCommand) -> Result<(), String> {
         self.command_tx.send(cmd).map_err(|e| e.to_string())
     }
-
-    pub fn init_async(_app_handle: tauri::AppHandle) {}
 }
 
 // =============================================================================
@@ -1969,26 +2246,6 @@ pub fn audio_set_volume(
     state: tauri::State<'_, PlaybackStateSync>,
 ) -> Result<(), String> {
     state.send(AudioCommand::SetVolume(volume))
-}
-
-#[tauri::command]
-pub fn audio_get_state(
-    state: tauri::State<'_, PlaybackStateSync>,
-) -> Result<PlaybackState, String> {
-    state
-        .shared_state
-        .lock()
-        .map(|s| s.clone())
-        .map_err(|_| "State lock poisoned".into())
-}
-
-#[tauri::command]
-pub fn audio_poll_event(state: tauri::State<'_, PlaybackStateSync>) -> Result<AudioEvent, String> {
-    state
-        .event_queue
-        .lock()
-        .map(|mut q| q.pop_front().unwrap_or(AudioEvent::Idle))
-        .map_err(|_| "Event queue lock poisoned".into())
 }
 
 #[tauri::command]

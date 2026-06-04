@@ -36,15 +36,12 @@ import {
     nativeAudioStop,
     nativeAudioSetVolume,
     nativeAudioSeek,
-    nativeAudioGetState,
     nativeAudioSetRepeatOne,
-    nativeAudioPollEvent,
     type AudioEventType,
     nativeAudioSetEq,
     nativeAudioSetReplayGainEnabled,
     nativeAudioSetOutputDevice,
     shouldUseNativeAudio,
-    type NativePlaybackState
 } from '$lib/services/native-audio';
 
 // =============================================================================
@@ -63,7 +60,102 @@ import {
 } from '$lib/services/html5-audio';
 
 // Interval for polling native playback state
-let nativeStatePoller: ReturnType<typeof setInterval> | null = null;
+// =============================================================================
+// DEAD-RECKONING STATE (native backend only)
+// position is computed locally between backend events using:
+//   currentTime = _reckoningOffset + (now - _reckoningStartedAt) / 1000
+//
+// baseline is reset on every real event: play, seek (correction), pause, resume, gapless advance, TrackFinished
+// =============================================================================
+
+let _reckoningOffset: number = 0;       // confirmed position in seconds at last event
+let _reckoningStartedAt: number = 0;    // performance.now() at last event
+let _reckoningActive: boolean = false;  // true only while native is playing
+let _reckoningRafId: number | null = null;
+
+function _startReckoning(offsetSecs: number): void {
+    _reckoningOffset = offsetSecs;
+    _reckoningStartedAt = performance.now();
+    _reckoningActive = true;
+    if (_reckoningRafId === null) {
+        _reckoningRafId = requestAnimationFrame(_reckoningTick);
+    }
+}
+
+function _stopReckoning(snapshotSecs?: number): void {
+    _reckoningActive = false;
+    if (_reckoningRafId !== null) {
+        cancelAnimationFrame(_reckoningRafId);
+        _reckoningRafId = null;
+    }
+    if (snapshotSecs !== undefined) {
+        _reckoningOffset = snapshotSecs;
+        currentTime.set(snapshotSecs);
+    }
+}
+
+function _correctReckoning(confirmedSecs: number): void {
+    // snap the baseline to the backend-confirmed position if the drift exceeds 1 second
+    const estimated = _reckoningOffset + (performance.now() - _reckoningStartedAt) / 1000;
+    const drift = Math.abs(estimated - confirmedSecs);
+    _reckoningOffset = confirmedSecs;
+    _reckoningStartedAt = performance.now();
+    if (drift > 1.0) {
+        currentTime.set(confirmedSecs);
+    }
+}
+
+function _reckoningTick(): void {
+    if (!_reckoningActive) {
+        _reckoningRafId = null;
+        return;
+    }
+    const elapsed = (performance.now() - _reckoningStartedAt) / 1000;
+    const position = _reckoningOffset + elapsed;
+    const dur = get(duration);
+
+    // clamp to duration
+    currentTime.set(dur > 0 ? Math.min(position, dur) : position);
+
+    pluginEvents.emit('timeUpdate', { currentTime: position, duration: dur });
+
+    if (get(isPlaying)) {
+        updateMediaSessionPosition();
+    }
+
+    _reckoningRafId = requestAnimationFrame(_reckoningTick);
+}
+
+// HTML5 POSITION TICKER
+// html5GetState() reads directly from the <audio> element
+// Still use rAF so position updates are frame-rate-aligned, not timer-based
+
+let _html5RafId: number | null = null;
+
+function _startHtml5Ticker(): void {
+    if (_html5RafId !== null) return;
+    _html5RafId = requestAnimationFrame(_html5Tick);
+}
+
+function _stopHtml5Ticker(): void {
+    if (_html5RafId !== null) {
+        cancelAnimationFrame(_html5RafId);
+        _html5RafId = null;
+    }
+}
+
+function _html5Tick(): void {
+    if (!get(isPlaying) || get(activeBackend) !== 'html5') {
+        _html5RafId = null;
+        return;
+    }
+    const state = html5GetState();
+    currentTime.set(state.position);
+    if (state.duration > 0 && !isNaN(state.duration)) duration.set(state.duration);
+    pluginEvents.emit('timeUpdate', { currentTime: state.position, duration: state.duration });
+    if (get(isPlaying)) updateMediaSessionPosition();
+    _html5RafId = requestAnimationFrame(_html5Tick);
+}
 
 // Track which backend is currently active ('native', 'html5', 'remote', or 'none')
 export type ActiveBackend = 'native' | 'html5' | 'remote' | 'none';
@@ -176,23 +268,27 @@ export const repeat = writable<'none' | 'one' | 'all'>('none');
 
 // Subscribe to EQ changes — native half only.
 // The HTML5 half is handled inside html5-audio.ts via its own subscription.
+//
+// debounce: we only send the last state seen during a 200ms burst of EQ sliders
+// The backend is checked at the moment the timer fires, not when the subscription
+// first ran, so we never send to a backend that became inactive mid-drag
 let _eqApplyTimer: ReturnType<typeof setTimeout> | null = null;
 let _latestEqState: any = null;
 equalizer.subscribe((state) => {
     _latestEqState = state;
 
-    // Only attempt to apply when native backend is active
-    if (get(activeBackend) !== 'native') return;
-
-    // Debounce rapid updates (200ms)
     if (_eqApplyTimer) clearTimeout(_eqApplyTimer);
     _eqApplyTimer = setTimeout(async () => {
+        _eqApplyTimer = null;
+
+        // re-check backend at fire time as it may have changed during the debounce window
+        if (get(activeBackend) !== 'native') return;
+
         try {
             await nativeAudioSetEq(_latestEqState);
         } catch (err) {
             console.error('[EQ] Failed to apply settings:', err);
-        } finally {
-            _eqApplyTimer = null;
+            addToast('Failed to apply equalizer settings', 'error');
         }
     }, 200);
 });
@@ -224,20 +320,57 @@ export async function initAudioBackend(): Promise<void> {
     nativeAudioUsed = await shouldUseNativeAudio();
     console.log(`[Player] Native audio preferred: ${nativeAudioUsed}`);
 
-    // Start/stop poller based on playback state and notify remote devices
+    // register the native audio event listener once
+    // backend emits 'audio://event' via app_handle.emit
+    if (nativeAudioUsed) {
+        listen<AudioEventType>('audio://event', ({ payload: event }) => {
+            if (event.type === 'TrackFinished') {
+                _stopReckoning(get(currentTime));
+                handleTrackEnd();
+            } else if (event.type === 'TrackAdvanced') {
+                _startReckoning(0);
+                handleGaplessAdvance();
+            } else if (event.type === 'StateChanged') {
+                // backend-confirmed position after keyframe alignment or repeat-one loop
+                // correct the reckoning baseline if drift exceeds 1 second
+                _correctReckoning(event.data.position);
+                if (event.data.position === 0) {
+                    // repeat-one loop
+                    isPlaying.set(true);
+                    updateMediaSessionPlaybackState('playing');
+                }
+            } else if (event.type === 'DeviceListChanged') {
+                console.log('[Player] Device list updated');
+            } else if (event.type === 'Error') {
+                console.error('[Player] Backend error:', event.data.message);
+                addToast(`Audio error: ${event.data.message}`, 'error');
+                // backend is now silent
+                // reset UI state so player doesn't show stale track info
+                // setting activeBackend to 'none' ensures resume() does a full reopen via playTrack
+                _stopReckoning(get(currentTime));
+                isPlaying.set(false);
+                activeBackend.set('none');
+                updateMediaSessionPlaybackState('paused');
+            }
+        }).catch(err => {
+            console.error('[Player] Failed to register audio event listener:', err);
+        });
+    }
+    // start/stop dead-reckoning ticker and thumbar based on playback state
     isPlaying.subscribe((playing) => {
         updateWindowsThumbarState(playing).catch(() => { });
-        broadcastState(true);
-        if (playing) {
-            startStatePoller();
+        if (playing && get(activeBackend) === 'native') {
+            // resume reckoning from wherever currentTime currently sits
+            // real baseline was already set by the event that caused isPlaying to flip
+            _startReckoning(get(currentTime));
         } else {
-            stopStatePoller();
+            _stopReckoning();
         }
-    });
-
-    // Also force broadcast when the actual track changes regardless of play state
-    currentTrack.subscribe(() => {
-        broadcastState(true);
+        if (playing && get(activeBackend) === 'html5') {
+            _startHtml5Ticker();
+        } else {
+            _stopHtml5Ticker();
+        }
     });
 
     // Subscribe to volume changes to keep backends in sync
@@ -298,7 +431,7 @@ export async function initAudioBackend(): Promise<void> {
 
     activeBackend.subscribe(b => {
         if (b === 'remote') {
-            stopStatePoller();
+            _stopReckoning();
         }
     });
 
@@ -359,81 +492,6 @@ function handleRemotePlayerState(payload: any) {
     }
 }
 
-// Poll the native backend for state changes (only while playing)
-const POLL_INTERVAL_MS = 50;
-
-function startStatePoller(): void {
-    if (nativeStatePoller) return;
-
-    nativeStatePoller = setInterval(async () => {
-        try {
-            const track = get(currentTrack);
-            if (!track) return;
-
-            if (get(activeBackend) === 'native') {
-                const state = await nativeAudioGetState();
-
-                currentTime.set(state.position);
-                if (state.duration > 0) {
-                    duration.set(state.duration);
-                } else {
-                    console.warn('[Poller] Native backend reported 0 duration for track at:', state.position);
-                }
-
-                const event = await nativeAudioPollEvent();
-
-                if (event.type === 'TrackFinished') {
-                    handleTrackEnd();
-                } else if (event.type === 'TrackAdvanced') {
-                    handleGaplessAdvance();
-                } else if (event.type === 'StateChanged') {
-                    currentTime.set(event.data.position);
-                    if (event.data.position === 0) {
-                        isPlaying.set(true);
-                        updateMediaSessionPlaybackState('playing');
-                    }
-                }
-
-                if (state.is_playing !== get(isPlaying)) {
-                    if (state.is_playing === false && state.duration === 0 && state.position === 0) {
-                        // Backend hasn't loaded track yet, don't trust this state
-                    } else {
-                        isPlaying.set(state.is_playing);
-                        updateMediaSessionPlaybackState(state.is_playing ? 'playing' : 'paused');
-                    }
-                }
-
-                pluginEvents.emit('timeUpdate', {
-                    currentTime: state.position,
-                    duration: state.duration
-                });
-
-            } else if (get(activeBackend) === 'html5') {
-                const state = html5GetState();
-                currentTime.set(state.position);
-                if (state.duration > 0 && !isNaN(state.duration)) duration.set(state.duration);
-                if (state.isPlaying !== get(isPlaying)) {
-                    isPlaying.set(state.isPlaying);
-                    updateMediaSessionPlaybackState(state.isPlaying ? 'playing' : 'paused');
-                }
-                pluginEvents.emit('timeUpdate', { currentTime: state.position, duration: state.duration });
-
-            } else if (get(activeBackend) === 'remote') {
-                // Remote: rely purely on WebSocket pushes, no local polling.
-            }
-
-            if (get(isPlaying)) {
-                updateMediaSessionPosition();
-            }
-
-            broadcastState();
-
-        } catch (e) {
-            console.error('[Player] Poller error:', e);
-        }
-    }, POLL_INTERVAL_MS);
-}
-
 let lastBroadcast = 0;
 function broadcastState(force = false) {
     if (get(activeBackend) === 'remote') return;
@@ -466,16 +524,10 @@ function broadcastState(force = false) {
     }
 }
 
-function stopStatePoller(): void {
-    if (nativeStatePoller) {
-        clearInterval(nativeStatePoller);
-        nativeStatePoller = null;
-    }
-}
-
 export function cleanupPlayer(): void {
     console.log('[Player] Cleaning up player resources');
-    stopStatePoller();
+    _stopReckoning();
+    _stopHtml5Ticker();
     nativeAudioStop().catch(console.error);
 
     // Cleanup HTML5 backend (audio element + dash + EQ graph)
@@ -850,8 +902,13 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
         duration.set(track.duration || 0);
         isPlaying.set(true);
 
+        if (get(activeBackend) === 'native') {
+            _startReckoning(startTime);
+        }
+
         updateMediaSessionPlaybackState('playing');
         updateMediaSessionPosition();
+        broadcastState(true);
 
     } catch (err) {
         console.error('[Player] Playback failed:', err);
@@ -942,9 +999,11 @@ export async function pause(): Promise<void> {
             html5Pause();
         } else if (get(activeBackend) === 'native') {
             await nativeAudioPause();
+            _stopReckoning(get(currentTime));
         }
         isPlaying.set(false);
         updateMediaSessionPlaybackState('paused');
+        broadcastState(true);
     } catch (err) {
         console.error('[Player] Pause failed:', err);
     }
@@ -975,8 +1034,10 @@ export async function resume(): Promise<void> {
             await nativeAudioResume();
             isPlaying.set(true);
             updateMediaSessionPlaybackState('playing');
+            _startReckoning(_reckoningOffset);
         }
         updateMediaSessionPosition();
+        broadcastState(true);
     } catch (err) {
         console.error('[Player] Resume failed:', err);
     }
@@ -1150,12 +1211,19 @@ export async function seek(position: number): Promise<void> {
         if (get(activeBackend) === 'html5') {
             html5Seek(position);
         } else if (get(activeBackend) === 'native') {
+            const targetSecs = position * get(duration);
             await nativeAudioSeek(position);
-            if (!get(isPlaying)) {
-                currentTime.set(position * get(duration));
+            // immediately snap reckoning to the target
+            // backend confirms the actual keyframe position via StateChanged after this
+            if (get(isPlaying)) {
+                _startReckoning(targetSecs);
+            } else {
+                _stopReckoning(targetSecs);
+                currentTime.set(targetSecs);
             }
         }
         updateMediaSessionPosition();
+        broadcastState(true);
     } catch (err) {
         console.error('[Player] Seek failed:', err);
     }
@@ -1181,6 +1249,7 @@ export async function setVolume(sliderValue: number): Promise<void> {
     } catch (err) {
         console.error('[Player] Volume set failed:', err);
     }
+    broadcastState(true);
 }
 
 export function toggleShuffle(): void {
@@ -1210,6 +1279,7 @@ export function toggleShuffle(): void {
 
         return newState;
     });
+    broadcastState(true);
 }
 
 export function cycleRepeat(): void {
@@ -1230,6 +1300,7 @@ export function cycleRepeat(): void {
         }
         return next;
     });
+    broadcastState(true);
 }
 
 function handleTrackEnd(): void {
@@ -1313,12 +1384,17 @@ async function _advanceUiToTrack(track: Track): Promise<void> {
     duration.set(track.duration || 0);
     isPlaying.set(true);
 
+    if (get(activeBackend) === 'native') {
+        _startReckoning(0);
+    }
+
     pluginEvents.emit('trackChange', { track: trackForPlugins, previousTrack: previousTrackObj });
     pluginEvents.emit('queueChange', { queue: get(queue), index: get(queueIndex) });
 
     await updateMediaSessionMetadata(trackForPlugins);
     updateMediaSessionPlaybackState('playing');
     updateMediaSessionPosition();
+    broadcastState(true);
 
     _schedulePreload();
 
