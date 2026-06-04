@@ -71,6 +71,7 @@ export const authState = writable<AuthState>(defaultAuthState);
 export const syncStatus = writable<SyncStatus>(defaultSyncStatus);
 export const syncProgress = writable<SyncProgress>(defaultSyncProgress);
 export const showLoginModal = writable<boolean>(false);
+export const loginModalMode = writable<'oauth' | 'custom_server'>('oauth');
 
 export interface CustomServerStatus {
     connected: boolean;

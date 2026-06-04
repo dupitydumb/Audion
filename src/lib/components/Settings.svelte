@@ -29,6 +29,7 @@
     isSupporter,
     isSyncing,
     showLoginModal,
+    loginModalMode,
     logout,
     triggerSync,
     deleteAccount,
@@ -720,18 +721,91 @@
               </button>
             </div>
           {:else}
-            <div class="account-signin">
-              <span class="setting-description">
-                {$_('settings.signInToSync', { default: 'Sign in to sync your library and settings across devices' })}
-              </span>
-              <button
-                class="btn-outline-compact btn-full-width"
-                style="margin-top: var(--spacing-sm)"
-                on:click={() => showLoginModal.set(true)}
-                aria-label={$_('settings.signIn', { default: 'Sign In' })}
-              >
-                {$_('settings.signIn', { default: 'Sign In' })}
-              </button>
+            <div class="account-options-grid">
+              <!-- Cloud Sync Card -->
+              <div class="account-option-card">
+                <div class="option-header">
+                  <div class="option-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                      <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+                    </svg>
+                  </div>
+                  <h3 class="option-title">{$_('settings.cloudSync', { default: 'Cloud Sync' })}</h3>
+                </div>
+                <p class="option-description">
+                  {$_('settings.cloudSyncDesc', { default: 'Sync your library and settings across devices using Audion Cloud.' })}
+                </p>
+                <button
+                  class="btn-outline-compact btn-full-width"
+                  style="margin-top: auto;"
+                  on:click={() => {
+                    loginModalMode.set("oauth");
+                    showLoginModal.set(true);
+                  }}
+                  aria-label={$_('settings.signIn', { default: 'Sign In' })}
+                >
+                  {$_('settings.signIn', { default: 'Sign In' })}
+                </button>
+              </div>
+
+              <!-- Custom Server Card -->
+              <div class="account-option-card">
+                <div class="option-header">
+                  <div class="option-icon accent">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                      <rect x="2" y="2" width="20" height="8" rx="2" ry="2" />
+                      <rect x="2" y="14" width="20" height="8" rx="2" ry="2" />
+                      <line x1="6" y1="6" x2="6.01" y2="6" />
+                      <line x1="6" y1="18" x2="6.01" y2="18" />
+                    </svg>
+                  </div>
+                  <h3 class="option-title">{$_('settings.customServer', { default: 'Self-Hosted / Custom Server' })}</h3>
+                </div>
+                <p class="option-description">
+                  {$_('settings.customServerDesc', { default: 'Sync with your own self-hosted Audion server for complete data privacy.' })}
+                </p>
+                <button
+                  class="btn-outline-compact btn-full-width"
+                  style="margin-top: auto;"
+                  on:click={() => {
+                    loginModalMode.set("custom_server");
+                    showLoginModal.set(true);
+                  }}
+                  aria-label={$_('settings.connectServer', { default: 'Connect Server' })}
+                >
+                  {$_('settings.connectServer', { default: 'Connect Server' })}
+                </button>
+              </div>
+            </div>
+
+            <div class="docker-guide-banner">
+              <div class="docker-guide-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="24" height="24">
+                  <path d="M22 12.5a8.25 8.25 0 0 1-16.5 0c0-2.5 1.5-4.5 4-5.5h2.5c2.5 1 4 3 4 5.5z" />
+                  <path d="M12 2v5" />
+                  <path d="M7.5 4.5l3.5 2.5" />
+                  <path d="M16.5 4.5L13 7" />
+                </svg>
+              </div>
+              <div class="docker-guide-info">
+                <span class="setting-title" style="margin: 0; font-size: 0.9375rem;">{$_('settings.runOwnServer', { default: 'Run your own Audion Server' })}</span>
+                <span class="setting-description" style="margin: 2px 0 6px 0; font-size: 0.8125rem;">
+                  {$_('settings.runOwnServerDesc', { default: 'Easily deploy your own server using Docker. View setup instructions on GitHub.' })}
+                </span>
+                <a
+                  href="https://github.com/dupitydumb/audion-server-docker"
+                  target="_blank"
+                  rel="noreferrer"
+                  class="docker-guide-link"
+                >
+                  {$_('settings.dockerSetupGuide', { default: 'Get audion-server-docker on GitHub' })}
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12" style="margin-left: 4px; display: inline-block; vertical-align: middle;">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                </a>
+              </div>
             </div>
           {/if}
         </div>
@@ -2030,6 +2104,114 @@
     display: flex;
     flex-direction: column;
     gap: var(--spacing-lg);
+  }
+
+  .account-options-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--spacing-md);
+    width: 100%;
+  }
+
+  .account-option-card {
+    display: flex;
+    flex-direction: column;
+    padding: var(--spacing-lg);
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    transition: all 0.2s ease;
+  }
+
+  .account-option-card:hover {
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .option-header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-sm);
+  }
+
+  .option-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+  }
+
+  .option-icon.accent {
+    color: var(--accent-primary);
+    background: color-mix(in srgb, var(--accent-primary), transparent 90%);
+  }
+
+  .option-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+  }
+
+  .option-description {
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    margin: 0 0 var(--spacing-md) 0;
+  }
+
+  .docker-guide-banner {
+    display: flex;
+    gap: var(--spacing-md);
+    padding: var(--spacing-lg);
+    background: color-mix(in srgb, var(--accent-primary), transparent 96%);
+    border: 1px dashed color-mix(in srgb, var(--accent-primary), transparent 70%);
+    border-radius: var(--radius-lg);
+    margin-top: var(--spacing-sm);
+  }
+
+  .docker-guide-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-md);
+    background: color-mix(in srgb, var(--accent-primary), transparent 90%);
+    color: var(--accent-primary);
+    flex-shrink: 0;
+  }
+
+  .docker-guide-info {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+  }
+
+  .docker-guide-link {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--accent-primary);
+    text-decoration: underline;
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    margin-top: 4px;
+  }
+
+  .docker-guide-link:hover {
+    opacity: 0.85;
+  }
+
+  @media (max-width: 640px) {
+    .account-options-grid {
+      grid-template-columns: 1fr;
+    }
   }
 
   .upgrade-card {

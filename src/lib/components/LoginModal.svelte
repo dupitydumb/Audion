@@ -1,9 +1,8 @@
 <script lang="ts">
-    import { showLoginModal, startLogin, connectCustomServerPassword } from "$lib/stores/sync";
+    import { showLoginModal, startLogin, connectCustomServerPassword, loginModalMode } from "$lib/stores/sync";
     import { fade, scale, slide } from "svelte/transition";
 
     let isLoading = false;
-    let mode: "oauth" | "custom_server" = "oauth";
 
     let serverUrl = "";
     let username = "";
@@ -13,7 +12,7 @@
     function close() {
         showLoginModal.set(false);
         // Reset state
-        mode = "oauth";
+        loginModalMode.set("oauth");
         serverUrl = "";
         username = "";
         password = "";
@@ -71,10 +70,10 @@
             on:click|stopPropagation
             role="dialog"
             aria-modal="true"
-            aria-label={mode === "oauth" ? "Sign in to Audion" : "Connect to Custom Server"}
+            aria-label={$loginModalMode === "oauth" ? "Sign in to Audion" : "Connect to Custom Server"}
         >
             <div class="modal-header">
-                {#if mode === "oauth"}
+                {#if $loginModalMode === "oauth"}
                     <h2>Sign in to Audion</h2>
                     <p class="subtitle">
                         Sync your playlists, liked songs, and settings across all
@@ -89,7 +88,7 @@
             </div>
 
             <div class="modal-body">
-                {#if mode === "oauth"}
+                {#if $loginModalMode === "oauth"}
                     <button
                         class="login-btn google"
                         on:click={() => loginWith("google")}
@@ -132,7 +131,7 @@
 
                     <button
                         class="btn-text secondary-action"
-                        on:click={() => mode = "custom_server"}
+                        on:click={() => loginModalMode.set("custom_server")}
                         disabled={isLoading}
                     >
                         Connect to Custom Server
@@ -178,6 +177,24 @@
                             </div>
                         {/if}
 
+                        <div class="docker-info-box">
+                            <div class="docker-info-header">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="docker-info-icon" width="16" height="16">
+                                    <path d="M22 12.5a8.25 8.25 0 0 1-16.5 0c0-2.5 1.5-4.5 4-5.5h2.5c2.5 1 4 3 4 5.5z" />
+                                    <path d="M12 2v5" />
+                                    <path d="M7.5 4.5l3.5 2.5" />
+                                    <path d="M16.5 4.5L13 7" />
+                                </svg>
+                                <span>Self-Hosting Guide</span>
+                            </div>
+                            <p class="docker-info-text">
+                                Run your own Audion Server in minutes using Docker. Read the setup guide on GitHub:
+                            </p>
+                            <a href="https://github.com/dupitydumb/audion-server-docker" target="_blank" rel="noreferrer" class="docker-info-link">
+                                github.com/dupitydumb/audion-server-docker
+                            </a>
+                        </div>
+
                         <div class="form-actions">
                             <button
                                 type="submit"
@@ -189,7 +206,7 @@
                             <button
                                 type="button"
                                 class="btn-text"
-                                on:click={() => mode = "oauth"}
+                                on:click={() => loginModalMode.set("oauth")}
                                 disabled={isLoading}
                             >
                                 Back
@@ -200,7 +217,7 @@
             </div>
 
             <div class="modal-footer">
-                {#if mode === "oauth"}
+                {#if $loginModalMode === "oauth"}
                     <p class="privacy-note">
                         By signing in, you agree to sync your music data with
                         Audion's servers. We only store your playlists, liked songs,
@@ -409,5 +426,45 @@
 
     .btn-text:hover {
         color: var(--text-primary);
+    }
+
+    .docker-info-box {
+        margin-top: var(--spacing-sm);
+        padding: var(--spacing-md);
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px dashed var(--border-color);
+        border-radius: var(--radius-md);
+        font-size: 0.8125rem;
+    }
+
+    .docker-info-header {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 6px;
+    }
+
+    .docker-info-icon {
+        color: var(--accent-primary);
+    }
+
+    .docker-info-text {
+        color: var(--text-secondary);
+        margin: 0 0 6px 0;
+        line-height: 1.4;
+    }
+
+    .docker-info-link {
+        color: var(--accent-primary);
+        text-decoration: underline;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+    }
+
+    .docker-info-link:hover {
+        opacity: 0.85;
     }
 </style>
