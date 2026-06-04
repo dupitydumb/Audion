@@ -32,6 +32,8 @@
     logout,
     triggerSync,
     deleteAccount,
+    customServerStatus,
+    disconnectCustomServer,
   } from "$lib/stores/sync";
   import { nativeAudioStop, nativeAudioSetReplayGainEnabled, nativeAudioListDevices, nativeAudioGetDeviceInfo, nativeAudioSetOutputDevice, type DeviceList } from "$lib/services/native-audio";
   import Icon from "$lib/components/Icon.svelte";
@@ -648,7 +650,31 @@
       <section class="settings-section" aria-labelledby="account-heading">
         <h2 id="account-heading" class="section-label">{$_('settings.account', { default: 'Account' })}</h2>
         <div class="settings-card">
-          {#if $isLoggedIn}
+          {#if $customServerStatus.connected}
+            <div class="account-profile-row">
+              <div class="avatar avatar-placeholder">
+                S
+              </div>
+              <div class="account-details">
+                <span class="setting-title">Self-Hosted Server</span>
+                <span class="setting-description">URL: {$customServerStatus.url}</span>
+                <span class="setting-description">User: {$customServerStatus.user || 'Unknown'}</span>
+              </div>
+              <button
+                class="btn-outline-compact"
+                on:click={async () => {
+                  const ok = await confirm(
+                    "Are you sure you want to disconnect from this server?",
+                    { title: "Disconnect Server" },
+                  );
+                  if (ok) disconnectCustomServer();
+                }}
+                aria-label="Disconnect Server"
+              >
+                Disconnect
+              </button>
+            </div>
+          {:else if $isLoggedIn}
             <div class="account-profile-row">
               {#if $authState.avatar_url}
                 <img
@@ -712,7 +738,7 @@
       </section>
 
       <!-- Section: Sync -->
-      {#if $isLoggedIn}
+      {#if $isLoggedIn && !$customServerStatus.connected}
         <section class="settings-section" aria-labelledby="sync-heading">
           <h2 id="sync-heading" class="section-label">{$_('settings.sync', { default: 'Sync' })}</h2>
           <div class="settings-card">

@@ -1103,3 +1103,17 @@ export async function proxyFetchBytes(url: string): Promise<string> {
 export async function saveImageToGallery(base64Data: string, filename: string): Promise<string> {
     return await invoke('save_image_to_gallery', { base64Data, filename });
 }
+
+/**
+ * Resolve a remote server audio path to a local cache path.
+ */
+export async function audioResolvePath(path: string, trackId?: number | null): Promise<string> {
+    return await invoke('audio_resolve_path', { path, trackId });
+}
+
+/**
+ * Get direct authenticated streaming URL for a server track.
+ */
+export async function audioGetStreamUrl(path: string, trackId?: number | null): Promise<string> {
+    return await invoke('audio_get_stream_url', { path, trackId });
+}

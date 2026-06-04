@@ -74,9 +74,9 @@ export interface EqSettings {
  *                       Pass null to fall back to reading the tag from the file.
  *                       Once DB integration is complete, always pass track.replay_gain_db.
  */
-export async function nativeAudioPlay(path: string, replayGainDb: number | null = null): Promise<void> {
+export async function nativeAudioPlay(path: string, trackId: number | null = null, replayGainDb: number | null = null): Promise<void> {
     console.log('[AUDIO] Native play:', path);
-    await invoke('audio_play', { path, replayGainDb });
+    await invoke('audio_play', { path, trackId, replayGainDb });
 }
 
 /**
@@ -156,8 +156,8 @@ export async function nativeAudioPollEvent(): Promise<AudioEventType> {
  * The backend will decode and buffer it so the transition is seamless.
  * @param replayGainDb — pass DB value if available, null otherwise.
  */
-export async function nativeAudioPreload(path: string, replayGainDb: number | null = null): Promise<void> {
-    await invoke('audio_preload', { path, replayGainDb });
+export async function nativeAudioPreload(path: string, trackId: number | null = null, replayGainDb: number | null = null): Promise<void> {
+    await invoke('audio_preload', { path, trackId, replayGainDb });
 }
 
 /**

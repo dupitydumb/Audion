@@ -658,6 +658,9 @@ pub fn run() {
                     commands::sync_delete_account,
                     commands::sync_get_access_token,
                     commands::sync_get_device_id,
+                    commands::server_connect,
+                    commands::server_disconnect,
+                    commands::server_get_status,
                     // =========================================================================
                     // NATIVE AUDIO COMMANDS
                     // =========================================================================
@@ -680,6 +683,8 @@ pub fn run() {
                     audio::audio_set_output_device,
                     audio::audio_get_device_info,
                     audio::native_audio_available,
+                    audio::audio_resolve_path,
+                    audio::audio_get_stream_url,
                     windows_thumbar::windows_init_thumbar,
                     windows_thumbar::windows_update_thumbar_state,
                     commands::proxy_fetch_bytes,
@@ -842,6 +847,8 @@ pub fn run() {
                     audio::audio_set_output_device,
                     audio::audio_get_device_info,
                     audio::native_audio_available,
+                    audio::audio_resolve_path,
+                    audio::audio_get_stream_url,
                     commands::proxy_fetch_bytes,
                     commands::save_image_to_gallery,
                 ]

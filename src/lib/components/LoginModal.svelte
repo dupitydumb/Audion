@@ -1,11 +1,23 @@
 <script lang="ts">
-    import { showLoginModal, startLogin } from "$lib/stores/sync";
-    import { fade, scale } from "svelte/transition";
+    import { showLoginModal, startLogin, connectCustomServerPassword } from "$lib/stores/sync";
+    import { fade, scale, slide } from "svelte/transition";
 
     let isLoading = false;
+    let mode: "oauth" | "custom_server" = "oauth";
+
+    let serverUrl = "";
+    let username = "";
+    let password = "";
+    let errorText = "";
 
     function close() {
         showLoginModal.set(false);
+        // Reset state
+        mode = "oauth";
+        serverUrl = "";
+        username = "";
+        password = "";
+        errorText = "";
     }
 
     async function loginWith(provider: "google" | "github") {
@@ -14,6 +26,29 @@
             await startLogin(provider);
         } catch (err) {
             console.error("[Login] Failed:", err);
+        } finally {
+            isLoading = false;
+        }
+    }
+
+    async function handleCustomConnect() {
+        if (!serverUrl) {
+            errorText = "Server URL is required";
+            return;
+        }
+        if (!username || !password) {
+            errorText = "Username and password are required";
+            return;
+        }
+
+        isLoading = true;
+        errorText = "";
+        try {
+            await connectCustomServerPassword(serverUrl, username, password);
+            close();
+        } catch (err) {
+            console.error("[Custom Server Connect] Failed:", err);
+            errorText = String(err);
         } finally {
             isLoading = false;
         }
@@ -36,64 +71,142 @@
             on:click|stopPropagation
             role="dialog"
             aria-modal="true"
-            aria-label="Sign in to Audion"
+            aria-label={mode === "oauth" ? "Sign in to Audion" : "Connect to Custom Server"}
         >
             <div class="modal-header">
-                <h2>Sign in to Audion</h2>
-                <p class="subtitle">
-                    Sync your playlists, liked songs, and settings across all
-                    your devices.
-                </p>
+                {#if mode === "oauth"}
+                    <h2>Sign in to Audion</h2>
+                    <p class="subtitle">
+                        Sync your playlists, liked songs, and settings across all
+                        your devices.
+                    </p>
+                {:else}
+                    <h2>Connect to Custom Server</h2>
+                    <p class="subtitle">
+                        Connect and sync with your self-hosted Audion server.
+                    </p>
+                {/if}
             </div>
 
             <div class="modal-body">
-                <button
-                    class="login-btn google"
-                    on:click={() => loginWith("google")}
-                    disabled={isLoading}
-                >
-                    <svg viewBox="0 0 24 24" width="20" height="20">
-                        <path
-                            fill="#4285F4"
-                            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
-                        />
-                        <path
-                            fill="#34A853"
-                            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                        />
-                        <path
-                            fill="#FBBC05"
-                            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                        />
-                        <path
-                            fill="#EA4335"
-                            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                        />
-                    </svg>
-                    <span>Continue with Google</span>
-                </button>
+                {#if mode === "oauth"}
+                    <button
+                        class="login-btn google"
+                        on:click={() => loginWith("google")}
+                        disabled={isLoading}
+                    >
+                        <svg viewBox="0 0 24 24" width="20" height="20">
+                            <path
+                                fill="#4285F4"
+                                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
+                            />
+                            <path
+                                fill="#34A853"
+                                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                            />
+                            <path
+                                fill="#FBBC05"
+                                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                            />
+                            <path
+                                fill="#EA4335"
+                                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                            />
+                        </svg>
+                        <span>Continue with Google</span>
+                    </button>
 
-                <button
-                    class="login-btn github"
-                    on:click={() => loginWith("github")}
-                    disabled={isLoading}
-                >
-                    <svg viewBox="0 0 24 24" width="20" height="20">
-                        <path
-                            fill="currentColor"
-                            d="M12 1C5.37 1 0 6.37 0 13c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 13c0-6.63-5.37-12-12-12z"
-                        />
-                    </svg>
-                    <span>Continue with GitHub</span>
-                </button>
+                    <button
+                        class="login-btn github"
+                        on:click={() => loginWith("github")}
+                        disabled={isLoading}
+                    >
+                        <svg viewBox="0 0 24 24" width="20" height="20">
+                            <path
+                                fill="currentColor"
+                                d="M12 1C5.37 1 0 6.37 0 13c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 13c0-6.63-5.37-12-12-12z"
+                            />
+                        </svg>
+                        <span>Continue with GitHub</span>
+                    </button>
+
+                    <button
+                        class="btn-text secondary-action"
+                        on:click={() => mode = "custom_server"}
+                        disabled={isLoading}
+                    >
+                        Connect to Custom Server
+                    </button>
+                {:else}
+                    <form on:submit|preventDefault={handleCustomConnect} class="custom-server-form">
+                        <div class="form-group">
+                            <label for="server-url">Server URL</label>
+                            <input
+                                id="server-url"
+                                type="url"
+                                placeholder="e.g., http://localhost:8080"
+                                bind:value={serverUrl}
+                                disabled={isLoading}
+                            />
+                        </div>
+
+                        <div class="form-group">
+                            <label for="username">Username</label>
+                            <input
+                                id="username"
+                                type="text"
+                                placeholder="Username"
+                                bind:value={username}
+                                disabled={isLoading}
+                            />
+                        </div>
+
+                        <div class="form-group">
+                            <label for="password">Password</label>
+                            <input
+                                id="password"
+                                type="password"
+                                placeholder="Password"
+                                bind:value={password}
+                                disabled={isLoading}
+                            />
+                        </div>
+
+                        {#if errorText}
+                            <div class="error-text" transition:slide={{ duration: 150 }}>
+                                {errorText}
+                            </div>
+                        {/if}
+
+                        <div class="form-actions">
+                            <button
+                                type="submit"
+                                class="btn-primary"
+                                disabled={isLoading}
+                            >
+                                {isLoading ? "Connecting..." : "Connect"}
+                            </button>
+                            <button
+                                type="button"
+                                class="btn-text"
+                                on:click={() => mode = "oauth"}
+                                disabled={isLoading}
+                            >
+                                Back
+                            </button>
+                        </div>
+                    </form>
+                {/if}
             </div>
 
             <div class="modal-footer">
-                <p class="privacy-note">
-                    By signing in, you agree to sync your music data with
-                    Audion's servers. We only store your playlists, liked songs,
-                    and app settings — never your music files.
-                </p>
+                {#if mode === "oauth"}
+                    <p class="privacy-note">
+                        By signing in, you agree to sync your music data with
+                        Audion's servers. We only store your playlists, liked songs,
+                        and app settings — never your music files.
+                    </p>
+                {/if}
                 <button class="btn-text" on:click={close}>Cancel</button>
             </div>
         </div>
@@ -181,6 +294,91 @@
 
     .login-btn svg {
         flex-shrink: 0;
+    }
+
+    .custom-server-form {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    .form-group label {
+        font-size: 0.8125rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+    }
+
+    .form-group input {
+        padding: 10px 14px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        color: var(--text-primary);
+        font-size: 0.9375rem;
+        outline: none;
+        transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+    }
+
+    .form-group input:focus {
+        border-color: var(--accent-primary);
+        box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-primary), transparent 85%);
+    }
+
+    .error-text {
+        font-size: 0.8125rem;
+        color: var(--error-color, #ff5c5c);
+        margin-top: var(--spacing-xs);
+        line-height: 1.4;
+    }
+
+    .form-actions {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-md);
+    }
+
+    .btn-primary {
+        background: var(--accent-primary);
+        color: #000;
+        border: none;
+        padding: 12px;
+        border-radius: var(--radius-md);
+        font-size: 0.9375rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: opacity var(--transition-fast), transform var(--transition-fast);
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+        opacity: 0.95;
+        transform: translateY(-1px);
+    }
+
+    .btn-primary:active:not(:disabled) {
+        transform: translateY(0);
+    }
+
+    .btn-primary:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .secondary-action {
+        margin-top: var(--spacing-sm);
+        text-decoration: underline;
+        font-size: 0.8125rem;
+        align-self: center;
     }
 
     .modal-footer {

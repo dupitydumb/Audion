@@ -1615,14 +1615,29 @@ pub fn start_sse_listener(sync_state: &SyncState, db: Database) {
                                     let state_for_sync = sync_state_for_task.clone();
                                     let app_handle_for_emit = app_handle.clone();
                                     tauri::async_runtime::spawn(async move {
-                                        match perform_sync(&db_for_sync, &state_for_sync).await {
-                                            Ok(status) => {
-                                                if let Some(handle) = app_handle_for_emit {
-                                                    let _ = handle.emit("sync://status-changed", &status);
-                                                }
+                                        let is_server = {
+                                            let mode = *state_for_sync.provider_mode.lock().unwrap();
+                                            mode == crate::sync::provider::ProviderMode::Server
+                                        };
+                                        if is_server {
+                                            if let Some(handle) = app_handle_for_emit {
+                                                let _ = handle.emit("sync://status-changed", SyncStatus {
+                                                    is_syncing: false,
+                                                    last_sync_at: Some(chrono_now()),
+                                                    pending_changes: 0,
+                                                    last_error: None,
+                                                });
                                             }
-                                            Err(e) => {
-                                                tracing::error!("SSE auto-sync failed: {}", e);
+                                        } else {
+                                            match perform_sync(&db_for_sync, &state_for_sync).await {
+                                                Ok(status) => {
+                                                    if let Some(handle) = app_handle_for_emit {
+                                                        let _ = handle.emit("sync://status-changed", &status);
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    tracing::error!("SSE auto-sync failed: {}", e);
+                                                }
                                             }
                                         }
                                     });

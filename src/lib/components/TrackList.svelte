@@ -106,8 +106,8 @@
 
     let unavailable = false;
 
-    // Local tracks are always available
-    if (!track.source_type || track.source_type === "local") {
+    // Local tracks and server-synced tracks are always available
+    if (!track.source_type || track.source_type === "local" || track.source_type === "server") {
       unavailable = false;
     } else if (track.local_src) {
       unavailable = false;

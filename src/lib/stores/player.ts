@@ -9,7 +9,9 @@ import {
     convertFileSrc,
     listen,
     initWindowsThumbar,
-    updateWindowsThumbarState
+    updateWindowsThumbarState,
+    audioResolvePath,
+    audioGetStreamUrl
 } from '$lib/api/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { addToast } from '$lib/stores/toast';
@@ -345,7 +347,7 @@ function setupHtml5AudioListeners(audio: HTMLAudioElement): void {
  */
 export function isStreaming(track: Track): boolean {
     // 1. Explicitly local sources (by type or path)
-    if (track.source_type === 'local' || track.local_src) return false;
+    if (track.source_type === 'local' || track.source_type === 'server' || track.local_src) return false;
 
     if (track.path) {
         // Tauri local protocols are always local
@@ -1220,6 +1222,27 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
     try {
         let audioPath = track.local_src || track.path;
 
+        // Resolve server tracks before checking/preparing backends
+        if (track.source_type === 'server' && !track.local_src) {
+            if (nativeAudioUsed) {
+                try {
+                    audioPath = await audioResolvePath(audioPath, track.id);
+                    // Cache it on the track object in memory
+                    track.local_src = audioPath;
+                } catch (err) {
+                    console.error('[Player] Failed to resolve server track path:', err);
+                    throw new Error(`Failed to download/resolve track from server: ${err instanceof Error ? err.message : String(err)}`);
+                }
+            } else {
+                try {
+                    audioPath = await audioGetStreamUrl(audioPath, track.id);
+                } catch (err) {
+                    console.error('[Player] Failed to get server stream URL:', err);
+                    throw new Error(`Failed to get stream URL from server: ${err instanceof Error ? err.message : String(err)}`);
+                }
+            }
+        }
+
         // Fallback for plugins using stream_url
         if (!audioPath && (track as any).stream_url) {
             audioPath = (track as any).stream_url;
@@ -1230,7 +1253,7 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
             audioPath = track.external_id;
         }
 
-        const streaming = isStreaming(track) || !!(track as any).stream_url;
+        const streaming = isStreaming(track) || !!(track as any).stream_url || audioPath.startsWith('http://') || audioPath.startsWith('https://');
 
         // Prep the backends
         if (streaming) {
@@ -1320,7 +1343,7 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
                 }
 
                 // Play via native backend
-                await nativeAudioPlay(audioPath, (track as any).replay_gain_db ?? null);
+                await nativeAudioPlay(audioPath, track.id, (track as any).replay_gain_db ?? null);
 
                 // Sync volume
                 const vol = sliderToAudioVolume(get(volume));
@@ -1958,7 +1981,7 @@ function _schedulePreload(): void {
     const nextPath = nextTrackObj.local_src || nextTrackObj.path;
     if (!nextPath) return;
 
-    nativeAudioPreload(nextPath, (nextTrackObj as any).replay_gain_db ?? null).catch(e => {
+    nativeAudioPreload(nextPath, nextTrackObj.id, (nextTrackObj as any).replay_gain_db ?? null).catch(e => {
         console.warn('[Player] Preload failed (non-fatal):', e);
     });
 }

@@ -72,6 +72,20 @@ export const syncStatus = writable<SyncStatus>(defaultSyncStatus);
 export const syncProgress = writable<SyncProgress>(defaultSyncProgress);
 export const showLoginModal = writable<boolean>(false);
 
+export interface CustomServerStatus {
+    connected: boolean;
+    url: string;
+    user: string | null;
+}
+
+const defaultCustomServerStatus: CustomServerStatus = {
+    connected: false,
+    url: '',
+    user: null,
+};
+
+export const customServerStatus = writable<CustomServerStatus>(defaultCustomServerStatus);
+
 // Derived convenience stores
 export const isLoggedIn = derived(authState, ($auth) => $auth.is_logged_in);
 export const isSupporter = derived(authState, ($auth) => $auth.is_supporter);
@@ -101,6 +115,13 @@ export async function initSync(): Promise<void> {
 
         const status = await invoke<SyncStatus>('sync_get_status');
         syncStatus.set(status);
+
+        try {
+            const serverStatus = await invoke<CustomServerStatus>('server_get_status');
+            customServerStatus.set(serverStatus);
+        } catch (err) {
+            console.error('[Sync] Failed to fetch server status:', err);
+        }
     } catch (error) {
         console.error('[Sync] Failed to initialize:', error);
         // If we can't read auth state (e.g. database was deleted), reset to logged-out
@@ -523,4 +544,28 @@ export async function refreshAuthState(): Promise<void> {
         authState.set(defaultAuthState);
     }
 }
+
+/**
+ * Connect to a custom server with username and password.
+ */
+export async function connectCustomServerPassword(url: string, username: string, password: string): Promise<void> {
+    if (!isTauri()) return;
+    await invoke('server_connect', { url, username, password });
+    const status = await invoke<CustomServerStatus>('server_get_status');
+    customServerStatus.set(status);
+    await refreshAuthState();
+    await refreshAll();
+}
+
+/**
+ * Disconnect from the custom server.
+ */
+export async function disconnectCustomServer(): Promise<void> {
+    if (!isTauri()) return;
+    await invoke('server_disconnect');
+    customServerStatus.set(defaultCustomServerStatus);
+    await refreshAuthState();
+    await refreshAll();
+}
+
 

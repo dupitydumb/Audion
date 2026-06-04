@@ -1572,6 +1572,7 @@ use crate::sync::SyncState;
 
 async fn resolve_audio_path(
     path: &str,
+    track_id: Option<i64>,
     db: &Database,
     sync_state: &SyncState,
 ) -> Result<String, String> {
@@ -1597,14 +1598,24 @@ async fn resolve_audio_path(
         .map_err(|e| e.to_string())?
     };
 
-    let (track_id, track_path, source_type, local_src, format) = match track_opt {
-        Some(t) => t,
-        None => return Ok(path.to_string()), // Not in DB, might be a local path, pass through
+    let is_server_track = if let Some((_, _, ref source_type, _, _)) = track_opt {
+        source_type.as_deref() == Some("server")
+    } else {
+        path.starts_with("music/")
     };
 
-    if source_type.as_deref() != Some("server") {
+    if !is_server_track {
         return Ok(path.to_string()); // Not a server track, pass through
     }
+
+    let (tid, track_path, local_src, format) = match track_opt {
+        Some((db_id, db_path, _, db_local_src, db_format)) => {
+            (Some(db_id), db_path, db_local_src, db_format)
+        }
+        None => {
+            (None, path.to_string(), None, None)
+        }
+    };
 
     // 2. Check if local_src is set and the file exists
     if let Some(ref local_path) = local_src {
@@ -1632,18 +1643,50 @@ async fn resolve_audio_path(
         .or(format.as_deref())
         .unwrap_or("mp3");
 
-    let cache_path = cache_dir.join(format!("{}.{}", track_id, ext));
+    let cache_id = match tid {
+        Some(id) => id.to_string(),
+        None => {
+            if let Some(id) = track_id {
+                id.to_string()
+            } else {
+                return Err("No track ID available to resolve server track".to_string());
+            }
+        }
+    };
+
+    let cache_path = cache_dir.join(format!("{}.{}", cache_id, ext));
 
     // 4. Download file if missing from disk
     if !cache_path.exists() {
-        tracing::info!("Downloading track {} from server to {:?}", track_id, cache_path);
+        tracing::info!("Downloading track {} from server to {:?}", cache_id, cache_path);
         
         let server_url = sync_state.server_url.lock().unwrap().clone();
         let token = crate::sync::auth::get_access_token(db)?
             .ok_or_else(|| "Not logged in to server".to_string())?;
 
+        let server_track_id = match tid {
+            Some(local_id) => {
+                let conn = db.conn.lock().map_err(|e| e.to_string())?;
+                crate::db::queries::get_server_id(&conn, &format!("lib_{}", local_id), "library_track")
+                    .map_err(|e| e.to_string())?
+                    .or_else(|| {
+                        crate::db::queries::get_server_id(&conn, &format!("liked_{}", local_id), "liked_track")
+                            .ok()
+                            .flatten()
+                    })
+                    .unwrap_or_else(|| local_id.to_string())
+            }
+            None => {
+                if let Some(id) = track_id {
+                    id.to_string()
+                } else {
+                    return Err("No track ID available to resolve server track".to_string());
+                }
+            }
+        };
+
         let client = reqwest::Client::new();
-        let stream_url = format!("{}/api/tracks/{}/stream", server_url, track_id);
+        let stream_url = format!("{}/api/tracks/{}/stream", server_url, server_track_id);
         
         let mut resp = client.get(&stream_url)
             .header("Authorization", format!("Bearer {}", token))
@@ -1666,12 +1709,14 @@ async fn resolve_audio_path(
         file.flush().await.map_err(|e| e.to_string())?;
 
         // 5. Update local_src in database
-        let cache_path_str = cache_path.to_string_lossy().to_string();
-        let conn = db.conn.lock().map_err(|e| e.to_string())?;
-        conn.execute(
-            "UPDATE tracks SET local_src = ?1 WHERE id = ?2",
-            rusqlite::params![cache_path_str, track_id],
-        ).ok();
+        if let Some(local_id) = tid {
+            let cache_path_str = cache_path.to_string_lossy().to_string();
+            let conn = db.conn.lock().map_err(|e| e.to_string())?;
+            conn.execute(
+                "UPDATE tracks SET local_src = ?1 WHERE id = ?2",
+                rusqlite::params![cache_path_str, local_id],
+            ).ok();
+        }
     }
 
     Ok(cache_path.to_string_lossy().to_string())
@@ -1680,25 +1725,27 @@ async fn resolve_audio_path(
 #[tauri::command]
 pub async fn audio_play(
     path: String,
+    track_id: Option<i64>,
     replay_gain_db: Option<f32>,
     state: tauri::State<'_, PlaybackStateSync>,
     db: tauri::State<'_, Database>,
     sync_state: tauri::State<'_, SyncState>,
 ) -> Result<(), String> {
-    let resolved_path = resolve_audio_path(&path, &db, &sync_state).await?;
+    let resolved_path = resolve_audio_path(&path, track_id, &db, &sync_state).await?;
     state.send(AudioCommand::Play(resolved_path, replay_gain_db))
 }
 
 #[tauri::command]
 pub async fn audio_preload(
     path: String,
+    track_id: Option<i64>,
     replay_gain_db: Option<f32>,
     state: tauri::State<'_, PlaybackStateSync>,
     db: tauri::State<'_, Database>,
     sync_state: tauri::State<'_, SyncState>,
 ) -> Result<(), String> {
     tracing::info!("[AUDIO] Preload requested: {}", path);
-    let resolved_path = resolve_audio_path(&path, &db, &sync_state).await?;
+    let resolved_path = resolve_audio_path(&path, track_id, &db, &sync_state).await?;
     state.send(AudioCommand::Preload(resolved_path, replay_gain_db))
 }
 
@@ -1812,4 +1859,74 @@ pub fn audio_set_output_device(
     state: tauri::State<'_, PlaybackStateSync>,
 ) -> Result<(), String> {
     state.send(AudioCommand::SetOutputDevice(device_name))
+}
+
+#[tauri::command]
+pub async fn audio_resolve_path(
+    path: String,
+    track_id: Option<i64>,
+    db: tauri::State<'_, Database>,
+    sync_state: tauri::State<'_, SyncState>,
+) -> Result<String, String> {
+    resolve_audio_path(&path, track_id, &db, &sync_state).await
+}
+
+#[tauri::command]
+pub async fn audio_get_stream_url(
+    path: String,
+    track_id: Option<i64>,
+    db: tauri::State<'_, Database>,
+    sync_state: tauri::State<'_, SyncState>,
+) -> Result<String, String> {
+    use rusqlite::OptionalExtension;
+
+    // 1. Look up track in local database
+    let track_opt = {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        conn.query_row(
+            "SELECT id, path, source_type FROM tracks WHERE path = ?1",
+            rusqlite::params![path],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                ))
+            },
+        )
+        .optional()
+        .map_err(|e| e.to_string())?
+    };
+
+    let (tid, _) = match track_opt {
+        Some((db_id, db_path, _)) => (Some(db_id), db_path),
+        None => (None, path.to_string()),
+    };
+
+    let server_url = sync_state.server_url.lock().unwrap().clone();
+    let token = crate::sync::auth::get_access_token(&db)?
+        .ok_or_else(|| "Not logged in to server".to_string())?;
+
+    let server_track_id = match tid {
+        Some(local_id) => {
+            let conn = db.conn.lock().map_err(|e| e.to_string())?;
+            crate::db::queries::get_server_id(&conn, &format!("lib_{}", local_id), "library_track")
+                .map_err(|e| e.to_string())?
+                .or_else(|| {
+                    crate::db::queries::get_server_id(&conn, &format!("liked_{}", local_id), "liked_track")
+                        .ok()
+                        .flatten()
+                })
+                .unwrap_or_else(|| local_id.to_string())
+        }
+        None => {
+            if let Some(id) = track_id {
+                id.to_string()
+            } else {
+                return Err("No track ID available".to_string());
+            }
+        }
+    };
+
+    Ok(format!("{}/api/tracks/{}/stream?token={}", server_url, server_track_id, token))
 }
