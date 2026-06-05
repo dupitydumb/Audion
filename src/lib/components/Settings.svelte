@@ -140,7 +140,14 @@
     }
   }
 
-  function handleInfoClick(e: MouseEvent, device: AudioDeviceInfo) {
+  function isHeadphoneDevice(device: AudioDeviceInfo | null | undefined): boolean {
+    if (!device) return false;
+    return device.interface_type === 'Bluetooth'
+      || device.device_type === 'Headphones'
+      || device.device_type === 'Headset';
+  }
+
+  function handleInfoClick(e: Event, device: AudioDeviceInfo) {
     e.stopPropagation();
     infoPopoverDevice = infoPopoverDevice?.id === device.id ? null : device;
   }
@@ -519,10 +526,10 @@
 
   // device type of currently selected device
   $: selectedDeviceType = (() => {
-      if (effectiveDevice) return effectiveDevice.interface_type === 'Bluetooth' || effectiveDevice.device_type === 'Headphones' || effectiveDevice.device_type === 'Headset' ? 'headphone' : 'speaker';
+      if (effectiveDevice) return isHeadphoneDevice(effectiveDevice) ? 'headphone' : 'speaker';
       const defaultDevice = deviceList?.devices.find(d => d.is_default);
       if (!defaultDevice) return 'speaker';
-      return defaultDevice.interface_type === 'Bluetooth' || defaultDevice.device_type === 'Headphones' || defaultDevice.device_type === 'Headset' ? 'headphone' : 'speaker';
+      return isHeadphoneDevice(defaultDevice) ? 'headphone' : 'speaker';
   })();
 
   function formatBytes(bytes: number): string {
@@ -1181,7 +1188,7 @@
                       aria-selected={!effectiveDevice}
                       tabindex="0"
                       on:click={() => handleDeviceSelect(null)}
-                      on:keydown={(e) => e.key === 'Enter' || e.key === ' ' ? handleDeviceSelect(null) : null}
+                      on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleDeviceSelect(null); } }}
                     >
                       <span class="device-item-check">
                         {#if !effectiveDevice}
@@ -1190,7 +1197,7 @@
                       </span>
                       {#if deviceList}
                         {@const defaultDev = deviceList.devices.find(d => d.is_default)}
-                        <Icon name={defaultDev?.interface_type === 'Bluetooth' || defaultDev?.device_type === 'Headphones' || defaultDev?.device_type === 'Headset' ? 'headphone' : 'speaker'} size={16} />
+                        <Icon name={isHeadphoneDevice(defaultDev) ? 'headphone' : 'speaker'} size={16} />
                         <span class="device-item-name">
                           {defaultDev 
                             ? $_('settings.systemDefaultNamed', { values: { name: defaultDev.extended[0] ?? defaultDev.name } })
@@ -1204,7 +1211,7 @@
                             role="button"
                             aria-label="Device info"
                             tabindex="0"
-                            on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleInfoClick(e as unknown as MouseEvent, defaultDev); }}
+                            on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleInfoClick(e, defaultDev); }}
                           >i</span>
                           {#if infoPopoverDevice?.id === defaultDev.id}
                             <div class="device-info-popover" role="tooltip">
@@ -1238,15 +1245,15 @@
                           aria-selected={effectiveDevice?.id === device.id}
                           tabindex="0"
                           on:click={() => handleDeviceSelect(device)}
-                          on:keydown={(e) => e.key === 'Enter' || e.key === ' ' ? handleDeviceSelect(device) : null}
+                          on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleDeviceSelect(device); } }}
                         >
                           <span class="device-item-check">
-                            {#if effectiveDevice === device}
+                            {#if effectiveDevice?.id === device.id}
                             <Icon name="check" size={12} />
                             {/if}
                           </span>
                           <span class="device-item-icon">
-                            <Icon name={device.interface_type === 'Bluetooth' || device.device_type === 'Headphones' || device.device_type === 'Headset' ? 'headphone' : 'speaker'} size={16} />
+                            <Icon name={isHeadphoneDevice(device) ? 'headphone' : 'speaker'} size={16} />
                           </span>
                           <span class="device-item-name">{device.extended[0] ?? device.name}</span>
                           <span
@@ -1256,7 +1263,7 @@
                             role="button"
                             aria-label="Device info"
                             tabindex="0"
-                            on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleInfoClick(e as unknown as MouseEvent, device); }}
+                            on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleInfoClick(e, device); }}
                           >i</span>
                           {#if infoPopoverDevice?.id === device.id}
                             <div class="device-info-popover" role="tooltip">
