@@ -167,17 +167,8 @@ function classifyAudioPath(path: string): AudioPathKind {
 async function getDashPlayer(): Promise<any> {
     if (typeof window === 'undefined') throw new Error('No window');
 
-    if (!(window as any).dashjs) {
-        await new Promise<void>((resolve, reject) => {
-            const script = document.createElement('script');
-            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/dashjs/4.7.4/dash.all.min.js';
-            script.onload = () => resolve();
-            script.onerror = () => reject(new Error('Failed to load dash.js'));
-            document.head.appendChild(script);
-        });
-    }
-
-    return (window as any).dashjs;
+    const dashjs = await import('dashjs');
+    return dashjs;
 }
 
 async function playWithDash(blobUrl: string, audioElement: HTMLAudioElement): Promise<void> {
