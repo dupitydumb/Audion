@@ -4588,12 +4588,12 @@ dependencies = [
  "symphonia-bundle-flac 0.5.5",
  "symphonia-bundle-mp3 0.5.5",
  "symphonia-codec-aac 0.5.5",
- "symphonia-codec-adpcm",
+ "symphonia-codec-adpcm 0.5.5",
  "symphonia-codec-alac 0.5.5",
  "symphonia-codec-pcm 0.5.5",
  "symphonia-codec-vorbis 0.5.5",
  "symphonia-core 0.5.5",
- "symphonia-format-caf",
+ "symphonia-format-caf 0.5.5",
  "symphonia-format-isomp4 0.5.5",
  "symphonia-format-mkv 0.5.5",
  "symphonia-format-ogg 0.5.5",
@@ -4611,10 +4611,12 @@ dependencies = [
  "symphonia-bundle-flac 0.6.0",
  "symphonia-bundle-mp3 0.6.0",
  "symphonia-codec-aac 0.6.0",
+ "symphonia-codec-adpcm 0.6.0",
  "symphonia-codec-alac 0.6.0",
  "symphonia-codec-pcm 0.6.0",
  "symphonia-codec-vorbis 0.6.0",
  "symphonia-core 0.6.0",
+ "symphonia-format-caf 0.6.0",
  "symphonia-format-isomp4 0.6.0",
  "symphonia-format-mkv 0.6.0",
  "symphonia-format-ogg 0.6.0",
@@ -4700,6 +4702,16 @@ checksum = "2dddc50e2bbea4cfe027441eece77c46b9f319748605ab8f3443350129ddd07f"
 dependencies = [
  "log",
  "symphonia-core 0.5.5",
+]
+
+[[package]]
+name = "symphonia-codec-adpcm"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ebbdfd76d6cc5a601c6292a44357c5b7c82f2cd7cdc0f171421f5c5cff0ea1f"
+dependencies = [
+ "log",
+ "symphonia-core 0.6.0",
 ]
 
 [[package]]
@@ -4800,6 +4812,7 @@ dependencies = [
  "lazy_static",
  "log",
  "num-complex",
+ "rustfft",
  "smallvec",
 ]
 
@@ -4812,6 +4825,17 @@ dependencies = [
  "log",
  "symphonia-core 0.5.5",
  "symphonia-metadata 0.5.5",
+]
+
+[[package]]
+name = "symphonia-format-caf"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cde3ca76633d3400ab57195456c09f8a58d775ff5452329f3f212b6efc8622f5"
+dependencies = [
+ "log",
+ "symphonia-common",
+ "symphonia-core 0.6.0",
 ]
 
 [[package]]
