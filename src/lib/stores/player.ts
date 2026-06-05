@@ -1224,21 +1224,30 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
 
         // Resolve server tracks before checking/preparing backends
         if (track.source_type === 'server' && !track.local_src) {
-            if (nativeAudioUsed) {
-                try {
-                    audioPath = await audioResolvePath(audioPath, track.id);
-                    // Cache it on the track object in memory
-                    track.local_src = audioPath;
-                } catch (err) {
-                    console.error('[Player] Failed to resolve server track path:', err);
-                    throw new Error(`Failed to download/resolve track from server: ${err instanceof Error ? err.message : String(err)}`);
-                }
-            } else {
+            if (get(appSettings).streamServerTracks) {
                 try {
                     audioPath = await audioGetStreamUrl(audioPath, track.id);
                 } catch (err) {
                     console.error('[Player] Failed to get server stream URL:', err);
                     throw new Error(`Failed to get stream URL from server: ${err instanceof Error ? err.message : String(err)}`);
+                }
+            } else {
+                if (nativeAudioUsed) {
+                    try {
+                        audioPath = await audioResolvePath(audioPath, track.id);
+                        // Cache it on the track object in memory
+                        track.local_src = audioPath;
+                    } catch (err) {
+                        console.error('[Player] Failed to resolve server track path:', err);
+                        throw new Error(`Failed to download/resolve track from server: ${err instanceof Error ? err.message : String(err)}`);
+                    }
+                } else {
+                    try {
+                        audioPath = await audioGetStreamUrl(audioPath, track.id);
+                    } catch (err) {
+                        console.error('[Player] Failed to get server stream URL:', err);
+                        throw new Error(`Failed to get stream URL from server: ${err instanceof Error ? err.message : String(err)}`);
+                    }
                 }
             }
         }

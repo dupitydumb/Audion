@@ -21,6 +21,7 @@ export interface AppSettings {
     showResonate: boolean;
     replayGainEnabled: boolean;
     outputDevice: string | null;
+    streamServerTracks: boolean;
 }
 
 const SETTINGS_STORAGE_KEY = 'audion_settings';
@@ -44,6 +45,7 @@ const defaultSettings: AppSettings = {
     showResonate: true,
     replayGainEnabled: true,
     outputDevice: null,
+    streamServerTracks: true,
 };
 
 // Load settings from localStorage
@@ -171,6 +173,14 @@ function createSettingsStore() {
         toggleListenBrainz() {
             update(state => {
                 const newState = { ...state, listenBrainzEnabled: !state.listenBrainzEnabled };
+                saveSettings(newState);
+                return newState;
+            });
+        },
+
+        setStreamServerTracks(enabled: boolean) {
+            update(state => {
+                const newState = { ...state, streamServerTracks: enabled };
                 saveSettings(newState);
                 return newState;
             });

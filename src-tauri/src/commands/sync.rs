@@ -109,6 +109,17 @@ pub async fn sync_trigger(
         return Err("Not logged in".to_string());
     }
 
+    let mode = *sync_state.provider_mode.lock().unwrap();
+    if mode == crate::sync::provider::ProviderMode::Server {
+        // Custom servers are live streams and do not use the background sync protocol
+        return Ok(sync::SyncStatus {
+            is_syncing: false,
+            last_sync_at: Some(chrono::Utc::now().to_rfc3339()),
+            pending_changes: 0,
+            last_error: None,
+        });
+    }
+
     // If the initial full sync never completed, retry it instead of doing a delta sync
     let full_sync_done = {
         let conn = db.conn.lock().map_err(|e| e.to_string())?;
@@ -132,6 +143,15 @@ pub async fn sync_get_status(
     db: State<'_, Database>,
     sync_state: State<'_, SyncState>,
 ) -> Result<sync::SyncStatus, String> {
+    let mode = *sync_state.provider_mode.lock().unwrap();
+    if mode == crate::sync::provider::ProviderMode::Server {
+        return Ok(sync::SyncStatus {
+            is_syncing: false,
+            last_sync_at: Some(chrono::Utc::now().to_rfc3339()),
+            pending_changes: 0,
+            last_error: None,
+        });
+    }
     sync::get_sync_status(&db, &sync_state)
 }
 

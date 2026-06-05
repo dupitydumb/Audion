@@ -57,3 +57,12 @@ export async function refreshRecentlyPlayed(): Promise<void> {
         console.error('[Activity] Failed to refresh recently played:', error);
     }
 }
+
+// Clear all activity data (e.g. when switching accounts/servers)
+export function clearActivityData(): void {
+    topTracks.set([]);
+    topAlbums.set([]);
+    topArtists.set([]);
+    recentlyPlayed.set([]);
+    statsSummary.set(null);
+}

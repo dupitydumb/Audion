@@ -675,6 +675,28 @@
                 Disconnect
               </button>
             </div>
+
+            <div class="divider"></div>
+
+            <div class="toggle-container">
+              <div class="toggle-info">
+                <span class="setting-title">Stream server tracks</span>
+                <span class="setting-description">Play server tracks instantly without caching them locally.</span>
+                <span class="setting-description" style="color: var(--accent-warning, #ffae42); margin-top: 4px;">
+                  ⚠️ Please change your Output Driver to HTML5 (in Audio settings) for reliable streaming playback.
+                </span>
+              </div>
+              <button
+                class="toggle-btn"
+                class:active={$appSettings.streamServerTracks}
+                on:click={() => appSettings.setStreamServerTracks(!$appSettings.streamServerTracks)}
+                role="switch"
+                aria-checked={$appSettings.streamServerTracks}
+                aria-label="Toggle Stream Server Tracks"
+              >
+                <div class="toggle-handle"></div>
+              </button>
+            </div>
           {:else if $isLoggedIn}
             <div class="account-profile-row">
               {#if $authState.avatar_url}

@@ -105,7 +105,11 @@ pub async fn record_play(
 pub async fn get_top_tracks(
     limit: i32,
     db: State<'_, Database>,
+    sync_state: State<'_, crate::sync::SyncState>,
 ) -> Result<Vec<queries::TrackWithCount>, String> {
+    if let crate::sync::provider::ProviderMode::Server = *sync_state.provider_mode.lock().unwrap() {
+        return Ok(vec![]);
+    }
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     queries::get_top_tracks(&conn, limit).map_err(|e| e.to_string())
 }
@@ -114,7 +118,11 @@ pub async fn get_top_tracks(
 pub async fn get_top_albums(
     limit: i32,
     db: State<'_, Database>,
+    sync_state: State<'_, crate::sync::SyncState>,
 ) -> Result<Vec<queries::AlbumWithCount>, String> {
+    if let crate::sync::provider::ProviderMode::Server = *sync_state.provider_mode.lock().unwrap() {
+        return Ok(vec![]);
+    }
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     queries::get_top_albums(&conn, limit).map_err(|e| e.to_string())
 }
@@ -123,7 +131,11 @@ pub async fn get_top_albums(
 pub async fn get_recently_played(
     limit: i32,
     db: State<'_, Database>,
+    sync_state: State<'_, crate::sync::SyncState>,
 ) -> Result<Vec<queries::Track>, String> {
+    if let crate::sync::provider::ProviderMode::Server = *sync_state.provider_mode.lock().unwrap() {
+        return Ok(vec![]);
+    }
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     queries::get_recently_played(&conn, limit).map_err(|e| e.to_string())
 }
@@ -132,13 +144,28 @@ pub async fn get_recently_played(
 pub async fn get_top_artists(
     limit: i32,
     db: State<'_, Database>,
+    sync_state: State<'_, crate::sync::SyncState>,
 ) -> Result<Vec<queries::ArtistWithCount>, String> {
+    if let crate::sync::provider::ProviderMode::Server = *sync_state.provider_mode.lock().unwrap() {
+        return Ok(vec![]);
+    }
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     queries::get_top_artists(&conn, limit).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn get_stats_summary(db: State<'_, Database>) -> Result<queries::StatsSummary, String> {
+pub async fn get_stats_summary(
+    db: State<'_, Database>,
+    sync_state: State<'_, crate::sync::SyncState>,
+) -> Result<queries::StatsSummary, String> {
+    if let crate::sync::provider::ProviderMode::Server = *sync_state.provider_mode.lock().unwrap() {
+        return Ok(queries::StatsSummary {
+            total_plays: 0,
+            total_duration_seconds: 0,
+            top_artist: None,
+            top_genre: None,
+        });
+    }
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     queries::get_stats_summary(&conn).map_err(|e| e.to_string())
 }
