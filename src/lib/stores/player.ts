@@ -609,10 +609,15 @@ function initMediaSessionHandlers(): void {
         if (details.seekTime != null) {
             const dur = get(duration);
             if (dur > 0) {
-                if (get(activeBackend) === 'html5') {
-                    html5Seek(details.seekTime / dur);
-                } else {
-                    nativeAudioSeek(details.seekTime / dur).catch(console.error);
+                const fraction = details.seekTime / dur;
+                const backend = get(activeBackend);
+                if (backend === 'remote') {
+                    const targetId = get(activeRemoteDevice);
+                    if (targetId) throttledRemoteCommand(targetId, 'seek', { position: fraction }, 100);
+                } else if (backend === 'html5') {
+                    html5Seek(fraction);
+                } else if (backend === 'native') {
+                    nativeAudioSeek(fraction).catch(console.error);
                 }
             }
         }
@@ -622,10 +627,15 @@ function initMediaSessionHandlers(): void {
         const cur = get(currentTime);
         const dur = get(duration);
         if (dur > 0) {
-            if (get(activeBackend) === 'html5') {
-                html5Seek(Math.max(0, cur - offset) / dur);
-            } else {
-                nativeAudioSeek(Math.max(0, cur - offset) / dur).catch(console.error);
+            const fraction = Math.max(0, cur - offset) / dur;
+            const backend = get(activeBackend);
+            if (backend === 'remote') {
+                const targetId = get(activeRemoteDevice);
+                if (targetId) throttledRemoteCommand(targetId, 'seek', { position: fraction }, 100);
+            } else if (backend === 'html5') {
+                html5Seek(fraction);
+            } else if (backend === 'native') {
+                nativeAudioSeek(fraction).catch(console.error);
             }
         }
     });
@@ -634,10 +644,15 @@ function initMediaSessionHandlers(): void {
         const cur = get(currentTime);
         const dur = get(duration);
         if (dur > 0) {
-            if (get(activeBackend) === 'html5') {
-                html5Seek(Math.min(dur, cur + offset) / dur);
-            } else {
-                nativeAudioSeek(Math.min(dur, cur + offset) / dur).catch(console.error);
+            const fraction = Math.min(dur, cur + offset) / dur;
+            const backend = get(activeBackend);
+            if (backend === 'remote') {
+                const targetId = get(activeRemoteDevice);
+                if (targetId) throttledRemoteCommand(targetId, 'seek', { position: fraction }, 100);
+            } else if (backend === 'html5') {
+                html5Seek(fraction);
+            } else if (backend === 'native') {
+                nativeAudioSeek(fraction).catch(console.error);
             }
         }
     });
