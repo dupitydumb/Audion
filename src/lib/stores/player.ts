@@ -357,20 +357,32 @@ export async function initAudioBackend(): Promise<void> {
         });
     }
     // start/stop dead-reckoning ticker and thumbar based on playback state
-    isPlaying.subscribe((playing) => {
+    // must subscribe to both isPlaying and activeBackend. if the backend switches
+    // while already playing isPlaying never
+    // changes so the isPlaying subscriber alone would never re-evaluate which ticker to run
+    // activeBackend changing while playing is the trigger that needs to stop the old ticker and start the correct new one.
+    function _syncTickers(playing: boolean, backend: ActiveBackend): void {
         updateWindowsThumbarState(playing).catch(() => { });
-        if (playing && get(activeBackend) === 'native') {
-            // resume reckoning from wherever currentTime currently sits
-            // real baseline was already set by the event that caused isPlaying to flip
+
+        if (playing && backend === 'native') {
             _startReckoning(get(currentTime));
         } else {
             _stopReckoning();
         }
-        if (playing && get(activeBackend) === 'html5') {
+
+        if (playing && backend === 'html5') {
             _startHtml5Ticker();
         } else {
             _stopHtml5Ticker();
         }
+    }
+
+    isPlaying.subscribe((playing) => {
+        _syncTickers(playing, get(activeBackend));
+    });
+
+    activeBackend.subscribe((backend) => {
+        _syncTickers(get(isPlaying), backend);
     });
 
     // Subscribe to volume changes to keep backends in sync
@@ -429,11 +441,7 @@ export async function initAudioBackend(): Promise<void> {
         }
     });
 
-    activeBackend.subscribe(b => {
-        if (b === 'remote') {
-            _stopReckoning();
-        }
-    });
+
 
     await initWindowsThumbarIntegration();
 }
