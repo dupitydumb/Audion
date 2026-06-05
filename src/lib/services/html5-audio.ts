@@ -39,7 +39,10 @@ export async function html5Play(path: string, volume: number, startTime = 0): Pr
         audio = await prepareHtml5AudioForPath(audio, path);
         audio.volume = volume;
 
-        await playWithDash(path, audio);
+        // startTime is forwarded to playWithDash so dash.js can seek to the
+        // correct position before the first segment is requested, avoiding an
+        // audible play-from-zero before the seek lands
+        await playWithDash(path, audio, startTime);
     } else {
         // Resolve playlist-format URLs (.m3u, .pls, .m3u8) to direct stream URLs
         const resolvedPath = await resolvePlaylistUrl(path);
@@ -47,6 +50,11 @@ export async function html5Play(path: string, volume: number, startTime = 0): Pr
 
         audio.src = resolvedPath;
         audio.volume = volume;
+
+        // set currentTime BEFORE play() so the browser begins decoding from the correct position
+        if (startTime > 0) {
+            audio.currentTime = startTime;
+        }
 
         // Wrap play in a handler to catch AbortError (common with rapid skipping)
         try {
@@ -57,10 +65,6 @@ export async function html5Play(path: string, volume: number, startTime = 0): Pr
             } else {
                 throw err;
             }
-        }
-
-        if (startTime > 0) {
-            audio.currentTime = startTime;
         }
     }
 }
@@ -171,7 +175,7 @@ async function getDashPlayer(): Promise<any> {
     return dashjs;
 }
 
-async function playWithDash(blobUrl: string, audioElement: HTMLAudioElement): Promise<void> {
+async function playWithDash(blobUrl: string, audioElement: HTMLAudioElement, startTime = 0): Promise<void> {
     if (dashPlayer) {
         try { dashPlayer.destroy(); } catch (_) { }
         dashPlayer = null;
@@ -186,6 +190,13 @@ async function playWithDash(blobUrl: string, audioElement: HTMLAudioElement): Pr
 
     const dashjs = await getDashPlayer();
     dashPlayer = dashjs.MediaPlayer().create();
+
+    // provide the start position before initialize() so dash.js requests the
+    // correct segment from the outset, rather than fetching from 0 and seeking
+    if (startTime > 0) {
+        dashPlayer.updateSettings({ streaming: { defaultStartTime: startTime } });
+    }
+
     dashPlayer.initialize(audioElement, dataUrl, true);
 
     dashPlayer.on(dashjs.MediaPlayer.events.ERROR, (e: any) => {
