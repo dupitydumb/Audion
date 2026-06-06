@@ -143,6 +143,7 @@ impl SyncState {
             crate::sync::provider::ProviderMode::Local => {
                 crate::sync::provider::ProviderEnum::Local(crate::sync::provider::LocalProvider {
                     db: self.db.clone(),
+                    server_url: self.server_url.lock().unwrap().clone(),
                 })
             }
             crate::sync::provider::ProviderMode::Server => {

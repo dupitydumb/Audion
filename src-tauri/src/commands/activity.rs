@@ -111,7 +111,13 @@ pub async fn get_top_tracks(
         return Ok(vec![]);
     }
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::get_top_tracks(&conn, limit).map_err(|e| e.to_string())
+    let mut tracks = queries::get_top_tracks(&conn, limit).map_err(|e| e.to_string())?;
+    let server_url = sync_state.server_url.lock().unwrap().clone();
+    let token = crate::sync::auth::get_access_token(&db).ok().flatten();
+    for t in &mut tracks {
+        crate::sync::provider::resolve_track(&mut t.track, &server_url, token.as_deref());
+    }
+    Ok(tracks)
 }
 
 #[tauri::command]
@@ -124,7 +130,13 @@ pub async fn get_top_albums(
         return Ok(vec![]);
     }
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::get_top_albums(&conn, limit).map_err(|e| e.to_string())
+    let mut albums = queries::get_top_albums(&conn, limit).map_err(|e| e.to_string())?;
+    let server_url = sync_state.server_url.lock().unwrap().clone();
+    let token = crate::sync::auth::get_access_token(&db).ok().flatten();
+    for a in &mut albums {
+        crate::sync::provider::resolve_album(&mut a.album, &server_url, token.as_deref());
+    }
+    Ok(albums)
 }
 
 #[tauri::command]
@@ -137,7 +149,11 @@ pub async fn get_recently_played(
         return Ok(vec![]);
     }
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::get_recently_played(&conn, limit).map_err(|e| e.to_string())
+    let mut tracks = queries::get_recently_played(&conn, limit).map_err(|e| e.to_string())?;
+    let server_url = sync_state.server_url.lock().unwrap().clone();
+    let token = crate::sync::auth::get_access_token(&db).ok().flatten();
+    crate::sync::provider::resolve_tracks(&mut tracks, &server_url, token.as_deref());
+    Ok(tracks)
 }
 
 #[tauri::command]

@@ -187,39 +187,117 @@ pub trait LibraryProvider: Send + Sync {
     async fn get_liked_tracks(&self) -> Result<Vec<queries::Track>, String>;
 }
 
+pub fn resolve_server_url(url: &str, server_url: &str, token: Option<&str>) -> String {
+    let server_url = server_url.trim_end_matches('/');
+    let is_custom_server = url.starts_with('/') || url.starts_with(server_url);
+    if is_custom_server {
+        if let Some(idx) = url.find("/api/") {
+            let relative_path = &url[idx..];
+            let clean_path = if let Some(q_idx) = relative_path.find('?') {
+                &relative_path[..q_idx]
+            } else {
+                relative_path
+            };
+            if let Some(tok) = token {
+                return format!("{}{}{}token={}", server_url, clean_path, if clean_path.contains('?') { "&" } else { "?" }, tok);
+            } else {
+                return format!("{}{}", server_url, clean_path);
+            }
+        }
+    }
+    url.to_string()
+}
+
+pub fn resolve_track(track: &mut queries::Track, server_url: &str, token: Option<&str>) {
+    if let Some(ref url) = track.cover_url {
+        track.cover_url = Some(resolve_server_url(url, server_url, token));
+    }
+}
+
+pub fn resolve_tracks(tracks: &mut [queries::Track], server_url: &str, token: Option<&str>) {
+    for track in tracks {
+        resolve_track(track, server_url, token);
+    }
+}
+
+pub fn resolve_album(album: &mut queries::Album, server_url: &str, token: Option<&str>) {
+    if let Some(ref url) = album.art_data {
+        album.art_data = Some(resolve_server_url(url, server_url, token));
+    }
+}
+
+pub fn resolve_albums(albums: &mut [queries::Album], server_url: &str, token: Option<&str>) {
+    for album in albums {
+        resolve_album(album, server_url, token);
+    }
+}
+
+pub fn resolve_playlist(playlist: &mut queries::Playlist, server_url: &str, token: Option<&str>) {
+    if let Some(ref url) = playlist.cover_url {
+        playlist.cover_url = Some(resolve_server_url(url, server_url, token));
+    }
+}
+
+pub fn resolve_playlists(playlists: &mut [queries::Playlist], server_url: &str, token: Option<&str>) {
+    for playlist in playlists {
+        resolve_playlist(playlist, server_url, token);
+    }
+}
+
 pub struct LocalProvider {
     pub db: Database,
+    pub server_url: String,
 }
 
 impl LibraryProvider for LocalProvider {
     async fn get_tracks_paginated(&self, limit: i32, offset: i32) -> Result<Vec<queries::Track>, String> {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
-        queries::get_tracks_paginated(&conn, limit, offset).map_err(|e| e.to_string())
+        let mut tracks = queries::get_tracks_paginated(&conn, limit, offset).map_err(|e| e.to_string())?;
+        let token = auth::get_access_token(&self.db).ok().flatten();
+        resolve_tracks(&mut tracks, &self.server_url, token.as_deref());
+        Ok(tracks)
     }
 
     async fn get_albums_paginated(&self, limit: i32, offset: i32) -> Result<Vec<queries::Album>, String> {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
-        queries::get_albums_paginated(&conn, limit, offset).map_err(|e| e.to_string())
+        let mut albums = queries::get_albums_paginated(&conn, limit, offset).map_err(|e| e.to_string())?;
+        let token = auth::get_access_token(&self.db).ok().flatten();
+        resolve_albums(&mut albums, &self.server_url, token.as_deref());
+        Ok(albums)
     }
 
     async fn search_library(&self, query: &str, limit: i32, offset: i32) -> Result<Vec<queries::Track>, String> {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
-        queries::search_tracks(&conn, query, limit, offset).map_err(|e| e.to_string())
+        let mut tracks = queries::search_tracks(&conn, query, limit, offset).map_err(|e| e.to_string())?;
+        let token = auth::get_access_token(&self.db).ok().flatten();
+        resolve_tracks(&mut tracks, &self.server_url, token.as_deref());
+        Ok(tracks)
     }
 
     async fn get_tracks_by_album(&self, album_id: i64) -> Result<Vec<queries::Track>, String> {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
-        queries::get_tracks_by_album(&conn, album_id).map_err(|e| e.to_string())
+        let mut tracks = queries::get_tracks_by_album(&conn, album_id).map_err(|e| e.to_string())?;
+        let token = auth::get_access_token(&self.db).ok().flatten();
+        resolve_tracks(&mut tracks, &self.server_url, token.as_deref());
+        Ok(tracks)
     }
 
     async fn get_tracks_by_artist(&self, artist: &str) -> Result<Vec<queries::Track>, String> {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
-        queries::get_tracks_by_artist(&conn, artist).map_err(|e| e.to_string())
+        let mut tracks = queries::get_tracks_by_artist(&conn, artist).map_err(|e| e.to_string())?;
+        let token = auth::get_access_token(&self.db).ok().flatten();
+        resolve_tracks(&mut tracks, &self.server_url, token.as_deref());
+        Ok(tracks)
     }
 
     async fn get_album(&self, album_id: i64) -> Result<Option<queries::Album>, String> {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
-        queries::get_album_by_id(&conn, album_id).map_err(|e| e.to_string())
+        let mut album = queries::get_album_by_id(&conn, album_id).map_err(|e| e.to_string())?;
+        if let Some(ref mut alb) = album {
+            let token = auth::get_access_token(&self.db).ok().flatten();
+            resolve_album(alb, &self.server_url, token.as_deref());
+        }
+        Ok(album)
     }
 
     async fn get_albums_by_artist(&self, artist: &str) -> Result<Vec<queries::Album>, String> {
@@ -234,7 +312,7 @@ impl LibraryProvider for LocalProvider {
             )
             .map_err(|e| e.to_string())?;
 
-        let albums = stmt
+        let mut albums = stmt
             .query_map([artist], |row| {
                 Ok(queries::Album {
                     id: row.get(0)?,
@@ -248,14 +326,21 @@ impl LibraryProvider for LocalProvider {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| e.to_string())?;
 
+        let token = auth::get_access_token(&self.db).ok().flatten();
+        resolve_albums(&mut albums, &self.server_url, token.as_deref());
         Ok(albums)
     }
 
     async fn get_library(&self) -> Result<Library, String> {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
-        let tracks = queries::get_all_tracks_with_paths(&conn).map_err(|e| e.to_string())?;
-        let albums = queries::get_all_albums_with_paths(&conn).map_err(|e| e.to_string())?;
+        let mut tracks = queries::get_all_tracks_with_paths(&conn).map_err(|e| e.to_string())?;
+        let mut albums = queries::get_all_albums_with_paths(&conn).map_err(|e| e.to_string())?;
         let artists = queries::get_all_artists(&conn).map_err(|e| e.to_string())?;
+        
+        let token = auth::get_access_token(&self.db).ok().flatten();
+        resolve_tracks(&mut tracks, &self.server_url, token.as_deref());
+        resolve_albums(&mut albums, &self.server_url, token.as_deref());
+        
         Ok(Library { tracks, albums, artists })
     }
 
@@ -293,12 +378,18 @@ impl LibraryProvider for LocalProvider {
 
     async fn get_playlists(&self) -> Result<Vec<queries::Playlist>, String> {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
-        queries::get_all_playlists(&conn).map_err(|e| e.to_string())
+        let mut playlists = queries::get_all_playlists(&conn).map_err(|e| e.to_string())?;
+        let token = auth::get_access_token(&self.db).ok().flatten();
+        resolve_playlists(&mut playlists, &self.server_url, token.as_deref());
+        Ok(playlists)
     }
 
     async fn get_playlist_tracks(&self, playlist_id: i64) -> Result<Vec<queries::Track>, String> {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
-        queries::get_playlist_tracks(&conn, playlist_id).map_err(|e| e.to_string())
+        let mut tracks = queries::get_playlist_tracks(&conn, playlist_id).map_err(|e| e.to_string())?;
+        let token = auth::get_access_token(&self.db).ok().flatten();
+        resolve_tracks(&mut tracks, &self.server_url, token.as_deref());
+        Ok(tracks)
     }
 
     async fn add_track_to_playlist(&self, playlist_id: i64, track_id: i64) -> Result<(), String> {
@@ -550,7 +641,10 @@ impl LibraryProvider for LocalProvider {
 
     async fn get_liked_tracks(&self) -> Result<Vec<queries::Track>, String> {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
-        queries::get_liked_tracks(&conn).map_err(|e| e.to_string())
+        let mut tracks = queries::get_liked_tracks(&conn).map_err(|e| e.to_string())?;
+        let token = auth::get_access_token(&self.db).ok().flatten();
+        resolve_tracks(&mut tracks, &self.server_url, token.as_deref());
+        Ok(tracks)
     }
 }
 
