@@ -648,6 +648,8 @@
                   <div
                     class="lyric-line"
                     class:active={i === $activeLine}
+                    class:past={i < $activeLine}
+                    class:upcoming={i > $activeLine}
                     role="button"
                     tabindex="0"
                     on:click={() => {
@@ -1051,6 +1053,10 @@
                       style="width: {$progress * 100}%"
                     ></div>
                   </div>
+                  <div
+                    class="progress-thumb-dot"
+                    style="left: {$progress * 100}%"
+                  ></div>
                 </div>
                 <div class="time-row">
                   <span>{formatDuration($currentTime)}</span>
@@ -1067,8 +1073,8 @@
                   ><svg
                     viewBox="0 0 24 24"
                     fill="currentColor"
-                    width="20"
-                    height="20"
+                    width="18"
+                    height="18"
                     ><path
                       d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"
                     /></svg
@@ -1081,8 +1087,8 @@
                   ><svg
                     viewBox="0 0 24 24"
                     fill="currentColor"
-                    width="28"
-                    height="28"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg
+                    width="22"
+                    height="22"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg
                   ></button
                 >
                 <button
@@ -1094,16 +1100,16 @@
                     <svg
                       viewBox="0 0 24 24"
                       fill="currentColor"
-                      width="36"
-                      height="36"
+                      width="32"
+                      height="32"
                       ><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg
                     >
                   {:else}
                     <svg
                       viewBox="0 0 24 24"
                       fill="currentColor"
-                      width="36"
-                      height="36"><path d="M8 5v14l11-7z" /></svg
+                      width="32"
+                      height="32"><path d="M8 5v14l11-7z" /></svg
                     >
                   {/if}
                 </button>
@@ -1114,8 +1120,8 @@
                   ><svg
                     viewBox="0 0 24 24"
                     fill="currentColor"
-                    width="28"
-                    height="28"
+                    width="22"
+                    height="22"
                     ><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg
                   ></button
                 >
@@ -1127,8 +1133,8 @@
                   ><svg
                     viewBox="0 0 24 24"
                     fill="currentColor"
-                    width="20"
-                    height="20"
+                    width="18"
+                    height="18"
                     ><path
                       d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"
                     /></svg
@@ -1156,6 +1162,7 @@
                   value={$volume}
                   on:input={handleVolumeChange}
                   class="volume-slider"
+                  style="background: linear-gradient(to right, rgba(255, 255, 255, 0.6) {$volume * 100}%, rgba(255, 255, 255, 0.15) {$volume * 100}%);"
                   aria-label="Volume"
                 />
               </div>
@@ -1191,7 +1198,8 @@
                       <div
                         class="desktop-lyric-line"
                         class:active={isActiveLine}
-                        class:past-line={i < $activeLine}
+                        class:past={i < $activeLine}
+                        class:upcoming={i > $activeLine}
                         role="button"
                         tabindex="0"
                         on:click={() => {
@@ -1203,7 +1211,7 @@
                             seek(line.time / $duration);
                         }}
                       >
-                        {#if hasWordSync && line.words}
+                        {#if hasWordSync && isActiveLine && line.words}
                           {#each line.words as word, wordIdx}
                             {@const wordProgress = getWordPercentage(
                               i,
@@ -1323,11 +1331,10 @@
   .backdrop-layer {
     position: absolute;
     inset: 0;
-    background: linear-gradient(
-      to bottom,
-      rgba(0, 0, 0, 0.4) 0%,
-      rgba(0, 0, 0, 0.7) 100%
-    );
+    background:
+      radial-gradient(ellipse at 20% 50%, rgba(0, 0, 0, 0.15) 0%, transparent 60%),
+      radial-gradient(ellipse at 80% 20%, rgba(0, 0, 0, 0.1) 0%, transparent 50%),
+      linear-gradient(to bottom, rgba(10, 10, 10, 0.3) 0%, rgba(10, 10, 10, 0.85) 100%);
     z-index: 1;
   }
 
@@ -1411,21 +1418,22 @@
   }
 
   .desktop-art-section {
+    width: 240px;
+    height: 240px;
     aspect-ratio: 1;
     position: relative;
-    flex-shrink: 1;
-    width: min(100%, min(500px, 44vh));
-    min-height: 160px;
-    margin-bottom: 0;
+    flex-shrink: 0;
+    margin-bottom: 26px;
     align-self: flex-start;
   }
 
   .desktop-art-wrapper {
     width: 100%;
     height: 100%;
-    border-radius: 24px;
+    border-radius: 14px;
     overflow: hidden;
     background: var(--bg-surface);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
   }
 
   .desktop-art-wrapper img {
@@ -1437,7 +1445,8 @@
   .desktop-track-details {
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
+    gap: 4px;
+    margin-bottom: 18px;
   }
 
   .desktop-track-details .marquee-container {
@@ -1536,9 +1545,9 @@
 
   .action-buttons {
     display: flex;
-    gap: 0.75rem;
+    gap: 12px;
     flex-shrink: 0;
-    margin-top: 0.25rem;
+    margin-top: 18px;
     justify-content: flex-start;
   }
 
@@ -1583,9 +1592,9 @@
 
   .desktop-progress-bar {
     width: 100%;
-    height: 6px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 3px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
     position: relative;
     cursor: pointer;
     margin-bottom: 0.75rem;
@@ -1595,18 +1604,30 @@
     width: 100%;
     height: 100%;
     overflow: hidden;
-    border-radius: 3px;
+    border-radius: 2px;
   }
 
   .progress-fill {
     height: 100%;
-    background: rgba(255, 255, 255, 0.8);
-    border-radius: 3px;
+    background: #ffffff;
+    border-radius: 2px;
     transition: width 0.1s linear;
   }
 
   .desktop-progress-bar:hover .progress-fill {
     background: #fff;
+  }
+
+  .progress-thumb-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ffffff;
+    position: absolute;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.5);
   }
 
   .time-row {
@@ -1622,35 +1643,36 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 1rem;
+    gap: 28px;
     margin-bottom: 0.6rem;
   }
 
   .control-btn {
     background: none;
     border: none;
-    color: rgba(255, 255, 255, 0.5);
+    color: rgba(255, 255, 255, 0.35);
     cursor: pointer;
     transition: all 0.2s;
     display: flex;
     align-items: center;
     justify-content: center;
     position: relative;
-    padding: 0.5rem;
+    width: 44px;
+    height: 44px;
   }
 
   .control-btn:hover {
     color: #fff;
-    transform: scale(1.15);
+    transform: scale(1.1);
   }
 
   .control-btn.secondary {
-    color: rgba(255, 255, 255, 0.8);
+    color: rgba(255, 255, 255, 0.75);
   }
 
   .control-btn.play-pause-main {
-    width: 64px;
-    height: 64px;
+    width: 56px;
+    height: 56px;
     background: #fff;
     color: #000;
     border-radius: 50%;
@@ -1702,8 +1724,9 @@
     }
 
     .desktop-art-section {
-      width: min(100%, min(440px, 38vh));
-    }
+    width: 240px;
+    height: 240px;
+  }
 
     .desktop-title {
       font-size: clamp(2rem, 3.8vh, 2.35rem);
@@ -1731,11 +1754,11 @@
     flex: 1;
     -webkit-appearance: none;
     appearance: none;
-    height: 4px;
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.15);
+    height: 3px;
+    border-radius: 1.5px;
     outline: none;
     cursor: pointer;
+    transition: background 0.1s ease;
   }
 
   .volume-slider::-webkit-slider-thumb {
@@ -1763,34 +1786,47 @@
 
   .tab-switcher {
     display: flex;
-    gap: 0.25rem;
-    background: rgba(255, 255, 255, 0.06);
-    padding: 0.35rem;
-    border-radius: 50px;
-    align-self: center;
-    margin-bottom: 2.5rem;
-    border: 1px solid rgba(255, 255, 255, 0.05);
+    gap: 2rem;
+    background: none;
+    padding: 0;
+    border-radius: 0;
+    align-self: flex-start;
+    margin-bottom: 1.5rem;
+    border: none;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    width: 100%;
   }
 
   .tab-btn {
     background: none;
     border: none;
-    color: rgba(255, 255, 255, 0.5);
-    padding: 0.6rem 2.2rem;
-    border-radius: 50px;
-    font-weight: 700;
-    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.35);
+    padding: 0.5rem 0;
+    border-radius: 0;
+    font-weight: 600;
+    font-size: 0.95rem;
     cursor: pointer;
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    transition: color 0.2s ease;
   }
 
   .tab-btn:hover {
-    color: rgba(255, 255, 255, 0.85);
+    color: rgba(255, 255, 255, 0.75);
   }
 
   .tab-btn.active {
-    background: rgba(255, 255, 255, 0.12);
+    background: none;
     color: #fff;
+  }
+
+  .tab-btn.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 0;
+    height: 1.5px;
+    background-color: #fff;
   }
 
   .tab-content-wrapper {
@@ -1799,15 +1835,17 @@
     position: relative;
     border-radius: 24px;
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
   }
 
   /* Lyrics Content Styling */
   .desktop-lyrics-container {
-    height: 100%;
+    height: 450px;
     width: 100%;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: 30vh 3rem 30vh 0;
+    overflow: hidden;
+    padding: 225px 3rem 225px 0;
     scrollbar-width: none;
     will-change: transform;
     mask-image: linear-gradient(
@@ -1831,15 +1869,15 @@
   }
 
   .desktop-lyric-line {
-    font-size: 2.25rem;
+    font-size: 22px;
     font-weight: 800;
     color: rgba(255, 255, 255, 0.15);
     padding: 0.7rem 0;
     cursor: pointer;
     transition:
-      color 0.5s ease,
-      opacity 0.5s ease,
-      transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+      color 0.4s ease,
+      opacity 0.4s ease,
+      transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     transform-origin: left;
     line-height: 1.4;
     letter-spacing: -0.01em;
@@ -1853,18 +1891,22 @@
     white-space: normal;
   }
 
-  .desktop-lyric-line.past-line {
+  .desktop-lyric-line.past {
+    color: rgba(255, 255, 255, 0.15);
+  }
+
+  .desktop-lyric-line.upcoming {
     color: rgba(255, 255, 255, 0.45);
-    transform: scale(0.98);
   }
 
   .desktop-lyric-line:hover {
-    color: rgba(255, 255, 255, 0.35);
+    color: rgba(255, 255, 255, 0.7);
   }
 
   .desktop-lyric-line.active {
     color: #fff;
-    transform: scale(1.08);
+    font-size: 24px;
+    transform: scale(1.04);
     margin: 0;
     text-shadow: 0 0 15px rgba(255, 255, 255, 0.1);
   }
@@ -1872,29 +1914,20 @@
   .desktop-lyric-word {
     position: relative;
     display: inline-block;
-    transition:
-      opacity 0.3s ease,
-      transform 0.3s ease,
-      background-size 0.1s linear;
     backface-visibility: hidden;
     -webkit-backface-visibility: hidden;
-    background-image: 
-      /* Top layer: White fill */
-      linear-gradient(to right, #fff, #fff),
-      /* Bottom layer: Dim base color */
-        linear-gradient(
-          to right,
-          rgba(255, 255, 255, 0.2),
-          rgba(255, 255, 255, 0.2)
-        );
-    background-repeat: no-repeat;
-    background-size:
-      var(--word-progress, 0%) 100%,
-      100% 100%;
+    background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    background-clip: text;
-    color: rgba(255, 255, 255, 0.2);
+    color: transparent;
+    background-image: linear-gradient(
+      to right,
+      #ffffff 0%,
+      #ffffff calc(var(--word-progress, 0%) - 4%),
+      rgba(255, 255, 255, 0.2) calc(var(--word-progress, 0%) + 4%),
+      rgba(255, 255, 255, 0.2) 100%
+    );
+    transition: text-shadow 0.2s ease;
   }
 
   .no-lyrics-desktop {
@@ -2120,11 +2153,11 @@
   }
 
   .mobile-lyrics-wrapper .lyric-line {
-    font-size: 1.5rem;
+    font-size: 22px;
     font-weight: 700;
     line-height: 1.4;
     padding: 0.75rem 0;
-    color: rgba(255, 255, 255, 0.4);
+    color: rgba(255, 255, 255, 0.15);
     transition: all 0.3s ease;
     width: 100%;
     max-width: 94%;
@@ -2133,29 +2166,35 @@
     white-space: normal;
   }
 
+  .mobile-lyrics-wrapper .lyric-line.past {
+    color: rgba(255, 255, 255, 0.15);
+  }
+
+  .mobile-lyrics-wrapper .lyric-line.upcoming {
+    color: rgba(255, 255, 255, 0.45);
+  }
+
   .mobile-lyrics-wrapper .lyric-line.active {
     color: #fff;
-    transform: scale(1.05);
+    font-size: 24px;
+    transform: scale(1.04);
   }
 
   .lyric-word {
     position: relative;
     display: inline-block;
-    transition: background-size 0.1s linear;
-    background-image: linear-gradient(to right, #fff, #fff),
-      linear-gradient(
-        to right,
-        rgba(255, 255, 255, 0.2),
-        rgba(255, 255, 255, 0.2)
-      );
-    background-repeat: no-repeat;
-    background-size:
-      var(--word-progress, 0%) 100%,
-      100% 100%;
+    background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    background-clip: text;
-    color: rgba(255, 255, 255, 0.2);
+    color: transparent;
+    background-image: linear-gradient(
+      to right,
+      #ffffff 0%,
+      #ffffff calc(var(--word-progress, 0%) - 4%),
+      rgba(255, 255, 255, 0.2) calc(var(--word-progress, 0%) + 4%),
+      rgba(255, 255, 255, 0.2) 100%
+    );
+    transition: text-shadow 0.2s ease;
   }
 
   @media (prefers-reduced-motion: reduce) {
