@@ -602,49 +602,477 @@ fn db_to_linear(db: f32) -> f32 {
 }
 
 // =============================================================================
-// channel_map => re-interleave a decoded audio buffer to a target channel count
+// channel_map => ITU-R BS.775 / SMPTE channel matrix for all src/dst pairs
 // =============================================================================
-// called from SymphoniaSource::refill whenever the file's channel count differs from the device channel count advertised to rodio
+// called from SymphoniaSource::refill whenever the decoded channel count differs
+// from the device channel count
+// because this app opens cpal streams directly at
+// the device's native channel count, the OS audio mixer is bypassed entirely
+// every sample that enters the cpal stream plays verbatim on the corresponding hardware speaker
+// there is no double-processing risk; we are the only converter
 //
-// mapping rules:
-//   mono -> any    : duplicate the single sample into all N channels
-//   fewer -> more  : copy the available channels, fill the rest with silence
-//                   (stereo->7.1: front L/R populated, centre/LFE/surround silent;
-//                    the driver and receiver handle spatial expansion from there)
-//   more -> fewer  : keep only the first dst_ch channels (simple truncation)
-//                   good enough for stereo output from a surround source
+// supported channel layouts and their interleave order:
+//   1ch : M                                        (mono)
+//   2ch : FL  FR                                   (stereo)
+//   3ch : FL  FR  C                                (LCR)
+//   4ch : FL  FR  Ls  Rs                           (quad , no centre, no LFE)
+//   5ch : FL  FR  C   Ls   Rs                      (5.0)
+//   6ch : FL  FR  C   LFE  Ls   Rs                 (5.1)
+//   7ch : FL  FR  C   LFE  Ls   Rs   Cs            (6.1)
+//   8ch : FL  FR  C   LFE  Ls   Rs   Lrs  Rrs      (7.1)
+//
+// Gain constants (ITU-R BS.775 / common AV receiver defaults):
+//   Centre     -> FL+FR  : −3 dB  (×0.7071)
+//   Surround   -> FL+FR  : −3 dB  (×0.7071)
+//   LFE        -> FL+FR  : −10 dB (×0.3162)  [per most consumer receivers]
+//   FL+FR      -> C      : −3 dB  (×0.7071)  [phantom centre for upmix]
+//   FL+FR      -> Ls+Rs  : −3 dB  (×0.7071)  [derived surround for upmix]
+//   Ls+Rs      -> Lrs+Rrs: −3 dB  (×0.7071)  [derived rear for 7.1 upmix]
+//
+// all output samples are clamped to [−1.0, 1.0]
+// unhandled src/dst combinations (>8ch or exotic layouts) fall back to truncation/zero-padding with a compile-time-visible warning comment
+//
+// index aliases used throughout:
+//   FL=0  FR=1  C=2  LFE=3  Ls=4  Rs=5  Cs/Lrs=6  Rrs=7
+// for 4ch quad the layout is FL=0 FR=1 Ls=2 Rs=3 (no C or LFE)
 fn channel_map(buf: &mut Vec<f32>, src_ch: u16, dst_ch: u16) {
-    if src_ch == dst_ch {
-        return;
-    }
-    let src = src_ch as usize;
-    let dst = dst_ch as usize;
+    if src_ch == dst_ch { return; }
+
+    // Gain constants
+    const C3:  f32 = 0.7071; // −3 dB  (centre / surround fold)
+    const C10: f32 = 0.3162; // −10 dB (LFE fold to mains)
+
+    let src    = src_ch as usize;
+    let dst    = dst_ch as usize;
     let frames = buf.len() / src;
 
+    // mono source: replicate to every output channel
+    // done in-place back-to-front to avoid a second allocation
     if src == 1 {
-        // mono -> any: duplicate in-place back-to-front (no allocation after first call)
         buf.resize(frames * dst, 0.0);
         for i in (0..frames).rev() {
-            let s = buf[i];
-            for c in 0..dst {
-                buf[i * dst + c] = s;
-            }
+            let m = buf[i];
+            for c in 0..dst { buf[i * dst + c] = m; }
         }
-    } else if dst > src {
-        // upmix: front channels filled, remainder silent
-        let old: Vec<f32> = buf.drain(..).collect();
-        buf.reserve(frames * dst);
-        for frame in old.chunks_exact(src) {
-            for c in 0..dst {
-                buf.push(if c < src { frame[c] } else { 0.0 });
+        return;
+    }
+
+    // all other conversions: drain -> process -> push ===================================
+    let old: Vec<f32> = buf.drain(..).collect();
+    buf.reserve(frames * dst);
+
+    // Helper: clamp a sample to [−1, 1]
+    #[inline(always)]
+    fn s(x: f32) -> f32 { x.clamp(-1.0, 1.0) }
+
+    for f in old.chunks_exact(src) {
+        // named source channels =================================
+        // each layout only reads indices that actually exist in that layout
+        let (fl, fr) = (f[0], f[1]);
+
+        // centre: index 2 for 3/5/6/7/8ch; absent in 1/2/4ch
+        let c = match src { 3 | 5..=8 => f[2], _ => 0.0 };
+
+        // LFE: index 3 for 6/7/8ch only (index 3 is Ls in 4ch and 5ch)
+        let lfe = match src { 6..=8 => f[3], _ => 0.0 };
+
+        // side/rear surrounds => index depends on whether centre/LFE are present
+        let (ls, rs) = match src {
+            4        => (f[2], f[3]),          // quad: FL FR Ls Rs
+            5        => (f[3], f[4]),          // 5.0:  FL FR C  Ls Rs
+            6..=8    => (f[4], f[5]),          // 5.1+: FL FR C  LFE Ls Rs
+            _        => (0.0,  0.0),
+        };
+
+        // rear surrounds: Cs (6.1) or Lrs/Rrs (7.1)
+        let (lrs, rrs) = match src {
+            7 => (f[6], f[6]),   // 6.1: single Cs folds equally to both rears
+            8 => (f[6], f[7]),   // 7.1: discrete Lrs / Rrs
+            _ => (0.0,  0.0),
+        };
+
+        // derived mix signals (used by multiple output layouts)
+        // stereo downmix of everything (ITU-R BS.775)
+        let dl = fl + c*C3 + lfe*C10 + ls*C3 + lrs*C3; // left  downmix
+        let dr = fr + c*C3 + lfe*C10 + rs*C3 + rrs*C3; // right downmix
+
+        // phantom centre from stereo (for upmix targets that have a centre speaker)
+        let pc = (fl + fr) * C3; // −3 dB blend
+
+        // derived surrounds from front pair (for upmix to quad / 5.x / 7.x)
+        let dls = fl * C3;   // derived Ls
+        let drs = fr * C3;   // derived Rs
+
+        // derived rears from derived surrounds (for upmix to 7.x)
+        let dlrs = dls * C3; // derived Lrs
+        let drrs = drs * C3; // derived Rrs
+
+        // output routing ================================
+        match (src, dst) {
+
+            // downmix to mono
+            // BS.775-3 Table 2: M = 0.7071·L + 0.7071·R + 1.0·C + 0.5·LS + 0.5·RS
+            // LFE is excluded by the standard but folded at C10 (consumer convention)
+            // Rears (lrs/rrs) are treated the same as surrounds (0.5 each) per symmetry
+            (_, 1) => {
+                buf.push(s(
+                    fl * C3 + fr * C3            // 0.7071 each per BS.775 Table 2
+                    + c                          // 1.0 per BS.775 Table 2
+                    + lfe * C10                  // not in standard; folded at -10 dB (consumer)
+                    + (ls  + rs ) * 0.5          // 0.5 each per BS.775 Table 2
+                    + (lrs + rrs) * 0.5          // rears treated same as surrounds
+                ));
             }
-        }
-    } else {
-        // downmix: keep first dst_ch channels per frame
-        let old: Vec<f32> = buf.drain(..).collect();
-        buf.reserve(frames * dst);
-        for frame in old.chunks_exact(src) {
-            buf.extend_from_slice(&frame[..dst]);
+
+            // downmix to stereo
+            // all layouts -> 2ch: ITU-R stereo downmix
+            (_, 2) => {
+                buf.push(s(dl));
+                buf.push(s(dr));
+            }
+
+            // downmix to LCR (3ch)
+            // 4ch quad -> 3ch: no centre in source; blend Ls+Rs into C
+            (4, 3) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s((ls + rs) * 0.5));   // Ls+Rs → phantom C
+            }
+            // 5ch -> 3ch: keep C, fold surrounds into it
+            (5, 3) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(c + (ls + rs) * C3 * 0.5));
+            }
+            // 6ch (5.1) -> 3ch
+            (6, 3) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(c + lfe*C10 + (ls + rs) * C3 * 0.5));
+            }
+            // 7ch (6.1) -> 3ch: fold Cs into centre too
+            (7, 3) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(c + lfe*C10 + (ls + rs) * C3 * 0.5 + lrs*C3));
+            }
+            // 8ch (7.1) -> 3ch
+            (8, 3) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(c + lfe*C10 + (ls + rs) * C3 * 0.5 + (lrs + rrs) * C3 * 0.5));
+            }
+
+            // downmix to quad (4ch)
+            // 5ch -> 4ch: fold C into FL+FR, pass Ls+Rs through
+            (5, 4) => {
+                buf.push(s(fl + c*C3));
+                buf.push(s(fr + c*C3));
+                buf.push(s(ls));
+                buf.push(s(rs));
+            }
+            // 6ch (5.1) -> 4ch
+            (6, 4) => {
+                buf.push(s(fl + c*C3 + lfe*C10));
+                buf.push(s(fr + c*C3 + lfe*C10));
+                buf.push(s(ls));
+                buf.push(s(rs));
+            }
+            // 7ch (6.1) -> 4ch: fold Cs equally into Ls+Rs
+            (7, 4) => {
+                buf.push(s(fl + c*C3 + lfe*C10));
+                buf.push(s(fr + c*C3 + lfe*C10));
+                buf.push(s(ls + lrs*C3));
+                buf.push(s(rs + rrs*C3));
+            }
+            // 8ch (7.1) -> 4ch: fold Lrs+Rrs into Ls+Rs
+            (8, 4) => {
+                buf.push(s(fl + c*C3 + lfe*C10));
+                buf.push(s(fr + c*C3 + lfe*C10));
+                buf.push(s(ls + lrs*C3));
+                buf.push(s(rs + rrs*C3));
+            }
+
+            // downmix to 5ch (5.0)
+            // 6ch (5.1) -> 5ch: absorb LFE into FL+FR
+            (6, 5) => {
+                buf.push(s(fl + lfe*C10));
+                buf.push(s(fr + lfe*C10));
+                buf.push(s(c));
+                buf.push(s(ls));
+                buf.push(s(rs));
+            }
+            // 7ch (6.1) -> 5ch: fold Cs into Ls+Rs, absorb LFE
+            (7, 5) => {
+                buf.push(s(fl + lfe*C10));
+                buf.push(s(fr + lfe*C10));
+                buf.push(s(c));
+                buf.push(s(ls + lrs*C3));
+                buf.push(s(rs + rrs*C3));
+            }
+            // 8ch (7.1) -> 5ch: fold Lrs+Rrs into Ls+Rs, absorb LFE
+            (8, 5) => {
+                buf.push(s(fl + lfe*C10));
+                buf.push(s(fr + lfe*C10));
+                buf.push(s(c));
+                buf.push(s(ls + lrs*C3));
+                buf.push(s(rs + rrs*C3));
+            }
+
+            // downmix to 5.1 (6ch)
+            // 7ch (6.1) -> 6ch: fold Cs into Ls+Rs
+            (7, 6) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(c));
+                buf.push(s(lfe));
+                buf.push(s(ls + lrs*C3));
+                buf.push(s(rs + rrs*C3));
+            }
+            // 8ch (7.1) -> 6ch: fold Lrs+Rrs into Ls+Rs
+            (8, 6) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(c));
+                buf.push(s(lfe));
+                buf.push(s(ls + lrs*C3));
+                buf.push(s(rs + rrs*C3));
+            }
+
+            // downmix to 6.1 (7ch)
+            // 8ch (7.1) -> 7ch: mix Lrs+Rrs into a single Cs
+            (8, 7) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(c));
+                buf.push(s(lfe));
+                buf.push(s(ls));
+                buf.push(s(rs));
+                buf.push(s((lrs + rrs) * 0.5)); // Lrs+Rrs -> Cs
+            }
+
+            // upmix from stereo
+            // the coefficient 0.7071 (C3) matches ffmpeg's
+            // M_SQRT1_2 weight: matrix[FC][FL] += M_SQRT1_2; matrix[FC][FR] += M_SQRT1_2.
+            // 2ch -> 3ch: derive phantom centre
+            (2, 3) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(pc));
+            }
+            // 2ch -> 4ch: derive surrounds from fronts
+            (2, 4) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(dls));
+                buf.push(s(drs));
+            }
+            // 2ch -> 5ch
+            (2, 5) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(pc));
+                buf.push(s(dls));
+                buf.push(s(drs));
+            }
+            // 2ch -> 6ch (5.1): LFE = 0 (no bass content to extract simply)
+            (2, 6) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(pc));
+                buf.push(0.0);   // LFE
+                buf.push(s(dls));
+                buf.push(s(drs));
+            }
+            // 2ch -> 7ch (6.1)
+            (2, 7) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(pc));
+                buf.push(0.0);   // LFE
+                buf.push(s(dls));
+                buf.push(s(drs));
+                buf.push(s((dls + drs) * 0.5)); // Cs
+            }
+            // 2ch -> 8ch (7.1)
+            (2, 8) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(pc));
+                buf.push(0.0);   // LFE
+                buf.push(s(dls));
+                buf.push(s(drs));
+                buf.push(s(dlrs));
+                buf.push(s(drrs));
+            }
+
+            // upmix from LCR (3ch)
+            // 3ch -> 4ch: derive surrounds from fronts (centre stays in C)
+            (3, 4) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(dls));
+                buf.push(s(drs));
+            }
+            // 3ch -> 5ch
+            (3, 5) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(c));
+                buf.push(s(dls));
+                buf.push(s(drs));
+            }
+            // 3ch -> 6ch
+            (3, 6) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(c));
+                buf.push(0.0);   // LFE
+                buf.push(s(dls));
+                buf.push(s(drs));
+            }
+            // 3ch -> 7ch
+            (3, 7) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(c));
+                buf.push(0.0);   // LFE
+                buf.push(s(dls));
+                buf.push(s(drs));
+                buf.push(s((dls + drs) * 0.5)); // Cs
+            }
+            // 3ch -> 8ch
+            (3, 8) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(c));
+                buf.push(0.0);   // LFE
+                buf.push(s(dls));
+                buf.push(s(drs));
+                buf.push(s(dlrs));
+                buf.push(s(drrs));
+            }
+
+            // upmix from quad (4ch)
+            // 4ch -> 5ch: derive phantom centre from FL+FR
+            (4, 5) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(pc));
+                buf.push(s(ls));
+                buf.push(s(rs));
+            }
+            // 4ch -> 6ch
+            (4, 6) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(pc));
+                buf.push(0.0);   // LFE
+                buf.push(s(ls));
+                buf.push(s(rs));
+            }
+            // 4ch -> 7ch
+            (4, 7) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(pc));
+                buf.push(0.0);   // LFE
+                buf.push(s(ls));
+                buf.push(s(rs));
+                buf.push(s((ls + rs) * 0.5 * C3)); // Cs derived from surrounds
+            }
+            // 4ch -> 8ch
+            (4, 8) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(pc));
+                buf.push(0.0);   // LFE
+                buf.push(s(ls));
+                buf.push(s(rs));
+                buf.push(s(ls * C3));  // Lrs derived from Ls
+                buf.push(s(rs * C3));  // Rrs derived from Rs
+            }
+
+            // upmix from 5ch (5.0)
+            // 5ch -> 6ch: insert silent LFE
+            (5, 6) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(c));
+                buf.push(0.0);   // LFE
+                buf.push(s(ls));
+                buf.push(s(rs));
+            }
+            // 5ch -> 7ch
+            (5, 7) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(c));
+                buf.push(0.0);   // LFE
+                buf.push(s(ls));
+                buf.push(s(rs));
+                buf.push(s((ls + rs) * 0.5 * C3)); // Cs
+            }
+            // 5ch -> 8ch
+            (5, 8) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(c));
+                buf.push(0.0);   // LFE
+                buf.push(s(ls));
+                buf.push(s(rs));
+                buf.push(s(ls * C3));  // Lrs
+                buf.push(s(rs * C3));  // Rrs
+            }
+
+            // upmix from 5.1 (6ch)
+            // 6ch -> 7ch: derive Cs from Ls+Rs
+            (6, 7) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(c));
+                buf.push(s(lfe));
+                buf.push(s(ls));
+                buf.push(s(rs));
+                buf.push(s((ls + rs) * 0.5 * C3)); // Cs
+            }
+            // 6ch -> 8ch: derive Lrs+Rrs from Ls+Rs
+            (6, 8) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(c));
+                buf.push(s(lfe));
+                buf.push(s(ls));
+                buf.push(s(rs));
+                buf.push(s(ls * C3));  // Lrs
+                buf.push(s(rs * C3));  // Rrs
+            }
+
+            // upmix from 6.1 (7ch)
+            // 7ch -> 8ch: split Cs into Lrs+Rrs
+            (7, 8) => {
+                buf.push(s(fl));
+                buf.push(s(fr));
+                buf.push(s(c));
+                buf.push(s(lfe));
+                buf.push(s(ls));
+                buf.push(s(rs));
+                buf.push(s(lrs * C3)); // Lrs from Cs
+                buf.push(s(rrs * C3)); // Rrs from Cs (lrs==rrs for 6.1)
+            }
+
+            // fallback for channel counts (>8ch)
+            // truncate if downmixing, zero-pad if upmixing
+            // purely a safety net. such channl counts don't really exist in consumer hardware
+            _ => {
+                tracing::debug!(
+                    "[AUDIO] channel_map: unhandled {}ch→{}ch, using truncation/zero-pad",
+                    src, dst
+                );
+                for ch in 0..dst {
+                    buf.push(if ch < src { f[ch] } else { 0.0 });
+                }
+            }
         }
     }
 }
@@ -1582,6 +2010,31 @@ impl AudioEngine {
         self.next_path = None;
         self.next_duration = None;
         self.paused_flag.store(false, Ordering::Relaxed);
+
+        // cancel any in-flight Play or Preload workers so their OpenResults
+        // arrive with an aborted flag and are dropped by the worker before
+        // being sent, or are matched by neither current_generation nor
+        // next_generation (both reset to 0 below)
+        self.play_abort.store(true, Ordering::Relaxed);
+        self.preload_abort.store(true, Ordering::Relaxed);
+        // fresh abort handles for future commands; old ones remain true so
+        // any still-running worker sees the cancellation
+        self.play_abort = Arc::new(AtomicBool::new(false));
+        self.preload_abort = Arc::new(AtomicBool::new(false));
+
+        // reset generations so any OpenResult that slips through the abort
+        // check (race between worker sending and the flag being read) will
+        // not match current_generation or next_generation and will be
+        // discarded by the open_result arm as stale
+        self.current_generation = u64::MAX;
+        self.next_generation = u64::MAX;
+
+        // clear pending state that belongs to the stopped track
+        self.pending_track_advanced = false;
+        self.pending_seek = None;
+        self.pending_seek_fraction = None;
+        self.pending_paused = false;
+
         tracing::info!("[AUDIO] Stopped");
     }
 
@@ -1769,15 +2222,10 @@ impl PlaybackStateSync {
             let mut eq_settings = EqSettings::default();
 
             // before the engine is initialised there are no event/open-result channels yet
-            // permanently disconnected receivers act as silent placeholders:
-            // crossbeam::select! will never fire on a disconnected receiver
-            let (_dead_tx, dead_rx) = crossbeam::channel::bounded::<AudioEvent>(0);
-            drop(_dead_tx);
-            let mut event_rx: crossbeam::channel::Receiver<AudioEvent> = dead_rx;
-
-            let (_dead_open_tx, dead_open_rx) = crossbeam::channel::bounded::<OpenResult>(0);
-            drop(_dead_open_tx);
-            let mut open_result_rx: crossbeam::channel::Receiver<OpenResult> = dead_open_rx;
+            // crossbeam::channel::never() returns a receiver that is permanently empty and never becomes ready
+            // select! will block on it without spinning
+            let mut event_rx: crossbeam::channel::Receiver<AudioEvent> = crossbeam::channel::never();
+            let mut open_result_rx: crossbeam::channel::Receiver<OpenResult> = crossbeam::channel::never();
 
             // emit a backend event to the frontend
             // errors here are non-fatal as the window may be closing
@@ -1869,9 +2317,8 @@ impl PlaybackStateSync {
                             Ok(r) => r,
                             Err(_) => {
                                 // channel disconnected (engine dropped/replaced)
-                                let (_dead_tx, dead_rx) = crossbeam::channel::bounded::<OpenResult>(0);
-                                drop(_dead_tx);
-                                open_result_rx = dead_rx;
+                                // park this arm with a never() receiver so select! won't spin
+                                open_result_rx = crossbeam::channel::never();
                                 continue;
                             }
                         };
@@ -2080,9 +2527,8 @@ impl PlaybackStateSync {
                             }
                             Err(_) => {
                                 // event channel disconnected (engine dropped)
-                                let (_dead_tx, dead_rx) = crossbeam::channel::bounded::<AudioEvent>(0);
-                                drop(_dead_tx);
-                                event_rx = dead_rx;
+                                // park this arm with a never() receiver so select! won't spin
+                                event_rx = crossbeam::channel::never();
                             }
                         }
                     }
