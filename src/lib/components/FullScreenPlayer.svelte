@@ -64,6 +64,7 @@
   let isSeeking = false;
   let isAndroid = false;
   $: hideAndroidLyricsControls = isAndroid && $isMobile && $lyricsVisible;
+  $: isUnsynced = !$lyricsData?.lines || $lyricsData.lines.length === 0 || !$lyricsData.lines.some((line) => line.time > 0);
 
   // Combined reactive state for word-by-word sync
   const wordSyncState = derived(
@@ -645,11 +646,16 @@
               {#if $lyricsData?.lines && $lyricsData.lines.length > 0}
                 {#each $lyricsData.lines as line, i}
                   {@const hasWordSync = line.words && line.words.length > 0}
+                  {#if line.structure && (i === 0 || line.structure !== $lyricsData.lines[i - 1].structure)}
+                    <div class="section-label" aria-hidden="true">{line.structure}</div>
+                  {/if}
                   <div
                     class="lyric-line"
                     class:active={i === $activeLine}
                     class:past={i < $activeLine}
                     class:upcoming={i > $activeLine}
+                    class:opposite={!!line.opposite_turn && !line.is_background}
+                    class:opposite-bg={!!line.opposite_turn && !!line.is_background}
                     role="button"
                     tabindex="0"
                     on:click={() => {
@@ -1188,6 +1194,7 @@
               {#if activeTab === "lyrics"}
                 <div
                   class="desktop-lyrics-container"
+                  class:unsynced={isUnsynced}
                   bind:this={lyricsContainer}
                   in:fade
                 >
@@ -1195,11 +1202,16 @@
                     {#each $lyricsData.lines as line, i}
                       {@const isActiveLine = i === $activeLine}
                       {@const hasWordSync = line.words && line.words.length > 0}
+                      {#if line.structure && (i === 0 || line.structure !== $lyricsData.lines[i - 1].structure)}
+                        <div class="section-label" aria-hidden="true">{line.structure}</div>
+                      {/if}
                       <div
                         class="desktop-lyric-line"
                         class:active={isActiveLine}
                         class:past={i < $activeLine}
                         class:upcoming={i > $activeLine}
+                        class:opposite={!!line.opposite_turn && !line.is_background}
+                        class:opposite-bg={!!line.opposite_turn && !!line.is_background}
                         role="button"
                         tabindex="0"
                         on:click={() => {
@@ -1868,6 +1880,38 @@
     display: none;
   }
 
+  /* Unsynced container & lines overrides */
+  .desktop-lyrics-container.unsynced {
+    overflow-y: auto;
+    height: 100%;
+    padding: 2rem 3rem 2rem 0;
+    mask-image: none;
+    -webkit-mask-image: none;
+  }
+
+  .desktop-lyrics-container.unsynced .desktop-lyric-line {
+    color: rgba(255, 255, 255, 0.75);
+    opacity: 1;
+    transform: none !important;
+    cursor: default;
+  }
+
+  .desktop-lyrics-container.unsynced .desktop-lyric-line:hover {
+    color: #ffffff;
+  }
+
+  .section-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.4);
+    padding: 16px 0 4px;
+    user-select: none;
+    pointer-events: none;
+    width: 100%;
+  }
+
   .desktop-lyric-line {
     font-size: 22px;
     font-weight: 800;
@@ -1889,6 +1933,19 @@
     overflow-wrap: break-word;
     word-break: break-word;
     white-space: normal;
+  }
+
+  .desktop-lyric-line.opposite {
+    text-align: right;
+    transform-origin: right center;
+    font-style: italic;
+  }
+
+  .desktop-lyric-line.opposite-bg {
+    text-align: right;
+    transform-origin: right center;
+    font-style: italic;
+    opacity: 0.6;
   }
 
   .desktop-lyric-line.past {
@@ -2164,6 +2221,19 @@
     overflow-wrap: break-word;
     word-break: break-word;
     white-space: normal;
+  }
+
+  .mobile-lyrics-wrapper .lyric-line.opposite {
+    text-align: right;
+    transform-origin: right center;
+    font-style: italic;
+  }
+
+  .mobile-lyrics-wrapper .lyric-line.opposite-bg {
+    text-align: right;
+    transform-origin: right center;
+    font-style: italic;
+    opacity: 0.6;
   }
 
   .mobile-lyrics-wrapper .lyric-line.past {
