@@ -1,13 +1,15 @@
 <script lang="ts">
-    import { showLoginModal, startLogin, connectCustomServerPassword, loginModalMode } from "$lib/stores/sync";
+    import { showLoginModal, startLogin, connectCustomServerPassword, testCustomServerConnection, loginModalMode } from "$lib/stores/sync";
     import { fade, scale, slide } from "svelte/transition";
 
     let isLoading = false;
+    let isTesting = false;
 
     let serverUrl = "";
     let username = "";
     let password = "";
     let errorText = "";
+    let successText = "";
 
     function close() {
         showLoginModal.set(false);
@@ -17,6 +19,13 @@
         username = "";
         password = "";
         errorText = "";
+        successText = "";
+        isTesting = false;
+    }
+
+    function clearMessages() {
+        errorText = "";
+        successText = "";
     }
 
     async function loginWith(provider: "google" | "github") {
@@ -27,6 +36,30 @@
             console.error("[Login] Failed:", err);
         } finally {
             isLoading = false;
+        }
+    }
+
+    async function handleTestConnection() {
+        if (!serverUrl) {
+            errorText = "Server URL is required";
+            return;
+        }
+        if (!username || !password) {
+            errorText = "Username and password are required";
+            return;
+        }
+
+        isTesting = true;
+        errorText = "";
+        successText = "";
+        try {
+            await testCustomServerConnection(serverUrl, username, password);
+            successText = "Connection test successful!";
+        } catch (err) {
+            console.error("[Custom Server Test Connection] Failed:", err);
+            errorText = String(err);
+        } finally {
+            isTesting = false;
         }
     }
 
@@ -42,6 +75,7 @@
 
         isLoading = true;
         errorText = "";
+        successText = "";
         try {
             await connectCustomServerPassword(serverUrl, username, password);
             close();
@@ -145,7 +179,8 @@
                                 type="url"
                                 placeholder="e.g., http://localhost:8080"
                                 bind:value={serverUrl}
-                                disabled={isLoading}
+                                on:input={clearMessages}
+                                disabled={isLoading || isTesting}
                             />
                         </div>
 
@@ -156,7 +191,8 @@
                                 type="text"
                                 placeholder="Username"
                                 bind:value={username}
-                                disabled={isLoading}
+                                on:input={clearMessages}
+                                disabled={isLoading || isTesting}
                             />
                         </div>
 
@@ -167,13 +203,20 @@
                                 type="password"
                                 placeholder="Password"
                                 bind:value={password}
-                                disabled={isLoading}
+                                on:input={clearMessages}
+                                disabled={isLoading || isTesting}
                             />
                         </div>
 
                         {#if errorText}
                             <div class="error-text" transition:slide={{ duration: 150 }}>
                                 {errorText}
+                            </div>
+                        {/if}
+
+                        {#if successText}
+                            <div class="success-text" transition:slide={{ duration: 150 }}>
+                                {successText}
                             </div>
                         {/if}
 
@@ -196,18 +239,28 @@
                         </div>
 
                         <div class="form-actions">
-                            <button
-                                type="submit"
-                                class="btn-primary"
-                                disabled={isLoading}
-                            >
-                                {isLoading ? "Connecting..." : "Connect"}
-                            </button>
+                            <div class="form-actions-row">
+                                <button
+                                    type="button"
+                                    class="btn-secondary"
+                                    on:click={handleTestConnection}
+                                    disabled={isLoading || isTesting}
+                                >
+                                    {isTesting ? "Testing..." : "Test Connection"}
+                                </button>
+                                <button
+                                    type="submit"
+                                    class="btn-primary"
+                                    disabled={isLoading || isTesting}
+                                >
+                                    {isLoading ? "Connecting..." : "Connect"}
+                                </button>
+                            </div>
                             <button
                                 type="button"
-                                class="btn-text"
+                                class="btn-text back-btn"
                                 on:click={() => loginModalMode.set("oauth")}
-                                disabled={isLoading}
+                                disabled={isLoading || isTesting}
                             >
                                 Back
                             </button>
@@ -354,11 +407,61 @@
         line-height: 1.4;
     }
 
+    .success-text {
+        font-size: 0.8125rem;
+        color: #4ade80;
+        margin-top: var(--spacing-xs);
+        line-height: 1.4;
+    }
+
     .form-actions {
         display: flex;
         flex-direction: column;
         gap: var(--spacing-sm);
         margin-top: var(--spacing-md);
+    }
+
+    .form-actions-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: var(--spacing-sm);
+        width: 100%;
+    }
+
+    .btn-secondary {
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--text-primary);
+        border: 1px solid var(--border-color);
+        padding: 12px;
+        border-radius: var(--radius-md);
+        font-size: 0.9375rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: var(--text-secondary);
+        transform: translateY(-1px);
+    }
+
+    .btn-secondary:active:not(:disabled) {
+        transform: translateY(0);
+    }
+
+    .btn-secondary:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+    }
+
+    .back-btn {
+        margin-top: var(--spacing-xs);
+        align-self: center;
     }
 
     .btn-primary {
