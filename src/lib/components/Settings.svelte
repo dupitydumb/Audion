@@ -118,7 +118,15 @@
   }
 
   function handleDeviceSelect(device: AudioDeviceInfo | null) {
-      handleSetOutputDevice(device?.id ?? null);
+      const requestedId = device?.id ?? null;
+      const currentId = $appSettings.outputDevice ?? null;
+      if (requestedId === currentId) {
+        // same device selected => close dropdown without dispatching to backend
+        deviceDropdownOpen = false;
+        infoPopoverDevice = null;
+        return;
+      }
+      handleSetOutputDevice(requestedId);
       deviceDropdownOpen = false;
       infoPopoverDevice = null;
   }
