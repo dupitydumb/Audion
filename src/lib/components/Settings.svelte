@@ -36,7 +36,7 @@
     customServerStatus,
     disconnectCustomServer,
   } from "$lib/stores/sync";
-  import { nativeAudioStop, nativeAudioSetReplayGainEnabled, nativeAudioListDevices, nativeAudioGetDeviceInfo, nativeAudioSetOutputDevice, type DeviceList } from "$lib/services/native-audio";
+  import { nativeAudioStop, nativeAudioSetReplayGainEnabled, nativeAudioListDevices, nativeAudioGetDeviceInfo, nativeAudioSetOutputDevice, type DeviceList, type AudioDeviceInfo } from "$lib/services/native-audio";
   import Icon from "$lib/components/Icon.svelte";
 
   interface MigrationProgressUpdate {
@@ -104,40 +104,67 @@
   let deviceDropdownOpen = false;
   let deviceDropdownRef: HTMLDivElement;
 
+  // device info popover state
+  let infoPopoverDevice: AudioDeviceInfo | null = null;
+
   function handleDeviceDropdownToggle() {
     if (outputDeviceDisabled) return;
     deviceDropdownOpen = !deviceDropdownOpen;
     if (deviceDropdownOpen) {
       handleLoadDevices();
+    } else {
+      infoPopoverDevice = null;
     }
   }
 
-  function handleDeviceSelect(device: string | null) {
-    handleSetOutputDevice(device);
-    deviceDropdownOpen = false;
+  function handleDeviceSelect(device: AudioDeviceInfo | null) {
+      handleSetOutputDevice(device?.id ?? null);
+      deviceDropdownOpen = false;
+      infoPopoverDevice = null;
   }
 
   function handleDeviceDropdownKeydown(e: KeyboardEvent) {
-    if (e.key === 'Escape') deviceDropdownOpen = false;
+    if (e.key === 'Escape') {
+      if (infoPopoverDevice) {
+        infoPopoverDevice = null;
+      } else {
+        deviceDropdownOpen = false;
+      }
+    }
   }
 
   function handleDeviceDropdownOutside(e: MouseEvent) {
     if (deviceDropdownRef && !deviceDropdownRef.contains(e.target as Node)) {
       deviceDropdownOpen = false;
+      infoPopoverDevice = null;
     }
   }
 
+  function isHeadphoneDevice(device: AudioDeviceInfo | null | undefined): boolean {
+    if (!device) return false;
+    return device.interface_type === 'Bluetooth'
+      || device.device_type === 'Headphones'
+      || device.device_type === 'Headset';
+  }
+
+  function handleInfoClick(e: Event, device: AudioDeviceInfo) {
+    e.stopPropagation();
+    infoPopoverDevice = infoPopoverDevice?.id === device.id ? null : device;
+  }
+
   $: selectedDeviceLabel = (() => {
-    if (effectiveDevice) return effectiveDevice;
-    return deviceList?.default ? $_('settings.systemDefaultNamed', { values: { name: deviceList.default } }) : $_('settings.systemDefault');
+      if (effectiveDevice) return effectiveDevice.extended[0] ?? effectiveDevice.name;
+      const defaultDevice = deviceList?.devices.find(d => d.is_default);
+      return defaultDevice 
+          ? $_('settings.systemDefaultNamed', { values: { name: defaultDevice.extended[0] ?? defaultDevice.name } })
+          : $_('settings.systemDefault');
   })();
 
   // effective device: null if saved device is no longer present in the list
   $: effectiveDevice = (() => {
-    const saved = $appSettings.outputDevice;
-    if (!saved) return null;
-    if (!deviceList) return null;
-    return deviceList.devices.includes(saved) ? saved : null;
+      const saved = $appSettings.outputDevice;
+      if (!saved || !deviceList) return null;
+      return deviceList.devices.find(d => d.id === saved) ?? null;
   })();
 
   async function handleLoadDevices() {
@@ -497,17 +524,13 @@
   // Alias for readability in template
   const formatLastSyncedRelative = formatLastSynced;
 
-  // Returns headphone, speaker or none based on device name
-  function getDeviceType(name: string | null): 'headphone' | 'speaker' | null {
-    if (!name) return null;
-    const lower = name.toLowerCase();
-    if (lower.includes('headphone') || lower.includes('headset') || lower.includes('earphone') || lower.includes('earbuds')) return 'headphone';
-    if (lower.includes('speaker')) return 'speaker';
-    return null;
-  }
-
   // device type of currently selected device
-  $: selectedDeviceType = getDeviceType(selectedDeviceLabel);
+  $: selectedDeviceType = (() => {
+      if (effectiveDevice) return isHeadphoneDevice(effectiveDevice) ? 'headphone' : 'speaker';
+      const defaultDevice = deviceList?.devices.find(d => d.is_default);
+      if (!defaultDevice) return 'speaker';
+      return isHeadphoneDevice(defaultDevice) ? 'headphone' : 'speaker';
+  })();
 
   function formatBytes(bytes: number): string {
     if (bytes === 0) return "0 B";
@@ -1158,49 +1181,108 @@
                       <span class="device-loading-dot"></span>
                     </div>
                   {:else}
-                    <button
+                    <div
                       class="device-dropdown-item"
                       class:selected={!effectiveDevice}
                       role="option"
                       aria-selected={!effectiveDevice}
+                      tabindex="0"
                       on:click={() => handleDeviceSelect(null)}
+                      on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleDeviceSelect(null); } }}
                     >
                       <span class="device-item-check">
                         {#if !effectiveDevice}
                           <Icon name="check" size={12} />
                         {/if}
                       </span>
-                      <span class="device-item-icon">
-                        <Icon name={getDeviceType(deviceList?.default ?? null) === 'headphone' ? 'headphone' : 'speaker'} size={16} />
-                      </span>
-                      <span class="device-item-name">
-                        {deviceList?.default ? $_('settings.systemDefaultNamed', { values: { name: deviceList.default } }) : $_('settings.systemDefault')}
-                      </span>
+                      {#if deviceList}
+                        {@const defaultDev = deviceList.devices.find(d => d.is_default)}
+                        <Icon name={isHeadphoneDevice(defaultDev) ? 'headphone' : 'speaker'} size={16} />
+                        <span class="device-item-name">
+                          {defaultDev 
+                            ? $_('settings.systemDefaultNamed', { values: { name: defaultDev.extended[0] ?? defaultDev.name } })
+                            : $_('settings.systemDefault')}
+                        </span>
+                        {#if defaultDev}
+                          <span
+                            class="device-info-button"
+                            class:active={infoPopoverDevice?.id === defaultDev.id}
+                            on:click={(e) => handleInfoClick(e, defaultDev)}
+                            role="button"
+                            aria-label="Device info"
+                            tabindex="0"
+                            on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleInfoClick(e, defaultDev); }}
+                          >i</span>
+                          {#if infoPopoverDevice?.id === defaultDev.id}
+                            <div class="device-info-popover" role="tooltip">
+                              <div class="device-info-primary">{defaultDev.extended[0] ?? defaultDev.name}</div>
+                              {#if defaultDev.driver}
+                                <div class="device-info-row"><span class="device-info-label">Driver</span><span>{defaultDev.driver}</span></div>
+                              {/if}
+                              {#if defaultDev.manufacturer}
+                                <div class="device-info-row"><span class="device-info-label">Manufacturer</span><span>{defaultDev.manufacturer}</span></div>
+                              {/if}
+                              <div class="device-info-row"><span class="device-info-label">Interface</span><span>{defaultDev.interface_type}</span></div>
+                              <div class="device-info-row"><span class="device-info-label">Type</span><span>{defaultDev.device_type}</span></div>
+                              {#if defaultDev.address}
+                                <div class="device-info-row"><span class="device-info-label">Address</span><span>{defaultDev.address}</span></div>
+                              {/if}
+                              <div class="device-info-id">{defaultDev.id}</div>
+                            </div>
+                          {/if}
+                        {/if}
+                      {/if}
                       <span class="device-item-badge">{$_('settings.defaultBadge')}</span>
-                    </button>
+                    </div>
 
-                    {#if (deviceList?.devices ?? []).length > 0}
+                    {#if (deviceList?.devices ?? []).filter(d => !d.is_default).length > 0}
                       <div class="device-dropdown-separator"></div>
-                      {#each deviceList?.devices ?? [] as device}
-                        <button
+                      {#each (deviceList?.devices ?? []).filter(d => !d.is_default) as device}
+                        <div
                           class="device-dropdown-item"
-                          class:selected={effectiveDevice === device}
+                          class:selected={effectiveDevice?.id === device.id}
                           role="option"
-                          aria-selected={effectiveDevice === device}
+                          aria-selected={effectiveDevice?.id === device.id}
+                          tabindex="0"
                           on:click={() => handleDeviceSelect(device)}
+                          on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleDeviceSelect(device); } }}
                         >
                           <span class="device-item-check">
-                            {#if effectiveDevice === device}
+                            {#if effectiveDevice?.id === device.id}
                             <Icon name="check" size={12} />
                             {/if}
                           </span>
                           <span class="device-item-icon">
-                            {#if getDeviceType(device) !== null}
-                              <Icon name={getDeviceType(device) === 'headphone' ? 'headphone' : 'speaker'} size={16} />
-                            {/if}
+                            <Icon name={isHeadphoneDevice(device) ? 'headphone' : 'speaker'} size={16} />
                           </span>
-                          <span class="device-item-name">{device}</span>
-                        </button>
+                          <span class="device-item-name">{device.extended[0] ?? device.name}</span>
+                          <span
+                            class="device-info-button"
+                            class:active={infoPopoverDevice?.id === device.id}
+                            on:click={(e) => handleInfoClick(e, device)}
+                            role="button"
+                            aria-label="Device info"
+                            tabindex="0"
+                            on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleInfoClick(e, device); }}
+                          >i</span>
+                          {#if infoPopoverDevice?.id === device.id}
+                            <div class="device-info-popover" role="tooltip">
+                              <div class="device-info-primary">{device.extended[0] ?? device.name}</div>
+                              {#if device.driver}
+                                <div class="device-info-row"><span class="device-info-label">Driver</span><span>{device.driver}</span></div>
+                              {/if}
+                              {#if device.manufacturer}
+                                <div class="device-info-row"><span class="device-info-label">Manufacturer</span><span>{device.manufacturer}</span></div>
+                              {/if}
+                              <div class="device-info-row"><span class="device-info-label">Interface</span><span>{device.interface_type}</span></div>
+                              <div class="device-info-row"><span class="device-info-label">Type</span><span>{device.device_type}</span></div>
+                              {#if device.address}
+                                <div class="device-info-row"><span class="device-info-label">Address</span><span>{device.address}</span></div>
+                              {/if}
+                              <div class="device-info-id">{device.id}</div>
+                            </div>
+                          {/if}
+                        </div>
                       {/each}
                     {/if}
                   {/if}
@@ -3391,8 +3473,16 @@
     box-shadow:
       0 8px 24px rgba(0, 0, 0, 0.25),
       0 2px 6px rgba(0, 0, 0, 0.15);
-    overflow: hidden;
     animation: deviceDropdownIn 0.15s ease;
+  }
+
+  /* clip only the first/last items to match the menu's border-radius */
+  .device-dropdown-item:first-child {
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+
+  .device-dropdown-item:last-child {
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
   }
 
   @keyframes deviceDropdownIn {
@@ -3420,6 +3510,8 @@
     cursor: pointer;
     text-align: left;
     transition: background-color 0.1s ease;
+    position: relative; /* anchor for the popover */
+    user-select: none;
   }
 
   .device-dropdown-item:hover {
@@ -3691,5 +3783,110 @@
     .limit-bar-wrap {
       height: 10px;
     }
+
+    .device-info-button {
+      width: 14px;
+      height: 14px;
+      min-height: unset;
+      min-width: unset;
+      font-size: 0.5625rem;
+    }
+
+    .device-item-check,
+    .device-item-badge {
+      display: none;
+    }
   }
+  /* device info button & popover */
+
+  .device-info-button {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1px solid var(--border-color);
+    background: var(--bg-highlight);
+    color: var(--text-subdued);
+    font-size: 0.625rem;
+    font-style: italic;
+    font-family: Georgia, serif;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    transition: background-color 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+    margin-right: 4px;
+  }
+
+  .device-info-button:hover,
+  .device-info-button.active {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: #fff;
+  }
+
+  .device-info-popover {
+    position: absolute;
+    top: 0;
+    left: calc(100% + 6px);
+    min-width: 220px;
+    max-width: 300px;
+    z-index: 300;
+    background: var(--bg-card, var(--bg-surface));
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow:
+      0 8px 24px rgba(0, 0, 0, 0.28),
+      0 2px 6px rgba(0, 0, 0, 0.16);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    pointer-events: none; /* informational only */
+  }
+
+  .device-info-primary {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 3px;
+    line-height: 1.3;
+  }
+
+  .device-info-row {
+    display: flex;
+    gap: 6px;
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    line-height: 1.4;
+  }
+
+  .device-info-label {
+    color: var(--text-subdued);
+    flex-shrink: 0;
+    min-width: 72px;
+  }
+
+  .device-info-id {
+    margin-top: 4px;
+    font-size: 0.625rem;
+    font-family: monospace;
+    color: var(--text-subdued);
+    opacity: 0.7;
+    word-break: break-all;
+  }
+
+  @media (max-width: 768px) {
+    .device-info-popover {
+      left: auto;
+      right: 0;
+      top: calc(100% + 4px);
+      min-width: 200px;
+      max-width: 90vw;
+    }
+  }
+
 </style>

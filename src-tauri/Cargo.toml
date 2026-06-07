@@ -45,7 +45,7 @@ dirs = "5"
 walkdir = "2"
 
 # Audio metadata extraction
-lofty = "0.22.4"
+lofty = "0.24.0"
 ratio-metadata = "0.1"  # Add version as needed
 
 # Metadata Writing
@@ -79,7 +79,7 @@ url = "2"
 sha2 = "0.10"
 
 # Parallel processing
-rayon = "1.10" 
+rayon = "1.12" 
 
  # Thread-safe channels
 crossbeam = "0.8"
@@ -104,7 +104,7 @@ tracing-appender = "0.2"
 # We use rodio to provide native audio playback that bypasses the WebView
 # for better performance and reliability across all platforms.
 # =============================================================================
-rodio = { version = "0.19", default-features = false, features = [
+rodio = { version = "0.22.2", default-features = false, features = [
     "vorbis",
     "symphonia-flac",
     "symphonia-mp3",
@@ -112,7 +112,9 @@ rodio = { version = "0.19", default-features = false, features = [
     "symphonia-aac",
     "symphonia-isomp4",
     "symphonia-all",
-    "crossbeam-channel"
+    "crossbeam-channel",
+    "playback",
+    "tracing"
 ] }
 
 symphonia = { version = "0.6", default-features = false, features = [
@@ -121,18 +123,26 @@ symphonia = { version = "0.6", default-features = false, features = [
     "ogg",      # OGG container
     "wav",      # WAV container
     "mkv",      # MKV/WebM
+    "aiff",     # AIFF
+    "caf",      # CAF (Apple Core Audio)
 
     # Codecs
     "aac",      # AAC-LC (for MP4/M4A)
     "mp3",      # MP3
+    "mp1",      # MP1
+    "mp2",      # MP2
     "flac",     # FLAC
     "alac",     # ALAC/Apple Lossless
     "pcm",      # PCM => required for WAV audio
     "vorbis",   # Vorbis => required for OGG audio
+    "adpcm",    # ADPCM => used in some WAV files
+
+    # Performance
+    "opt-simd", # SIMD optimizations
 ] }
 
-cpal = "0.15"
-rubato = "0.16"
+cpal = "0.17"
+rubato = "3.0.0"
 
 [target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
 # Discord RPC (desktop only - uses local IPC sockets)
@@ -153,3 +163,5 @@ windows = { version = "0.61.3", features = [
 ] }
 raw-window-handle = "0.6"
 
+[patch.crates-io]
+lofty = { git = "https://github.com/SmileofHaven/lofty-rs", branch = "main" }

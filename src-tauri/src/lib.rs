@@ -348,8 +348,7 @@ pub fn run() {
             // =============================================================================
             {
                 tracing::info!("Registering native audio backend state (lazy init)");
-                app.manage(audio::PlaybackStateSync::new());
-                audio::PlaybackStateSync::init_async(app.handle().clone());
+                app.manage(audio::PlaybackStateSync::new(app.handle().clone()));
             }
 
             // =============================================================================
@@ -675,8 +674,6 @@ pub fn run() {
                     audio::audio_seek,
                     audio::audio_preload,
                     audio::audio_set_repeat_one,
-                    audio::audio_poll_event,
-                    audio::audio_get_state,
                     audio::audio_set_eq,
                     audio::audio_set_replay_gain_enabled,
                     audio::audio_list_output_devices,
@@ -837,10 +834,8 @@ pub fn run() {
                     audio::audio_stop,
                     audio::audio_preload,
                     audio::audio_set_repeat_one,
-                    audio::audio_poll_event,
                     audio::audio_set_volume,
                     audio::audio_seek,
-                    audio::audio_get_state,
                     audio::audio_set_eq,
                     audio::audio_set_replay_gain_enabled,
                     audio::audio_list_output_devices,

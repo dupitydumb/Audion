@@ -104,7 +104,7 @@ fn calculate_batch_size(
 
     let adjusted = if queue_depth > base_size * 3 {
         (base_size as f32 * 1.5) as usize   // back-pressure: bigger batches
-    } else if queue_depth < base_size / 2 {
+    } else if queue_depth < base_size.saturating_sub(base_size / 3).max(1) {
         (base_size as f32 * 0.8) as usize   // draining fast: smaller for smoother UI
     } else {
         base_size
@@ -227,8 +227,9 @@ pub async fn migrate_covers_to_files(
 
             if let Some(res) = result {
                 let _ = tx.send(res);
-                extracted_count_for_spawn.fetch_add(1, Ordering::Relaxed);
             }
+            // increment regardless of success so the receiver loop exits cleanly
+            extracted_count_for_spawn.fetch_add(1, Ordering::Relaxed);
         });
     });
 
@@ -270,7 +271,13 @@ pub async fn migrate_covers_to_files(
             }
 
             // Single transaction for the whole batch
-            let tx_db = conn.transaction().unwrap();
+            let tx_db = match conn.transaction() {
+                Ok(t) => t,
+                Err(e) => {
+                    errors.push(format!("Failed to begin transaction: {}", e));
+                    break;
+                }
+            };
             let mut batch_items = Vec::new();
 
             for result in &pending {
@@ -305,7 +312,11 @@ pub async fn migrate_covers_to_files(
                 }
             }
 
-            tx_db.commit().unwrap();
+            if let Err(e) = tx_db.commit() {
+                errors.push(format!("Failed to commit batch transaction: {}", e));
+                pending.clear();
+                continue;
+            }
 
             // Emit batch to frontend with progress
             items_sent += batch_items.len();
