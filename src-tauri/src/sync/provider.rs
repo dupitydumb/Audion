@@ -253,7 +253,7 @@ impl LibraryProvider for LocalProvider {
     async fn get_tracks_paginated(&self, limit: i32, offset: i32) -> Result<Vec<queries::Track>, String> {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
         let mut tracks = queries::get_tracks_paginated(&conn, limit, offset).map_err(|e| e.to_string())?;
-        let token = auth::get_access_token(&self.db).ok().flatten();
+        let token = queries::get_sync_meta(&conn, "access_token").ok().flatten();
         resolve_tracks(&mut tracks, &self.server_url, token.as_deref());
         Ok(tracks)
     }
@@ -261,7 +261,7 @@ impl LibraryProvider for LocalProvider {
     async fn get_albums_paginated(&self, limit: i32, offset: i32) -> Result<Vec<queries::Album>, String> {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
         let mut albums = queries::get_albums_paginated(&conn, limit, offset).map_err(|e| e.to_string())?;
-        let token = auth::get_access_token(&self.db).ok().flatten();
+        let token = queries::get_sync_meta(&conn, "access_token").ok().flatten();
         resolve_albums(&mut albums, &self.server_url, token.as_deref());
         Ok(albums)
     }
@@ -269,7 +269,7 @@ impl LibraryProvider for LocalProvider {
     async fn search_library(&self, query: &str, limit: i32, offset: i32) -> Result<Vec<queries::Track>, String> {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
         let mut tracks = queries::search_tracks(&conn, query, limit, offset).map_err(|e| e.to_string())?;
-        let token = auth::get_access_token(&self.db).ok().flatten();
+        let token = queries::get_sync_meta(&conn, "access_token").ok().flatten();
         resolve_tracks(&mut tracks, &self.server_url, token.as_deref());
         Ok(tracks)
     }
@@ -277,7 +277,7 @@ impl LibraryProvider for LocalProvider {
     async fn get_tracks_by_album(&self, album_id: i64) -> Result<Vec<queries::Track>, String> {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
         let mut tracks = queries::get_tracks_by_album(&conn, album_id).map_err(|e| e.to_string())?;
-        let token = auth::get_access_token(&self.db).ok().flatten();
+        let token = queries::get_sync_meta(&conn, "access_token").ok().flatten();
         resolve_tracks(&mut tracks, &self.server_url, token.as_deref());
         Ok(tracks)
     }
@@ -285,7 +285,7 @@ impl LibraryProvider for LocalProvider {
     async fn get_tracks_by_artist(&self, artist: &str) -> Result<Vec<queries::Track>, String> {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
         let mut tracks = queries::get_tracks_by_artist(&conn, artist).map_err(|e| e.to_string())?;
-        let token = auth::get_access_token(&self.db).ok().flatten();
+        let token = queries::get_sync_meta(&conn, "access_token").ok().flatten();
         resolve_tracks(&mut tracks, &self.server_url, token.as_deref());
         Ok(tracks)
     }
@@ -294,7 +294,7 @@ impl LibraryProvider for LocalProvider {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
         let mut album = queries::get_album_by_id(&conn, album_id).map_err(|e| e.to_string())?;
         if let Some(ref mut alb) = album {
-            let token = auth::get_access_token(&self.db).ok().flatten();
+            let token = queries::get_sync_meta(&conn, "access_token").ok().flatten();
             resolve_album(alb, &self.server_url, token.as_deref());
         }
         Ok(album)
@@ -326,7 +326,7 @@ impl LibraryProvider for LocalProvider {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| e.to_string())?;
 
-        let token = auth::get_access_token(&self.db).ok().flatten();
+        let token = queries::get_sync_meta(&conn, "access_token").ok().flatten();
         resolve_albums(&mut albums, &self.server_url, token.as_deref());
         Ok(albums)
     }
@@ -337,7 +337,7 @@ impl LibraryProvider for LocalProvider {
         let mut albums = queries::get_all_albums_with_paths(&conn).map_err(|e| e.to_string())?;
         let artists = queries::get_all_artists(&conn).map_err(|e| e.to_string())?;
         
-        let token = auth::get_access_token(&self.db).ok().flatten();
+        let token = queries::get_sync_meta(&conn, "access_token").ok().flatten();
         resolve_tracks(&mut tracks, &self.server_url, token.as_deref());
         resolve_albums(&mut albums, &self.server_url, token.as_deref());
         
@@ -379,7 +379,7 @@ impl LibraryProvider for LocalProvider {
     async fn get_playlists(&self) -> Result<Vec<queries::Playlist>, String> {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
         let mut playlists = queries::get_all_playlists(&conn).map_err(|e| e.to_string())?;
-        let token = auth::get_access_token(&self.db).ok().flatten();
+        let token = queries::get_sync_meta(&conn, "access_token").ok().flatten();
         resolve_playlists(&mut playlists, &self.server_url, token.as_deref());
         Ok(playlists)
     }
@@ -387,7 +387,7 @@ impl LibraryProvider for LocalProvider {
     async fn get_playlist_tracks(&self, playlist_id: i64) -> Result<Vec<queries::Track>, String> {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
         let mut tracks = queries::get_playlist_tracks(&conn, playlist_id).map_err(|e| e.to_string())?;
-        let token = auth::get_access_token(&self.db).ok().flatten();
+        let token = queries::get_sync_meta(&conn, "access_token").ok().flatten();
         resolve_tracks(&mut tracks, &self.server_url, token.as_deref());
         Ok(tracks)
     }
@@ -642,7 +642,7 @@ impl LibraryProvider for LocalProvider {
     async fn get_liked_tracks(&self) -> Result<Vec<queries::Track>, String> {
         let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
         let mut tracks = queries::get_liked_tracks(&conn).map_err(|e| e.to_string())?;
-        let token = auth::get_access_token(&self.db).ok().flatten();
+        let token = queries::get_sync_meta(&conn, "access_token").ok().flatten();
         resolve_tracks(&mut tracks, &self.server_url, token.as_deref());
         Ok(tracks)
     }

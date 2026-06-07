@@ -454,7 +454,7 @@ pub fn run() {
                             "
                             document.addEventListener('mousedown', () => {
                                 if (window.__TAURI__ && window.__TAURI__.window) {
-                                    window.__TAURI__.window.getCurrentWindow().focus().catch(() => {});
+                                    window.__TAURI__.window.getCurrentWindow().setFocus().catch(() => {});
                                 }
                             }, { once: true });
                         ",
