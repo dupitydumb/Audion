@@ -6,6 +6,15 @@ import type { Track, Album, Artist, Playlist } from '$lib/api/tauri';
 // Search query store
 export const searchQuery = writable('');
 
+// tokenized search helpers
+function tokenize(str: string): string[] {
+    return str.toLowerCase().trim().split(/\s+/).filter(Boolean);
+}
+
+function matchesAllTokens(haystack: string, tokens: string[]): boolean {
+    return tokens.every(token => haystack.includes(token));
+}
+
 // Search results derived from library
 export const searchResults = derived(
     [searchQuery, tracks, albums, artists, playlists],
@@ -23,24 +32,29 @@ export const searchResults = derived(
             };
         }
 
-        const matchedTracks = $tracks.filter(track =>
-            track.title?.toLowerCase().includes(query) ||
-            track.artist?.toLowerCase().includes(query) ||
-            track.album?.toLowerCase().includes(query)
-        );
+        const tokens = tokenize(query);
 
-        const matchedAlbums = $albums.filter(album =>
-            album.name.toLowerCase().includes(query) ||
-            album.artist?.toLowerCase().includes(query)
-        );
+        const matchedTracks = $tracks.filter(track => {
+            const haystack = [track.title, track.artist, track.album]
+                .filter(Boolean).join(' ').toLowerCase();
+            return matchesAllTokens(haystack, tokens);
+        });
 
-        const matchedArtists = $artists.filter(artist =>
-            artist.name.toLowerCase().includes(query)
-        );
+        const matchedAlbums = $albums.filter(album => {
+            const haystack = [album.name, album.artist]
+                .filter(Boolean).join(' ').toLowerCase();
+            return matchesAllTokens(haystack, tokens);
+        });
 
-        const matchedPlaylists = $playlists.filter(playlist =>
-            playlist.name.toLowerCase().includes(query)
-        );
+        const matchedArtists = $artists.filter(artist => {
+            const haystack = artist.name.toLowerCase();
+            return matchesAllTokens(haystack, tokens);
+        });
+
+        const matchedPlaylists = $playlists.filter(playlist => {
+            const haystack = playlist.name.toLowerCase();
+            return matchesAllTokens(haystack, tokens);
+        });
 
         return {
             tracks: matchedTracks,
