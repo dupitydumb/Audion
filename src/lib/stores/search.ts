@@ -1,71 +1,61 @@
 // Search store - manages search query and results
-import { writable, derived } from 'svelte/store';
-import { tracks, albums, artists, playlists } from './library';
+import { writable } from 'svelte/store';
+import { searchLibrary } from '$lib/api/tauri';
 import type { Track, Album, Artist, Playlist } from '$lib/api/tauri';
 
-// Search query store
+export interface SearchResults {
+    tracks: Track[];
+    albums: Album[];
+    artists: Artist[];
+    playlists: Playlist[];
+    hasResults: boolean;
+    query: string;
+}
+
+function emptyResults(): SearchResults {
+    return {
+        tracks: [],
+        albums: [],
+        artists: [],
+        playlists: [],
+        hasResults: false,
+        query: ''
+    };
+}
+
+// search query store
 export const searchQuery = writable('');
 
-// tokenized search helpers
-function tokenize(str: string): string[] {
-    return str.toLowerCase().trim().split(/\s+/).filter(Boolean);
-}
+// search results store
+export const searchResults = writable<SearchResults>(emptyResults());
 
-function matchesAllTokens(haystack: string, tokens: string[]): boolean {
-    return tokens.every(token => haystack.includes(token));
-}
+let debounceTimer: ReturnType<typeof setTimeout>;
 
-// Search results derived from library
-export const searchResults = derived(
-    [searchQuery, tracks, albums, artists, playlists],
-    ([$query, $tracks, $albums, $artists, $playlists]) => {
-        const query = $query.toLowerCase().trim();
+searchQuery.subscribe(query => {
+    clearTimeout(debounceTimer);
+    const q = query.trim();
 
-        if (!query) {
-            return {
-                tracks: [] as Track[],
-                albums: [] as Album[],
-                artists: [] as Artist[],
-                playlists: [] as Playlist[],
-                hasResults: false,
-                query: ''
-            };
-        }
-
-        const tokens = tokenize(query);
-
-        const matchedTracks = $tracks.filter(track => {
-            const haystack = [track.title, track.artist, track.album]
-                .filter(Boolean).join(' ').toLowerCase();
-            return matchesAllTokens(haystack, tokens);
-        });
-
-        const matchedAlbums = $albums.filter(album => {
-            const haystack = [album.name, album.artist]
-                .filter(Boolean).join(' ').toLowerCase();
-            return matchesAllTokens(haystack, tokens);
-        });
-
-        const matchedArtists = $artists.filter(artist => {
-            const haystack = artist.name.toLowerCase();
-            return matchesAllTokens(haystack, tokens);
-        });
-
-        const matchedPlaylists = $playlists.filter(playlist => {
-            const haystack = playlist.name.toLowerCase();
-            return matchesAllTokens(haystack, tokens);
-        });
-
-        return {
-            tracks: matchedTracks,
-            albums: matchedAlbums,
-            artists: matchedArtists,
-            playlists: matchedPlaylists,
-            hasResults: matchedTracks.length > 0 || matchedAlbums.length > 0 || matchedArtists.length > 0 || matchedPlaylists.length > 0,
-            query
-        };
+    if (!q) {
+        searchResults.set(emptyResults());
+        return;
     }
-);
+
+    debounceTimer = setTimeout(async () => {
+        const results = await searchLibrary(q, 100, 0);
+        searchResults.set({
+            tracks: results.tracks,
+            albums: results.albums,
+            artists: results.artists,
+            playlists: results.playlists,
+            hasResults:
+                results.tracks.length > 0 ||
+                results.albums.length > 0 ||
+                results.artists.length > 0 ||
+                results.playlists.length > 0,
+            query: q,
+        });
+    }, 150);
+});
 
 // Clear search
 export function clearSearch(): void {
