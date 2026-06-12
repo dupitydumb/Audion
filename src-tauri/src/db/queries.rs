@@ -250,7 +250,7 @@ fn get_or_create_album(
     conn: &Connection,
     name: &str,
     artist: Option<&str>,
-    art_data: Option<&[u8]>,
+    _art_data: Option<&[u8]>,
 ) -> Result<i64> {
     // Match by album name only to avoid splitting albums when tracks have different artists
     let existing: Option<i64> = conn
@@ -294,6 +294,14 @@ pub fn delete_album(conn: &Connection, album_id: i64) -> Result<bool> {
 
 // FTS5 SEARCH FUNCTIONS
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResults {
+    pub tracks: Vec<Track>,
+    pub albums: Vec<Album>,
+    pub artists: Vec<Artist>,
+    pub playlists: Vec<Playlist>,
+}
+
 /// Initialize FTS5 virtual table for searching
 pub fn init_fts(conn: &Connection) -> Result<()> {
     conn.execute_batch(
@@ -305,7 +313,7 @@ pub fn init_fts(conn: &Connection) -> Result<()> {
             content_rowid='id'
         );
 
-        -- Trigger to keep FTS in sync with tracks
+        -- Triggers to keep tracks FTS in sync
         CREATE TRIGGER IF NOT EXISTS tracks_ai AFTER INSERT ON tracks BEGIN
             INSERT INTO tracks_fts(rowid, title, artist, album) VALUES (new.id, new.title, new.artist, new.album);
         END;
@@ -320,23 +328,44 @@ pub fn init_fts(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
-/// Search tracks using FTS5
-pub fn search_tracks(
-    conn: &Connection,
-    query: &str,
-    limit: i32,
-    offset: i32,
-) -> Result<Vec<Track>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, track_cover_path, disc_number, metadata_json, date_added 
-         FROM tracks 
+/// build a tokenized FTS5 MATCH query from a raw search string
+fn build_fts_query(query: &str) -> Option<String> {
+    let tokens: Vec<String> = query
+        .split_whitespace()
+        .filter(|t| !t.is_empty())
+        .map(|t| format!("\"{}\"*", t.replace('"', "\"\"")))
+        .collect();
+    if tokens.is_empty() { None } else { Some(tokens.join(" AND ")) }
+}
+
+/// build LIKE patterns for playlist name matching, one per token
+fn build_like_tokens(query: &str) -> Vec<String> {
+    query
+        .split_whitespace()
+        .filter(|t| !t.is_empty())
+        .map(|t| format!("%{}%", t.to_lowercase()))
+        .collect()
+}
+
+/// search tracks using FTS5. called by the provider so it can resolve URLs before returning
+pub fn search_tracks(conn: &Connection, query: &str, limit: i32, offset: i32) -> Result<Vec<Track>> {
+    let fts_query = match build_fts_query(query) {
+        Some(q) => q,
+        None => return Ok(vec![]),
+    };
+    let sql = format!(
+        "SELECT id, path, title, artist, album, track_number, duration, album_id, format,
+                bitrate, source_type, cover_url, external_id, local_src, track_cover_path,
+                disc_number, metadata_json, date_added
+         FROM tracks
          WHERE id IN (SELECT rowid FROM tracks_fts WHERE tracks_fts MATCH ?1)
          ORDER BY artist, album, disc_number, track_number, title
-         LIMIT ?2 OFFSET ?3",
-    )?;
-
+         LIMIT {} OFFSET {}",
+        limit, offset
+    );
+    let mut stmt = conn.prepare(&sql)?;
     let tracks = stmt
-        .query_map(params![query, limit, offset], |row| {
+        .query_map(params![fts_query], |row| {
             Ok(Track {
                 id: row.get(0)?,
                 path: row.get(1)?,
@@ -360,8 +389,104 @@ pub fn search_tracks(
             })
         })?
         .collect::<Result<Vec<_>>>()?;
-
     Ok(tracks)
+}
+
+/// given track IDs already returned by the provider's search, derive the related
+/// albums, artists, and playlists.called from search_library after the provider
+/// has done its own track search (local FTS5 or remote)
+pub fn search_related(
+    conn: &Connection,
+    query: &str,
+    track_ids: &[i64],
+) -> Result<(Vec<Album>, Vec<Artist>, Vec<Playlist>)> {
+    if track_ids.is_empty() {
+        return Ok((vec![], vec![], vec![]));
+    }
+
+    let placeholders = track_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+
+    // albums and artists are derived from track_ids which is already bounded to 100, so no separate limit needed
+    let album_sql = format!(
+        "SELECT DISTINCT a.id, a.name, a.artist, a.art_path
+         FROM albums a INNER JOIN tracks t ON t.album_id = a.id
+         WHERE t.id IN ({})
+         ORDER BY a.artist, a.name",
+        placeholders
+    );
+    let mut album_stmt = conn.prepare(&album_sql)?;
+    let albums = album_stmt
+        .query_map(rusqlite::params_from_iter(track_ids.iter()), |row| {
+            Ok(Album {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                artist: row.get(2)?,
+                art_data: None,
+                art_path: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+
+    let artist_sql = format!(
+        "SELECT artist, COUNT(*) as track_count, COUNT(DISTINCT album) as album_count
+         FROM tracks WHERE id IN ({}) AND artist IS NOT NULL
+         GROUP BY artist ORDER BY artist",
+        placeholders
+    );
+    let mut artist_stmt = conn.prepare(&artist_sql)?;
+    let artists = artist_stmt
+        .query_map(rusqlite::params_from_iter(track_ids.iter()), |row| {
+            Ok(Artist {
+                name: row.get(0)?,
+                track_count: row.get(1)?,
+                album_count: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+
+    // playlists: UNION of track-membership and direct name match
+    let like_tokens = build_like_tokens(query);
+    
+    let name_conditions = if like_tokens.is_empty() {
+        "1=0".to_string()
+    } else {
+        like_tokens
+            .iter()
+            .map(|_| "LOWER(p2.name) LIKE ?")
+            .collect::<Vec<_>>()
+            .join(" AND ")
+    };
+    
+    let playlist_sql = format!(
+        "SELECT DISTINCT p.id, p.name, p.cover_url, p.created_at, p.folder_path
+            FROM playlists p
+            INNER JOIN playlist_tracks pt ON p.id = pt.playlist_id
+            WHERE pt.track_id IN ({})
+            UNION
+            SELECT DISTINCT p2.id, p2.name, p2.cover_url, p2.created_at, p2.folder_path
+            FROM playlists p2 WHERE {}
+            ORDER BY name",
+        placeholders, name_conditions
+    );
+    
+    let mut playlist_stmt = conn.prepare(&playlist_sql)?;
+    let playlists = playlist_stmt
+        .query_map(
+            rusqlite::params_from_iter(
+                track_ids.iter().map(|id| id as &dyn rusqlite::ToSql)
+                    .chain(like_tokens.iter().map(|t| t as &dyn rusqlite::ToSql))
+            ),
+            |row| Ok(Playlist {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                cover_url: row.get(2)?,
+                created_at: row.get(3)?,
+                folder_path: row.get(4)?,
+            }),
+        )?
+        .collect::<Result<Vec<_>>>()?;
+
+    Ok((albums, artists, playlists))
 }
 
 /// Get paginated tracks
@@ -442,7 +567,7 @@ pub fn get_all_tracks(conn: &Connection) -> Result<Vec<Track>> {
         })?
         .collect::<Result<Vec<_>>>()?;
 
-    let map_time = map_start.elapsed();
+    let _map_time = map_start.elapsed();
     let total_time = query_start.elapsed();
 
     println!(

@@ -1,6 +1,7 @@
 // App settings store - manages app-wide settings
 import { writable, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
+import type { ShortcutBinding } from '$lib/stores/shortcuts';
 
 export interface AppSettings {
     downloadLocation: string | null;
@@ -22,6 +23,8 @@ export interface AppSettings {
     replayGainEnabled: boolean;
     outputDevice: string | null;
     streamServerTracks: boolean;
+    /** persisted keyboard shortcut bindings. null means use defaults. */
+    keyboardBindings: ShortcutBinding[] | null;
 }
 
 const SETTINGS_STORAGE_KEY = 'audion_settings';
@@ -46,6 +49,7 @@ const defaultSettings: AppSettings = {
     replayGainEnabled: true,
     outputDevice: null,
     streamServerTracks: true,
+    keyboardBindings: null,
 };
 
 // Load settings from localStorage
@@ -181,6 +185,14 @@ function createSettingsStore() {
         setStreamServerTracks(enabled: boolean) {
             update(state => {
                 const newState = { ...state, streamServerTracks: enabled };
+                saveSettings(newState);
+                return newState;
+            });
+        },
+
+        setKeyboardBindings(bindings: ShortcutBinding[] | null) {
+            update(state => {
+                const newState = { ...state, keyboardBindings: bindings };
                 saveSettings(newState);
                 return newState;
             });

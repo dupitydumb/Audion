@@ -249,7 +249,14 @@ export async function getAlbumsPaginated(limit: number, offset: number): Promise
     return await invoke<Album[]>("get_albums_paginated", { limit, offset });
 }
 
-export async function searchLibrary(query: string, limit: number, offset: number): Promise<Track[]> {
+export interface SearchResults {
+    tracks: Track[];
+    albums: Album[];
+    artists: Artist[];
+    playlists: Playlist[];
+}
+
+export async function searchLibrary(query: string, limit: number, offset: number): Promise<SearchResults> {
     return await invoke('search_library', { query, limit, offset });
 }
 

@@ -932,9 +932,21 @@ pub async fn search_library(
     limit: i32,
     offset: i32,
     sync_state: State<'_, crate::sync::SyncState>,
-) -> Result<Vec<queries::Track>, String> {
-    let provider = sync_state.active_provider();
-    provider.search_library(&query, limit, offset).await
+    db: State<'_, Database>,
+) -> Result<queries::SearchResults, String> {
+    // tracks go through the provider (handles remote sources too)
+    let tracks = {
+        let provider = sync_state.active_provider();
+        provider.search_library(&query, limit, offset).await?
+    };
+
+    // derive albums, artists, playlists from the matched track IDs
+    let track_ids: Vec<i64> = tracks.iter().map(|t| t.id).collect();
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    let (albums, artists, playlists) = queries::search_related(&conn, &query, &track_ids)
+        .map_err(|e| e.to_string())?;
+
+    Ok(queries::SearchResults { tracks, albums, artists, playlists })
 }
 
 #[tauri::command]

@@ -1,5 +1,6 @@
 <script lang="ts">
     import { get } from "svelte/store";
+    import { onMount, onDestroy } from "svelte";
     import {
         togglePlay,
         nextTrack,
@@ -20,7 +21,7 @@
         goToPlugins,
         goToSettings,
     } from "$lib/stores/view";
-    import { toggleLyrics } from "$lib/stores/lyrics";
+    import { toggleLyrics, lyricsVisible } from "$lib/stores/lyrics";
     import {
         toggleQueue,
         toggleFullScreen,
@@ -32,8 +33,10 @@
         showShortcutsHelp,
         isShortcutsHelpVisible,
         hideShortcutsHelp,
+        shortcutBindings,
+        matchBindings,
+        type ShortcutBinding,
     } from "$lib/stores/shortcuts";
-    import { lyricsVisible } from "$lib/stores/lyrics";
 
     // Volume step (5%)
     const VOLUME_STEP = 0.05;
@@ -46,8 +49,140 @@
     let lastVolume = 0.7;
     let isMuted = false;
 
+    // dynamically import the Tauri global-shortcut plugin
+    let globalShortcutPlugin: typeof import("@tauri-apps/plugin-global-shortcut") | null = null;
+
+    // track which globalStrings are currently registered so we can unregister
+    // stale ones when bindings change
+    let registeredGlobals = new Set<string>();
+
+    async function loadPlugin() {
+        try {
+            globalShortcutPlugin = await import("@tauri-apps/plugin-global-shortcut");
+        } catch {
+            console.warn("[Shortcuts] global-shortcut plugin not available");
+        }
+    }
+
+    // media keys are always registered globally . not user-rebindable
+    const MEDIA_KEYS: Array<{ gs: string; action: string }> = [
+        { gs: "MediaPlayPause",      action: "togglePlay"    },
+        { gs: "MediaTrackNext",      action: "nextTrack"     },
+        { gs: "MediaTrackPrevious",  action: "previousTrack" },
+    ];
+
+    async function syncGlobalShortcuts(bindings: ShortcutBinding[]) {
+        if (!globalShortcutPlugin) return;
+
+        const { register, unregister } = globalShortcutPlugin;
+
+        // desired set: media keys (always) + user-enabled globals
+        const desired = new Map<string, string>(); // globalString -> action
+        for (const mk of MEDIA_KEYS) {
+            desired.set(mk.gs, mk.action);
+        }
+        for (const b of bindings) {
+            if (b.isGlobal && b.globalString) {
+                desired.set(b.globalString, b.action);
+            }
+        }
+
+        // unregister any that are no longer wanted
+        for (const gs of registeredGlobals) {
+            if (!desired.has(gs)) {
+                try {
+                    await unregister(gs);
+                } catch (err) {
+                    console.warn(`[Shortcuts] Failed to unregister global "${gs}":`, err);
+                }
+                registeredGlobals.delete(gs);
+            }
+        }
+
+        // register new ones
+        // use event.state guard for all globals to avoid double-fire on OSes that emit both Pressed and Released events
+        for (const [gs, action] of desired) {
+            if (registeredGlobals.has(gs)) continue;
+            try {
+                await register(gs, (event) => {
+                    if (event.state === "Pressed") dispatch(action);
+                });
+                registeredGlobals.add(gs);
+            } catch (err) {
+                console.warn(`[Shortcuts] Failed to register global "${gs}" for "${action}":`, err);
+                const failedBinding = get(shortcutBindings).find(
+                    b => b.action === action && b.globalString === gs
+                );
+                if (failedBinding) {
+                    shortcutBindings.markGlobalError(action, failedBinding.keyDisplay, String(err));
+                }
+            }
+        }
+    }
+
+    let unsubscribeBindings: () => void;
+
+    onMount(async () => {
+        await loadPlugin();
+
+        // re-sync global shortcuts whenever bindings change
+        unsubscribeBindings = shortcutBindings.subscribe(bindings => {
+            syncGlobalShortcuts(bindings);
+        });
+    });
+
+    onDestroy(async () => {
+        unsubscribeBindings?.();
+
+        // unregister all globals on component teardown
+        if (globalShortcutPlugin && registeredGlobals.size > 0) {
+            const { unregister } = globalShortcutPlugin;
+            for (const gs of registeredGlobals) {
+                try { await unregister(gs); } catch { /* ignore */ }
+            }
+        }
+    });
+
+    function dispatch(action: string) {
+        switch (action) {
+            // Playback
+            case "togglePlay":       togglePlay();                 break;
+            case "nextTrack":        nextTrack();                  break;
+            case "previousTrack":    previousTrack();              break;
+            case "toggleShuffle":    toggleShuffle();              break;
+            case "cycleRepeat":      cycleRepeat();                break;
+
+            // Volume
+            case "volumeUp":         adjustVolume(VOLUME_STEP);    break;
+            case "volumeDown":       adjustVolume(-VOLUME_STEP);   break;
+            case "toggleMute":       toggleMute();                 break;
+
+            // Seeking
+            case "seekForward5":     seekRelative(SEEK_SMALL);     break;
+            case "seekBackward5":    seekRelative(-SEEK_SMALL);    break;
+            case "seekForward30":    seekRelative(SEEK_LARGE);     break;
+            case "seekBackward30":   seekRelative(-SEEK_LARGE);    break;
+
+            // Navigation
+            case "goToTracks":       goToTracks();                 break;
+            case "goToAlbums":       goToAlbums();                 break;
+            case "goToArtists":      goToArtists();                break;
+            case "goToPlaylists":    goToPlaylists();              break;
+            case "goToPlugins":      goToPlugins();                break;
+            case "goToSettings":     goToSettings();               break;
+            case "focusSearch":      focusSearchInput();           break;
+
+            // UI
+            case "toggleLyrics":     toggleLyrics();               break;
+            case "toggleQueue":      toggleQueue();                 break;
+            case "toggleFullscreen": toggleFullScreen();            break;
+            case "closeOrClear":     handleEscape();               break;
+            case "showHelp":         showShortcutsHelp();          break;
+        }
+    }
+
     function handleKeydown(e: KeyboardEvent) {
-        // Check if shortcuts help is open - only allow Escape
+        // When the help/edit modal is open, only allow Escape
         if (get(isShortcutsHelpVisible)) {
             if (e.key === "Escape") {
                 e.preventDefault();
@@ -56,152 +191,30 @@
             return;
         }
 
-        // Skip shortcuts when typing in inputs
+        // Skip shortcuts while typing in inputs, but still allow Escape to blur
         if (isInputElement(e.target)) {
-            // Allow Escape to blur search input
             if (e.key === "Escape") {
-                const target = e.target as HTMLElement;
-                target.blur();
+                (e.target as HTMLElement).blur();
             }
             return;
         }
 
-        const { key, ctrlKey, shiftKey } = e;
+        const bindings = get(shortcutBindings);
+        const matched  = matchBindings(e, bindings);
 
-        // Handle Ctrl+key shortcuts first
-        if (ctrlKey && !shiftKey) {
-            switch (key.toLowerCase()) {
-                case "f":
-                    e.preventDefault();
-                    focusSearchInput();
-                    return;
-                case "arrowright":
-                    e.preventDefault();
-                    seekRelative(SEEK_LARGE);
-                    return;
-                case "arrowleft":
-                    e.preventDefault();
-                    seekRelative(-SEEK_LARGE);
-                    return;
-            }
-        }
+        if (matched.length === 0) return;
 
-        // Handle Shift+key shortcuts
-        if (shiftKey && !ctrlKey) {
-            switch (key) {
-                case "ArrowRight":
-                    e.preventDefault();
-                    seekRelative(SEEK_SMALL);
-                    return;
-                case "ArrowLeft":
-                    e.preventDefault();
-                    seekRelative(-SEEK_SMALL);
-                    return;
-                case "?": // Shift+/ = ?
-                    e.preventDefault();
-                    showShortcutsHelp();
-                    return;
-            }
-        }
+        // filter out actions whose binding is currently registered as a global to avoid double firing
+        const globalActions = new Set(
+            bindings.filter(b => b.isGlobal && b.globalString).map(b => b.action)
+        );
+        const toDispatch = matched.filter(action => !globalActions.has(action));
 
-        // Regular shortcuts (no modifiers)
-        if (!ctrlKey && !shiftKey) {
-            switch (key) {
-                // Playback
-                case " ":
-                case "Spacebar":
-                    e.preventDefault();
-                    togglePlay();
-                    return;
-                case "ArrowRight":
-                    e.preventDefault();
-                    nextTrack();
-                    return;
-                case "ArrowLeft":
-                    e.preventDefault();
-                    previousTrack();
-                    return;
-                case "s":
-                case "S":
-                    e.preventDefault();
-                    toggleShuffle();
-                    return;
-                case "r":
-                case "R":
-                    e.preventDefault();
-                    cycleRepeat();
-                    return;
+        if (toDispatch.length === 0) return;
 
-                // Volume
-                case "ArrowUp":
-                    e.preventDefault();
-                    adjustVolume(VOLUME_STEP);
-                    return;
-                case "ArrowDown":
-                    e.preventDefault();
-                    adjustVolume(-VOLUME_STEP);
-                    return;
-                case "m":
-                case "M":
-                    e.preventDefault();
-                    toggleMute();
-                    return;
-
-                // Navigation
-                case "1":
-                    e.preventDefault();
-                    goToTracks();
-                    return;
-                case "2":
-                    e.preventDefault();
-                    goToAlbums();
-                    return;
-                case "3":
-                    e.preventDefault();
-                    goToArtists();
-                    return;
-                case "4":
-                    e.preventDefault();
-                    goToPlaylists();
-                    return;
-                case "5":
-                    e.preventDefault();
-                    goToPlugins();
-                    return;
-                case "6":
-                    e.preventDefault();
-                    goToSettings();
-                    return;
-                case "/":
-                    e.preventDefault();
-                    focusSearchInput();
-                    return;
-
-                // UI Toggles
-                case "l":
-                case "L":
-                    e.preventDefault();
-                    toggleLyrics();
-                    return;
-                case "q":
-                case "Q":
-                    e.preventDefault();
-                    toggleQueue();
-                    return;
-                case "f":
-                case "F":
-                    e.preventDefault();
-                    toggleFullScreen();
-                    return;
-                case "F11":
-                    e.preventDefault();
-                    toggleFullScreen();
-                    return;
-                case "Escape":
-                    e.preventDefault();
-                    handleEscape();
-                    return;
-            }
+        e.preventDefault();
+        for (const action of toDispatch) {
+            dispatch(action);
         }
     }
 
@@ -230,7 +243,7 @@
 
     function seekRelative(seconds: number) {
         const current = get(currentTime);
-        const total = get(duration);
+        const total   = get(duration);
         if (total <= 0) return;
 
         const newTime = Math.max(0, Math.min(total, current + seconds));
