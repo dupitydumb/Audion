@@ -93,7 +93,7 @@ use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::{MetadataOptions, RawValue, StandardTag};
-use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::probe::{Hint, ProbeOptions};
 
 use rubato::{Fft, FixedSync, Indexing, Resampler};
 use rubato::audioadapter_buffers::direct::SequentialSliceOfVecs;
@@ -1085,6 +1085,46 @@ fn channel_map(buf: &mut Vec<f32>, src_ch: u16, dst_ch: u16) {
 // Stop sentinel: Duration::MAX sent via seek channel — sets done=true immediately.
 // =============================================================================
 
+fn probe_with_fallback(
+    path: &str,
+    mss: MediaSourceStream<'static>,
+    hint: &Hint,
+) -> symphonia::core::errors::Result<Box<dyn FormatReader>> {
+    use symphonia::core::errors::Error as SymphoniaError;
+
+    match symphonia::default::get_probe().probe(
+        hint,
+        mss,
+        FormatOptions::default(),
+        MetadataOptions::default(),
+    ) {
+        Ok(fmt) => Ok(fmt),
+
+        Err(SymphoniaError::Unsupported(_)) => {
+            tracing::warn!(
+                "[AUDIO] Probe depth exhausted for '{}', retrying with 16 MB limit",
+                path
+            );
+
+            let file = File::open(path).map_err(|e| {
+                SymphoniaError::IoError(std::io::Error::new(std::io::ErrorKind::NotFound, e))
+            })?;
+            let mss_retry = MediaSourceStream::new(Box::new(file), Default::default());
+
+            let opts = ProbeOptions {
+                max_probe_depth: 16 * 1024 * 1024,
+                ..Default::default()
+            };
+            let mut probe = symphonia::core::formats::probe::Probe::new_with_options(&opts);
+            symphonia::default::register_enabled_formats(&mut probe);
+
+            probe.probe(hint, mss_retry, FormatOptions::default(), MetadataOptions::default())
+        }
+
+        Err(e) => Err(e),
+    }
+}
+
 struct SymphoniaSource {
     format: Box<dyn FormatReader>,
     decoder: Box<dyn symphonia::core::codecs::audio::AudioDecoder>,
@@ -1130,8 +1170,7 @@ impl SymphoniaSource {
             hint.with_extension(ext);
         }
 
-        let mut format = symphonia::default::get_probe()
-            .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
+        let mut format = probe_with_fallback(path, mss, &hint)
             .map_err(|e| format!("Failed to probe {}: {}", path, e))?;
         let track = format.default_track(symphonia::core::formats::TrackType::Audio)
         .ok_or_else(|| format!("No audio track found in {}", path))?;
@@ -1725,7 +1764,7 @@ impl AudioEngine {
                         task.device_channels,
                     );
 
-                    let src = match src {
+                    let mut src = match src {
                         Ok(s) => s,
                         Err(e) => {
                             let _ = open_result_tx.send(OpenResult {
@@ -1746,6 +1785,11 @@ impl AudioEngine {
                             continue;
                         }
                     };
+
+                    // if an initial seek position was requested, seek now before the source produces a single sample
+                    if let Some(pos) = task.initial_seek {
+                        src.seek(pos);
+                    }
 
                     // checkpoint: abort before the expensive FFT construction
                     if task.abort.load(Ordering::Relaxed) {
@@ -1825,7 +1869,13 @@ impl AudioEngine {
     // sends an OpenTask to the worker thread and returns immediately
     // worker does all blocking I/O + FFT construction off the command thread
     // command thread receives the OpenResult via the open_result_rx arm in select!
-    fn dispatch_open(&mut self, path: &str, replay_gain_db: Option<f32>, abort_flag: Arc<AtomicBool>) -> u64 {
+    fn dispatch_open(
+        &mut self,
+        path: &str,
+        replay_gain_db: Option<f32>,
+        abort_flag: Arc<AtomicBool>,
+        initial_seek: Option<Duration>,
+    ) -> u64 {
         self.generation_counter += 1;
         let generation = self.generation_counter;
 
@@ -1847,6 +1897,7 @@ impl AudioEngine {
             abort: abort_flag,
             seek_tx,
             repeat_one_tx,
+            initial_seek,
         });
 
         generation
@@ -1908,7 +1959,7 @@ impl AudioEngine {
         let new_play_abort = Arc::new(AtomicBool::new(false));
         self.play_abort = Arc::clone(&new_play_abort);
 
-        let generation = self.dispatch_open(path, replay_gain_db, new_play_abort);
+        let generation = self.dispatch_open(path, replay_gain_db, new_play_abort, None);
         self.current_generation = generation;
 
         tracing::info!("[AUDIO] Play dispatched (gen {}): {}", generation, path);
@@ -1947,7 +1998,7 @@ impl AudioEngine {
         // we tag it with a negative sentinel by storing the path now so the result arm knows this was a preload, not a play
         self.next_path = Some(path.to_string());
         self.next_duration = None;
-        let generation = self.dispatch_open(path, replay_gain_db, new_preload_abort);
+        let generation = self.dispatch_open(path, replay_gain_db, new_preload_abort, None);
         self.next_generation = generation;
         tracing::debug!("[AUDIO] Preload dispatched (gen {}): {}", generation, path);
         Ok(())
@@ -2094,12 +2145,49 @@ impl AudioEngine {
         new_engine.repeat_one = repeat_one;
 
         // resume track at the snapshotted position if one was playing
-        // play() is now non-blocking
-        // seek and pause are applied when worker result arrives via pending_seek / pending_paused
+        // we bypass play() entirely here because play() resets current_info.offset to ZERO,
+        // which would cause dead-reckoning to report position 0 while the worker is opening
+        // the file. instead we pre-seed current_info with the correct offset and dispatch
+        // directly with initial_seek so the worker seeks before producing a single sample
         if let Some((path, position)) = snapshot {
-            new_engine.pending_seek = Some(position);
+            // mirror the queue/channel teardown that play() normally does
+            new_engine.queue_input.clear();
+            new_engine.seek_tx = None;
+            new_engine.repeat_one_tx = None;
+            new_engine.next_seek_tx = None;
+            new_engine.next_repeat_one_tx = None;
+            new_engine.next_path = None;
+            new_engine.next_duration = None;
+            new_engine.next_generation = 0;
+            new_engine.pending_track_advanced = false;
+            new_engine.pending_seek = None;
+            new_engine.pending_seek_fraction = None;
+            new_engine.pending_paused = false;
+            new_engine.paused_flag.store(false, Ordering::Relaxed);
+
+            // pre-seed current_info with the correct offset so position_secs()
+            // dead-reckons correctly while the worker is still opening the file
+            new_engine.current_info = Some(TrackInfo {
+                path: path.clone(),
+                duration: None,
+                started: Instant::now(),
+                offset: position,
+            });
+
+            let abort = Arc::new(AtomicBool::new(false));
+            new_engine.play_abort = Arc::clone(&abort);
+            new_engine.preload_abort = Arc::clone(&abort);
+
+            let generation = new_engine.dispatch_open(&path, None, abort, Some(position));
+            new_engine.current_generation = generation;
+
+            // re-pause on the new engine once the source is appended
             new_engine.pending_paused = was_paused;
-            new_engine.play(&path, None);
+
+            tracing::info!(
+                "[AUDIO] Device switch: resuming '{}' at {:.3}s (gen {})",
+                path, position.as_secs_f64(), generation
+            );
         }
 
         // swap channel slots so the command loop uses the new engine's channels
@@ -2164,6 +2252,10 @@ struct OpenTask {
     device_sample_rate: NonZero<u32>,
     device_channels: NonZero<u16>,
     abort: Arc<AtomicBool>,
+    // if set, the worker seeks to this position immediately after opening the source,
+    // before it is ever appended to the queue => used for device switches so audio
+    // resumes from the exact position with zero frames decoded from position 0
+    initial_seek: Option<Duration>,
 }
 
 // fully built source ready to be appended to the queue, returned by the worker
@@ -2400,6 +2492,9 @@ impl PlaybackStateSync {
                                     }
 
                                     // update duration now that the worker has probed it
+                                    // for device-switch resumes
+                                    // these were pre-seeded with the correct position in
+                                    // set_output_device and must not be reset to zero
                                     if let Some(ref mut info) = engine.current_info {
                                         info.duration = result.duration;
                                     }
