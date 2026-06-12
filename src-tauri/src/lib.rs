@@ -81,14 +81,15 @@ fn handle_deep_link_url(app_handle: &tauri::AppHandle, url_str: &str) {
 
     // Fetch profile and trigger sync in background
     let db_clone = db.inner().clone();
-    let server_url = sync_state.server_url.clone();
+    let server_url_str = sync_state.server_url.lock().unwrap().clone();
+    let server_url_arc = sync_state.server_url.clone();
     let is_syncing = sync_state.is_syncing.clone();
     let handle = app_handle.clone();
     let at_clone = at.clone();
 
     tauri::async_runtime::spawn(async move {
         // Fetch profile
-        match sync::auth::fetch_and_store_profile(&db_clone, &server_url, &at_clone).await {
+        match sync::auth::fetch_and_store_profile(&db_clone, &server_url_str, &at_clone).await {
             Ok(state) => {
                 tracing::info!("Profile fetched: {:?}", state.email);
                 let _ = handle.emit("sync://auth-state-changed", &state);
@@ -101,8 +102,12 @@ fn handle_deep_link_url(app_handle: &tauri::AppHandle, url_str: &str) {
         // Initial full sync
         let temp_state = sync::SyncState {
             is_syncing,
-            server_url: server_url.clone(),
+            server_url: server_url_arc,
             app_handle: Some(handle.clone()),
+            provider_mode: std::sync::Arc::new(std::sync::Mutex::new(sync::provider::ProviderMode::Local)),
+            sse_join_handle: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            is_connected: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            db: db_clone.clone(),
         };
         match sync::perform_full_sync(&db_clone, &temp_state).await {
             Ok(status) => {
@@ -327,7 +332,7 @@ pub fn run() {
             })?;
             tracing::info!("Database initialized");
 
-            app.manage(database);
+            app.manage(database.clone());
             app.manage(commands::listenbrainz::ListenBrainzState::new());
 
             // Initialize Discord RPC state (desktop only)
@@ -343,8 +348,7 @@ pub fn run() {
             // =============================================================================
             {
                 tracing::info!("Registering native audio backend state (lazy init)");
-                app.manage(audio::PlaybackStateSync::new());
-                audio::PlaybackStateSync::init_async(app.handle().clone());
+                app.manage(audio::PlaybackStateSync::new(app.handle().clone()));
             }
 
             // =============================================================================
@@ -352,7 +356,29 @@ pub fn run() {
             // =============================================================================
             {
                 tracing::info!("Registering sync state");
-                app.manage(sync::SyncState::new_with_handle(app.handle().clone()));
+                let sync_state = sync::SyncState::new_with_handle(app.handle().clone(), database.clone());
+                
+                let has_server_credentials = {
+                    let conn = database.conn.lock().unwrap();
+                    let server_url = crate::db::queries::get_sync_meta(&conn, "server_url").unwrap_or(None);
+                    let access_token = crate::db::queries::get_sync_meta(&conn, "access_token").unwrap_or(None);
+                    
+                    if let (Some(url), Some(_token)) = (server_url, access_token) {
+                        *sync_state.server_url.lock().unwrap() = url;
+                        *sync_state.provider_mode.lock().unwrap() = crate::sync::provider::ProviderMode::Server;
+                        sync_state.is_connected.store(true, std::sync::atomic::Ordering::SeqCst);
+                        true
+                    } else {
+                        false
+                    }
+                };
+
+                if has_server_credentials {
+                    tracing::info!("Found stored server credentials. Starting SSE listener for auto-connect.");
+                    sync::start_sse_listener(&sync_state, database.clone());
+                }
+
+                app.manage(sync_state);
             }
 
             // =============================================================================
@@ -428,7 +454,7 @@ pub fn run() {
                             "
                             document.addEventListener('mousedown', () => {
                                 if (window.__TAURI__ && window.__TAURI__.window) {
-                                    window.__TAURI__.window.getCurrentWindow().focus().catch(() => {});
+                                    window.__TAURI__.window.getCurrentWindow().setFocus().catch(() => {});
                                 }
                             }, { once: true });
                         ",
@@ -631,6 +657,9 @@ pub fn run() {
                     commands::sync_delete_account,
                     commands::sync_get_access_token,
                     commands::sync_get_device_id,
+                    commands::server_connect,
+                    commands::server_disconnect,
+                    commands::server_get_status,
                     // =========================================================================
                     // NATIVE AUDIO COMMANDS
                     // =========================================================================
@@ -645,14 +674,14 @@ pub fn run() {
                     audio::audio_seek,
                     audio::audio_preload,
                     audio::audio_set_repeat_one,
-                    audio::audio_poll_event,
-                    audio::audio_get_state,
                     audio::audio_set_eq,
                     audio::audio_set_replay_gain_enabled,
                     audio::audio_list_output_devices,
                     audio::audio_set_output_device,
                     audio::audio_get_device_info,
                     audio::native_audio_available,
+                    audio::audio_resolve_path,
+                    audio::audio_get_stream_url,
                     windows_thumbar::windows_init_thumbar,
                     windows_thumbar::windows_update_thumbar_state,
                     commands::proxy_fetch_bytes,
@@ -793,6 +822,9 @@ pub fn run() {
                     commands::sync_delete_account,
                     commands::sync_get_access_token,
                     commands::sync_get_device_id,
+                    commands::server_connect,
+                    commands::server_disconnect,
+                    commands::server_get_status,
                     // =========================================================================
                     // NATIVE AUDIO COMMANDS
                     // =========================================================================
@@ -802,16 +834,16 @@ pub fn run() {
                     audio::audio_stop,
                     audio::audio_preload,
                     audio::audio_set_repeat_one,
-                    audio::audio_poll_event,
                     audio::audio_set_volume,
                     audio::audio_seek,
-                    audio::audio_get_state,
                     audio::audio_set_eq,
                     audio::audio_set_replay_gain_enabled,
                     audio::audio_list_output_devices,
                     audio::audio_set_output_device,
                     audio::audio_get_device_info,
                     audio::native_audio_available,
+                    audio::audio_resolve_path,
+                    audio::audio_get_stream_url,
                     commands::proxy_fetch_bytes,
                     commands::save_image_to_gallery,
                 ]

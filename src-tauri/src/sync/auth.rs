@@ -17,7 +17,7 @@ static HTTP_CLIENT: OnceLock<Client> = OnceLock::new();
 /// Get or initialize a shared HTTP client with proper timeouts and TLS config.
 /// This avoids the overhead of a fresh TLS handshake for every single request
 /// and prevents connection hangs on Windows by reusing the connection pool.
-fn http_client() -> Result<Client, String> {
+pub(crate) fn http_client() -> Result<Client, String> {
     if let Some(client) = HTTP_CLIENT.get() {
         return Ok(client.clone());
     }

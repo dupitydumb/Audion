@@ -51,7 +51,6 @@
     import { get } from "svelte/store";
     import { addTrackToPlaylist, importAudioFile, importAudioBytes, type Track } from "$lib/api/tauri";
 
-    import GlobalShortcuts from "./GlobalShortcuts.svelte";
     import type { SectionKey } from "./SearchResults.svelte";
 
     $: isSearching = $searchQuery.length > 0;
@@ -555,8 +554,6 @@
             </button>
         </div>
     {/if}
-
-    <GlobalShortcuts />
 
     <!-- Mobile: Search bar + library sub-tabs (Spotify pill style) -->
     {#if $isMobile && isLibraryView}

@@ -5,12 +5,16 @@
 // - mod.rs:  SyncService (queue processing, push/pull, merge logic)
 
 pub mod auth;
+pub mod provider;
 
 use crate::db::queries::{self, SyncQueueEntry};
 use crate::db::Database;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+use tokio::time::sleep;
+use futures::StreamExt;
 use tauri::Emitter;
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -97,26 +101,57 @@ struct SyncFullResponse {
 
 // ─── SyncState (shared, managed by Tauri) ───────────────────────────────────
 
+#[derive(Clone)]
 pub struct SyncState {
     pub is_syncing: Arc<AtomicBool>,
-    pub server_url: String,
+    pub server_url: Arc<Mutex<String>>,
     pub app_handle: Option<tauri::AppHandle>,
+    pub provider_mode: Arc<Mutex<crate::sync::provider::ProviderMode>>,
+    pub sse_join_handle: Arc<Mutex<Option<tauri::async_runtime::JoinHandle<()>>>>,
+    pub is_connected: Arc<AtomicBool>,
+    pub db: Database,
 }
 
 impl SyncState {
-    pub fn new() -> Self {
+    pub fn new(db: Database) -> Self {
         Self {
             is_syncing: Arc::new(AtomicBool::new(false)),
-            server_url: DEFAULT_SERVER_URL.to_string(),
+            server_url: Arc::new(Mutex::new(DEFAULT_SERVER_URL.to_string())),
             app_handle: None,
+            provider_mode: Arc::new(Mutex::new(crate::sync::provider::ProviderMode::Local)),
+            sse_join_handle: Arc::new(Mutex::new(None)),
+            is_connected: Arc::new(AtomicBool::new(false)),
+            db,
         }
     }
 
-    pub fn new_with_handle(handle: tauri::AppHandle) -> Self {
+    pub fn new_with_handle(handle: tauri::AppHandle, db: Database) -> Self {
         Self {
             is_syncing: Arc::new(AtomicBool::new(false)),
-            server_url: DEFAULT_SERVER_URL.to_string(),
+            server_url: Arc::new(Mutex::new(DEFAULT_SERVER_URL.to_string())),
             app_handle: Some(handle),
+            provider_mode: Arc::new(Mutex::new(crate::sync::provider::ProviderMode::Local)),
+            sse_join_handle: Arc::new(Mutex::new(None)),
+            is_connected: Arc::new(AtomicBool::new(false)),
+            db,
+        }
+    }
+
+    pub fn active_provider(&self) -> crate::sync::provider::ProviderEnum {
+        let mode = *self.provider_mode.lock().unwrap();
+        match mode {
+            crate::sync::provider::ProviderMode::Local => {
+                crate::sync::provider::ProviderEnum::Local(crate::sync::provider::LocalProvider {
+                    db: self.db.clone(),
+                    server_url: self.server_url.lock().unwrap().clone(),
+                })
+            }
+            crate::sync::provider::ProviderMode::Server => {
+                crate::sync::provider::ProviderEnum::Server(crate::sync::provider::ServerProvider {
+                    db: self.db.clone(),
+                    server_url: self.server_url.lock().unwrap().clone(),
+                })
+            }
         }
     }
 }
@@ -196,7 +231,7 @@ pub async fn perform_sync(db: &Database, sync_state: &SyncState) -> Result<SyncS
 }
 
 async fn perform_sync_inner(db: &Database, sync_state: &SyncState) -> Result<SyncStatus, String> {
-    let server_url = &sync_state.server_url;
+    let server_url = sync_state.server_url.lock().unwrap().clone();
 
     emit_progress(sync_state, "sync", "Reading pending changes...", 0, 0);
 
@@ -267,7 +302,7 @@ async fn perform_sync_inner(db: &Database, sync_state: &SyncState) -> Result<Syn
         sendable.len(),
     );
 
-    let resp_body = auth::authenticated_request(db, &sync_state.server_url, "POST", "/sync/push", Some(&body_json)).await?;
+    let resp_body = auth::authenticated_request(db, &server_url, "POST", "/sync/push", Some(&body_json)).await?;
     let response: SyncPushResponse = serde_json::from_str(&resp_body)
         .map_err(|e| format!("Failed to parse sync push response: {} — Raw body: {}", e, resp_body))?;
 
@@ -350,7 +385,8 @@ async fn perform_full_sync_inner(
     // ── Step 1: Pull existing data from server ──────────────────────────
     emit_progress(sync_state, "pull", "Downloading data from server...", 0, 0);
 
-    let resp_body = auth::authenticated_request(db, &sync_state.server_url, "GET", "/sync/full", None).await?;
+    let server_url = sync_state.server_url.lock().unwrap().clone();
+    let resp_body = auth::authenticated_request(db, &server_url, "GET", "/sync/full", None).await?;
     let response: SyncFullResponse = serde_json::from_str(&resp_body)
         .map_err(|e| format!("Failed to parse full sync response: {} — Raw body: {}", e, resp_body))?;
 
@@ -421,7 +457,7 @@ async fn push_local_data_to_server(db: &Database, sync_state: &SyncState) -> Res
         }
     }
 
-    let server_url = &sync_state.server_url;
+    let server_url = sync_state.server_url.lock().unwrap().clone();
 
     // 1. Gather local playlists + their tracks
     let playlist_tracks_map = {
@@ -633,7 +669,7 @@ async fn push_local_data_to_server(db: &Database, sync_state: &SyncState) -> Res
         );
 
         let response_text =
-            auth::authenticated_request(db, server_url, "POST", "/sync/push", Some(&body_json))
+            auth::authenticated_request(db, &server_url, "POST", "/sync/push", Some(&body_json))
                 .await?;
 
         let response: SyncPushResponse = serde_json::from_str(&response_text).map_err(|e| {
@@ -1473,4 +1509,162 @@ fn build_track_hash(track: &queries::Track) -> String {
 /// Get the current timestamp as an ISO string.
 fn chrono_now() -> String {
     chrono::Utc::now().to_rfc3339()
+}
+
+/// Start listening to Server-Sent Events from the server to receive real-time sync updates.
+pub fn start_sse_listener(sync_state: &SyncState, db: Database) {
+    stop_sse_listener(sync_state);
+
+    let is_connected = sync_state.is_connected.clone();
+    let server_url = sync_state.server_url.lock().unwrap().clone();
+    let db_clone = db.clone();
+    let app_handle = sync_state.app_handle.clone();
+    let sync_state_for_task = sync_state.clone();
+
+    is_connected.store(true, Ordering::SeqCst);
+
+    let join_handle = tauri::async_runtime::spawn(async move {
+        let mut retry_delay = Duration::from_secs(1);
+        
+        while is_connected.load(Ordering::SeqCst) {
+            let token = match auth::get_access_token(&db_clone) {
+                Ok(Some(t)) => t,
+                _ => {
+                    tracing::warn!("SSE listener: no access token found, retrying in 5s");
+                    sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
+
+            let cursor = auth::get_sync_cursor(&db_clone).unwrap_or(0);
+            let client = match auth::http_client() {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::error!("SSE listener: failed to get HTTP client: {}", e);
+                    sleep(Duration::from_secs(5)).await;
+                    continue;
+                }
+            };
+
+            let url = format!("{}/api/events", server_url);
+            let mut req = client.get(&url)
+                .header("Authorization", format!("Bearer {}", token));
+            
+            if cursor > 0 {
+                req = req.header("last-event-id", cursor.to_string());
+            }
+
+            tracing::info!("SSE listener connecting to {} with cursor {}", url, cursor);
+
+            match req.send().await {
+                Ok(resp) => {
+                    if !resp.status().is_success() {
+                        tracing::error!("SSE listener: server returned error status {}", resp.status());
+                        if resp.status().as_u16() == 401 {
+                            if let Err(e) = auth::refresh_access_token(&db_clone, &server_url).await {
+                                tracing::error!("SSE listener: failed to refresh token: {}", e);
+                            }
+                        }
+                        sleep(retry_delay).await;
+                        retry_delay = (retry_delay * 2).min(Duration::from_secs(60));
+                        continue;
+                    }
+
+                    retry_delay = Duration::from_secs(1);
+                    tracing::info!("SSE listener connected successfully");
+
+                    let mut stream = resp.bytes_stream();
+                    let mut buffer = Vec::new();
+
+                    while let Some(chunk_res) = stream.next().await {
+                        let chunk = match chunk_res {
+                            Ok(bytes) => bytes,
+                            Err(e) => {
+                                tracing::error!("SSE listener stream error: {}", e);
+                                break;
+                            }
+                        };
+
+                        buffer.extend_from_slice(&chunk);
+
+                        while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
+                            let line_bytes = buffer.drain(..=pos).collect::<Vec<u8>>();
+                            let line = String::from_utf8_lossy(&line_bytes);
+                            let line = line.trim();
+
+                            if line.is_empty() {
+                                continue;
+                            }
+
+                            if line.starts_with("data:") {
+                                let data_content = line["data:".len()..].trim();
+                                tracing::info!("SSE listener received data: {}", data_content);
+
+                                #[derive(serde::Deserialize)]
+                                struct SseEvent {
+                                    id: i64,
+                                    event_type: String,
+                                }
+
+                                if let Ok(event) = serde_json::from_str::<SseEvent>(data_content) {
+                                    if let Err(e) = auth::set_sync_cursor(&db_clone, event.id) {
+                                        tracing::error!("SSE listener: failed to set sync cursor: {}", e);
+                                    }
+
+                                    tracing::info!("SSE listener triggering delta sync due to event: {}", event.event_type);
+                                    let db_for_sync = db_clone.clone();
+                                    let state_for_sync = sync_state_for_task.clone();
+                                    let app_handle_for_emit = app_handle.clone();
+                                    tauri::async_runtime::spawn(async move {
+                                        let is_server = {
+                                            let mode = *state_for_sync.provider_mode.lock().unwrap();
+                                            mode == crate::sync::provider::ProviderMode::Server
+                                        };
+                                        if is_server {
+                                            if let Some(handle) = app_handle_for_emit {
+                                                let _ = handle.emit("sync://status-changed", SyncStatus {
+                                                    is_syncing: false,
+                                                    last_sync_at: Some(chrono_now()),
+                                                    pending_changes: 0,
+                                                    last_error: None,
+                                                });
+                                            }
+                                        } else {
+                                            match perform_sync(&db_for_sync, &state_for_sync).await {
+                                                Ok(status) => {
+                                                    if let Some(handle) = app_handle_for_emit {
+                                                        let _ = handle.emit("sync://status-changed", &status);
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    tracing::error!("SSE auto-sync failed: {}", e);
+                                                }
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    tracing::info!("SSE connection closed, reconnecting...");
+                }
+                Err(e) => {
+                    tracing::error!("SSE connection failed: {}", e);
+                    sleep(retry_delay).await;
+                    retry_delay = (retry_delay * 2).min(Duration::from_secs(60));
+                }
+            }
+        }
+    });
+
+    *sync_state.sse_join_handle.lock().unwrap() = Some(join_handle);
+}
+
+/// Stop the Server-Sent Events listener.
+pub fn stop_sse_listener(sync_state: &SyncState) {
+    sync_state.is_connected.store(false, Ordering::SeqCst);
+    let mut handle_guard = sync_state.sse_join_handle.lock().unwrap();
+    if let Some(handle) = handle_guard.take() {
+        handle.abort();
+    }
 }

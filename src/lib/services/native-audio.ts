@@ -74,9 +74,9 @@ export interface EqSettings {
  *                       Pass null to fall back to reading the tag from the file.
  *                       Once DB integration is complete, always pass track.replay_gain_db.
  */
-export async function nativeAudioPlay(path: string, replayGainDb: number | null = null): Promise<void> {
+export async function nativeAudioPlay(path: string, trackId: number | null = null, replayGainDb: number | null = null): Promise<void> {
     console.log('[AUDIO] Native play:', path);
-    await invoke('audio_play', { path, replayGainDb });
+    await invoke('audio_play', { path, trackId, replayGainDb });
 }
 
 /**
@@ -115,13 +115,6 @@ export async function nativeAudioSeek(position: number): Promise<void> {
 }
 
 /**
- * Get current playback state
- */
-export async function nativeAudioGetState(): Promise<NativePlaybackState> {
-    return await invoke('audio_get_state');
-}
-
-/**
  * Enable or disable repeat-one mode.
  * When enabled, the backend loops the current track at EOF without firing TrackFinished.
  */
@@ -134,30 +127,19 @@ export async function nativeAudioSetRepeatOne(enabled: boolean): Promise<void> {
 // =============================================================================
 
 export type AudioEventType =
-    | { type: 'Idle' }
     | { type: 'TrackFinished' }
     | { type: 'TrackAdvanced'; data: { new_path: string } }
-    | { type: 'StateChanged'; data: { position: number } };
-
-/**
- * Poll for the next audio event (one per call, FIFO).
- *
- *   Idle           — nothing happened this cycle
- *   TrackFinished  — track ended, no next buffered. Call nextTrack() normally.
- *   TrackAdvanced  — gapless: audio already on new track. Advance UI state only,
- *                    do NOT call nativeAudioPlay().
- */
-export async function nativeAudioPollEvent(): Promise<AudioEventType> {
-    return await invoke('audio_poll_event');
-}
+    | { type: 'StateChanged'; data: { position: number } }
+    | { type: 'DeviceListChanged'; data: { devices: DeviceList } }
+    | { type: 'Error'; data: { message: string } };
 
 /**
  * Preload the next track for gapless playback.
  * The backend will decode and buffer it so the transition is seamless.
  * @param replayGainDb — pass DB value if available, null otherwise.
  */
-export async function nativeAudioPreload(path: string, replayGainDb: number | null = null): Promise<void> {
-    await invoke('audio_preload', { path, replayGainDb });
+export async function nativeAudioPreload(path: string, trackId: number | null = null, replayGainDb: number | null = null): Promise<void> {
+    await invoke('audio_preload', { path, trackId, replayGainDb });
 }
 
 /**
@@ -176,9 +158,20 @@ export async function nativeAudioSetReplayGainEnabled(enabled: boolean): Promise
     await invoke('audio_set_replay_gain_enabled', { enabled });
 }
 
+export interface AudioDeviceInfo {
+    id: string;
+    name: string;
+    manufacturer: string | null;
+    driver: string | null;
+    device_type: string;
+    interface_type: string;
+    address: string | null;
+    extended: string[];
+    is_default: boolean;
+}
+
 export interface DeviceList {
-    devices: string[];
-    default: string | null;
+    devices: AudioDeviceInfo[];
 }
 
 /**
@@ -202,8 +195,8 @@ export async function nativeAudioGetDeviceInfo(): Promise<DeviceList> {
  * pass null to revert to the system default
  * the backend will rebuild the pipeline and resume playback on the new device
  */
-export async function nativeAudioSetOutputDevice(deviceName: string | null): Promise<void> {
-    await invoke('audio_set_output_device', { deviceName });
+export async function nativeAudioSetOutputDevice(deviceId: string | null): Promise<void> {
+    await invoke('audio_set_output_device', { deviceId });
 }
 
 // =============================================================================

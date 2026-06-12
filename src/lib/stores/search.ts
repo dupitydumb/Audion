@@ -1,57 +1,61 @@
 // Search store - manages search query and results
-import { writable, derived } from 'svelte/store';
-import { tracks, albums, artists, playlists } from './library';
+import { writable } from 'svelte/store';
+import { searchLibrary } from '$lib/api/tauri';
 import type { Track, Album, Artist, Playlist } from '$lib/api/tauri';
 
-// Search query store
+export interface SearchResults {
+    tracks: Track[];
+    albums: Album[];
+    artists: Artist[];
+    playlists: Playlist[];
+    hasResults: boolean;
+    query: string;
+}
+
+function emptyResults(): SearchResults {
+    return {
+        tracks: [],
+        albums: [],
+        artists: [],
+        playlists: [],
+        hasResults: false,
+        query: ''
+    };
+}
+
+// search query store
 export const searchQuery = writable('');
 
-// Search results derived from library
-export const searchResults = derived(
-    [searchQuery, tracks, albums, artists, playlists],
-    ([$query, $tracks, $albums, $artists, $playlists]) => {
-        const query = $query.toLowerCase().trim();
+// search results store
+export const searchResults = writable<SearchResults>(emptyResults());
 
-        if (!query) {
-            return {
-                tracks: [] as Track[],
-                albums: [] as Album[],
-                artists: [] as Artist[],
-                playlists: [] as Playlist[],
-                hasResults: false,
-                query: ''
-            };
-        }
+let debounceTimer: ReturnType<typeof setTimeout>;
 
-        const matchedTracks = $tracks.filter(track =>
-            track.title?.toLowerCase().includes(query) ||
-            track.artist?.toLowerCase().includes(query) ||
-            track.album?.toLowerCase().includes(query)
-        );
+searchQuery.subscribe(query => {
+    clearTimeout(debounceTimer);
+    const q = query.trim();
 
-        const matchedAlbums = $albums.filter(album =>
-            album.name.toLowerCase().includes(query) ||
-            album.artist?.toLowerCase().includes(query)
-        );
-
-        const matchedArtists = $artists.filter(artist =>
-            artist.name.toLowerCase().includes(query)
-        );
-
-        const matchedPlaylists = $playlists.filter(playlist =>
-            playlist.name.toLowerCase().includes(query)
-        );
-
-        return {
-            tracks: matchedTracks,
-            albums: matchedAlbums,
-            artists: matchedArtists,
-            playlists: matchedPlaylists,
-            hasResults: matchedTracks.length > 0 || matchedAlbums.length > 0 || matchedArtists.length > 0 || matchedPlaylists.length > 0,
-            query
-        };
+    if (!q) {
+        searchResults.set(emptyResults());
+        return;
     }
-);
+
+    debounceTimer = setTimeout(async () => {
+        const results = await searchLibrary(q, 100, 0);
+        searchResults.set({
+            tracks: results.tracks,
+            albums: results.albums,
+            artists: results.artists,
+            playlists: results.playlists,
+            hasResults:
+                results.tracks.length > 0 ||
+                results.albums.length > 0 ||
+                results.artists.length > 0 ||
+                results.playlists.length > 0,
+            query: q,
+        });
+    }, 150);
+});
 
 // Clear search
 export function clearSearch(): void {

@@ -7,7 +7,7 @@ import { appSettings } from '$lib/stores/settings';
 import { pluginStore } from '$lib/stores/plugin-store';
 import { addToast } from '$lib/stores/toast';
 import { loadLibrary } from '$lib/stores/library';
-import type { Track } from '$lib/api/tauri';
+import { type Track, audioGetStreamUrl } from '$lib/api/tauri';
 import { lyricsManager } from '$lib/lyrics';
 
 export interface DownloadProgress {
@@ -44,6 +44,10 @@ export function canDownload(track: Track): boolean {
     // Local tracks are already on disk
     if (!track.source_type || track.source_type === 'local') {
         return false;
+    }
+
+    if (track.source_type === 'server') {
+        return true;
     }
 
     // Check if a stream resolver exists for this source type
@@ -138,13 +142,19 @@ export async function downloadTrack(
         throw new Error('Track cannot be downloaded. It may be a local track or the streaming plugin is not active.');
     }
 
-    const runtime = pluginStore.getRuntime();
-    if (!runtime) {
-        throw new Error('Plugin runtime not available.');
+    let streamUrl: string | null = null;
+    if (track.source_type === 'server') {
+        streamUrl = await audioGetStreamUrl(track.path, track.id);
+    } else {
+        const runtime = pluginStore.getRuntime();
+        if (!runtime) {
+            throw new Error('Plugin runtime not available.');
+        }
+
+        // Resolve the stream URL
+        streamUrl = await runtime.resolveStreamUrl(track.source_type!, track.external_id!);
     }
 
-    // Resolve the stream URL
-    const streamUrl = await runtime.resolveStreamUrl(track.source_type!, track.external_id!);
     if (!streamUrl) {
         throw new Error(`Failed to resolve stream URL for "${track.title}"`);
     }

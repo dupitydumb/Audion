@@ -10,9 +10,10 @@ import { writable, derived, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { isTauri } from '$lib/api/tauri';
-import { refreshAll } from '$lib/stores/library';
-import { loadLikedTracks } from '$lib/stores/liked';
+import { refreshAll, clearLibrary } from '$lib/stores/library';
+import { loadLikedTracks, likedTrackIds } from '$lib/stores/liked';
 import { isOnline } from '$lib/stores/network';
+import { loadActivityData, clearActivityData } from '$lib/stores/activity';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -71,6 +72,21 @@ export const authState = writable<AuthState>(defaultAuthState);
 export const syncStatus = writable<SyncStatus>(defaultSyncStatus);
 export const syncProgress = writable<SyncProgress>(defaultSyncProgress);
 export const showLoginModal = writable<boolean>(false);
+export const loginModalMode = writable<'oauth' | 'custom_server'>('oauth');
+
+export interface CustomServerStatus {
+    connected: boolean;
+    url: string;
+    user: string | null;
+}
+
+const defaultCustomServerStatus: CustomServerStatus = {
+    connected: false,
+    url: '',
+    user: null,
+};
+
+export const customServerStatus = writable<CustomServerStatus>(defaultCustomServerStatus);
 
 // Derived convenience stores
 export const isLoggedIn = derived(authState, ($auth) => $auth.is_logged_in);
@@ -101,6 +117,13 @@ export async function initSync(): Promise<void> {
 
         const status = await invoke<SyncStatus>('sync_get_status');
         syncStatus.set(status);
+
+        try {
+            const serverStatus = await invoke<CustomServerStatus>('server_get_status');
+            customServerStatus.set(serverStatus);
+        } catch (err) {
+            console.error('[Sync] Failed to fetch server status:', err);
+        }
     } catch (error) {
         console.error('[Sync] Failed to initialize:', error);
         // If we can't read auth state (e.g. database was deleted), reset to logged-out
@@ -332,7 +355,7 @@ function pollSyncStatus(intervalMs = 2000, maxAttempts = 60): void {
 async function reloadAfterSync(): Promise<void> {
     try {
         console.log('[Sync] Reloading data after sync...');
-        await Promise.all([refreshAll(), loadLikedTracks()]);
+        await Promise.all([refreshAll(), loadLikedTracks(), loadActivityData()]);
         console.log('[Sync] Data reload complete');
     } catch (error) {
         console.error('[Sync] Failed to reload data after sync:', error);
@@ -390,19 +413,25 @@ export async function startLogin(provider: 'google' | 'github' = 'google'): Prom
 export async function logout(): Promise<void> {
     if (!isTauri()) return;
 
+    // Clear sync account data gracefully
+    await clearLibrary();
+    clearActivityData();
+    likedTrackIds.set(new Set());
+
     try {
         await invoke('sync_logout');
     } catch (error) {
         console.error('[Sync] Failed to logout:', error);
         // Continue anyway — always clear frontend state regardless of backend errors
-        // (e.g. if the local database was deleted, the backend call will fail
-        // but we still need to reset the UI to logged-out state)
     }
 
     // Always reset frontend stores, even if the backend call failed
     authState.set(defaultAuthState);
     syncStatus.set(defaultSyncStatus);
     syncProgress.set(defaultSyncProgress);
+    
+    // Refresh local data after logout
+    await Promise.all([refreshAll(), loadLikedTracks(), loadActivityData()]);
 }
 
 /**
@@ -523,4 +552,40 @@ export async function refreshAuthState(): Promise<void> {
         authState.set(defaultAuthState);
     }
 }
+
+/**
+ * Connect to a custom server with username and password.
+ */
+export async function connectCustomServerPassword(url: string, username: string, password: string): Promise<void> {
+    if (!isTauri()) return;
+    
+    // Clear old data gracefully before connecting to new server
+    await clearLibrary();
+    clearActivityData();
+    likedTrackIds.set(new Set());
+    
+    await invoke('server_connect', { url, username, password });
+    const status = await invoke<CustomServerStatus>('server_get_status');
+    customServerStatus.set(status);
+    await refreshAuthState();
+    await Promise.all([refreshAll(), loadLikedTracks(), loadActivityData()]);
+}
+
+/**
+ * Disconnect from the custom server.
+ */
+export async function disconnectCustomServer(): Promise<void> {
+    if (!isTauri()) return;
+
+    // Clear custom server data before loading local data
+    await clearLibrary();
+    clearActivityData();
+    likedTrackIds.set(new Set());
+
+    await invoke('server_disconnect');
+    customServerStatus.set(defaultCustomServerStatus);
+    await refreshAuthState();
+    await Promise.all([refreshAll(), loadLikedTracks(), loadActivityData()]);
+}
+
 

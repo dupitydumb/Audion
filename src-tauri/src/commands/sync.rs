@@ -29,8 +29,9 @@ pub async fn sync_handle_auth_callback(
     auth::store_auth_tokens(&db, &access_token, &refresh_token)?;
 
     // 2. Fetch user profile from server
+    let server_url = sync_state.server_url.lock().unwrap().clone();
     let auth_state =
-        auth::fetch_and_store_profile(&db, &sync_state.server_url, &access_token).await?;
+        auth::fetch_and_store_profile(&db, &server_url, &access_token).await?;
 
     // 3. Ensure device ID exists
     auth::get_or_create_device_id(&db)?;
@@ -45,6 +46,10 @@ pub async fn sync_handle_auth_callback(
             is_syncing,
             server_url: sync_state_url,
             app_handle: Some(handle),
+            provider_mode: std::sync::Arc::new(std::sync::Mutex::new(crate::sync::provider::ProviderMode::Local)),
+            sse_join_handle: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            is_connected: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            db: db_clone.clone(),
         };
         match sync::perform_full_sync(&db_clone, &temp_sync_state).await {
             Ok(_) => tracing::info!("Initial full sync completed"),
@@ -66,7 +71,7 @@ pub async fn sync_logout(
     // Try to revoke refresh token on server (best-effort)
     if let Ok(Some(refresh_token)) = auth::get_refresh_token(&db) {
         let body = serde_json::json!({ "refresh_token": refresh_token }).to_string();
-        let server_url = sync_state.server_url.clone();
+        let server_url = sync_state.server_url.lock().unwrap().clone();
 
         // Fire-and-forget: don't block logout on network issues
         tokio::spawn(async move {
@@ -104,6 +109,17 @@ pub async fn sync_trigger(
         return Err("Not logged in".to_string());
     }
 
+    let mode = *sync_state.provider_mode.lock().unwrap();
+    if mode == crate::sync::provider::ProviderMode::Server {
+        // Custom servers are live streams and do not use the background sync protocol
+        return Ok(sync::SyncStatus {
+            is_syncing: false,
+            last_sync_at: Some(chrono::Utc::now().to_rfc3339()),
+            pending_changes: 0,
+            last_error: None,
+        });
+    }
+
     // If the initial full sync never completed, retry it instead of doing a delta sync
     let full_sync_done = {
         let conn = db.conn.lock().map_err(|e| e.to_string())?;
@@ -127,13 +143,22 @@ pub async fn sync_get_status(
     db: State<'_, Database>,
     sync_state: State<'_, SyncState>,
 ) -> Result<sync::SyncStatus, String> {
+    let mode = *sync_state.provider_mode.lock().unwrap();
+    if mode == crate::sync::provider::ProviderMode::Server {
+        return Ok(sync::SyncStatus {
+            is_syncing: false,
+            last_sync_at: Some(chrono::Utc::now().to_rfc3339()),
+            pending_changes: 0,
+            last_error: None,
+        });
+    }
     sync::get_sync_status(&db, &sync_state)
 }
 
 /// Get the server URL for OAuth login (so frontend knows where to open browser).
 #[tauri::command]
 pub async fn sync_get_server_url(sync_state: State<'_, SyncState>) -> Result<String, String> {
-    Ok(sync_state.server_url.clone())
+    Ok(sync_state.server_url.lock().unwrap().clone())
 }
 
 /// Enqueue a sync change from the frontend (e.g., when a setting changes).
@@ -172,7 +197,8 @@ pub async fn sync_delete_account(
 ) -> Result<(), String> {
     tracing::warn!("User requested account deletion (GDPR)");
 
-    auth::authenticated_request(&db, &sync_state.server_url, "DELETE", "/sync/account", None)
+    let server_url = sync_state.server_url.lock().unwrap().clone();
+    auth::authenticated_request(&db, &server_url, "DELETE", "/sync/account", None)
         .await?;
 
     // Clear local data
@@ -193,9 +219,10 @@ pub async fn sync_link_kofi(
 ) -> Result<auth::AuthState, String> {
     let body = serde_json::json!({ "kofi_email": kofi_email }).to_string();
 
+    let server_url = sync_state.server_url.lock().unwrap().clone();
     let resp_str = auth::authenticated_request(
         &db,
-        &sync_state.server_url,
+        &server_url,
         "POST",
         "/auth/link-kofi",
         Some(&body),
@@ -267,7 +294,8 @@ pub async fn sync_get_access_token(
     // Attempt to refresh the access token to ensure it's valid for the WS connection.
     // If it's already fresh, the server should return a new one or the same one.
     // This is better than returning a potentially expired token and getting a WS 401.
-    match auth::refresh_access_token(&db, &sync_state.server_url).await {
+    let server_url = sync_state.server_url.lock().unwrap().clone();
+    match auth::refresh_access_token(&db, &server_url).await {
         Ok(token) => Ok(Some(token)),
         Err(e) => {
             tracing::warn!("Failed to refresh token for WebSocket: {}", e);
@@ -281,4 +309,114 @@ pub async fn sync_get_access_token(
 #[tauri::command]
 pub async fn sync_get_device_id(db: State<'_, Database>) -> Result<String, String> {
     auth::get_or_create_device_id(&db)
+}
+
+#[tauri::command]
+pub async fn server_connect(
+    url: String,
+    username: String,
+    password: String,
+    db: State<'_, Database>,
+    sync_state: State<'_, SyncState>,
+) -> Result<(), String> {
+    let url = url.trim_end_matches('/').to_string();
+
+    let client = reqwest::Client::new();
+    let login_url = format!("{}/api/auth/login", url);
+    let payload = serde_json::json!({
+        "username": username,
+        "password": password,
+    });
+
+    let resp = client.post(&login_url)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to connect to server: {}", e))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Login failed ({}): {}", status, body));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct LoginResponse {
+        token: String,
+        user: UserResponse,
+    }
+    #[derive(serde::Deserialize)]
+    struct UserResponse {
+        id: String,
+        username: String,
+    }
+
+    let login_res: LoginResponse = resp.json().await
+        .map_err(|e| format!("Failed to parse login response: {}", e))?;
+
+    auth::store_auth_tokens(&db, &login_res.token, &login_res.token)?;
+    auth::store_user_profile(
+        &db,
+        &login_res.user.id,
+        &login_res.user.username,
+        Some(&login_res.user.username),
+        None,
+        true,
+        None,
+    )?;
+
+    {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        crate::db::queries::set_sync_meta(&conn, "server_url", &url).map_err(|e| e.to_string())?;
+    }
+
+    *sync_state.server_url.lock().unwrap() = url;
+    *sync_state.provider_mode.lock().unwrap() = crate::sync::provider::ProviderMode::Server;
+    sync_state.is_connected.store(true, std::sync::atomic::Ordering::SeqCst);
+
+    sync::start_sse_listener(&sync_state, db.inner().clone());
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn server_disconnect(
+    db: State<'_, Database>,
+    sync_state: State<'_, SyncState>,
+) -> Result<(), String> {
+    sync::stop_sse_listener(&sync_state);
+
+    auth::clear_auth(&db)?;
+
+    *sync_state.provider_mode.lock().unwrap() = crate::sync::provider::ProviderMode::Local;
+    sync_state.is_connected.store(false, std::sync::atomic::Ordering::SeqCst);
+
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+pub struct ServerStatus {
+    pub connected: bool,
+    pub url: String,
+    pub user: Option<String>,
+}
+
+#[tauri::command]
+pub async fn server_get_status(
+    db: State<'_, Database>,
+    sync_state: State<'_, SyncState>,
+) -> Result<ServerStatus, String> {
+    let connected = sync_state.is_connected.load(std::sync::atomic::Ordering::SeqCst);
+    let url = sync_state.server_url.lock().unwrap().clone();
+    
+    let user = {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        crate::db::queries::get_sync_meta(&conn, "user_name").unwrap_or(None)
+    };
+
+    Ok(ServerStatus {
+        connected,
+        url,
+        user,
+    })
 }
