@@ -554,6 +554,14 @@ export async function refreshAuthState(): Promise<void> {
 }
 
 /**
+ * Test connection to a custom server with username and password.
+ */
+export async function testCustomServerConnection(url: string, username: string, password: string): Promise<void> {
+    if (!isTauri()) return;
+    await invoke('server_test_connection', { url, username, password });
+}
+
+/**
  * Connect to a custom server with username and password.
  */
 export async function connectCustomServerPassword(url: string, username: string, password: string): Promise<void> {

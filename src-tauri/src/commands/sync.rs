@@ -312,6 +312,54 @@ pub async fn sync_get_device_id(db: State<'_, Database>) -> Result<String, Strin
 }
 
 #[tauri::command]
+pub async fn server_test_connection(
+    url: String,
+    username: String,
+    password: String,
+) -> Result<(), String> {
+    let url = url.trim_end_matches('/').to_string();
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let login_url = format!("{}/api/auth/login", url);
+    let payload = serde_json::json!({
+        "username": username,
+        "password": password,
+    });
+
+    let resp = client.post(&login_url)
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to connect to server: {}", e))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Login failed ({}): {}", status, body));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct LoginResponse {
+        token: String,
+        user: UserResponse,
+    }
+    #[derive(serde::Deserialize)]
+    struct UserResponse {
+        id: String,
+        username: String,
+    }
+
+    let _login_res: LoginResponse = resp.json().await
+        .map_err(|e| format!("Failed to parse login response: {}", e))?;
+
+    Ok(())
+}
+
+#[tauri::command]
 pub async fn server_connect(
     url: String,
     username: String,
@@ -321,7 +369,10 @@ pub async fn server_connect(
 ) -> Result<(), String> {
     let url = url.trim_end_matches('/').to_string();
 
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
     let login_url = format!("{}/api/auth/login", url);
     let payload = serde_json::json!({
         "username": username,
