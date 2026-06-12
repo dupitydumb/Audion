@@ -1,41 +1,31 @@
 # Release Notes - Audion
 
-## [v1.3.4] - 2026-06-03
+## [v1.3.5] - 2026-06-12
+
+### Highlights: Server Docker Support & Custom Server Integration
+
+* **Server Docker Support**: Audion now officially supports self-hosted deployment using Docker (`audion-server-docker`), enabling seamless hosting of your library with custom server integration.
+* **Custom Server Enhancements**: Added library streaming capabilities, backend-supported search, tokenized search results, and secure retrieval of album/cover artwork via local SQLite DB and server origin access tokens.
+* **Event-Driven Player Sync**: Replaced interval polling with a modern event-driven architecture and dead-reckoning positional tracking for synchronized and responsive playback.
 
 ### New Features & Enhancements
 
-* **ALAC Audio Support**: Added support for `.alac` audio files across library scanning, metadata parsing, and playback workflows.
-* **Expanded Codec Detection**: Implemented codec-aware detection for MP4 containers, allowing reliable identification of ALAC, AAC, and other codecs within MP4-based formats.
-* **Broader Format Compatibility**: Expanded support for additional audio codecs and containers, including MKV, OGG, WAV, ISO MP4, and Vorbis.
-* **ReplayGain Controls**: Added a ReplayGain toggle for audio processing on the native playback backend.
-* **Output Device Selection**: Added an audio output device selector, making it easy to switch between available playback devices directly within the application.
-* **Apple Music Lyrics Improvements**: Enhanced lyrics retrieval with smarter fallback mechanisms for improved reliability and coverage.
-* **API Key Validation**: Added user-friendly validation and notifications when required API credentials are missing.
+* **Keyboard Shortcut Rebinding**: Added full support for customizing and rebinding keyboard shortcuts.
+* **Refined Fullscreen UI**: Restyled the fullscreen playback user interface for a cleaner and more immersive visual experience.
+* **Device Info Popover**: Introduced an information popover for audio output devices to provide more clarity on active configurations.
+* **Robust Streaming & Connection Handling**: Integrated event-driven playback syncing and automatic handling for connection state resets when switching server accounts or handling server failures.
 
-### Library & Playback Improvements
+### Audio & Playback Upgrades
 
-* **Symphonia 0.6 Upgrade**: Upgraded the decoding backend to Symphonia 0.6.0, bringing improved format support, decoding reliability, and overall playback enhancements.
-* **Enhanced ALAC Parsing**: Updated the file walker and metadata parser to recognize `.alac` files directly, with automatic fallback to MP4 parsing through Lofty when required.
-* **Improved Track Matching**: Refined track matching logic to better handle artist name variations and metadata inconsistencies during lyrics lookup and library operations.
-
-### UI & UX Improvements
-
-* **Updated Drag & Drop Support**: Enhanced drag-and-drop interfaces and supported file indicators to include ALAC files throughout the application.
-* **Output Device UI**: Added a dedicated device selection dropdown for a smoother audio management experience.
-
-### Documentation
-
-* **Arch Linux Installation Support**: Added official installation instructions for Arch Linux and Arch-based distributions through the AUR package `audion-bin`.
-* **AUR Package Availability**: Audion can now be installed and updated natively using package managers such as `yay` and `paru`, with automated release synchronization.
-* **Expanded Format Documentation**: Updated the README with a comprehensive list of supported audio formats, codecs, and containers.
+* **Channel-Mix Compatibility**: Added support for automatic upmixing and downmixing of mismatched channel counts.
+* **HTML5 Backend Refactoring**: Refactored the player codebase to isolate the HTML5 playback backend from core player logic.
+* **Bundled Dash.js**: Replaced the CDN-based `dash.js` with a bundled local import, preventing external dependency fetch issues.
+* **MPEG & Lofty Fixes**: Patched duration estimation freezes for MPEG streams and integrated zero-duration fallback logic via Symphonia.
+* **Audio Library Updates**: Upgraded critical audio libraries, including `rodio` to `0.22.2`, `rubato` to `3.0.0`, `rayon` to `1.12`, and `lofty` to `0.24.0`.
 
 ### Bug Fixes & Stability
 
-* **Lyrics Fallback Reliability**: Improved lyrics retrieval stability by automatically falling back to alternative sources when the primary provider fails.
-* **Metadata Handling Improvements**: Fixed edge cases involving metadata inconsistencies and artist matching across supported music services.
-* **Container Parsing Enhancements**: Improved handling of MP4-based audio files and codec detection for greater compatibility across music libraries.
-
-### Notes
-
-* Audion now includes support for standalone `.alac` files in addition to ALAC audio stored within standard M4A containers.
-* Due to dependency compatibility requirements, both Symphonia 0.6.0 and 0.5.5 may appear in `Cargo.lock`, as the current Rodio release continues to depend on Symphonia 0.5.5.
+* **Device Switching Guards**: Added safety guards preventing redundant switching to the same device, and optimized switching logic with higher probe limit retries and pre-seeded seek positions.
+* **Fullscreen Scroll Alignment**: Resolved unsynced scrolling issues when viewing lyrics/content in fullscreen mode.
+* **Android CI fixes**: Fixed build and compilation errors in CI pipelines for the Android build.
+* **Error & Abort Improvements**: Improved error handling for album cover retrieval, channel mapping, and audio playback abort actions.

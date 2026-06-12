@@ -102,6 +102,50 @@ If you prefer, download the platform-specific asset from the Releases page for y
 
 ---
 
+## 🐳 Self-Hosted Server (Docker)
+
+Audion now supports a self-hosted streaming server (`audion-server-docker`) written in Rust with a responsive Svelte frontend. This allows you to host your library on a home server or VPS and stream to your Audion clients anywhere.
+
+### Running Audion Server
+
+A preconfigured `docker-compose.yml` is available in the `audion-server-docker` directory:
+
+1. **Verify configuration** in `audion-server-docker/docker-compose.yml`:
+   ```yaml
+   services:
+     audion-server:
+       build:
+         context: .
+         dockerfile: Dockerfile
+       ports:
+         - "8080:8080"
+       volumes:
+         - ./data:/data
+       environment:
+         - AUDION_ADMIN_USER=admin
+         - AUDION_ADMIN_PASSWORD=securepasswordhere # Change this!
+         - AUDION_JWT_SECRET=your-secret-key-here
+         - AUDION_DATA_DIR=/data
+   ```
+
+2. **Start the server**:
+   ```bash
+   cd audion-server-docker
+   docker compose up --build -d
+   ```
+
+3. **Access the Web Interface**: Navigate to `http://localhost` (or port `8080` for backend API access directly) to manage files, playlists, and users.
+
+### Connecting the Client
+
+To connect your Audion desktop or mobile application to your self-hosted server:
+1. Open Audion settings.
+2. Under **Server Connection**, select **Custom Server**.
+3. Input your server URL (e.g., `http://your-server-ip:8080`) and your credentials.
+4. Enjoy streaming playback, library sync, and remote access!
+
+---
+
 ## ✨ Features
 
 ### Music Management
