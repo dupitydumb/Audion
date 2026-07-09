@@ -9,6 +9,7 @@
     isQueueVisible,
     toggleQueue,
     contextMenu,
+    nativeTransitionActive,
   } from "$lib/stores/ui";
   import {
     currentTrack,
@@ -56,6 +57,10 @@
   let isAndroid = false;
   $: hideAndroidLyricsControls = isAndroid && $isMobile && $lyricsVisible;
   $: isUnsynced = !$lyricsData?.lines || $lyricsData.lines.length === 0 || !$lyricsData.lines.some((line) => line.time > 0);
+  let desktopArtWrapperEl: HTMLDivElement | null = null;
+  $: if (desktopArtWrapperEl) {
+    desktopArtWrapperEl.style.viewTransitionName = $isFullScreen ? 'player-album-art' : 'none';
+  }
 
   // Combined reactive state for word-by-word sync
   const wordSyncState = derived(
@@ -310,7 +315,7 @@
   <div
     class="fullscreen-player"
     class:android-lite={isAndroid && $isMobile}
-    transition:fade={{ duration: isAndroid ? 180 : 300 }}
+    transition:fade={{ duration: $nativeTransitionActive ? 0 : (isAndroid ? 180 : 300) }}
   >
     <!-- Animated blurred background -->
     <MeshGradientBg lite={isAndroid && $isMobile} />
@@ -703,9 +708,13 @@
           <!-- Left Area: Track Info & Playback Controls -->
           <div class="desktop-left">
             <div class="desktop-art-section">
-              <div class="desktop-art-wrapper shadow-lg">
+              <div class="desktop-art-wrapper shadow-lg" bind:this={desktopArtWrapperEl}>
                 {#if albumArt}
-                  <img src={albumArt} alt="Album Art" decoding="async" />
+                  <img
+                    src={albumArt}
+                    alt="Album Art"
+                    decoding="async"
+                  />
                 {:else}
                   <div class="art-placeholder large">
                     <svg

@@ -7,7 +7,7 @@
     nextTrack,
     progress,
   } from "$lib/stores/player";
-  import { isFullScreen } from "$lib/stores/ui";
+  import { isFullScreen, openFullScreen } from "$lib/stores/ui";
   import {
     getTrackCoverSrc,
     getAlbumArtSrc,
@@ -56,7 +56,7 @@
   }
 
   function handleOpenPlayer() {
-    isFullScreen.set(true);
+    openFullScreen();
   }
 
   function handlePlayPause(e: Event) {

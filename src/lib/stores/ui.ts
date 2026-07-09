@@ -1,4 +1,5 @@
 import { writable, get } from 'svelte/store';
+import { tick } from 'svelte';
 import { isTauri, isAndroid } from '$lib/api/tauri';
 
 export const isFullScreen = writable(false);
@@ -23,8 +24,45 @@ const PIP_WIDTH = 400;
 const PIP_HEIGHT = 148;
 const PIP_MARGIN = 16;
 
+// shared choke point for every isFullScreen mutation
+function prefersReducedMotion(): boolean {
+    return typeof window !== 'undefined'
+        && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+}
+
+// true while a native View transition is animating the fullscreen open/close
+// FullScreenPlayer reads this to skip its own Svelte fade for that same open/close
+export const nativeTransitionActive = writable(false);
+
+function mutateFullScreen(mutate: () => void) {
+    const doc = typeof document !== 'undefined' ? (document as any) : null;
+
+    // feature detect and fall back to the plain store mutation,
+    // which gets the existing fade/fly transitions in FullScreenPlayer
+    if (doc?.startViewTransition && !prefersReducedMotion()) {
+        nativeTransitionActive.set(true);
+        const transition = doc.startViewTransition(() => {
+            mutate();
+            return tick();
+        });
+        transition.finished
+            .catch(() => {})
+            .finally(() => nativeTransitionActive.set(false));
+    } else {
+        mutate();
+    }
+}
+
 export function toggleFullScreen() {
-    isFullScreen.update(v => !v);
+    mutateFullScreen(() => isFullScreen.update(v => !v));
+}
+
+export function openFullScreen() {
+    mutateFullScreen(() => isFullScreen.set(true));
+}
+
+export function closeFullScreen() {
+    mutateFullScreen(() => isFullScreen.set(false));
 }
 
 export async function setMiniPlayer(enable: boolean) {

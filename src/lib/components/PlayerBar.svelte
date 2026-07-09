@@ -278,7 +278,10 @@
     <!-- Track info -->
     <div class="track-info desktop-track-info">
             {#if $currentTrack}
-                <div class="album-art">
+                <div
+                    class="album-art"
+                    style="view-transition-name: {$isFullScreen ? 'none' : 'player-album-art'};"
+                >
                     {#if albumArt && !imageLoadFailed}
                         <img
                             src={albumArt}
@@ -745,7 +748,7 @@
     .album-art {
         width: 54px;
         height: 54px;
-        border-radius: var(--radius-md);
+        border-radius: 14px;
         overflow: hidden;
         flex-shrink: 0;
         background-color: var(--bg-surface);

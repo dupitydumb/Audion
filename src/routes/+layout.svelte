@@ -27,6 +27,7 @@
   } from "$lib/stores/view";
   import {
     isFullScreen,
+    closeFullScreen,
     isQueueVisible,
     contextMenu,
     isMiniPlayer,
@@ -70,7 +71,7 @@
 
       // 2. Close full-screen player
       if (get(isFullScreen)) {
-        isFullScreen.set(false);
+        closeFullScreen();
         return true;
       }
 
@@ -497,5 +498,24 @@
 
   .permission-button:active {
     background: rgba(255, 255, 255, 0.4);
+  }
+
+  /* album art morph between the mini PlayerBar and FullScreenPlayer
+     View-transition pseudo elements render outside any component's scope,
+     so these rules must be :global */
+  :global(::view-transition-group(player-album-art)) {
+    animation-duration: 550ms;
+    animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  /* browser's default page level crossfade (everything without its own
+     view-transition-name) */
+  :global(::view-transition-group(root)) {
+    animation-duration: 450ms;
+  }
+
+  :global(::view-transition-old(root)),
+  :global(::view-transition-new(root)) {
+    animation-duration: 450ms;
   }
 </style>
