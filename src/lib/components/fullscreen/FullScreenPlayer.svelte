@@ -44,8 +44,11 @@
   import ConnectPanel from "../ConnectPanel.svelte";
   import { wsStore } from "$lib/stores/websocket";
   import MeshGradientBg from "../MeshGradientBg.svelte";
+  import MeshBackgroundSettings from "./MeshBackgroundSettings.svelte";
   import FullScreenMobileBottomSheet from "./FullScreenMobileBottomSheet.svelte";
   import FullScreenPlaybackControls from "./FullScreenPlaybackControls.svelte";
+
+  let showMeshSettings = false;
 
   let showConnectPanel = false;
   let showMobileMenu = false;
@@ -309,6 +312,8 @@
     // No global listeners needed; pointer events are attached to the element.
     return () => {};
   });
+
+  $: if (!$isFullScreen && showMeshSettings) showMeshSettings = false;
 </script>
 
 {#if $isFullScreen}
@@ -320,6 +325,24 @@
     <!-- Animated blurred background -->
     <MeshGradientBg lite={isAndroid && $isMobile} />
     <div class="backdrop-layer"></div>
+
+    {#if !$isMobile}
+      <button
+        class="mesh-settings-toggle"
+        class:active={showMeshSettings}
+        on:click={() => (showMeshSettings = !showMeshSettings)}
+        aria-label="Background settings"
+      >
+        <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+          <path
+            d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.5.5 0 00.12-.61l-1.92-3.32a.5.5 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 00-.48-.41h-3.84a.48.48 0 00-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.5.5 0 00-.59.22L3.34 8.87a.5.5 0 00.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.5.5 0 00-.12.61l1.92 3.32c.12.22.39.3.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.25.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.49 0 .59-.22l1.92-3.32a.5.5 0 00-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"
+          />
+        </svg>
+      </button>
+      {#if showMeshSettings}
+        <MeshBackgroundSettings onClose={() => (showMeshSettings = false)} />
+      {/if}
+    {/if}
 
     {#if $isMobile}
       <!-- Mobile header -->
@@ -988,6 +1011,30 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
+  }
+
+  .mesh-settings-toggle {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(20, 20, 20, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.75);
+    cursor: pointer;
+    z-index: 51;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+
+  .mesh-settings-toggle:hover,
+  .mesh-settings-toggle.active {
+    background: rgba(40, 40, 40, 0.8);
+    color: #fff;
   }
 
   /* Animated blurred background */
