@@ -7,6 +7,7 @@ import { equalizer } from '$lib/stores/equalizer';
 import { appSettings } from '$lib/stores/settings';
 import { addToast } from '$lib/stores/toast';
 import { nativeAudioSetEq, nativeAudioSetReplayGainEnabled, nativeAudioSetCrossfadeSeconds } from '$lib/services/native-audio';
+import { html5SetReplayGainEnabled } from '$lib/services/html5-audio';
 import { toNativeBands } from '$lib/stores/equalizer';
 
 // Track which backend is currently active
@@ -164,5 +165,7 @@ appSettings.subscribe((settings) => {
     if (get(activeBackend) === 'native') {
         nativeAudioSetReplayGainEnabled(settings.replayGainEnabled).catch(console.error);
         nativeAudioSetCrossfadeSeconds(settings.crossfadeSeconds).catch(console.error);
+    } else {
+        html5SetReplayGainEnabled(settings.replayGainEnabled);
     }
 });

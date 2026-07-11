@@ -292,7 +292,7 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
                 }
 
                 activeBackend.set('html5');
-                await html5Play(audioPath, sliderToAudioVolume(get(volume)), startTime);
+                await html5Play(audioPath, sliderToAudioVolume(get(volume)), startTime, (track as any).replay_gain_db ?? null);
                 console.log('[Player] HTML5 streaming started:', track.title);
                 _scheduleHtml5Preload();
 
@@ -327,7 +327,7 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
                     console.log('[Player] Native playback started:', track.title);
                 } else {
                     activeBackend.set('html5');
-                    await html5Play(convertFileSrc(audioPath), sliderToAudioVolume(get(volume)), startTime);
+                    await html5Play(convertFileSrc(audioPath), sliderToAudioVolume(get(volume)), startTime, (track as any).replay_gain_db ?? null);
                     console.log('[Player] Local playback started via HTML5:', track.title);
                     _scheduleHtml5Preload();
                 }
@@ -909,7 +909,7 @@ async function _scheduleHtml5Preload(): Promise<void> {
     }
 
     console.log('[Player] Preloading next HTML5 track:', nextTrackObj.title, audioPath);
-    html5Preload(audioPath, nextTrackObj.id).catch(e => {
+    html5Preload(audioPath, nextTrackObj.id, (nextTrackObj as any).replay_gain_db ?? null).catch(e => {
         console.warn('[Player] HTML5 Preload failed (non-fatal):', e);
     });
 }

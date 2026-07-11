@@ -3,6 +3,7 @@
   import { appSettings } from "$lib/stores/settings";
   import { equalizer, EQ_PRESETS, type FilterType } from "$lib/stores/equalizer";
   import { nativeAudioStop, nativeAudioSetReplayGainEnabled, nativeAudioListDevices, nativeAudioGetDeviceInfo, nativeAudioSetOutputDevice, type DeviceList, type AudioDeviceInfo } from "$lib/services/native-audio";
+  import { html5SetReplayGainEnabled } from "$lib/services/html5-audio";
   import Icon from "$lib/components/Icon.svelte";
   import { onMount, onDestroy } from "svelte";
   import { slide } from "svelte/transition";
@@ -15,7 +16,6 @@
   let initialAudioBackend = $appSettings.audioBackend;
   let showRefreshNotice = false;
   $: showRefreshNotice = $appSettings.audioBackend !== initialAudioBackend;
-  $: replayGainDisabled = $appSettings.audioBackend === 'html5';
   $: outputDeviceDisabled = $appSettings.audioBackend === 'html5';
 
   let deviceList: DeviceList | null = null;
@@ -91,9 +91,13 @@
   }
 
   async function handleToggleReplayGain() {
-    if (replayGainDisabled) return;
     const next = !$appSettings.replayGainEnabled;
     appSettings.setReplayGainEnabled(next);
+    if ($appSettings.audioBackend === 'html5') {
+      // html5 replay gain is applied synchronously via WebAudio
+      html5SetReplayGainEnabled(next);
+      return;
+    }
     try {
       await nativeAudioSetReplayGainEnabled(next);
     } catch (e) {
@@ -335,12 +339,6 @@
               <div class="toggle-handle"></div>
             </button>
           </div>
-          {#if replayGainDisabled}
-            <div class="disabled-notice">
-              <Icon name="info" size="xs" />
-              <span>{$_('settings.replayGainDisabled', { default: 'Replay Gain requires Native audio backend' })}</span>
-            </div>
-          {/if}
         </div>
 
         <div class="divider"></div>
