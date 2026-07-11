@@ -1,16 +1,32 @@
 // Equalizer store - manages audio EQ settings
 import { writable, get } from 'svelte/store';
+import type { EqBand as NativeEqBand } from '../services/native-audio';
+
+export type FilterType =
+    | 'peaking'
+    | 'lowShelf'
+    | 'highShelf'
+    | 'lowPass'
+    | 'highPass'
+    | 'bandPass'
+    | 'notch'
+    | 'allPass';
 
 export interface EqualizerBand {
     frequency: number;
     label: string;
-    gain: number; // -12 to +12 dB
+    gain: number;         // -12 to +12 dB; unused by lowPass/highPass/bandPass/notch/allPass
+    q: number;            // 0.1 to 10.0
+    filterType: FilterType;
+    enabled: boolean;     // false => band is bypassed without losing settings
 }
 
 export interface EqualizerState {
     enabled: boolean;
     bands: EqualizerBand[];
     currentPreset: string | null;
+    /** output trim applied after all bands (dB). range: -24..+6 dB */
+    preampDb: number;
 }
 
 export interface EqualizerPreset {
@@ -39,19 +55,28 @@ export const EQ_PRESETS: EqualizerPreset[] = [
 const EQ_STORAGE_KEY = 'audion_equalizer';
 
 // Create default bands
+// end bands use shelves at Q=0.707, middle bands use peaking at Q=1.41
 function createDefaultBands(): EqualizerBand[] {
-    return EQ_FREQUENCIES.map((freq, i) => ({
-        frequency: freq,
-        label: EQ_LABELS[i],
-        gain: 0
-    }));
+    return EQ_FREQUENCIES.map((freq, i) => {
+        const isFirst = i === 0;
+        const isLast = i === EQ_FREQUENCIES.length - 1;
+        return {
+            frequency: freq,
+            label: EQ_LABELS[i],
+            gain: 0,
+            q: isFirst || isLast ? 0.707 : 1.41,
+            filterType: isFirst ? 'lowShelf' : isLast ? 'highShelf' : 'peaking',
+            enabled: true,
+        };
+    });
 }
 
 // Default state
 const defaultState: EqualizerState = {
     enabled: false,
     bands: createDefaultBands(),
-    currentPreset: 'Flat'
+    currentPreset: 'Flat',
+    preampDb: 0,
 };
 
 // Load from localStorage
@@ -64,14 +89,26 @@ function loadState(): EqualizerState {
             const parsed = JSON.parse(stored);
             // Ensure bands array has correct structure
             if (parsed.bands && Array.isArray(parsed.bands) && parsed.bands.length === 10) {
+                const total = parsed.bands.length;
                 return {
                     enabled: parsed.enabled ?? false,
-                    bands: parsed.bands.map((b: any, i: number) => ({
-                        frequency: EQ_FREQUENCIES[i],
-                        label: EQ_LABELS[i],
-                        gain: typeof b.gain === 'number' ? Math.max(-12, Math.min(12, b.gain)) : 0
-                    })),
-                    currentPreset: parsed.currentPreset ?? null
+                    bands: parsed.bands.map((b: any, i: number) => {
+                        const isFirst = i === 0;
+                        const isLast = i === total - 1;
+                        return {
+                            frequency: EQ_FREQUENCIES[i],
+                            label: EQ_LABELS[i],
+                            gain: typeof b.gain === 'number' ? Math.max(-12, Math.min(12, b.gain)) : 0,
+                            // migrate old stored bands that lack q / filterType / enabled
+                            q: typeof b.q === 'number' ? b.q : (isFirst || isLast ? 0.707 : 1.41),
+                            filterType: b.filterType ?? (isFirst ? 'lowShelf' : isLast ? 'highShelf' : 'peaking'),
+                            enabled: b.enabled ?? true,
+                        };
+                    }),
+                    currentPreset: parsed.currentPreset ?? null,
+                    preampDb: typeof parsed.preampDb === 'number'
+                        ? Math.max(-24, Math.min(6, parsed.preampDb))
+                        : 0,
                 };
             }
         }
@@ -93,19 +130,30 @@ function saveState(state: EqualizerState): void {
     }
 }
 
+// convert store bands -> wire format expected by the backend
+export function toNativeBands(bands: EqualizerBand[]): NativeEqBand[] {
+    return bands.map(b => ({
+        frequency: b.frequency,
+        gain: b.gain,
+        q: b.q,
+        filter_type: b.filterType,
+        enabled: b.enabled,
+    }));
+}
+
 // Create the equalizer store
 function createEqualizerStore() {
     const { subscribe, set, update } = writable<EqualizerState>(loadState());
 
     // Internal callbacks for when filters need updating
-    let gainChangeCallbacks: Set<(bandIndex: number, gain: number) => void> = new Set();
+    let gainChangeCallbacks: Set<(bandIndex: number, band: EqualizerBand) => void> = new Set();
     let enabledChangeCallbacks: Set<(enabled: boolean) => void> = new Set();
 
     return {
         subscribe,
 
         // Register callbacks for audio system integration - returns unsubscribe function
-        onGainChange(callback: (bandIndex: number, gain: number) => void): () => void {
+        onGainChange(callback: (bandIndex: number, band: EqualizerBand) => void): () => void {
             gainChangeCallbacks.add(callback);
             return () => {
                 gainChangeCallbacks.delete(callback);
@@ -139,19 +187,70 @@ function createEqualizerStore() {
             update(state => {
                 const bands = [...state.bands];
                 bands[bandIndex] = { ...bands[bandIndex], gain };
-
-                const newState = {
-                    ...state,
-                    bands,
-                    currentPreset: null // Custom settings
-                };
+                const newState = { ...state, bands, currentPreset: null };
                 saveState(newState);
-
-                // Notify audio system
                 if (state.enabled) {
-                    gainChangeCallbacks.forEach(cb => cb(bandIndex, gain));
+                    gainChangeCallbacks.forEach(cb => cb(bandIndex, bands[bandIndex]));
                 }
+                return newState;
+            });
+        },
 
+        // set Q for a specific band
+        setBandQ(bandIndex: number, q: number) {
+            if (bandIndex < 0 || bandIndex >= 10) return;
+            q = Math.max(0.1, Math.min(10.0, q));
+
+            update(state => {
+                const bands = [...state.bands];
+                bands[bandIndex] = { ...bands[bandIndex], q };
+                const newState = { ...state, bands, currentPreset: null };
+                saveState(newState);
+                if (state.enabled) {
+                    gainChangeCallbacks.forEach(cb => cb(bandIndex, bands[bandIndex]));
+                }
+                return newState;
+            });
+        },
+
+        // set filter type for a specific band
+        setBandFilterType(bandIndex: number, filterType: FilterType) {
+            if (bandIndex < 0 || bandIndex >= 10) return;
+
+            update(state => {
+                const bands = [...state.bands];
+                bands[bandIndex] = { ...bands[bandIndex], filterType };
+                const newState = { ...state, bands, currentPreset: null };
+                saveState(newState);
+                if (state.enabled) {
+                    gainChangeCallbacks.forEach(cb => cb(bandIndex, bands[bandIndex]));
+                }
+                return newState;
+            });
+        },
+
+        // enable or bypass a specific band without losing its settings
+        setBandEnabled(bandIndex: number, enabled: boolean) {
+            if (bandIndex < 0 || bandIndex >= 10) return;
+
+            update(state => {
+                const bands = [...state.bands];
+                bands[bandIndex] = { ...bands[bandIndex], enabled };
+                const newState = { ...state, bands, currentPreset: null };
+                saveState(newState);
+                if (state.enabled) {
+                    gainChangeCallbacks.forEach(cb => cb(bandIndex, bands[bandIndex]));
+                }
+                return newState;
+            });
+        },
+
+        // set preamp trim (dB). range: -24..+6
+        setPreampDb(preampDb: number) {
+            preampDb = Math.max(-24, Math.min(6, preampDb));
+            update(state => {
+                const newState = { ...state, preampDb };
+                saveState(newState);
                 return newState;
             });
         },
@@ -177,7 +276,7 @@ function createEqualizerStore() {
                 // Notify audio system for all bands
                 if (state.enabled) {
                     bands.forEach((band, i) => {
-                        gainChangeCallbacks.forEach(cb => cb(i, band.gain));
+                        gainChangeCallbacks.forEach(cb => cb(i, band));
                     });
                 }
 

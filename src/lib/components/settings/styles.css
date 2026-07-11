@@ -381,6 +381,217 @@
     cursor: pointer;
   }
 
+  .eq-band input[type="range"]:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* eq band label button */
+  .eq-band-label-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 3px 5px;
+    border-radius: var(--radius-sm);
+    transition: background-color 0.15s, color 0.15s;
+    line-height: 1;
+  }
+
+  .eq-band-label-btn:hover {
+    background-color: rgba(255, 255, 255, 0.07);
+    color: var(--text-primary);
+  }
+
+  .eq-band-label-btn.active {
+    background-color: rgba(var(--accent-rgb, 29, 185, 84), 0.15);
+    color: var(--accent-primary);
+  }
+
+  .eq-band-label-btn.bypassed {
+    opacity: 0.5;
+  }
+
+  /* eq band detail panel */
+  .eq-band-detail {
+    background-color: var(--bg-highlight);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    animation: eqFadeSlideIn 0.15s ease;
+  }
+
+  @keyframes eqFadeSlideIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .eq-band-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .eq-detail-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .eq-detail-subtitle {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+  }
+
+  .eq-detail-header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .toggle-btn-sm {
+    width: 36px;
+    height: 20px;
+  }
+
+  .toggle-btn-sm .toggle-handle {
+    width: 14px;
+    height: 14px;
+    top: 2px;
+    left: 2px;
+  }
+
+  .toggle-btn-sm.active .toggle-handle {
+    transform: translateX(16px);
+  }
+
+  .eq-band-detail-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+  }
+
+  .eq-detail-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .eq-q-value {
+    font-family: monospace;
+    color: var(--accent-primary);
+    font-weight: 700;
+  }
+
+  .eq-filter-type-grid {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+  }
+
+  .eq-filter-group {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .eq-filter-group-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--text-subdued);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    width: 36px;
+    flex-shrink: 0;
+  }
+
+  .eq-filter-pill {
+    flex: 1;
+    border-radius: var(--radius-md);
+  }
+
+  .eq-segment-sm {
+    min-height: 30px;
+    font-size: 0.7rem;
+    padding: var(--spacing-xs) var(--spacing-sm);
+  }
+
+  .eq-q-slider {
+    width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    background: var(--bg-surface);
+    border-radius: 3px;
+    cursor: pointer;
+    outline: none;
+    border: 1px solid var(--border-color);
+  }
+
+  .eq-q-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--accent-primary);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  .eq-q-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--accent-primary);
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  .eq-q-range-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.65rem;
+    color: var(--text-subdued);
+    padding: 0 2px;
+  }
+
+  .eq-gainless-note {
+    font-size: 0.7rem;
+    color: var(--text-subdued);
+    margin: 0;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: var(--bg-surface);
+    border-radius: var(--radius-sm);
+    border-left: 2px solid var(--border-color);
+  }
+
+  .eq-preamp-row {
+    padding: var(--spacing-sm) 0 0;
+    border-top: 1px solid var(--border-color);
+    margin-top: var(--spacing-xs);
+  }
+
+  /* reset band button in detail header */
+  .eq-reset-band-btn {
+    font-size: 0.7rem;
+    color: var(--text-subdued);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .eq-reset-band-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-surface);
+  }
+
   .crossfade-slider {
     margin-top: 8px;
     display: flex;

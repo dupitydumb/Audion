@@ -7,6 +7,7 @@ import { equalizer } from '$lib/stores/equalizer';
 import { appSettings } from '$lib/stores/settings';
 import { addToast } from '$lib/stores/toast';
 import { nativeAudioSetEq, nativeAudioSetReplayGainEnabled, nativeAudioSetCrossfadeSeconds } from '$lib/services/native-audio';
+import { toNativeBands } from '$lib/stores/equalizer';
 
 // Track which backend is currently active
 export type ActiveBackend = 'native' | 'html5' | 'remote' | 'none';
@@ -145,7 +146,12 @@ equalizer.subscribe((state) => {
         if (get(activeBackend) !== 'native') return;
 
         try {
-            await nativeAudioSetEq(_latestEqState);
+            const state = _latestEqState;
+            await nativeAudioSetEq({
+                enabled: state.enabled,
+                bands: toNativeBands(state.bands),
+                preamp_db: state.preampDb,
+            });
         } catch (err) {
             console.error('[EQ] Failed to apply settings:', err);
             addToast('Failed to apply equalizer settings', 'error');

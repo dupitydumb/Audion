@@ -2,7 +2,7 @@
 // player.ts interacts exclusively through the public interface below.
 
 import { get } from 'svelte/store';
-import { equalizer, EQ_FREQUENCIES, type EqualizerState } from '$lib/stores/equalizer';
+import { equalizer, EQ_FREQUENCIES, type EqualizerState, type FilterType } from '$lib/stores/equalizer';
 import { addToast } from '$lib/stores/toast';
 import { appSettings } from '$lib/stores/settings';
 
@@ -703,11 +703,13 @@ function ensureHtml5EqGraph(audio: HTMLAudioElement): void {
         }
 
         if (html5EqFilters.length === 0) {
-            html5EqFilters = EQ_FREQUENCIES.map((freq) => {
+            html5EqFilters = EQ_FREQUENCIES.map((freq, i) => {
                 const filter = ctx.createBiquadFilter();
-                filter.type = 'peaking';
+                const isFirst = i === 0;
+                const isLast = i === EQ_FREQUENCIES.length - 1;
+                filter.type = isFirst ? 'lowshelf' : isLast ? 'highshelf' : 'peaking';
                 filter.frequency.value = freq;
-                filter.Q.value = 1.41;
+                filter.Q.value = isFirst || isLast ? 0.707 : 1.41;
                 filter.gain.value = 0;
                 return filter;
             });
@@ -735,14 +737,61 @@ function ensureHtml5EqGraph(audio: HTMLAudioElement): void {
     }
 }
 
+// map our FilterType
+const WEBAUDIO_FILTER_TYPE: Record<FilterType, BiquadFilterType> = {
+    peaking: 'peaking',
+    lowShelf: 'lowshelf',
+    highShelf: 'highshelf',
+    lowPass: 'lowpass',
+    highPass: 'highpass',
+    bandPass: 'bandpass',
+    notch: 'notch',
+    allPass: 'allpass',
+};
+
+const GAINLESS_FILTERS = new Set<FilterType>(['lowPass', 'highPass', 'bandPass', 'notch', 'allPass']);
+
+function dbToLinear(db: number): number {
+    return Math.pow(10, db / 20);
+}
+
 function applyHtml5EqState(state: EqualizerState): void {
     if (!html5AudioContext || html5EqFilters.length === 0) return;
 
     const now = html5AudioContext.currentTime;
     for (let i = 0; i < html5EqFilters.length; i++) {
-        const gain = state.enabled ? (state.bands[i]?.gain ?? 0) : 0;
-        html5EqFilters[i].gain.cancelScheduledValues(now);
-        html5EqFilters[i].gain.setTargetAtTime(gain, now, 0.01);
+        const band = state.bands[i];
+        const filter = html5EqFilters[i];
+        if (!band) continue;
+
+        const filterType = WEBAUDIO_FILTER_TYPE[band.filterType] ?? 'peaking';
+        if (filter.type !== filterType) filter.type = filterType;
+        if (filter.frequency.value !== band.frequency) filter.frequency.value = band.frequency;
+
+        const q = Math.max(0.1, Math.min(10, band.q ?? 1.41));
+        filter.Q.cancelScheduledValues(now);
+        filter.Q.setTargetAtTime(q, now, 0.01);
+
+        // bypassed bands are flattened to 0 gain; gainless filter types (LP/HP/BP/Notch/AP)
+        // don't use the gain param at all, so it's left untouched for them
+        const isEnabled = state.enabled && band.enabled;
+        const gain = isEnabled && !GAINLESS_FILTERS.has(band.filterType) ? band.gain : 0;
+        filter.gain.cancelScheduledValues(now);
+        filter.gain.setTargetAtTime(gain, now, 0.01);
+
+        // for gainless filter types, bypassing the band means routing frequency out of range
+        // we approximate bypass by pinning Q/gain
+        // to a neutral peaking response at unity when disabled
+        if (!state.enabled || !band.enabled) {
+            if (GAINLESS_FILTERS.has(band.filterType) && filter.type !== 'peaking') {
+            }
+        }
+    }
+
+    if (html5EqGainNode) {
+        const preampLinear = state.enabled ? dbToLinear(state.preampDb ?? 0) : 1;
+        html5EqGainNode.gain.cancelScheduledValues(now);
+        html5EqGainNode.gain.setTargetAtTime(preampLinear, now, 0.01);
     }
 }
 

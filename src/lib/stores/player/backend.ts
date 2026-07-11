@@ -6,7 +6,7 @@ import {
     sliderToAudioVolume, pluginEvents,
 } from './stores';
 import { appSettings } from '$lib/stores/settings';
-import { equalizer } from '$lib/stores/equalizer';
+import { equalizer, toNativeBands } from '$lib/stores/equalizer';
 import { addToast } from '$lib/stores/toast';
 import { wsStore } from '$lib/stores/websocket';
 import { activeRemoteDevice } from '$lib/stores/websocket';
@@ -200,7 +200,11 @@ export async function initAudioBackend(): Promise<void> {
         try {
             const state = equalizer.getState();
             nativeAudioSetRepeatOne(get(repeat) === 'one').catch(console.error);
-            await nativeAudioSetEq(state);
+            await nativeAudioSetEq({
+                enabled: state.enabled,
+                bands: toNativeBands(state.bands),
+                preamp_db: state.preampDb,
+            });
             nativeAudioSetReplayGainEnabled(get(appSettings).replayGainEnabled).catch(console.error);
             nativeAudioSetCrossfadeSeconds(get(appSettings).crossfadeSeconds).catch(console.error);
             console.log('[Player] Applied initial EQ settings to native backend');

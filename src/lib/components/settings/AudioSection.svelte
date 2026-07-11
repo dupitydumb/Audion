@@ -1,7 +1,7 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
   import { appSettings } from "$lib/stores/settings";
-  import { equalizer, EQ_PRESETS } from "$lib/stores/equalizer";
+  import { equalizer, EQ_PRESETS, type FilterType } from "$lib/stores/equalizer";
   import { nativeAudioStop, nativeAudioSetReplayGainEnabled, nativeAudioListDevices, nativeAudioGetDeviceInfo, nativeAudioSetOutputDevice, type DeviceList, type AudioDeviceInfo } from "$lib/services/native-audio";
   import Icon from "$lib/components/Icon.svelte";
   import { onMount, onDestroy } from "svelte";
@@ -110,6 +110,56 @@
   function formatEqGain(gain: number): string {
     const rounded = Math.round(gain * 10) / 10;
     return `${rounded > 0 ? "+" : ""}${rounded.toFixed(1)} dB`;
+  }
+
+  // eq band detail panel
+  let selectedBandIndex: number | null = null;
+
+  function toggleBandDetail(i: number) {
+    selectedBandIndex = selectedBandIndex === i ? null : i;
+  }
+
+  const FILTER_TYPE_LABELS: Record<FilterType, string> = {
+    peaking: 'Peak',
+    lowShelf: 'Low Shelf',
+    highShelf: 'High Shelf',
+    lowPass: 'Low Pass',
+    highPass: 'High Pass',
+    bandPass: 'Band Pass',
+    notch: 'Notch',
+    allPass: 'All Pass',
+  };
+
+  // filter types where gain has no effect => slider is dimmed
+  const GAINLESS_FILTERS = new Set<FilterType>(['lowPass', 'highPass', 'bandPass', 'notch', 'allPass']);
+
+  // groups for the filter type picker in the band detail panel
+  const FILTER_TYPE_GROUPS: { label: string; types: FilterType[] }[] = [
+    { label: 'Gain', types: ['peaking', 'lowShelf', 'highShelf'] },
+    { label: 'Filter', types: ['lowPass', 'highPass', 'bandPass', 'notch', 'allPass'] },
+  ];
+
+  // default band values
+  const BAND_DEFAULTS: { gain: number; q: number; filterType: FilterType; enabled: boolean }[] = [
+    { gain: 0, q: 0.707, filterType: 'lowShelf', enabled: true },
+    { gain: 0, q: 1.41, filterType: 'peaking', enabled: true },
+    { gain: 0, q: 1.41, filterType: 'peaking', enabled: true },
+    { gain: 0, q: 1.41, filterType: 'peaking', enabled: true },
+    { gain: 0, q: 1.41, filterType: 'peaking', enabled: true },
+    { gain: 0, q: 1.41, filterType: 'peaking', enabled: true },
+    { gain: 0, q: 1.41, filterType: 'peaking', enabled: true },
+    { gain: 0, q: 1.41, filterType: 'peaking', enabled: true },
+    { gain: 0, q: 1.41, filterType: 'peaking', enabled: true },
+    { gain: 0, q: 0.707, filterType: 'highShelf', enabled: true },
+  ];
+
+  function resetBand(i: number) {
+    const d = BAND_DEFAULTS[i];
+    if (!d) return;
+    equalizer.setBandGain(i, d.gain);
+    equalizer.setBandQ(i, d.q);
+    equalizer.setBandFilterType(i, d.filterType);
+    equalizer.setBandEnabled(i, d.enabled);
   }
 
   function handleInfoClick(e: Event, device: AudioDeviceInfo) {
@@ -342,13 +392,24 @@
               <div class="eq-bands">
                 {#each $equalizer.bands as band, i}
                   <div class="eq-band">
-                    <span class="eq-band-label">{band.label}</span>
+                    <button
+                      class="eq-band-label eq-band-label-btn"
+                      class:active={selectedBandIndex === i}
+                      class:bypassed={!band.enabled}
+                      on:click={() => toggleBandDetail(i)}
+                      title="Edit {band.label} band settings"
+                      aria-expanded={selectedBandIndex === i}
+                      aria-label="{band.label}: {FILTER_TYPE_LABELS[band.filterType]}, Q {band.q.toFixed(2)}{band.enabled ? '' : ' (bypassed)'}"
+                    >
+                      {band.label}
+                    </button>
                     <input
                       type="range"
                       min="-12"
                       max="12"
                       step="0.5"
                       value={band.gain}
+                      disabled={!band.enabled || GAINLESS_FILTERS.has(band.filterType)}
                       style="--eq-fill: {((band.gain + 12) / 24 * 100).toFixed(1)}%"
                       on:input={(e) => {
                         const val = parseFloat(e.currentTarget.value);
@@ -356,10 +417,132 @@
                       }}
                       aria-label="{band.frequency} band"
                     />
-                    <span class="eq-band-value">{formatEqGain(band.gain)}</span>
+                    <span class="eq-band-value">
+                      {GAINLESS_FILTERS.has(band.filterType) ? 'Q ' + band.q.toFixed(1) : formatEqGain(band.gain)}
+                    </span>
                   </div>
                 {/each}
               </div>
+
+              {#if selectedBandIndex !== null}
+                {@const selBand = $equalizer.bands[selectedBandIndex]}
+                {@const gainless = GAINLESS_FILTERS.has(selBand.filterType)}
+                <div class="eq-band-detail" role="region" aria-label="Band detail for {selBand.label}">
+                  <div class="eq-band-detail-header">
+                    <div class="eq-detail-title-group">
+                      <span class="setting-title">{selBand.label}</span>
+                      <span class="eq-detail-subtitle">
+                        {#if gainless}
+                          {FILTER_TYPE_LABELS[selBand.filterType]} · Q {selBand.q.toFixed(2)}
+                        {:else}
+                          {selBand.gain > 0 ? '+' : ''}{selBand.gain.toFixed(1)} dB · Q {selBand.q.toFixed(2)}
+                        {/if}
+                      </span>
+                    </div>
+                    <div class="eq-detail-header-actions">
+                      <button
+                        class="btn-text-small eq-reset-band-btn"
+                        on:click={() => resetBand(selectedBandIndex!)}
+                        title="Reset this band to default"
+                        aria-label="Reset {selBand.label} band to default"
+                      >
+                        Reset
+                      </button>
+                      <button
+                        class="toggle-btn toggle-btn-sm"
+                        class:active={selBand.enabled}
+                        on:click={() => equalizer.setBandEnabled(selectedBandIndex!, !selBand.enabled)}
+                        role="switch"
+                        aria-checked={selBand.enabled}
+                        aria-label="{selBand.enabled ? 'Bypass' : 'Enable'} {selBand.label} band"
+                        title="{selBand.enabled ? 'Bypass' : 'Enable'} band"
+                      >
+                        <div class="toggle-handle"></div>
+                      </button>
+                      <button class="btn-text-small" on:click={() => selectedBandIndex = null} aria-label="Close band detail">✕</button>
+                    </div>
+                  </div>
+
+                  <div class="eq-band-detail-row">
+                    <span class="eq-detail-label">Filter type</span>
+                    <div class="eq-filter-type-grid" role="group" aria-label="Filter type">
+                      {#each FILTER_TYPE_GROUPS as group}
+                        <div class="eq-filter-group">
+                          <span class="eq-filter-group-label">{group.label}</span>
+                          <div class="segmented-pill eq-filter-pill">
+                            {#each group.types as ft}
+                              <button
+                                class="segment-btn eq-segment-sm"
+                                class:active={selBand.filterType === ft}
+                                on:click={() => equalizer.setBandFilterType(selectedBandIndex!, ft)}
+                                aria-pressed={selBand.filterType === ft}
+                              >
+                                {FILTER_TYPE_LABELS[ft]}
+                              </button>
+                            {/each}
+                          </div>
+                        </div>
+                      {/each}
+                    </div>
+                  </div>
+
+                  <div class="eq-band-detail-row">
+                    <label class="eq-detail-label" for="eq-q-{selectedBandIndex}">
+                      Q factor
+                      <span class="eq-q-value">{selBand.q.toFixed(2)}</span>
+                    </label>
+                    <input
+                      id="eq-q-{selectedBandIndex}"
+                      type="range"
+                      class="eq-q-slider"
+                      min="0.1"
+                      max="10"
+                      step="0.01"
+                      value={selBand.q}
+                      on:input={(e) => equalizer.setBandQ(selectedBandIndex!, parseFloat(e.currentTarget.value))}
+                      aria-label="Q factor for {selBand.label}"
+                      aria-valuemin="0.1"
+                      aria-valuemax="10"
+                      aria-valuenow={selBand.q}
+                    />
+                    <div class="eq-q-range-labels" aria-hidden="true">
+                      <span>Wide</span>
+                      <span>Narrow</span>
+                    </div>
+                  </div>
+
+                  {#if gainless}
+                    <p class="eq-gainless-note">Gain slider has no effect for {FILTER_TYPE_LABELS[selBand.filterType]} — adjust frequency and Q only.</p>
+                  {/if}
+                </div>
+              {/if}
+
+              <!-- preamp -->
+              <div class="eq-band-detail-row eq-preamp-row">
+                <label class="eq-detail-label" for="eq-preamp">
+                  Preamp
+                  <span class="eq-q-value">{$equalizer.preampDb > 0 ? '+' : ''}{$equalizer.preampDb.toFixed(1)} dB</span>
+                </label>
+                <input
+                  id="eq-preamp"
+                  type="range"
+                  class="eq-q-slider"
+                  min="-24"
+                  max="6"
+                  step="0.5"
+                  value={$equalizer.preampDb}
+                  on:input={(e) => equalizer.setPreampDb(parseFloat(e.currentTarget.value))}
+                  aria-label="Preamp gain"
+                  aria-valuemin="-24"
+                  aria-valuemax="6"
+                  aria-valuenow={$equalizer.preampDb}
+                />
+                <div class="eq-q-range-labels" aria-hidden="true">
+                  <span>−24 dB</span>
+                  <span>+6 dB</span>
+                </div>
+              </div>
+
               <div class="eq-presets">
                 <span class="eq-presets-label">{$_('settings.presets', { default: 'Presets' })}</span>
                 <div class="eq-preset-pills">
@@ -367,7 +550,7 @@
                     <button
                       class="preset-pill"
                       class:active={$equalizer.currentPreset === preset.name}
-                      on:click={() => equalizer.applyPreset(preset.name)}
+                      on:click={() => { equalizer.applyPreset(preset.name); selectedBandIndex = null; }}
                       title={preset.name}
                     >
                       {preset.name}

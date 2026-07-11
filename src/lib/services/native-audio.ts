@@ -57,14 +57,45 @@ export interface NativePlaybackState {
     current_path: string;
 }
 
+export type FilterType =
+    | 'peaking'
+    | 'lowShelf'
+    | 'highShelf'
+    | 'lowPass'
+    | 'highPass'
+    | 'bandPass'
+    | 'notch'
+    | 'allPass';
+
 export interface EqBand {
     frequency: number;
-    gain: number;
+    gain: number;        // dB, -12..+12; unused by lowPass/highPass/bandPass/notch/allPass
+    q: number;            // 0.1..10.0
+    filter_type: FilterType;
+    enabled: boolean;     // false =? band is bypassed without losing settings
 }
 
 export interface EqSettings {
     enabled: boolean;
     bands: EqBand[];
+    /** output trim applied after all bands (dB). range: -24..+6 dB */
+    preamp_db: number;
+}
+
+/**
+ * migrate a persisted EqBand that may be missing q / filter_type / enabled fields
+ * safe to call on already migrated bands
+ */
+export function migrateEqBand(band: Partial<EqBand>, index: number, total: number): EqBand {
+    const isFirst = index === 0;
+    const isLast = index === total - 1;
+    return {
+        frequency: band.frequency ?? 1000,
+        gain: band.gain ?? 0,
+        q: band.q ?? (isFirst || isLast ? 0.707 : 1.41),
+        filter_type: band.filter_type ?? (isFirst ? 'lowShelf' : isLast ? 'highShelf' : 'peaking'),
+        enabled: band.enabled ?? true,
+    };
 }
 
 /**
