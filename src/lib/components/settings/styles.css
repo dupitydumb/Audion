@@ -1,5 +1,4 @@
-
-  .settings-view {
+.settings-view {
     height: 100%;
     min-height: 0;
     display: flex;
@@ -25,15 +24,21 @@
   .settings-content {
     flex: 1;
     min-height: 0;
-    overflow-y: auto;
-    padding: var(--spacing-md);
-    padding-bottom: calc(var(--player-height) + var(--spacing-lg));
+    overflow: hidden;
+    position: relative;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
   }
 
+  .settings-content .settings-pane {
+    padding: var(--spacing-md);
+  }
+  .settings-content .settings-pane.settings-container {
+    padding-bottom: calc(var(--player-height) + var(--spacing-lg));
+  }
+
   @media (max-width: 768px) {
-    .settings-content {
+    .settings-content .settings-pane.settings-container {
       padding-bottom: calc(
         var(--mobile-bottom-inset, 130px) + var(--spacing-xl)
       );
@@ -3228,4 +3233,241 @@ animation: spin 0.8s linear infinite;
 .startup-page-dropdown-menu {
 max-height: 280px;
 overflow-y: auto;
+}
+
+/* =============================================================================
+   EQUALIZER SUBSECTION EDITOR => slides in over the settings list
+   ============================================================================= */
+
+.eq-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.eq-editor-topbar {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.eq-back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.eq-back-btn:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+.eq-graph-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.eq-graph-title {
+  font-size: 0.95rem;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.eq-editor-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  padding: 2px 2px var(--spacing-md);
+}
+
+.eq-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.eq-band-count {
+  font-size: 0.7rem;
+  color: var(--text-subdued);
+  font-family: monospace;
+}
+
+.btn-secondary-small {
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-medium);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.btn-secondary-small:hover:not(:disabled) {
+  background-color: var(--bg-highlight);
+  border-color: var(--accent-primary);
+}
+
+.btn-secondary-small:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.eq-preamp-hint {
+  font-size: 0.68rem;
+  color: var(--text-subdued);
+  margin: 4px 0 0;
+  line-height: 1.4;
+}
+
+.eq-presets-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.preset-pill-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.preset-delete-btn {
+  background: none;
+  border: none;
+  color: var(--text-subdued);
+  font-size: 0.6rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+}
+
+.preset-delete-btn:hover {
+  color: var(--danger, #e33);
+}
+
+/* save preset modal */
+.eq-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.eq-modal {
+  background: var(--bg-highlight);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  width: 280px;
+}
+
+.eq-preset-name-input {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+.eq-preset-name-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.eq-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+}
+
+/* sliding pane: main settings list vs. the equalizer subsection editor */
+.settings-pane-slider {
+  display: flex;
+  width: 200%;
+  height: 100%;
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.settings-pane-slider.show-subsection {
+  transform: translateX(-50%);
+}
+
+.settings-pane {
+  width: 50%;
+  flex-shrink: 0;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* compact eq preview shown inline in audio settings (full editor is a subsection) */
+.eq-compact-preview {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) 0;
+}
+
+.eq-compact-preview.dimmed {
+  opacity: 0.5;
+}
+
+.eq-compact-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 28px;
+  flex: 1;
+  min-width: 80px;
+}
+
+.eq-compact-bar {
+  flex: 1;
+  height: var(--bar-h, 50%);
+  background: var(--accent-primary);
+  border-radius: 1px;
+  min-width: 2px;
+  transition: height 0.15s;
+}
+
+.eq-compact-bar.bypassed {
+  background: var(--text-subdued);
+  opacity: 0.5;
+}
+
+.eq-compact-info {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  gap: 1px;
+}
+
+.eq-compact-band-count {
+  color: var(--text-subdued);
+  font-size: 0.62rem;
 }

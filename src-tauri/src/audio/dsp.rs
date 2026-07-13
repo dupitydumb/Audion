@@ -57,6 +57,9 @@ impl Default for EqSettings {
     }
 }
 
+/// upper bound on bands per EQ chain. a safety cap against unbounded input
+pub const MAX_EQ_BANDS: usize = 24;
+
 pub fn db_to_linear(db: f32) -> f32 {
     if !db.is_finite() {
         return 1.0;
@@ -226,11 +229,14 @@ impl FilterBank {
             return;
         }
         for ch in 0..self.channels {
-            for band in &settings.bands {
+            for band in settings.bands.iter().take(MAX_EQ_BANDS) {
                 if !band.enabled {
                     continue;
                 }
                 let q = band.q.clamp(0.1, 10.0);
+                // clamp frequency below Nyquist
+                let nyquist = self.sample_rate.get() as f32 / 2.0;
+                let freq = band.frequency.clamp(20.0, nyquist * 0.998);
                 let needs_gain = matches!(
                     band.filter_type,
                     FilterType::Peaking | FilterType::LowShelf | FilterType::HighShelf
@@ -239,14 +245,14 @@ impl FilterBank {
                     continue;
                 }
                 let f = match band.filter_type {
-                    FilterType::Peaking   => BiquadFilter::new_peaking(band.frequency, band.gain, q, self.sample_rate),
-                    FilterType::LowShelf  => BiquadFilter::new_low_shelf(band.frequency, band.gain, q, self.sample_rate),
-                    FilterType::HighShelf => BiquadFilter::new_high_shelf(band.frequency, band.gain, q, self.sample_rate),
-                    FilterType::LowPass   => BiquadFilter::new_low_pass(band.frequency, q, self.sample_rate),
-                    FilterType::HighPass  => BiquadFilter::new_high_pass(band.frequency, q, self.sample_rate),
-                    FilterType::BandPass  => BiquadFilter::new_band_pass(band.frequency, q, self.sample_rate),
-                    FilterType::Notch     => BiquadFilter::new_notch(band.frequency, q, self.sample_rate),
-                    FilterType::AllPass   => BiquadFilter::new_all_pass(band.frequency, q, self.sample_rate),
+                    FilterType::Peaking   => BiquadFilter::new_peaking(freq, band.gain, q, self.sample_rate),
+                    FilterType::LowShelf  => BiquadFilter::new_low_shelf(freq, band.gain, q, self.sample_rate),
+                    FilterType::HighShelf => BiquadFilter::new_high_shelf(freq, band.gain, q, self.sample_rate),
+                    FilterType::LowPass   => BiquadFilter::new_low_pass(freq, q, self.sample_rate),
+                    FilterType::HighPass  => BiquadFilter::new_high_pass(freq, q, self.sample_rate),
+                    FilterType::BandPass  => BiquadFilter::new_band_pass(freq, q, self.sample_rate),
+                    FilterType::Notch     => BiquadFilter::new_notch(freq, q, self.sample_rate),
+                    FilterType::AllPass   => BiquadFilter::new_all_pass(freq, q, self.sample_rate),
                 };
                 self.filters[ch].push(f);
             }

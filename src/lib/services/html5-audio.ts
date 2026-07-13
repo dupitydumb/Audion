@@ -2,7 +2,7 @@
 // player.ts interacts exclusively through the public interface below.
 
 import { get } from 'svelte/store';
-import { equalizer, EQ_FREQUENCIES, type EqualizerState, type FilterType } from '$lib/stores/equalizer';
+import { equalizer, type EqualizerState, type FilterType } from '$lib/stores/equalizer';
 import { addToast } from '$lib/stores/toast';
 import { appSettings } from '$lib/stores/settings';
 
@@ -717,7 +717,10 @@ function ensureHtml5EqGraph(audio: HTMLAudioElement): void {
         html5AudioSourceElement = null;
     }
 
-    if (html5AudioSourceNode && html5EqGainNode && html5EqFilters.length > 0) return;
+    const bandCount = get(equalizer).bands.length;
+    const graphIsCurrent = html5AudioSourceNode && html5EqGainNode
+        && html5ReplayGainNode && html5EqFilters.length === bandCount;
+    if (graphIsCurrent) return;
 
     try {
         if (!html5AudioContext) {
@@ -746,18 +749,7 @@ function ensureHtml5EqGraph(audio: HTMLAudioElement): void {
             html5ReplayGainNode.gain.value = 1;
         }
 
-        if (html5EqFilters.length === 0) {
-            html5EqFilters = EQ_FREQUENCIES.map((freq, i) => {
-                const filter = ctx.createBiquadFilter();
-                const isFirst = i === 0;
-                const isLast = i === EQ_FREQUENCIES.length - 1;
-                filter.type = isFirst ? 'lowshelf' : isLast ? 'highshelf' : 'peaking';
-                filter.frequency.value = freq;
-                filter.Q.value = isFirst || isLast ? 0.707 : 1.41;
-                filter.gain.value = 0;
-                return filter;
-            });
-        }
+        rebuildHtml5FilterChain(ctx, bandCount);
 
         try { html5AudioSourceNode.disconnect(); } catch (_) { }
         html5EqFilters.forEach((filter) => {
@@ -766,11 +758,16 @@ function ensureHtml5EqGraph(audio: HTMLAudioElement): void {
         try { html5ReplayGainNode.disconnect(); } catch (_) { }
         try { html5EqGainNode.disconnect(); } catch (_) { }
 
-        html5AudioSourceNode.connect(html5EqFilters[0]);
-        for (let i = 0; i < html5EqFilters.length - 1; i++) {
-            html5EqFilters[i].connect(html5EqFilters[i + 1]);
+        if (html5EqFilters.length > 0) {
+            html5AudioSourceNode.connect(html5EqFilters[0]);
+            for (let i = 0; i < html5EqFilters.length - 1; i++) {
+                html5EqFilters[i].connect(html5EqFilters[i + 1]);
+            }
+            html5EqFilters[html5EqFilters.length - 1].connect(html5ReplayGainNode);
+        } else {
+            // no bands at all => route straight through
+            html5AudioSourceNode.connect(html5ReplayGainNode);
         }
-        html5EqFilters[html5EqFilters.length - 1].connect(html5ReplayGainNode);
         html5ReplayGainNode.connect(html5EqGainNode);
         html5EqGainNode.connect(ctx.destination);
 
@@ -784,6 +781,57 @@ function ensureHtml5EqGraph(audio: HTMLAudioElement): void {
         html5ReplayGainNode = null;
     }
 }
+
+// (re)create the BiquadFilterNode chain to match the current number of bands
+// called whenever the graph is (re)built or the band count changes structurally
+// (add/remove band) => see equalizer.onStructureChange subscription below
+function rebuildHtml5FilterChain(ctx: AudioContext, bandCount: number): void {
+    html5EqFilters.forEach((filter) => {
+        try { filter.disconnect(); } catch (_) { }
+    });
+    html5EqFilters = Array.from({ length: bandCount }, () => {
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'peaking';
+        filter.frequency.value = 1000;
+        filter.Q.value = 1.41;
+        filter.gain.value = 0;
+        return filter;
+    });
+}
+
+/**
+ * rewire the graph after a structural change (band added/removed) while a track
+ * is already playing.
+ * no-op if the graph hasn't been built yet => it'll pick up
+ * the current band count next time ensureHtml5EqGraph runs
+ */
+function handleHtml5EqStructureChange(): void {
+    if (!html5AudioContext || !html5AudioSourceNode || !html5ReplayGainNode || !html5EqGainNode) return;
+    const ctx = html5AudioContext;
+    const bandCount = get(equalizer).bands.length;
+    if (html5EqFilters.length === bandCount) {
+        applyHtml5EqState(get(equalizer));
+        return;
+    }
+
+    try { html5AudioSourceNode.disconnect(); } catch (_) { }
+    rebuildHtml5FilterChain(ctx, bandCount);
+
+    if (html5EqFilters.length > 0) {
+        html5AudioSourceNode.connect(html5EqFilters[0]);
+        for (let i = 0; i < html5EqFilters.length - 1; i++) {
+            html5EqFilters[i].connect(html5EqFilters[i + 1]);
+        }
+        html5EqFilters[html5EqFilters.length - 1].connect(html5ReplayGainNode);
+    } else {
+        html5AudioSourceNode.connect(html5ReplayGainNode);
+    }
+
+    applyHtml5EqState(get(equalizer));
+}
+
+equalizer.onStructureChange(handleHtml5EqStructureChange);
+
 
 // map our FilterType
 const WEBAUDIO_FILTER_TYPE: Record<FilterType, BiquadFilterType> = {
@@ -814,7 +862,9 @@ function applyHtml5EqState(state: EqualizerState): void {
 
         const filterType = WEBAUDIO_FILTER_TYPE[band.filterType] ?? 'peaking';
         if (filter.type !== filterType) filter.type = filterType;
-        if (filter.frequency.value !== band.frequency) filter.frequency.value = band.frequency;
+        const nyquist = html5AudioContext.sampleRate / 2;
+        const freq = Math.min(band.frequency, nyquist * 0.998);
+        if (filter.frequency.value !== freq) filter.frequency.value = freq;
 
         const q = Math.max(0.1, Math.min(10, band.q ?? 1.41));
         filter.Q.cancelScheduledValues(now);
