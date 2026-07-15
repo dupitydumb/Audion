@@ -6,6 +6,7 @@ import { init, register, getLocaleFromNavigator } from 'svelte-i18n';
 register('en', () => import('./locales/en.json'));
 register('es', () => import('./locales/es.json'));
 register('fr', () => import('./locales/fr.json'));
+register('ru', () => import('./locales/ru.json'));
 
 let i18nInitialized = false;
 
