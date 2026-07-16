@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import type { Album } from "$lib/api/tauri";
     import { goToAlbumDetail, goToArtistDetail } from "$lib/stores/view";
     import {
@@ -102,11 +103,13 @@
             y: e.clientY,
             items: [
                 {
-                    label: "Play",
+                    label: $_("contextMenu.play"),
                     action: () => playAlbum(album),
                 },
                 {
-                    label: pinned ? "Unpin from Top" : "Pin to Top",
+                    label: pinned
+                        ? $_("contextMenu.unpinFromTop")
+                        : $_("contextMenu.pinToTop"),
                     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2L4.5 9L9 9L9 22L15 22L15 9L19.5 9L12 2Z"/></svg>`,
                     action: () => {
                         if (pinned) {
@@ -118,10 +121,10 @@
                 },
                 { type: "separator" },
                 {
-                    label: "Change Artwork",
+                    label: $_("contextMenu.changeArtwork"),
                     submenu: [
                         {
-                            label: "From File",
+                            label: $_("contextMenu.fromFile"),
                             action: () => {
                                 const input = document.createElement("input");
                                 input.type = "file";
@@ -140,7 +143,7 @@
                                                 result,
                                             );
                                             addToast(
-                                                "Album artwork updated",
+                                                $_("album.artworkUpdated"),
                                                 "success",
                                             );
                                         };
@@ -151,13 +154,16 @@
                             },
                         },
                         {
-                            label: "From URL",
+                            label: $_("contextMenu.fromUrl"),
                             action: async () => {
-                                const url = await prompt("Enter image URL:", {
-                                    title: "Change Artwork",
-                                    placeholder:
-                                        "https://example.com/image.jpg",
-                                });
+                                const url = await prompt(
+                                    $_("playlist.enterImageUrl"),
+                                    {
+                                        title: $_("contextMenu.changeArtwork"),
+                                        placeholder: $_(
+                                            "trackList.imageUrlPlaceholder"),
+                                    },
+                                );
                                 if (url && url.trim()) {
                                     setCustomArtwork(
                                         "album",
@@ -165,7 +171,7 @@
                                         url.trim(),
                                     );
                                     addToast(
-                                        "Album artwork updated",
+                                        $_("album.artworkUpdated"),
                                         "success",
                                     );
                                 }
@@ -175,14 +181,14 @@
                 },
                 { type: "separator" },
                 {
-                    label: "Delete Album",
+                    label: $_("main.deleteAlbumTitle"),
                     danger: true,
                     action: async () => {
                         const confirmed = await confirm(
-                            `Are you sure you want to delete the album "${album.name}"? This will delete all songs in this album from your computer.`,
+                            $_("main.deleteAlbumConfirm", { values: { name: album.name } }),
                             {
-                                title: "Delete Album",
-                                confirmLabel: "Delete",
+                                title: $_("main.deleteAlbumTitle"),
+                                confirmLabel: $_("main.delete"),
                                 danger: true,
                             },
                         );
@@ -205,8 +211,8 @@
 
     const emptyState = {
         icon: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/></svg>`,
-        title: "No albums found",
-        description: "Add a music folder to see your albums",
+        title: $_("album.noAlbumsFound"),
+        description: $_("album.emptyHint"),
     };
 </script>
 
@@ -230,12 +236,13 @@
         {isNowPlaying}
         {isPaused}
         isPinned={isPinned("album", album.id, $pinnedItems)}
-        playTooltip="Play album"
-        resumeTooltip="Resume album"
-        pauseTooltip="Pause"
+        playTooltip={$_("common.playAlbum")}
+        resumeTooltip={$_("common.resumeAlbum")}
+        pauseTooltip={$_("common.pause")}
         ariaLabel={album.name}
         primaryText={album.name}
-        secondaryText={album.artist || "Unknown Artist"}
+        secondaryText={album.artist ||
+            $_("common.unknownArtist")}
         secondaryAction={album.artist
             ? () => goToArtistDetail(album.artist!)
             : null}

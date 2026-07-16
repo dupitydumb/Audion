@@ -533,19 +533,19 @@
         action: async () => {
           if (needsDownloadLocation()) {
             addToast(
-              "Please configure a download location in Settings first",
+              $_('playlist.configureDownloadLocation'),
               "error",
             );
             return;
           }
 
-          addToast(`Downloading "${track.title}"...`, "info");
+          addToast($_('trackList.downloadingTrack', { values: { title: track.title } }), "info");
           try {
             await downloadTrack(track);
-            addToast(`Downloaded "${track.title}"`, "success");
+            addToast($_('trackList.downloadedTrack', { values: { title: track.title } }), "success");
           } catch (error) {
             console.error("Failed to download track:", error);
-            addToast(`Failed to download "${track.title}"`, "error");
+            addToast($_('trackList.downloadTrackFailed', { values: { title: track.title } }), "error");
           }
         },
         disabled:
@@ -583,7 +583,7 @@
                   reader.onload = () => {
                     const result = reader.result as string;
                     setCustomArtwork("track", track.id, result);
-                    addToast("Artwork updated", "success");
+                    addToast($_('trackList.artworkUpdated'), "success");
                     // Refresh local cache for reactivity
                     trackAlbumArtCache.delete(track.id);
                   };
@@ -596,13 +596,13 @@
           {
             label: $_('contextMenu.fromUrl'),
             action: async () => {
-              const url = await prompt("Enter image URL:", {
-                title: "Change Artwork",
-                placeholder: "https://example.com/image.jpg",
+              const url = await prompt($_('playlist.enterImageUrl'), {
+                title: $_('contextMenu.changeArtwork'),
+                placeholder: $_('trackList.imageUrlPlaceholder'),
               });
               if (url && url.trim()) {
                 setCustomArtwork("track", track.id, url.trim());
-                addToast("Artwork updated", "success");
+                addToast($_('trackList.artworkUpdated'), "success");
                 trackAlbumArtCache.delete(track.id);
               }
             },
@@ -642,10 +642,10 @@
         danger: true,
         action: async () => {
           const confirmed = await confirm(
-            `Are you sure you want to delete "${track.title}" from your library? This will also remove the file from your computer.`,
+            $_('trackList.deleteTrackConfirmWithFile', { values: { title: track.title } }),
             {
-              title: "Delete Track",
-              confirmLabel: "Delete",
+              title: $_('player.deleteTrackTitle'),
+              confirmLabel: $_('player.delete'),
               danger: true,
             },
           );
@@ -765,10 +765,10 @@
         newTracks.splice(dragOverIndex, 0, removed);
         tracks = newTracks;
 
-        addToast("Tracks reordered", "success");
+        addToast($_('trackList.tracksReordered'), "success");
       } catch (error) {
         console.error("Failed to reorder tracks:", error);
-        addToast(`Failed to reorder tracks: ${error}`, "error");
+        addToast($_('trackList.reorderTracksFailed', { values: { error: String(error) } }), "error");
       }
     }
 
@@ -867,7 +867,7 @@
         const track = sortedTracks[trackIndex];
         if (track) {
           addToQueue([track]);
-          addToast(`Added "${track.title}" to queue`, "success");
+          addToast($_('trackList.addedToQueueWithTitle', { values: { title: track.title } }), "success");
         }
       }
 
@@ -892,7 +892,7 @@
 
 
   function formatDateAdded(dateAdded?: string | null): string {
-    if (!dateAdded) return "Unknown";
+    if (!dateAdded) return $_('common.unknown');
 
     const raw = dateAdded.trim();
     const isoLike = raw.replace(" ", "T").replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
@@ -927,17 +927,17 @@
     <div class="list-toolbar">
       <span class="toolbar-hint"
         >{showAdvancedMetadata
-          ? "Details shown: format, bitrate, source"
-          : "Minimal view"}</span
+          ? $_('trackList.detailsShown')
+          : $_('trackList.minimalView')}</span
       >
       <button
         class="advanced-toggle"
-        title="Toggle extra metadata (format, bitrate, source)"
+        title={$_('trackList.toggleMetadataTitle')}
         on:click={() => {
           showAdvancedMetadata = !showAdvancedMetadata;
         }}
       >
-        {showAdvancedMetadata ? "Hide details" : "Show details"}
+        {showAdvancedMetadata ? $_('trackList.hideDetails') : $_('trackList.showDetails')}
       </button>
     </div>
   {/if}
@@ -1059,7 +1059,7 @@
 
   :global(.list-header) {
     display: grid;
-    grid-template-columns: 40px 1fr 1fr 80px 130px;
+    grid-template-columns: 40px 1fr 1fr 80px 140px;
     gap: var(--spacing-md);
     padding: var(--spacing-sm) var(--spacing-md);
     padding-right: calc(var(--spacing-md) + var(--scrollbar-width, 0px));
@@ -1076,11 +1076,11 @@
     flex-shrink: 0;
   }
 
-  :global(.list-header.with-drag) { grid-template-columns: 32px 40px 1fr 1fr 80px 130px; }
-  :global(.list-header.no-album) { grid-template-columns: 40px 1fr 80px 130px; }
-  :global(.list-header.no-album.with-drag) { grid-template-columns: 32px 40px 1fr 80px 130px; }
-  :global(.list-header.multiselect) { grid-template-columns: 40px 40px 1fr 1fr 80px 130px; }
-  :global(.list-header.multiselect.no-album) { grid-template-columns: 40px 40px 1fr 80px 130px; }
+  :global(.list-header.with-drag) { grid-template-columns: 32px 40px 1fr 1fr 80px 140px; }
+  :global(.list-header.no-album) { grid-template-columns: 40px 1fr 80px 140px; }
+  :global(.list-header.no-album.with-drag) { grid-template-columns: 32px 40px 1fr 80px 140px; }
+  :global(.list-header.multiselect) { grid-template-columns: 40px 40px 1fr 1fr 80px 140px; }
+  :global(.list-header.multiselect.no-album) { grid-template-columns: 40px 40px 1fr 80px 140px; }
 
   :global(.col-header) {
     background: none; border: none; padding: 0; font: inherit; color: inherit;
@@ -1107,7 +1107,7 @@
 
   :global(.track-row) {
     display: grid;
-    grid-template-columns: 40px 1fr 1fr 80px 130px;
+    grid-template-columns: 40px 1fr 1fr 80px 140px;
     gap: var(--spacing-md);
     padding: 6px var(--spacing-md);
     padding-left: var(--spacing-lg);
@@ -1116,11 +1116,11 @@
     transition: background-color var(--transition-fast);
     width: 100%; text-align: left; height: 50px; box-sizing: border-box;
   }
-  .list-body.with-drag :global(.track-row) { grid-template-columns: 32px 40px 1fr 1fr 80px 130px; }
-  .list-body.no-album :global(.track-row) { grid-template-columns: 40px 1fr 80px 130px; }
-  .list-body.no-album.with-drag :global(.track-row) { grid-template-columns: 32px 40px 1fr 80px 130px; }
-  .list-body.multiselect :global(.track-row) { grid-template-columns: 40px 40px 1fr 1fr 80px 130px; }
-  .list-body.multiselect.no-album :global(.track-row) { grid-template-columns: 40px 40px 1fr 80px 130px; }
+  .list-body.with-drag :global(.track-row) { grid-template-columns: 32px 40px 1fr 1fr 80px 140px; }
+  .list-body.no-album :global(.track-row) { grid-template-columns: 40px 1fr 80px 140px; }
+  .list-body.no-album.with-drag :global(.track-row) { grid-template-columns: 32px 40px 1fr 80px 140px; }
+  .list-body.multiselect :global(.track-row) { grid-template-columns: 40px 40px 1fr 1fr 80px 140px; }
+  .list-body.multiselect.no-album :global(.track-row) { grid-template-columns: 40px 40px 1fr 80px 140px; }
 
   :global(.track-row.selected) { background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.12); }
   :global(.track-row.selected:hover) { background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.18); }

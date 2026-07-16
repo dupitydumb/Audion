@@ -41,15 +41,15 @@
 
   // Categories for filtering
   const categories = [
-    { id: "all", label: "All" },
-    { id: "audio", label: "Audio" },
-    { id: "ui", label: "UI" },
-    { id: "lyrics", label: "Lyrics" },
-    { id: "library", label: "Library" },
-    { id: "utility", label: "Utility" },
-    { id: "appearance", label: "Appearance" },
-    { id: "social", label: "Social" },
-    { id: "sync", label: "Sync" },
+    { id: "all", key: "pluginManager.categoryAll" },
+    { id: "audio", key: "pluginManager.categoryAudio" },
+    { id: "ui", key: "pluginManager.categoryUi" },
+    { id: "lyrics", key: "pluginManager.categoryLyrics" },
+    { id: "library", key: "pluginManager.categoryLibrary" },
+    { id: "utility", key: "pluginManager.categoryUtility" },
+    { id: "appearance", key: "pluginManager.categoryAppearance" },
+    { id: "social", key: "pluginManager.categorySocial" },
+    { id: "sync", key: "pluginManager.categorySync" },
   ];
 
   let confettiParticles: {
@@ -282,12 +282,12 @@
 
 <div class="plugin-view">
   <header class="view-header">
-    <h1>{$_('pluginManager.title', { default: 'Plugin Marketplace' })}</h1>
+    <h1>{$_('pluginManager.title')}</h1>
     <div class="header-actions">
       <button
         class="btn-secondary"
         on:click={openPluginsFolder}
-        title="Open local plugins folder"
+        title={$_('pluginManager.openFolderTitle')}
       >
         <svg
           viewBox="0 0 24 24"
@@ -300,7 +300,7 @@
             d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z"
           />
         </svg>
-        {$_('pluginManager.openFolder', { default: 'Open Folder' })}
+        {$_('pluginManager.openFolder')}
       </button>
 
       <button
@@ -326,7 +326,7 @@
               stroke-linecap="round"
             />
           </svg>
-          {$_('pluginManager.refreshing', { default: 'Refreshing...' })}
+          {$_('pluginManager.refreshing')}
         {:else}
           <svg
             viewBox="0 0 24 24"
@@ -340,7 +340,7 @@
               d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 0 1 9-9"
             />
           </svg>
-          {$_('pluginManager.fetchPlugins', { default: 'Fetch Plugins' })}
+          {$_('pluginManager.fetchPlugins')}
         {/if}
       </button>
 
@@ -350,10 +350,10 @@
             value={$pluginStore.sortBy}
             on:change={(e) => pluginStore.setSortBy(e.currentTarget.value as any)}
           >
-            <option value="stars">Most Stars</option>
-            <option value="downloads">Most Downloads</option>
-            <option value="updated">Recently Updated</option>
-            <option value="name">Name (A-Z)</option>
+            <option value="stars">{$_('pluginManager.sortStars')}</option>
+            <option value="downloads">{$_('pluginManager.sortDownloads')}</option>
+            <option value="updated">{$_('pluginManager.sortUpdated')}</option>
+            <option value="name">{$_('pluginManager.sortName')}</option>
           </select>
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="select-icon">
             <polyline points="6 9 12 15 18 9" />
@@ -367,7 +367,7 @@
     <div class="error-banner">
       <span>{$pluginStore.error}</span>
       <button class="btn-secondary" on:click={() => pluginStore.clearError()}>
-        {$_('pluginManager.dismiss', { default: 'Dismiss' })}
+        {$_('pluginManager.dismiss')}
       </button>
     </div>
   {/if}
@@ -378,21 +378,21 @@
       class:active={activeTab === "curated"}
       on:click={() => (activeTab = "curated")}
     >
-      {$_('pluginManager.curated', { default: 'Curated' })}
+      {$_('pluginManager.curated')}
     </button>
     <button
       class="tab"
       class:active={activeTab === "community"}
       on:click={() => (activeTab = "community")}
     >
-      {$_('pluginManager.community', { default: 'Community' })}
+      {$_('pluginManager.community')}
     </button>
     <button
       class="tab"
       class:active={activeTab === "installed"}
       on:click={() => (activeTab = "installed")}
     >
-      {$_('pluginManager.installedTab', { values: { count: $pluginStore.installed.length }, default: `Installed (${$pluginStore.installed.length})` })}
+      {$_('pluginManager.installedTab', { values: { count: $pluginStore.installed.length } })}
     </button>
   </div>
 
@@ -400,12 +400,12 @@
     <div class="create-form">
       <input
         type="text"
-        placeholder={$_('pluginManager.enterUrl', { default: 'Enter GitHub repository URL or plugin.json URL...' })}
+        placeholder={$_('pluginManager.enterUrl')}
         bind:value={newCommunityUrl}
         on:keydown={handleKeyDown}
       />
       <button class="btn-primary" on:click={handleAddCommunityUrl}>
-        {$_('pluginManager.add', { default: 'Add' })}
+        {$_('pluginManager.add')}
       </button>
     </div>
   {/if}
@@ -418,7 +418,7 @@
           class:active={$pluginStore.categoryFilter === category.id}
           on:click={() => pluginStore.setCategoryFilter(category.id)}
         >
-          {category.label}
+          {$_(category.key)}
         </button>
       {/each}
     </div>
@@ -451,7 +451,7 @@
             stroke-linecap="round"
           />
         </svg>
-        <h3>{$_('pluginManager.loading', { default: 'Loading plugins...' })}</h3>
+        <h3>{$_('pluginManager.loading')}</h3>
       </div>
     {:else if activeTab === "curated"}
       <div class="plugin-grid">
@@ -491,7 +491,7 @@
                   <span class="badge">{plugin.manifest.category}</span>
                 {/if}
                 {#if plugin.verified}
-                  <span class="badge badge-verified">{$_('pluginManager.verified', { default: 'Verified' })}</span>
+                  <span class="badge badge-verified">{$_('pluginManager.verified')}</span>
                 {/if}
               </div>
               <div class="plugin-stats">
@@ -531,8 +531,8 @@
                 d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"
               />
             </svg>
-            <h3>{$_('pluginManager.noCurated', { default: 'No curated plugins available' })}</h3>
-            <p>{$_('pluginManager.checkBackLater', { default: 'Check back later for new plugins' })}</p>
+            <h3>{$_('pluginManager.noCurated')}</h3>
+            <p>{$_('pluginManager.checkBackLater')}</p>
           </div>
         {/each}
       </div>
@@ -586,7 +586,7 @@
                 >{plugin.manifest.author} · v{plugin.manifest.version}</span
               >
               <span class="plugin-desc truncate"
-                >{plugin.manifest.description || $_('pluginManager.noDescription', { default: 'No description' })}</span
+                >{plugin.manifest.description || $_('pluginManager.noDescription')}</span
               >
               <div class="plugin-badges">
                 <span class="badge">{plugin.manifest.type.toUpperCase()}</span>
@@ -613,13 +613,13 @@
             </div>
             <div class="plugin-actions">
               {#if isInstalled(plugin.manifest.name)}
-                <button class="btn-secondary" disabled> {$_('pluginManager.installedBtn', { default: 'Installed' })} </button>
+                <button class="btn-secondary" disabled> {$_('pluginManager.installedBtn')} </button>
               {:else}
                 <button
                   class="btn-primary"
                   on:click={() => handleInstallClick(plugin)}
                 >
-                  {$_('pluginManager.installBtn', { default: 'Install' })}
+                  {$_('pluginManager.installBtn')}
                 </button>
               {/if}
             </div>
@@ -631,8 +631,8 @@
                 d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
               />
             </svg>
-            <h3>{$_('pluginManager.noCommunity', { default: 'No community plugins added' })}</h3>
-            <p>{$_('pluginManager.addUrlAbove', { default: 'Add a plugin URL above to get started' })}</p>
+            <h3>{$_('pluginManager.noCommunity')}</h3>
+            <p>{$_('pluginManager.addUrlAbove')}</p>
           </div>
         {/each}
       </div>
@@ -666,12 +666,12 @@
                 >v{plugin.manifest.version}</span
               >
               <span class="plugin-desc truncate"
-                >{plugin.manifest.description || $_('pluginManager.noDescription', { default: 'No description' })}</span
+                >{plugin.manifest.description || $_('pluginManager.noDescription')}</span
               >
               <div class="plugin-badges">
                 <span class="badge">{plugin.manifest.type.toUpperCase()}</span>
                 {#if plugin.enabled}
-                  <span class="badge badge-active">Active</span>
+                  <span class="badge badge-active">{$_('pluginManager.active')}</span>
                 {/if}
               </div>
             </div>
@@ -680,13 +680,13 @@
                 class={plugin.enabled ? "btn-secondary" : "btn-primary"}
                 on:click={() => handleToggleEnabled(plugin)}
               >
-                {plugin.enabled ? $_('pluginManager.disable', { default: 'Disable' }) : $_('pluginManager.enable', { default: 'Enable' })}
+                {plugin.enabled ? $_('pluginManager.disable') : $_('pluginManager.enable')}
               </button>
               <button
                 class="btn-danger"
                 on:click={() => handleUninstall(plugin.name)}
               >
-                {$_('pluginManager.uninstall', { default: 'Uninstall' })}
+                {$_('pluginManager.uninstall')}
               </button>
               {#if plugin.manifest.repo}
                 <button
@@ -696,8 +696,8 @@
                       await confirm(
                         `Are you sure you want to reinstall "${plugin.name}"?`,
                         {
-                          title: $_('pluginManager.reinstall', { default: 'Reinstall Plugin' }),
-                          confirmLabel: $_('pluginManager.reinstall', { default: 'Reinstall' }),
+                          title: $_('pluginManager.reinstall'),
+                          confirmLabel: $_('pluginManager.reinstall'),
                         },
                       )
                     ) {
@@ -705,7 +705,7 @@
                     }
                   }}
                 >
-                  {$_('pluginManager.reinstall', { default: 'Reinstall' })}
+                  {$_('pluginManager.reinstall')}
                 </button>
               {/if}
             </div>
@@ -717,8 +717,8 @@
                 d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"
               />
             </svg>
-            <h3>{$_('pluginManager.noInstalled', { default: 'No plugins installed' })}</h3>
-            <p>{$_('pluginManager.browseMarketplace', { default: 'Browse the marketplace to find plugins' })}</p>
+            <h3>{$_('pluginManager.noInstalled')}</h3>
+            <p>{$_('pluginManager.browseMarketplace')}</p>
           </div>
         {/each}
       </div>
@@ -735,9 +735,9 @@
     aria-modal="true"
   >
     <div class="modal" on:click|stopPropagation role="document">
-      <h2>{$_('pluginManager.permissionReview', { default: 'Permission Review' })}</h2>
+      <h2>{$_('pluginManager.permissionReview')}</h2>
       <p class="modal-desc">
-        <strong>{selectedPlugin.manifest.name}</strong> {$_('pluginManager.requestsPermissions', { default: 'requests the following permissions:' })}
+        <strong>{selectedPlugin.manifest.name}</strong> {$_('pluginManager.requestsPermissions')}
       </p>
 
       <!-- Regular Permissions -->
@@ -749,7 +749,7 @@
                 d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"
               />
             </svg>
-            {$_('pluginManager.systemPermissions', { default: 'System Permissions' })}
+            {$_('pluginManager.systemPermissions')}
           </h3>
           <div class="permission-list">
             {#each pendingPermissions as permission}
@@ -771,7 +771,7 @@
             <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
               <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
             </svg>
-            {$_('pluginManager.pluginIntegration', { default: 'Plugin Integration' })}
+            {$_('pluginManager.pluginIntegration')}
           </h3>
           <div class="cross-plugin-list">
             {#each selectedPlugin.manifest.cross_plugin_access as access}
@@ -809,7 +809,7 @@
           on:click={closePermissionModal}
           disabled={installState === "loading"}
         >
-          {$_('pluginManager.cancel', { default: 'Cancel' })}
+          {$_('pluginManager.cancel')}
         </button>
         <button
           class="btn-install"
@@ -836,7 +836,7 @@
                 stroke-linecap="round"
               />
             </svg>
-            {$_('pluginManager.installing', { default: 'Installing...' })}
+            {$_('pluginManager.installing')}
           {:else if installState === "success"}
             <svg
               class="checkmark"
@@ -854,7 +854,7 @@
                 stroke-width="2.5"
               />
             </svg>
-            {$_('pluginManager.installedSuccess', { default: 'Installed!' })}
+            {$_('pluginManager.installedSuccess')}
           {:else if installState === "error"}
             <svg
               viewBox="0 0 24 24"
@@ -866,9 +866,9 @@
             >
               <path d="M18 6L6 18M6 6l12 12" stroke-width="2.5" />
             </svg>
-            {$_('pluginManager.failed', { default: 'Failed' })}
+            {$_('pluginManager.failed')}
           {:else}
-            {$_('pluginManager.grantAndInstall', { default: 'Grant & Install' })}
+            {$_('pluginManager.grantAndInstall')}
           {/if}
         </button>
       </div>

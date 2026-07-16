@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n";
   import { onMount, tick } from "svelte";
   import "../app.css";
   import Sidebar from "$lib/components/Sidebar.svelte";
@@ -125,11 +126,11 @@
       <p
         style="color: var(--text-primary); font-size: 1.1rem; margin-top: 1rem;"
       >
-        🖥️ Please open the Tauri desktop app
+        🖥️ {$_('app.tauriRequired')}
       </p>
-      <p>This app requires the Tauri desktop window to function.</p>
+      <p>{$_('app.tauriRequiredDesc')}</p>
       <p style="opacity: 0.7; font-size: 0.8rem;">
-        The Tauri window should open automatically when running <code
+        {$_('app.tauriRunHint')} <code
           >npm run tauri dev</code
         >
       </p>
@@ -141,7 +142,7 @@
         <span>Audion</span>
       </div>
       <div class="loading-spinner"></div>
-      <p>Loading your music library...</p>
+      <p>{$_('app.loadingLibrary')}</p>
     </div>
   {:else}
     {#if $isMiniPlayer}

@@ -38,8 +38,8 @@
       <line x1="12" y1="8" x2="12.01" y2="8" />
     </svg>
     <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.about', { default: 'About' })}</span>
-      <span class="accordion-subtitle">{$_('settings.aboutSubtitle', { default: 'View application version, updates, and credits' })}</span>
+      <span class="accordion-title">{$_('settings.about')}</span>
+      <span class="accordion-subtitle">{$_('settings.aboutSubtitle')}</span>
     </div>
     <svg class="accordion-chevron" class:rotated={open} viewBox="0 0 24 24" width="16" height="16">
       <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
@@ -51,8 +51,8 @@
     {#if supportsOta()}
       <div class="toggle-container">
         <div class="toggle-info">
-          <span class="setting-title">{$_('settings.otaEnabled', { default: 'Automatic updates' })}</span>
-          <span class="setting-description">{$_('settings.otaEnabledDesc', { default: 'Download and install updates in-app instead of via GitHub releases' })}</span>
+          <span class="setting-title">{$_('settings.otaEnabled')}</span>
+          <span class="setting-description">{$_('settings.otaEnabledDesc')}</span>
         </div>
         <button
           class="toggle-btn"
@@ -60,7 +60,7 @@
           on:click={() => setOtaEnabled(!$otaEnabled)}
           role="switch"
           aria-checked={$otaEnabled}
-          aria-label={$_('settings.otaEnabled', { default: 'Automatic updates' })}
+          aria-label={$_('settings.otaEnabled')}
         >
           <div class="toggle-handle"></div>
         </button>
@@ -73,7 +73,7 @@
       <div class="app-logo-sm">Audion</div>
       <div class="about-details">
         <span class="setting-title">Audion {__APP_VERSION__}</span>
-        <span class="setting-description">{$_('settings.modernPlayerDesc', { default: 'Modern player powered by Tauri and Svelte' })}</span>
+        <span class="setting-description">{$_('settings.modernPlayerDesc')}</span>
       </div>
     </div>
     {#if $otaState.phase === "ready"}
@@ -94,7 +94,7 @@
     {:else if $otaState.phase === "downloading"}
       <div class="restart-notice">
         <div class="restart-notice-text">
-          <span class="setting-title">{$_('updatePopup.downloading', { default: 'Downloading update…' })}</span>
+          <span class="setting-title">{$_('updatePopup.downloading')}</span>
           <span class="setting-description">{$otaState.progress}%</span>
         </div>
       </div>
@@ -107,9 +107,9 @@
           showUpdatePopup = true;
         }}
         style="margin-top: var(--spacing-sm)"
-      >{$_('settings.updateAvailable', { default: 'Update Available' })}</button>
+      >{$_('settings.updateAvailable')}</button>
     {:else if $updates.hasUpdate}
-      <button class="btn-green-compact" on:click={() => { updatePopupRelease = $updates.latestRelease; updatePopupMode = "github"; showUpdatePopup = true; }} style="margin-top: var(--spacing-sm)">{$_('settings.updateAvailable', { default: 'Update Available' })}</button>
+      <button class="btn-green-compact" on:click={() => { updatePopupRelease = $updates.latestRelease; updatePopupMode = "github"; showUpdatePopup = true; }} style="margin-top: var(--spacing-sm)">{$_('settings.updateAvailable')}</button>
     {/if}
   </div>
   </div>

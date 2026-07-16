@@ -17,8 +17,8 @@
       <path d="M2 9h20" />
     </svg>
     <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.shortcuts', { default: 'Keyboard Shortcuts' })}</span>
-      <span class="accordion-subtitle">{$_('settings.shortcutsSubtitle', { default: 'Customize hotkeys and media control shortcuts' })}</span>
+      <span class="accordion-title">{$_('settings.shortcuts')}</span>
+      <span class="accordion-subtitle">{$_('settings.shortcutsSubtitle')}</span>
     </div>
     <svg class="accordion-chevron" class:rotated={open} viewBox="0 0 24 24" width="16" height="16">
       <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
@@ -29,8 +29,8 @@
       <div class="settings-card">
         <div class="toggle-container">
           <div class="toggle-info">
-            <span class="setting-title">{$_('settings.enableShortcuts', { default: 'Enable Keyboard Shortcuts' })}</span>
-            <span class="setting-description">{$_('settings.enableShortcutsDesc', { default: 'Use keyboard shortcuts to control playback and navigation' })}</span>
+            <span class="setting-title">{$_('settings.enableShortcuts')}</span>
+            <span class="setting-description">{$_('settings.enableShortcutsDesc')}</span>
           </div>
           <button
             class="toggle-btn"
@@ -38,7 +38,7 @@
             on:click={() => appSettings.setShortcutsEnabled(!$appSettings.shortcutsEnabled)}
             role="switch"
             aria-checked={$appSettings.shortcutsEnabled}
-            aria-label={$_('settings.toggleShortcuts', { default: 'Toggle Keyboard Shortcuts' })}
+            aria-label={$_('settings.toggleShortcuts')}
           >
             <div class="toggle-handle"></div>
           </button>
@@ -48,21 +48,21 @@
 
         <div class="inner-section">
           <div class="card-title-group compact">
-            <h3 class="setting-title">{$_('settings.customizeShortcuts', { default: 'Customize Shortcuts' })}</h3>
-            <span class="setting-description">{$_('settings.customizeShortcutsDesc', { default: 'View and rebind keyboard shortcuts for playback, navigation, and more' })}</span>
+            <h3 class="setting-title">{$_('settings.customizeShortcuts')}</h3>
+            <span class="setting-description">{$_('settings.customizeShortcutsDesc')}</span>
           </div>
 
           <div class="button-group-row">
             <button class="btn-outline-compact" on:click={() => showShortcutsHelp()} disabled={!$appSettings.shortcutsEnabled}>
-              {$_('settings.editShortcuts', { default: 'Edit Shortcuts' })}
+              {$_('settings.editShortcuts')}
             </button>
           </div>
 
           <div class="shortcut-hint">
             <span class="setting-description">
               {$appSettings.shortcutsEnabled
-                ? $_('settings.shortcutsHint', { default: 'Tip: you can also open this anytime by pressing' })
-                : $_('settings.shortcutsDisabledHint', { default: 'Enable keyboard shortcuts to use Shift + / quick help' })}
+                ? $_('settings.shortcutsHint')
+                : $_('settings.shortcutsDisabledHint')}
             </span>
             <span class="key-combo">
               <kbd class="key">Shift</kbd>

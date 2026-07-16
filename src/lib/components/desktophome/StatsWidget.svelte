@@ -18,7 +18,7 @@
             </div>
             <div class="stat-info">
                 <span class="stat-value">{statsSummary.total_plays}</span>
-                <span class="stat-label">{$_('home.stats.plays', { default: 'Plays' })}</span>
+                <span class="stat-label">{$_('home.stats.plays')}</span>
             </div>
         </div>
         <div class="stat-card">
@@ -30,7 +30,7 @@
             </div>
             <div class="stat-info">
                 <span class="stat-value">{Math.round(statsSummary.total_duration_seconds / 60)} min</span>
-                <span class="stat-label">{$_('home.stats.timePlayed', { default: 'Time Played' })}</span>
+                <span class="stat-label">{$_('home.stats.timePlayed')}</span>
             </div>
         </div>
         {#if statsSummary.top_artist}
@@ -48,7 +48,7 @@
                 </div>
                 <div class="stat-info">
                     <span class="stat-value">{statsSummary.top_artist}</span>
-                    <span class="stat-label">{$_('home.stats.topArtist', { default: 'Top Artist' })}</span>
+                    <span class="stat-label">{$_('home.stats.topArtist')}</span>
                 </div>
             </div>
         {/if}

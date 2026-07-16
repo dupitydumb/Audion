@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _, locale } from "svelte-i18n";
     import { onMount } from "svelte";
     import { fade, slide, scale, fly } from "svelte/transition";
     import { cubicOut } from "svelte/easing";
@@ -67,21 +68,15 @@
     $: if (show && $topArtists[0])
         fetchArtistPicture($topArtists[0].artist.toString());
 
-    const monthNames = [
-        "January",
-        "February",
-        "March",
-        "April",
-        "May",
-        "June",
-        "July",
-        "August",
-        "September",
-        "October",
-        "November",
-        "December",
-    ];
-    const currentMonthName = monthNames[new Date().getMonth()];
+    const monthSlug = new Intl.DateTimeFormat("en", { month: "long" })
+        .format(new Date())
+        .toLowerCase();
+
+    $: currentMonthName = new Intl.DateTimeFormat($locale || "en", {
+        month: "long",
+    })
+        .format(new Date())
+        .replace(/^./u, (c) => c.toUpperCase());
 
     const slides = [
         { id: "intro", title: "Your Recap" },
@@ -106,21 +101,21 @@
 
     // fun personality labels for the top artist
     function getArtistLabel(playCount: number): string {
-        if (playCount > 100) return "The Obesession";
-        if (playCount > 50) return "The Daily Bread";
-        if (playCount > 20) return "The Mood Maker";
-        return "The New Discovery";
+        if (playCount > 100) return $_('recap.labelObsession');
+        if (playCount > 50) return $_('recap.labelDailyBread');
+        if (playCount > 20) return $_('recap.labelMoodMaker');
+        return $_('recap.labelNewDiscovery');
     }
 
     // fun facts based on minutes
     function getFunFact(minutes: number): string {
         if (minutes > 10000)
-            return "You've listened enough to fly to the moon and back!";
+            return $_('recap.funFactMoon');
         if (minutes > 5000)
-            return "That's more time than it takes to watch every Lord of the Rings movie 5 times.";
+            return $_('recap.funFactLotr');
         if (minutes > 1000)
-            return "You've spent more time with us than most people spend at the gym.";
-        return "You're just getting started on your musical journey!";
+            return $_('recap.funFactGym');
+        return $_('recap.funFactStarting');
     }
 
     // Helper to format duration
@@ -221,7 +216,7 @@
 
             const dataUrl = canvas.toDataURL("image/png");
             const base64Data = dataUrl.split(",")[1];
-            const fileName = `audion-wrapped-${currentMonthName.toLowerCase()}.png`;
+            const fileName = `audion-wrapped-${monthSlug}.png`;
 
             await saveImageToGallery(base64Data, fileName);
             // Optional: You could show a "Saved to gallery" toast here if available
@@ -521,10 +516,10 @@
                         </div>
                         <div class="intro-text">
                             <h2 in:fly={{ y: 50, duration: 600, delay: 300 }}>
-                                Your Recap
+                                {$_('recap.yourRecap')}
                             </h2>
                             <p in:fly={{ y: 30, duration: 600, delay: 500 }}>
-                                {currentMonthName} aboard Audion
+                                {$_('recap.aboardAudion', { values: { month: currentMonthName } })}
                             </p>
                         </div>
                     </div>
@@ -533,7 +528,7 @@
                         class="slide"
                         in:fly={{ x: 100, duration: 500, easing: cubicOut }}
                     >
-                        <h2 class="slide-title">Top Tracks</h2>
+                        <h2 class="slide-title">{$_('recap.topTracks')}</h2>
                         <div class="track-stack">
                             {#each $topTracks.slice(0, 5) as item, i}
                                 <div
@@ -564,7 +559,7 @@
                                         </div>
                                     </div>
                                     <div class="track-plays">
-                                        {item.play_count} <small>plays</small>
+                                        {item.play_count} <small>{$_('recap.plays')}</small>
                                     </div>
                                 </div>
                             {/each}
@@ -580,7 +575,7 @@
                                 $topArtists[0]?.play_count || 0,
                             )}</span
                         >
-                        <h2 class="slide-title">Most Listened</h2>
+                        <h2 class="slide-title">{$_('recap.mostListened')}</h2>
                         {#if $topArtists[0]}
                             <div class="artist-hero">
                                 <div class="artist-name-reveal">
@@ -588,7 +583,7 @@
                                 </div>
                                 <div class="artist-plays-hero">
                                     {$topArtists[0].play_count}
-                                    <span>plays this month</span>
+                                    <span>{$_('recap.playsThisMonth')}</span>
                                 </div>
                             </div>
                         {/if}
@@ -598,7 +593,7 @@
                         class="slide summary-slide"
                         in:fly={{ y: 100, duration: 500 }}
                     >
-                        <h2 class="slide-title">The Numbers</h2>
+                        <h2 class="slide-title">{$_('recap.theNumbers')}</h2>
                         <div class="summary-visual">
                             <div class="stat-card primary">
                                 <span class="stat-val"
@@ -607,13 +602,13 @@
                                             0,
                                     )}</span
                                 >
-                                <span class="stat-label">Minutes Listened</span>
+                                <span class="stat-label">{$_('recap.minutesListened')}</span>
                             </div>
                             <div class="stat-card secondary">
                                 <span class="stat-val"
                                     >{$statsSummary?.total_plays || 0}</span
                                 >
-                                <span class="stat-label">Total Plays</span>
+                                <span class="stat-label">{$_('recap.totalPlays')}</span>
                             </div>
                             <p class="fun-fact" in:fly={{ y: 20, delay: 400 }}>
                                 {getFunFact(
@@ -635,11 +630,11 @@
                             easing: cubicOut,
                         }}
                     >
-                        <h2 class="slide-title">Your Sound</h2>
+                        <h2 class="slide-title">{$_('recap.yourSound')}</h2>
                         {#if genresLoading}
                             <div class="genre-loading">
                                 <div class="genre-spinner"></div>
-                                <span>Discovering your genres…</span>
+                                <span>{$_('recap.discoveringGenres')}</span>
                             </div>
                         {:else if topGenres.length > 0}
                             <div
@@ -652,7 +647,7 @@
                                 class="genre-label"
                                 in:fly={{ y: 20, duration: 500, delay: 400 }}
                             >
-                                is your #1 genre
+                                {$_('recap.numberOneGenre')}
                             </p>
                             {#if topGenres.length > 1}
                                 <div
@@ -663,7 +658,7 @@
                                         delay: 600,
                                     }}
                                 >
-                                    <span class="also-label">Also into:</span>
+                                    <span class="also-label">{$_('recap.alsoInto')}</span>
                                     <div class="genre-pill-row">
                                         {#each topGenres.slice(1) as [genre], i}
                                             <span
@@ -680,12 +675,11 @@
                         {:else}
                             <div class="genre-empty">
                                 <p>
-                                    Keep listening to uncover your genre
-                                    identity!
+                                    {$_('recap.genreEmptyHint')}
                                 </p>
                             </div>
                         {/if}
-                        <p class="mb-credit">Genres via MusicBrainz</p>
+                        <p class="mb-credit">{$_('recap.genresViaMusicBrainz')}</p>
                     </div>
                 {:else if currentSlide === 5}
                     <div class="slide final-slide" in:fade={{ duration: 600 }}>
@@ -693,7 +687,7 @@
                             <div class="premium-card">
                                 <div class="card-logo-row">
                                     <h2 class="card-recap-title">
-                                        RECAP {new Date().getFullYear()}
+                                        {$_('recap.recapYear', { values: { year: new Date().getFullYear() } })}
                                     </h2>
                                     <img
                                         src="/logo.png"
@@ -723,7 +717,7 @@
                                 <div class="card-grid">
                                     <div class="grid-col">
                                         <span class="grid-label"
-                                            >Top Artists</span
+                                            >{$_('recap.topArtists')}</span
                                         >
                                         {#each $topArtists.slice(0, 5) as art, i}
                                             <div class="grid-item">
@@ -735,7 +729,7 @@
                                         {/each}
                                     </div>
                                     <div class="grid-col">
-                                        <span class="grid-label">Top Songs</span
+                                        <span class="grid-label">{$_('recap.topSongs')}</span
                                         >
                                         {#each $topTracks.slice(0, 5) as item, i}
                                             <div class="grid-item">
@@ -751,7 +745,7 @@
                                 <div class="card-footer-stats">
                                     <div class="footer-stat">
                                         <span class="stat-label"
-                                            >Minutes Listened</span
+                                            >{$_('recap.minutesListened')}</span
                                         >
                                         <span class="stat-value"
                                             >{formatMinutes(
@@ -761,12 +755,12 @@
                                         >
                                     </div>
                                     <div class="footer-stat text-right">
-                                        <span class="stat-label">Top Genre</span
+                                        <span class="stat-label">{$_('recap.topGenre')}</span
                                         >
                                         <span class="stat-value"
                                             >{topGenres[0]
                                                 ? topGenres[0][0]
-                                                : "Music"}</span
+                                                : $_('recap.musicFallback')}</span
                                         >
                                     </div>
                                 </div>
@@ -811,7 +805,7 @@
                         <polyline points="7 10 12 15 17 10" />
                         <line x1="12" y1="15" x2="12" y2="3" />
                     </svg>
-                    <span>{isExporting ? "Saving..." : "Download Image"}</span>
+                    <span>{isExporting ? $_('recap.saving') : $_('recap.downloadImage')}</span>
                 </button>
                 <button
                     class="nav-btn"

@@ -136,7 +136,7 @@
 
         if (needsDownloadLocation()) {
             addToast(
-                "Please configure a download location in Settings first",
+                $_("playlist.configureDownloadLocation"),
                 "error",
             );
             // Optionally redirect to settings
@@ -144,7 +144,7 @@
         }
 
         isDownloading = true;
-        downloadProgress = "Starting...";
+        downloadProgress = $_("playlist.downloadStarting");
 
         try {
             const result = await downloadTracks(
@@ -168,7 +168,10 @@
             showDownloadResult(result);
         } catch (error) {
             console.error("Download failed:", error);
-            addToast("Download failed unexpectedly", "error");
+            addToast(
+                $_("playlist.downloadFailed"),
+                "error",
+            );
         } finally {
             isDownloading = false;
             downloadProgress = "";
@@ -248,7 +251,7 @@
                                                 result,
                                             );
                                             addToast(
-                                                "Album artwork updated",
+                                                $_("album.artworkUpdated"),
                                                 "success",
                                             );
                                         };
@@ -261,11 +264,14 @@
                         {
                             label: $_("contextMenu.fromUrl"),
                             action: async () => {
-                                const url = await prompt("Enter image URL:", {
-                                    title: "Change Artwork",
-                                    placeholder:
-                                        "https://example.com/image.jpg",
-                                });
+                                const url = await prompt(
+                                    $_("playlist.enterImageUrl"),
+                                    {
+                                        title: $_("contextMenu.changeArtwork"),
+                                        placeholder: $_(
+                                            "trackList.imageUrlPlaceholder"),
+                                    },
+                                );
                                 if (url && url.trim()) {
                                     setCustomArtwork(
                                         "album",
@@ -273,7 +279,7 @@
                                         url.trim(),
                                     );
                                     addToast(
-                                        "Album artwork updated",
+                                        $_("album.artworkUpdated"),
                                         "success",
                                     );
                                 }
@@ -283,14 +289,14 @@
                 },
                 { type: "separator" },
                 {
-                    label: "Delete Album",
+                    label: $_("main.deleteAlbumTitle"),
                     danger: true,
                     action: async () => {
                         const confirmed = await confirm(
-                            `Are you sure you want to delete the album "${album!.name}"? This will delete all songs in this album from your computer.`,
+                            $_("main.deleteAlbumConfirm", { values: { name: album!.name } }),
                             {
-                                title: "Delete Album",
-                                confirmLabel: "Delete",
+                                title: $_("main.deleteAlbumTitle"),
+                                confirmLabel: $_("main.delete"),
                                 danger: true,
                             },
                         );
@@ -370,12 +376,14 @@
                         on:click={() => {
                             if (album)
                                 goToArtistDetail(
-                                    album.artist || "Unknown Artist",
+                                    album.artist ||
+                                        $_("common.unknownArtist"),
                                 );
                         }}
-                        title="Go to artist"
+                        title={$_("contextMenu.goToArtist")}
                     >
-                        {album.artist || "Unknown Artist"}
+                        {album.artist ||
+                            $_("common.unknownArtist")}
                     </button>
                     <span class="separator">•</span>
                     <span

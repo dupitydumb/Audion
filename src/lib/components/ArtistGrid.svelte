@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n";
   import type { Artist } from "$lib/api/tauri";
   import { goToArtistDetail } from "$lib/stores/view";
   import {
@@ -133,11 +134,13 @@
       y: e.clientY,
       items: [
         {
-          label: "Play",
+          label: $_("contextMenu.play"),
           action: () => playArtist(artist),
         },
         {
-          label: pinned ? "Unpin from Top" : "Pin to Top",
+          label: pinned
+            ? $_("contextMenu.unpinFromTop")
+            : $_("contextMenu.pinToTop"),
           icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2L4.5 9L9 9L9 22L15 22L15 9L19.5 9L12 2Z"/></svg>`,
           action: () => {
             if (pinned) {
@@ -149,10 +152,10 @@
         },
         { type: "separator" },
         {
-          label: "Change Artwork",
+          label: $_("contextMenu.changeArtwork"),
           submenu: [
             {
-              label: "From File",
+              label: $_("contextMenu.fromFile"),
               action: () => {
                 const input = document.createElement("input");
                 input.type = "file";
@@ -164,7 +167,10 @@
                     reader.onload = () => {
                       const result = reader.result as string;
                       setCustomArtwork("artist", artist.name, result);
-                      addToast("Artist artwork updated", "success");
+                      addToast(
+                        $_("artist.artworkUpdated"),
+                        "success",
+                      );
                     };
                     reader.readAsDataURL(file);
                   }
@@ -173,15 +179,21 @@
               },
             },
             {
-              label: "From URL",
+              label: $_("contextMenu.fromUrl"),
               action: async () => {
-                const url = await prompt("Enter image URL:", {
-                  title: "Change Artwork",
-                  placeholder: "https://example.com/image.jpg",
-                });
+                const url = await prompt(
+                  $_("playlist.enterImageUrl"),
+                  {
+                    title: $_("contextMenu.changeArtwork"),
+                    placeholder: $_("trackList.imageUrlPlaceholder"),
+                  },
+                );
                 if (url && url.trim()) {
                   setCustomArtwork("artist", artist.name, url.trim());
-                  addToast("Artist artwork updated", "success");
+                  addToast(
+                    $_("artist.artworkUpdated"),
+                    "success",
+                  );
                 }
               },
             },
@@ -189,7 +201,7 @@
         },
         { type: "separator" },
         {
-          label: "Add to Playlist",
+          label: $_("contextMenu.addToPlaylist"),
           // TODO: implement playlist logic
           action: () => {},
         },
@@ -203,8 +215,8 @@
 
   const emptyState = {
     icon: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>`,
-    title: "No artists found",
-    description: "Add a music folder to see your artists",
+    title: $_("artist.noArtistsFound"),
+    description: $_("artist.emptyHint"),
   };
 
   onDestroy(() => {
@@ -237,12 +249,12 @@
     {isNowPlaying}
     {isPaused}
     isPinned={isPinned("artist", artist.name, $pinnedItems)}
-    playTooltip="Play artist"
-    resumeTooltip="Resume artist"
-    pauseTooltip="Pause"
+    playTooltip={$_("common.playArtist")}
+    resumeTooltip={$_("common.resumeArtist")}
+    pauseTooltip={$_("common.pause")}
     ariaLabel={artist.name}
     primaryText={artist.name}
-    secondaryText="{artist.album_count} albums • {artist.track_count} songs"
+    secondaryText="{$_('artist.albums', { values: { count: artist.album_count } })} • {$_('artist.songs', { values: { count: artist.track_count } })}"
     variant="round"
     coverBackground="linear-gradient(135deg, var(--accent-primary) 0%, #1a1a1a 100%)"
     on:play={() => playArtist(artist)}

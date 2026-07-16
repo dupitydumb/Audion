@@ -31,13 +31,19 @@
   import SyncProgressOverlay from "$lib/components/SyncProgressOverlay.svelte";
   import LoginModal from "$lib/components/LoginModal.svelte";
   import { initSync, destroySync } from "$lib/stores/sync";
+  import { browser } from "$app/environment";
   import { setupI18n } from "$lib/i18n";
-  import { isLoading } from "svelte-i18n";
+  import { _, isLoading, locale } from "svelte-i18n";
   import "../app.css";
   import MobileMiniPlayer from "$lib/components/MobileMiniPlayer.svelte";
 
+  if (browser) {
+    setupI18n(localStorage.getItem("audion_language") || undefined);
+  }
+
   let handleVisibilityChange: (() => void) | null = null;
   let migrationStatus = "";
+  let migrationPhase: "loading" | "success" | "error" = "loading";
   let showMigrationBanner = false;
   let showPermissionBanner = false;
   let permissionDenied = false;
@@ -168,7 +174,8 @@
     if (migrated !== "true") {
       try {
         showMigrationBanner = true;
-        migrationStatus = "Migrating cover images to file storage...";
+        migrationPhase = "loading";
+        migrationStatus = $_("app.migratingCovers");
         console.log("[MIGRATION FRONTEND] Starting migration...");
 
         const result = await migrateCoversToFiles();
@@ -195,7 +202,11 @@
 
         if (result.errors.length === 0) {
           localStorage.setItem("covers_migrated", "true");
-          migrationStatus = ` Successfully migrated ${result.tracks_migrated} track covers and ${result.albums_migrated} album covers`;
+          migrationPhase = "success";
+          migrationStatus = $_("app.migrationSuccess", { values: {
+              tracks: result.tracks_migrated,
+              albums: result.albums_migrated,
+            } });
           console.log("[MIGRATION FRONTEND] Migration completed successfully!");
 
           setTimeout(() => {
@@ -203,7 +214,8 @@
           }, 3000);
         } else {
           console.error("[MIGRATION FRONTEND] Migration completed with errors");
-          migrationStatus = `Migration completed with ${result.errors.length} errors. Check console for details.`;
+          migrationPhase = "error";
+          migrationStatus = $_("app.migrationErrors", { values: { count: result.errors.length } });
 
           setTimeout(() => {
             showMigrationBanner = false;
@@ -211,7 +223,8 @@
         }
       } catch (error) {
         console.error("[MIGRATION FRONTEND] Migration failed:", error);
-        migrationStatus = "Migration failed. Please try again from settings.";
+        migrationPhase = "error";
+        migrationStatus = $_("app.migrationFailed");
 
         setTimeout(() => {
           showMigrationBanner = false;
@@ -258,7 +271,7 @@
   }
 </script>
 
-{#if !$isLoading}
+{#if !$isLoading && $locale}
 {#if !$isMobile && !$isMiniPlayer}
   <TitleBar />
 {/if}
@@ -271,9 +284,9 @@
 {#if showMigrationBanner}
   <div class="migration-banner">
     <div class="migration-content">
-      {#if migrationStatus.startsWith("")}
+      {#if migrationPhase === "success"}
         <span class="success-icon"></span>
-      {:else if migrationStatus.includes("error") || migrationStatus.includes("failed")}
+      {:else if migrationPhase === "error"}
         <span class="error-icon"></span>
       {:else}
         <span class="loading-icon">⏳</span>
@@ -289,21 +302,21 @@
       <span class="permission-icon">🎵</span>
       <span class="permission-text">
         {#if permissionDenied}
-          Audio permission required to play local music files.
+          {$_("app.audioPermissionRequired")}
         {:else}
-          Requesting audio permission...
+          {$_("app.requestingAudioPermission")}
         {/if}
       </span>
       {#if permissionDenied}
         <button class="permission-button" on:click={handleOpenSettings}>
-          Open Settings
+          {$_("common.openSettings")}
         </button>
       {/if}
     </div>
   </div>
 {/if}
 
-<a href="#main-content" class="skip-link">Skip to main content</a>
+<a href="#main-content" class="skip-link">{$_("app.skipToMainContent")}</a>
 
 <div class="app-content" class:mobile={$isMobile} class:pip={$isMiniPlayer} class:has-mini-player={$isMobile && $currentTrack && !$isFullScreen} id="main-content">
   <slot />

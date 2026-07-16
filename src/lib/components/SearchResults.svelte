@@ -1,4 +1,5 @@
 <script context="module" lang="ts">
+    import { _ } from "svelte-i18n";
     export type SectionKey = "tracks" | "albums" | "artists" | "playlists";
 </script>
 
@@ -171,25 +172,25 @@
             y: e.clientY,
             items: [
                 {
-                    label: "Play",
+                    label: $_("common.play"),
                     action: () => {
                         playTracks($searchResults.tracks, index);
                     },
                 },
                 { type: "separator" },
                 {
-                    label: "Add to Queue",
+                    label: $_("contextMenu.addToQueue"),
                     action: () => addToQueue([track]),
                 },
                 { type: "separator" },
                 {
-                    label: "Add to Playlist",
+                    label: $_("contextMenu.addToPlaylist"),
                     submenu:
                         playlistItems.length > 0
                             ? playlistItems
                             : [
                                   {
-                                      label: "No playlists",
+                                      label: $_("contextMenu.noPlaylists"),
                                       action: () => {},
                                       disabled: true,
                                   },
@@ -197,7 +198,7 @@
                 },
                 { type: "separator" },
                 {
-                    label: "Go to Album",
+                    label: $_("contextMenu.goToAlbum"),
                     action: () => {
                         if (track.album_id) {
                             handleAlbumClick(track.album_id);
@@ -206,7 +207,7 @@
                     disabled: !track.album_id,
                 },
                 {
-                    label: "Go to Artist",
+                    label: $_("contextMenu.goToArtist"),
                     action: () => {
                         if (track.artist) {
                             handleArtistClick(track.artist);
@@ -216,14 +217,14 @@
                 },
                 { type: "separator" },
                 {
-                    label: "Delete from Library",
+                    label: $_("contextMenu.deleteFromLibrary"),
                     danger: true,
                     action: async () => {
                         const confirmed = await confirm(
-                            `Are you sure you want to delete "${track.title}" from your library? This will also remove the file from your computer.`,
+                            $_("main.deleteTrackConfirm", { values: { title: track.title } }),
                             {
-                                title: "Delete Track",
-                                confirmLabel: "Delete",
+                                title: $_("main.deleteTrackTitle"),
+                                confirmLabel: $_("main.delete"),
                                 danger: true,
                             },
                         );
@@ -259,12 +260,12 @@
             y: e.clientY,
             items: [
                 {
-                    label: "Open Album",
+                    label: $_("main.openAlbum"),
                     action: () => handleAlbumClick(album.id),
                 },
                 { type: "separator" },
                 {
-                    label: "Go to Artist",
+                    label: $_("contextMenu.goToArtist"),
                     action: () => {
                         if (album.artist) {
                             handleArtistClick(album.artist);
@@ -274,14 +275,14 @@
                 },
                 { type: "separator" },
                 {
-                    label: "Delete Album",
+                    label: $_("main.deleteAlbumTitle"),
                     danger: true,
                     action: async () => {
                         const confirmed = await confirm(
-                            `Are you sure you want to delete the album "${album.name}"? This will delete all songs in this album from your computer.`,
+                            $_("main.deleteAlbumConfirm", { values: { name: album.name } }),
                             {
-                                title: "Delete Album",
-                                confirmLabel: "Delete",
+                                title: $_("main.deleteAlbumTitle"),
+                                confirmLabel: $_("main.delete"),
                                 danger: true,
                             },
                         );
@@ -308,7 +309,7 @@
             y: e.clientY,
             items: [
                 {
-                    label: "Open Artist",
+                    label: $_("main.openArtist"),
                     action: () => handleArtistClick(artist.name),
                 },
             ],
@@ -320,8 +321,8 @@
     {#if !$searchResults.hasResults && $searchQuery}
         <EmptyState
             icon="search"
-            title="No results found"
-            description="Try searching for something else"
+            title={$_("main.noResultsFound")}
+            description={$_("main.noResultsHint")}
         />
     {:else}
         {#each sectionOrder as key (key)}
@@ -329,8 +330,8 @@
                 {#if key === "tracks" && $searchResults.tracks.length > 0}
                     <section class="result-section">
                         <h2 class="section-title">
-                            <button class="section-pill pill-inactive" aria-pressed="false" title="Tracks">
-                                <span class="pill-label">Tracks</span>
+                            <button class="section-pill pill-inactive" aria-pressed="false" title={$_("common.tracks")}>
+                                <span class="pill-label">{$_("common.tracks")}</span>
                                 <span class="pill-count">{$searchResults.tracks.length}</span>
                             </button>
                         </h2>
@@ -375,22 +376,30 @@
                                     </div>
                                     <div class="track-info">
                                         <span class="track-title truncate"
-                                            >{track.title || "Unknown Title"}</span
+                                            >{track.title ||
+                                                $_("player.unknownTitle")}</span
                                         >
                                         <button
                                             class="track-artist truncate link-text"
                                             on:click|stopPropagation={() =>
                                                 handleArtistClick(
-                                                    track.artist || "Unknown Artist",
+                                                    track.artist ||
+                                                        $_(
+                                                            "common.unknownArtist"),
                                                 )}
-                                            >{track.artist || "Unknown Artist"}</button
+                                            >{track.artist ||
+                                                $_("common.unknownArtist")}</button
                                         >
                                     </div>
                                 </div>
                             {/each}
                             {#if $searchResults.tracks.length > 10}
                                 <p class="more-results">
-                                    And {$searchResults.tracks.length - 10} more tracks...
+                                    {$_("main.moreTracks", { values: {
+                                            count:
+                                                $searchResults.tracks.length -
+                                                10,
+                                        } })}
                                 </p>
                             {/if}
                         </div>
@@ -399,8 +408,8 @@
                 {:else if key === "albums" && $searchResults.albums.length > 0}
                     <section class="result-section">
                         <h2 class="section-title">
-                            <button class="section-pill pill-inactive" aria-pressed="false" title="Albums">
-                                <span class="pill-label">Albums</span>
+                            <button class="section-pill pill-inactive" aria-pressed="false" title={$_("sidebar.albums")}>
+                                <span class="pill-label">{$_("sidebar.albums")}</span>
                                 <span class="pill-count">{$searchResults.albums.length}</span>
                             </button>
                         </h2>
@@ -451,9 +460,12 @@
                                             class="album-artist truncate link-text"
                                             on:click|stopPropagation={() =>
                                                 handleArtistClick(
-                                                    album.artist || "Unknown Artist",
+                                                    album.artist ||
+                                                        $_(
+                                                            "common.unknownArtist"),
                                                 )}
-                                            >{album.artist || "Unknown Artist"}</button
+                                            >{album.artist ||
+                                                $_("common.unknownArtist")}</button
                                         >
                                     </div>
                                 </div>
@@ -464,8 +476,8 @@
                 {:else if key === "artists" && $searchResults.artists.length > 0}
                     <section class="result-section">
                         <h2 class="section-title">
-                            <button class="section-pill pill-inactive" aria-pressed="false" title="Artists">
-                                <span class="pill-label">Artists</span>
+                            <button class="section-pill pill-inactive" aria-pressed="false" title={$_("sidebar.artists")}>
+                                <span class="pill-label">{$_("sidebar.artists")}</span>
                                 <span class="pill-count">{$searchResults.artists.length}</span>
                             </button>
                         </h2>
@@ -487,8 +499,13 @@
                                             >{artist.name}</span
                                         >
                                         <span class="artist-meta"
-                                            >{artist.album_count} albums • {artist.track_count}
-                                            songs</span
+                                            >{$_("artist.albums", { values: {
+                                                    count: artist.album_count,
+                                                } })}
+                                            •
+                                            {$_("artist.songs", { values: {
+                                                    count: artist.track_count,
+                                                } })}</span
                                         >
                                     </div>
                                 </button>
@@ -499,8 +516,8 @@
                 {:else if key === "playlists" && $searchResults.playlists?.length > 0}
                     <section class="result-section">
                         <h2 class="section-title">
-                            <button class="section-pill pill-inactive" aria-pressed="false" title="Playlists">
-                                <span class="pill-label">Playlists</span>
+                            <button class="section-pill pill-inactive" aria-pressed="false" title={$_("sidebar.playlists")}>
+                                <span class="pill-label">{$_("sidebar.playlists")}</span>
                                 <span class="pill-count">{$searchResults.playlists.length}</span>
                             </button>
                         </h2>

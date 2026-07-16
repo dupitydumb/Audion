@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import { onMount } from "svelte";
     import { getCurrentWindow } from "@tauri-apps/api/window";
     import { goBack, goForward, navigationHistory } from "$lib/stores/view";
@@ -167,7 +168,7 @@
                         class="nav-btn"
                         on:click={goBack}
                         disabled={!canGoBack}
-                        title="Go back (Alt+Left)"
+                        title={$_('nav.goBack')}
                         aria-label="Go Back"
                     >
                         <svg
@@ -187,7 +188,7 @@
                         class="nav-btn"
                         on:click={goForward}
                         disabled={!canGoForward}
-                        title="Go forward (Alt+Right)"
+                        title={$_('nav.goForward')}
                         aria-label="Go Forward"
                     >
                         <svg
@@ -237,7 +238,7 @@
                     <input
                         type="text"
                         class="search-input"
-                        placeholder="Search..."
+                        placeholder={$_('common.search')}
                         bind:value={searchInput}
                         bind:this={searchInputEl}
                         on:input={handleSearchInput}
@@ -251,7 +252,7 @@
                             handleClearSearch();
                             mobileSearchOpen = false;
                         }}
-                        title="Close search"
+                        title={$_('nav.closeSearch')}
                     >
                         <svg
                             viewBox="0 0 24 24"
@@ -302,28 +303,28 @@
                 <input
                     type="text"
                     class="search-input"
-                    placeholder="Search..."
+                    placeholder={$_('common.search')}
                     bind:value={searchInput}
                     bind:this={searchInputEl}
                     on:input={handleSearchInput}
                     on:keydown={handleKeydown}
                     on:click={() => searchInputEl?.focus()}
                     spellcheck="false"
-                    title="Search (Ctrl+F)"
+                    title={$_('nav.searchShortcutHint')}
                 />
                 {#if searchInput}
                     {#if $searchResults.hasResults}
                         <span class="search-count">
-                            {$searchResults.tracks.length +
+                            {$_('nav.resultsCount', { values: { count: $searchResults.tracks.length +
                                 $searchResults.albums.length +
                                 $searchResults.artists.length +
-                                $searchResults.playlists.length} results
+                                $searchResults.playlists.length } })}
                         </span>
                     {/if}
                     <button
                         class="clear-search"
                         on:click={handleClearSearch}
-                        title="Clear search (Esc)"
+                        title={$_('nav.clearSearchHint')}
                     >
                         <svg
                             viewBox="0 0 24 24"
@@ -350,7 +351,7 @@
                     class="win-btn"
                     on:click={minimizeToTray}
                     aria-label="Minimize to tray"
-                    title="Minimize to tray"
+                    title={$_('nav.minimizeToTray')}
                 >
                     <svg
                         width="10"

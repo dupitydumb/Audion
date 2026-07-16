@@ -320,7 +320,7 @@
                     <circle cx="12" cy="12" r="3"></circle>
                     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
                 </svg>
-                <span>Customize</span>
+                <span>{$_('home.customize')}</span>
             </button>
         </div>
     </header>
@@ -354,11 +354,11 @@
                                         {isNowPlaying}
                                         {isPaused}
                                         isPinned={true}
-                                        playTooltip={isAlbum ? "Play album" : "Play playlist"}
-                                        resumeTooltip={isAlbum ? "Resume album" : "Resume playlist"}
-                                        pauseTooltip="Pause"
+                                        playTooltip={isAlbum ? $_('common.playAlbum') : $_('common.playPlaylist')}
+                                        resumeTooltip={isAlbum ? $_('common.resumeAlbum') : $_('common.resumePlaylist')}
+                                        pauseTooltip={$_('common.pause')}
                                         primaryText={item.data.name}
-                                        secondaryText={isAlbum ? (item.data.artist || "Unknown Artist") : "Playlist"}
+                                        secondaryText={isAlbum ? (item.data.artist || $_('common.unknownArtist')) : $_('common.playlist')}
                                         secondaryAction={isAlbum && item.data.artist
                                             ? () => goToArtistDetail(item.data.artist!)
                                             : null}
@@ -433,11 +433,11 @@
                                     <MediaCard
                                         {isNowPlaying}
                                         {isPaused}
-                                        playTooltip="Play"
-                                        resumeTooltip="Resume"
-                                        pauseTooltip="Pause"
-                                        primaryText={track.title || "Unknown"}
-                                        secondaryText={track.artist || "Unknown"}
+                                        playTooltip={$_('common.play')}
+                                        resumeTooltip={$_('common.resume')}
+                                        pauseTooltip={$_('common.pause')}
+                                        primaryText={track.title || $_('common.unknown')}
+                                        secondaryText={track.artist || $_('common.unknown')}
                                         secondaryAction={track.artist
                                             ? () => goToArtistDetail(track.artist!)
                                             : null}
@@ -498,11 +498,11 @@
                                     <MediaCard
                                         {isNowPlaying}
                                         {isPaused}
-                                        playTooltip="Play"
-                                        resumeTooltip="Resume"
-                                        pauseTooltip="Pause"
-                                        primaryText={track.album || "Unknown Album"}
-                                        secondaryText={track.title || "Unknown Track"}
+                                        playTooltip={$_('common.play')}
+                                        resumeTooltip={$_('common.resume')}
+                                        pauseTooltip={$_('common.pause')}
+                                        primaryText={track.album || $_('common.unknownAlbum')}
+                                        secondaryText={track.title || $_('common.unknownTrack')}
                                         ariaLabel={track.album || "Unknown Album"}
                                         on:play={() => playContinueListeningTrack(track, i)}
                                         on:pause={togglePlay}
@@ -551,11 +551,11 @@
                                     <MediaCard
                                         {isNowPlaying}
                                         {isPaused}
-                                        playTooltip="Play"
-                                        resumeTooltip="Resume"
-                                        pauseTooltip="Pause"
+                                        playTooltip={$_('common.play')}
+                                        resumeTooltip={$_('common.resume')}
+                                        pauseTooltip={$_('common.pause')}
                                         primaryText={album.name}
-                                        secondaryText={album.artist || "Unknown Artist"}
+                                        secondaryText={album.artist || $_('common.unknownArtist')}
                                         secondaryAction={album.artist
                                             ? () => goToArtistDetail(album.artist!)
                                             : null}

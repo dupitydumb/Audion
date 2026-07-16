@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import { goToAlbumDetail, goToArtistDetail } from "$lib/stores/view";
     import { getAlbumCoverFromTracks } from "$lib/stores/library";
     import type { Album } from "$lib/api/tauri";
@@ -144,7 +145,7 @@
                                 <button class="quick-play-artist" class:qp-marquee={active && overflows.artist}
                                     style="--marquee-duration: {durations.artist};"
                                     on:click|stopPropagation={() => goToArtistDetail(album.artist!)}
-                                    title="Go to artist" use:registerArtistEl={album.id}>{album.artist}</button>
+                                    title={$_('contextMenu.goToArtist')} use:registerArtistEl={album.id}>{album.artist}</button>
                                 {#if active && overflows.artist}
                                     <button class="quick-play-artist qp-marquee" aria-hidden="true"
                                         style="--marquee-duration: {durations.artist};"

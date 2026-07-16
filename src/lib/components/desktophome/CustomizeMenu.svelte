@@ -1,6 +1,7 @@
 <script lang="ts">
     import { homeLayout, toggleSection } from "$lib/stores/homeLayout";
     import { createEventDispatcher } from "svelte";
+    import { _ } from "svelte-i18n";
 
     const dispatch = createEventDispatcher<{ close: void }>();
 
@@ -11,15 +12,15 @@
 
     function getSectionDisplayName(id: string): string {
         switch (id) {
-            case 'stats': return 'Listening Stats';
-            case 'pinned': return 'Pinned Items';
-            case 'quickplay': return 'Quick Play Grid';
-            case 'recent': return 'Jump Back In (Recent)';
-            case 'continue': return 'Continue Listening';
-            case 'added': return 'Recently Added';
-            case 'topTracks': return 'Your Top Songs';
-            case 'topAlbums': return 'Most Played Albums';
-            case 'charts': return 'Charts & Trends';
+            case 'stats': return $_('home.sections.stats');
+            case 'pinned': return $_('home.sections.pinned');
+            case 'quickplay': return $_('home.sections.quickplay');
+            case 'recent': return $_('home.sections.recent');
+            case 'continue': return $_('home.sections.continue');
+            case 'added': return $_('home.sections.added');
+            case 'topTracks': return $_('home.sections.topTracks');
+            case 'topAlbums': return $_('home.sections.topAlbums');
+            case 'charts': return $_('home.sections.charts');
             default: return id;
         }
     }
@@ -90,11 +91,11 @@
 <div class="customize-overlay" on:click={() => dispatch('close')}></div>
 <div class="customize-menu" role="dialog" aria-modal="true" aria-label="Customize Home Layout">
     <div class="customize-header">
-        <h3>Customize Layout</h3>
+        <h3>{$_('home.customizeTitle')}</h3>
         <button class="close-btn" on:click={() => dispatch('close')}>&times;</button>
     </div>
     <div class="customize-body">
-        <p class="customize-instructions">Drag handles to reorder sections, or toggle switches to show/hide them.</p>
+        <p class="customize-instructions">{$_('home.customizeHint')}</p>
         <div class="sections-list" bind:this={sectionsListEl}>
             {#each $homeLayout as section, i (section.id)}
                 <div
