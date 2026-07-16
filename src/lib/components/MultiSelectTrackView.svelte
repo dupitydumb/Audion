@@ -71,7 +71,6 @@
                 addToast(
                     $_("playlist.addedTracks", { values: {
                             count: result.success,
-                            plural: result.success !== 1 ? "s" : "",
                         } }),
                     "success"
                 );
@@ -81,7 +80,6 @@
                 addToast(
                     $_("playlist.failedTracks", { values: {
                             count: result.failed,
-                            plural: result.failed !== 1 ? "s" : "",
                         } }),
                     "error"
                 );
@@ -202,7 +200,6 @@
                             </svg>
                             {$_("playlist.tracksSelected", { values: {
                                     count: selectedCount,
-                                    plural: selectedCount !== 1 ? "s" : "",
                                 } })}
                         </span>
                         <button class="text-btn" on:click={handleClearAll}>
@@ -264,10 +261,11 @@
                 <span
                     >{isAdding
                         ? $_("playlist.adding")
-                        : $_("playlist.addSongsButton", { values: {
-                                  count: selectedCount > 0 ? selectedCount : "",
-                                  plural: selectedCount !== 1 ? "s" : "",
-                              } })}</span
+                        : selectedCount > 0
+                          ? $_("playlist.addSongsButton", {
+                                values: { count: selectedCount },
+                            })
+                          : $_("playlist.addSongs")}</span
                 >
             </button>
         </div>

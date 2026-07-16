@@ -42,11 +42,30 @@
   }
 
   let handleVisibilityChange: (() => void) | null = null;
+  let migrationPhase: "loading" | "success" | "errors" | "failed" = "loading";
+  let migrationTracks = 0;
+  let migrationAlbums = 0;
+  let migrationErrorCount = 0;
   let migrationStatus = "";
-  let migrationPhase: "loading" | "success" | "error" = "loading";
   let showMigrationBanner = false;
   let showPermissionBanner = false;
   let permissionDenied = false;
+
+  $: {
+    if (migrationPhase === "loading") {
+      migrationStatus = $_("app.migratingCovers");
+    } else if (migrationPhase === "success") {
+      migrationStatus = $_("app.migrationSuccess", {
+        values: { tracks: migrationTracks, albums: migrationAlbums },
+      });
+    } else if (migrationPhase === "errors") {
+      migrationStatus = $_("app.migrationErrors", {
+        values: { count: migrationErrorCount },
+      });
+    } else {
+      migrationStatus = $_("app.migrationFailed");
+    }
+  }
 
   // =========================================================================
   // ANDROID BACK BUTTON HANDLER
@@ -104,10 +123,6 @@
 
     appSettings.initialize();
     theme.initialize();
-    
-    // Initialize i18n with saved preference or navigator default
-    const savedLang = localStorage.getItem("audion_language");
-    setupI18n(savedLang || undefined);
 
     initMobileDetection();
     await initAudioBackend();
@@ -175,7 +190,6 @@
       try {
         showMigrationBanner = true;
         migrationPhase = "loading";
-        migrationStatus = $_("app.migratingCovers");
         console.log("[MIGRATION FRONTEND] Starting migration...");
 
         const result = await migrateCoversToFiles();
@@ -202,11 +216,9 @@
 
         if (result.errors.length === 0) {
           localStorage.setItem("covers_migrated", "true");
+          migrationTracks = result.tracks_migrated;
+          migrationAlbums = result.albums_migrated;
           migrationPhase = "success";
-          migrationStatus = $_("app.migrationSuccess", { values: {
-              tracks: result.tracks_migrated,
-              albums: result.albums_migrated,
-            } });
           console.log("[MIGRATION FRONTEND] Migration completed successfully!");
 
           setTimeout(() => {
@@ -214,8 +226,8 @@
           }, 3000);
         } else {
           console.error("[MIGRATION FRONTEND] Migration completed with errors");
-          migrationPhase = "error";
-          migrationStatus = $_("app.migrationErrors", { values: { count: result.errors.length } });
+          migrationErrorCount = result.errors.length;
+          migrationPhase = "errors";
 
           setTimeout(() => {
             showMigrationBanner = false;
@@ -223,8 +235,7 @@
         }
       } catch (error) {
         console.error("[MIGRATION FRONTEND] Migration failed:", error);
-        migrationPhase = "error";
-        migrationStatus = $_("app.migrationFailed");
+        migrationPhase = "failed";
 
         setTimeout(() => {
           showMigrationBanner = false;
@@ -286,7 +297,7 @@
     <div class="migration-content">
       {#if migrationPhase === "success"}
         <span class="success-icon"></span>
-      {:else if migrationPhase === "error"}
+      {:else if migrationPhase === "errors" || migrationPhase === "failed"}
         <span class="error-icon"></span>
       {:else}
         <span class="loading-icon">⏳</span>

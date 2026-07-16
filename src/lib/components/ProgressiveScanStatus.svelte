@@ -62,10 +62,10 @@
                 </div>
                 <div class="scan-counts">
                     {#if added > 0}
-                        <span class="count-item added">+{$_('scanStatus.tracksAdded', { values: { count: added.toLocaleString() } })}</span>
+                        <span class="count-item added">+{$_('scanStatus.tracksAdded', { values: { count: added } })}</span>
                     {/if}
                     {#if updated > 0}
-                        <span class="count-item updated">↻ {$_('scanStatus.tracksUpdated', { values: { count: updated.toLocaleString() } })}</span>
+                        <span class="count-item updated">↻ {$_('scanStatus.tracksUpdated', { values: { count: updated } })}</span>
                     {/if}
                 </div>
                 {#if progress}

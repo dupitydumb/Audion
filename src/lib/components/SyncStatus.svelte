@@ -8,7 +8,7 @@
         triggerSync,
         showLoginModal,
     } from "$lib/stores/sync";
-    import { _ } from "svelte-i18n";
+    import { _, locale } from "svelte-i18n";
 
     function handleClick() {
         if ($isLoggedIn) {
@@ -19,25 +19,29 @@
     }
 
     // Format the last sync time as relative (e.g., "2m ago")
-    function formatLastSync(timestamp: string | null): string {
-        if (!timestamp) return $_('syncStatus.never');
-        
+    function formatLastSync(
+        timestamp: string | null,
+        currentLocale: string | null | undefined,
+        t: typeof $_,
+    ): string {
+        if (!timestamp) return t('syncStatus.never');
+
         const date = new Date(timestamp);
         const seconds = Math.floor(date.getTime() / 1000);
-        if (isNaN(seconds)) return $_('syncStatus.never');
+        if (isNaN(seconds)) return t('syncStatus.never');
 
         const now = Math.floor(Date.now() / 1000);
         const diff = now - seconds;
 
-        if (diff < 60) return $_('syncStatus.justNow');
-        if (diff < 3600) return $_('syncStatus.minutesAgo', { values: { minutes: Math.floor(diff / 60) } });
-        if (diff < 86400) return $_('syncStatus.hoursAgo', { values: { hours: Math.floor(diff / 3600) } });
+        if (diff < 60) return t('syncStatus.justNow');
+        if (diff < 3600) return t('syncStatus.minutesAgo', { values: { minutes: Math.floor(diff / 60) } });
+        if (diff < 86400) return t('syncStatus.hoursAgo', { values: { hours: Math.floor(diff / 3600) } });
 
-        // Format as DD/MM/YYYY for older syncs
-        const dd = String(date.getDate()).padStart(2, "0");
-        const mm = String(date.getMonth() + 1).padStart(2, "0");
-        const yyyy = date.getFullYear();
-        return `${dd}/${mm}/${yyyy}`;
+        return new Intl.DateTimeFormat(currentLocale || undefined, {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+        }).format(date);
     }
 
     function formatSyncError(error: string | null): string {
@@ -59,6 +63,32 @@
         $syncProgress.total > 0
             ? Math.round(($syncProgress.current / $syncProgress.total) * 100)
             : 0;
+
+    $: lastSyncLabel = formatLastSync($syncStatus.last_sync_at, $locale, $_);
+
+    let statusTitle = "";
+    $: {
+        if (!$isLoggedIn) {
+            statusTitle = $_('syncStatus.signInToSync');
+        } else if ($isSyncing) {
+            statusTitle = $syncProgress.message || $_('syncOverlay.synchronizing');
+        } else {
+            const parts = [
+                $_('syncStatus.lastSynced', { values: { time: lastSyncLabel } }),
+            ];
+            if ($syncStatus.pending_changes > 0) {
+                parts.push(
+                    $_('syncStatus.pendingCount', {
+                        values: { count: $syncStatus.pending_changes },
+                    }),
+                );
+            }
+            if ($syncStatus.last_error) {
+                parts.push(formatSyncError($syncStatus.last_error));
+            }
+            statusTitle = parts.join(" • ");
+        }
+    }
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -69,11 +99,7 @@
     class:syncing={$isSyncing}
     class:has-error={$syncStatus.last_error}
     on:click={handleClick}
-    title={$isLoggedIn
-        ? $isSyncing
-            ? $syncProgress.message || $_('syncOverlay.synchronizing')
-            : `${$_('syncStatus.lastSynced', { values: { time: formatLastSync($syncStatus.last_sync_at) } })}${$syncStatus.pending_changes > 0 ? ` • ${$_('syncStatus.pendingCount', { values: { count: $syncStatus.pending_changes } })}` : ""}${$syncStatus.last_error ? ` • ${formatSyncError($syncStatus.last_error)}` : ""}`
-        : $_('syncStatus.signInToSync')}
+    title={statusTitle}
 >
     {#if $isLoggedIn}
         {#if $isSyncing}

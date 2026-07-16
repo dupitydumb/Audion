@@ -181,11 +181,23 @@
 
             const parts = [];
             if (result.tracks_added > 0)
-                parts.push(`${result.tracks_added} added`);
+                parts.push(
+                    $_("scanStatus.tracksAdded", {
+                        values: { count: result.tracks_added },
+                    }),
+                );
             if (result.tracks_updated > 0)
-                parts.push(`${result.tracks_updated} updated`);
+                parts.push(
+                    $_("scanStatus.tracksUpdated", {
+                        values: { count: result.tracks_updated },
+                    }),
+                );
             if (result.tracks_deleted > 0)
-                parts.push(`${result.tracks_deleted} deleted`);
+                parts.push(
+                    $_("scanStatus.tracksDeleted", {
+                        values: { count: result.tracks_deleted },
+                    }),
+                );
 
             const message =
                 parts.length > 0
@@ -403,7 +415,7 @@
         >
             <div class="recap-card-content">
                 <span class="recap-label">{$_('home.monthly')}</span>
-                <h2 class="recap-title">{currentMonthName} {$_('home.recap')}</h2>
+                <h2 class="recap-title">{$_('home.recap', { values: { month: currentMonthName } })}</h2>
                 <p class="recap-text">{$_('home.recapTeaser')}</p>
                 <div class="recap-pill">{$_('home.viewRecap')}</div>
             </div>

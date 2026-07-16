@@ -230,17 +230,17 @@
     async function drawIntro(ctx: CanvasRenderingContext2D) {
         ctx.fillStyle = "#ffffff";
         ctx.font = "900 120px Inter, sans-serif";
-        ctx.fillText("Your", 540, 800);
+        ctx.fillText($_("recap.your"), 540, 800);
         ctx.fillText(currentMonthName, 540, 950);
-        ctx.fillText("Recap", 540, 1100);
+        ctx.fillText($_("recap.recapWord"), 540, 1100);
     }
 
     async function drawTopTracks(ctx: CanvasRenderingContext2D) {
         ctx.textAlign = "left";
         ctx.fillStyle = "#ffffff";
         ctx.font = "900 100px Inter, sans-serif";
-        ctx.fillText("Your Top", 100, 300);
-        ctx.fillText("Tracks", 100, 410);
+        ctx.fillText($_("recap.yourTop"), 100, 300);
+        ctx.fillText($_("recap.tracks"), 100, 410);
 
         const tracks = $topTracks.slice(0, 5);
         let y = 600;
@@ -264,11 +264,11 @@
             ctx.fillText((i + 1).toString(), 300, y + 60);
 
             ctx.font = "bold 48px Inter, sans-serif";
-            ctx.fillText(track.title || "Unknown", 300, y + 110);
+            ctx.fillText(track.title || $_("common.unknownTrack"), 300, y + 110);
 
             ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
             ctx.font = "32px Inter, sans-serif";
-            ctx.fillText(track.artist || "Unknown Artist", 300, y + 155);
+            ctx.fillText(track.artist || $_("common.unknownArtist"), 300, y + 155);
 
             y += 240;
         }
@@ -281,14 +281,14 @@
         ctx.textAlign = "center";
         ctx.fillStyle = "#ffffff";
         ctx.font = "bold 70px Inter, sans-serif";
-        ctx.fillText("YOUR #1 ARTIST", 540, 500);
+        ctx.fillText($_("recap.numberOneArtist"), 540, 500);
 
         ctx.font = "900 140px Inter, sans-serif";
         ctx.fillText(topArt.artist.toString(), 540, 900);
 
         ctx.font = "bold 60px Inter, sans-serif";
         ctx.fillStyle = "rgba(255,255,255,0.9)";
-        ctx.fillText(`${topArt.play_count} Plays`, 540, 1100);
+        ctx.fillText(`${topArt.play_count} ${$_("recap.plays")}`, 540, 1100);
 
         ctx.font = "italic bold 50px Inter, sans-serif";
         ctx.fillText(getArtistLabel(topArt.play_count), 540, 1200);
@@ -300,8 +300,8 @@
         ctx.textAlign = "center";
         ctx.fillStyle = "#ffffff";
         ctx.font = "900 120px Inter, sans-serif";
-        ctx.fillText("Your Month", 540, 400);
-        ctx.fillText("in Music", 540, 530);
+        ctx.fillText($_("recap.yourMonth"), 540, 400);
+        ctx.fillText($_("recap.inMusic"), 540, 530);
 
         ctx.font = "900 240px Inter, sans-serif";
         ctx.fillText(
@@ -311,18 +311,18 @@
         );
 
         ctx.font = "bold 60px Inter, sans-serif";
-        ctx.fillText("MINUTES LISTENED", 540, 1000);
+        ctx.fillText($_("recap.minutesListened").toUpperCase(), 540, 1000);
 
         ctx.font = "900 200px Inter, sans-serif";
         ctx.fillText($statsSummary.total_plays.toString(), 540, 1350);
-        ctx.fillText("TOTAL PLAYS", 540, 1450);
+        ctx.fillText($_("recap.totalPlays").toUpperCase(), 540, 1450);
     }
 
     async function drawGenreSlide(ctx: CanvasRenderingContext2D) {
         ctx.textAlign = "center";
         ctx.fillStyle = "#ffffff";
         ctx.font = "900 90px Inter, sans-serif";
-        ctx.fillText("YOUR SOUND", 540, 350);
+        ctx.fillText($_("recap.yourSound").toUpperCase(), 540, 350);
 
         if (topGenres.length > 0) {
             const [topGenre] = topGenres[0];
@@ -333,7 +333,7 @@
             if (topGenres.length > 1) {
                 ctx.font = "bold 60px Inter, sans-serif";
                 ctx.fillStyle = "rgba(255,255,255,0.7)";
-                ctx.fillText("Also into:", 540, 900);
+                ctx.fillText($_("recap.alsoInto"), 540, 900);
                 topGenres.slice(1).forEach(([genre], i) => {
                     ctx.fillText(genre, 540, 990 + i * 90);
                 });
@@ -341,8 +341,8 @@
         } else {
             ctx.font = "bold 70px Inter, sans-serif";
             ctx.fillStyle = "rgba(255,255,255,0.5)";
-            ctx.fillText("Play more music", 540, 600);
-            ctx.fillText("to discover your genre!", 540, 700);
+            ctx.fillText($_("recap.genreEmptyLine1"), 540, 600);
+            ctx.fillText($_("recap.genreEmptyLine2"), 540, 700);
         }
     }
 
@@ -389,7 +389,7 @@
         ctx.textAlign = "center";
         ctx.fillStyle = "#000000";
         ctx.font = "900 36px Inter, sans-serif";
-        ctx.fillText("RECAP " + year, 540, cardY + 100);
+        ctx.fillText($_("recap.recapYear", { values: { year } }), 540, cardY + 100);
 
         try {
             const logoImg = await loadImage("/logo.png");
@@ -431,8 +431,8 @@
 
         ctx.fillStyle = "rgba(0,0,0,0.5)";
         ctx.font = "bold 28px Inter, sans-serif";
-        ctx.fillText("TOP ARTISTS", cardX + 80, textY);
-        ctx.fillText("TOP SONGS", cardX + 450, textY);
+        ctx.fillText($_("recap.topArtists").toUpperCase(), cardX + 80, textY);
+        ctx.fillText($_("recap.topSongs").toUpperCase(), cardX + 450, textY);
 
         ctx.fillStyle = "#000000";
         ctx.font = "900 38px Inter, sans-serif"; // Slightly smaller font
@@ -446,7 +446,7 @@
         });
 
         $topTracks.slice(0, 5).forEach((item, i) => {
-            const titleText = item.track.title || "Unknown Track";
+            const titleText = item.track.title || $_("common.unknownTrack");
             const title =
                 titleText.length > 20
                     ? titleText.substring(0, 17) + "..."
@@ -460,8 +460,8 @@
 
         ctx.fillStyle = "rgba(0,0,0,0.4)";
         ctx.font = "bold 28px Inter, sans-serif";
-        ctx.fillText("MINUTES LISTENED", 540 - 200, footerY);
-        ctx.fillText("TOP GENRE", 540 + 200, footerY);
+        ctx.fillText($_("recap.minutesListened").toUpperCase(), 540 - 200, footerY);
+        ctx.fillText($_("recap.topGenre").toUpperCase(), 540 + 200, footerY);
 
         ctx.fillStyle = "#000000";
         ctx.font = "900 80px Inter, sans-serif";
@@ -471,7 +471,7 @@
             footerY + 80,
         );
         ctx.fillText(
-            topGenres[0] ? topGenres[0][0] : "Music",
+            topGenres[0] ? topGenres[0][0] : $_("recap.musicFallback"),
             540 + 200,
             footerY + 80,
         );
