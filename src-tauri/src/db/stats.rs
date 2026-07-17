@@ -86,6 +86,7 @@ pub fn get_top_albums(conn: &Connection, limit: i32) -> Result<Vec<AlbumWithCoun
                     artist: row.get(2)?,
                     art_data: row.get(3)?,
                     art_path: row.get(4)?,
+                    artists: Vec::new(),
                 },
                 play_count: row.get(5)?,
             })

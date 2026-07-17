@@ -1,6 +1,7 @@
 <script lang="ts">
     import { goToAlbumDetail, goToArtistDetail } from "$lib/stores/view";
     import { getAlbumCoverFromTracks } from "$lib/stores/library";
+    import { formatArtists } from "$lib/utils/artists";
     import type { Album } from "$lib/api/tauri";
 
     export let albums: Album[] = [];
@@ -143,12 +144,12 @@
                             <div class="qp-text-track" class:animate={active && overflows.artist}>
                                 <button class="quick-play-artist" class:qp-marquee={active && overflows.artist}
                                     style="--marquee-duration: {durations.artist};"
-                                    on:click|stopPropagation={() => goToArtistDetail(album.artist!)}
-                                    title="Go to artist" use:registerArtistEl={album.id}>{album.artist}</button>
+                                    on:click|stopPropagation={() => goToArtistDetail((album.artists && album.artists[0]) || album.artist!)}
+                                    title="Go to artist" use:registerArtistEl={album.id}>{formatArtists(album.artists) || album.artist}</button>
                                 {#if active && overflows.artist}
                                     <button class="quick-play-artist qp-marquee" aria-hidden="true"
                                         style="--marquee-duration: {durations.artist};"
-                                        on:click|stopPropagation={() => goToArtistDetail(album.artist!)}>{album.artist}</button>
+                                        on:click|stopPropagation={() => goToArtistDetail((album.artists && album.artists[0]) || album.artist!)}>{formatArtists(album.artists) || album.artist}</button>
                                 {/if}
                             </div>
                         {/if}

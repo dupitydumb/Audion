@@ -1,5 +1,6 @@
 // Tauri IPC commands
 pub mod activity;
+pub mod app_settings;
 pub mod covers;
 pub mod library;
 pub mod listenbrainz;
@@ -15,6 +16,7 @@ pub mod sync;
 pub mod export;
 
 pub use activity::*;
+pub use app_settings::*;
 pub use library::*;
 pub use listenbrainz::*;
 pub use lyrics::*;

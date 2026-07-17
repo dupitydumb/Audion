@@ -2,6 +2,7 @@
     import { onMount } from "svelte";
     import { formatDuration, type Track, type Album, type Playlist, getPlaylistTracks, getTracksByAlbum } from "$lib/api/tauri";
     import ArtistLinks from "$lib/components/ArtistLinks.svelte";
+    import { formatArtists } from "$lib/utils/artists";
     import {
         playTracks,
         currentAlbumId,
@@ -551,9 +552,9 @@
                                         resumeTooltip="Resume"
                                         pauseTooltip="Pause"
                                         primaryText={album.name}
-                                        secondaryText={album.artist || "Unknown Artist"}
+                                        secondaryText={formatArtists(album.artists) || album.artist || "Unknown Artist"}
                                         secondaryAction={album.artist
-                                            ? () => goToArtistDetail(album.artist!)
+                                            ? () => goToArtistDetail((album.artists && album.artists[0]) || album.artist!)
                                             : null}
                                         ariaLabel={album.name}
                                         on:play={() => playAlbum(album)}

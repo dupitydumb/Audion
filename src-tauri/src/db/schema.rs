@@ -121,6 +121,22 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         );
         CREATE INDEX IF NOT EXISTS idx_track_artists_artist ON track_artists(artist_id);
         CREATE INDEX IF NOT EXISTS idx_track_artists_track ON track_artists(track_id);
+
+        -- Album <-> Artist join table, same shape as track_artists. Populated
+        -- from either the file's AlbumArtist tag or the first-scanned track's
+        -- artist, depending on AlbumArtistMode (see commands::app_settings and
+        -- db::tracks::get_or_create_album). `albums.artist` remains the raw
+        -- display string for backward compatible reads.
+        CREATE TABLE IF NOT EXISTS album_artists (
+            album_id INTEGER NOT NULL,
+            artist_id INTEGER NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (album_id, artist_id),
+            FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE,
+            FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_album_artists_artist ON album_artists(artist_id);
+        CREATE INDEX IF NOT EXISTS idx_album_artists_album ON album_artists(album_id);
         ",
     )?;
 
@@ -256,6 +272,9 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
     // safe to call every startup
     if let Err(e) = super::artists::backfill_track_artists_if_needed(conn) {
         eprintln!("[DB] Failed to backfill track_artists: {}", e);
+    }
+    if let Err(e) = super::artists::backfill_album_artists_if_needed(conn) {
+        eprintln!("[DB] Failed to backfill album_artists: {}", e);
     }
 
     Ok(())

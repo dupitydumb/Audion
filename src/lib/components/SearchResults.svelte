@@ -8,6 +8,7 @@
         searchQuery,
         clearSearch,
     } from "$lib/stores/search";
+    import { formatArtists } from "$lib/utils/artists";
     import {
         goToAlbumDetail,
         goToArtistDetail,
@@ -358,9 +359,9 @@
                                             class="album-artist truncate link-text"
                                             on:click|stopPropagation={() =>
                                                 handleArtistClick(
-                                                    album.artist || "Unknown Artist",
+                                                    (album.artists && album.artists[0]) || album.artist || "Unknown Artist",
                                                 )}
-                                            >{album.artist || "Unknown Artist"}</button
+                                            >{formatArtists(album.artists) || album.artist || "Unknown Artist"}</button
                                         >
                                     </div>
                                 </div>

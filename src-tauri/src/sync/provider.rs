@@ -1,4 +1,3 @@
-use std::sync::{Arc, Mutex};
 use crate::db::{queries, Database};
 use crate::sync::auth;
 use serde::{Deserialize, Serialize};
@@ -98,6 +97,7 @@ impl AlbumResponse {
             id: self.id,
             name: self.name.clone(),
             artist: self.artist.clone(),
+            artists: Vec::new(),
             art_data: resolved_art_url, // passed in art_data to bypass tauri local asset URL converter
             art_path: None,
         }
@@ -340,6 +340,7 @@ impl LibraryProvider for LocalProvider {
                     id: row.get(0)?,
                     name: row.get(1)?,
                     artist: row.get(2)?,
+                    artists: Vec::new(),
                     art_data: row.get(3)?,
                     art_path: row.get(4)?,
                 })

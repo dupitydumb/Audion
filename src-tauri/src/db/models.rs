@@ -30,6 +30,22 @@ pub struct Track {
     pub artists: Vec<String>,
 }
 
+/// whether album artist comes from the file's own AlbumArtist tag when present
+/// or is always derived from the first scanned track's artist
+/// commands::app_settings re exports this type for the get/set_album_artist_mode tauri commands
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AlbumArtistMode {
+    /// use the file's AlbumArtist tag when present,
+    /// fall back to first track's artist only when no track in the album has one
+    TagIfPresent,
+    /// ignore AlbumArtist tags entirely
+    /// always use first scanned track's artist
+    /// current behavior. kept as default , so after update, change is opt in
+    #[default]
+    FirstTrack,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Album {
     pub id: i64,
@@ -37,6 +53,12 @@ pub struct Album {
     pub artist: Option<String>,
     pub art_data: Option<String>,
     pub art_path: Option<String>,
+    /// individual album artist names derived from artist via the active split rules, in original order
+    /// 'artist' keeps the raw display string as is
+    /// not yet populated by every query that returns an `Album`
+    /// see attach_album_artists callers for which ones fill this in
+    #[serde(default)]
+    pub artists: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +83,12 @@ pub struct TrackInsert {
     pub title: Option<String>,
     pub artist: Option<String>,
     pub album: Option<String>,
+    /// raw AlbumArtist tag ,unsplit
+    /// none if the file has no such tag
+    /// only consulted when AlbumArtistMode::TagIfPresent is active
+    /// see commands::app_settings and db::tracks::get_or_create_album
+    #[serde(default)]
+    pub album_artist: Option<String>,
     pub track_number: Option<i32>,
     pub disc_number: Option<i32>,
     pub duration: Option<i32>,

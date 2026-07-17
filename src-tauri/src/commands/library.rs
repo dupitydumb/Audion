@@ -1211,6 +1211,7 @@ pub async fn add_external_track(
         title: Some(track.title),
         artist: Some(track.artist),
         album: track.album,
+        album_artist: None,
         track_number: track.track_number,
         disc_number: track.disc_number,
         duration: track.duration,

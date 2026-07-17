@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
+    import { formatArtists } from "$lib/utils/artists";
     import {
         tracks,
         albums,
@@ -594,7 +595,7 @@
                                 >{album.name}</span
                             >
                             <span class="song-subtitle truncate-text">
-                                {album.artist || "Unknown Artist"}
+                                {formatArtists(album.artists) || album.artist || "Unknown Artist"}
                             </span>
                         </div>
                         <div class="song-count">{play_count}</div>

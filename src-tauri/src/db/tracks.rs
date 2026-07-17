@@ -12,8 +12,18 @@ fn get_or_create_album(
     conn: &Connection,
     name: &str,
     artist: Option<&str>,
+    album_artist_tag: Option<&str>,
     _art_data: Option<&[u8]>,
 ) -> Result<i64> {
+    // decide which raw string to store as the album's artist
+    // per the active AlbumArtistMode (commands::app_settings)
+    // TagIfPresent prefers the file's own AlbumArtist tag
+    // FirstTrack (default) ignores it and falls back to whichever track's artist wins
+    let chosen_artist = match super::artists::active_album_artist_mode() {
+        super::models::AlbumArtistMode::TagIfPresent => album_artist_tag.or(artist),
+        super::models::AlbumArtistMode::FirstTrack => artist,
+    };
+
     // Match by album name only to avoid splitting albums when tracks have different artists
     let existing: Option<i64> = conn
         .query_row(
@@ -25,11 +35,14 @@ fn get_or_create_album(
 
     if let Some(id) = existing {
         // Update artist if not set yet
-        if let Some(album_artist) = artist {
-            conn.execute(
+        if let Some(album_artist) = chosen_artist {
+            let updated = conn.execute(
                 "UPDATE albums SET artist = ?1 WHERE id = ?2 AND artist IS NULL",
                 params![album_artist, id],
             )?;
+            if updated > 0 {
+                super::artists::sync_album_artists_for_album(conn, id, Some(album_artist))?;
+            }
         }
         return Ok(id);
     }
@@ -37,10 +50,12 @@ fn get_or_create_album(
     // Create new album (without art_data, we'll save file separately)
     conn.execute(
         "INSERT INTO albums (name, artist) VALUES (?1, ?2)",
-        params![name, artist],
+        params![name, chosen_artist],
     )?;
 
-    Ok(conn.last_insert_rowid())
+    let album_id = conn.last_insert_rowid();
+    super::artists::sync_album_artists_for_album(conn, album_id, chosen_artist)?;
+    Ok(album_id)
 }
 
 fn build_fts_query(query: &str) -> Option<String> {
@@ -92,10 +107,12 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
     // First, handle album if present
     let album_id = if let Some(album_name) = &track.album {
         let artist = track.artist.as_deref();
+        let album_artist_tag = track.album_artist.as_deref();
         Some(get_or_create_album(
             conn,
             album_name,
             artist,
+            album_artist_tag,
             track.album_art.as_deref(),
         )?)
     } else {
@@ -365,6 +382,7 @@ pub fn search_related(
                 artist: row.get(2)?,
                 art_data: None,
                 art_path: row.get(3)?,
+                artists: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>>>()?;

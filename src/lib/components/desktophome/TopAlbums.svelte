@@ -6,6 +6,7 @@
     import { contextMenu } from "$lib/stores/ui";
     import { getAlbumCoverFromTracks } from "$lib/stores/library";
     import { goToArtistDetail, goToAlbumDetail } from "$lib/stores/view";
+    import { formatArtists } from "$lib/utils/artists";
     import { _ } from "svelte-i18n";
 
     export let topAlbums: AlbumWithCount[];
@@ -41,7 +42,7 @@
             items: [
                 { label: "Play", action: () => playAlbum(album) },
                 { label: "Go to Album", action: () => goToAlbumDetail(album.id) },
-                { label: "Go to Artist", action: () => goToArtistDetail(album.artist || "") },
+                { label: "Go to Artist", action: () => goToArtistDetail((album.artists && album.artists[0]) || album.artist || "") },
             ],
         });
     }
@@ -104,10 +105,10 @@
                     <span class="top-track-title" class:accent={isNowPlaying || isPaused}>{album.name}</span>
                     <button
                         class="top-track-artist link"
-                        on:click|stopPropagation={() => goToArtistDetail(album.artist || "")}
+                        on:click|stopPropagation={() => goToArtistDetail((album.artists && album.artists[0]) || album.artist || "")}
                         title="Go to artist"
                     >
-                        {album.artist || "Unknown Artist"}
+                        {formatArtists(album.artists) || album.artist || "Unknown Artist"}
                     </button>
                 </div>
                 <span class="top-track-plays">{play_count} plays</span>

@@ -13,6 +13,7 @@
     } from "$lib/api/tauri";
     import { playTracks, currentTrack, isPlaying } from "$lib/stores/player";
     import { goToAlbums, goToArtistDetail } from "$lib/stores/view";
+    import ArtistLinks from "$lib/components/ArtistLinks.svelte";
     import { getAlbumCoverFromTracks } from "$lib/stores/library";
     import TrackList from "./track-list/TrackList.svelte";
     import {
@@ -268,18 +269,13 @@
                 <span class="album-type">{$_("album.type")}</span>
                 <h1 class="album-title">{album.name}</h1>
                 <div class="album-meta">
-                    <button
-                        class="album-artist link"
-                        on:click={() => {
-                            if (album)
-                                goToArtistDetail(
-                                    album.artist || "Unknown Artist",
-                                );
-                        }}
-                        title="Go to artist"
-                    >
-                        {album.artist || "Unknown Artist"}
-                    </button>
+                    <ArtistLinks
+                        artist={album.artist}
+                        artists={album.artists}
+                        chipClass="album-artist link"
+                        wrapClass="album-artist-links"
+                        on:select={(e) => goToArtistDetail(e.detail)}
+                    />
                     <span class="separator">•</span>
                     <span
                         >{$_("album.songs", {

@@ -3,7 +3,7 @@ use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::time::Instant;
 
 use super::models::{Album, Artist, Track};
-use super::artists::attach_artists;
+use super::artists::{attach_artists, attach_album_artists};
 
 /// Get album art path
 pub fn get_album_art_path(conn: &Connection, album_id: i64) -> Result<Option<String>> {
@@ -30,9 +30,13 @@ pub fn get_all_albums(conn: &Connection) -> Result<Vec<Album>> {
                 artist: row.get(2)?,
                 art_data: row.get(3)?,
                 art_path: row.get(4)?,
+            artists: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>>>()?;
+
+    let mut albums = albums;
+    attach_album_artists(conn, &mut albums)?;
 
     let total_time = query_start.elapsed();
     println!(
@@ -58,9 +62,13 @@ pub fn get_all_albums_lightweight(conn: &Connection) -> Result<Vec<Album>> {
                 artist: row.get(2)?,
                 art_data: None,
                 art_path: None,
+            artists: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>>>()?;
+
+    let mut albums = albums;
+    attach_album_artists(conn, &mut albums)?;
 
     let total_time = query_start.elapsed();
     println!(
@@ -87,9 +95,13 @@ pub fn get_all_albums_with_paths(conn: &Connection) -> Result<Vec<Album>> {
                 artist: row.get(2)?,
                 art_data: None,
                 art_path: row.get(3)?,
+            artists: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>>>()?;
+
+    let mut albums = albums;
+    attach_album_artists(conn, &mut albums)?;
 
     let total_time = query_start.elapsed();
     println!(
@@ -119,9 +131,13 @@ pub fn get_albums_paginated(conn: &Connection, limit: i32, offset: i32) -> Resul
                 artist: row.get(2)?,
                 art_data: None,
                 art_path: row.get(3)?,
+            artists: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>>>()?;
+
+    let mut albums = albums;
+    attach_album_artists(conn, &mut albums)?;
 
     let total_time = query_start.elapsed();
     println!(
@@ -252,20 +268,29 @@ pub fn get_tracks_by_artist(conn: &Connection, artist: &str) -> Result<Vec<Track
 }
 
 pub fn get_album_by_id(conn: &Connection, album_id: i64) -> Result<Option<Album>> {
-    conn.query_row(
-        "SELECT id, name, artist, art_data, art_path FROM albums WHERE id = ?1",
-        [album_id],
-        |row| {
-            Ok(Album {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                artist: row.get(2)?,
-                art_data: row.get(3)?,
-                art_path: row.get(4)?,
-            })
-        },
-    )
-    .optional()
+    let album = conn
+        .query_row(
+            "SELECT id, name, artist, art_data, art_path FROM albums WHERE id = ?1",
+            [album_id],
+            |row| {
+                Ok(Album {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    artist: row.get(2)?,
+                    art_data: row.get(3)?,
+                    art_path: row.get(4)?,
+                    artists: Vec::new(),
+                })
+            },
+        )
+        .optional()?;
+
+    if let Some(mut album) = album {
+        attach_album_artists(conn, std::slice::from_mut(&mut album))?;
+        Ok(Some(album))
+    } else {
+        Ok(None)
+    }
 }
 
 pub fn get_recently_added_albums(conn: &Connection, limit: i32) -> Result<Vec<Album>> {
@@ -286,9 +311,13 @@ pub fn get_recently_added_albums(conn: &Connection, limit: i32) -> Result<Vec<Al
                 artist: row.get(2)?,
                 art_data: row.get(3)?,
                 art_path: row.get(4)?,
+            artists: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>>>()?;
+
+    let mut albums = albums;
+    attach_album_artists(conn, &mut albums)?;
 
     Ok(albums)
 }

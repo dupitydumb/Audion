@@ -666,6 +666,18 @@ pub fn run() {
                 }
             }
 
+            // load persisted artist split delimiter rules into the process wide cache used by scanner::artist_parser::split_artists
+            // so scans and track_artists/album_artists syncing on this run use the user's saved rules
+            {
+                let app_settings = commands::app_settings::load_app_settings(app.handle());
+                crate::scanner::artist_parser::set_active_delimiters(
+                    app_settings.artist_split_rules.delimiters,
+                );
+                crate::db::artists::set_active_album_artist_mode(
+                    app_settings.album_artist_mode,
+                );
+            }
+
             // Handle window start mode (desktop only)
             #[cfg(desktop)]
             {
@@ -886,6 +898,11 @@ pub fn run() {
                     commands::scan_folder,
                     commands::get_default_music_dirs,
                     commands::get_music_folders,
+                    commands::get_artist_split_rules,
+                    commands::set_artist_split_rules,
+                    commands::get_album_artist_mode,
+                    commands::set_album_artist_mode,
+                    commands::resplit_all_artists,
                     commands::get_library,
                     commands::get_tracks_paginated,
                     commands::get_albums_paginated,
@@ -1095,6 +1112,11 @@ pub fn run() {
                     commands::scan_folder,
                     commands::get_default_music_dirs,
                     commands::get_music_folders,
+                    commands::get_artist_split_rules,
+                    commands::set_artist_split_rules,
+                    commands::get_album_artist_mode,
+                    commands::set_album_artist_mode,
+                    commands::resplit_all_artists,
                     commands::get_library,
                     commands::get_tracks_paginated,
                     commands::get_albums_paginated,

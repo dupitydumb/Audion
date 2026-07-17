@@ -180,6 +180,9 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
                 .or_else(|| get_filename_without_ext(path));
             let artist = tag.artist().map(|s| s.to_string());
             let album = tag.album().map(|s| s.to_string());
+            // album artist tag => the raw, unsplit display string
+            // only used when AlbumArtistMode::TagIfPresent is active (see commands::app_settings)
+            let album_artist = tag.get_string(ItemKey::AlbumArtist).map(|s| s.to_string());
 
             // Extract track number, handling both simple numbers and "X/Y" format
             let track_number = tag.track().map(|n| n as i32).or_else(|| {
@@ -229,6 +232,7 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
                 title,
                 artist,
                 album,
+                album_artist,
                 track_number,
                 disc_number,
                 duration: Some(duration),
@@ -313,6 +317,7 @@ fn create_fallback_metadata(path: &Path) -> TrackInsert {
         title: get_filename_without_ext(path),
         artist: None,
         album: None,
+        album_artist: None,
         track_number: None,
         disc_number: None,
         duration: None,
@@ -384,6 +389,9 @@ fn extract_alac_metadata_fallback(path: &Path) -> Option<TrackInsert> {
         path: path.to_string_lossy().to_string(),
         title,
         artist,
+        // ALAC/MP4 fallback path
+        // falls back to first track wins album artist behavior
+        album_artist: None,
         album,
         track_number,
         disc_number,
@@ -417,6 +425,8 @@ fn extract_flac_metadata_fallback(path: &Path, _duration_hint: Option<i32>) -> O
                 .or_else(|| get_filename_without_ext(path));
             let artist = vorbis.and_then(|v| v.artist().map(|s| s[0].clone()));
             let album = vorbis.and_then(|v| v.album().map(|s| s[0].clone()));
+            let album_artist = vorbis
+                .and_then(|v| v.get("ALBUMARTIST").and_then(|a| a.get(0).cloned()));
             let track_number = vorbis.and_then(|v| v.track().map(|n| n as i32));
             let disc_number =
                 vorbis.and_then(|v| v.get("DISCNUMBER").and_then(|d| d[0].parse::<i32>().ok()));
@@ -448,6 +458,7 @@ fn extract_flac_metadata_fallback(path: &Path, _duration_hint: Option<i32>) -> O
                 path: path.to_string_lossy().to_string(),
                 title,
                 artist,
+                album_artist,
                 album,
                 track_number,
                 disc_number,

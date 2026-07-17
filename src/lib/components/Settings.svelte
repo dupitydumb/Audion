@@ -7,6 +7,7 @@
   import SyncSection from "./settings/SyncSection.svelte";
   import AccountSection from "./settings/AccountSection.svelte";
   import StorageSection from "./settings/StorageSection.svelte";
+  import ArtistsSection from "./settings/ArtistsSection.svelte";
   import LyricsSection from "./settings/LyricsSection.svelte";
   import ShortcutsSection from "./settings/ShortcutsSection.svelte";
   import PrivacySection from "./settings/PrivacySection.svelte";
@@ -41,6 +42,7 @@
         <SyncSection open={openSections['sync'] ?? false} on:toggle={() => toggle('sync')} />
         <AccountSection open={openSections['account'] ?? false} on:toggle={() => toggle('account')} />
         <StorageSection open={openSections['storage'] ?? false} on:toggle={() => toggle('storage')} />
+        <ArtistsSection open={openSections['artists'] ?? false} on:toggle={() => toggle('artists')} />
         <LyricsSection open={openSections['lyrics'] ?? false} on:toggle={() => toggle('lyrics')} />
         <ShortcutsSection open={openSections['shortcuts'] ?? false} on:toggle={() => toggle('shortcuts')} />
         <PrivacySection open={openSections['privacy'] ?? false} on:toggle={() => toggle('privacy')} />

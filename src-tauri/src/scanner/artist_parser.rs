@@ -21,20 +21,51 @@
 
 const ESCAPE_CHAR: char = '\\';
 
-/// example priority list. highest priority first
-/// TODO: replace with user configurable rules once the storage question
-/// (DB backed vs localStorage passthrough) is settled
+/// fallback priority list, used only until the persisted rules are loaded
+/// (see commands::app_settings::ArtistSplitRules) or if loading them fails
 const DEFAULT_DELIMITERS: &[&str] = &["&", " and ", ","];
 
 /// unique placeholder sequence
 /// used to temporarily protect escaped delimiters during splitting
 const PLACEHOLDER_PREFIX: char = '\u{E000}'; // unicode private use area
 
-/// split a raw artist string into individual, trimmed artist names using the default delimiter priority list
+/// process wide cache of the currently active delimiter list
+/// populated once at startup from commands::app_settings::load_app_settings (see lib.rs setup)
+/// refreshed immediately by commands::app_settings::set_artist_split_rules whenever the user changes the rules
+static ACTIVE_DELIMITERS: std::sync::OnceLock<std::sync::RwLock<Vec<String>>> =
+    std::sync::OnceLock::new();
+
+fn active_delimiters_lock() -> &'static std::sync::RwLock<Vec<String>> {
+    ACTIVE_DELIMITERS.get_or_init(|| {
+        std::sync::RwLock::new(DEFAULT_DELIMITERS.iter().map(|s| s.to_string()).collect())
+    })
+}
+
+/// replace the active delimiter list
+/// call this once at startup with the persisted rules
+/// again any time the user saves new rules
+pub fn set_active_delimiters(delimiters: Vec<String>) {
+    if let Ok(mut guard) = active_delimiters_lock().write() {
+        *guard = delimiters;
+    }
+}
+
+/// current active delimiter list, owned copy
+pub fn active_delimiters() -> Vec<String> {
+    active_delimiters_lock()
+        .read()
+        .map(|guard| guard.clone())
+        .unwrap_or_else(|_| DEFAULT_DELIMITERS.iter().map(|s| s.to_string()).collect())
+}
+
+/// split a raw artist string into individual, trimmed artist names using
+/// the currently active delimiter priority list (see active_delimiters)
 ///
 /// returns a single element vec containing the trimmed input if no configured delimiter is found (including when the input is empty)
 pub fn split_artists(raw: &str) -> Vec<String> {
-    split_artists_with_rules(raw, DEFAULT_DELIMITERS)
+    let owned = active_delimiters();
+    let refs: Vec<&str> = owned.iter().map(|s| s.as_str()).collect();
+    split_artists_with_rules(raw, &refs)
 }
 
 /// split a raw artist string using an explicit, ordered delimiter list
