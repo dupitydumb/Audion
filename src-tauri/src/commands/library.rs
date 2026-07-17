@@ -278,6 +278,7 @@ async fn handle_track_import(
         disc_number: track_data.disc_number,
         metadata_json: track_data.metadata_json.clone(),
         date_added,
+        artists: track_data.artist.as_deref().map(crate::scanner::artist_parser::split_artists).unwrap_or_default(),
     };
 
     Ok(track)
@@ -710,6 +711,7 @@ async fn run_scan_and_import(
                             disc_number: track_data.disc_number,
                             metadata_json: track_data.metadata_json.clone(),
                             date_added,
+                            artists: track_data.artist.as_deref().map(crate::scanner::artist_parser::split_artists).unwrap_or_default(),
                         });
                     }
                     Ok(_) => {}

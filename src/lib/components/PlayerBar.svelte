@@ -39,6 +39,7 @@
     import { goToArtistDetail } from "$lib/stores/view";
     import { isMobile } from "$lib/stores/mobile";
     import type { Album } from "$lib/api/tauri";
+    import ArtistLinks from "$lib/components/ArtistLinks.svelte";
     import { likedTrackIds, toggleLike } from "$lib/stores/liked";
     import {
         sleepTimerActive,
@@ -308,21 +309,15 @@
                     <span class="track-title truncate"
                         >{$currentTrack.title || "Unknown Title"}</span
                     >
-                    <span
-                        class="track-artist truncate"
-                        role="button"
-                        tabindex="0"
-                        on:click|stopPropagation={() => {
-                            if ($currentTrack?.artist) {
-                                goToArtistDetail($currentTrack.artist);
-                            }
-                        }}
-                        on:keydown={(e) => {
-                            if (e.key === "Enter" && $currentTrack?.artist) {
-                                goToArtistDetail($currentTrack.artist);
-                            }
-                        }}>{$currentTrack.artist || "Unknown Artist"}</span
-                    >
+                    <ArtistLinks
+                        artist={$currentTrack.artist}
+                        artists={$currentTrack.artists}
+                        chipClass="track-artist truncate"
+                        marquee
+                        marqueeTrigger="always"
+                        resetKey={$currentTrack.id}
+                        on:select={(e) => goToArtistDetail(e.detail)}
+                    />
                 </div>
 
                 <!-- Like button (desktop) -->

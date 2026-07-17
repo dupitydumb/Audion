@@ -14,6 +14,7 @@
         goToPlaylistDetail,
     } from "$lib/stores/view";
     import { playTracks } from "$lib/stores/player";
+    import ArtistLinks from "$lib/components/ArtistLinks.svelte";
     import {
         getAlbumArtSrc,
         getTrackCoverSrc,
@@ -45,6 +46,7 @@
     let visibleAlbums = 6;
     let visibleArtists = 6;
     let visiblePlaylists = 6;
+    let hoveredTrackIndex: number | null = null;
 
     $: $searchResults, resetVisible();
     function resetVisible() {
@@ -240,6 +242,8 @@
                                     }}
                                     on:contextmenu={(e) =>
                                         handleTrackContextMenu(e, track, index)}
+                                    on:mouseenter={() => (hoveredTrackIndex = index)}
+                                    on:mouseleave={() => (hoveredTrackIndex = null)}
                                 >
                                     <div class="track-art">
                                         {#if albumArt}
@@ -268,14 +272,16 @@
                                         <span class="track-title truncate"
                                             >{track.title || "Unknown Title"}</span
                                         >
-                                        <button
-                                            class="track-artist truncate link-text"
-                                            on:click|stopPropagation={() =>
-                                                handleArtistClick(
-                                                    track.artist || "Unknown Artist",
-                                                )}
-                                            >{track.artist || "Unknown Artist"}</button
-                                        >
+                                        <ArtistLinks
+                                            artist={track.artist}
+                                            artists={track.artists}
+                                            chipClass="track-artist truncate link-text"
+                                            marquee
+                                            marqueeTrigger="external"
+                                            marqueeActive={hoveredTrackIndex === index}
+                                            resetKey={track.id}
+                                            on:select={(e) => handleArtistClick(e.detail)}
+                                        />
                                     </div>
                                     <button
                                         class="track-album truncate"

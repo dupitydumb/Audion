@@ -1,5 +1,7 @@
 <script lang="ts">
   import { fly } from "svelte/transition";
+  import ArtistLinks from "$lib/components/ArtistLinks.svelte";
+  import { goToArtistDetail } from "$lib/stores/view";
   import {
     currentTrack,
     isPlaying,
@@ -102,7 +104,14 @@
         </div>
         <div class="track-text">
           <span class="track-title truncate">{$currentTrack.title || "Unknown Title"}</span>
-          <span class="track-artist truncate">{$currentTrack.artist || "Unknown Artist"}</span>
+          <ArtistLinks
+            artist={$currentTrack.artist}
+            artists={$currentTrack.artists}
+            compact
+            tapMenu
+            chipClass="track-artist truncate"
+            on:select={(e) => goToArtistDetail(e.detail)}
+          />
         </div>
       </div>
 

@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
+    import { formatTrackArtists } from "$lib/utils/artists";
     import { fade, slide, scale, fly } from "svelte/transition";
     import { cubicOut } from "svelte/easing";
     import {
@@ -273,7 +274,7 @@
 
             ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
             ctx.font = "32px Inter, sans-serif";
-            ctx.fillText(track.artist || "Unknown Artist", 300, y + 155);
+            ctx.fillText(formatTrackArtists(track) || "Unknown Artist", 300, y + 155);
 
             y += 240;
         }
@@ -560,7 +561,7 @@
                                             {item.track.title}
                                         </div>
                                         <div class="track-artist">
-                                            {item.track.artist}
+                                            {formatTrackArtists(item.track)}
                                         </div>
                                     </div>
                                     <div class="track-plays">

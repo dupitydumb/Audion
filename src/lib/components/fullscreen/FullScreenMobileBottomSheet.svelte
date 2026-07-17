@@ -9,6 +9,7 @@
   import { addToast } from "$lib/stores/toast";
   import { wsStore } from "$lib/stores/websocket";
   import { goToArtistDetail, goToAlbumDetail } from "$lib/stores/view";
+  import { formatArtists } from "$lib/utils/artists";
   import {
     sleepTimerActive,
     sleepTimerRemainingMs,
@@ -156,7 +157,7 @@
         {/key}
         <div class="sheet-track-details">
           <span class="sheet-track-title">{$currentTrack.title || "Unknown Title"}</span>
-          <span class="sheet-track-artist">{$currentTrack.artist || "Unknown Artist"}</span>
+          <span class="sheet-track-artist">{formatArtists($currentTrack.artists) || $currentTrack.artist || "Unknown Artist"}</span>
         </div>
       </div>
     {/if}
@@ -164,7 +165,23 @@
     <div class="sheet-divider"></div>
 
     <!-- Go to Artist -->
-    {#if $currentTrack?.artist}
+    {#if $currentTrack?.artists && $currentTrack.artists.length > 1}
+      {#each $currentTrack.artists as artistName (artistName)}
+        <button
+          class="sheet-item"
+          on:click={() => {
+            showMobileMenu = false;
+            toggleFullScreen();
+            goToArtistDetail(artistName);
+          }}
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
+            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+          </svg>
+          <span>Go to {artistName}</span>
+        </button>
+      {/each}
+    {:else if $currentTrack?.artist}
       <button
         class="sheet-item"
         on:click={() => {

@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import { formatDuration, type Track, type Album, type Playlist, getPlaylistTracks, getTracksByAlbum } from "$lib/api/tauri";
+    import ArtistLinks from "$lib/components/ArtistLinks.svelte";
     import {
         playTracks,
         currentAlbumId,
@@ -426,14 +427,20 @@
                                         resumeTooltip="Resume"
                                         pauseTooltip="Pause"
                                         primaryText={track.title || "Unknown"}
-                                        secondaryText={track.artist || "Unknown"}
-                                        secondaryAction={track.artist
-                                            ? () => goToArtistDetail(track.artist!)
-                                            : null}
                                         ariaLabel={track.title || "Unknown"}
                                         on:play={() => playRecentTrack(track, i)}
                                         on:pause={togglePlay}
                                     >
+                                        <svelte:fragment slot="secondary">
+                                            <ArtistLinks
+                                                artist={track.artist}
+                                                artists={track.artists}
+                                                chipClass="text-inner secondary-link"
+                                                marquee
+                                                resetKey={track.id}
+                                                on:select={(e) => goToArtistDetail(e.detail)}
+                                            />
+                                        </svelte:fragment>
                                         <svelte:fragment slot="cover">
                                             {#if getTrackAlbumCover(track.id)}
                                                 <img

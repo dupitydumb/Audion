@@ -3,6 +3,7 @@ use rusqlite::{params, Connection, OptionalExtension, Result};
 use std::time::Instant;
 
 use super::models::{Album, Artist, Track};
+use super::artists::attach_artists;
 
 /// Get album art path
 pub fn get_album_art_path(conn: &Connection, album_id: i64) -> Result<Option<String>> {
@@ -137,12 +138,15 @@ pub fn get_albums_paginated(conn: &Connection, limit: i32, offset: i32) -> Resul
 pub fn get_all_artists(conn: &Connection) -> Result<Vec<Artist>> {
     let query_start = Instant::now();
 
+    // grouped via track_artists rather than GROUP BY tracks.artist
+    // to support multiple artists and not create separate artist strings for each track with multiple artists
     let mut stmt = conn.prepare(
-        "SELECT artist, COUNT(*) as track_count, COUNT(DISTINCT album) as album_count 
-         FROM tracks 
-         WHERE artist IS NOT NULL 
-         GROUP BY artist 
-         ORDER BY artist",
+        "SELECT a.name, COUNT(DISTINCT ta.track_id) as track_count, COUNT(DISTINCT t.album_id) as album_count
+         FROM artists a
+         JOIN track_artists ta ON ta.artist_id = a.id
+         JOIN tracks t ON t.id = ta.track_id
+         GROUP BY a.id
+         ORDER BY a.name COLLATE NOCASE",
     )?;
 
     let artists = stmt
@@ -193,17 +197,26 @@ pub fn get_tracks_by_album(conn: &Connection, album_id: i64) -> Result<Vec<Track
                 disc_number: row.get(16)?,
                 metadata_json: row.get(17)?,
                 date_added: row.get(18)?,
+                artists: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>>>()?;
 
+    let mut tracks = tracks;
+    attach_artists(conn, &mut tracks)?;
     Ok(tracks)
 }
 
 pub fn get_tracks_by_artist(conn: &Connection, artist: &str) -> Result<Vec<Track>> {
+    // matches via track_artists so this returns every track the artist
+    // appears on, including tracks credited to multiple artists
     let mut stmt = conn.prepare(
-        "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, track_cover, track_cover_path, disc_number, metadata_json, date_added 
-         FROM tracks WHERE artist = ?1 ORDER BY album, disc_number, track_number, title",
+        "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.album_id, t.format, t.bitrate, t.source_type, t.cover_url, t.external_id, t.local_src, t.track_cover, t.track_cover_path, t.disc_number, t.metadata_json, t.date_added
+         FROM tracks t
+         JOIN track_artists ta ON ta.track_id = t.id
+         JOIN artists a ON a.id = ta.artist_id
+         WHERE a.name = ?1 COLLATE NOCASE
+         ORDER BY t.album, t.disc_number, t.track_number, t.title",
     )?;
 
     let tracks = stmt
@@ -228,10 +241,13 @@ pub fn get_tracks_by_artist(conn: &Connection, artist: &str) -> Result<Vec<Track
                 disc_number: row.get(16)?,
                 metadata_json: row.get(17)?,
                 date_added: row.get(18)?,
+                artists: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>>>()?;
 
+    let mut tracks = tracks;
+    super::artists::attach_artists(conn, &mut tracks)?;
     Ok(tracks)
 }
 

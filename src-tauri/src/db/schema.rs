@@ -97,6 +97,30 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks(artist);
         CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album);
         CREATE INDEX IF NOT EXISTS idx_tracks_album_id ON tracks(album_id);
+
+        -- Canonical artist entities. `tracks.artist` / `albums.artist` remain the
+        -- raw, unsplit display strings (e.g. 'Dua Lipa & Drake'); this table plus
+        -- track_artists below is what enables per-artist grouping/filtering
+        -- without discarding the original tag text.
+        CREATE TABLE IF NOT EXISTS artists (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE COLLATE NOCASE
+        );
+
+        -- Track <-> Artist join table. One row per (track, artist) pair produced
+        -- by splitting the track's raw artist string. `position` preserves the
+        -- order artists appeared in the original raw tag (0 = first-listed/
+        -- primary artist).
+        CREATE TABLE IF NOT EXISTS track_artists (
+            track_id INTEGER NOT NULL,
+            artist_id INTEGER NOT NULL,
+            position INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (track_id, artist_id),
+            FOREIGN KEY (track_id) REFERENCES tracks(id) ON DELETE CASCADE,
+            FOREIGN KEY (artist_id) REFERENCES artists(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_track_artists_artist ON track_artists(artist_id);
+        CREATE INDEX IF NOT EXISTS idx_track_artists_track ON track_artists(track_id);
         ",
     )?;
 
@@ -227,6 +251,12 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
 
     // Initialize playlist positions for existing playlists
     initialize_playlist_positions(conn)?;
+
+    // one time backfill: populate track_artists from existing tracks.artist strings for db that predate the artists/track_artists tables
+    // safe to call every startup
+    if let Err(e) = super::artists::backfill_track_artists_if_needed(conn) {
+        eprintln!("[DB] Failed to backfill track_artists: {}", e);
+    }
 
     Ok(())
 }

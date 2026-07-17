@@ -70,6 +70,10 @@ impl TrackResponse {
             disc_number: self.disc_number,
             metadata_json: self.metadata_json.clone(),
             date_added: self.date_added.clone(),
+            // server tracks don't have local track_artists rows to join against
+            // so derive the split client side from the raw string
+            // using the same rules as local tracks
+            artists: self.artist.as_deref().map(crate::scanner::artist_parser::split_artists).unwrap_or_default(),
         }
     }
 }
@@ -323,7 +327,9 @@ impl LibraryProvider for LocalProvider {
                 "SELECT DISTINCT a.id, a.name, a.artist, a.art_data, a.art_path 
                  FROM albums a
                  INNER JOIN tracks t ON t.album_id = a.id
-                 WHERE t.artist = ?1
+                 INNER JOIN track_artists ta ON ta.track_id = t.id
+                 INNER JOIN artists ar ON ar.id = ta.artist_id
+                 WHERE ar.name = ?1 COLLATE NOCASE
                  ORDER BY a.name",
             )
             .map_err(|e| e.to_string())?;

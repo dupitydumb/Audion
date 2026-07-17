@@ -141,6 +141,14 @@ export interface Track {
     path: string;
     title: string | null;
     artist: string | null;
+    /**
+     * individual artist names split from (e.g. Dua Lipa & Drake =>
+     * [Dua Lipa, Drake]), in original order
+     * artist` is still the raw display string and is unaffected.
+     * may be an empty array for data paths the backend hasn't wired up yet
+     * see formatArtists in artists.ts
+     */
+    artists?: string[];
     album: string | null;
     track_number: number | null;
     duration: number | null;

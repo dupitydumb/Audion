@@ -232,7 +232,11 @@
       {/if}
     </div>
 
-    {#if secondaryText}
+    {#if $$slots.secondary}
+      <div class="text-track secondary">
+        <slot name="secondary" />
+      </div>
+    {:else if secondaryText}
       <div
         class="text-track secondary"
         class:animate={isActive && secondaryOverflows}

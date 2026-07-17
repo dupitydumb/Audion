@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Track } from "$lib/api/tauri";
+  import ArtistLinks from "$lib/components/ArtistLinks.svelte";
   import { formatDuration } from "$lib/api/tauri";
   import { isMobile } from "$lib/stores/mobile";
   import { multiSelect } from "$lib/stores/multiselect";
@@ -24,10 +25,13 @@
   export let onPointerDown: (e: PointerEvent, index: number) => void;
   export let onImageError: (art: string) => void;
 
-  function handleArtistClick(e: MouseEvent) {
-    e.stopPropagation();
-    if (track && track.artist) {
-      goToArtistDetail(track.artist);
+  /** row's own hover state, used to drive marquee start/stop for the
+   *  artist chips in this row (see ArtistLinks marqueeTrigger=external */
+  let rowHovered = false;
+
+  function handleArtistSelect(name: string) {
+    if (name) {
+      goToArtistDetail(name);
     }
   }
 
@@ -71,6 +75,8 @@
   data-track-index={actualIndex}
   role="button"
   tabindex="0"
+  on:mouseenter={() => (rowHovered = true)}
+  on:mouseleave={() => (rowHovered = false)}
 >
   {#if multiSelectMode}
     <div
@@ -223,11 +229,16 @@
           </span>
         {/if}
       </div>
-      <button
-        class="track-artist truncate"
-        on:click={handleArtistClick}
-        >{track.artist || "Unknown Artist"}</button
-      >
+      <ArtistLinks
+        artist={track.artist}
+        artists={track.artists}
+        chipClass="track-artist truncate"
+        marquee
+        marqueeTrigger="external"
+        marqueeActive={rowHovered}
+        resetKey={track.id}
+        on:select={(e) => handleArtistSelect(e.detail)}
+      />
     </div>
   {:else}
     <div class="col-artist">
@@ -260,9 +271,16 @@
         <span class="track-name truncate"
           >{track.title || "Unknown Title"}</span
         >
-        <button class="track-artist truncate" on:click={handleArtistClick}
-          >{track.artist || "Unknown Artist"}</button
-        >
+        <ArtistLinks
+          artist={track.artist}
+          artists={track.artists}
+          chipClass="track-artist truncate"
+          marquee
+          marqueeTrigger="external"
+          marqueeActive={rowHovered}
+          resetKey={track.id}
+          on:select={(e) => handleArtistSelect(e.detail)}
+        />
         {#if showAdvancedMetadata}
           <span class="media-metadata truncate">
             {track.format ? track.format.toUpperCase() : "Unknown format"}

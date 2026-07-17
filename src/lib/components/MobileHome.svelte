@@ -31,6 +31,7 @@
     import { isMobile } from "$lib/stores/mobile";
     import { appSettings } from "$lib/stores/settings";
     import { getLikedTracks } from "$lib/api/tauri";
+    import ArtistLinks from "$lib/components/ArtistLinks.svelte";
     import { likedTrackIds } from "$lib/stores/liked";
     import {
         topTracks,
@@ -330,7 +331,13 @@
                                 {$topTracks[0].track.title}
                             </h2>
                             <p class="hero-artist truncate-text">
-                                {$topTracks[0].track.artist}
+                                <ArtistLinks
+                                    artist={$topTracks[0].track.artist}
+                                    artists={$topTracks[0].track.artists}
+                                    compact
+                                    tapMenu
+                                    on:select={(e) => goToArtistDetail(e.detail)}
+                                />
                             </p>
                         </div>
                     </div>
@@ -468,7 +475,13 @@
                                 >{track.title || "Unknown"}</span
                             >
                             <span class="card-subtitle truncate-text">
-                                {track.artist || "Unknown Artist"}
+                                <ArtistLinks
+                                    artist={track.artist}
+                                    artists={track.artists}
+                                    compact
+                                    tapMenu
+                                    on:select={(e) => goToArtistDetail(e.detail)}
+                                />
                             </span>
                         </div>
                     </div>
@@ -520,9 +533,15 @@
                             <span class="song-title truncate-text"
                                 >{track.title || "Unknown"}</span
                             >
-                            <span class="song-subtitle truncate-text"
-                                >{track.artist || "Unknown Artist"}</span
-                            >
+                            <span class="song-subtitle truncate-text">
+                                <ArtistLinks
+                                    artist={track.artist}
+                                    artists={track.artists}
+                                    compact
+                                    tapMenu
+                                    on:select={(e) => goToArtistDetail(e.detail)}
+                                />
+                            </span>
                         </div>
                         <div class="song-count">{play_count}</div>
                     </div>
@@ -634,15 +653,15 @@
                         <span class="card-title truncate-text"
                             >{track.title || "Unknown"}</span
                         >
-                        <button
-                            class="card-subtitle truncate-text link"
-                            on:click={() =>
-                                goToArtistDetail(
-                                    track.artist || "Unknown Artist",
-                                )}
-                        >
-                            {track.artist || "Unknown Artist"}
-                        </button>
+                        <span class="card-subtitle truncate-text link">
+                            <ArtistLinks
+                                artist={track.artist}
+                                artists={track.artists}
+                                compact
+                                tapMenu
+                                on:select={(e) => goToArtistDetail(e.detail)}
+                            />
+                        </span>
                     </div>
                 {/each}
             </div>

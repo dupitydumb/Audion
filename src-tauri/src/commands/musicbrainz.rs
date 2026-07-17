@@ -276,11 +276,11 @@ pub async fn get_top_genres_from_mb(
         let conn = db.conn.lock().map_err(|e| e.to_string())?;
         let mut stmt = conn
             .prepare(
-                "SELECT t.artist, COUNT(*) as plays
+                "SELECT ar.name, COUNT(ph.id) as plays
                  FROM play_history ph
-                 JOIN tracks t ON ph.track_id = t.id
-                 WHERE t.artist IS NOT NULL
-                 GROUP BY lower(t.artist)
+                 JOIN track_artists ta ON ta.track_id = ph.track_id
+                 JOIN artists ar ON ar.id = ta.artist_id
+                 GROUP BY ar.id
                  ORDER BY plays DESC
                  LIMIT ?1",
             )

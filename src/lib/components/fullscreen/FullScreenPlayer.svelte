@@ -30,6 +30,8 @@
   import { isMobile } from "$lib/stores/mobile";
   import { lyricsVisible, toggleLyrics } from "$lib/stores/lyrics";
   import { goToArtistDetail, goToAlbumDetail } from "$lib/stores/view";
+  import ArtistLinks from "$lib/components/ArtistLinks.svelte";
+  import MarqueeText from "$lib/components/MarqueeText.svelte";
   import { lyricsData, activeLine } from "$lib/stores/lyrics";
   import {
     getTrackCoverSrc,
@@ -224,19 +226,6 @@
 
   // --- Tab Management ---
   let activeTab: "lyrics" | "queue" = "lyrics";
-
-  // --- Marquee & Overflow Management ---
-  let titleContainerWidth = 0;
-  let titleContentWidth = 0;
-  let artistContainerWidth = 0;
-  let artistContentWidth = 0;
-
-  $: isTitleOverflowing = titleContentWidth > titleContainerWidth;
-  $: isArtistOverflowing = artistContentWidth > artistContainerWidth;
-
-  // Dynamic duration based on content length for consistent speed
-  $: titleScrollDuration = Math.max(10, titleContentWidth / 40);
-  $: artistScrollDuration = Math.max(8, artistContentWidth / 35);
 
   // --- Volume Management ---
   function handleVolumeChange(e: Event) {
@@ -453,17 +442,15 @@
             <h1 class="track-title">
               {$currentTrack?.title || "Unknown Title"}
             </h1>
-            <button
-              class="track-artist"
-              on:click={() => {
-                if ($currentTrack?.artist) {
-                  toggleFullScreen();
-                  goToArtistDetail($currentTrack.artist);
-                }
+            <ArtistLinks
+              artist={$currentTrack?.artist}
+              artists={$currentTrack?.artists}
+              chipClass="track-artist"
+              on:select={(e) => {
+                toggleFullScreen();
+                goToArtistDetail(e.detail);
               }}
-            >
-              {$currentTrack?.artist || "Unknown Artist"}
-            </button>
+            />
             {#if $currentTrack?.album}
               {#if $currentTrack?.album_id}
                 <button
@@ -757,57 +744,26 @@
 
             <div class="desktop-track-details">
               <div class="track-info-header">
-                <div
-                  class="marquee-container"
-                  bind:clientWidth={titleContainerWidth}
-                >
-                  <div
-                    class="marquee-inner"
-                    class:animate={isTitleOverflowing}
-                    style="--duration: {titleScrollDuration}s"
-                  >
-                    <h1
-                      class="desktop-title"
-                      bind:clientWidth={titleContentWidth}
-                    >
-                      {$currentTrack?.title || "Unknown Title"}
-                    </h1>
-                    {#if isTitleOverflowing}
-                      <span class="desktop-title" aria-hidden="true"
-                        >{$currentTrack?.title || "Unknown Title"}</span
-                      >
-                    {/if}
-                  </div>
-                </div>
+                <MarqueeText trigger="always" pauseOnHover="reset" resetKey={$currentTrack?.id} containerClass="title-marquee">
+                  <h1 class="desktop-title">
+                    {$currentTrack?.title || "Unknown Title"}
+                  </h1>
+                </MarqueeText>
               </div>
 
-              <div
-                class="marquee-container artist"
-                bind:clientWidth={artistContainerWidth}
-              >
-                <div
-                  class="marquee-inner"
-                  class:animate={isArtistOverflowing}
-                  style="--duration: {artistScrollDuration}s"
-                >
-                  <button
-                    class="desktop-subtitle"
-                    bind:clientWidth={artistContentWidth}
-                    on:click={() => {
-                      $currentTrack?.artist &&
-                        (toggleFullScreen(),
-                        goToArtistDetail($currentTrack.artist));
-                    }}
-                  >
-                    {$currentTrack?.artist || "Unknown Artist"}
-                  </button>
-                  {#if isArtistOverflowing}
-                    <button class="desktop-subtitle" aria-hidden="true"
-                      >{$currentTrack?.artist || "Unknown Artist"}</button
-                    >
-                  {/if}
-                </div>
-              </div>
+              <ArtistLinks
+                artist={$currentTrack?.artist}
+                artists={$currentTrack?.artists}
+                chipClass="desktop-subtitle"
+                wrapClass="artist-marquee"
+                marquee
+                marqueeTrigger="always"
+                resetKey={$currentTrack?.id}
+                on:select={(e) => {
+                  toggleFullScreen();
+                  goToArtistDetail(e.detail);
+                }}
+              />
 
               {#if $currentTrack?.album}
                 {#if $currentTrack?.album_id}
@@ -1156,7 +1112,7 @@
     margin-bottom: 18px;
   }
 
-  .desktop-track-details .marquee-container {
+  .title-marquee {
     width: 100%;
     flex: none;
   }
@@ -1226,11 +1182,10 @@
   }
 
   /* Marquee Styles */
-  .marquee-container {
+  .title-marquee,
+  .artist-marquee {
     flex: 1;
-    overflow: hidden;
     position: relative;
-    margin-bottom: 0;
     mask-image: linear-gradient(
       to right,
       black 0%,
@@ -1245,27 +1200,8 @@
     );
   }
 
-  .marquee-container.artist {
+  .artist-marquee {
     margin-top: 0.25rem;
-  }
-
-  .marquee-inner {
-    display: flex;
-    width: max-content;
-    gap: 4rem;
-  }
-
-  .marquee-inner.animate {
-    animation: running-marquee var(--duration) linear infinite;
-  }
-
-  @keyframes running-marquee {
-    0% {
-      transform: translateX(0);
-    }
-    100% {
-      transform: translateX(calc(-50% - 2rem));
-    }
   }
 
   .action-buttons {
@@ -1854,7 +1790,8 @@
   }
 
   /* Android webview fallback: lighter composition to avoid transition glitches */
-  .fullscreen-player.android-lite .marquee-container,
+  .fullscreen-player.android-lite .title-marquee,
+  .fullscreen-player.android-lite .artist-marquee,
   .fullscreen-player.android-lite .desktop-lyrics-container,
   .fullscreen-player.android-lite .mobile-lyrics-wrapper .lyrics-container {
     mask-image: none;

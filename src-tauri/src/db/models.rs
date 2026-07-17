@@ -22,6 +22,12 @@ pub struct Track {
     pub disc_number: Option<i32>,
     pub metadata_json: Option<String>,
     pub date_added: Option<String>,
+    /// individual artist names derived from artist via the split rules in original order
+    /// `artist` keeps the raw display string as is
+    /// not yet populated by every query that returns a `Track`
+    /// see attach_artists callers for which ones currently fill this in
+    #[serde(default)]
+    pub artists: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

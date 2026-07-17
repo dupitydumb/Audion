@@ -2,6 +2,7 @@
 use rusqlite::{params, Connection, OptionalExtension, Result};
 
 use super::models::{Album, AlbumWithCount, Artist, ArtistWithCount, StatsSummary, Track, TrackWithCount};
+use super::artists;
 
 // ============================================================================
 // Play History operations
@@ -54,6 +55,7 @@ pub fn get_top_tracks(conn: &Connection, limit: i32) -> Result<Vec<TrackWithCoun
                     disc_number: row.get(15)?,
                     metadata_json: row.get(16)?,
                     date_added: row.get(17)?,
+                    artists: Vec::new(),
                 },
                 play_count: row.get(18)?,
             })
@@ -103,7 +105,7 @@ pub fn get_recently_played(conn: &Connection, limit: i32) -> Result<Vec<Track>> 
          LIMIT ?1",
     )?;
 
-    let tracks = stmt
+    let mut tracks = stmt
         .query_map(params![limit], |row| {
             Ok(Track {
                 id: row.get(0)?,
@@ -125,21 +127,23 @@ pub fn get_recently_played(conn: &Connection, limit: i32) -> Result<Vec<Track>> 
                 disc_number: row.get(15)?,
                 metadata_json: row.get(16)?,
                 date_added: row.get(17)?,
+                artists: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>>>()?;
 
+    artists::attach_artists(conn, &mut tracks)?;
     Ok(tracks)
 }
 
 pub fn get_top_artists(conn: &Connection, limit: i32) -> Result<Vec<ArtistWithCount>> {
     let mut stmt = conn.prepare(
-        "SELECT t.artist, COUNT(ph.id) as play_count
-         FROM tracks t
-         INNER JOIN play_history ph ON t.id = ph.track_id
-         WHERE t.artist IS NOT NULL
-         AND strftime('%Y-%m', ph.played_at) = strftime('%Y-%m', 'now')
-         GROUP BY t.artist
+        "SELECT ar.name, COUNT(ph.id) as play_count
+         FROM artists ar
+         INNER JOIN track_artists ta ON ta.artist_id = ar.id
+         INNER JOIN play_history ph ON ph.track_id = ta.track_id
+         WHERE strftime('%Y-%m', ph.played_at) = strftime('%Y-%m', 'now')
+         GROUP BY ar.id
          ORDER BY play_count DESC
          LIMIT ?1",
     )?;
@@ -168,12 +172,12 @@ pub fn get_stats_summary(conn: &Connection) -> Result<StatsSummary> {
 
     let top_artist: Option<String> = conn
         .query_row(
-            "SELECT t.artist
-         FROM tracks t
-         INNER JOIN play_history ph ON t.id = ph.track_id
-         WHERE t.artist IS NOT NULL
-         AND strftime('%Y-%m', ph.played_at) = strftime('%Y-%m', 'now')
-         GROUP BY t.artist
+            "SELECT ar.name
+         FROM artists ar
+         INNER JOIN track_artists ta ON ta.artist_id = ar.id
+         INNER JOIN play_history ph ON ph.track_id = ta.track_id
+         WHERE strftime('%Y-%m', ph.played_at) = strftime('%Y-%m', 'now')
+         GROUP BY ar.id
          ORDER BY COUNT(ph.id) DESC
          LIMIT 1",
             [],
