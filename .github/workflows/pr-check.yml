@@ -28,7 +28,9 @@ jobs:
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4.0.1
+        with:
+          packages: 'platform-tools'
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -43,7 +45,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.89.0"
-
+          targets: aarch64-linux-android
       - name: Fetch Rust dependencies (needed for Android library sources)
         run: cargo fetch --manifest-path src-tauri/Cargo.toml
 
@@ -65,8 +67,21 @@ jobs:
 
       - name: Verify MainActivity.kt exists
         run: test -f src-tauri/gen/android/app/src/main/java/com/audion/app/MainActivity.kt
-
+      - name: Dummy key.properties (no real keystore needed for a Kotlin-only compile check)
+        run: |
+          cat > src-tauri/gen/android/key.properties << 'EOF'
+          keyAlias=dummy
+          keyPassword=dummy
+          storeFile=dummy.jks
+          storePassword=dummy
+          EOF
+      - name: Generate Android build files (writes tauri.settings.gradle, needed by settings.gradle)
+        run: cargo tauri android build --debug --target aarch64 --ci
+        continue-on-error: true
+      - name: Verify tauri.settings.gradle was generated
+        run: test -f src-tauri/gen/android/tauri.settings.gradle
       - name: Compile Kotlin (debug)
         run: |
           cd src-tauri/gen/android
+          chmod +x ./gradlew
           ./gradlew compileDebugKotlin --no-daemon
