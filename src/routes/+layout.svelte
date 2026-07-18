@@ -45,6 +45,12 @@
   import "../app.css";
   import MobileMiniPlayer from "$lib/components/MobileMiniPlayer.svelte";
 
+  // initialize i18n synchronously
+  // during this component's construction and before any template evaluates
+  // not inside onMount, it crashes the whole render
+  const savedLang = localStorage.getItem("audion_language");
+  setupI18n(savedLang || undefined);
+
   let handleVisibilityChange: (() => void) | null = null;
   let unlistenRequestLastView: (() => void) | null = null;
   let unlistenGoToArtist: (() => void) | null = null;
@@ -109,10 +115,6 @@
 
     appSettings.initialize();
     theme.initialize();
-    
-    // Initialize i18n with saved preference or navigator default
-    const savedLang = localStorage.getItem("audion_language");
-    setupI18n(savedLang || undefined);
 
     initMobileDetection();
     await initAudioBackend();
@@ -504,6 +506,15 @@
      View-transition pseudo elements render outside any component's scope,
      so these rules must be :global */
   :global(::view-transition-group(player-album-art)) {
+    animation-duration: 550ms;
+    animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  /* audion icon morph from startup loading screen into the sidebar
+  (see +page.svelte's withViewTransition call around the isLoading flip)
+  only present on desktop layouts, since sidebar isn't rendered on mobile */
+  :global(::view-transition-group(app-logo-icon)),
+  :global(::view-transition-group(app-logo-text)) {
     animation-duration: 550ms;
     animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
   }

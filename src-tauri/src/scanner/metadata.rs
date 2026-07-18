@@ -1,7 +1,7 @@
 // Audio metadata extraction using lofty
 use lofty::prelude::*;
 use lofty::probe::Probe;
-use lofty::mp4::{Mp4Codec, Mp4File};
+use lofty::mp4::{Mp4Codec, Mp4File, AtomIdent, AtomData};
 use lofty::tag::Tag as LoftyTag;
 use lofty::config::{ParseOptions, ParsingMode};
 use std::collections::hash_map::DefaultHasher;
@@ -370,6 +370,14 @@ fn extract_alac_metadata_fallback(path: &Path) -> Option<TrackInsert> {
         .or_else(|| get_filename_without_ext(path));
     let artist = ilst.and_then(|t| t.artist().map(|s| s.to_string()));
     let album = ilst.and_then(|t| t.album().map(|s| s.to_string()));
+    // Ilst's Accessor trait has no dedicated method for it
+    // so it's looked up by atom identifier directly (see commands::app_settings::AlbumArtistMode)
+    let album_artist = ilst.and_then(|t| t.get(&AtomIdent::Fourcc(*b"aART"))).and_then(|atom| {
+        atom.data().find_map(|d| match d {
+            AtomData::UTF8(s) | AtomData::UTF16(s) => Some(s.clone()),
+            _ => None,
+        })
+    });
     let track_number = ilst.and_then(|t| t.track()).map(|n| n as i32);
     let disc_number  = ilst.and_then(|t| t.disk()).map(|n| n as i32);
 
@@ -391,7 +399,7 @@ fn extract_alac_metadata_fallback(path: &Path) -> Option<TrackInsert> {
         artist,
         // ALAC/MP4 fallback path
         // falls back to first track wins album artist behavior
-        album_artist: None,
+        album_artist,
         album,
         track_number,
         disc_number,

@@ -384,8 +384,8 @@
 <aside class="sidebar">
     <div class="sidebar-header">
         <div class="logo">
-            <img src="/logo.png" alt="Audion Logo" width="32" height="32" />
-            <span class="logo-text">Audion</span>
+            <img src="/logo.png" alt="Audion Logo" width="32" height="32" style="view-transition-name: app-logo-icon;" />
+            <span class="logo-text" style="view-transition-name: app-logo-text;">Audion</span>
             <SyncStatus />
             {#if $otaState.phase === "ready"}
                 <div

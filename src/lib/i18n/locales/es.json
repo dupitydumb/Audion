@@ -1,4 +1,11 @@
 {
+  "app": {
+    "logoAlt": "Logo de Audion",
+    "notInTauriTitle": "Abre la aplicación de escritorio Tauri",
+    "notInTauriDesc": "Esta aplicación requiere la ventana de escritorio de Tauri para funcionar.",
+    "notInTauriHint": "La ventana de Tauri debería abrirse automáticamente al ejecutar",
+    "loadingLibrary": "Cargando tu biblioteca musical..."
+  },
   "contextMenu": {
     "play": "Reproducir",
     "addToQueue": "Añadir a la Cola",
@@ -263,7 +270,25 @@
     "lyricsDeleteSuccess": "Se eliminó {count} archivo{plural} de letras de {label}",
     "lyricsDeleteNoneFound": "No se encontraron letras de {label} en caché para eliminar",
     "lyricsDeleteFailed": "Error al eliminar las letras de {label}",
-    "lyricsTokenAll": "Todas"
+    "lyricsTokenAll": "Todas",
+    "artists": "Artistas",
+    "artistsSubtitle": "Configura cómo se dividen las etiquetas de varios artistas y cómo se determina el artista del álbum",
+    "artistSplitRules": "Reglas de división de varios artistas",
+    "artistSplitRulesDesc": "Delimitadores usados para dividir una etiqueta de artista en artistas individuales, probados en orden (arriba = mayor prioridad). Escapa un delimitador con una barra invertida (p. ej. \"Simon \\& Garfunkel\") para mantenerlo como un solo artista.",
+    "artistSplitRulesEmpty": "No hay delimitadores configurados: las etiquetas de artista no se dividirán.",
+    "artistSplitRulesAddPlaceholder": "Añade un delimitador, p. ej. feat. o /",
+    "add": "Añadir",
+    "albumArtistMode": "Artista del álbum",
+    "albumArtistModeDesc": "Cómo se elige el artista mostrado de cada álbum al escanear",
+    "albumArtistFirstTrack": "Artista de la primera pista",
+    "albumArtistTag": "Etiqueta de artista del álbum",
+    "albumArtistFirstTrackDesc": "Ignora por completo la etiqueta de artista del álbum y siempre usa el artista de la pista que se escaneó primero (comportamiento actual/predeterminado).",
+    "albumArtistTagDesc": "Usa la etiqueta de artista del álbum de cada archivo cuando está presente, y recurre al artista de la primera pista en caso contrario.",
+    "rescanRequired": "Vuelve a escanear tu biblioteca para aplicar estos cambios",
+    "rescanLibrary": "Volver a escanear biblioteca",
+    "rescanning": "Reescaneando...",
+    "artistRescanDone": "Biblioteca reescaneada",
+    "artistRescanFailed": "Error al reescanear"
   },
   "updatePopup": {
     "restartToUpdate": "Reiniciar para actualizar",

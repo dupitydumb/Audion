@@ -234,7 +234,7 @@
 
     {#if $$slots.secondary}
       <div class="text-track secondary">
-        <slot name="secondary" />
+        <slot name="secondary" {isActive} />
       </div>
     {:else if secondaryText}
       <div

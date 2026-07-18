@@ -2,7 +2,6 @@
     import { onMount } from "svelte";
     import { formatDuration, type Track, type Album, type Playlist, getPlaylistTracks, getTracksByAlbum } from "$lib/api/tauri";
     import ArtistLinks from "$lib/components/ArtistLinks.svelte";
-    import { formatArtists } from "$lib/utils/artists";
     import {
         playTracks,
         currentAlbumId,
@@ -349,15 +348,27 @@
                                         resumeTooltip={isAlbum ? "Resume album" : "Resume playlist"}
                                         pauseTooltip="Pause"
                                         primaryText={item.data.name}
-                                        secondaryText={isAlbum ? (item.data.artist || "Unknown Artist") : "Playlist"}
-                                        secondaryAction={isAlbum && item.data.artist
-                                            ? () => goToArtistDetail(item.data.artist!)
-                                            : null}
                                         ariaLabel={item.data.name}
                                         on:play={() => isAlbum ? playAlbum(item.data) : playPlaylist(item.data)}
                                         on:pause={togglePlay}
                                         on:click={() => isAlbum ? goToAlbumDetail(item.id) : goToPlaylistDetail(item.id, item.data.name)}
                                     >
+                                        <svelte:fragment slot="secondary" let:isActive>
+                                            {#if isAlbum}
+                                                <ArtistLinks
+                                                    artist={item.data.artist}
+                                                    artists={item.data.artists}
+                                                    chipClass="text-inner secondary-link"
+                                                    marquee
+                                                    marqueeTrigger="external"
+                                                    marqueeActive={isActive}
+                                                    resetKey={item.id}
+                                                    on:select={(e) => goToArtistDetail(e.detail)}
+                                                />
+                                            {:else}
+                                                Playlist
+                                            {/if}
+                                        </svelte:fragment>
                                         <svelte:fragment slot="cover">
                                             {#if isAlbum}
                                                 {#if getAlbumCoverFromTracks(item.id)}
@@ -552,15 +563,23 @@
                                         resumeTooltip="Resume"
                                         pauseTooltip="Pause"
                                         primaryText={album.name}
-                                        secondaryText={formatArtists(album.artists) || album.artist || "Unknown Artist"}
-                                        secondaryAction={album.artist
-                                            ? () => goToArtistDetail((album.artists && album.artists[0]) || album.artist!)
-                                            : null}
                                         ariaLabel={album.name}
                                         on:play={() => playAlbum(album)}
                                         on:pause={togglePlay}
                                         on:click={() => goToAlbumDetail(album.id)}
                                     >
+                                        <svelte:fragment slot="secondary" let:isActive>
+                                            <ArtistLinks
+                                                artist={album.artist}
+                                                artists={album.artists}
+                                                chipClass="text-inner secondary-link"
+                                                marquee
+                                                marqueeTrigger="external"
+                                                marqueeActive={isActive}
+                                                resetKey={album.id}
+                                                on:select={(e) => goToArtistDetail(e.detail)}
+                                            />
+                                        </svelte:fragment>
                                         <svelte:fragment slot="cover">
                                             {#if getAlbumCoverFromTracks(album.id)}
                                                 <img

@@ -1,4 +1,11 @@
 {
+  "app": {
+    "logoAlt": "Logo Audion",
+    "notInTauriTitle": "Veuillez ouvrir l'application de bureau Tauri",
+    "notInTauriDesc": "Cette application nécessite la fenêtre de bureau Tauri pour fonctionner.",
+    "notInTauriHint": "La fenêtre Tauri devrait s'ouvrir automatiquement en exécutant",
+    "loadingLibrary": "Chargement de votre bibliothèque musicale..."
+  },
   "contextMenu": {
     "play": "Lire",
     "addToQueue": "Ajouter à la file",
@@ -263,7 +270,25 @@
     "lyricsDeleteSuccess": "{count} fichier{plural} de paroles {label} supprimé{plural}",
     "lyricsDeleteNoneFound": "Aucune parole {label} en cache trouvée à supprimer",
     "lyricsDeleteFailed": "Échec de la suppression des paroles {label}",
-    "lyricsTokenAll": "Toutes"
+    "lyricsTokenAll": "Toutes",
+    "artists": "Artistes",
+    "artistsSubtitle": "Configurez la manière dont les étiquettes multi-artistes sont divisées et dont l'artiste de l'album est déterminé",
+    "artistSplitRules": "Règles de division des artistes multiples",
+    "artistSplitRulesDesc": "Délimiteurs utilisés pour diviser une étiquette d'artiste brute en artistes individuels, testés dans l'ordre (en haut = priorité la plus élevée). Échappez un délimiteur avec une barre oblique inverse (p. ex. « Simon \\& Garfunkel ») pour le garder comme un seul artiste.",
+    "artistSplitRulesEmpty": "Aucun délimiteur configuré — les étiquettes d'artiste ne seront pas divisées.",
+    "artistSplitRulesAddPlaceholder": "Ajoutez un délimiteur, p. ex. feat. ou /",
+    "add": "Ajouter",
+    "albumArtistMode": "Artiste de l'album",
+    "albumArtistModeDesc": "Comment l'artiste affiché de chaque album est choisi lors de l'analyse",
+    "albumArtistFirstTrack": "Artiste de la première piste",
+    "albumArtistTag": "Étiquette artiste de l'album",
+    "albumArtistFirstTrackDesc": "Ignore entièrement l'étiquette Artiste de l'album et utilise toujours l'artiste de la piste analysée en premier (comportement actuel/par défaut).",
+    "albumArtistTagDesc": "Utilise l'étiquette Artiste de l'album de chaque fichier lorsqu'elle est présente, et se rabat sinon sur l'artiste de la première piste.",
+    "rescanRequired": "Réanalysez votre bibliothèque pour appliquer ces changements",
+    "rescanLibrary": "Réanalyser la bibliothèque",
+    "rescanning": "Réanalyse en cours...",
+    "artistRescanDone": "Bibliothèque réanalysée",
+    "artistRescanFailed": "Échec de la réanalyse"
   },
   "updatePopup": {
     "restartToUpdate": "Redémarrer pour mettre à jour",

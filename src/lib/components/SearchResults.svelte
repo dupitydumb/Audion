@@ -8,7 +8,6 @@
         searchQuery,
         clearSearch,
     } from "$lib/stores/search";
-    import { formatArtists } from "$lib/utils/artists";
     import {
         goToAlbumDetail,
         goToArtistDetail,
@@ -48,6 +47,7 @@
     let visibleArtists = 6;
     let visiblePlaylists = 6;
     let hoveredTrackIndex: number | null = null;
+    let hoveredAlbumId: number | null = null;
 
     $: $searchResults, resetVisible();
     function resetVisible() {
@@ -327,6 +327,8 @@
                                     }}
                                     on:contextmenu={(e) =>
                                         handleAlbumContextMenu(e, album)}
+                                    on:mouseenter={() => (hoveredAlbumId = album.id)}
+                                    on:mouseleave={() => (hoveredAlbumId = null)}
                                 >
                                     <div class="album-art">
                                         {#if coverSrc}
@@ -355,14 +357,18 @@
                                         <span class="album-name truncate"
                                             >{album.name}</span
                                         >
-                                        <button
-                                            class="album-artist truncate link-text"
-                                            on:click|stopPropagation={() =>
-                                                handleArtistClick(
-                                                    (album.artists && album.artists[0]) || album.artist || "Unknown Artist",
-                                                )}
-                                            >{formatArtists(album.artists) || album.artist || "Unknown Artist"}</button
-                                        >
+                                        <span class="album-artist truncate">
+                                            <ArtistLinks
+                                                artist={album.artist}
+                                                artists={album.artists}
+                                                chipClass="link-text"
+                                                marquee
+                                                marqueeTrigger="external"
+                                                marqueeActive={hoveredAlbumId === album.id}
+                                                resetKey={album.id}
+                                                on:select={(e) => handleArtistClick(e.detail)}
+                                            />
+                                        </span>
                                     </div>
                                 </div>
                             {/each}

@@ -34,22 +34,79 @@ function prefersReducedMotion(): boolean {
 // FullScreenPlayer reads this to skip its own Svelte fade for that same open/close
 export const nativeTransitionActive = writable(false);
 
-function mutateFullScreen(mutate: () => void) {
+// shared choke point for native View Transitions api usage
+// feature detected with a reduced motion and
+// same document fallback to a plain synchronous mutation
+// returns the ViewTransition (so callers can hook .finished)
+// or null when no transition was started (unsupported browser / reduced motion)
+//
+// two safeguards :
+// 1. startViewTransition can throw synchronously in some environments instead of the spec'd async rejection => wrap it so we still fall back to a plain mutation rather than leaving the app stuck
+// 2. short watchdog timeout calls transition.skipTransition, so a misbehaving transition degrades to no animation instead of a freeze
+const VIEW_TRANSITION_WATCHDOG_MS = 1000;
+
+export function withViewTransition(mutate: () => void, label: string = 'unlabeled'): any {
     const doc = typeof document !== 'undefined' ? (document as any) : null;
 
-    // feature detect and fall back to the plain store mutation,
-    // which gets the existing fade/fly transitions in FullScreenPlayer
     if (doc?.startViewTransition && !prefersReducedMotion()) {
-        nativeTransitionActive.set(true);
-        const transition = doc.startViewTransition(() => {
+        const startedAt = performance.now();
+        console.log(`[viewTransition:${label}] starting`);
+
+        let transition: any;
+        try {
+            transition = doc.startViewTransition(() => {
+                try {
+                    mutate();
+                } catch (e) {
+                    // if mutate() throws here
+                    // the browser sees a rejected update callback promise
+                    // should abort the transition on its own. log it
+                    console.error(`[viewTransition:${label}] mutate() threw:`, e);
+                    throw e;
+                }
+                return tick();
+            });
+        } catch (e) {
+            console.warn(`[viewTransition:${label}] startViewTransition threw synchronously, falling back to plain mutation:`, e);
             mutate();
-            return tick();
-        });
+            return null;
+        }
+
+        transition.ready
+            ?.then(() => console.log(`[viewTransition:${label}] ready (snapshots captured) at +${(performance.now() - startedAt).toFixed(0)}ms`))
+            .catch((e: unknown) => console.warn(`[viewTransition:${label}] ready rejected at +${(performance.now() - startedAt).toFixed(0)}ms:`, e));
+
+        let skipped = false;
+        const watchdog = setTimeout(() => {
+            skipped = true;
+            console.warn(`[viewTransition:${label}] watchdog firing after ${VIEW_TRANSITION_WATCHDOG_MS}ms - transition never resolved, forcing skipTransition()`);
+            try {
+                transition.skipTransition?.();
+            } catch (e) {
+                console.warn(`[viewTransition:${label}] failed to skip stuck view transition:`, e);
+            }
+        }, VIEW_TRANSITION_WATCHDOG_MS);
+
+        transition.finished
+            .then(() => console.log(`[viewTransition:${label}] finished at +${(performance.now() - startedAt).toFixed(0)}ms${skipped ? ' (was force-skipped by watchdog)' : ''}`))
+            .catch((e: unknown) => console.warn(`[viewTransition:${label}] finished rejected at +${(performance.now() - startedAt).toFixed(0)}ms:`, e))
+            .finally(() => clearTimeout(watchdog));
+
+        return transition;
+    }
+
+    console.log(`[viewTransition:${label}] not supported or reduced-motion - plain mutation`);
+    mutate();
+    return null;
+}
+
+function mutateFullScreen(mutate: () => void) {
+    const transition = withViewTransition(mutate, 'fullscreen');
+    if (transition) {
+        nativeTransitionActive.set(true);
         transition.finished
             .catch(() => {})
             .finally(() => nativeTransitionActive.set(false));
-    } else {
-        mutate();
     }
 }
 

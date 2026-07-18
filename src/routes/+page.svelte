@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, tick } from "svelte";
   import { get } from "svelte/store";
+  import { _ } from "svelte-i18n";
   import "../app.css";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import MainView from "$lib/components/MainView.svelte";
@@ -24,14 +25,13 @@
   } from "$lib/stores/persist";
   import { playTrack, playFromQueue, queue } from "$lib/stores/player";
   import { theme } from "$lib/stores/theme";
-  import { isMiniPlayer } from "$lib/stores/ui";
+  import { isMiniPlayer, withViewTransition, isStatsWrappedOpen } from "$lib/stores/ui";
   import { pluginStore } from "$lib/stores/plugin-store";
   import { appSettings } from "$lib/stores/settings";
   import { isMobile, mobileSearchOpen } from "$lib/stores/mobile";
   import MobileBottomNav from "$lib/components/MobileBottomNav.svelte";
   import { searchQuery, clearSearch } from "$lib/stores/search";
   import PluginUpdateDialog from "$lib/components/PluginUpdateDialog.svelte";
-  import { isStatsWrappedOpen } from "$lib/stores/ui";
   import PluginDrawer from "$lib/components/PluginDrawer.svelte";
 
   let isLoading = true;
@@ -126,7 +126,17 @@
     } catch (error) {
       console.error("Failed to load library:", error);
     } finally {
-      isLoading = false;
+      // morph the loading screen logo into the sidebar's logo
+      // see app-logo-icon/app-logo-text view-transition-name below
+      // and the group rules in +layout.svelte
+      // sidebar (the morph target) doesn't render on mobile so disabled here
+      if (get(isMobile)) {
+        isLoading = false;
+      } else {
+        withViewTransition(() => {
+          isLoading = false;
+        }, 'app-boot-logo');
+      }
 
       // Lazy load plugins- reduce startup time
       requestIdleCallback(() => {
@@ -154,29 +164,34 @@
   {#if notInTauri}
     <div class="loading-screen">
       <div class="logo">
-        <img src="/logo.png" alt="Audion Logo" width="48" height="48" />
+        <img src="/logo.png" alt={$_('app.logoAlt', { default: 'Audion Logo' })} width="48" height="48" />
         <span>Audion</span>
       </div>
       <p
         style="color: var(--text-primary); font-size: 1.1rem; margin-top: 1rem;"
       >
-        🖥️ Please open the Tauri desktop app
+        {$_('app.notInTauriTitle', { default: '🖥️ Please open the Tauri desktop app' })}
       </p>
-      <p>This app requires the Tauri desktop window to function.</p>
+      <p>{$_('app.notInTauriDesc', { default: 'This app requires the Tauri desktop window to function.' })}</p>
       <p style="opacity: 0.7; font-size: 0.8rem;">
-        The Tauri window should open automatically when running <code
-          >npm run tauri dev</code
-        >
+        {$_('app.notInTauriHint', { default: 'The Tauri window should open automatically when running' })}
+        <code>npm run tauri dev</code>
       </p>
     </div>
   {:else if isLoading}
     <div class="loading-screen">
       <div class="logo">
-        <img src="/logo.png" alt="Audion Logo" width="48" height="48" />
-        <span>Audion</span>
+        <img
+          src="/logo.png"
+          alt={$_('app.logoAlt', { default: 'Audion Logo' })}
+          width="48"
+          height="48"
+          style="view-transition-name: app-logo-icon;"
+        />
+        <span style="view-transition-name: app-logo-text;">Audion</span>
       </div>
       <div class="loading-spinner"></div>
-      <p>Loading your music library...</p>
+      <p>{$_('app.loadingLibrary', { default: 'Loading your music library...' })}</p>
     </div>
   {:else}
     {#if $isMiniPlayer}

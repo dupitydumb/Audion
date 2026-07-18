@@ -1,4 +1,11 @@
 {
+  "app": {
+    "logoAlt": "Audion Logo",
+    "notInTauriTitle": "Please open the Tauri desktop app",
+    "notInTauriDesc": "This app requires the Tauri desktop window to function.",
+    "notInTauriHint": "The Tauri window should open automatically when running",
+    "loadingLibrary": "Loading your music library..."
+  },
   "contextMenu": {
     "play": "Play",
     "addToQueue": "Add to Queue",
@@ -279,6 +286,7 @@
     "albumArtistTagDesc": "Uses each file's Album Artist tag when present, falling back to the first track's artist otherwise.",
     "rescanRequired": "Rescan your library to apply these changes",
     "rescanLibrary": "Rescan library",
+    "rescanning": "Rescanning...",
     "artistRescanDone": "Library rescanned",
     "artistRescanFailed": "Rescan failed"
   },

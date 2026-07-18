@@ -6,13 +6,15 @@
     import { contextMenu } from "$lib/stores/ui";
     import { getAlbumCoverFromTracks } from "$lib/stores/library";
     import { goToArtistDetail, goToAlbumDetail } from "$lib/stores/view";
-    import { formatArtists } from "$lib/utils/artists";
+    import ArtistLinks from "$lib/components/ArtistLinks.svelte";
     import { _ } from "svelte-i18n";
 
     export let topAlbums: AlbumWithCount[];
     export let playingAlbumId: number | null;
     export let pausedAlbumId: number | null;
     export let playing: boolean;
+
+    let hoveredAlbumId: number | null = null;
 
     async function playAlbum(album: Album) {
         if (playingAlbumId === album.id) {
@@ -78,6 +80,8 @@
                 on:click={(e) => handleContainerClick(e, () => goToAlbumDetail(album.id))}
                 on:keydown={(e) => handleKeyActivate(e, () => goToAlbumDetail(album.id))}
                 on:contextmenu={(e) => albumContextMenu(album, e)}
+                on:mouseenter={() => (hoveredAlbumId = album.id)}
+                on:mouseleave={() => (hoveredAlbumId = null)}
             >
                 <span class="top-track-rank">
                     {#if isNowPlaying}
@@ -103,13 +107,18 @@
                 </div>
                 <div class="top-track-info">
                     <span class="top-track-title" class:accent={isNowPlaying || isPaused}>{album.name}</span>
-                    <button
-                        class="top-track-artist link"
-                        on:click|stopPropagation={() => goToArtistDetail((album.artists && album.artists[0]) || album.artist || "")}
-                        title="Go to artist"
-                    >
-                        {formatArtists(album.artists) || album.artist || "Unknown Artist"}
-                    </button>
+                    <span class="top-track-artist">
+                        <ArtistLinks
+                            artist={album.artist}
+                            artists={album.artists}
+                            chipClass="link"
+                            marquee
+                            marqueeTrigger="external"
+                            marqueeActive={hoveredAlbumId === album.id}
+                            resetKey={album.id}
+                            on:select={(e) => goToArtistDetail(e.detail)}
+                        />
+                    </span>
                 </div>
                 <span class="top-track-plays">{play_count} plays</span>
             </div>
