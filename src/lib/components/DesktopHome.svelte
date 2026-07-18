@@ -443,12 +443,14 @@
                                         on:play={() => playRecentTrack(track, i)}
                                         on:pause={togglePlay}
                                     >
-                                        <svelte:fragment slot="secondary">
+                                        <svelte:fragment slot="secondary" let:isActive>
                                             <ArtistLinks
                                                 artist={track.artist}
                                                 artists={track.artists}
                                                 chipClass="text-inner secondary-link"
                                                 marquee
+                                                marqueeTrigger="external"
+                                                marqueeActive={isActive}
                                                 resetKey={track.id}
                                                 on:select={(e) => goToArtistDetail(e.detail)}
                                             />
@@ -637,6 +639,7 @@
     .desktop-home {
         padding: 24px 32px;
         overflow-y: auto;
+        overflow-x: hidden;
         height: 100%;
         display: flex;
         flex-direction: column;
@@ -714,6 +717,7 @@
         display: flex;
         gap: 16px;
         overflow-x: auto;
+        overscroll-behavior-x: contain;
         padding-bottom: 8px;
         scrollbar-width: thin;
         scrollbar-color: rgba(255, 255, 255, 0.2) transparent;

@@ -15,6 +15,7 @@
     } from "$lib/stores/view";
     import { playTracks } from "$lib/stores/player";
     import ArtistLinks from "$lib/components/ArtistLinks.svelte";
+    import MarqueeText from "$lib/components/MarqueeText.svelte";
     import {
         getAlbumArtSrc,
         getTrackCoverSrc,
@@ -270,9 +271,16 @@
                                         {/if}
                                     </div>
                                     <div class="track-info">
-                                        <span class="track-title truncate"
-                                            >{track.title || "Unknown Title"}</span
+                                        <MarqueeText
+                                            trigger="external"
+                                            active={hoveredTrackIndex === index}
+                                            resetKey={track.id}
+                                            containerClass="track-title-track"
                                         >
+                                            <span class="track-title"
+                                                >{track.title || "Unknown Title"}</span
+                                            >
+                                        </MarqueeText>
                                         <ArtistLinks
                                             artist={track.artist}
                                             artists={track.artists}
@@ -354,9 +362,14 @@
                                         {/if}
                                     </div>
                                     <div class="album-info">
-                                        <span class="album-name truncate"
-                                            >{album.name}</span
+                                        <MarqueeText
+                                            trigger="external"
+                                            active={hoveredAlbumId === album.id}
+                                            resetKey={album.id}
+                                            containerClass="album-name-track"
                                         >
+                                            <span class="album-name">{album.name}</span>
+                                        </MarqueeText>
                                         <span class="album-artist truncate">
                                             <ArtistLinks
                                                 artist={album.artist}
@@ -621,6 +634,8 @@
         font-size: 0.9375rem;
         font-weight: var(--font-weight-medium);
         color: var(--text-primary);
+        white-space: nowrap;
+        flex-shrink: 0;
     }
 
     .track-artist {
@@ -723,6 +738,8 @@
         font-size: var(--font-size-base);
         font-weight: var(--font-weight-semibold);
         color: var(--text-primary);
+        white-space: nowrap;
+        flex-shrink: 0;
     }
 
     .album-artist {

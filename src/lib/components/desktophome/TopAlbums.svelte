@@ -7,6 +7,7 @@
     import { getAlbumCoverFromTracks } from "$lib/stores/library";
     import { goToArtistDetail, goToAlbumDetail } from "$lib/stores/view";
     import ArtistLinks from "$lib/components/ArtistLinks.svelte";
+    import MarqueeText from "$lib/components/MarqueeText.svelte";
     import { _ } from "svelte-i18n";
 
     export let topAlbums: AlbumWithCount[];
@@ -106,7 +107,14 @@
                     {/if}
                 </div>
                 <div class="top-track-info">
-                    <span class="top-track-title" class:accent={isNowPlaying || isPaused}>{album.name}</span>
+                    <MarqueeText
+                        trigger="external"
+                        active={hoveredAlbumId === album.id}
+                        resetKey={album.id}
+                        containerClass="top-track-title-track"
+                    >
+                        <span class="top-track-title" class:accent={isNowPlaying || isPaused}>{album.name}</span>
+                    </MarqueeText>
                     <span class="top-track-artist">
                         <ArtistLinks
                             artist={album.artist}
@@ -241,8 +249,7 @@
         font-weight: var(--font-weight-medium);
         color: var(--text-primary);
         white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        flex-shrink: 0;
     }
 
     .top-track-title.accent { color: var(--accent-primary); }

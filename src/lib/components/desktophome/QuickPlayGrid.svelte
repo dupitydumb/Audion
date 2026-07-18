@@ -2,6 +2,7 @@
     import { goToAlbumDetail, goToArtistDetail } from "$lib/stores/view";
     import { getAlbumCoverFromTracks } from "$lib/stores/library";
     import ArtistLinks from "$lib/components/ArtistLinks.svelte";
+    import MarqueeText from "$lib/components/MarqueeText.svelte";
     import type { Album } from "$lib/api/tauri";
 
     export let albums: Album[] = [];
@@ -11,53 +12,14 @@
     export let playAlbum: (album: Album) => void;
     export let albumContextMenu: (album: Album, e: MouseEvent) => void;
 
-    const MARQUEE_GAP = 64;
-
     let marqueeActive: Record<number, boolean> = {};
-    let marqueeOverflows: Record<number, { name: boolean }> = {};
-    let marqueeDurations: Record<number, { name: string }> = {};
-
-    let nameEls = new Map<number, HTMLSpanElement>();
-
-    function measureQPOverflow(albumId: number) {
-        if (marqueeOverflows[albumId]) return;
-        requestAnimationFrame(() => {
-            const nameEl = nameEls.get(albumId);
-            const nameOverflows = nameEl
-                ? nameEl.scrollWidth > nameEl.clientWidth
-                : false;
-            marqueeDurations = {
-                ...marqueeDurations,
-                [albumId]: {
-                    name:
-                        nameEl && nameOverflows
-                            ? `${Math.max(4, (nameEl.scrollWidth + MARQUEE_GAP) / 60).toFixed(1)}s`
-                            : "0s",
-                },
-            };
-            marqueeOverflows = {
-                ...marqueeOverflows,
-                [albumId]: { name: nameOverflows },
-            };
-        });
-    }
 
     function handleQPMouseEnter(albumId: number) {
         marqueeActive = { ...marqueeActive, [albumId]: true };
-        measureQPOverflow(albumId);
     }
 
     function handleQPMouseLeave(albumId: number) {
         marqueeActive = { ...marqueeActive, [albumId]: false };
-        const { [albumId]: _o, ...restO } = marqueeOverflows;
-        marqueeOverflows = restO;
-        const { [albumId]: _d, ...restD } = marqueeDurations;
-        marqueeDurations = restD;
-    }
-
-    function registerNameEl(node: HTMLSpanElement, albumId: number) {
-        nameEls.set(albumId, node);
-        return { destroy() { nameEls.delete(albumId); } };
     }
 
     function handleKeyActivate(e: KeyboardEvent, action: () => void) {
@@ -74,9 +36,6 @@
             {#each albums as album}
                 {@const isNowPlaying = playingAlbumId === album.id && playing}
                 {@const isPaused = pausedAlbumId === album.id}
-                {@const active = marqueeActive[album.id]}
-                {@const overflows = marqueeOverflows[album.id] ?? { name: false }}
-                {@const durations = marqueeDurations[album.id] ?? { name: "0s" }}
                 <div
                     class="quick-play-card"
                     class:now-playing={isNowPlaying}
@@ -117,14 +76,18 @@
                         </div>
                     </div>
                     <div class="quick-play-text" role="presentation">
-                        <div class="qp-text-track" class:animate={active && overflows.name}>
-                            <span class="quick-play-name" class:accent={isNowPlaying || isPaused} class:qp-marquee={active && overflows.name}
-                                style="--marquee-duration: {durations.name};" use:registerNameEl={album.id}>{album.name}</span>
-                            {#if active && overflows.name}
-                                <span class="quick-play-name qp-marquee" class:accent={isNowPlaying || isPaused} aria-hidden="true"
-                                    style="--marquee-duration: {durations.name};">{album.name}</span>
-                            {/if}
-                        </div>
+                        <MarqueeText
+                            trigger="external"
+                            active={marqueeActive[album.id]}
+                            resetKey={album.id}
+                            containerClass="qp-text-track"
+                        >
+                            <span
+                                class="quick-play-name"
+                                class:accent={isNowPlaying || isPaused}
+                                >{album.name}</span
+                            >
+                        </MarqueeText>
                         {#if album.artist || (album.artists && album.artists.length > 0)}
                             <div class="qp-text-track">
                                 <ArtistLinks
@@ -133,7 +96,7 @@
                                     chipClass="quick-play-artist"
                                     marquee
                                     marqueeTrigger="external"
-                                    marqueeActive={active}
+                                    marqueeActive={marqueeActive[album.id]}
                                     resetKey={album.id}
                                     on:select={(e) => goToArtistDetail(e.detail)}
                                 />
@@ -166,14 +129,11 @@
     .quick-play-hover-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity var(--transition-fast); background: rgba(0,0,0,0.35); color: white; pointer-events: none; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6)); }
     .quick-play-art:hover .quick-play-hover-overlay { opacity: 1; }
     .quick-play-text { display: flex; flex-direction: column; flex: 1; min-width: 0; gap: 2px; overflow: hidden; }
-    .qp-text-track { display: flex; flex-direction: row; overflow: hidden; position: relative; }
-    .qp-text-track.animate { -webkit-mask-image: linear-gradient(to right, transparent 0%, black 4%, black 92%, transparent 100%); mask-image: linear-gradient(to right, transparent 0%, black 4%, black 92%, transparent 100%); }
-    .quick-play-name { font-size: 0.85rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; max-width: 100%; }
+    :global(.qp-text-track) { display: flex; flex-direction: row; }
+    .quick-play-name { font-size: 0.85rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); white-space: nowrap; flex-shrink: 0; }
     .quick-play-name.accent { color: var(--accent-primary); }
-    .quick-play-artist { font-size: var(--font-size-xs); color: var(--text-secondary); background: none; border: none; padding: 0; text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; max-width: 100%; font-family: inherit; }
-    .quick-play-artist:hover { text-decoration: underline; color: var(--text-primary); }
-    .qp-marquee { overflow: visible; text-overflow: clip; max-width: none; padding-right: 64px; animation: qp-marquee-scroll var(--marquee-duration) linear infinite; }
-    @keyframes qp-marquee-scroll { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+    :global(.quick-play-artist) { font-size: var(--font-size-xs); color: var(--text-secondary); background: none; border: none; padding: 0; text-align: left; cursor: pointer; white-space: nowrap; flex-shrink: 0; font-family: inherit; }
+    :global(.quick-play-artist:hover) { text-decoration: underline; color: var(--text-primary); }
     .quick-play-eq { display: flex; align-items: flex-end; gap: 3px; flex-shrink: 0; height: 20px; padding-right: 12px; }
     .eq-bar { width: 4px; background-color: var(--accent-primary); border-radius: 2px; animation: qp-equalizer 0.8s ease-in-out infinite; }
     .eq-bar.paused { animation-play-state: paused; height: 8px; background-color: var(--text-secondary); }
