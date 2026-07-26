@@ -832,6 +832,11 @@ pub async fn rescan_music(
 
         let _ = queries::cleanup_empty_albums(&conn);
 
+        // reset album->artist assignment
+        // so this rescan rederives it fresh
+        // using the currently active AlbumArtistMode/split rules
+        let _ = queries::reset_album_artist_assignments(&conn);
+
         let folder_playlists = queries::get_folder_playlists(&conn).unwrap_or_default();
 
         (folders, folder_playlists, tracks_deleted)

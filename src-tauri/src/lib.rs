@@ -539,6 +539,22 @@ pub fn run() {
             scanner::cover_storage::init_app_data_dir(app_dir.clone());
             tracing::info!("Cover storage initialized");
 
+            // into the process wide caches used by scanner::artist_parser and
+            // load persisted artist split delimiter rules and album artist mode
+            // db::artists before opening the database - init_schema
+            // called from Database::new below
+            // runs the one time track_artists/album_artists backfill immediately
+            // so the caches must already reflect the user's saved settings
+            {
+                let app_settings = commands::app_settings::load_app_settings(app.handle());
+                crate::scanner::artist_parser::set_active_delimiters(
+                    app_settings.artist_split_rules.delimiters,
+                );
+                crate::db::artists::set_active_album_artist_mode(
+                    app_settings.album_artist_mode,
+                );
+            }
+
             // Initialize database
             let database = Database::new(&app_dir).map_err(|e| {
                 tracing::error!(error = %e, "Failed to initialize database");
@@ -664,18 +680,6 @@ pub fn run() {
                 if let Err(e) = app.deep_link().register_all() {
                     tracing::warn!("Failed to register deep link schemes: {}", e);
                 }
-            }
-
-            // load persisted artist split delimiter rules into the process wide cache used by scanner::artist_parser::split_artists
-            // so scans and track_artists/album_artists syncing on this run use the user's saved rules
-            {
-                let app_settings = commands::app_settings::load_app_settings(app.handle());
-                crate::scanner::artist_parser::set_active_delimiters(
-                    app_settings.artist_split_rules.delimiters,
-                );
-                crate::db::artists::set_active_album_artist_mode(
-                    app_settings.album_artist_mode,
-                );
             }
 
             // Handle window start mode (desktop only)
