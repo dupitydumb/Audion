@@ -154,6 +154,28 @@ jobs:
           Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Rename-Item -NewName "audion_${ver}_windows.exe"
           Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe.sig | Rename-Item -NewName "audion_${ver}_windows.exe.sig"
 
+      - name: Decode MSIX signing cert
+        shell: pwsh
+        run: |
+          $bytes = [Convert]::FromBase64String("${{ secrets.MSIX_CERT_BASE64 }}")
+          [IO.File]::WriteAllBytes("audion-msix.pfx", $bytes)
+
+      - name: Build MSIX bundle (sideload, self-signed)
+        run: npm run tauri:windows:build
+        env:
+          MSIX_PFX_PASSWORD: ${{ secrets.MSIX_CERT_PASSWORD }}
+
+      - name: Rename MSIX artifact
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.info.outputs.version }}"
+          Get-ChildItem src-tauri/target/msix/*.msix | Rename-Item -NewName "audion_${ver}_windows.msix"
+
+      - name: Clean up cert from workspace
+        if: always()
+        shell: pwsh
+        run: Remove-Item -Path audion-msix.pfx -ErrorAction SilentlyContinue
+
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v3.0.1
         with:
@@ -163,6 +185,7 @@ jobs:
             src-tauri/target/release/bundle/msi/audion_*_windows.msi
             src-tauri/target/release/bundle/nsis/audion_*_windows.exe
             src-tauri/target/release/bundle/nsis/audion_*_windows.exe.sig
+            src-tauri/target/msix/audion_*_windows.msix
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
