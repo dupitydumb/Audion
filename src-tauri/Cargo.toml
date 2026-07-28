@@ -37,7 +37,6 @@ tauri-plugin-fs = "2"
 tauri-plugin-os = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri-plugin-notification = "2"
 chrono = { version = "0.4", features = ["serde"] }
 
 # dirs for cross-platform app data paths
@@ -166,7 +165,13 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 
 souvlaki = "0.8"
 
+# native os notifications(bypasses tauri-plugin-notification)
+# preview-macos-un: opts into the modern backend on mac. default backend is deprecated
+notify-rust = { version = "4", features = ["preview-macos-un"] }
+
+# notify_rust's windows backend does not support hero image. calling winrt for that
 [target.'cfg(target_os = "windows")'.dependencies]
+tauri-winrt-notification = "0.7"
 windows = { version = "0.61.3", features = [
     "Win32_Foundation",
     "Win32_System_Com",
@@ -174,6 +179,7 @@ windows = { version = "0.61.3", features = [
     "Win32_UI_Shell_Common", 
     "Win32_UI_Shell_PropertiesSystem",
     "Win32_Storage_EnhancedStorage",
+    "Win32_Storage_FileSystem",
     "Win32_UI_WindowsAndMessaging",
 ] }
 raw-window-handle = "0.6"

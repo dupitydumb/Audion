@@ -4,11 +4,7 @@
 mod commands;
 mod db;
 #[cfg(desktop)]
-mod discord;
-#[cfg(desktop)]
-mod windows_thumbar;
-#[cfg(desktop)]
-mod smtc;
+mod integrations;
 mod scanner;
 mod security;
 mod sync;
@@ -26,6 +22,8 @@ use db::Database;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Emitter, Listener, Manager, WindowEvent};
+use crate::integrations::discord;
+use crate::integrations::smtc;
 #[cfg(desktop)]
 use tauri::{
     menu::{CheckMenuItem, IconMenuItem, Menu, MenuItem, PredefinedMenuItem},
@@ -474,8 +472,7 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_notification::init());
+        .plugin(tauri_plugin_fs::init());
 
     #[cfg(desktop)]
     {
@@ -564,7 +561,7 @@ pub fn run() {
 
             app.manage(database.clone());
             app.manage(commands::listenbrainz::ListenBrainzState::new());
-            app.manage(commands::window::CloseConfirmed::default());
+            app.manage(integrations::window::CloseConfirmed::default());
 
             // OTA install-on-close gate => starts un-armed; see ota_set_close_intercept
             #[cfg(desktop)]
@@ -685,18 +682,18 @@ pub fn run() {
             // Handle window start mode (desktop only)
             #[cfg(desktop)]
             {
-                let window_config = commands::window::load_window_config(app.handle());
+                let window_config = integrations::window::load_window_config(app.handle());
                 if let Some(window) = app.get_webview_window("main") {
                     match window_config.start_mode {
-                        commands::window::WindowStartMode::Maximized => {
+                        integrations::window::WindowStartMode::Maximized => {
                             tracing::info!("Window start mode: Maximized");
                             window.maximize().ok();
                         }
-                        commands::window::WindowStartMode::Minimized => {
+                        integrations::window::WindowStartMode::Minimized => {
                             tracing::info!("Window start mode: Minimized");
                             window.minimize().ok();
                         }
-                        commands::window::WindowStartMode::Normal => {
+                        integrations::window::WindowStartMode::Normal => {
                             tracing::info!("Window start mode: Normal");
                         }
                     }
@@ -998,6 +995,7 @@ pub fn run() {
                     commands::check_plugin_updates,
                     commands::update_plugin,
                     commands::save_notification_image,
+                    integrations::notifications::show_native_notification,
                     commands::plugin_save_data,
                     commands::plugin_get_data,
                     commands::plugin_list_keys,
@@ -1024,15 +1022,15 @@ pub fn run() {
                     commands::get_release_group_tracks_mb,
                     commands::get_artist_top_tracks_mb,
                     // Window commands
-                    commands::window::get_window_start_mode,
-                    commands::window::set_window_start_mode,
+                    integrations::window::get_window_start_mode,
+                    integrations::window::set_window_start_mode,
                     // Discord RPC commands (desktop only)
-                    discord::discord_connect,
-                    discord::discord_update_presence,
-                    discord::discord_clear_presence,
-                    discord::discord_resolve_cover,
-                    discord::discord_disconnect,
-                    discord::discord_reconnect,
+                    integrations::discord::discord_connect,
+                    integrations::discord::discord_update_presence,
+                    integrations::discord::discord_clear_presence,
+                    integrations::discord::discord_resolve_cover,
+                    integrations::discord::discord_disconnect,
+                    integrations::discord::discord_reconnect,
                     // =========================================================================
                     // SYNC COMMANDS
                     // =========================================================================
@@ -1075,32 +1073,32 @@ pub fn run() {
                     audio::native_audio_available,
                     audio::audio_resolve_path,
                     audio::audio_get_stream_url,
-                    windows_thumbar::windows_init_thumbar,
-                    windows_thumbar::windows_update_thumbar_state,
-                    windows_thumbar::windows_set_taskbar_progress,
-                    windows_thumbar::windows_clear_taskbar_progress,
-                    windows_thumbar::windows_update_jump_list,
-                    windows_thumbar::windows_clear_jump_list,
-                    smtc::smtc_set_metadata,
-                    smtc::smtc_set_playback,
-                    smtc::smtc_set_volume,
+                    integrations::windows_thumbar::windows_init_thumbar,
+                    integrations::windows_thumbar::windows_update_thumbar_state,
+                    integrations::windows_thumbar::windows_set_taskbar_progress,
+                    integrations::windows_thumbar::windows_clear_taskbar_progress,
+                    integrations::windows_thumbar::windows_update_jump_list,
+                    integrations::windows_thumbar::windows_clear_jump_list,
+                    integrations::smtc::smtc_set_metadata,
+                    integrations::smtc::smtc_set_playback,
+                    integrations::smtc::smtc_set_volume,
                     tray_update_playback,
                     tray_update_toggles,
                     commands::proxy_fetch_bytes,
                     commands::save_image_to_gallery,
                     // Window close-to-tray and minimize-to-tray commands
-                    commands::window::get_close_to_tray,
-                    commands::window::set_close_to_tray,
-                    commands::window::get_minimize_to_tray,
-                    commands::window::set_minimize_to_tray,
+                    integrations::window::get_close_to_tray,
+                    integrations::window::set_close_to_tray,
+                    integrations::window::get_minimize_to_tray,
+                    integrations::window::set_minimize_to_tray,
                     // OTA install-on-close
                     ota_set_close_intercept,
                     ota_confirm_exit,
                     // launch on startup (desktop only)
-                    commands::window::get_autostart_enabled,
-                    commands::window::set_autostart_enabled,
+                    integrations::window::get_autostart_enabled,
+                    integrations::window::set_autostart_enabled,
                     // last visited view (startup page = last-visited)
-                    commands::window::confirm_close,
+                    integrations::window::confirm_close,
                     get_pending_plugin_install,
                     get_pending_play_track,
                 ]
@@ -1283,7 +1281,7 @@ pub fn run() {
             #[cfg(desktop)]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 // Check if close-to-tray is enabled
-                let config = commands::window::load_window_config(window.app_handle());
+                let config = integrations::window::load_window_config(window.app_handle());
                 if config.close_to_tray {
                     api.prevent_close();
                     let _ = window.hide();
@@ -1298,7 +1296,7 @@ pub fn run() {
                 // regardless of the OTA gate below
                 let confirmed = window
                     .app_handle()
-                    .state::<commands::window::CloseConfirmed>();
+                    .state::<integrations::window::CloseConfirmed>();
                 if confirmed.0.load(std::sync::atomic::Ordering::SeqCst) {
                     return;
                 }
@@ -1329,7 +1327,7 @@ pub fn run() {
                 // without this the app would become unclosable
                 tauri::async_runtime::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-                    let confirmed = app_handle.state::<commands::window::CloseConfirmed>();
+                    let confirmed = app_handle.state::<integrations::window::CloseConfirmed>();
                     if !confirmed.0.load(std::sync::atomic::Ordering::SeqCst) {
                         tracing::warn!(
                             "No response from frontend for close notification, closing anyway"
