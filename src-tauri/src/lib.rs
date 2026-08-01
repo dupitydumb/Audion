@@ -451,6 +451,8 @@ pub fn run() {
             for arg in argv.iter().skip(1) {
                 if arg.starts_with("audion://") {
                     handle_deep_link_url(app, arg);
+                } else {
+                    integrations::cli::handle(app, arg);
                 }
             }
 

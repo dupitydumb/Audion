@@ -1,3 +1,4 @@
+pub mod cli;
 pub mod discord;
 pub mod notifications;
 pub mod smtc;
