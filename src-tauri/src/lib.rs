@@ -567,6 +567,9 @@ pub fn run() {
                 }
             }
 
+            // "Play with Audion" right click context menu entry - idempotent
+            integrations::context_menu::register_context_menu(ASSOCIATED_AUDIO_EXTENSIONS);
+
             // Get app data directory and create database
             let app_dir = app
                 .path()
