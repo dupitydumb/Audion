@@ -625,6 +625,8 @@ pub fn run() {
             app.manage(PendingPluginInstall(std::sync::Mutex::new(None)));
             app.manage(PendingPlayTrack(std::sync::Mutex::new(None)));
             app.manage(PendingOpenFile(std::sync::Mutex::new(None)));
+            #[cfg(desktop)]
+            app.manage(integrations::cli::PendingCliAction(std::sync::Mutex::new(None)));
 
             // Initialize Discord RPC state (desktop only)
             #[cfg(desktop)]
@@ -723,13 +725,18 @@ pub fn run() {
             }
 
             // =============================================================================
-            // FILE ASSOCIATION - COLD START (windows/linux)
+            // FILE ASSOCIATION + CLI PLAYBACK FLAGS - COLD START (windows/linux)
             // =============================================================================
             // double clicking an associated file (or "Open with Audion") launches the
             // process with the file path as a plain CLI argument on these platforms
             // deep-link plugin only recognizes registered URL schemes, not bare paths
             // if second instance was launched instead, this is handled by the
             // single-instance callback above
+            //
+            // playback flags (--play/--next/etc, e.g. from .desktop file quick actions)
+            // are also handled here
+            // PendingCliAction stashes them for the frontend
+            // which applies them after persisted queue state is restored
             //=============================================================================
             #[cfg(any(windows, target_os = "linux"))]
             {
@@ -738,6 +745,7 @@ pub fn run() {
                         handle_open_file(app.handle(), &arg);
                         break;
                     }
+                    integrations::cli::handle(app.handle(), &arg);
                 }
             }
 
@@ -1174,6 +1182,7 @@ pub fn run() {
                     get_pending_plugin_install,
                     get_pending_play_track,
                     get_pending_open_file,
+                    integrations::cli::get_pending_cli_action,
                 ]
             }
             #[cfg(mobile)]

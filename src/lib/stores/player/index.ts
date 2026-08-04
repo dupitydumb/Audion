@@ -34,4 +34,4 @@ export { sendRemoteCommand, transferPlayback } from './remote';
 
 // Media session / SMTC (consumed directly by persist.ts for restoring
 // last-played-track state into the os media controls on startup
-export { updateSmtcMetadata, updateSmtcPlaybackState } from './media-session';
+export { updateSmtcMetadata, updateSmtcPlaybackState, dispatchSmtcEvent } from './media-session';

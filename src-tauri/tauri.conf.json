@@ -56,6 +56,11 @@
     "android": {
       "minSdkVersion": 26
     },
+    "linux": {
+      "deb": {
+        "desktopTemplate": "../packaging/linux/audion.desktop.hbs"
+      }
+    },
     "macOS": {
       "entitlements": "./entitlements.plist"
     },

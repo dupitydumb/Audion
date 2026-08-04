@@ -23,7 +23,7 @@
     initializeFromPersistedState,
     setupAutoSave,
   } from "$lib/stores/persist";
-  import { playTrack, playFromQueue, queue, openAssociatedFile } from "$lib/stores/player";
+  import { playTrack, playFromQueue, queue, openAssociatedFile, dispatchSmtcEvent } from "$lib/stores/player";
   import { theme } from "$lib/stores/theme";
   import { isMiniPlayer, withViewTransition, isStatsWrappedOpen } from "$lib/stores/ui";
   import { pluginStore } from "$lib/stores/plugin-store";
@@ -134,6 +134,23 @@
             "[Player] cold-start jump-list track not found in library:",
             pendingJumpListTrackId,
           );
+        }
+      }
+
+      // check for a cold start cli playback flag
+      // (--play/--next/etc e.g. from the .desktop file's quick actions)
+      // stashed by PendingCliAction
+      // see cli.rs. deliberately checked here
+      if (isTauri()) {
+        try {
+          const pendingCliAction = await invoke<{ type: string; data?: any } | null>(
+            "get_pending_cli_action",
+          );
+          if (pendingCliAction) {
+            dispatchSmtcEvent(pendingCliAction);
+          }
+        } catch (error) {
+          console.error("[Player] Failed to check pending cli action:", error);
         }
       }
     } catch (error) {
