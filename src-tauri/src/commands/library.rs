@@ -178,6 +178,49 @@ pub async fn import_audio_bytes(
     handle_track_import(db, track_data, overwrite).await
 }
 
+/// used when a file is opened via os file association
+/// if the exact path is already a known track, returns it as is
+/// otherwise extracts metadata and adds it to the library
+/// bypassing the content hash duplicate check
+#[tauri::command]
+pub async fn open_or_import_track_by_path(
+    path: String,
+    db: State<'_, Database>,
+) -> Result<queries::Track, String> {
+    // canonicalize first - every other path in the db was stored this way
+    // (see add_folder/scan_folder/rescan_music, which all canonicalize before storing)
+    let path = std::path::Path::new(&path)
+        .canonicalize()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or(path);
+
+    // fast path: this exact file is already in the library
+    // COLLATE NOCASE matters here: Windows filesystem paths are case insensitive
+    {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        let existing_id: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM tracks WHERE path = ?1 COLLATE NOCASE",
+                rusqlite::params![path],
+                |row| row.get(0),
+            )
+            .ok();
+        if let Some(id) = existing_id {
+            if let Some(track) =
+                queries::get_track_by_id(&conn, id).map_err(|e| e.to_string())?
+            {
+                return Ok(track);
+            }
+        }
+    }
+
+    // not in the library yet => read tags and add it now
+    let track_data = crate::scanner::extract_metadata(&path)
+        .ok_or_else(|| format!("Failed to read audio metadata from {path}"))?;
+
+    handle_track_import(db, track_data, true).await
+}
+
 async fn handle_track_import(
     db: State<'_, Database>,
     track_data: queries::TrackInsert,

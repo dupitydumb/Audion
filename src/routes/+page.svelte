@@ -23,7 +23,7 @@
     initializeFromPersistedState,
     setupAutoSave,
   } from "$lib/stores/persist";
-  import { playTrack, playFromQueue, queue } from "$lib/stores/player";
+  import { playTrack, playFromQueue, queue, openAssociatedFile } from "$lib/stores/player";
   import { theme } from "$lib/stores/theme";
   import { isMiniPlayer, withViewTransition, isStatsWrappedOpen } from "$lib/stores/ui";
   import { pluginStore } from "$lib/stores/plugin-store";
@@ -94,6 +94,19 @@
     // Initialize persisted state (volume, lyrics visibility, etc.)
     initializeFromPersistedState(pendingJumpListTrackId);
     setupAutoSave();
+
+    // check for a cold start file association open
+    // stashed the same way as the jump list track above, for the same cold start race
+    if (isTauri()) {
+      try {
+        const pendingFile = await invoke<string | null>("get_pending_open_file");
+        if (pendingFile) {
+          void openAssociatedFile(pendingFile);
+        }
+      } catch (error) {
+        console.error("[Player] Failed to check pending open-file:", error);
+      }
+    }
 
     // Check if we're in Tauri environment
     if (!isTauri()) {

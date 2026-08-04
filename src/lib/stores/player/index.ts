@@ -27,7 +27,7 @@ export {
 } from './queue';
 
 // Backend lifecycle
-export { initAudioBackend, cleanupPlayer, shutdownPlayer } from './backend';
+export { initAudioBackend, cleanupPlayer, shutdownPlayer, openAssociatedFile } from './backend';
 
 // Remote
 export { sendRemoteCommand, transferPlayback } from './remote';

@@ -83,7 +83,7 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
     if let Some(ref hash) = track.content_hash {
         let existing: Option<i64> = conn
             .query_row(
-                "SELECT id FROM tracks WHERE content_hash = ?1 AND path != ?2",
+                "SELECT id FROM tracks WHERE content_hash = ?1 AND path != ?2 COLLATE NOCASE",
                 params![hash, track.path],
                 |row| row.get(0),
             )
@@ -96,9 +96,10 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
     }
 
     // Check if track already exists by path
+    // collate nocase helps with windows case-insensitive NTFS paths
     let existing_id: Option<i64> = conn
         .query_row(
-            "SELECT id FROM tracks WHERE path = ?1",
+            "SELECT id FROM tracks WHERE path = ?1 COLLATE NOCASE",
             params![track.path],
             |row| row.get(0),
         )

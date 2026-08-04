@@ -59,6 +59,57 @@
     "macOS": {
       "entitlements": "./entitlements.plist"
     },
+    "fileAssociations": [
+      {
+        "ext": ["mp3"],
+        "name": "MP3 Audio",
+        "description": "MP3 Audio File",
+        "mimeType": "audio/mpeg",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["flac"],
+        "name": "FLAC Audio",
+        "description": "FLAC Audio File",
+        "mimeType": "audio/flac",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["wav"],
+        "name": "WAV Audio",
+        "description": "WAV Audio File",
+        "mimeType": "audio/wav",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["ogg"],
+        "name": "OGG Audio",
+        "description": "OGG Vorbis Audio File",
+        "mimeType": "audio/ogg",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["m4a"],
+        "name": "M4A Audio",
+        "description": "M4A Audio File",
+        "mimeType": "audio/mp4",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["aac"],
+        "name": "AAC Audio",
+        "description": "AAC Audio File",
+        "mimeType": "audio/aac",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["alac"],
+        "name": "ALAC Audio",
+        "description": "Apple Lossless Audio File",
+        "mimeType": "audio/x-alac",
+        "role": "Viewer"
+      }
+    ],
     "createUpdaterArtifacts": true
   },
   "plugins": {

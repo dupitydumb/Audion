@@ -114,6 +114,50 @@ fn get_pending_play_track(state: tauri::State<'_, PendingPlayTrack>) -> Option<S
     pending.take()
 }
 
+// same cold start race as PendingPlayTrack, but for files opened via file association
+struct PendingOpenFile(pub std::sync::Mutex<Option<String>>);
+
+#[tauri::command]
+fn get_pending_open_file(state: tauri::State<'_, PendingOpenFile>) -> Option<String> {
+    let mut pending = state.0.lock().unwrap();
+    pending.take()
+}
+
+const ASSOCIATED_AUDIO_EXTENSIONS: &[&str] =
+    &["flac", "mp3", "wav", "ogg", "m4a", "aac", "alac"];
+
+fn is_associated_audio_file(path: &str) -> bool {
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ASSOCIATED_AUDIO_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+/// handle a file opened via file association
+/// stash then emit pattern for the cold start race
+/// path is stashed in PendingOpenFile regardless of whether the emit lands
+fn handle_open_file(app_handle: &tauri::AppHandle, path: &str) {
+    if !is_associated_audio_file(path) {
+        tracing::info!("Ignoring opened file with unsupported extension: {}", path);
+        return;
+    }
+
+    tracing::info!("Opening file via file association: {}", path);
+
+    if let Some(pending_state) = app_handle.try_state::<PendingOpenFile>() {
+        *pending_state.0.lock().unwrap() = Some(path.to_string());
+    }
+    let _ = app_handle.emit("app://open-file", path.to_string());
+
+    #[cfg(not(target_os = "android"))]
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 /// Handle a deep link URL — extract tokens, store them, fetch profile, trigger sync.
 /// Called from both the deep-link event listener (macOS) and the single-instance
 /// callback (Windows/Linux).
@@ -451,6 +495,8 @@ pub fn run() {
             for arg in argv.iter().skip(1) {
                 if arg.starts_with("audion://") {
                     handle_deep_link_url(app, arg);
+                } else if is_associated_audio_file(arg) {
+                    handle_open_file(app, arg);
                 } else {
                     integrations::cli::handle(app, arg);
                 }
@@ -575,10 +621,11 @@ pub fn run() {
 
             app.manage(PendingPluginInstall(std::sync::Mutex::new(None)));
             app.manage(PendingPlayTrack(std::sync::Mutex::new(None)));
+            app.manage(PendingOpenFile(std::sync::Mutex::new(None)));
 
             // Initialize Discord RPC state (desktop only)
             #[cfg(desktop)]
-            app.manage(discord::DiscordState(std::sync::Mutex::new(None)));
+            app.manage(integrations::discord::DiscordState(std::sync::Mutex::new(None)));
 
             // =============================================================================
             // NATIVE AUDIO BACKEND INITIALIZATION (Non-blocking, thread-safe)
@@ -603,7 +650,7 @@ pub fn run() {
             #[cfg(desktop)]
             {
                 tracing::info!("Registering SMTC state");
-                app.manage(smtc::SmtcState::uninitialized());
+                app.manage(integrations::smtc::SmtcState::uninitialized());
             }
 
             // =============================================================================
@@ -672,6 +719,25 @@ pub fn run() {
                 }
             }
 
+            // =============================================================================
+            // FILE ASSOCIATION - COLD START (windows/linux)
+            // =============================================================================
+            // double clicking an associated file (or "Open with Audion") launches the
+            // process with the file path as a plain CLI argument on these platforms
+            // deep-link plugin only recognizes registered URL schemes, not bare paths
+            // if second instance was launched instead, this is handled by the
+            // single-instance callback above
+            //=============================================================================
+            #[cfg(any(windows, target_os = "linux"))]
+            {
+                for arg in std::env::args().skip(1) {
+                    if is_associated_audio_file(&arg) {
+                        handle_open_file(app.handle(), &arg);
+                        break;
+                    }
+                }
+            }
+
             // Register deep-link schemes at runtime (required on Windows/Linux for dev builds)
             #[cfg(any(windows, target_os = "linux"))]
             {
@@ -723,7 +789,7 @@ pub fn run() {
 
                 // SMTC init needs a real HWND on windows, so this runs only after
                 // the main window block above has confirmed the window exists
-                if let Err(e) = smtc::init(app.handle().clone()) {
+                if let Err(e) = integrations::smtc::init(app.handle().clone()) {
                     tracing::warn!("SMTC initialization failed (non-fatal): {}", e);
                 }
             }
@@ -915,6 +981,7 @@ pub fn run() {
                     commands::get_album,
                     commands::get_albums_by_artist,
                     commands::add_external_track,
+                    commands::open_or_import_track_by_path,
                     commands::import_audio_file,
                     commands::begin_folder_import,
                     commands::delete_track,
@@ -1103,6 +1170,7 @@ pub fn run() {
                     integrations::window::confirm_close,
                     get_pending_plugin_install,
                     get_pending_play_track,
+                    get_pending_open_file,
                 ]
             }
             #[cfg(mobile)]
@@ -1130,6 +1198,7 @@ pub fn run() {
                     commands::get_album,
                     commands::get_albums_by_artist,
                     commands::add_external_track,
+                    commands::open_or_import_track_by_path,
                     commands::import_audio_file,
                     commands::begin_folder_import,
                     commands::delete_track,
@@ -1343,6 +1412,26 @@ pub fn run() {
                 });
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // file association open event
+            // mac only
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            {
+                if let tauri::RunEvent::Opened { urls } = event {
+                    for url in urls {
+                        if url.scheme() == "file" {
+                            if let Ok(path) = url.to_file_path() {
+                                handle_open_file(app_handle, &path.to_string_lossy());
+                            }
+                        }
+                    }
+                }
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+            {
+                let _ = (app_handle, event);
+            }
+        });
 }

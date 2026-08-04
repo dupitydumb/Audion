@@ -21,6 +21,7 @@ import {
 } from '$lib/services/html5-audio';
 import { listen } from '$lib/api/tauri';
 import { updateWindowsThumbarState } from '$lib/api/tauri';
+import type { Track } from '$lib/api/tauri';
 import {
     _startReckoning, _stopReckoning, _correctReckoning,
     _startHtml5Ticker, _stopHtml5Ticker, registerPositionUpdateCallback,
@@ -343,7 +344,27 @@ export async function initAudioBackend(): Promise<void> {
             void playTrack(track);
         }
     });
+
+    // file opened via os file association
+    // while the app is already running - lib.rs's handle_open_file emits this
+    await listen<string>('app://open-file', ({ payload }) => {
+        void openAssociatedFile(payload);
+    });
     // cold-start case (app launched via jump list click) is handled in +page.svelte, coordinated with initializeFromPersistedState
+}
+
+/**
+ * opens a file received via os file association
+ * open_or_import_track_by_path checks the library for this exact path first and returns it as is if found
+ * otherwise it reads the file's tags and adds it, then returns the new track
+ */
+export async function openAssociatedFile(path: string): Promise<void> {
+    try {
+        const track = await invoke<Track>('open_or_import_track_by_path', { path });
+        await playTrack(track);
+    } catch (error) {
+        console.error('[Player] Failed to open associated file:', path, error);
+    }
 }
 
 export function cleanupPlayer(): void {
