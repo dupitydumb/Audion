@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from "svelte";
+    import { get } from "svelte/store";
     import {
         currentTrack,
         isPlaying,
@@ -152,8 +153,9 @@
         // Update UI immediately for smooth drag — fire-and-forget to backend
         // i know the drag is buggy. but this is the best we can do
         // Poller will correct position on next tick if keyframe alignment differs.
+        const previousSecs = get(currentTime);
         currentTime.set(pos * $duration);
-        seek(pos);
+        seek(pos, previousSecs);
     }
 
     function handleSeekEnd() {

@@ -11,6 +11,7 @@ mod windows_impl {
     use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
     use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows::Win32::Graphics::Gdi::{CreateBitmap, DeleteObject, HGDIOBJ};
+    use windows::core::{HSTRING, PCWSTR};
     use windows::Win32::System::Com::{
         CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
     };
@@ -42,12 +43,20 @@ mod windows_impl {
     const ICON_W: usize = 16;
     const ICON_H: usize = 16;
 
-    #[derive(Clone, Copy)]
-    enum TransportIcon {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    pub(super) enum TransportIcon {
         Previous,
         Play,
         Pause,
         Next,
+        SeekForward,
+        SeekBackward,
+        VolumeUp,
+        VolumeDown,
+        ShuffleOn,
+        RepeatAll,
+        RepeatOne,
+        Muted,
     }
 
     #[derive(Clone, Copy)]
@@ -150,6 +159,65 @@ mod windows_impl {
                 fill_right_triangle(&mut put, 4, 10, 2, 13);
                 fill_rect(&mut put, 11, 3, 12, 12);
             }
+            TransportIcon::SeekForward => {
+                fill_right_triangle(&mut put, 2, 7, 4, 11);
+                fill_right_triangle(&mut put, 8, 13, 4, 11);
+            }
+            TransportIcon::SeekBackward => {
+                fill_left_triangle(&mut put, 2, 7, 4, 11);
+                fill_left_triangle(&mut put, 8, 13, 4, 11);
+            }
+            TransportIcon::VolumeUp => {
+                fill_left_triangle(&mut put, 2, 6, 5, 10);
+                fill_rect(&mut put, 2, 6, 3, 9);
+                // small ascending bars to the right of the speaker cone
+                fill_rect(&mut put, 9, 9, 10, 10);
+                fill_rect(&mut put, 11, 6, 12, 10);
+                fill_rect(&mut put, 13, 3, 14, 10);
+            }
+            TransportIcon::VolumeDown => {
+                fill_left_triangle(&mut put, 2, 6, 5, 10);
+                fill_rect(&mut put, 2, 6, 3, 9);
+                // single short bar => lower volume than VolumeUp
+                fill_rect(&mut put, 9, 7, 10, 8);
+            }
+            TransportIcon::ShuffleOn => {
+                // two crossing diagonal arrows
+                for i in 0..8 {
+                    put(3 + i, 4 + i);
+                    put(3 + i, 11 - i);
+                }
+                fill_right_triangle(&mut put, 9, 12, 2, 5);
+                fill_right_triangle(&mut put, 9, 12, 8, 11);
+            }
+            TransportIcon::RepeatAll => {
+                // rounded rectangle loop
+                fill_rect(&mut put, 3, 3, 12, 4);
+                fill_rect(&mut put, 3, 11, 12, 12);
+                fill_rect(&mut put, 3, 4, 4, 11);
+                fill_rect(&mut put, 11, 4, 12, 11);
+                fill_right_triangle(&mut put, 11, 14, 2, 5);
+                fill_left_triangle(&mut put, 1, 4, 10, 13);
+            }
+            TransportIcon::RepeatOne => {
+                fill_rect(&mut put, 3, 3, 12, 4);
+                fill_rect(&mut put, 3, 11, 12, 12);
+                fill_rect(&mut put, 3, 4, 4, 11);
+                fill_rect(&mut put, 11, 4, 12, 11);
+                fill_right_triangle(&mut put, 11, 14, 2, 5);
+                fill_left_triangle(&mut put, 1, 4, 10, 13);
+                // small "1" mark in the center
+                fill_rect(&mut put, 7, 6, 8, 9);
+            }
+            TransportIcon::Muted => {
+                fill_left_triangle(&mut put, 2, 6, 5, 10);
+                fill_rect(&mut put, 2, 6, 3, 9);
+                // "X" mark where the volume bars would be
+                for i in 0..5 {
+                    put(9 + i, 5 + i);
+                    put(9 + i, 9 - i);
+                }
+            }
         }
 
         px
@@ -236,6 +304,9 @@ mod windows_impl {
             TransportIcon::Play => set.play,
             TransportIcon::Pause => set.pause,
             TransportIcon::Next => set.next,
+            // overlay only icons aren't pre-cached (infrequent, unlike thumbar hover redraws)
+            // create_hicon() is called directly for those
+            _ => return Err("icon_for called with a non-thumbar-button icon".into()),
         };
 
         Ok(windows::Win32::UI::WindowsAndMessaging::HICON(raw as *mut c_void))
@@ -316,6 +387,145 @@ mod windows_impl {
         let taskbar = taskbar_list()?;
         unsafe { taskbar.SetProgressState(hwnd, TBPF_NOPROGRESS) }
             .map_err(|e| format!("SetProgressState failed: {e}"))
+    }
+
+    // =============================================================================
+    // TASKBAR OVERLAY ICON
+    // =============================================================================
+    // small badge on the taskbar icon
+    // two kinds of update, both always applied unconditionally
+    // 1) transient: momentary action (play/pause/next/prev/seek/volume) :
+    //      shown immediately, auto-reverts to the current persistent baseline after 1.5s
+    //      a new transient during that window overwrites the icon and restarts the timer
+    // 2) persistent: toggle state (shuffle/repeat/mute :
+    //      shown immediately and stays until it changes again
+    //      priority when more than one is active at once: repeat > shuffle > mute
+    // =============================================================================
+
+    struct OverlayState {
+        shuffle: bool,
+        repeat_mode: String, // off | all | one
+        muted: bool,
+        timer_generation: u64,
+    }
+
+    static OVERLAY_STATE: OnceLock<Mutex<OverlayState>> = OnceLock::new();
+
+    fn overlay_state() -> &'static Mutex<OverlayState> {
+        OVERLAY_STATE.get_or_init(|| {
+            Mutex::new(OverlayState {
+                shuffle: false,
+                repeat_mode: "off".to_string(),
+                muted: false,
+                timer_generation: 0,
+            })
+        })
+    }
+
+    fn persistent_icon(shuffle: bool, repeat_mode: &str, muted: bool) -> Option<TransportIcon> {
+        // priority: repeat > shuffle > mute
+        match repeat_mode {
+            "all" => return Some(TransportIcon::RepeatAll),
+            "one" => return Some(TransportIcon::RepeatOne),
+            _ => {}
+        }
+        if shuffle {
+            return Some(TransportIcon::ShuffleOn);
+        }
+        if muted {
+            return Some(TransportIcon::Muted);
+        }
+        None
+    }
+
+    fn set_overlay_icon(app: &AppHandle, icon: Option<TransportIcon>) -> Result<(), String> {
+        let window = app
+            .get_webview_window("main")
+            .ok_or_else(|| "No main window".to_string())?;
+        let hwnd = HWND(window_hwnd(&window)?);
+        let taskbar = taskbar_list()?;
+
+        match icon {
+            None => unsafe { taskbar.SetOverlayIcon(hwnd, Default::default(), PCWSTR::null()) }
+                .map_err(|e| format!("SetOverlayIcon clear failed: {e}")),
+            Some(kind) => {
+                let hicon = create_hicon(kind)?;
+                let alt = HSTRING::from(overlay_alt_text(kind));
+                unsafe { taskbar.SetOverlayIcon(hwnd, hicon, &alt) }
+                    .map_err(|e| format!("SetOverlayIcon failed: {e}"))
+            }
+        }
+    }
+
+    fn overlay_alt_text(kind: TransportIcon) -> &'static str {
+        match kind {
+            TransportIcon::Previous => "Previous track",
+            TransportIcon::Play => "Playing",
+            TransportIcon::Pause => "Paused",
+            TransportIcon::Next => "Next track",
+            TransportIcon::SeekForward => "Seeking forward",
+            TransportIcon::SeekBackward => "Seeking backward",
+            TransportIcon::VolumeUp => "Volume up",
+            TransportIcon::VolumeDown => "Volume down",
+            TransportIcon::ShuffleOn => "Shuffle on",
+            TransportIcon::RepeatAll => "Repeat all",
+            TransportIcon::RepeatOne => "Repeat one",
+            TransportIcon::Muted => "Muted",
+        }
+    }
+
+    /// momentary action
+    /// shows immediately
+    /// auto reverts to the current persistent baseline after 1.5s unless another transient overwrites it
+    pub(crate) fn flash_overlay(app: &AppHandle, kind: TransportIcon) {
+        let generation = {
+            let mut state = overlay_state().lock().unwrap();
+            state.timer_generation += 1;
+            state.timer_generation
+        };
+
+        let _ = set_overlay_icon(app, Some(kind));
+
+        let app = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+
+            let (still_current, persistent) = {
+                let state = overlay_state().lock().unwrap();
+                (
+                    state.timer_generation == generation,
+                    persistent_icon(state.shuffle, &state.repeat_mode, state.muted),
+                )
+            };
+            if still_current {
+                let _ = set_overlay_icon(&app, persistent);
+            }
+        });
+    }
+
+    /// toggle state update (shuffle/repeat/mute)
+    /// shown immediately and stays until changed again
+    /// 'None' for a field means "unchanged"
+    pub(crate) fn update_persistent_overlay(
+        app: &AppHandle,
+        shuffle: Option<bool>,
+        repeat_mode: Option<String>,
+        muted: Option<bool>,
+    ) {
+        let icon = {
+            let mut state = overlay_state().lock().unwrap();
+            if let Some(s) = shuffle {
+                state.shuffle = s;
+            }
+            if let Some(r) = repeat_mode {
+                state.repeat_mode = r;
+            }
+            if let Some(m) = muted {
+                state.muted = m;
+            }
+            persistent_icon(state.shuffle, &state.repeat_mode, state.muted)
+        };
+        let _ = set_overlay_icon(app, icon);
     }
 
     fn window_hwnd(window: &WebviewWindow) -> Result<*mut c_void, String> {
@@ -675,5 +885,50 @@ pub fn windows_clear_jump_list() -> Result<(), String> {
     #[cfg(not(target_os = "windows"))]
     {
         Ok(())
+    }
+}
+
+/// momentary action overlay (play/pause/next/prev/seek/volume)
+/// called from integrations::smtc's commands
+pub fn taskbar_flash_overlay(app: &AppHandle, kind: &str) {
+    #[cfg(target_os = "windows")]
+    {
+        let icon = match kind {
+            "play" => windows_impl::TransportIcon::Play,
+            "pause" => windows_impl::TransportIcon::Pause,
+            "next" => windows_impl::TransportIcon::Next,
+            "previous" => windows_impl::TransportIcon::Previous,
+            "seek_forward" => windows_impl::TransportIcon::SeekForward,
+            "seek_backward" => windows_impl::TransportIcon::SeekBackward,
+            "volume_up" => windows_impl::TransportIcon::VolumeUp,
+            "volume_down" => windows_impl::TransportIcon::VolumeDown,
+            _ => return,
+        };
+        windows_impl::flash_overlay(app, icon);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, kind);
+    }
+}
+
+/// toggle state overlay (shuffle/repeat/mute)
+/// 'None' for a field means unchanged since last call
+/// called from integrations::smtc's commands
+pub fn taskbar_update_persistent_overlay(
+    app: &AppHandle,
+    shuffle: Option<bool>,
+    repeat_mode: Option<String>,
+    muted: Option<bool>,
+) {
+    #[cfg(target_os = "windows")]
+    {
+        windows_impl::update_persistent_overlay(app, shuffle, repeat_mode, muted);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, shuffle, repeat_mode, muted);
     }
 }

@@ -39,7 +39,7 @@ import {
 } from './playback';
 import { handleRemoteCommand, handleRemotePlayerState, transferPlayback } from './remote';
 import { registerRemoteCallbacks } from './remote';
-import { seek, setVolume, toggleShuffle } from './playback';
+import { seek, setVolume, toggleShuffle, cycleRepeat } from './playback';
 import { playTrack, playFromQueue } from './playback';
 import { updateMediaSessionPosition } from './media-session';
 import { getTrackByIdSync } from '$lib/stores/library';
@@ -241,13 +241,7 @@ export async function initAudioBackend(): Promise<void> {
     }).catch(() => { });
 
     listen<void>('tray://toggle-repeat', () => {
-        // cycle none => all => one => none
-        const current = get(repeat);
-        const next = current === 'none' ? 'all' : current === 'all' ? 'one' : 'none';
-        repeat.set(next);
-        if (get(activeBackend) === 'native') {
-            nativeAudioSetRepeatOne(next === 'one').catch(console.error);
-        }
+        cycleRepeat();
     }).catch(() => { });
 
     // emitted when the user clicks the track title in the tray menu

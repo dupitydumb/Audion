@@ -138,7 +138,12 @@ registerReorderCallback(() => _schedulePreload());
 
 // ─── Core playback ────────────────────────────────────────────────────────────
 
-export async function playTrack(track: Track, skipLocalSrc = false, startTime = 0): Promise<void> {
+export async function playTrack(
+    track: Track,
+    skipLocalSrc = false,
+    startTime = 0,
+    direction?: 'next' | 'previous',
+): Promise<void> {
     const previousTrackObj = get(currentTrack);
     const sessionId = ++_currentSessionId;
 
@@ -183,7 +188,7 @@ export async function playTrack(track: Track, skipLocalSrc = false, startTime = 
 
     console.log('[Player] Preparing MediaSession metadata for:', trackForPlugins.title);
     await updateMediaSessionMetadata(trackForPlugins);
-    await updateSmtcMetadata(trackForPlugins).catch(e => console.warn('[Player] SMTC metadata update failed:', e));
+    await updateSmtcMetadata(trackForPlugins, direction).catch(e => console.warn('[Player] SMTC metadata update failed:', e));
 
     if (!track.track_cover_path && !track.cover_url) {
         fetchTrackCover(track).then(async (newCoverUrl) => {
@@ -501,7 +506,7 @@ export function nextTrack(): void {
     }
 
     queueIndex.set(idx);
-    playTrack(q[idx]);
+    playTrack(q[idx], false, 0, 'next');
 }
 
 function playRandomFromLibrary(): void {
@@ -577,10 +582,10 @@ export async function previousTrack(): Promise<void> {
     }
 
     queueIndex.set(idx);
-    playTrack(q[idx]);
+    playTrack(q[idx], false, 0, 'previous');
 }
 
-export async function seek(position: number): Promise<void> {
+export async function seek(position: number, previousPositionOverride?: number): Promise<void> {
     if (get(activeBackend) === 'remote') {
         const targetId = get(activeRemoteDevice);
         if (targetId) {
@@ -591,6 +596,14 @@ export async function seek(position: number): Promise<void> {
 
     try {
         const dur = get(duration);
+        // most callers (keyboard shortcuts, SMTC initiated seeks) don't mutate currentTime themselves before calling this
+        // so reading the store directly is correct for them
+        // PlayerBar's drag handler is the exception - it sets currentTime immediately for smooth visual feedback (see its own comment) before this function ever runs
+        // so it passes the true "before" value explicitly instead
+        // without this, direction detection would silently break for whichever backend happens to run this function synchronously
+        // html5 has no await point before the call site below
+        // so PlayerBar's own mutation - if it happened first - would already be visible here
+        const previousSecs = previousPositionOverride ?? get(currentTime);
         const targetSecs = position * dur;
         let didSeek = false;
 
@@ -610,7 +623,10 @@ export async function seek(position: number): Promise<void> {
 
         if (didSeek) {
             updateMediaSessionPosition();
-            updateSmtcPlaybackState(get(isPlaying) ? 'playing' : 'paused');
+            const seekDirection = targetSecs > previousSecs ? 'forward'
+                : targetSecs < previousSecs ? 'backward'
+                : undefined;
+            updateSmtcPlaybackState(get(isPlaying) ? 'playing' : 'paused', { seekDirection });
             broadcastState(true);
             pluginEvents.emit('seeked', { currentTime: targetSecs, duration: dur });
         }
@@ -639,6 +655,7 @@ export async function setVolume(sliderValue: number): Promise<void> {
     } catch (err) {
         console.error('[Player] Volume set failed:', err);
     }
+    invoke('smtc_set_volume', { level: vol }).catch(() => { });
     broadcastState(true);
 }
 
@@ -670,6 +687,7 @@ export function toggleShuffle(): void {
         return newState;
     });
     broadcastState(true);
+    updateSmtcPlaybackState(get(isPlaying) ? 'playing' : 'paused', { shuffle: get(shuffle) });
 }
 
 export function cycleRepeat(): void {
@@ -691,6 +709,9 @@ export function cycleRepeat(): void {
         return next;
     });
     broadcastState(true);
+    const currentRepeat = get(repeat);
+    const repeatMode = currentRepeat === 'none' ? 'off' : currentRepeat;
+    updateSmtcPlaybackState(get(isPlaying) ? 'playing' : 'paused', { repeatMode });
 }
 
 export function playFromQueue(index: number): void {
