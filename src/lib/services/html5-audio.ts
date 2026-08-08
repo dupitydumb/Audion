@@ -540,6 +540,7 @@ async function playWithDash(blobUrl: string, audioElement: HTMLAudioElement, sta
 function getHtml5Audio(): HTMLAudioElement {
     if (!html5Audio && typeof window !== 'undefined') {
         html5Audio = new Audio();
+        html5Audio.disableRemotePlayback = true; // prevent WebView2 from registering a duplicate SMTC entry
         setupHtml5AudioListeners(html5Audio);
     }
     return html5Audio!;
@@ -574,6 +575,7 @@ function recreateHtml5AudioElement(): HTMLAudioElement {
     cleanupHtml5EqGraph();
 
     html5Audio = new Audio();
+    html5Audio.disableRemotePlayback = true; // prevent WebView2 from registering a duplicate SMTC entry
     setupHtml5AudioListeners(html5Audio);
     return html5Audio;
 }

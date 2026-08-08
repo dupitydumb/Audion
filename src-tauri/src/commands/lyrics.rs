@@ -6,7 +6,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, State};
+use crate::db::{queries, Database};
 
 // ---------------------------------------------------------------------------
 // Path helpers
@@ -257,6 +258,103 @@ pub fn get_cached_sources(
 pub struct CachedSourceInfo {
     pub source_id: String,
     pub format:    String,
+}
+
+// ======================================================
+// bulk delete by token (Settings => Lyrics)
+// =======================================================
+
+/// does filename belong to the given token?
+/// expected shapes: 
+/// <id>.<ext> (user-imported file, no source segment)
+/// <id>.<source>.<ext> (auto fetched, one segment per source)
+/// token == all matches any recognised lyrics file regardless of source
+/// purely structural => never checks against a list of known source ids, so new sources added later need no maintainenence
+fn filename_matches_token(filename: &str, token: &str) -> bool {
+    // match from the right
+    let mut rsplit = filename.rsplitn(3, '.');
+    let ext = match rsplit.next() {
+        Some(e) => e,
+        None => return false,
+    };
+    if !KNOWN_FORMATS.contains(&ext) {
+        return false;
+    }
+    let middle = match rsplit.next() {
+        Some(m) => m,
+        None => return false,
+    };
+    // if there's nothing left before middle, then middle is the stem
+    // (no source segment) => user-imported file
+    if rsplit.next().is_none() {
+        token == "all" || token == "user"
+    } else {
+        token == "all" || middle.to_lowercase() == token
+    }
+}
+
+/// delete every cached lyrics file matching token, across the entire library 
+/// sidecar files beside each local music file, fetched directly from the db
+/// and the shared hashed cache dir (used for stream/URL tracks, which have no folder of their own to keep a sidecar file in)
+/// token is matched against the source-id segment of each lyrics filename
+/// user matches imported files (no source segment)
+/// all matches every lyrics file regardless of source
+/// matching is filename pattern based only
+/// returns the number of files deleted
+#[tauri::command]
+pub fn delete_lyrics_by_token(
+    app: AppHandle,
+    db: State<'_, Database>,
+    token: String,
+) -> Result<u32, String> {
+    let token = token.trim().to_lowercase();
+    if token.is_empty() {
+        return Err("Empty token".to_string());
+    }
+
+    let music_paths: Vec<String> = {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        queries::get_all_track_paths(&conn).map_err(|e| e.to_string())?
+    };
+
+    let mut deleted: u32 = 0;
+
+    // shared hashed cache dir (stream/URL tracks) ==========================================
+    let cache_dir = app_lyrics_dir(&app);
+    if let Ok(entries) = fs::read_dir(&cache_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() { continue; }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if filename_matches_token(name, &token) {
+                if fs::remove_file(&path).is_ok() { deleted += 1; }
+            }
+        }
+    }
+
+    // sidecar files beside each local music file ===================================
+    for music_path in &music_paths {
+        let path = Path::new(music_path);
+        match fs::metadata(path) {
+            Ok(m) if m.is_file() => {}
+            _ => continue, // not a local file (stream URL) => already covered above
+        }
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else { continue };
+        let Some(parent) = path.parent() else { continue };
+        let Ok(entries) = fs::read_dir(parent) else { continue };
+        let prefix = format!("{}.", stem);
+        for entry in entries.flatten() {
+            let epath = entry.path();
+            if !epath.is_file() { continue; }
+            let Some(name) = epath.file_name().and_then(|n| n.to_str()) else { continue };
+            if !name.starts_with(&prefix) { continue; }
+            if filename_matches_token(name, &token) {
+                if fs::remove_file(&epath).is_ok() { deleted += 1; }
+            }
+        }
+    }
+
+    Ok(deleted)
 }
 
 // ---------------------------------------------------------------------------

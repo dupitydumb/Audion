@@ -5,9 +5,6 @@
     getAlbumArtSrc,
     getTrackCoverSrc,
     getAlbumCoverSrc,
-    addTrackToPlaylist,
-    removeTrackFromPlaylist,
-    deleteTrack,
     reorderPlaylistTracks,
   } from "$lib/api/tauri";
   import {
@@ -22,28 +19,20 @@
     albums,
     playlists,
     loadPlaylists,
-    loadLibrary,
     getTrackAlbumCover,
     loadMoreTracks,
   } from "$lib/stores/library";
   import { pluginStore } from "$lib/stores/plugin-store";
-  import {
-
-    canDownload,
-    downloadTrack,
-    needsDownloadLocation,
-  } from "$lib/services/downloadService";
   import { addToast } from "$lib/stores/toast";
   import { isOnline } from "$lib/stores/network";
   import { onDestroy, onMount } from "svelte";
   import { multiSelect } from "$lib/stores/multiselect";
   import { isMobile } from "$lib/stores/mobile";
-  import { confirm, prompt } from "$lib/stores/dialogs";
   import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
-  import { setCustomArtwork } from "$lib/stores/customArtwork";
   import MetadataModal from "$lib/components/MetadataModal.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
   import { _, locale } from "svelte-i18n";
+  import { buildTrackContextMenu, isTrackUnavailable } from "$lib/menus/contextMenus";
   import TrackListHeader from "./TrackListHeader.svelte";
   import TrackListRow from "./TrackListRow.svelte";
 
@@ -99,30 +88,15 @@
         ? "playlist"
         : "library";
 
-  // 3: Memoize availability check results
+  // 3: Memoize availability check results via local cache wrapping the imported helper
+  // cache is invalidated below when runtime or network state changes
   const availabilityCache = new Map<number, boolean>();
 
-  function isTrackUnavailable(track: Track): boolean {
-    // Check cache first
-    if (availabilityCache.has(track.id)) {
-      return availabilityCache.get(track.id)!;
-    }
-
-    let unavailable = false;
-
-    // Local tracks and server-synced tracks are always available
-    if (!track.source_type || track.source_type === "local" || track.source_type === "server") {
-      unavailable = false;
-    } else if (track.local_src) {
-      unavailable = false;
-    } else {
-      // Streaming track: only unavailable if NO plugin can play it
-      const runtime = pluginStore.getRuntime();
-      unavailable = !runtime || !runtime.streamResolvers.has(track.source_type);
-    }
-
-    availabilityCache.set(track.id, unavailable);
-    return unavailable;
+  function getCachedUnavailable(track: Track): boolean {
+    if (availabilityCache.has(track.id)) return availabilityCache.get(track.id)!;
+    const result = isTrackUnavailable(track);
+    availabilityCache.set(track.id, result);
+    return result;
   }
 
   // Clear availability cache when dependencies change (including plugin store)
@@ -291,7 +265,7 @@
       return {
         track,
         albumArt: getTrackAlbumArt(track),
-        unavailable: isTrackUnavailable(track),
+        unavailable: getCachedUnavailable(track),
       };
     },
   ) as TrackWithMetadata[];
@@ -435,7 +409,7 @@
     if (trackIndex === undefined) return;
 
     const track = sortedTracks[trackIndex];
-    if (!track || isTrackUnavailable(track)) return;
+    if (!track || getCachedUnavailable(track)) return;
 
     // Use unified queueTracks if available, otherwise fallback to local sortedTracks
     if (queueTracks) {
@@ -460,7 +434,7 @@
     if (trackIndex === undefined) return;
 
     const track = sortedTracks[trackIndex];
-    if (!track || isTrackUnavailable(track)) return;
+    if (!track || getCachedUnavailable(track)) return;
 
     // Use unified queueTracks if available
     if (queueTracks) {
@@ -488,190 +462,26 @@
     const track = sortedTracks[trackIndex];
     if (!track) return;
 
-    const playlistItems = $playlists.map((playlist) => ({
-      label: playlist.name,
-      action: async () => {
-        try {
-          await addTrackToPlaylist(playlist.id, track.id);
-        } catch (error) {
-          console.error("Failed to add track to playlist:", error);
-        }
-      },
-    }));
-
-    const isUnavailable = isTrackUnavailable(track);
-
-    const menuItems: any[] = [
-      {
-        label: $_('contextMenu.play'),
-        action: () => {
-          if (trackIndex !== undefined) {
-            // Use unified queueTracks if available
-            if (queueTracks) {
-              const globalIndex = queueTracks.findIndex(
-                (t) => t.id === trackId,
-              );
-              if (globalIndex !== -1) {
-                playTracks(queueTracks, globalIndex, playbackContext);
-                return;
-              }
-            }
-            playTracks(sortedTracks, trackIndex, playbackContext);
-          }
-        },
-        disabled: isUnavailable,
-      },
-      { type: "separator" },
-      {
-        label: $_('contextMenu.addToQueue'),
-        action: () => addToQueue([track]),
-        disabled: isUnavailable,
-      },
-      { type: "separator" },
-      {
-        label: $_('contextMenu.download'),
-        action: async () => {
-          if (needsDownloadLocation()) {
-            addToast(
-              "Please configure a download location in Settings first",
-              "error",
-            );
-            return;
-          }
-
-          addToast(`Downloading "${track.title}"...`, "info");
-          try {
-            await downloadTrack(track);
-            addToast(`Downloaded "${track.title}"`, "success");
-          } catch (error) {
-            console.error("Failed to download track:", error);
-            addToast(`Failed to download "${track.title}"`, "error");
-          }
-        },
-        disabled:
-          !canDownload(track) ||
-          (isUnavailable && !isTidalAvailable && !track.local_src),
-      },
-      { type: "separator" },
-      {
-        label: $_('contextMenu.addToPlaylist'),
-        submenu:
-          playlistItems.length > 0
-            ? playlistItems
-            : [
-                {
-                  label: $_('contextMenu.noPlaylists'),
-                  action: () => {},
-                  disabled: true,
-                },
-              ],
-      },
-      { type: "separator" },
-      {
-        label: $_('contextMenu.changeArtwork'),
-        submenu: [
-          {
-            label: $_('contextMenu.fromFile'),
-            action: () => {
-              const input = document.createElement("input");
-              input.type = "file";
-              input.accept = "image/*";
-              input.onchange = (e) => {
-                const file = (e.target as HTMLInputElement).files?.[0];
-                if (file) {
-                  const reader = new FileReader();
-                  reader.onload = () => {
-                    const result = reader.result as string;
-                    setCustomArtwork("track", track.id, result);
-                    addToast("Artwork updated", "success");
-                    // Refresh local cache for reactivity
-                    trackAlbumArtCache.delete(track.id);
-                  };
-                  reader.readAsDataURL(file);
-                }
-              };
-              input.click();
-            },
-          },
-          {
-            label: $_('contextMenu.fromUrl'),
-            action: async () => {
-              const url = await prompt("Enter image URL:", {
-                title: "Change Artwork",
-                placeholder: "https://example.com/image.jpg",
-              });
-              if (url && url.trim()) {
-                setCustomArtwork("track", track.id, url.trim());
-                addToast("Artwork updated", "success");
-                trackAlbumArtCache.delete(track.id);
-              }
-            },
-          },
-        ],
-      },
-    ];
-
-    menuItems.push(
-      { type: "separator" },
-      {
-        label: $_('contextMenu.showMoreInfo'),
-        action: () => {
-          metadataModalTrack = track;
-        },
-      },
-    );
-
-    if (playlistId) {
-      menuItems.push({
-        label: $_('contextMenu.removeFromPlaylist'),
-        action: async () => {
-          try {
-            await removeTrackFromPlaylist(playlistId, track.id);
-            tracks = tracks.filter((t) => t.id !== track.id);
-          } catch (error) {
-            console.error("Failed to remove track from playlist:", error);
-          }
-        },
-      });
-    }
-
-    menuItems.push(
-      { type: "separator" },
-      {
-        label: $_('contextMenu.deleteFromLibrary'),
-        danger: true,
-        action: async () => {
-          const confirmed = await confirm(
-            `Are you sure you want to delete "${track.title}" from your library? This will also remove the file from your computer.`,
-            {
-              title: "Delete Track",
-              confirmLabel: "Delete",
-              danger: true,
-            },
-          );
-
-          if (!confirmed) return;
-
-          try {
-            await deleteTrack(track.id);
-            // Clear from cache
-            trackAlbumArtCache.delete(track.id);
-            availabilityCache.delete(track.id);
-            await loadLibrary();
-            // Also remove from local tracks array for immediate UI feedback
-            tracks = tracks.filter((t) => t.id !== track.id);
-          } catch (error) {
-            console.error("Failed to delete track:", error);
-          }
-        },
-      },
-    );
-
     contextMenu.set({
       visible: true,
       x: e.clientX,
       y: e.clientY,
-      items: menuItems,
+      items: buildTrackContextMenu({
+        track,
+        trackIndex,
+        sortedTracks,
+        isUnavailable: getCachedUnavailable(track),
+        variant: 'full',
+        playlistId,
+        queueTracks,
+        playbackContext,
+        isTidalAvailable,
+        t: $_,
+        onMetadataOpen: (t) => { metadataModalTrack = t; },
+        onArtworkCacheInvalidate: (id) => { trackAlbumArtCache.delete(id); },
+        onAvailabilityCacheInvalidate: (id) => { availabilityCache.delete(id); },
+        onTracksUpdated: (updated) => { tracks = updated; },
+      }),
     });
   }
 

@@ -148,21 +148,23 @@ export function toggleSettings() {
     isSettingsOpen.update(v => !v);
 }
 
-export interface ContextMenuItem {
-    label: string;
-    action?: () => void;
-    danger?: boolean;
-    icon?: string;
-    disabled?: boolean;
-    submenu?: ContextMenuItem[];
-    type?: 'item' | 'separator';
-}
+export type ContextMenuItem =
+    | {
+        type?: 'item';
+        label: string;
+        action?: () => void;
+        danger?: boolean;
+        icon?: string;
+        disabled?: boolean;
+        submenu?: ContextMenuItem[];
+      }
+    | { type: 'separator' };
 
 export interface ContextMenu {
     visible: boolean;
     x: number;
     y: number;
-    items: (ContextMenuItem | { type: 'separator' })[];
+    items: ContextMenuItem[];
 }
 
 export const contextMenu = writable<ContextMenu>({

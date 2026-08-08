@@ -13,15 +13,9 @@
   import MediaCard from "./MediaCard.svelte";
   import { onDestroy } from "svelte";
   import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
-  import { confirm, prompt } from "$lib/stores/dialogs";
-  import {
-    pinnedItems,
-    pinItem,
-    unpinItem,
-    isPinned,
-  } from "$lib/stores/pinned";
-  import { setCustomArtwork } from "$lib/stores/customArtwork";
-  import { addToast } from "$lib/stores/toast";
+  import { pinnedItems, isPinned } from "$lib/stores/pinned";
+  import { buildArtistContextMenu } from "$lib/menus/contextMenus";
+  import { _ } from "svelte-i18n";
 
   let currentScrollTop = getScroll("artists");
 
@@ -126,74 +120,16 @@
   }
 
   function handleArtistContextMenu(artist: Artist, e: MouseEvent) {
-    const pinned = isPinned("artist", artist.name, $pinnedItems);
     contextMenu.set({
       visible: true,
       x: e.clientX,
       y: e.clientY,
-      items: [
-        {
-          label: "Play",
-          action: () => playArtist(artist),
-        },
-        {
-          label: pinned ? "Unpin from Top" : "Pin to Top",
-          icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2L4.5 9L9 9L9 22L15 22L15 9L19.5 9L12 2Z"/></svg>`,
-          action: () => {
-            if (pinned) {
-              unpinItem("artist", artist.name);
-            } else {
-              pinItem("artist", artist.name);
-            }
-          },
-        },
-        { type: "separator" },
-        {
-          label: "Change Artwork",
-          submenu: [
-            {
-              label: "From File",
-              action: () => {
-                const input = document.createElement("input");
-                input.type = "file";
-                input.accept = "image/*";
-                input.onchange = (e) => {
-                  const file = (e.target as HTMLInputElement).files?.[0];
-                  if (file) {
-                    const reader = new FileReader();
-                    reader.onload = () => {
-                      const result = reader.result as string;
-                      setCustomArtwork("artist", artist.name, result);
-                      addToast("Artist artwork updated", "success");
-                    };
-                    reader.readAsDataURL(file);
-                  }
-                };
-                input.click();
-              },
-            },
-            {
-              label: "From URL",
-              action: async () => {
-                const url = await prompt("Enter image URL:", {
-                  title: "Change Artwork",
-                  placeholder: "https://example.com/image.jpg",
-                });
-                if (url && url.trim()) {
-                  setCustomArtwork("artist", artist.name, url.trim());
-                  addToast("Artist artwork updated", "success");
-                }
-              },
-            },
-          ],
-        },
-        { type: "separator" },
-        {
-          label: "Add to Playlist",
-          // TODO: implement playlist logic
-          action: () => {},
-        },
-      ],
+      items: buildArtistContextMenu({
+        artist,
+        showPlay: true,
+        onPlay: playArtist,
+        t: $_,
+      }),
     });
   }
 

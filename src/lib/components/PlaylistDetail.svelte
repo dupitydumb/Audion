@@ -5,16 +5,14 @@
         getPlaylistTracks,
         deletePlaylist,
         renamePlaylist,
+        exportPlaylistZip,
         formatDuration,
     } from "$lib/api/tauri";
-    import { confirm, prompt } from "$lib/stores/dialogs";
-    import {
-        pinnedItems,
-        pinItem,
-        unpinItem,
-        isPinned,
-    } from "$lib/stores/pinned";
+    import { confirm } from "$lib/stores/dialogs";
+    import { pinnedItems } from "$lib/stores/pinned";
     import { contextMenu } from "$lib/stores/ui";
+    import { buildPlaylistContextMenu } from "$lib/menus/contextMenus";
+    import { _ } from "svelte-i18n";
     import { playTracks, addToQueue } from "$lib/stores/player";
     import { goToPlaylists, goToTracksMultiSelect } from "$lib/stores/view";
     import { loadPlaylists, playlists, playlistPendingTracks, drainPendingTracks } from "$lib/stores/library";
@@ -278,71 +276,22 @@
     function handleHeaderContextMenu(e: MouseEvent) {
         e.preventDefault();
         if (!playlist) return;
-        const pinned = isPinned("playlist", playlist.id, $pinnedItems);
-
         contextMenu.set({
             visible: true,
             x: e.clientX,
             y: e.clientY,
-            items: [
-                {
-                    label: "Play",
-                    action: handlePlayAll,
-                    disabled: tracks.length === 0,
-                },
-                {
-                    label: "Add to Queue",
-                    action: () => {
-                        if (tracks.length > 0) addToQueue(tracks);
-                    },
-                    disabled: tracks.length === 0,
-                },
-                { type: "separator" },
-                {
-                    label: pinned ? "Unpin from Top" : "Pin to Top",
-                    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2L4.5 9L9 9L9 22L15 22L15 9L19.5 9L12 2Z"/></svg>`,
-                    action: () => {
-                        if (pinned) {
-                            unpinItem("playlist", playlist!.id);
-                        } else {
-                            pinItem("playlist", playlist!.id);
-                        }
-                    },
-                },
-                { type: "separator" },
-                {
-                    label: "Rename",
-                    action: startEditing,
-                },
-                {
-                    label: "Change Cover",
-                    submenu: [
-                        {
-                            label: "From File",
-                            action: () => coverInput?.click(),
-                        },
-                        {
-                            label: "From URL",
-                            action: async () => {
-                                const url = await prompt("Enter image URL:", {
-                                    title: "Change Cover",
-                                    placeholder:
-                                        "https://example.com/image.jpg",
-                                });
-                                if (url && url.trim()) {
-                                    setPlaylistCover(playlist!.id, url.trim());
-                                }
-                            },
-                        },
-                    ],
-                },
-                { type: "separator" },
-                {
-                    label: "Delete Playlist",
-                    danger: true,
-                    action: handleDelete,
-                },
-            ],
+            items: buildPlaylistContextMenu({
+                playlist,
+                tracks,
+                variant: "detail",
+                onPlay: handlePlayAll,
+                onAddToQueue: () => { if (tracks.length > 0) addToQueue(tracks); },
+                onRename: startEditing,
+                onDelete: handleDelete,
+                onExportZip: handleExportZip,
+                coverInput,
+                t: $_,
+            }),
         });
     }
 
@@ -352,6 +301,49 @@
 
     // Reload when playlistId changes
     $: playlistId, loadPlaylistData();
+
+    let menuOpen = false;
+    let menuTriggerEl: HTMLButtonElement;
+
+    function toggleMenu() {
+        menuOpen = !menuOpen;
+    }
+
+    function closeMenu() {
+        if (!menuOpen) return;
+        menuOpen = false;
+        // return focus to the trigger so keyboard users don't lose their place
+        menuTriggerEl?.focus();
+    }
+
+    function handleMenuKeydown(e: KeyboardEvent) {
+        if (!menuOpen) return;
+        if (e.key === 'Escape') {
+            e.stopPropagation();
+            closeMenu();
+        }
+    }
+
+    async function handleExportZip() {
+        closeMenu();
+        if (!playlist) return;
+
+        try {
+            addToast("Exporting…", "info");
+
+            const result = await exportPlaylistZip(playlistId, playlist.name);
+            if (!result) return; // user cancelled
+
+            const skipped_count = result.skipped_count;
+            const exported = result.track_count - skipped_count;
+            const skippedMsg = skipped_count > 0
+                ? ` (${skipped_count} streaming-only track${skipped_count === 1 ? "" : "s"} skipped)`
+                : "";
+            addToast(`Exported ${exported} track${exported === 1 ? "" : "s"}${skippedMsg}`, "success");
+        } catch (e) {
+            addToast(`Export failed: ${e}`, "error");
+        }
+    }
 </script>
 
 <div class="playlist-detail">
@@ -367,18 +359,62 @@
             role="region"
             aria-label="Playlist header"
         >
-            <button class="back-btn" on:click={goToPlaylists} title="Close">
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="20"
-                    height="20"
-                >
-                    <path
-                        d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                    />
-                </svg>
-            </button>
+            <div class="header-actions">
+                <div class="menu-wrapper" role="presentation" on:keydown={handleMenuKeydown}>
+                    <button
+                        class="back-btn"
+                        on:click={toggleMenu}
+                        title="More options"
+                        bind:this={menuTriggerEl}
+                        aria-haspopup="menu"
+                        aria-expanded={menuOpen}
+                    >
+                        <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+                            <circle cx="12" cy="5" r="1.5"/>
+                            <circle cx="12" cy="12" r="1.5"/>
+                            <circle cx="12" cy="19" r="1.5"/>
+                        </svg>
+                    </button>
+
+                    {#if menuOpen}
+                        <div class="menu-backdrop" role="presentation" on:click={closeMenu}></div>
+                        <div class="dropdown-menu" role="menu">
+                            <button class="dropdown-item" role="menuitem" on:click={() => { closeMenu(); startEditing(); }}>
+                                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                                    <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
+                                </svg>
+                                {$_('contextMenu.rename')}
+                            </button>
+                            <button class="dropdown-item" role="menuitem" on:click={handleExportZip}>
+                                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                                    <path d="M20 6h-2.18c.07-.44.18-.88.18-1a3 3 0 0 0-6 0c0 .12.11.56.18 1H10V4c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-8-1c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm8 15H4V8h16v12z"/>
+                                </svg>
+                                {$_('contextMenu.exportToZip')}
+                            </button>
+                            <div class="dropdown-separator"></div>
+                            <button class="dropdown-item danger" role="menuitem" on:click={() => { closeMenu(); handleDelete(); }}>
+                                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                                    <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+                                </svg>
+                                {$_('contextMenu.deletePlaylist')}
+                            </button>
+                        </div>
+                    {/if}
+                </div>
+
+                <button class="back-btn close-btn" on:click={goToPlaylists} title="Close">
+                    <svg
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        width="20"
+                        height="20"
+                    >
+                        <path
+                            d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                        />
+                    </svg>
+                </button>
+            </div>
             <div
                 class="playlist-cover"
                 on:mouseenter={() => (coverHovered = true)}
@@ -539,38 +575,6 @@
                         </button>
                     {/if}
 
-                    <button
-                        class="icon-btn"
-                        on:click={startEditing}
-                        title="Rename"
-                    >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="20"
-                            height="20"
-                        >
-                            <path
-                                d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
-                            />
-                        </svg>
-                    </button>
-                    <button
-                        class="icon-btn"
-                        on:click={handleDelete}
-                        title="Delete"
-                    >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="20"
-                            height="20"
-                        >
-                            <path
-                                d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
-                            />
-                        </svg>
-                    </button>
                 </div>
             </div>
         </header>
@@ -659,10 +663,20 @@
         position: relative;
     }
 
-    .back-btn {
+    .header-actions {
         position: absolute;
         top: var(--spacing-md);
         right: var(--spacing-md);
+        display: flex;
+        gap: var(--spacing-xs);
+        z-index: 10;
+    }
+
+    .menu-wrapper {
+        position: relative;
+    }
+
+    .back-btn {
         width: 40px;
         height: 40px;
         border-radius: var(--radius-full);
@@ -673,7 +687,6 @@
         align-items: center;
         justify-content: center;
         transition: all var(--transition-fast);
-        z-index: 10;
         border: 1px solid rgba(255, 255, 255, 0.1);
     }
 
@@ -708,6 +721,62 @@
 
     .back-btn:active {
         transform: scale(0.95);
+    }
+
+    .menu-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+    }
+
+    .dropdown-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        right: 0;
+        z-index: 30;
+        min-width: 180px;
+        background-color: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        box-shadow: var(--shadow-lg);
+        padding: var(--spacing-xs) 0;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .dropdown-item {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-sm) var(--spacing-md);
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        background: none;
+        border: none;
+        text-align: left;
+        cursor: pointer;
+        transition: background-color var(--transition-fast), color var(--transition-fast);
+        width: 100%;
+    }
+
+    .dropdown-item:hover {
+        background-color: var(--bg-elevated);
+        color: var(--text-primary);
+    }
+
+    .dropdown-item.danger {
+        color: var(--error-color, #f15e6c);
+    }
+
+    .dropdown-item.danger:hover {
+        background-color: rgba(241, 94, 108, 0.1);
+        color: var(--error-color, #f15e6c);
+    }
+
+    .dropdown-separator {
+        height: 1px;
+        background-color: var(--border-color);
+        margin: var(--spacing-xs) 0;
     }
 
     .playlist-cover {
@@ -910,7 +979,7 @@
             gap: var(--spacing-md);
         }
 
-        .back-btn {
+        .header-actions {
             top: calc(var(--safe-area-top) + var(--spacing-sm));
             right: var(--spacing-sm);
         }

@@ -83,6 +83,7 @@ export async function updateWindowsThumbarState(isPlaying: boolean): Promise<voi
 // Dynamic imports to avoid SSR issues
 let invokeFunc: typeof import('@tauri-apps/api/core').invoke | null = null;
 let openFunc: typeof import('@tauri-apps/plugin-dialog').open | null = null;
+let saveFunc: typeof import('@tauri-apps/plugin-dialog').save | null = null;
 let convertFileSrcFunc: typeof import('@tauri-apps/api/core').convertFileSrc | null = null;
 let listenFunc: typeof import('@tauri-apps/api/event').listen | null = null;
 
@@ -98,6 +99,7 @@ async function ensureTauriLoaded() {
     if (!openFunc) {
         const dialog = await import('@tauri-apps/plugin-dialog');
         openFunc = dialog.open;
+        saveFunc = dialog.save;
     }
     if (!listenFunc) {
         const event = await import('@tauri-apps/api/event');
@@ -239,8 +241,31 @@ export async function rescanMusic(): Promise<ScanResult> {
     return await invoke('rescan_music');
 }
 
+/**
+ * scan a single folder for new/updated/removed tracks
+ *  safe to call repeatedly on a folder that
+ * already has tracks in the db => existing tracks are updated
+ * emits scan-batch-ready / scan-complete events
+ */
+export async function scanFolder(folderPath: string): Promise<ScanResult> {
+    return await invoke('scan_folder', { folderPath });
+}
+
+/**
+ * remove a registered music folder and delete all tracks under it
+ * deletes from db , local files untouched
+ * returns the number of tracks removed
+ */
+export async function removeFolder(path: string): Promise<number> {
+    return await invoke('remove_folder', { path });
+}
+
 export async function getDefaultMusicDirs(): Promise<string[]> {
     return await invoke('get_default_music_dirs');
+}
+
+export async function getMusicFolders(): Promise<string[]> {
+    return await invoke('get_music_folders');
 }
 
 export async function getLibrary(): Promise<Library> {
@@ -466,6 +491,12 @@ export async function getPlaylistTracks(playlistId: number): Promise<Track[]> {
     return await invoke('get_playlist_tracks', { playlistId });
 }
 
+/** batched track counts for the given playlist ids
+ * playlists with zero tracks are absent from the returned map */
+export async function getPlaylistTrackCounts(playlistIds: number[]): Promise<Record<number, number>> {
+    return await invoke('get_playlist_track_counts', { playlistIds });
+}
+
 export async function addTrackToPlaylist(playlistId: number, trackId: number): Promise<void> {
     return await invoke('add_track_to_playlist', { playlistId, trackId });
 }
@@ -484,6 +515,81 @@ export async function renamePlaylist(playlistId: number, newName: string): Promi
 
 export async function reorderPlaylistTracks(playlistId: number, fromIndex: number, toIndex: number): Promise<void> {
     return await invoke('reorder_playlist_tracks', { playlistId, fromIndex, toIndex });
+}
+
+export interface ExportPlaylistResult {
+    track_count: number;
+    skipped_count: number;
+}
+
+/**
+ * shared picker + invoke logic for ZIP exports
+ *
+ * @param defaultName  suggested filename shown in the save dialog (e.g. My Playlist.zip)
+ * @param title        desktop dialog title
+ * @param cmd          tauri command to invoke (e.g. export_playlist_zip)
+ * @param cmdArgs      extra args forwarded to the command alongside destPath
+ */
+async function exportZip(
+    defaultName: string,
+    title: string,
+    cmd: string,
+    cmdArgs: Record<string, unknown> = {},
+): Promise<ExportPlaylistResult | null> {
+    if (isAndroid()) {
+        // 1: show picker first => user chooses destination before compression starts
+        const uri = await saveFile({
+            platform: 'android',
+            defaultPath: defaultName,
+            mimeType: 'application/zip',
+        });
+        if (!uri) return null;
+
+        // 2: compress into the app cache dir
+        const tempPath = await invoke<string>('get_export_temp_path', { name: defaultName });
+        const result = await invoke<ExportPlaylistResult>(cmd, { ...cmdArgs, destPath: tempPath });
+
+        // 3: copy finished zip to the user-picked URI (kotlin cleans up tempPath either way)
+        const ok = await commitAndroidSave(tempPath, uri);
+        if (!ok) {
+            // distinct from user cancelled: the compression succeeded but
+            // the final copy to the picked URI failed, so surface this as a
+            // real error
+            throw new Error('Failed to copy exported file to the selected location');
+        }
+
+        return result;
+    }
+
+    // desktop: picker returns the real path, write directly there
+    const destPath = await saveFile({
+        platform: 'desktop',
+        title,
+        defaultPath: defaultName,
+        filters: [{ name: 'ZIP Archive', extensions: ['zip'] }],
+    });
+    if (!destPath) return null;
+    return await invoke(cmd, { ...cmdArgs, destPath });
+}
+
+export async function exportPlaylistZip(
+    playlistId: number,
+    playlistName = 'playlist',
+): Promise<ExportPlaylistResult | null> {
+    return exportZip(
+        `${playlistName}.zip`,
+        'Export playlist as ZIP',
+        'export_playlist_zip',
+        { playlistId },
+    );
+}
+
+export async function exportLikedSongsZip(): Promise<ExportPlaylistResult | null> {
+    return exportZip(
+        'Liked Songs.zip',
+        'Export Liked Songs as ZIP',
+        'export_liked_songs_zip',
+    );
 }
 
 export async function beginFolderImport(folderPath: string): Promise<number> {
@@ -613,6 +719,128 @@ async function _pickFolderAndroid(): Promise<string | null> {
 
 export async function pickFolder(): Promise<string | null> {
     return isAndroid() ? _pickFolderAndroid() : _pickFolderDesktop();
+}
+
+// save file dialog
+
+/**
+ * platform discriminated save-file options
+ *
+ * desktop: the OS picker returns a real filesystem path the caller writes to directly
+ *
+ * android: SAF does not expose a writable path.saveFile only shows the picker and
+ *   returns a content:// URI representing the user's chosen destination. caller
+ *   must then do the actual work (e.g. compress the zip) and call `ommitAndroidSave
+ *   to copy the finished file into that URI
+ *
+ * platform discriminant is required so TypeScript can enforce that
+ * mimeType is always provided on android at the call site
+ */
+export type SaveFileOptions =
+    | {
+          platform: 'desktop';
+          title?: string;
+          defaultPath?: string;
+          filters?: { name: string; extensions: string[] }[];
+      }
+    | {
+          platform: 'android';
+          /** suggested filename shown in the SAF picker */
+          defaultPath?: string;
+          /** MIME type shown to the SAF picker */
+          mimeType: string;
+      };
+
+async function _saveFileDesktop(
+    options: Extract<SaveFileOptions, { platform: 'desktop' }>,
+): Promise<string | null> {
+    await ensureTauriLoaded();
+    const selected = await saveFunc!({
+        title: options.title,
+        defaultPath: options.defaultPath,
+        filters: options.filters,
+    });
+    return selected ?? null;
+}
+
+// serialize all Android native save/commit calls through
+// this queue so only one round-trip to native code is ever in flight
+let _androidSaveQueue: Promise<unknown> = Promise.resolve();
+function _queueAndroidNativeCall<T>(fn: () => Promise<T>): Promise<T> {
+    const run = () => fn();
+    const result = _androidSaveQueue.then(run, run);
+    _androidSaveQueue = result.then(
+        () => undefined,
+        () => undefined,
+    );
+    return result;
+}
+
+function _saveFileAndroid(
+    options: Extract<SaveFileOptions, { platform: 'android' }>,
+): Promise<string | null> {
+    return _queueAndroidNativeCall(() => new Promise<string | null>((resolve) => {
+        const finish = (uri: string | null) => {
+            delete (window as any).__onAndroidFileSaved;
+            resolve(uri);
+        };
+
+        (window as any).__onAndroidFileSaved = (uri: string | null) => finish(uri);
+
+        const saver = (window as any).AndroidFileSaver;
+        if (saver?.saveFile) {
+            saver.saveFile(options.defaultPath ?? 'file', options.mimeType);
+            return;
+        }
+
+        // native bridge unavailable
+        delete (window as any).__onAndroidFileSaved;
+        resolve(null);
+    }));
+}
+
+/**
+ * show the platform save-file picker and return the destination
+ *
+ *  desktop: returns the chosen filesystem path.write your file there directly
+ *  android: returns a content:// URI. show the picker first, do
+ *   (compression, rendering, etc) then call `commitAndroidSave(tempPath, uri)
+ *   to copy the finished file in
+ *
+ * returns null if the user cancelled
+ */
+export async function saveFile(options: SaveFileOptions): Promise<string | null> {
+    if (options.platform === 'android') {
+        return _saveFileAndroid(options);
+    }
+    return _saveFileDesktop(options);
+}
+
+/**
+ * android only => copy a finished temp file into the content:// URI returned by
+ * saveFile => call this after work is done (compression, rendering, etc)
+ * kotlin cleans up tempPath regardless of success or failure
+ *
+ * returns true on success, false if the copy failed
+ */
+export function commitAndroidSave(tempPath: string, uri: string): Promise<boolean> {
+    return _queueAndroidNativeCall(() => new Promise<boolean>((resolve) => {
+        const finish = (ok: boolean) => {
+            delete (window as any).__onAndroidFileCopied;
+            resolve(ok);
+        };
+
+        (window as any).__onAndroidFileCopied = (ok: boolean) => finish(ok);
+
+        const saver = (window as any).AndroidFileSaver;
+        if (saver?.copyTempToUri) {
+            saver.copyTempToUri(tempPath, uri);
+            return;
+        }
+
+        delete (window as any).__onAndroidFileCopied;
+        resolve(false);
+    }));
 }
 
 // Ensure the correct path for downloaded files
@@ -1137,4 +1365,25 @@ export async function audioResolvePath(path: string, trackId?: number | null): P
  */
 export async function audioGetStreamUrl(path: string, trackId?: number | null): Promise<string> {
     return await invoke('audio_get_stream_url', { path, trackId });
+}
+
+// ====================================================================
+// autostart (launch on startup) => desktop only
+// ====================================================================
+
+/**
+ * whether the app is currently registered to launch on system startup.
+ * always resolves to false on android
+ */
+export async function getAutostartEnabled(): Promise<boolean> {
+    if (isAndroid()) return false;
+    return await invoke('get_autostart_enabled');
+}
+
+/**
+ * enable or disable launch on system startup(desktop only))
+ */
+export async function setAutostartEnabled(enabled: boolean): Promise<void> {
+    if (isAndroid()) return;
+    return await invoke('set_autostart_enabled', { enabled });
 }

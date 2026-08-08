@@ -1,7 +1,7 @@
 // Library store - manages music library state
 import { writable, derived, get } from 'svelte/store';
 import type { Track, Album, Artist, Playlist, ScanBatchEvent } from '$lib/api/tauri';
-import { getLibrary, getPlaylists, getAlbumCoverSrc, getAlbumArtSrc, getTracksPaginated, getAlbumsPaginated, searchLibrary, convertFileSrc } from '$lib/api/tauri';
+import { getLibrary, getPlaylists, getPlaylistTracks, getPlaylistTrackCounts, getAlbumCoverSrc, getAlbumArtSrc, getTracksPaginated, getAlbumsPaginated, searchLibrary, convertFileSrc } from '$lib/api/tauri';
 import { customArtworks, getCustomArtworkSync } from './customArtwork';
 import { playlistCovers, getPlaylistCoverSync } from './playlistCovers';
 
@@ -208,6 +208,75 @@ export const artists = writable<Artist[]>([]);
 
 // Playlist store
 export const playlists = writable<Playlist[]>([]);
+
+// track count per playlist, keyed by playlist id
+// shared source every component (Sidebar, PlaylistView grid etc)
+// populated in bulk by loadPlaylists 
+// mutations that add/remove/move a single track should call adjustPlaylistTrackCount
+// directly instead of re fetching everything
+export const playlistTrackCounts = writable<Record<number, number>>({});
+
+/**
+ * fetch track counts for every playlist currently in the playlists store
+ * called once from loadPlaylists
+ * don't call after every single track mutation
+ * use adjustPlaylistTrackCount for that instead
+ *
+ * skipped entirely when the set of playlist ids
+ * hasn't changed since the last successful fetch (e.g. a rename or a
+ * playlist-metadata-only reload)
+ * any real track mutation goes through adjustPlaylistTrackCount instead
+ *
+ * generation token guards against a slower call finishing after a
+ * newer one (or after adjustPlaylistTrackCount/setPlaylistTrackCount
+ * landed while this was in flight) and clobbering fresher state
+ */
+let _trackCountsGeneration = 0;
+let _lastCountedPlaylistIds = '';
+async function loadPlaylistTrackCounts(playlistList: Playlist[]): Promise<void> {
+    const ids = playlistList.map(p => p.id).sort((a, b) => a - b);
+    const idsKey = ids.join(',');
+    if (idsKey === _lastCountedPlaylistIds) return;
+
+    const generation = ++_trackCountsGeneration;
+    let fetched: Record<number, number>;
+    try {
+        fetched = await getPlaylistTrackCounts(ids);
+    } catch (error) {
+        console.error('[Library] Failed to get playlist track counts:', error);
+        return;
+    }
+    // a newer call started (or finished) while we were fetching =>
+    // don't stomp on more recent state with this stale result
+    if (generation !== _trackCountsGeneration) return;
+
+    // playlists absent from the response have zero tracks
+    const counts: Record<number, number> = {};
+    for (const id of ids) counts[id] = fetched[id] ?? 0;
+
+    _lastCountedPlaylistIds = idsKey;
+    playlistTrackCounts.set(counts);
+}
+
+/**
+ * adjust a playlist's track count in memory, no refetch
+ * call this after a backend mutation succeeds (add/remove/move a track)
+ * so every subscriber (sidebar etc) updates instantly
+ */
+export function adjustPlaylistTrackCount(playlistId: number, delta: number): void {
+    playlistTrackCounts.update(counts => ({
+        ...counts,
+        [playlistId]: Math.max(0, (counts[playlistId] ?? 0) + delta),
+    }));
+}
+
+/**
+ * set a playlist's track count to an exact value in memory, no refetch
+ * use when a new playlist is created or a bulk operation lands
+ */
+export function setPlaylistTrackCount(playlistId: number, count: number): void {
+    playlistTrackCounts.update(counts => ({ ...counts, [playlistId]: count }));
+}
 
 // Map of playlistId . tracks pending UI insertion after a drag-drop.
 // arrive before the reactive in PlaylistDetail drains them.
@@ -774,6 +843,9 @@ export async function loadPlaylists(): Promise<void> {
     try {
         const playlistList = await getPlaylists();
         playlists.set(playlistList);
+        // fire and forget 
+        // counts arrive slightly after the list itself
+        loadPlaylistTrackCounts(playlistList);
     } catch (error) {
         console.error('Failed to load playlists:', error);
     }
@@ -790,6 +862,8 @@ export async function clearLibrary(): Promise<void> {
     albums.set([]);
     artists.set([]);
     playlists.set([]);
+    playlistTrackCounts.set({});
+    _lastCountedPlaylistIds = '';
     lastError.set(null);
 
     // Revoke all blob URLs before clearing caches

@@ -7,6 +7,17 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
+
+/// true if path is folder itself or lives under it, matching on path separators
+fn path_is_within(path: &str, folder: &str) -> bool {
+    let folder = folder.trim_end_matches(['/', '\\']);
+    if path == folder {
+        return true;
+    }
+    path.strip_prefix(folder)
+        .map(|rest| rest.starts_with('/') || rest.starts_with('\\'))
+        .unwrap_or(false)
+}
 use tauri::Emitter;
 use tauri::State;
 
@@ -842,13 +853,13 @@ pub async fn rescan_music(
 
     for (playlist_id, folder_path) in &folder_playlists {
         let already_covered = folders.iter().any(|f| {
-            folder_path.starts_with(f.as_str())
+            path_is_within(folder_path, f.as_str())
         });
     
         if already_covered {
             // Reuse files already collected from the music folder scan above 
             // no need to walk the filesystem again.
-            for file_path in all_files.iter().filter(|p| p.starts_with(folder_path.as_str())) {
+            for file_path in all_files.iter().filter(|p| path_is_within(p, folder_path.as_str())) {
                 file_playlist_map
                     .entry(file_path.clone())
                     .or_default()
@@ -891,6 +902,144 @@ pub async fn rescan_music(
     });
  
     Ok(result)
+}
+
+/// scan a single folder for new/updated/removed tracks, without touching rest of the library
+/// safe to call on a folder that already has tracks in the db:
+/// existing tracks are matched by path and updated in
+/// place (via insert_or_update_track's ON CONFLICT(path) handling)
+/// only files that vanished from this folder are cleaned up
+/// tracks belonging to other folders are left untouched
+#[tauri::command]
+pub async fn scan_folder(
+    window: tauri::Window,
+    folder_path: String,
+    db: State<'_, Database>,
+) -> Result<ScanResult, String> {
+    // validate path exists and is a directory
+    let path_buf = std::path::PathBuf::from(&folder_path);
+
+    if !path_buf.exists() {
+        return Err("Invalid path: Does not exist".to_string());
+    }
+
+    if !path_buf.is_dir() {
+        return Err("Invalid path: Not a directory".to_string());
+    }
+
+    // canonicalize so it matches however paths are stored elsewhere
+    let canonical_path = path_buf
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve path: {}", e))?;
+    let folder_str = canonical_path.to_string_lossy().to_string();
+
+    // 1: cleanup => but scoped to only this folder
+    let (folder_playlists, tracks_deleted) = {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+        let tracks_deleted =
+            queries::cleanup_deleted_tracks(&conn, std::slice::from_ref(&folder_str))
+                .map_err(|e| format!("Failed to cleanup deleted tracks: {}", e))?;
+
+        let _ = queries::cleanup_empty_albums(&conn);
+
+        // only keep folder playlists that live under (or are) this folder
+        let folder_playlists = queries::get_folder_playlists(&conn)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|(_, p)| path_is_within(p, folder_str.as_str()))
+            .collect::<Vec<_>>();
+
+        (folder_playlists, tracks_deleted)
+    }; // conn dropped here
+
+    // 2: directory walk => only this folder, not the whole library
+    let scan_result = scan_directory(&folder_str);
+    let mut all_files = scan_result.audio_files;
+    let mut scan_errors = scan_result.errors;
+
+    // map any nested folder playlists onto the files we just found
+    let mut file_playlist_map: std::collections::HashMap<String, Vec<i64>> =
+        std::collections::HashMap::new();
+
+    for (playlist_id, folder_playlist_path) in &folder_playlists {
+        if folder_playlist_path == &folder_str {
+            // playlist is this folder => every file belongs to it
+            for file_path in &all_files {
+                file_playlist_map
+                    .entry(file_path.clone())
+                    .or_default()
+                    .push(*playlist_id);
+            }
+        } else {
+            for file_path in all_files
+                .iter()
+                .filter(|p| path_is_within(p, folder_playlist_path.as_str()))
+            {
+                file_playlist_map
+                    .entry(file_path.clone())
+                    .or_default()
+                    .push(*playlist_id);
+            }
+        }
+    }
+
+    // dedup in case scan_directory ever returns overlapping paths
+    all_files.sort();
+    all_files.dedup();
+    scan_errors.dedup();
+
+    // 3: parallel metadata extraction + db import
+    // insert_or_update_track upserts on the unique path column
+    // so files already in the DB are safely updated rather than duplicated
+    let db_conn = Arc::clone(&db.conn);
+    let result = run_scan_and_import(
+        &window,
+        db_conn,
+        all_files,
+        file_playlist_map,
+        tracks_deleted,
+        scan_errors,
+        vec![folder_str], // only this folder's last_scanned gets updated
+        ScanSource::Rescan,
+    )
+    .await?;
+
+    // background orphan cover art cleanup (non blocking)
+    let db_conn_cleanup = Arc::clone(&db.conn);
+    tauri::async_runtime::spawn(async move {
+        if let Ok(conn) = db_conn_cleanup.lock() {
+            let _ = cover_storage::cleanup_orphaned_covers(&conn);
+        }
+    });
+
+    Ok(result)
+}
+
+/// remove a music folder and delete all tracks that live under it
+#[tauri::command]
+pub async fn remove_folder(path: String, db: State<'_, Database>) -> Result<usize, String> {
+    // canonicalize to match how add_folder stored it
+    let canonical_path = std::path::PathBuf::from(&path)
+        .canonicalize()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or(path);
+
+    let deleted = {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        queries::remove_folder_with_tracks(&conn, &canonical_path)
+            .map_err(|e| format!("Failed to remove folder: {}", e))?
+    };
+
+    // background orphan cover art cleanup (non blocking)
+    let db_conn_cleanup = Arc::clone(&db.conn);
+    tauri::async_runtime::spawn(async move {
+        if let Ok(conn) = db_conn_cleanup.lock() {
+            let _ = cover_storage::cleanup_orphaned_covers(&conn);
+        }
+    });
+
+    Ok(deleted)
 }
 
 #[tauri::command]
@@ -1161,6 +1310,13 @@ pub fn get_default_music_dirs() -> Vec<String> {
     }
 
     dirs
+}
+
+/// list all registered music folders (desktop multi-folder library)
+#[tauri::command]
+pub async fn get_music_folders(db: State<'_, Database>) -> Result<Vec<String>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    queries::get_music_folders(&conn).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

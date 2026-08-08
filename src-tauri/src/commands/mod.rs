@@ -12,6 +12,7 @@ pub mod network;
 pub mod playlist;
 pub mod plugin;
 pub mod sync;
+pub mod export;
 
 pub use activity::*;
 pub use library::*;
@@ -27,3 +28,4 @@ pub use plugin::*;
 pub mod window;
 pub use covers::*;
 pub use sync::*;
+pub use export::*;

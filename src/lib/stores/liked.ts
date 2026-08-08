@@ -49,3 +49,49 @@ export async function toggleLike(trackId: number): Promise<void> {
         likedTrackIds.set(currentIds);
     }
 }
+
+// fans out individual unlikeTrack call
+// clears the store optimistically, then restores
+// only the ids whose backend call actually failed
+// returns the number of tracks that failed to unlike (0 = full success)
+// Never rejects: a partial failure isn't a single error to throw, it's a
+// per-track outcome the caller may want to report (e.g. a toast)
+export async function unlikeAll(): Promise<number> {
+    const currentIds = get(likedTrackIds);
+    if (currentIds.size === 0) return 0;
+
+    const idsToUnlike = Array.from(currentIds);
+
+    // optimistic clear
+    likedTrackIds.set(new Set());
+
+    // chunk requests instead of firing hundreds/thousands of concurrent IPC
+    // calls at once for a large liked-songs library
+    const CHUNK_SIZE = 25;
+    const results: PromiseSettledResult<unknown>[] = [];
+    for (let i = 0; i < idsToUnlike.length; i += CHUNK_SIZE) {
+        const chunk = idsToUnlike.slice(i, i + CHUNK_SIZE);
+        const chunkResults = await Promise.allSettled(chunk.map((id) => unlikeTrack(id)));
+        results.push(...chunkResults);
+    }
+
+    const failedIds = idsToUnlike.filter((_, i) => results[i].status === 'rejected');
+
+    if (failedIds.length > 0) {
+        console.error(
+            `[Liked] Failed to unlike ${failedIds.length} of ${idsToUnlike.length} tracks:`,
+            results
+                .map((r, i) => (r.status === 'rejected' ? { id: idsToUnlike[i], reason: r.reason } : null))
+                .filter(Boolean),
+        );
+        // restore only the ones that actually failed
+        // preserving any likes added by other code while this was in flight
+        likedTrackIds.update((ids) => {
+            const restored = new Set(ids);
+            for (const id of failedIds) restored.add(id);
+            return restored;
+        });
+    }
+
+    return failedIds.length;
+}

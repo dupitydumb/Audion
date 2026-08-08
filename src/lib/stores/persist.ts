@@ -6,6 +6,7 @@ import {
     playbackContext, currentTime, duration, type PlaybackContext
 } from './player';
 import { lyricsVisible } from './lyrics';
+import { updateSmtcMetadata, updateSmtcPlaybackState } from './player';
 import type { Track } from '$lib/api/tauri';
 
 const STORAGE_KEY = 'rlist_player_state';
@@ -101,7 +102,11 @@ export function savePersistedState(): void {
 }
 
 // Initialize stores from persisted state
-export function initializeFromPersistedState(): void {
+//
+// pendingJumpListTrackId: if the app was cold-started via a jump list click, pass the target track id here
+// we still restore the queue/shuffle/context
+// skip others. since the jump list track will go through the normal play track path, it wil updated there
+export function initializeFromPersistedState(pendingJumpListTrackId: number | null = null): void {
     const state = loadPersistedState();
 
     console.log('[Persist] Restoring state:', state);
@@ -128,6 +133,11 @@ export function initializeFromPersistedState(): void {
         // Restore context
         if (state.playbackContext) {
             playbackContext.set(state.playbackContext);
+        }
+
+        if (pendingJumpListTrackId !== null) {
+            // jump list track is about to take over. don't display anything
+            return;
         }
 
         // Restore current track based on queue and index
@@ -161,6 +171,13 @@ export function initializeFromPersistedState(): void {
         // Restore duration
         if (state.duration > 0) {
             duration.set(state.duration);
+        }
+
+        // push restored metadata into SMTC so OS media controls show the
+        // last playing track
+        if (trackToRestore) {
+            updateSmtcMetadata(trackToRestore).catch(() => { });
+            updateSmtcPlaybackState('paused');
         }
     }
 }

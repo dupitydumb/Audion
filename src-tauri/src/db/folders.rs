@@ -1,5 +1,5 @@
 // Music folder management and scanner cleanup helpers
-use rusqlite::{Connection, Result};
+use rusqlite::{params, Connection, Result};
 use std::path::Path;
 
 // Music folder operations
@@ -52,6 +52,44 @@ pub fn get_music_folders(conn: &Connection) -> Result<Vec<String>> {
 pub fn remove_music_folder(conn: &Connection, path: &str) -> Result<()> {
     conn.execute("DELETE FROM music_folders WHERE path = ?1", [path])?;
     Ok(())
+}
+
+/// remove a registered music folder and delete every track under it
+/// plus albums left with no remaining tracks
+/// a single transaction with one bulk DELETE
+/// returns the number of tracks deleted
+pub fn remove_folder_with_tracks(conn: &Connection, folder_path: &str) -> Result<usize> {
+    // escape existing SQL LIKE wildcards in the folder path itself
+    // then match either the folder exactly or anything under it via a path separator boundary
+    fn escape_like(s: &str) -> String {
+        s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+    }
+    let escaped = escape_like(folder_path);
+    let pattern_children = format!("{}/%", escaped);
+    // under ESCAPE '\', a bare "\%" is read as an escaped literal
+    // percent sign, not "backslash + wildcard" => so the separator
+    // backslash itself must be escaped (\\) to keep % as a wildcard
+    let pattern_children_win = format!("{}\\\\%", escaped);
+
+    let tx = conn.unchecked_transaction()?;
+
+    let deleted = tx.execute(
+        "DELETE FROM tracks WHERE path = ?1 \
+         OR path LIKE ?2 ESCAPE '\\' \
+         OR path LIKE ?3 ESCAPE '\\'",
+        params![folder_path, pattern_children, pattern_children_win],
+    )?;
+
+    tx.execute(
+        "DELETE FROM music_folders WHERE path = ?1",
+        params![folder_path],
+    )?;
+
+    cleanup_empty_albums(&tx)?;
+
+    tx.commit()?;
+
+    Ok(deleted)
 }
 
 pub fn update_folder_last_scanned(conn: &Connection, path: &str) -> Result<()> {

@@ -1,9 +1,7 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
   import { theme, presetAccents, type ThemeMode } from "$lib/stores/theme";
-  import { appSettings } from "$lib/stores/settings";
   import { locale } from "svelte-i18n";
-  import { isAndroid } from "$lib/api/tauri";
   import { slide } from "svelte/transition";
   import { createEventDispatcher } from "svelte";
 
@@ -71,36 +69,6 @@
         <button class="segment-btn" class:active={$theme.mode === 'system'} on:click={() => handleModeChange('system')}>{$_('settings.system', { default: 'System' })}</button>
       </div>
     </div>
-
-    {#if !isAndroid()}
-      <div class="divider"></div>
-      <div class="inner-section">
-        <span class="setting-title">{$_('settings.windowStartMode', { default: 'Window start mode' })}</span>
-        <div class="segmented-pill">
-          <button class="segment-btn" class:active={$appSettings.startMode === 'normal'} on:click={() => appSettings.setStartMode('normal')}>{$_('settings.normal', { default: 'Normal' })}</button>
-          <button class="segment-btn" class:active={$appSettings.startMode === 'maximized'} on:click={() => appSettings.setStartMode('maximized')}>{$_('settings.max', { default: 'Max' })}</button>
-          <button class="segment-btn" class:active={$appSettings.startMode === 'minimized'} on:click={() => appSettings.setStartMode('minimized')}>{$_('settings.min', { default: 'Min' })}</button>
-        </div>
-      </div>
-
-      <div class="divider"></div>
-      <div class="toggle-container">
-        <div class="toggle-info">
-          <span class="setting-title">{$_('settings.closeToTray', { default: 'Close to tray' })}</span>
-          <span class="setting-description">{$_('settings.closeToTrayDesc', { default: 'Hide the window to the system tray when closed' })}</span>
-        </div>
-        <button
-          class="toggle-btn"
-          class:active={$appSettings.closeToTray}
-          on:click={() => appSettings.setCloseToTray(!$appSettings.closeToTray)}
-          role="switch"
-          aria-checked={$appSettings.closeToTray}
-          aria-label="Toggle Close to Tray"
-        >
-          <div class="toggle-handle"></div>
-        </button>
-      </div>
-    {/if}
 
     <div class="divider"></div>
 

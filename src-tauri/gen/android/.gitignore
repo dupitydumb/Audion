@@ -14,6 +14,7 @@ build
 .cxx
 local.properties
 key.properties
+release.keystore
 
 /.tauri
 /tauri.settings.gradle

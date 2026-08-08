@@ -14,7 +14,22 @@
     "pinToTop": "Épingler en haut",
     "unpinFromTop": "Désépingler du haut",
     "goToArtist": "Aller à l'artiste",
-    "goToAlbum": "Aller à l'album"
+    "goToAlbum": "Aller à l'album",
+    "addedToQueue": "Ajouté à la file",
+    "like": "Aimer",
+    "unlike": "Ne plus aimer",
+    "unlikeAll": "Ne plus aimer tout",
+    "exportToZip": "Exporter en Zip",
+    "deleteAlbum": "Supprimer l'album",
+    "deletePlaylist": "Supprimer la playlist",
+    "rename": "Renommer",
+    "changeCover": "Changer la pochette",
+    "configureDownloadLocation": "Veuillez d'abord configurer un dossier de téléchargement dans les Paramètres",
+    "artworkUpdated": {
+      "track": "Pochette du titre mise à jour",
+      "album": "Pochette de l'album mise à jour",
+      "artist": "Image de l'artiste mise à jour"
+    }
   },
   "trackList": {
     "title": "Titre",
@@ -107,13 +122,13 @@
     "logout": "Se déconnecter",
     "signInToSync": "Connectez-vous pour synchroniser votre bibliothèque et vos paramètres sur tous vos appareils",
     "signIn": "Se connecter",
-    "cloudSync": "Synchronisation cloud",
-    "cloudSyncDesc": "Synchronisez votre bibliothèque et vos paramètres entre appareils via Audion Cloud.",
-    "customServer": "Serveur personnel / personnalisé",
+    "cloudSync": "Synchronisation Cloud",
+    "cloudSyncDesc": "Synchronisez votre bibliothèque et vos paramètres sur tous vos appareils grâce à Audion Cloud.",
+    "customServer": "Auto-hébergé / Serveur personnalisé",
     "customServerDesc": "Synchronisez avec votre propre serveur Audion auto-hébergé pour une confidentialité totale des données.",
     "connectServer": "Connecter le serveur",
-    "runOwnServer": "Exécutez votre propre serveur Audion",
-    "runOwnServerDesc": "Déployez facilement votre propre serveur avec Docker. Consultez les instructions sur GitHub.",
+    "runOwnServer": "Hébergez votre propre serveur Audion",
+    "runOwnServerDesc": "Déployez facilement votre propre serveur avec Docker. Consultez les instructions d'installation sur GitHub.",
     "dockerSetupGuide": "Obtenir audion-server-docker sur GitHub",
     "sync": "Synchronisation",
     "libraryStatus": "État de la bibliothèque",
@@ -221,7 +236,34 @@
     "shortcutsHint": "Astuce : vous pouvez aussi ouvrir ceci à tout moment en appuyant sur",
     "shortcutsDisabledHint": "Activez les raccourcis clavier pour utiliser l'aide rapide avec Shift + /",
     "otaEnabled": "Mises à jour automatiques",
-    "otaEnabledDesc": "Télécharger et installer les mises à jour dans l'application plutôt que via les releases GitHub"
+    "otaEnabledDesc": "Télécharger et installer les mises à jour dans l'application plutôt que via les releases GitHub",
+    "lyricsPriorityTitle": "Priorité des sources de récupération automatique",
+    "lyricsPriorityDesc": "Contrôle l'ordre dans lequel les sources sont essayées automatiquement, ex. {example}. Lettres minuscules et séparateurs \"/\" uniques uniquement. Laissez vide pour utiliser l'ordre par défaut. La sélection manuelle de la source dans le panneau des paroles n'est pas affectée.",
+    "lyricsPriorityPlaceholder": "apple/imported/genius",
+    "lyricsPriorityInputLabel": "Priorité des sources de paroles",
+    "save": "Enregistrer",
+    "lyricsPriorityResetToDefault": "Réinitialiser par défaut",
+    "lyricsPrioritySaved": "Priorité des sources de paroles enregistrée",
+    "lyricsPriorityInvalidFormat": "Format invalide — lettres minuscules et séparateurs \"/\" uniques uniquement, ex. {example}. Les jetons inconnus sont également rejetés.",
+    "lyricsPriorityInvalidToast": "Format de priorité des paroles invalide",
+    "lyricsDeleteTitle": "Supprimer les paroles en cache",
+    "lyricsDeleteDesc": "Supprime définitivement chaque fichier de paroles en cache pour une source donnée, dans toute votre bibliothèque. Saisissez un jeton de source (ex. {apple}, {imported}, ou {all} pour tout supprimer).",
+    "lyricsDeleteAllLabel": "Supprimer tout",
+    "lyricsDeleteLyricsLabel": "paroles",
+    "lyricsDeleteTokenPlaceholder": "jeton",
+    "lyricsDeleteTokenInputLabel": "Jeton de source de paroles à supprimer",
+    "lyricsDeleteButtonLabel": "Supprimer les paroles de cette source",
+    "lyricsDeleteButtonTitle": "Supprimer toutes les paroles en cache pour cette source",
+    "lyricsDeleteEmptyToken": "Saisissez d'abord un jeton de source",
+    "lyricsDeleteAllConfirm": "Supprimer TOUTES les paroles en cache — toutes sources confondues, y compris les fichiers importés — pour chaque piste de votre bibliothèque ? Cette action est irréversible.",
+    "lyricsDeleteTokenConfirm": "Supprimer toutes les paroles \"{label}\" pour chaque piste de votre bibliothèque ? Cette action est irréversible.",
+    "lyricsDeleteAllConfirmTitle": "Supprimer toutes les paroles",
+    "lyricsDeleteTokenConfirmTitle": "Supprimer les paroles {label}",
+    "lyricsDeleteConfirmLabel": "Supprimer",
+    "lyricsDeleteSuccess": "{count} fichier{plural} de paroles {label} supprimé{plural}",
+    "lyricsDeleteNoneFound": "Aucune parole {label} en cache trouvée à supprimer",
+    "lyricsDeleteFailed": "Échec de la suppression des paroles {label}",
+    "lyricsTokenAll": "Toutes"
   },
   "updatePopup": {
     "restartToUpdate": "Redémarrer pour mettre à jour",
@@ -272,5 +314,8 @@
     "installedSuccess": "Installé !",
     "failed": "Échoué",
     "grantAndInstall": "Autoriser & Installer"
+  },
+  "search": {
+    "loadMore": "Charger plus ({count} restants)"
   }
 }

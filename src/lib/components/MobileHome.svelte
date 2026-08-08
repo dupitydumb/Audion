@@ -165,11 +165,6 @@
 
             await progressiveScan.startScan(true);
 
-            await addFolder(path);
-            if ($isMobile && isAndroid()) {
-                appSettings.setAndroidMusicFolder(path);
-            }
-
             const result = await rescanMusic();
 
             if (result.errors.length > 0) {

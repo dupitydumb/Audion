@@ -69,6 +69,18 @@ pub fn get_playlist_tracks(conn: &Connection, playlist_id: i64) -> Result<Vec<Tr
     Ok(tracks)
 }
 
+/// track counts for every playlist in one query
+/// playlists with zero tracks are absent from the result map
+pub fn get_playlist_track_counts(conn: &Connection) -> Result<std::collections::HashMap<i64, i64>> {
+    let mut stmt = conn.prepare(
+        "SELECT playlist_id, COUNT(*) FROM playlist_tracks GROUP BY playlist_id",
+    )?;
+    let rows = stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))?
+        .collect::<Result<Vec<_>>>()?;
+    Ok(rows.into_iter().collect())
+}
+
 pub fn add_track_to_playlist(conn: &Connection, playlist_id: i64, track_id: i64) -> Result<()> {
     let position: i32 = conn.query_row(
         "SELECT COALESCE(MAX(position), 0) + 1 FROM playlist_tracks WHERE playlist_id = ?1",

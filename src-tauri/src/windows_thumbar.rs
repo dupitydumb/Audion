@@ -17,6 +17,7 @@ mod windows_impl {
     use windows::Win32::UI::Shell::{
         ITaskbarList3, TaskbarList, THBN_CLICKED, THUMBBUTTON, THUMBBUTTONFLAGS, THUMBBUTTONMASK,
         THBF_ENABLED, THB_FLAGS, THB_ICON, THB_TOOLTIP,
+        TBPF_NOPROGRESS, TBPF_NORMAL, TBPF_PAUSED,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         CallWindowProcW, CreateIconIndirect, DefWindowProcW, GetWindowLongPtrW,
@@ -26,6 +27,17 @@ mod windows_impl {
     const THUMBAR_BUTTON_PREVIOUS: u32 = 2001;
     const THUMBAR_BUTTON_PLAY_PAUSE: u32 = 2002;
     const THUMBAR_BUTTON_NEXT: u32 = 2003;
+
+    // disabled but kept for future use
+    const TASKBAR_PROGRESS_ENABLED: bool = false;
+
+    #[derive(Clone)]
+    pub(crate) struct JumpListItem {
+        pub track_id: i64,
+        pub title: String,
+        pub artist: Option<String>,
+        pub path: String,
+    }
 
     const ICON_W: usize = 16;
     const ICON_H: usize = 16;
@@ -279,6 +291,33 @@ mod windows_impl {
             .map_err(|e| format!("ThumbBarUpdateButtons failed: {e}"))
     }
 
+    // taskbar icon progress overlay
+    // value is 0.0-1.0
+    // is_paused switches the green fill to the amber paused color
+    fn set_progress(hwnd: HWND, value: f64, is_paused: bool) -> Result<(), String> {
+        if !TASKBAR_PROGRESS_ENABLED {
+            return Ok(());
+        }
+        let taskbar = taskbar_list()?;
+
+        let state = if is_paused { TBPF_PAUSED } else { TBPF_NORMAL };
+        unsafe { taskbar.SetProgressState(hwnd, state) }
+            .map_err(|e| format!("SetProgressState failed: {e}"))?;
+
+        let completed = (value.clamp(0.0, 1.0) * 100.0).round() as u64;
+        unsafe { taskbar.SetProgressValue(hwnd, completed, 100) }
+            .map_err(|e| format!("SetProgressValue failed: {e}"))
+    }
+
+    fn clear_progress(hwnd: HWND) -> Result<(), String> {
+        if !TASKBAR_PROGRESS_ENABLED {
+            return Ok(());
+        }
+        let taskbar = taskbar_list()?;
+        unsafe { taskbar.SetProgressState(hwnd, TBPF_NOPROGRESS) }
+            .map_err(|e| format!("SetProgressState failed: {e}"))
+    }
+
     fn window_hwnd(window: &WebviewWindow) -> Result<*mut c_void, String> {
         let handle = window
             .window_handle()
@@ -387,6 +426,149 @@ mod windows_impl {
         let hwnd_raw = window_hwnd(&window)?;
         update_play_pause_button(HWND(hwnd_raw), is_playing)
     }
+
+    pub(crate) fn set_taskbar_progress(app: &AppHandle, value: f64, is_paused: bool) -> Result<(), String> {
+        let Some(window) = app.get_webview_window("main") else {
+            return Ok(());
+        };
+
+        let hwnd_raw = window_hwnd(&window)?;
+        set_progress(HWND(hwnd_raw), value, is_paused)
+    }
+
+    pub(crate) fn clear_taskbar_progress(app: &AppHandle) -> Result<(), String> {
+        let Some(window) = app.get_webview_window("main") else {
+            return Ok(());
+        };
+
+        let hwnd_raw = window_hwnd(&window)?;
+        clear_progress(HWND(hwnd_raw))
+    }
+
+    /// windows returns E_ACCESSDENIED (0x80070005) for jump list writes when the user
+    /// has disabled "Show recently opened items in Jump Lists" under
+    /// Settings > Personalization > Start
+    ///  we tag it distinctly and skip re-logging it as a real error
+    const E_ACCESSDENIED: i32 = 0x80070005u32 as i32;
+    const JUMP_LIST_DISABLED_MARKER: &str = "JUMPLIST_DISABLED_BY_SETTINGS";
+
+    fn jump_list_err(context: &str, e: windows::core::Error) -> String {
+        if e.code().0 == E_ACCESSDENIED {
+            JUMP_LIST_DISABLED_MARKER.to_string()
+        } else {
+            format!("{context} failed: {e}")
+        }
+    }
+
+    pub(crate) fn update_jump_list(_app: &AppHandle, items: Vec<JumpListItem>) -> Result<(), String> {
+        use windows::Win32::UI::Shell::{
+            ICustomDestinationList, DestinationList,
+            IShellLinkW, ShellLink,
+            EnumerableObjectCollection,
+            Common::{IObjectCollection, IObjectArray},
+            PropertiesSystem::IPropertyStore,
+        };
+        use windows::Win32::Storage::EnhancedStorage::{PKEY_Title, PKEY_AppUserModel_ID};
+        use windows::Win32::System::Com::{
+            StructuredStorage::PROPVARIANT,
+            CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
+        };
+        use windows::core::{HSTRING, PCWSTR, Interface};
+
+        let exe_path = std::env::current_exe()
+            .map_err(|e| format!("Failed to get exe path: {e}"))?;
+        let exe_hstring = HSTRING::from(exe_path.as_os_str());
+
+        unsafe {
+            // required or else :
+            // AppendCategory fails with E_ACCESSDENIED (0x80070005)
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            let cdl: ICustomDestinationList =
+                CoCreateInstance(&DestinationList, None, CLSCTX_INPROC_SERVER)
+                    .map_err(|e| jump_list_err("ICustomDestinationList", e))?;
+
+            let mut max_slots: u32 = 0;
+            // beginList returns the removed items array (ignored) and tells us max slots
+            let _: IObjectArray = cdl
+                .BeginList(&mut max_slots)
+                .map_err(|e| jump_list_err("BeginList", e))?;
+
+            let collection: IObjectCollection =
+                CoCreateInstance(&EnumerableObjectCollection, None, CLSCTX_INPROC_SERVER)
+                    .map_err(|e| format!("IObjectCollection failed: {e}"))?;
+
+            let count = items.len().min(max_slots as usize).min(5);
+            for item in items.iter().take(count) {
+                let link: IShellLinkW =
+                    CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER)
+                        .map_err(|e| format!("IShellLink failed: {e}"))?;
+
+                link.SetPath(PCWSTR(exe_hstring.as_ptr()))
+                    .map_err(|e| format!("SetPath failed: {e}"))?;
+
+                let arg = format!("audion://play/{}", item.track_id);
+                let arg_hstring = HSTRING::from(arg.as_str());
+                link.SetArguments(PCWSTR(arg_hstring.as_ptr()))
+                    .map_err(|e| format!("SetArguments failed: {e}"))?;
+
+                let display_name = match &item.artist {
+                    Some(a) if !a.is_empty() => format!("{} \u{b7} {}", item.title, a),
+                    _ => item.title.clone(),
+                };
+
+                let prop_store: IPropertyStore = link.cast()
+                    .map_err(|e| format!("IPropertyStore cast failed: {e}"))?;
+
+                let pv = PROPVARIANT::from(display_name.as_str());
+
+                prop_store.SetValue(&PKEY_Title, &pv)
+                    .map_err(|e| format!("SetValue PKEY_Title failed: {e}"))?;
+
+                // per-link AppUserModelID must match the process-level's
+                let pv_appid = PROPVARIANT::from("com.audion.app");
+                prop_store.SetValue(&PKEY_AppUserModel_ID, &pv_appid)
+                    .map_err(|e| format!("SetValue PKEY_AppUserModel_ID failed: {e}"))?;
+
+                prop_store.Commit()
+                    .map_err(|e| format!("IPropertyStore::Commit failed: {e}"))?;
+                // pv, pv_appid are Drop-safe, no manual clear needed
+
+                collection.AddObject(&link)
+                    .map_err(|e| format!("AddObject failed: {e}"))?;
+            }
+
+            let category = HSTRING::from("NEXT UP");
+            // IObjectCollection implements From<IObjectCollection> for IObjectArray
+            let obj_array = IObjectArray::from(collection);
+            cdl.AppendCategory(PCWSTR(category.as_ptr()), &obj_array)
+                .map_err(|e| jump_list_err("AppendCategory", e))?;
+
+            cdl.CommitList()
+                .map_err(|e| jump_list_err("CommitList", e))?;
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn clear_jump_list() -> Result<(), String> {
+        use windows::Win32::UI::Shell::{ICustomDestinationList, DestinationList};
+        use windows::Win32::System::Com::{
+            CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
+        };
+        use windows::core::PCWSTR;
+
+        unsafe {
+            // see update_jump_list for why this is required
+            let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+            let cdl: ICustomDestinationList =
+                CoCreateInstance(&DestinationList, None, CLSCTX_INPROC_SERVER)
+                    .map_err(|e| jump_list_err("ICustomDestinationList", e))?;
+            cdl.DeleteList(PCWSTR::null())
+                .map_err(|e| jump_list_err("DeleteList", e))?;
+        }
+        Ok(())
+    }
+
 }
 
 #[tauri::command]
@@ -414,6 +596,84 @@ pub fn windows_update_thumbar_state(app: AppHandle, is_playing: bool) -> Result<
     {
         let _ = app;
         let _ = is_playing;
+        Ok(())
+    }
+}
+
+// value is 0.0-1.0 fraction of the track played
+// is_paused => overlay to the amber paused color. called from player.ts's position
+// ticker (throttled). instant on play/pause/seek/track-change
+#[tauri::command]
+pub fn windows_set_taskbar_progress(app: AppHandle, value: f64, is_paused: bool) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        windows_impl::set_taskbar_progress(&app, value, is_paused)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, value, is_paused);
+        Ok(())
+    }
+}
+
+// called on stop / queue end so the icon doesn't keep showing a stale bar
+#[tauri::command]
+pub fn windows_clear_taskbar_progress(app: AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        windows_impl::clear_taskbar_progress(&app)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        Ok(())
+    }
+}
+#[derive(serde::Deserialize)]
+pub struct JumpListTrack {
+    pub track_id: i64,
+    pub title: String,
+    pub artist: Option<String>,
+    pub path: String,
+}
+
+#[tauri::command]
+pub fn windows_update_jump_list(
+    app: AppHandle,
+    tracks: Vec<JumpListTrack>,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let items: Vec<windows_impl::JumpListItem> = tracks
+            .into_iter()
+            .map(|t| windows_impl::JumpListItem {
+                track_id: t.track_id,
+                title: t.title,
+                artist: t.artist,
+                path: t.path,
+            })
+            .collect();
+        windows_impl::update_jump_list(&app, items)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, tracks);
+        Ok(())
+    }
+}
+
+#[tauri::command]
+pub fn windows_clear_jump_list() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        windows_impl::clear_jump_list()
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
         Ok(())
     }
 }

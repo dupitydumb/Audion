@@ -52,6 +52,66 @@ selectedSource.subscribe(value => {
     }
 });
 
+/**
+ * auto mode source priority, e.g. user/embedded/applejson
+ * controls the order fetchLyricsForTrack walks sources in auto mode only
+ * manual selection (dropdown / fetchFromSpecificSource) is unaffected
+ * a source left out of this list simply isn't auto tried; it's still pickable manually
+ *
+ * raw string is persisted as-is
+ * resolved ids are derived on read
+ * so this always reflects whatever is currently registered (no hardcoded alias
+ * table => valid ids are user, embedded, plus whatever SOURCE_IDS holds)
+ */
+export const sourcePriorityRaw = writable<string>(
+    localStorage.getItem('lyrics_source_priority') ?? ''
+);
+
+/** lowercase letters and single "/" separators only; no leading/trailing/double slashes, no spaces */
+const PRIORITY_FORMAT_RE = /^[a-z]+(\/[a-z]+)*$/;
+
+function knownPriorityIds(): string[] {
+    return ['user', 'embedded', ...SOURCE_IDS];
+}
+
+/**
+ * validate and persist a raw priority string
+ * rejects (leaves the previous config untouched) on malformed input or any token not matching a currently known source id
+ * returns true if accepted, false if rejected
+ */
+export function setSourcePriority(raw: string): boolean {
+    if (raw === '') {
+        sourcePriorityRaw.set('');
+        localStorage.removeItem('lyrics_source_priority');
+        return true;
+    }
+
+    if (!PRIORITY_FORMAT_RE.test(raw)) return false;
+
+    const tokens = raw.split('/');
+    const known = new Set(knownPriorityIds());
+    if (!tokens.every(t => known.has(t))) return false;
+
+    sourcePriorityRaw.set(raw);
+    localStorage.setItem('lyrics_source_priority', raw);
+    return true;
+}
+
+/**
+ * resolved, ordered list of source ids to try in auto mode
+ * falls back to the default order (user, embedded, then registry order) when no priority is configured
+ */
+export function getSourcePriorityIds(): string[] {
+    const raw = get(sourcePriorityRaw);
+    if (!raw) return ['user', 'embedded', ...SOURCE_IDS];
+
+    // revalidate against currently known ids in case a source was removed since this was saved
+    // drop stale tokens rather than failing
+    const known = new Set(knownPriorityIds());
+    const resolved = raw.split('/').filter(t => known.has(t));
+    return resolved.length > 0 ? resolved : ['user', 'embedded', ...SOURCE_IDS];
+}
+
 /** Index of the currently active lyric line based on playback time. */
 export const activeLine = derived(
     [lyricsData, currentTime],
@@ -454,7 +514,125 @@ async function reparseFromCache(
 // Public: fetch lyrics for the current track
 // ---------------------------------------------------------------------------
 
-export async function fetchLyricsForTrack(): Promise<void> {
+/**
+ * try to load (from cache) or fetch (live) lyrics for one source id
+ * handles the three shapes a source can be: user (imported file)
+ * embedded (audio tag, local files only), or a registered api source
+ * returns null on any miss/failure so the caller can move to the next id
+ */
+/**
+ * per-invocation query override
+ * searched as is
+ * 
+ * template substitution (e.g. resolving $title / $artist tokens typed by the user into real metadata) happens in lyricspanel.svelte
+ * this just takes the final resolved strings
+ */
+export interface LyricsQueryOverride {
+    title?: string;
+    artist?: string;
+    album?: string | null;
+    duration?: number | null;
+}
+
+async function tryLoadOrFetchSource(
+    sourceId: string,
+    track: { path: string; title?: string | null; artist?: string | null; album?: string | null; duration?: number | null; source_type?: string | null },
+    fetchId: number,
+    isStream: boolean,
+    override?: LyricsQueryOverride,
+): Promise<LyricsResult | null> {
+    if (sourceId === 'user') {
+        // file based, not query based 
+        // skip it on a manual-query retry (already tried once in 1)
+        if (override) return null;
+        const userFile = await loadUserLyrics(track.path);
+        if (!userFile || fetchId !== currentFetchId) return null;
+        return await reparseFromCache(userFile.content, userFile.format, 'user');
+    }
+
+    if (sourceId === 'embedded') {
+        if (override) return null; // same reasoning as user above
+        if (!track.path || track.source_type) return null; // local files only
+        try {
+            const embedded = await invoke<{ content: string; synced: boolean } | null>(
+                'get_embedded_lyrics', { musicPath: track.path }
+            );
+            if (!embedded || fetchId !== currentFetchId) return null;
+
+            let lines;
+            if (embedded.synced) {
+                // LRC-formatted content (native USLT-LRC or SYLT converted to LRC)
+                // Word sync disabled  SYLT is line-level only
+                lines = lyricsManager.parseLRC(embedded.content, false);
+            } else {
+                // Plain prose .render as static lines anchored at t=0
+                lines = embedded.content
+                    .split('\n')
+                    .map((l: string) => l.trim())
+                    .filter((l: string) => l.length > 0)
+                    .map((text: string) => ({ time: 0, text }));
+            }
+            if (lines.length === 0) return null; // malformed content . fall through
+
+            return {
+                lines,
+                source:      'embedded',
+                format:      'lrc',
+                hasWordSync: false,
+                raw:         embedded.content,
+                synced:      embedded.synced,
+            };
+        } catch {
+            return null; // tag read failed . continue
+        }
+    }
+
+    // registered source =========================================
+    if (!SOURCE_IDS.includes(sourceId)) return null;
+
+    // custom query retry should never surface a cached result from the previous (default) query
+    if (!override) {
+        const cached = await loadSourceLyrics(track.path, sourceId);
+        if (cached && fetchId === currentFetchId) {
+            const result = await reparseFromCache(cached.content, cached.format, sourceId);
+            if (result) return result;
+        }
+    }
+
+    if (fetchId !== currentFetchId) return null;
+    try {
+        const source = override ? LYRICS_SOURCES.find((s: LyricsSource) => s.id === sourceId) : null;
+        const result = override && source
+            ? await source.fetch(
+                override.title  ?? track.title  ?? '',
+                override.artist ?? track.artist ?? '',
+                override.album !== undefined    ? override.album    : track.album,
+                override.duration !== undefined ? override.duration : track.duration,
+              )
+            : await lyricsManager.fetchFromSource(
+                sourceId, track.title ?? null, track.artist ?? null, track.album, track.duration
+              );
+        if (result && fetchId === currentFetchId) {
+            await saveSourceLyrics(track.path, sourceId, result.format, result.raw);
+            return result;
+        }
+    } catch { /* try next source */ }
+
+    return null;
+}
+
+/**
+ * rerun lyrics resolution for the current track
+ *
+ * with no override: normal flow => manual selectedSource preference first
+ * (if set), then the configured auto-mode priority chain
+ *
+ * With an override: skips the selectedSource preference
+ * and walks the entire priority chain fresh using the override's query,
+ * bypassing cache and cleanTitle/lowercasing for every searchable source
+ *  user/embedded are skipped
+ */
+export async function fetchLyricsForTrack(override?: LyricsQueryOverride): Promise<void> {
     const track = get(currentTrack);
     if (!track) { lyricsData.set(null); return; }
     const isStream = !!track.source_type;
@@ -464,117 +642,36 @@ export async function fetchLyricsForTrack(): Promise<void> {
     lyricsError.set(null);
 
     try {
-        // 1. User-imported file (any format)  always wins, never overridden
-        const userFile = await loadUserLyrics(track.path);
-        if (userFile && fetchId === currentFetchId) {
-            const result = await reparseFromCache(userFile.content, userFile.format, 'user');
-            if (result) {
+        // 1. respect user's manual source preference if set 
+        // (manual override always takes priority over the auto walk, regardless of the configured priority list)
+        // skipped entirely on a query retry
+        if (!override) {
+            const preferred = get(selectedSource);
+            if (preferred) {
+                const result = await tryLoadOrFetchSource(preferred, track, fetchId, isStream);
+                if (result && fetchId === currentFetchId) {
+                    lyricsData.set(result);
+                    await refreshAvailableSources(track.path, isStream);
+                    lyricsLoading.set(false);
+                    return;
+                }
+                // preferred source had nothing . fall through to auto
+            }
+        }
+
+        // 2. auto mode: walk the configured priority list (cache check then
+        //    live fetch each, or straight to live fetch with override when
+        //    retrying)
+        // default : user -> embedded -> registry order when unconfigured
+        for (const sourceId of getSourcePriorityIds()) {
+            if (fetchId !== currentFetchId) return;
+            const result = await tryLoadOrFetchSource(sourceId, track, fetchId, isStream, override);
+            if (result && fetchId === currentFetchId) {
                 lyricsData.set(result);
                 await refreshAvailableSources(track.path, isStream);
                 lyricsLoading.set(false);
                 return;
             }
-        }
-
-        // 2. Embedded tag lyrics (SYLT preferred, then USLT)  local files only
-        if (track.path && !track.source_type) {
-            try {
-                const embedded = await invoke<{ content: string; synced: boolean } | null>(
-                    'get_embedded_lyrics', { musicPath: track.path }
-                );
-                if (embedded && fetchId === currentFetchId) {
-                    let lines;
-                    if (embedded.synced) {
-                        // LRC-formatted content (native USLT-LRC or SYLT converted to LRC)
-                        // Word sync disabled  SYLT is line-level only
-                        lines = lyricsManager.parseLRC(embedded.content, false);
-                    } else {
-                        // Plain prose .render as static lines anchored at t=0
-                        lines = embedded.content
-                            .split('\n')
-                            .map((l: string) => l.trim())
-                            .filter((l: string) => l.length > 0)
-                            .map((text: string) => ({ time: 0, text }));
-                    }
-
-                    if (lines.length > 0) {
-                        lyricsData.set({
-                            lines,
-                            source:      'embedded',
-                            format:      'lrc',
-                            hasWordSync: false,
-                            raw:         embedded.content,
-                            synced:      embedded.synced,
-                        });
-                        await refreshAvailableSources(track.path, isStream);
-                        lyricsLoading.set(false);
-                        return;
-                    }
-                    // lines empty (e.g. malformed content) . fall through to API sources
-                }
-            } catch { /* tag read failed . continue */ }
-        }
-
-        // 3. Respect user's source preference if set
-        const preferred = get(selectedSource);
-        if (preferred && SOURCE_IDS.includes(preferred)) {
-            const cached = await loadSourceLyrics(track.path, preferred);
-            if (cached && fetchId === currentFetchId) {
-                const result = await reparseFromCache(cached.content, cached.format, preferred);
-                if (result) {
-                    lyricsData.set(result);
-                    await refreshAvailableSources(track.path, isStream);
-                    lyricsLoading.set(false);
-                    return;
-                }
-            }
-
-            // Cache miss . fetch live from preferred source
-            const fetched = await lyricsManager.fetchFromSource(
-                preferred, track.title, track.artist, track.album, track.duration
-            );
-            if (fetched && fetchId === currentFetchId) {
-                await saveSourceLyrics(track.path, preferred, fetched.format, fetched.raw);
-                lyricsData.set(fetched);
-                await refreshAvailableSources(track.path, isStream);
-                lyricsLoading.set(false);
-                return;
-            }
-            // Preferred source had nothing . fall through to auto
-        }
-
-        // 4. Auto mode: try each source in registry order, cache first
-        for (const source of LYRICS_SOURCES) {
-            const cached = await loadSourceLyrics(track.path, source.id);
-            if (cached) {
-                if (fetchId !== currentFetchId) return;
-                const result = await reparseFromCache(cached.content, cached.format, source.id);
-                if (result) {
-                    lyricsData.set(result);
-                    await refreshAvailableSources(track.path, isStream);
-                    lyricsLoading.set(false);
-                    return;
-                }
-            }
-
-            // Not cached . fetch live
-            try {
-                if (fetchId !== currentFetchId) return;
-                const result = await source.fetch(
-                    lyricsManager.cleanTitle(track.title ?? ''),
-                    (track.artist ?? 'Unknown Artist').toLowerCase(),
-                    track.album,
-                    track.duration,
-                );
-                if (result) {
-                    if (fetchId !== currentFetchId) return;
-                    await saveSourceLyrics(track.path, source.id, result.format, result.raw);
-                    lyricsData.set(result);
-                    await refreshAvailableSources(track.path, isStream);
-                    lyricsLoading.set(false);
-                    return;
-                }
-            } catch { /* try next source */ }
         }
 
         // Nothing found
@@ -596,106 +693,142 @@ export async function fetchLyricsForTrack(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Public: switch to a specific source (from the dropdown)
+// Public: switch to a specific source (from the dropdown), and manual fetch
 // ---------------------------------------------------------------------------
+
+/**
+ * fetch lyrics from one specific source, with optional full control over search parameters
+ * standalone core used by both the dropdown(switchLyricsSource) and any future custom query ui
+ *
+ * no override: behaves like a normal cache then live fetch for that source
+ * (same cleanTitle/lowercasing as auto mode)
+ * with override: bypasses cleanTitle/lowercasing entirely and uses the given fields as is, falling back to the current track's metadata for any field left unset
+ * skipCache forces a live fetch, bypassing the cached file check
+ */
+export async function fetchFromSpecificSource(
+    sourceId: string,
+    override?: LyricsQueryOverride,
+    opts?: { skipCache?: boolean },
+): Promise<LyricsResult | null> {
+    const track = get(currentTrack);
+    if (!track) return null;
+
+    if (sourceId === 'user') {
+        const userFile = await loadUserLyrics(track.path);
+        if (!userFile) return null;
+        return await reparseFromCache(userFile.content, userFile.format, 'user');
+    }
+
+    if (sourceId === 'embedded') {
+        if (!track.path || track.source_type) return null; // local files only
+        try {
+            const embedded = await invoke<{ content: string; synced: boolean } | null>(
+                'get_embedded_lyrics', { musicPath: track.path }
+            );
+            if (!embedded || !embedded.content) return null;
+
+            let lines;
+            if (embedded.synced) {
+                lines = lyricsManager.parseLRC(embedded.content, false);
+            } else {
+                lines = embedded.content
+                    .split('\n')
+                    .map((l: string) => l.trim())
+                    .filter((l: string) => l.length > 0)
+                    .map((text: string) => ({ time: 0, text }));
+            }
+            if (lines.length === 0) return null;
+
+            return {
+                lines,
+                source:      'embedded',
+                format:      'lrc',
+                hasWordSync: false,
+                raw:         embedded.content,
+                synced:      embedded.synced,
+            };
+        } catch {
+            return null;
+        }
+    }
+
+    // registered source =========================================
+    const source = LYRICS_SOURCES.find((s: LyricsSource) => s.id === sourceId);
+    if (!source) return null;
+
+    if (!opts?.skipCache) {
+        const cached = await loadSourceLyrics(track.path, sourceId);
+        if (cached) {
+            const result = await reparseFromCache(cached.content, cached.format, sourceId);
+            if (result) return result;
+        }
+    }
+
+    try {
+        let result: LyricsResult | null;
+        if (override) {
+            // fully manual
+            result = await source.fetch(
+                override.title  ?? track.title  ?? '',
+                override.artist ?? track.artist ?? '',
+                override.album !== undefined    ? override.album    : track.album,
+                override.duration !== undefined ? override.duration : track.duration,
+            );
+        } else {
+            result = await lyricsManager.fetchFromSource(
+                sourceId, track.title ?? null, track.artist ?? null, track.album, track.duration
+            );
+        }
+        if (result) {
+            await saveSourceLyrics(track.path, sourceId, result.format, result.raw);
+        }
+        return result;
+    } catch (err) {
+        console.warn(`[lyrics store] fetchFromSpecificSource error (${sourceId}):`, err);
+        return null;
+    }
+}
 
 export async function switchLyricsSource(sourceId: string): Promise<void> {
     const track = get(currentTrack);
     if (!track) return;
 
     const previousSource = get(selectedSource);
-    const label = LYRICS_SOURCES.find((s: LyricsSource) => s.id === sourceId)?.label ?? sourceId;
+    const label =
+        sourceId === 'user'     ? 'Imported' :
+        sourceId === 'embedded' ? 'Embedded' :
+        LYRICS_SOURCES.find((s: LyricsSource) => s.id === sourceId)?.label ?? sourceId;
 
-    // Clear immediately
+    // clear immediately
     lyricsData.set(null);
     lyricsError.set(null);
     lyricsLoading.set(true);
 
-    // Set optimistically so fetchLyricsForTrack respects it if the user
-    // switches tracks mid-flight. Reverted below on any failure.
+    // set optimistically so fetchLyricsForTrack respects it if the user switches tracks mid flight
+    // reverted below on any failure
     selectedSource.set(sourceId);
 
     const fetchId = ++currentFetchId;
 
-    const revert = (errorMsg: string) => {
-        if (fetchId !== currentFetchId) return;
-        selectedSource.set(previousSource);
-        lyricsError.set(errorMsg);
-        addToast(errorMsg, 'error');
-    };
-
     try {
-        if (sourceId === 'embedded') {
-            try {
-                const embedded = await invoke<{ content: string; synced: boolean } | null>(
-                    'get_embedded_lyrics', { musicPath: track.path }
-                );
-                if (!embedded || !embedded.content) {
-                    revert('No embedded lyrics found');
-                    return;
-                }
-                if (fetchId !== currentFetchId) return;
-                let lines;
-                if (embedded.synced) {
-                    lines = lyricsManager.parseLRC(embedded.content, false);
-                } else {
-                    lines = embedded.content
-                        .split('\n')
-                        .map((l: string) => l.trim())
-                        .filter((l: string) => l.length > 0)
-                        .map((text: string) => ({ time: 0, text }));
-                }
-                if (lines.length === 0) {
-                    revert('No embedded lyrics found');
-                    return;
-                }
-                // Determine format for the badge
-                const format: LyricsFormat = 'lrc';
-                lyricsData.set({
-                    lines,
-                    source:      'embedded',
-                    format,
-                    hasWordSync: false,
-                    raw:         embedded.content,
-                    synced:      embedded.synced,
-                });
-                addToast('Switched to Embedded', 'success');
-                lyricsLoading.set(false);
-                return;
-            } catch {
-                revert('Failed to read embedded lyrics');
-                return;
-            }
-        }
-        // Try cache first
-        const cached = await loadSourceLyrics(track.path, sourceId);
-        if (cached && fetchId === currentFetchId) {
-            const result = await reparseFromCache(cached.content, cached.format, sourceId);
-            if (result) {
-                lyricsData.set(result);
-                addToast(`Switched to ${label}`, 'success');
-                lyricsLoading.set(false);
-                return;
-            }
-        }
-
-        // Cache miss . fetch live
-        if (fetchId !== currentFetchId) return;
-        const result = await lyricsManager.fetchFromSource(
-            sourceId, track.title, track.artist, track.album, track.duration
-        );
+        const result = await fetchFromSpecificSource(sourceId);
         if (fetchId !== currentFetchId) return;
 
         if (result) {
-            await saveSourceLyrics(track.path, sourceId, result.format, result.raw);
             lyricsData.set(result);
-            await refreshAvailableSources(track.path);
+            await refreshAvailableSources(track.path, !!track.source_type);
             addToast(`Switched to ${label}`, 'success');
         } else {
-            revert(`No lyrics found on ${label}`);
+            selectedSource.set(previousSource);
+            const msg = `No lyrics found on ${label}`;
+            lyricsError.set(msg);
+            addToast(msg, 'error');
         }
     } catch {
-        revert(`Failed to fetch lyrics from ${label}`);
+        selectedSource.set(previousSource);
+        const msg = `Failed to fetch lyrics from ${label}`;
+        lyricsError.set(msg);
+        addToast(msg, 'error');
     } finally {
         if (fetchId === currentFetchId) lyricsLoading.set(false);
     }
@@ -805,7 +938,7 @@ export const lyricsStore = {
         } catch { /* non-fatal */ }
         lyricsData.set(null);
         lyricsError.set(null);
-        await refreshAvailableSources(track.path);
+        await refreshAvailableSources(track.path, !!track.source_type);
         await fetchLyricsForTrack();
     },
 
@@ -816,10 +949,95 @@ export const lyricsStore = {
         try {
             await invoke('delete_source_lyrics_file', { musicPath: track.path, sourceId });
         } catch { /* non-fatal */ }
-        await refreshAvailableSources(track.path);
+        await refreshAvailableSources(track.path, !!track.source_type);
         if (get(lyricsData)?.source === sourceId) {
             lyricsData.set(null);
             await fetchLyricsForTrack();
+        }
+    },
+
+    /**
+     * delete the lyrics file for a given source on the current track
+     * unified dispatcher
+     * user (imported) and embedded are handled specially
+     * since they don't go through the registered source file naming scheme
+     * embedded can't be deleted (it lives in the audio file itself)
+     * returns true if a delete was attempted (and not rejected outright)
+     * false for unknown/embedded ids
+     */
+    async deleteLyricsForSource(sourceId: string): Promise<boolean> {
+        const track = get(currentTrack);
+        if (!track) return false;
+
+        if (sourceId === 'embedded') {
+            // embedded lyrics live inside the audio file itself; not deletable
+            return false;
+        }
+
+        if (sourceId === 'user') {
+            await this.clearCurrentTrackCache();
+            return true;
+        }
+
+        if (!SOURCE_IDS.includes(sourceId)) return false;
+
+        await this.clearSourceCache(sourceId);
+        return true;
+    },
+
+    /**
+     * delete every cached lyrics file for the current track across all sources (registered sources + imported)
+     * embedded is skipped since it can't be deleted
+     * reloads lyrics afterward
+     */
+    async clearAllLyricsForTrack(): Promise<void> {
+        const track = get(currentTrack);
+        if (!track) return;
+        const isStream = !!track.source_type;
+
+        // get_cached_sources only reports registered api sources
+        // so user is deleted separately (it's a virtual source outside the registry)
+        const cachedIds = await refreshAvailableSources(track.path, isStream);
+        const idsToDelete = new Set<string>(cachedIds.filter(id => id !== 'embedded'));
+        idsToDelete.add('user');
+
+        const results = await Promise.allSettled(
+            Array.from(idsToDelete).map(id =>
+                id === 'user'
+                    ? invoke('delete_user_lyrics_file', { musicPath: track.path })
+                    : invoke('delete_source_lyrics_file', { musicPath: track.path, sourceId: id })
+            )
+        );
+        const failed = results.filter(r => r.status === 'rejected');
+        if (failed.length > 0) {
+            console.error(
+                `[Lyrics] Failed to delete ${failed.length} of ${results.length} cached lyrics files:`,
+                failed,
+            );
+            addToast(`Failed to delete ${failed.length} cached lyrics file${failed.length === 1 ? '' : 's'}`, 'error');
+        }
+
+        lyricsData.set(null);
+        lyricsError.set(null);
+        await refreshAvailableSources(track.path, isStream);
+        await fetchLyricsForTrack();
+    },
+
+    /**
+     * bulk delete every cached lyrics file matching token across the entire library (Settings => Lyrics => Delete all <token> lyrics)
+     * token is compared purely by filename pattern on the backend
+     * user matches imported files, all matches every source
+     * never needs updating when a new source is added
+     * returns the number of files deleted
+     */
+    async deleteLyricsByToken(token: string): Promise<number> {
+        const normalized = token.trim().toLowerCase();
+        if (!normalized) return 0;
+        try {
+            return await invoke<number>('delete_lyrics_by_token', { token: normalized });
+        } catch (err) {
+            console.warn('[lyrics store] deleteLyricsByToken failed:', err);
+            throw err;
         }
     },
 };

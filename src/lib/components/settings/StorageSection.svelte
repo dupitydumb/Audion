@@ -1,8 +1,20 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
   import { appSettings } from "$lib/stores/settings";
-  import { isAndroid, pickFolder, addFolder, rescanMusic, syncCoverPathsFromFiles, mergeDuplicateCovers, type MergeCoverResult } from "$lib/api/tauri";
+  import {
+    pickFolder,
+    addFolder,
+    rescanMusic,
+    syncCoverPathsFromFiles,
+    mergeDuplicateCovers,
+    scanFolder,
+    removeFolder,
+    getMusicFolders,
+    type MergeCoverResult,
+  } from "$lib/api/tauri";
   import { loadLibrary } from "$lib/stores/library";
+  import { progressiveScan } from "$lib/stores/progressiveScan";
+  import { confirm } from "$lib/stores/dialogs";
   import { onMount, onDestroy } from "svelte";
   import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { slide } from "svelte/transition";
@@ -38,39 +50,189 @@
     }
   }
 
-  let isUpdatingAndroidMusicFolder = false;
-  let androidMusicFolderMessage = "";
-  let androidMusicFolderSuccess = false;
+  // ---------------------------------------------------------------------
+  // desktop/android multi folder library state
+  // ---------------------------------------------------------------------
+  let musicFolders: string[] = [];
+  let isLoadingFolders = false;
+  let isAddingFolder = false;
+  let isRescanningAll = false;
+  let folderListMessage = "";
+  let folderListSuccess = false;
+  // per folder busy state, keyed by folder path, so each row can show its
+  // own Rescanning.../Removing... state independently of the others
+  let busyFolders: Record<string, "rescanning" | "removing"> = {};
 
-  async function handleSetAndroidMusicFolder() {
+  // true while any of the 4 folder actions (add, rescan-one, remove-one, rescan-all) is in flight
+  // running two of these concurrently isn't safe
+  $: anyFolderActionBusy =
+    isAddingFolder || isRescanningAll || Object.keys(busyFolders).length > 0;
+
+  async function refreshMusicFolders() {
+    isLoadingFolders = true;
     try {
-      androidMusicFolderMessage = "";
-      androidMusicFolderSuccess = false;
+      musicFolders = await getMusicFolders();
+    } catch (error) {
+      console.error("Failed to load music folders:", error);
+    } finally {
+      isLoadingFolders = false;
+    }
+  }
+
+  function formatScanResultMessage(
+    result: { tracks_added: number; tracks_updated: number; tracks_deleted: number },
+    addedMessage: string,
+    noChangeMessage: string,
+  ): string {
+    const parts: string[] = [];
+    if (result.tracks_added > 0) parts.push(`${result.tracks_added} added`);
+    if (result.tracks_updated > 0) parts.push(`${result.tracks_updated} updated`);
+    if (result.tracks_deleted > 0) parts.push(`${result.tracks_deleted} removed`);
+    return parts.length > 0 ? `${addedMessage}: ${parts.join(", ")}` : noChangeMessage;
+  }
+
+  async function handleAddMusicFolder() {
+    if (anyFolderActionBusy) return;
+    folderListMessage = "";
+    try {
       const path = await pickFolder();
       if (!path) return;
+
       if (path.startsWith("content://")) {
-        androidMusicFolderSuccess = false;
-        androidMusicFolderMessage = "Folder URI is not supported yet. Please pick a local Music folder path.";
+        folderListSuccess = false;
+        folderListMessage =
+          "Folder URI is not supported yet. Please pick a local Music folder path.";
         return;
       }
-      isUpdatingAndroidMusicFolder = true;
+
+      isAddingFolder = true;
+
       await addFolder(path);
-      appSettings.setAndroidMusicFolder(path);
+      // attach progress listeners before invoking the scan
+      // don't clear the existing library data since only a single folder is scanned
+      await progressiveScan.startScan(false);
+      // only scan the newly added folder, not the whole library
+      const result = await scanFolder(path);
+      await refreshMusicFolders();
+      await loadLibrary();
+
+      folderListSuccess = true;
+      folderListMessage = formatScanResultMessage(
+        result,
+        "Folder added",
+        "Folder added. No tracks found.",
+      );
+    } catch (error) {
+      folderListSuccess = false;
+      folderListMessage = `Failed to add folder: ${error}`;
+      console.error("Failed to add music folder:", error);
+    } finally {
+      isAddingFolder = false;
+      setTimeout(() => {
+        folderListMessage = "";
+      }, 5000);
+    }
+  }
+
+  async function handleRescanFolder(path: string) {
+    if (anyFolderActionBusy) return;
+    folderListMessage = "";
+    busyFolders = { ...busyFolders, [path]: "rescanning" };
+
+    try {
+      // attach listeners first, don't clear the library
+      await progressiveScan.startScan(false);
+      const result = await scanFolder(path);
+      await loadLibrary();
+
+      folderListSuccess = true;
+      folderListMessage = formatScanResultMessage(
+        result,
+        "Folder rescanned",
+        "Folder rescanned. No changes detected.",
+      );
+    } catch (error) {
+      folderListSuccess = false;
+      folderListMessage = `Failed to rescan folder: ${error}`;
+      console.error("Failed to rescan folder:", path, error);
+    } finally {
+      const { [path]: _removed, ...rest } = busyFolders;
+      busyFolders = rest;
+      setTimeout(() => {
+        folderListMessage = "";
+      }, 5000);
+    }
+  }
+
+  async function handleRemoveMusicFolder(path: string) {
+    if (anyFolderActionBusy) return;
+
+    const ok = await confirm(
+      `Remove "${path}" from your library? Tracks from this folder will be deleted from the database (the files on disk are not affected).`,
+      { title: "Remove Folder", danger: true },
+    );
+    if (!ok) return;
+
+    folderListMessage = "";
+    busyFolders = { ...busyFolders, [path]: "removing" };
+
+    try {
+      const tracksRemoved = await removeFolder(path);
+      await refreshMusicFolders();
+      await loadLibrary();
+
+      folderListSuccess = true;
+      folderListMessage =
+        tracksRemoved > 0
+          ? `Folder removed, ${tracksRemoved} track(s) deleted from library.`
+          : "Folder removed.";
+    } catch (error) {
+      folderListSuccess = false;
+      folderListMessage = `Failed to remove folder: ${error}`;
+      console.error("Failed to remove folder:", path, error);
+    } finally {
+      const { [path]: _removed, ...rest } = busyFolders;
+      busyFolders = rest;
+      setTimeout(() => {
+        folderListMessage = "";
+      }, 5000);
+    }
+  }
+
+  async function handleRescanAllFolders() {
+    if (anyFolderActionBusy) return;
+    isRescanningAll = true;
+    folderListMessage = "";
+
+    try {
+      // full rescan: clear existing library data so the progress banner shows a clean repopulation
+      await progressiveScan.startScan(true);
       const result = await rescanMusic();
       await loadLibrary();
-      const parts = [];
-      if (result.tracks_added > 0) parts.push(`${result.tracks_added} added`);
-      if (result.tracks_updated > 0) parts.push(`${result.tracks_updated} updated`);
-      if (result.tracks_deleted > 0) parts.push(`${result.tracks_deleted} deleted`);
-      androidMusicFolderSuccess = true;
-      androidMusicFolderMessage = parts.length > 0 ? `Music folder added: ${parts.join(", ")}` : "Music folder added. No library changes detected.";
+
+      folderListSuccess = true;
+      folderListMessage = formatScanResultMessage(
+        result,
+        "Rescanned all folders",
+        "Rescanned all folders. No changes detected.",
+      );
     } catch (error) {
-      androidMusicFolderSuccess = false;
-      androidMusicFolderMessage = `Failed to add music folder: ${error}`;
-      console.error("Failed to add Android music folder:", error);
+      folderListSuccess = false;
+      folderListMessage = `Failed to rescan folders: ${error}`;
+      console.error("Failed to rescan all folders:", error);
+      // startScan(true) already cleared the library store for the "clean
+      // repopulation" banner; reload from the db so the ui doesn't get
+      // stuck showing an empty library after a failed rescan
+      try {
+        await loadLibrary();
+      } catch (reloadError) {
+        console.error("Failed to reload library after rescan failure:", reloadError);
+      }
     } finally {
-      isUpdatingAndroidMusicFolder = false;
-      setTimeout(() => { androidMusicFolderMessage = ""; }, 5000);
+      isRescanningAll = false;
+      setTimeout(() => {
+        folderListMessage = "";
+      }, 5000);
     }
   }
 
@@ -90,6 +252,9 @@
   let unlistenMerge: UnlistenFn | null = null;
 
   onMount(async () => {
+    // load registered music folders
+    refreshMusicFolders();
+
     unlistenSync = await listen("migration-batch-ready", (event) => {
       const data = event.payload as { progress: MigrationProgressUpdate };
       syncProgress = data.progress;
@@ -234,27 +399,61 @@
           </div>
         </div>
 
-        {#if isAndroid()}
-          <div class="divider"></div>
-          <div class="inner-section">
-            <span class="setting-title">{$_('settings.musicLibraryFolder', { default: 'Music library folder (Android)' })}</span>
-            <span class="setting-description">{$_('settings.musicLibraryFolderDesc', { default: 'Add folders to your library scan while avoiding system audio clips' })}</span>
-            <div class="path-selector">
-              <div class="setting-description path-display" style="margin-top: 0;" title={$appSettings.androidMusicFolder || $_('settings.noMusicFolder', { default: 'Not set' })}>
-                {$appSettings.androidMusicFolder || $_('settings.noMusicFolder', { default: 'No music folder selected' })}
-              </div>
-              <button
-                class="selector-btn"
-                on:click={handleSetAndroidMusicFolder}
-                aria-label={$_('settings.addFolder', { default: 'Add folder' })}
-                disabled={isUpdatingAndroidMusicFolder}
-              >{isUpdatingAndroidMusicFolder ? $_('settings.adding', { default: 'Adding...' }) : $_('settings.addFolder', { default: 'Add folder' })}</button>
-            </div>
-            {#if androidMusicFolderMessage}
-              <div class="sync-message {androidMusicFolderSuccess ? 'success' : 'error'}">{androidMusicFolderMessage}</div>
-            {/if}
+        <div class="divider"></div>
+
+        <div class="inner-section">
+          <div class="folder-section-header">
+            <span class="setting-title">{$_('settings.musicFolders', { default: 'Music folders' })}</span>
+            <button
+              class="btn-folder-action primary"
+              on:click={handleAddMusicFolder}
+              disabled={anyFolderActionBusy}
+              aria-label={$_('settings.addFolder', { default: 'Add folder' })}
+            >
+              {isAddingFolder ? $_('settings.adding', { default: 'Adding...' }) : $_('settings.addFolder', { default: 'Add folder' })}
+            </button>
           </div>
-        {/if}
+          <span class="setting-description">{$_('settings.musicFoldersDesc', { default: 'Folders included when scanning your library' })}</span>
+
+          {#if isLoadingFolders}
+            <span class="setting-description" style="margin-top: 8px;">{$_('settings.loading', { default: 'Loading...' })}</span>
+          {:else if musicFolders.length === 0}
+            <span class="setting-description" style="margin-top: 8px;">{$_('settings.noMusicFolders', { default: 'No folders added yet' })}</span>
+          {:else}
+            <ul class="folder-list">
+              {#each musicFolders as path (path)}
+                <li class="folder-item">
+                  <span class="folder-item-path" title={path}>{path}</span>
+                  <div class="folder-item-actions">
+                    <button
+                      class="btn-folder-action"
+                      on:click={() => handleRescanFolder(path)}
+                      disabled={anyFolderActionBusy}
+                    >
+                      {busyFolders[path] === 'rescanning' ? $_('settings.rescanning', { default: 'Rescanning...' }) : $_('settings.rescan', { default: 'Rescan' })}
+                    </button>
+                    <button
+                      class="btn-folder-action danger"
+                      on:click={() => handleRemoveMusicFolder(path)}
+                      disabled={anyFolderActionBusy}
+                    >
+                      {busyFolders[path] === 'removing' ? $_('settings.removing', { default: 'Removing...' }) : $_('settings.remove', { default: 'Remove' })}
+                    </button>
+                  </div>
+                </li>
+              {/each}
+            </ul>
+            <div class="button-group-row" style="margin-top: 8px;">
+              <button class="btn-outline-compact" on:click={handleRescanAllFolders} disabled={anyFolderActionBusy}>
+                {isRescanningAll ? $_('settings.rescanning', { default: 'Rescanning...' }) : $_('settings.rescanAll', { default: 'Rescan all' })}
+              </button>
+            </div>
+          {/if}
+
+          {#if folderListMessage}
+            <div class="sync-message {folderListSuccess ? 'success' : 'error'}">{folderListMessage}</div>
+          {/if}
+        </div>
 
         <div class="divider"></div>
 

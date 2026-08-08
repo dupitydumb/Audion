@@ -2,12 +2,11 @@
     import type { Album } from "$lib/api/tauri";
     import { goToAlbumDetail, goToArtistDetail } from "$lib/stores/view";
     import {
-        loadLibrary,
         getAlbumCoverFromTracks,
         loadMoreAlbums,
     } from "$lib/stores/library";
     import { contextMenu } from "$lib/stores/ui";
-    import { deleteAlbum, getTracksByAlbum } from "$lib/api/tauri";
+    import { getTracksByAlbum } from "$lib/api/tauri";
     import {
         playTracks,
         currentAlbumId,
@@ -16,17 +15,11 @@
     } from "$lib/stores/player";
     import VirtualizedGrid from "./Virtualizedgrid.svelte";
     import MediaCard from "./MediaCard.svelte";
-    import { confirm, prompt } from "$lib/stores/dialogs";
     import { onDestroy } from "svelte";
     import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
-    import {
-        pinnedItems,
-        pinItem,
-        unpinItem,
-        isPinned,
-    } from "$lib/stores/pinned";
-    import { setCustomArtwork } from "$lib/stores/customArtwork";
-    import { addToast } from "$lib/stores/toast";
+    import { pinnedItems, isPinned } from "$lib/stores/pinned";
+    import { buildAlbumContextMenu } from "$lib/menus/contextMenus";
+    import { _ } from "svelte-i18n";
 
     let currentScrollTop = getScroll("albums");
 
@@ -94,108 +87,18 @@
         goToAlbumDetail(album.id);
     }
 
-    async function handleAlbumContextMenu(album: Album, e: MouseEvent) {
-        const pinned = isPinned("album", album.id, $pinnedItems);
+    function handleAlbumContextMenu(album: Album, e: MouseEvent) {
         contextMenu.set({
             visible: true,
             x: e.clientX,
             y: e.clientY,
-            items: [
-                {
-                    label: "Play",
-                    action: () => playAlbum(album),
-                },
-                {
-                    label: pinned ? "Unpin from Top" : "Pin to Top",
-                    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2L4.5 9L9 9L9 22L15 22L15 9L19.5 9L12 2Z"/></svg>`,
-                    action: () => {
-                        if (pinned) {
-                            unpinItem("album", album.id);
-                        } else {
-                            pinItem("album", album.id);
-                        }
-                    },
-                },
-                { type: "separator" },
-                {
-                    label: "Change Artwork",
-                    submenu: [
-                        {
-                            label: "From File",
-                            action: () => {
-                                const input = document.createElement("input");
-                                input.type = "file";
-                                input.accept = "image/*";
-                                input.onchange = (e) => {
-                                    const file = (e.target as HTMLInputElement)
-                                        .files?.[0];
-                                    if (file) {
-                                        const reader = new FileReader();
-                                        reader.onload = () => {
-                                            const result =
-                                                reader.result as string;
-                                            setCustomArtwork(
-                                                "album",
-                                                album.id,
-                                                result,
-                                            );
-                                            addToast(
-                                                "Album artwork updated",
-                                                "success",
-                                            );
-                                        };
-                                        reader.readAsDataURL(file);
-                                    }
-                                };
-                                input.click();
-                            },
-                        },
-                        {
-                            label: "From URL",
-                            action: async () => {
-                                const url = await prompt("Enter image URL:", {
-                                    title: "Change Artwork",
-                                    placeholder:
-                                        "https://example.com/image.jpg",
-                                });
-                                if (url && url.trim()) {
-                                    setCustomArtwork(
-                                        "album",
-                                        album.id,
-                                        url.trim(),
-                                    );
-                                    addToast(
-                                        "Album artwork updated",
-                                        "success",
-                                    );
-                                }
-                            },
-                        },
-                    ],
-                },
-                { type: "separator" },
-                {
-                    label: "Delete Album",
-                    danger: true,
-                    action: async () => {
-                        const confirmed = await confirm(
-                            `Are you sure you want to delete the album "${album.name}"? This will delete all songs in this album from your computer.`,
-                            {
-                                title: "Delete Album",
-                                confirmLabel: "Delete",
-                                danger: true,
-                            },
-                        );
-                        if (!confirmed) return;
-                        try {
-                            await deleteAlbum(album.id);
-                            await loadLibrary();
-                        } catch (err) {
-                            console.error("Failed to delete album:", err);
-                        }
-                    },
-                },
-            ],
+            items: buildAlbumContextMenu({
+                album,
+                showPlay: true,
+                showDelete: true,
+                onPlay: playAlbum,
+                t: $_,
+            }),
         });
     }
 

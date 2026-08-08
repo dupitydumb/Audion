@@ -13,33 +13,46 @@
         goToArtistDetail,
         goToPlaylistDetail,
     } from "$lib/stores/view";
-    import { playTracks, addToQueue } from "$lib/stores/player";
+    import { playTracks } from "$lib/stores/player";
     import {
         getAlbumArtSrc,
         getTrackCoverSrc,
         getAlbumCoverSrc,
-        addTrackToPlaylist,
-        deleteTrack,
-        deleteAlbum,
+        formatDuration,
     } from "$lib/api/tauri";
     import {
         albums,
-        tracks as allTracks,
-        playlists,
-        loadPlaylists,
-        loadLibrary,
         getAlbumCoverFromTracks,
     } from "$lib/stores/library";
     import { contextMenu } from "$lib/stores/ui";
-    import { pluginStore } from "$lib/stores/plugin-store";
     import { playlistCovers } from "$lib/stores/playlistCovers";
-    import { confirm } from "$lib/stores/dialogs";
+    import {
+        buildTrackContextMenu,
+        buildAlbumContextMenu,
+        buildArtistContextMenu,
+        isTrackUnavailable,
+    } from "$lib/menus/contextMenus";
+    import { _ } from "svelte-i18n";
 
     import EmptyState from "./EmptyState.svelte";
 
     // Props from MainView
     export let sectionOrder: SectionKey[];
     export let hiddenSections: Set<SectionKey>;
+
+    // per-section visible counts (reset when search results change)
+    let visibleTracks = 10;
+    let visibleAlbums = 6;
+    let visibleArtists = 6;
+    let visiblePlaylists = 6;
+
+    $: $searchResults, resetVisible();
+    function resetVisible() {
+        visibleTracks = 10;
+        visibleAlbums = 6;
+        visibleArtists = 6;
+        visiblePlaylists = 6;
+    }
 
     // Helper functions for playlist covers
     function initialsFromName(name: string) {
@@ -141,113 +154,24 @@
         return name.charAt(0).toUpperCase();
     }
 
-    async function handleTrackContextMenu(
+    function handleTrackContextMenu(
         e: MouseEvent,
         track: any,
         index: number,
     ) {
         e.preventDefault();
-
-        // Ensure playlists are loaded
-        if ($playlists.length === 0) {
-            await loadPlaylists();
-        }
-
-        // Build playlist submenu items
-        const playlistItems = $playlists.map((playlist) => ({
-            label: playlist.name,
-            action: async () => {
-                try {
-                    await addTrackToPlaylist(playlist.id, track.id);
-                } catch (error) {
-                    console.error("Failed to add track to playlist:", error);
-                }
-            },
-        }));
-
         contextMenu.set({
             visible: true,
             x: e.clientX,
             y: e.clientY,
-            items: [
-                {
-                    label: "Play",
-                    action: () => {
-                        playTracks($searchResults.tracks, index);
-                    },
-                },
-                { type: "separator" },
-                {
-                    label: "Add to Queue",
-                    action: () => addToQueue([track]),
-                },
-                { type: "separator" },
-                {
-                    label: "Add to Playlist",
-                    submenu:
-                        playlistItems.length > 0
-                            ? playlistItems
-                            : [
-                                  {
-                                      label: "No playlists",
-                                      action: () => {},
-                                      disabled: true,
-                                  },
-                              ],
-                },
-                { type: "separator" },
-                {
-                    label: "Go to Album",
-                    action: () => {
-                        if (track.album_id) {
-                            handleAlbumClick(track.album_id);
-                        }
-                    },
-                    disabled: !track.album_id,
-                },
-                {
-                    label: "Go to Artist",
-                    action: () => {
-                        if (track.artist) {
-                            handleArtistClick(track.artist);
-                        }
-                    },
-                    disabled: !track.artist,
-                },
-                { type: "separator" },
-                {
-                    label: "Delete from Library",
-                    danger: true,
-                    action: async () => {
-                        const confirmed = await confirm(
-                            `Are you sure you want to delete "${track.title}" from your library? This will also remove the file from your computer.`,
-                            {
-                                title: "Delete Track",
-                                confirmLabel: "Delete",
-                                danger: true,
-                            },
-                        );
-
-                        if (!confirmed) return;
-
-                        try {
-                            if (track.id) {
-                                await deleteTrack(track.id);
-                                // Refresh library or simple remove from search results not easy without re-search
-                                // but we should at least trigger library reload
-                                loadLibrary();
-                            }
-                        } catch (error) {
-                            console.error("Failed to delete track:", error);
-                        }
-                    },
-                    // Only for local tracks essentially, but backend handles safety?
-                    // Let's assume yes or user will see error.
-                    // Actually checking source might be good.
-                    disabled:
-                        track.source_type && track.source_type !== "local",
-                },
-            ],
+            items: buildTrackContextMenu({
+                track,
+                trackIndex: index,
+                sortedTracks: $searchResults.tracks,
+                isUnavailable: isTrackUnavailable(track),
+                variant: 'full',
+                t: $_,
+            }),
         });
     }
 
@@ -257,46 +181,14 @@
             visible: true,
             x: e.clientX,
             y: e.clientY,
-            items: [
-                {
-                    label: "Open Album",
-                    action: () => handleAlbumClick(album.id),
-                },
-                { type: "separator" },
-                {
-                    label: "Go to Artist",
-                    action: () => {
-                        if (album.artist) {
-                            handleArtistClick(album.artist);
-                        }
-                    },
-                    disabled: !album.artist,
-                },
-                { type: "separator" },
-                {
-                    label: "Delete Album",
-                    danger: true,
-                    action: async () => {
-                        const confirmed = await confirm(
-                            `Are you sure you want to delete the album "${album.name}"? This will delete all songs in this album from your computer.`,
-                            {
-                                title: "Delete Album",
-                                confirmLabel: "Delete",
-                                danger: true,
-                            },
-                        );
-
-                        if (!confirmed) return;
-
-                        try {
-                            await deleteAlbum(album.id);
-                            await loadLibrary();
-                        } catch (error) {
-                            console.error("Failed to delete album:", error);
-                        }
-                    },
-                },
-            ],
+            items: buildAlbumContextMenu({
+                album,
+                showPlay: false,
+                showPin: true,
+                showGoToArtist: true,
+                showDelete: true,
+                t: $_,
+            }),
         });
     }
 
@@ -306,12 +198,11 @@
             visible: true,
             x: e.clientX,
             y: e.clientY,
-            items: [
-                {
-                    label: "Open Artist",
-                    action: () => handleArtistClick(artist.name),
-                },
-            ],
+            items: buildArtistContextMenu({
+                artist,
+                showPlay: false,
+                t: $_,
+            }),
         });
     }
 </script>
@@ -335,7 +226,7 @@
                             </button>
                         </h2>
                         <div class="tracks-list">
-                            {#each $searchResults.tracks.slice(0, 10) as track, index}
+                            {#each $searchResults.tracks.slice(0, visibleTracks) as track, index}
                                 {@const albumArt = getTrackArt(track)}
                                 <div
                                     class="track-item"
@@ -386,12 +277,22 @@
                                             >{track.artist || "Unknown Artist"}</button
                                         >
                                     </div>
+                                    <button
+                                        class="track-album truncate"
+                                        on:click|stopPropagation={() =>
+                                            track.album_id && handleAlbumClick(track.album_id)}
+                                        disabled={!track.album_id}
+                                        >{track.album || "-"}</button
+                                    >
+                                    <span class="track-duration"
+                                        >{formatDuration(track.duration)}</span
+                                    >
                                 </div>
                             {/each}
-                            {#if $searchResults.tracks.length > 10}
-                                <p class="more-results">
-                                    And {$searchResults.tracks.length - 10} more tracks...
-                                </p>
+                            {#if $searchResults.tracks.length > visibleTracks}
+                                <button class="load-more" on:click={() => visibleTracks += 10}>
+                                    {$_('search.loadMore', { values: { count: $searchResults.tracks.length - visibleTracks }, default: `Load more (${$searchResults.tracks.length - visibleTracks} left)` })}
+                                </button>
                             {/if}
                         </div>
                     </section>
@@ -405,7 +306,7 @@
                             </button>
                         </h2>
                         <div class="albums-grid">
-                            {#each $searchResults.albums.slice(0, 6) as album}
+                            {#each $searchResults.albums.slice(0, visibleAlbums) as album}
                                 {@const coverSrc = getAlbumCover(album)}
                                 <div
                                     class="album-card"
@@ -459,6 +360,11 @@
                                 </div>
                             {/each}
                         </div>
+                        {#if $searchResults.albums.length > visibleAlbums}
+                            <button class="load-more" on:click={() => visibleAlbums += 6}>
+                                {$_('search.loadMore', { values: { count: $searchResults.albums.length - visibleAlbums }, default: `Load more (${$searchResults.albums.length - visibleAlbums} left)` })}
+                            </button>
+                        {/if}
                     </section>
 
                 {:else if key === "artists" && $searchResults.artists.length > 0}
@@ -470,7 +376,7 @@
                             </button>
                         </h2>
                         <div class="artists-grid">
-                            {#each $searchResults.artists.slice(0, 6) as artist}
+                            {#each $searchResults.artists.slice(0, visibleArtists) as artist}
                                 <button
                                     class="artist-card"
                                     on:click={() => handleArtistClick(artist.name)}
@@ -494,6 +400,11 @@
                                 </button>
                             {/each}
                         </div>
+                        {#if $searchResults.artists.length > visibleArtists}
+                            <button class="load-more" on:click={() => visibleArtists += 6}>
+                                {$_('search.loadMore', { values: { count: $searchResults.artists.length - visibleArtists }, default: `Load more (${$searchResults.artists.length - visibleArtists} left)` })}
+                            </button>
+                        {/if}
                     </section>
 
                 {:else if key === "playlists" && $searchResults.playlists?.length > 0}
@@ -505,7 +416,7 @@
                             </button>
                         </h2>
                         <div class="playlists-grid">
-                            {#each $searchResults.playlists.slice(0, 6) as playlist}
+                            {#each $searchResults.playlists.slice(0, visiblePlaylists) as playlist}
                                 {@const coverSrc = getPlaylistCover(playlist)}
                                 <button
                                     class="playlist-card"
@@ -527,6 +438,11 @@
                                 </button>
                             {/each}
                         </div>
+                        {#if $searchResults.playlists.length > visiblePlaylists}
+                            <button class="load-more" on:click={() => visiblePlaylists += 6}>
+                                {$_('search.loadMore', { values: { count: $searchResults.playlists.length - visiblePlaylists }, default: `Load more (${$searchResults.playlists.length - visiblePlaylists} left)` })}
+                            </button>
+                        {/if}
                     </section>
                 {/if}
             {/if}
@@ -685,6 +601,7 @@
         flex-direction: column;
         gap: var(--spacing-xs);
         min-width: 0;
+        flex: 1 1 0;
     }
 
     .track-title {
@@ -698,10 +615,56 @@
         color: var(--text-secondary);
     }
 
-    .more-results {
+    .track-album {
+        flex: 1 1 0;
+        min-width: 0;
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        background: none;
+        border: none;
+        padding: 0;
+        text-align: left;
+        line-height: 1.2;
+        cursor: pointer;
+    }
+
+    .track-album:hover:not(:disabled) {
+        color: var(--text-primary);
+        text-decoration: underline;
+        cursor: pointer;
+    }
+
+    .track-album:disabled {
+        cursor: default;
+    }
+
+    .track-duration {
+        flex-shrink: 0;
+        font-size: 0.875rem;
+        color: var(--text-subdued);
+        min-width: 40px;
+        text-align: right;
+    }
+
+    @media (max-width: 640px) {
+        .track-album {
+            display: none;
+        }
+    }
+
+    .load-more {
+        display: block;
+        background: none;
+        border: none;
+        padding: var(--spacing-sm);
         font-size: var(--font-size-base);
         color: var(--text-subdued);
-        padding: var(--spacing-sm);
+        cursor: pointer;
+        text-align: left;
+    }
+
+    .load-more:hover {
+        color: var(--text-secondary);
     }
 
     /* Albums Grid */

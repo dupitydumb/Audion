@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { invoke } from "@tauri-apps/api/core";
   import { onMount, onDestroy } from "svelte";
   import { get } from "svelte/store";
   import { appSettings } from "$lib/stores/settings";
@@ -11,12 +12,19 @@
     ensureAudioPermission,
     openAppSettings,
     initPlatformDetection,
+    listen,
   } from "$lib/api/tauri";
   import { initMobileDetection, isMobile } from "$lib/stores/mobile";
   import { mobileSearchOpen } from "$lib/stores/mobile";
   import { initAndroidNotification } from "$lib/services/android-notification";
   import { loadLikedTracks } from "$lib/stores/liked";
-  import { goBack, navigationHistory } from "$lib/stores/view";
+  import {
+    goBack,
+    goToArtistDetail,
+    navigationHistory,
+    currentView,
+    cacheLastViewForNextLaunch,
+  } from "$lib/stores/view";
   import {
     isFullScreen,
     isQueueVisible,
@@ -37,6 +45,8 @@
   import MobileMiniPlayer from "$lib/components/MobileMiniPlayer.svelte";
 
   let handleVisibilityChange: (() => void) | null = null;
+  let unlistenRequestLastView: (() => void) | null = null;
+  let unlistenGoToArtist: (() => void) | null = null;
   let migrationStatus = "";
   let showMigrationBanner = false;
   let showPermissionBanner = false;
@@ -105,6 +115,34 @@
 
     initMobileDetection();
     await initAudioBackend();
+
+    // tray artist click => focus window + navigate to artist detail
+    listen<string>("tray://go-to-artist", ({ payload: artist }) => {
+      if (artist) goToArtistDetail(artist);
+    })
+      .then((unlisten) => {
+        unlistenGoToArtist = unlisten;
+      })
+      .catch(() => { });
+
+    // backend asks the frontend to react right before it actually closes the window
+    // see CloseRequested in lib.rs
+    // cache the current view to localStorage
+    // view.ts's getInitialView reads on the next launch
+    // once we are done, we call confirm_close to let the close actually go through
+    listen("app://request-last-view", async () => {
+      try {
+        const view = get(currentView);
+        cacheLastViewForNextLaunch(view);
+        await invoke("confirm_close");
+      } catch (error) {
+        console.error("[App] Failed to save last view on close:", error);
+      }
+    })
+      .then((unlisten) => {
+        unlistenRequestLastView = unlisten;
+      })
+      .catch(() => { });
 
     // Load liked tracks from database
     loadLikedTracks();
@@ -231,6 +269,16 @@
     // Remove visibility change listener
     if (handleVisibilityChange) {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
+    }
+
+    // cleanup the backend's current view request
+    if (unlistenRequestLastView) {
+      unlistenRequestLastView();
+    }
+
+    // cleanup the tray artist click listener
+    if (unlistenGoToArtist) {
+      unlistenGoToArtist();
     }
 
     // Cleanup Android back handler
