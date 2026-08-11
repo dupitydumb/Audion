@@ -12,7 +12,7 @@ import { wsStore } from '$lib/stores/websocket';
 import { activeRemoteDevice } from '$lib/stores/websocket';
 import {
     shouldUseNativeAudio, nativeAudioStop, nativeAudioSetVolume,
-    nativeAudioSetEq, nativeAudioSetRepeatOne, nativeAudioSetReplayGainEnabled,
+    nativeAudioSetEq, nativeAudioSetRepeatOne, nativeAudioSetReplayGainEnabled, nativeAudioSetLimiterEnabled,
     nativeAudioSetCrossfadeSeconds, nativeAudioSetOutputDevice,
     type AudioEventType,
 } from '$lib/services/native-audio';
@@ -207,6 +207,7 @@ export async function initAudioBackend(): Promise<void> {
                 preamp_db: state.preampDb,
             });
             nativeAudioSetReplayGainEnabled(get(appSettings).replayGainEnabled).catch(console.error);
+            nativeAudioSetLimiterEnabled(get(appSettings).limiterEnabled).catch(console.error);
             nativeAudioSetCrossfadeSeconds(get(appSettings).crossfadeSeconds).catch(console.error);
             console.log('[Player] Applied initial EQ settings to native backend');
         } catch (err) {

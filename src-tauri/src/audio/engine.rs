@@ -8,9 +8,9 @@ use crossbeam::channel::{unbounded, Receiver, Sender};
 use rodio::queue::queue;
 use rodio::Source;
 
-use super::dsp::EqSettings;
+use super::dsp::{EqSettings, LIMITER_ENABLED_DEFAULT};
 use super::mod_types::{AudioEvent, ReadySource, DeviceList, AudioDeviceInfo};
-use super::sources::{PausableQueue, CrossfadeSource, CrossfadeState, EqSource};
+use super::sources::{PausableQueue, CrossfadeSource, CrossfadeState, EqSource, LimiterSource};
 use super::worker::{OpenTask, OpenResult};
 use super::symphonia::SymphoniaSource;
 use super::resampler::RubatoResampler;
@@ -52,6 +52,7 @@ pub struct AudioEngine {
     pub device_sample_rate: NonZero<u32>,
     pub device_channels: NonZero<u16>,
     pub replay_gain_enabled: Arc<AtomicBool>,
+    pub limiter_enabled: Arc<AtomicBool>,
     pub seek_tx: Option<Sender<Duration>>,
     pub repeat_one_tx: Option<Sender<bool>>,
     pub repeat_one: bool,
@@ -169,6 +170,7 @@ impl AudioEngine {
         let paused_flag = Arc::new(AtomicBool::new(false));
         let volume_atomic = Arc::new(AtomicU32::new(1.0f32.to_bits()));
         let replay_gain_enabled = Arc::new(AtomicBool::new(true));
+        let limiter_enabled = Arc::new(AtomicBool::new(LIMITER_ENABLED_DEFAULT));
 
         let (eq_tx, eq_rx) = unbounded::<EqSettings>();
         let (event_tx, event_rx) = unbounded::<AudioEvent>();
@@ -299,8 +301,10 @@ impl AudioEngine {
         let cf_pending: Arc<Mutex<Option<CrossfadeState>>> = Arc::new(Mutex::new(None));
         let cf_src = CrossfadeSource::new(pq, Arc::clone(&cf_active), Arc::clone(&cf_pending));
         let eq_src = EqSource::new(cf_src, eq_settings, eq_rx);
+        // final stage => sees the cumulative result of ReplayGain + volume + EQ
+        let limited_src = LimiterSource::new(eq_src, Arc::clone(&limiter_enabled));
 
-        stream.mixer().add(eq_src);
+        stream.mixer().add(limited_src);
 
         Ok((
             Self {
@@ -314,6 +318,7 @@ impl AudioEngine {
                 device_sample_rate,
                 device_channels,
                 replay_gain_enabled,
+                limiter_enabled,
                 seek_tx: None,
                 repeat_one_tx: None,
                 repeat_one: false,
@@ -550,6 +555,11 @@ impl AudioEngine {
         tracing::info!("[AUDIO] Replay gain enabled: {}", enabled);
     }
 
+    pub fn set_limiter_enabled(&mut self, enabled: bool) {
+        self.limiter_enabled.store(enabled, Ordering::Relaxed);
+        tracing::info!("[AUDIO] Limiter enabled: {}", enabled);
+    }
+
     pub fn set_output_device(
         &mut self,
         device_name: Option<String>,
@@ -563,6 +573,7 @@ impl AudioEngine {
         let volume = self.volume;
         let repeat_one = self.repeat_one;
         let replay_gain_enabled = self.replay_gain_enabled.load(Ordering::Relaxed);
+        let limiter_enabled = self.limiter_enabled.load(Ordering::Relaxed);
         let eq_settings = self.eq_settings.clone();
 
         self.queue_input.clear();
@@ -578,6 +589,7 @@ impl AudioEngine {
 
         new_engine.set_volume(volume);
         new_engine.replay_gain_enabled.store(replay_gain_enabled, Ordering::Relaxed);
+        new_engine.limiter_enabled.store(limiter_enabled, Ordering::Relaxed);
         new_engine.repeat_one = repeat_one;
 
         if let Some((path, position)) = snapshot {

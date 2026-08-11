@@ -249,6 +249,14 @@ pub fn audio_set_replay_gain_enabled(
 }
 
 #[tauri::command]
+pub fn audio_set_limiter_enabled(
+    enabled: bool,
+    state: State<'_, PlaybackStateSync>,
+) -> Result<(), String> {
+    state.send(AudioCommand::SetLimiterEnabled(enabled))
+}
+
+#[tauri::command]
 pub fn native_audio_available(_state: State<'_, PlaybackStateSync>) -> bool {
     true
 }

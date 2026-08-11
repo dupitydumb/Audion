@@ -196,6 +196,14 @@ export async function nativeAudioSetReplayGainEnabled(enabled: boolean): Promise
     await invoke('audio_set_replay_gain_enabled', { enabled });
 }
 
+/**
+ * enable or disable the safety limiter that sits after ReplayGain/volume/EQ
+ * when disabled, audio is passed through completely untouched
+ */
+export async function nativeAudioSetLimiterEnabled(enabled: boolean): Promise<void> {
+    await invoke('audio_set_limiter_enabled', { enabled });
+}
+
 export async function nativeAudioSetCrossfadeSeconds(seconds: number): Promise<void> {
     await invoke('audio_set_crossfade_seconds', { seconds });
 }

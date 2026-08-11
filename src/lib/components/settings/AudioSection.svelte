@@ -2,7 +2,7 @@
   import { _ } from "svelte-i18n";
   import { appSettings } from "$lib/stores/settings";
   import { equalizer } from "$lib/stores/equalizer";
-  import { nativeAudioStop, nativeAudioSetReplayGainEnabled, nativeAudioListDevices, nativeAudioGetDeviceInfo, nativeAudioSetOutputDevice, type DeviceList, type AudioDeviceInfo } from "$lib/services/native-audio";
+  import { nativeAudioStop, nativeAudioSetReplayGainEnabled, nativeAudioSetLimiterEnabled, nativeAudioListDevices, nativeAudioGetDeviceInfo, nativeAudioSetOutputDevice, type DeviceList, type AudioDeviceInfo } from "$lib/services/native-audio";
   import { html5SetReplayGainEnabled } from "$lib/services/html5-audio";
   import Icon from "$lib/components/Icon.svelte";
   import { onMount, onDestroy } from "svelte";
@@ -103,6 +103,19 @@
     } catch (e) {
       console.warn('[AudioSection] Failed to set replay gain:', e);
       appSettings.setReplayGainEnabled(!next);
+    }
+  }
+
+  // limiter is native/rodio-only - no WebAudio equivalent
+  // +hidden entirely on the html5 backend
+  async function handleToggleLimiter() {
+    const next = !$appSettings.limiterEnabled;
+    appSettings.setLimiterEnabled(next);
+    try {
+      await nativeAudioSetLimiterEnabled(next);
+    } catch (e) {
+      console.warn('[AudioSection] Failed to set limiter:', e);
+      appSettings.setLimiterEnabled(!next);
     }
   }
 
@@ -285,6 +298,30 @@
             </button>
           </div>
         </div>
+
+        {#if $appSettings.audioBackend !== 'html5'}
+          <div class="divider"></div>
+
+          <!-- limiter - native/rodio only, no html5 equivalent -->
+          <div class="inner-section">
+            <div class="toggle-container">
+              <div class="toggle-info">
+                <span class="setting-title">{$_('settings.limiter', { default: 'Safety Limiter' })}</span>
+                <span class="setting-description">{$_('settings.limiterDesc', { default: 'Prevent clipping from Replay Gain and EQ boosts. Turning this off plays audio completely unprocessed, which can distort if Replay Gain or EQ push a track past full volume.' })}</span>
+              </div>
+              <button
+                class="toggle-btn"
+                class:active={$appSettings.limiterEnabled}
+                on:click={handleToggleLimiter}
+                role="switch"
+                aria-checked={$appSettings.limiterEnabled}
+                aria-label="Toggle Safety Limiter"
+              >
+                <div class="toggle-handle"></div>
+              </button>
+            </div>
+          </div>
+        {/if}
 
         <div class="divider"></div>
 

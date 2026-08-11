@@ -50,6 +50,7 @@ pub enum AudioCommand {
     SetEq(EqSettings),
     SetRepeatOne(bool),
     SetReplayGainEnabled(bool),
+    SetLimiterEnabled(bool),
     SetOutputDevice(Option<String>),
     SetCrossfadeSeconds(u32),
     TriggerCrossfade,
@@ -151,6 +152,9 @@ impl PlaybackStateSync {
                             AudioCommand::SetRepeatOne(v) => engine.set_repeat_one(v),
                             AudioCommand::SetReplayGainEnabled(v) => {
                                 engine.set_replay_gain_enabled(v);
+                            }
+                            AudioCommand::SetLimiterEnabled(v) => {
+                                engine.set_limiter_enabled(v);
                             }
                             AudioCommand::SetOutputDevice(name) => {
                                 match engine.set_output_device(name, &mut event_rx, &mut open_result_rx) {

@@ -7,7 +7,7 @@ use std::f32::consts::PI;
 use crossbeam::channel::Receiver;
 use rodio::Source;
 
-use super::dsp::{EqSettings, FilterBank};
+use super::dsp::{EqSettings, FilterBank, Limiter};
 
 // =============================================================================
 // PausableQueue — wraps queue output, emits silence when paused
@@ -210,6 +210,173 @@ impl<S: Source<Item = f32>> Iterator for EqSource<S> {
 }
 
 impl<S: Source<Item = f32>> Source for EqSource<S> {
+    fn current_span_len(&self) -> Option<usize> {
+        self.inner.current_span_len()
+    }
+    fn channels(&self) -> NonZero<u16> {
+        self.inner.channels()
+    }
+    fn sample_rate(&self) -> NonZero<u32> {
+        self.inner.sample_rate()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        None
+    }
+    fn try_seek(&mut self, pos: Duration) -> Result<(), rodio::source::SeekError> {
+        self.inner.try_seek(pos)
+    }
+}
+
+// =============================================================================
+// LimiterSource => final stage lookahead limiter, wraps EqSource
+// =============================================================================
+// see Limiter in dsp.rs for the gain scheduling algorithm
+// this wrapper's job is just frame buffering: 
+// limiter operates on one whole frame (all channels) at a time so its gain stays linked across channels
+// but Source::next() hands us one interleaved sample at a time
+// so we buffer a frame in, and drain a processed frame out, one sample per call either way
+
+pub struct LimiterSource<S: Source<Item = f32>> {
+    pub inner: S,
+    limiter: Limiter,
+    enabled: Arc<AtomicBool>,
+    // current effective state
+    // lags 'enabled' by however long it takes to drain whatever's still buffered in the limiter
+    // so toggling doesn't click/drop audio
+    bypassed: bool,
+    channels: usize,
+    sample_rate: NonZero<u32>,
+    in_frame: Vec<f32>,
+    in_fill: usize,
+    out_frame: Vec<f32>,
+    out_pos: usize,
+    out_len: usize,
+    inner_exhausted: bool,
+}
+
+impl<S: Source<Item = f32>> LimiterSource<S> {
+    /// enabled is shared with whoever exposes the on/off toggle
+    /// (see audio_set_limiter_enabled)
+    /// LimiterSource just reacts to it
+    pub fn new(inner: S, enabled: Arc<AtomicBool>) -> Self {
+        let channels = inner.channels().get() as usize;
+        let sample_rate = inner.sample_rate();
+        let bypassed = !enabled.load(Ordering::Relaxed);
+        Self {
+            limiter: Limiter::new(channels, sample_rate),
+            enabled,
+            bypassed,
+            inner,
+            channels,
+            sample_rate,
+            in_frame: vec![0.0; channels],
+            in_fill: 0,
+            out_frame: vec![0.0; channels],
+            out_pos: 0,
+            out_len: 0,
+            inner_exhausted: false,
+        }
+    }
+
+    fn check_reconfigure(&mut self) {
+        let ch_now = self.inner.channels().get() as usize;
+        let rate_now = self.inner.sample_rate();
+        if ch_now != self.channels || rate_now != self.sample_rate {
+            self.channels = ch_now;
+            self.sample_rate = rate_now;
+            self.in_frame = vec![0.0; ch_now];
+            self.out_frame = vec![0.0; ch_now];
+            self.in_fill = 0;
+            self.out_pos = 0;
+            self.out_len = 0;
+            self.limiter.reconfigure(ch_now, rate_now);
+        }
+    }
+}
+
+impl<S: Source<Item = f32>> Iterator for LimiterSource<S> {
+    type Item = f32;
+
+    #[inline]
+    fn next(&mut self) -> Option<f32> {
+        if self.out_pos < self.out_len {
+            let s = self.out_frame[self.out_pos];
+            self.out_pos += 1;
+            return Some(s);
+        }
+
+        let want_enabled = self.enabled.load(Ordering::Relaxed);
+
+        // already fully bypassed and staying that way => zero overhead
+        if self.bypassed && !want_enabled {
+            return self.inner.next();
+        }
+
+        // just got toggled off
+        // the limiter may still have up to lookahead_frames of audio sitting in its delay line
+        // drain that through normally first
+        if !want_enabled && !self.bypassed {
+            self.check_reconfigure();
+            let mut out = std::mem::take(&mut self.out_frame);
+            let drained = self.limiter.flush(&mut out);
+            self.out_frame = out;
+            if drained {
+                self.out_pos = 1;
+                self.out_len = self.channels;
+                return Some(self.out_frame[0]);
+            }
+            self.bypassed = true;
+            return self.inner.next();
+        }
+
+        // just got toggled back on
+        // reset the limiter's lookahead state
+        if want_enabled && self.bypassed {
+            self.limiter.reconfigure(self.channels, self.sample_rate);
+            self.bypassed = false;
+        }
+
+        self.check_reconfigure();
+
+        while !self.inner_exhausted {
+            match self.inner.next() {
+                Some(sample) => {
+                    self.in_frame[self.in_fill] = sample;
+                    self.in_fill += 1;
+                    if self.in_fill == self.channels {
+                        self.in_fill = 0;
+                        let mut out = std::mem::take(&mut self.out_frame);
+                        let ready = self.limiter.push_frame(&self.in_frame, &mut out);
+                        self.out_frame = out;
+                        if ready {
+                            self.out_pos = 1;
+                            self.out_len = self.channels;
+                            return Some(self.out_frame[0]);
+                        }
+                        // still filling the lookahead window => keep pulling
+                    }
+                }
+                None => {
+                    self.inner_exhausted = true;
+                }
+            }
+        }
+
+        // inner is done => drain whatever the limiter still has buffered
+        let mut out = std::mem::take(&mut self.out_frame);
+        let drained = self.limiter.flush(&mut out);
+        self.out_frame = out;
+        if drained {
+            self.out_pos = 1;
+            self.out_len = self.channels;
+            Some(self.out_frame[0])
+        } else {
+            None
+        }
+    }
+}
+
+impl<S: Source<Item = f32>> Source for LimiterSource<S> {
     fn current_span_len(&self) -> Option<usize> {
         self.inner.current_span_len()
     }
