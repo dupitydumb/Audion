@@ -1124,6 +1124,22 @@ export class PluginRuntime {
           throw error;
         }
       };
+
+      // api.fetchBlob: fetch binary via Rust (no CORS) → same-origin blob: URL
+      // Use as stream_url when the CDN blocks cross-origin browser requests (e.g. Tidal, Deezer).
+      api.fetchBlob = async (url: string, mimeType = 'audio/mp4'): Promise<string> => {
+        try {
+          const b64: string = await invoke<string>('proxy_fetch_bytes', { url });
+          const binary = atob(b64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const blob = new Blob([bytes], { type: mimeType });
+          return URL.createObjectURL(blob);
+        } catch (error) {
+          console.error(`[PluginRuntime] fetchBlob failed for ${pluginName}:`, error);
+          throw error;
+        }
+      };
     }
 
     // Theme API (Always exposed to allow un-theming)
