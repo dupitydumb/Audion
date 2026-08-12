@@ -14,7 +14,22 @@
     "pinToTop": "Закрепить вверху",
     "unpinFromTop": "Открепить",
     "goToArtist": "Перейти к артисту",
-    "goToAlbum": "Перейти к альбому"
+    "goToAlbum": "Перейти к альбому",
+    "addedToQueue": "Добавлено в очередь",
+    "artworkUpdated": {
+      "album": "Обложка альбома обновлена",
+      "artist": "Фото исполнителя обновлено",
+      "track": "Обложка трека обновлена"
+    },
+    "changeCover": "Изменить обложку",
+    "configureDownloadLocation": "Сначала настройте папку для загрузок в настройках",
+    "deleteAlbum": "Удалить альбом",
+    "deletePlaylist": "Удалить плейлист",
+    "exportToZip": "Экспортировать в ZIP",
+    "like": "Нравится",
+    "rename": "Переименовать",
+    "unlike": "Убрать из избранного",
+    "unlikeAll": "Убрать все из избранного"
   },
   "trackList": {
     "title": "Название",
@@ -389,7 +404,34 @@
     "supportOnKofi": "Поддержать на Ko-fi",
     "unlock": "Разблокировать",
     "urlLabel": "URL:",
-    "userLabel": "Пользователь:"
+    "userLabel": "Пользователь:",
+    "lyricsPriorityTitle": "Приоритет источников автопоиска",
+    "lyricsPriorityDesc": "Задаёт порядок автоматического поиска источников, например {example}. Используйте только строчные буквы и одиночные разделители \"/\". Оставьте пустым для порядка по умолчанию. Ручной выбор источника в панели текста песен не изменяется.",
+    "lyricsPriorityPlaceholder": "apple/imported/genius",
+    "lyricsPriorityInputLabel": "Приоритет источников текста песен",
+    "save": "Сохранить",
+    "lyricsPriorityResetToDefault": "Сбросить по умолчанию",
+    "lyricsPrioritySaved": "Приоритет источников текста песен сохранён",
+    "lyricsPriorityInvalidFormat": "Неверный формат — используйте строчные буквы и одиночные разделители \"/\", например {example}. Неизвестные значения также отклоняются.",
+    "lyricsPriorityInvalidToast": "Неверный формат приоритета источников текста песен",
+    "lyricsDeleteTitle": "Удалить кэшированный текст песен",
+    "lyricsDeleteDesc": "Безвозвратно удаляет все кэшированные файлы текста песен для указанного источника во всей медиатеке. Введите идентификатор источника (например, {apple}, {imported} или {all} для удаления всего).",
+    "lyricsDeleteAllLabel": "Удалить всё",
+    "lyricsDeleteLyricsLabel": "текстов песен",
+    "lyricsDeleteTokenPlaceholder": "идентификатор",
+    "lyricsDeleteTokenInputLabel": "Идентификатор источника текста песен для удаления",
+    "lyricsDeleteButtonLabel": "Удалить тексты песен для этого источника",
+    "lyricsDeleteButtonTitle": "Удалить все кэшированные тексты песен для этого источника",
+    "lyricsDeleteEmptyToken": "Сначала введите идентификатор источника",
+    "lyricsDeleteAllConfirm": "Удалить ВСЕ кэшированные тексты песен — из всех источников, включая импортированные файлы, — для каждого трека в медиатеке? Это действие нельзя отменить.",
+    "lyricsDeleteTokenConfirm": "Удалить все тексты песен «{label}» для каждого трека в медиатеке? Это действие нельзя отменить.",
+    "lyricsDeleteAllConfirmTitle": "Удалить все тексты песен",
+    "lyricsDeleteTokenConfirmTitle": "Удалить тексты песен «{label}»",
+    "lyricsDeleteConfirmLabel": "Удалить",
+    "lyricsDeleteSuccess": "Удалено {count} файлов текста песен «{label}»{plural}",
+    "lyricsDeleteNoneFound": "Кэшированных текстов песен «{label}» не найдено",
+    "lyricsDeleteFailed": "Не удалось удалить тексты песен «{label}»",
+    "lyricsTokenAll": "Все"
   },
   "updatePopup": {
     "restartToUpdate": "Перезапустить для обновления",
@@ -822,5 +864,8 @@
     "never": "Никогда",
     "pendingCount": "{count} в ожидании",
     "signInToSync": "Войдите, чтобы синхронизировать"
+  },
+  "search": {
+    "loadMore": "Загрузить ещё ({count} осталось)"
   }
 }

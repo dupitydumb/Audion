@@ -567,6 +567,16 @@ pub fn get_all_tracks_lightweight(conn: &Connection) -> Result<Vec<Track>> {
 }
 
 /// Get all tracks WITH cover paths only (fast, for on-demand loading)
+/// every track's file path only
+/// used by bulk filesystem operations (e.g. sweeping sidecar lyrics files)
+pub fn get_all_track_paths(conn: &Connection) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare("SELECT path FROM tracks")?;
+    let paths = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>>>()?;
+    Ok(paths)
+}
+
 pub fn get_all_tracks_with_paths(conn: &Connection) -> Result<Vec<Track>> {
     let query_start = Instant::now();
 

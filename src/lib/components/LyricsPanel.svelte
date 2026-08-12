@@ -15,6 +15,8 @@
         fetchLyricsForTrack,
         switchLyricsSource,
         wordSyncState,
+        lyricsStore,
+        type LyricsQueryOverride,
     } from "$lib/stores/lyrics";
     import {
         currentTrack,
@@ -218,6 +220,79 @@
         await switchLyricsSource(sourceId);
     }
 
+    // ===============================================
+    // delete a source's cached lyrics file (dropdown delete button)
+    // ===============================================
+
+    async function handleDeleteSource(sourceId: string, label: string, event: MouseEvent) {
+        event.stopPropagation();
+        const ok = await lyricsStore.deleteLyricsForSource(sourceId);
+        if (ok) {
+            addToast(`Deleted ${label} lyrics`, 'success');
+        } else {
+            addToast(`Failed to delete ${label} lyrics`, 'error');
+        }
+    }
+
+    // =================================================
+    // custom search query (shown on no lyrics found screen)
+    // ==============================================
+    /** the default query text derived from track metadata, e.g. Title - Artist */
+    $: defaultQueryText = $currentTrack
+        ? `${$currentTrack.title || "Unknown"} - ${$currentTrack.artist || "Unknown"}`
+        : "";
+
+    let customQueryInput = "";
+    let customQueryChanged = false;
+    let customQueryTrackPath: string | null = null;
+    let customQueryDebounce: ReturnType<typeof setTimeout> | null = null;
+
+    // reset the box to the default query whenever the track actually changes
+    $: if ($currentTrack && $currentTrack.path !== customQueryTrackPath) {
+        customQueryTrackPath = $currentTrack.path;
+        customQueryInput = defaultQueryText;
+        customQueryChanged = false;
+    }
+
+    function handleCustomQueryInput() {
+        customQueryChanged = false;
+        if (customQueryDebounce) clearTimeout(customQueryDebounce);
+        customQueryDebounce = setTimeout(() => {
+            const trimmed = customQueryInput.trim();
+            customQueryChanged = trimmed.length > 0 && trimmed !== defaultQueryText.trim();
+        }, 500);
+    }
+
+    /**
+     * resolve $title / $artist / $album tokens into real metadata
+     * then split on " - " (same shape as the default query text) to derive title/artist for the override
+     * re walks the full auto-mode priority chain with this query
+     */
+    async function retryWithCustomQuery() {
+        if (!$currentTrack) return;
+        if (customQueryDebounce) clearTimeout(customQueryDebounce);
+
+        const resolved = customQueryInput
+            .replace(/\$title/gi, $currentTrack.title ?? "")
+            .replace(/\$artist/gi, $currentTrack.artist ?? "")
+            .replace(/\$album/gi, $currentTrack.album ?? "")
+            .trim();
+
+        if (!resolved) return;
+
+        let title = resolved;
+        let artist: string | undefined;
+        const sepIdx = resolved.indexOf(" - ");
+        if (sepIdx !== -1) {
+            title = resolved.slice(0, sepIdx).trim();
+            artist = resolved.slice(sepIdx + 3).trim();
+        }
+
+        customQueryChanged = false;
+        const override: LyricsQueryOverride = { title, artist };
+        await fetchLyricsForTrack(override);
+    }
+
     // -------------------------------------------------------------------------
     // Import (.lrc, .ttml, .srt)
     // -------------------------------------------------------------------------
@@ -296,6 +371,42 @@
 
                         {#if sourceMenuOpen}
                             <ul class="source-menu" role="listbox" aria-label="Lyrics source">
+                                {#if $availableSources.includes('user')}
+                                    {@const isActive = $lyricsData?.source === 'user'}
+                                    {@const isCached = $availableSources.includes('user')}
+                                    <li
+                                        class="source-menu-item"
+                                        class:active={isActive}
+                                        role="option"
+                                        aria-selected={isActive}
+                                        tabindex="0"
+                                        on:click={() => handleSourceSelect('user')}
+                                        on:keydown={(e) => e.key === 'Enter' && handleSourceSelect('user')}
+                                    >
+                                        <span class="source-menu-label">Imported</span>
+                                        <span class="source-menu-format">
+                                            {#if $lyricsData?.source === 'user' && $lyricsData?.format}
+                                                {$lyricsData.format.toUpperCase()}
+                                            {/if}
+                                        </span>
+                                        {#if isActive}
+                                            <svg class="source-menu-check" viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
+                                            </svg>
+                                        {/if}
+                                        <button
+                                            class="source-menu-delete"
+                                            disabled={!isCached}
+                                            title={isCached ? 'Delete imported lyrics file' : 'No cached file'}
+                                            aria-label="Delete Imported lyrics"
+                                            on:click={(e) => handleDeleteSource('user', 'Imported', e)}
+                                        >
+                                            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
+                                                <path d="M6 7h12v2H6zm2 3h2v9H8zm6 0h2v9h-2zM9 4h6l1 2H8z"/>
+                                            </svg>
+                                        </button>
+                                    </li>
+                                {/if}
                                 {#if $availableSources.includes('embedded')}
                                     {@const isActive = $lyricsData?.source === 'embedded'}
                                     <li
@@ -341,6 +452,17 @@
                                         {:else if isCached}
                                             <span class="source-menu-cached" title={$_('lyrics.cached')}>●</span>
                                         {/if}
+                                        <button
+                                            class="source-menu-delete"
+                                            disabled={!isCached}
+                                            title={isCached ? `Delete ${source.label} lyrics file` : 'No cached file'}
+                                            aria-label={`Delete ${source.label} lyrics`}
+                                            on:click={(e) => handleDeleteSource(source.id, source.label, e)}
+                                        >
+                                            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
+                                                <path d="M6 7h12v2H6zm2 3h2v9H8zm6 0h2v9h-2zM9 4h6l1 2H8z"/>
+                                            </svg>
+                                        </button>
                                     </li>
                                 {/each}
                             </ul>
@@ -414,12 +536,45 @@
                             {$currentTrack.title || $_('common.unknown')} - {$currentTrack.artist ||
                                 $_('common.unknown')}
                         </span>
+                        <div class="custom-query-block">
+                            <span class="custom-query-hint">Try a different query?</span>
+                            <div class="custom-query-row">
+                                <input
+                                    type="text"
+                                    class="custom-query-input"
+                                    bind:value={customQueryInput}
+                                    on:input={handleCustomQueryInput}
+                                    on:keydown={(e) => e.key === 'Enter' && customQueryChanged && retryWithCustomQuery()}
+                                    placeholder={defaultQueryText}
+                                    aria-label="Custom lyrics search query"
+                                />
+                                {#if customQueryChanged}
+                                    <button
+                                        class="custom-query-retry"
+                                        on:click={retryWithCustomQuery}
+                                        title="Retry with this query"
+                                        aria-label="Retry with this query"
+                                    >
+                                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                                            <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08a5.99 5.99 0 01-5.65 4c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L14 11h7V4l-3.35 2.35z"/>
+                                        </svg>
+                                        Retry
+                                    </button>
+                                {/if}
+                            </div>
+                            <span class="custom-query-tip">Pro tip: use $title, $artist, or $album to keep the real metadata while customizing your query.</span>
+                        </div>
                     {/if}
 
                     {#if showSourcePicker}
                         <div class="no-lyrics-sources">
                             <span class="no-lyrics-hint">{$_('lyrics.trySource')}</span>
                             <div class="no-lyrics-source-btns">
+                                {#if $availableSources.includes('user')}
+                                    <button class="source-try-btn" on:click={() => handleSourceSelect('user')}>
+                                        Imported
+                                    </button>
+                                {/if}
                                 {#if $availableSources.includes('embedded')}
                                     <button class="source-try-btn" on:click={() => handleSourceSelect('embedded')}>
                                         {$_('lyrics.embedded')}
@@ -728,7 +883,7 @@
         position: absolute;
         top: calc(100% + 6px);
         right: 0;
-        min-width: 170px;
+        min-width: 260px;
         background: var(--bg-elevated);
         border: 1px solid var(--border-color);
         border-radius: var(--radius-md);
@@ -748,7 +903,7 @@
         display: flex;
         align-items: center;
         gap: 6px;
-        padding: 8px 12px;
+        padding: 8px 8px 8px 12px;
         border-radius: calc(var(--radius-md) - 2px);
         font-size: 0.82rem;
         font-weight: var(--font-weight-medium);
@@ -779,6 +934,30 @@
         color: var(--accent-primary);
         opacity: 0.5;
         flex-shrink: 0;
+    }
+
+    /* delete button . red, greyed out when there's no cached file */
+    .source-menu-delete {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        flex-shrink: 0;
+        border-radius: var(--radius-full);
+        color: #e05555;
+        background: transparent;
+        transition: all var(--transition-fast);
+        margin-left: 2px;
+    }
+    .source-menu-delete:hover:not(:disabled) {
+        background: rgba(224, 85, 85, 0.15);
+        color: #ff4d4d;
+    }
+    .source-menu-delete:disabled {
+        color: var(--text-subdued);
+        opacity: 0.3;
+        cursor: not-allowed;
     }
 
     /* ------------------------------------------------------------------ */
@@ -859,7 +1038,74 @@
     .lyrics-track-info {
         font-size: var(--font-size-xs);
         opacity: 0.7;
+    }
+
+    .custom-query-block {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
         margin-top: var(--spacing-sm);
+        width: 100%;
+        max-width: 320px;
+    }
+
+    .custom-query-hint {
+        font-size: 0.72rem;
+        opacity: 0.6;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+    }
+
+    .custom-query-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+    }
+
+    .custom-query-input {
+        flex: 1;
+        min-width: 0;
+        padding: 7px 12px;
+        border-radius: var(--radius-full);
+        border: 1px solid var(--border-color);
+        background: var(--bg-highlight);
+        color: var(--text-primary);
+        font-size: 0.8rem;
+        text-align: center;
+        transition: all var(--transition-fast);
+    }
+    .custom-query-input::placeholder { color: var(--text-subdued); }
+    .custom-query-input:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+        background: var(--bg-base);
+    }
+
+    .custom-query-retry {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        flex-shrink: 0;
+        padding: 7px 12px;
+        border-radius: var(--radius-full);
+        border: 1px solid var(--accent-primary);
+        background: var(--accent-primary);
+        color: #fff;
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+        animation: menuIn 0.15s ease;
+    }
+    .custom-query-retry:hover { filter: brightness(1.1); }
+
+    .custom-query-tip {
+        font-size: 0.68rem;
+        opacity: 0.5;
+        text-align: center;
+        line-height: 1.3;
     }
 
     .no-lyrics-sources {

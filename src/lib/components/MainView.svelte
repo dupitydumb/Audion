@@ -63,6 +63,13 @@
     $: isLibraryView = ["tracks", "albums", "artists", "playlists"].includes(
         $currentView.type,
     );
+
+    // clear search on navigation (only when the view actually changes)
+    let _prevView = $currentView;
+    $: if ($currentView !== _prevView) {
+        _prevView = $currentView;
+        if (isSearching) clearSearch();
+    }
     let dropTargetPlaylist: ViewState | null = null;
 
     let sectionLabels: Record<SectionKey, string>;

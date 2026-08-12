@@ -75,8 +75,15 @@ export interface EqSettings {
  *                       Once DB integration is complete, always pass track.replay_gain_db.
  */
 export async function nativeAudioPlay(path: string, trackId: number | null = null, replayGainDb: number | null = null): Promise<void> {
-    console.log('[AUDIO] Native play:', path);
-    await invoke('audio_play', { path, trackId, replayGainDb });
+    console.log('[AUDIO] Native play invoked, path:', path, 'trackId:', trackId);
+    try {
+        await invoke('audio_play', { path, trackId, replayGainDb });
+        console.log('[AUDIO] audio_play invoke resolved');
+    } catch (err) {
+        console.error('[AUDIO] audio_play invoke rejected:', err);
+        console.error('[AUDIO] audio_play error type:', typeof err);
+        throw err;
+    }
 }
 
 /**

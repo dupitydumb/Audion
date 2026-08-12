@@ -75,6 +75,13 @@ android {
             useLegacyPackaging = true
         }
     }
+
+    sourceSets {
+        getByName("main") {
+            jni.srcDirs(emptyList<File>())
+            jniLibs.srcDirs("src/jniLibs")
+        }
+    }
 }
 
 rust {

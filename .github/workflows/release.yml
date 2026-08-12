@@ -66,7 +66,7 @@ jobs:
       prerelease: ${{ steps.info.outputs.prerelease }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -103,7 +103,7 @@ jobs:
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3.0.1
         with:
           tag_name: ${{ steps.info.outputs.tag_name }}
           name: ${{ steps.info.outputs.tag_name }}
@@ -123,7 +123,7 @@ jobs:
       github.event_name == 'push' || inputs.build_windows == true
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -155,7 +155,7 @@ jobs:
           Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe.sig | Rename-Item -NewName "audion_${ver}_windows.exe.sig"
 
       - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3.0.1
         with:
           tag_name: ${{ steps.info.outputs.tag_name }}
           overwrite_files: ${{ inputs.overwrite }}
@@ -198,7 +198,7 @@ jobs:
       github.event_name == 'push' || inputs.build_linux == true
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -341,7 +341,7 @@ jobs:
             --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
 
       - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3.0.1
         with:
           tag_name: ${{ steps.info.outputs.tag_name }}
           overwrite_files: ${{ inputs.overwrite }}
@@ -377,7 +377,7 @@ jobs:
       github.event_name == 'push' || inputs.build_flatpak == true
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -401,7 +401,6 @@ jobs:
           repository-url: https://flathub.org/repo/flathub.flatpakrepo
           bundle: audion_${{ steps.info.outputs.version }}_flatpak.flatpak
           cache-key: flatpak-builder-${{ runner.os }}-${{ hashFiles('packaging/flatpak/*.yml') }}-v1
-          install-dependencies: true
           upload-artifact: false
           verbose: true
 
@@ -412,7 +411,7 @@ jobs:
           test -f "audion_${{ steps.info.outputs.version }}_flatpak.flatpak"
 
       - name: Upload Flatpak to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3.0.1
         with:
           tag_name: ${{ steps.info.outputs.tag_name }}
           overwrite_files: ${{ inputs.overwrite }}
@@ -439,7 +438,7 @@ jobs:
       github.event_name == 'push' || inputs.build_macos == true
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -474,7 +473,7 @@ jobs:
           mv src-tauri/target/universal-apple-darwin/release/bundle/macos/*.app.tar.gz.sig src-tauri/target/universal-apple-darwin/release/bundle/macos/audion_${VER}_macos.app.tar.gz.sig
 
       - name: Upload to GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3.0.1
         with:
           tag_name: ${{ steps.info.outputs.tag_name }}
           overwrite_files: ${{ inputs.overwrite }}
@@ -508,7 +507,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -541,7 +540,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -574,7 +573,7 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -610,18 +609,18 @@ jobs:
       GRADLE_OPTS: -Xmx4096m
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: 'temurin'
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4.0.1
 
       - name: Setup Node and Rust (composite action)
         uses: ./.github/actions/setup
@@ -630,7 +629,7 @@ jobs:
           rust_targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
 
       - name: Cache tauri-cli
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cargo/bin/tauri
           key: tauri-cli-2.11.0
@@ -738,7 +737,7 @@ jobs:
           fi
 
       - name: Upload Android artifacts
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3.0.1
         with:
           tag_name: ${{ steps.info.outputs.tag_name }}
           overwrite_files: ${{ inputs.overwrite }}

@@ -2,6 +2,7 @@
     import { _ } from "svelte-i18n";
     import { onMount } from "svelte";
     import { getCurrentWindow } from "@tauri-apps/api/window";
+    import { listen } from "@tauri-apps/api/event";
     import { goBack, goForward, navigationHistory } from "$lib/stores/view";
     import {
         searchQuery,
@@ -15,6 +16,7 @@
 
     const appWindow = getCurrentWindow();
     let isMaximized = false;
+    let unlistenQuit: (() => void) | null = null;
 
     function minimize() {
         appWindow.minimize();
@@ -94,6 +96,10 @@
         // Initial maximize state
         appWindow.isMaximized().then((m) => (isMaximized = m));
 
+        // MPRIS/macOS quit event from smtc.rs=> route through close so
+        // closeToTray preference is respected
+        listen("app://quit-requested", () => close()).then((f) => { unlistenQuit = f; });
+
         // Listen for resize to update maximize state
         let _resizeTimer: ReturnType<typeof setTimeout> | null = null;
         const unlistenResize = appWindow.onResized(() => {
@@ -127,6 +133,7 @@
             unsubscribeNav();
             window.removeEventListener("keydown", handleGlobalKeydown);
             unlistenResize.then((f) => f());
+            unlistenQuit?.();
             if (_resizeTimer) {
                 clearTimeout(_resizeTimer);
                 _resizeTimer = null;

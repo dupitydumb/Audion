@@ -26,23 +26,18 @@
     toggleShuffle,
     cycleRepeat,
     volume,
-    addToQueue,
   } from "$lib/stores/player";
   import { isMobile } from "$lib/stores/mobile";
   import { lyricsVisible, toggleLyrics } from "$lib/stores/lyrics";
-  import { goToArtistDetail } from "$lib/stores/view";
+  import { goToArtistDetail, goToAlbumDetail } from "$lib/stores/view";
   import { lyricsData, activeLine } from "$lib/stores/lyrics";
-  // Only keep the used imports
   import {
     getTrackCoverSrc,
     formatDuration,
-    addTrackToPlaylist,
-    deleteTrack,
   } from "$lib/api/tauri";
   import { onMount, tick } from "svelte";
   import { likedTrackIds, toggleLike } from "$lib/stores/liked";
-  import { playlists, loadLibrary } from "$lib/stores/library";
-  import { confirm } from "$lib/stores/dialogs";
+  import { buildTrackContextMenu } from "$lib/menus/contextMenus";
   import { addToast } from "$lib/stores/toast";
   import QueuePanel from "../QueuePanel.svelte";
   import ConnectPanel from "../ConnectPanel.svelte";
@@ -242,7 +237,7 @@
   }
 
   // --- Context Menu Management ---
-  async function showTrackMenu(
+  function showTrackMenu(
     e: MouseEvent | PointerEvent,
     onlyAddToPlaylist = false,
   ) {
@@ -252,89 +247,19 @@
     e.preventDefault();
     e.stopPropagation();
 
-    const playlistItems = $playlists.map((playlist) => ({
-      label: playlist.name,
-      action: async () => {
-        try {
-          await addTrackToPlaylist(playlist.id, track.id);
-          addToast($_('player.addedToPlaylist', { values: { name: playlist.name } }), "success");
-        } catch (error) {
-          console.error("Failed to add track to playlist:", error);
-          addToast($_('player.addToPlaylistFailed'), "error");
-        }
-      },
-    }));
-
-    const menuItems: any[] = [
-      {
-        label: $_('contextMenu.addToQueue'),
-        action: () => {
-          addToQueue([track]);
-          addToast($_('player.addedToQueue'), "success");
-        },
-      },
-      { type: "separator" },
-      {
-        label: $_('contextMenu.addToPlaylist'),
-        submenu:
-          playlistItems.length > 0
-            ? playlistItems
-            : [
-                {
-                  label: $_('contextMenu.noPlaylists'),
-                  action: () => {},
-                  disabled: true,
-                },
-              ],
-      },
-      { type: "separator" },
-      {
-        label: $_('contextMenu.deleteFromLibrary'),
-        danger: true,
-        action: async () => {
-          const confirmed = await confirm(
-            $_('player.deleteTrackConfirm', { values: { title: track.title } }),
-            {
-              title: $_('player.deleteTrackTitle'),
-              confirmLabel: $_('player.delete'),
-              danger: true,
-            },
-          );
-
-          if (!confirmed) return;
-
-          try {
-            await deleteTrack(track.id);
-            await loadLibrary();
-            toggleFullScreen(); // Close player if track is deleted
-          } catch (error) {
-            console.error("Failed to delete track:", error);
-          }
-        },
-      },
-    ];
-
     contextMenu.set({
       visible: true,
       x: e.clientX,
       y: e.clientY,
-      items: onlyAddToPlaylist
-        ? [
-            {
-              label: $_('contextMenu.addToPlaylist'),
-              submenu:
-                playlistItems.length > 0
-                  ? playlistItems
-                  : [
-                      {
-                        label: $_('contextMenu.noPlaylists'),
-                        action: () => {},
-                        disabled: true,
-                      },
-                    ],
-            },
-          ]
-        : menuItems,
+      items: buildTrackContextMenu({
+        track,
+        trackIndex: 0,
+        sortedTracks: [],
+        isUnavailable: false,
+        variant: onlyAddToPlaylist ? 'playlist-only' : 'player',
+        onAfterDelete: toggleFullScreen,
+        t: $_,
+      }),
     });
   }
 
@@ -511,6 +436,25 @@
             >
               {$currentTrack?.artist || $_('common.unknownArtist')}
             </button>
+            {#if $currentTrack?.album}
+              {#if $currentTrack?.album_id}
+                <button
+                  class="track-album"
+                  on:click={() => {
+                    if ($currentTrack?.album_id) {
+                      toggleFullScreen();
+                      goToAlbumDetail($currentTrack.album_id);
+                    }
+                  }}
+                >
+                  {$currentTrack.album}
+                </button>
+              {:else}
+                <span class="track-album track-album--static">
+                  {$currentTrack.album}
+                </span>
+              {/if}
+            {/if}
           </div>
         {:else}
           <!-- In-place Lyrics for Mobile -->
@@ -834,9 +778,22 @@
               </div>
 
               {#if $currentTrack?.album}
-                <p class="desktop-album-context" title={$currentTrack.album}>
-                  {$currentTrack.album}
-                </p>
+                {#if $currentTrack?.album_id}
+                  <button
+                    class="desktop-album-context"
+                    on:click={() => {
+                      $currentTrack?.album_id &&
+                        (toggleFullScreen(),
+                        goToAlbumDetail($currentTrack.album_id));
+                    }}
+                  >
+                    {$currentTrack.album}
+                  </button>
+                {:else}
+                  <span class="desktop-album-context desktop-album-context--static">
+                    {$currentTrack.album}
+                  </span>
+                {/if}
               {/if}
 
               <div class="action-buttons">
@@ -1156,6 +1113,25 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    background: none;
+    border: none;
+    padding: 0;
+    text-align: left;
+    cursor: pointer;
+    transition: color 0.15s ease;
+  }
+
+  .desktop-album-context:hover {
+    color: #fff;
+  }
+
+  .desktop-album-context--static {
+    display: block;
+    cursor: default;
+  }
+
+  .desktop-album-context--static:hover {
+    color: rgba(255, 255, 255, 0.64);
   }
 
   .track-info-header {
@@ -1191,7 +1167,6 @@
 
   .desktop-subtitle:hover {
     color: #fff;
-    text-decoration: underline;
   }
 
   /* Marquee Styles */
@@ -1598,6 +1573,21 @@
     background: none;
     border: none;
     padding: 0;
+  }
+
+  .mobile-view .track-album {
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.4);
+    background: none;
+    border: none;
+    padding: 0;
+    margin-top: 2px;
+    cursor: pointer;
+  }
+
+  .mobile-view .track-album--static {
+    display: block;
+    cursor: default;
   }
 
   .mobile-view .player-controls {

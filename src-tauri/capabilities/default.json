@@ -43,6 +43,9 @@
     "fs:allow-exists",
     "updater:default",
     "process:allow-restart",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled",
     {
       "identifier": "fs:allow-read-file",
       "allow": [

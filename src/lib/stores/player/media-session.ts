@@ -25,6 +25,32 @@ export function registerMediaSessionActions(prev: () => void, toggle: () => void
     _onNext = next;
 }
 
+let _onSmtcResume: () => Promise<void> = async () => {};
+let _onSmtcPause: () => Promise<void> = async () => {};
+let _onSmtcTogglePlay: () => Promise<void> = async () => {};
+let _onSmtcNext: () => void = () => {};
+let _onSmtcPrevious: () => Promise<void> = async () => {};
+let _onSmtcSeek: (fraction: number) => Promise<void> = async () => {};
+let _onSmtcSetVolume: (level: number) => Promise<void> = async () => {};
+
+export function registerSmtcActions(actions: {
+    resume: () => Promise<void>;
+    pause: () => Promise<void>;
+    togglePlay: () => Promise<void>;
+    next: () => void;
+    previous: () => Promise<void>;
+    seek: (fraction: number) => Promise<void>;
+    setVolume: (level: number) => Promise<void>;
+}): void {
+    _onSmtcResume = actions.resume;
+    _onSmtcPause = actions.pause;
+    _onSmtcTogglePlay = actions.togglePlay;
+    _onSmtcNext = actions.next;
+    _onSmtcPrevious = actions.previous;
+    _onSmtcSeek = actions.seek;
+    _onSmtcSetVolume = actions.setVolume;
+}
+
 let mediaSessionInitialized = false;
 let windowsThumbarInitialized = false;
 
@@ -208,5 +234,163 @@ export function updateMediaSessionPosition(): void {
         });
     } catch (err) {
         console.error('[MediaSession] setPositionState failed:', err);
+    }
+}
+
+// =============================================================================
+// SMTC (Windows/Linux/macOS native os media controls, via souvlaki)
+// so backend independent
+// =============================================================================
+
+let smtcInitialized = false;
+let _unlistenSmtc: (() => void) | null = null;
+
+export async function initSmtcIntegration(): Promise<void> {
+    if (smtcInitialized) return;
+
+    try {
+        _unlistenSmtc = await listen<{ type: string; data?: any }>('smtc://event', ({ payload }) => {
+            switch (payload.type) {
+                case 'Play':
+                    void _onSmtcResume();
+                    break;
+                case 'Pause':
+                    void _onSmtcPause();
+                    break;
+                case 'Toggle':
+                    void _onSmtcTogglePlay();
+                    break;
+                case 'Next':
+                    _onSmtcNext();
+                    break;
+                case 'Previous':
+                    void _onSmtcPrevious();
+                    break;
+                case 'Stop':
+                    void _onSmtcPause();
+                    break;
+                case 'SeekForward':
+                    _smtcSeekRelative(10);
+                    break;
+                case 'SeekBackward':
+                    _smtcSeekRelative(-10);
+                    break;
+                case 'SeekByForward':
+                    _smtcSeekRelative(payload.data.secs);
+                    break;
+                case 'SeekByBackward':
+                    _smtcSeekRelative(-payload.data.secs);
+                    break;
+                case 'SetPosition': {
+                    const dur = get(duration);
+                    if (dur > 0) void _onSmtcSeek(payload.data.secs / dur);
+                    break;
+                }
+                case 'SetVolume':
+                    void _smtcApplyVolume(payload.data.level);
+                    break;
+            }
+        });
+        smtcInitialized = true;
+        console.log('[Player] SMTC integration initialized');
+    } catch (err) {
+        console.warn('[Player] SMTC init failed:', err);
+    }
+}
+
+export function cleanupSmtcIntegration(): void {
+    updateSmtcPlaybackState('none');
+    _unlistenSmtc?.();
+    _unlistenSmtc = null;
+    smtcInitialized = false;
+}
+
+function _smtcSeekRelative(deltaSecs: number): void {
+    const dur = get(duration);
+    if (dur <= 0) return;
+    const targetSecs = Math.max(0, Math.min(dur, get(currentTime) + deltaSecs));
+    void _onSmtcSeek(targetSecs / dur);
+}
+
+// MPRIS only: the desktop's own volume slider for this player was moved
+// ack back to souvlaki
+// (smtc_set_volume)
+// refer to SmtcEvent::SetVolume doc comment in smtc.rs for why the ack matters
+async function _smtcApplyVolume(level: number): Promise<void> {
+    const clamped = Math.max(0, Math.min(1, level));
+    await _onSmtcSetVolume(clamped); // updates the volume store the ui slider reads from
+    try {
+        await invoke('smtc_set_volume', { level: clamped });
+    } catch (err) {
+        console.debug('[SMTC] set_volume ack failed:', err);
+    }
+}
+
+export async function updateSmtcMetadata(track: Track): Promise<void> {
+    // raw source only => never a webview asset:// URL here. smtc.rs does the
+    // platform specific file:// / percent-encoding conversion on its side
+    const rawCover = track.track_cover_path || track.cover_url || null;
+    try {
+        await invoke('smtc_set_metadata', {
+            title: track.title || 'Unknown Title',
+            artist: track.artist || 'Unknown Artist',
+            album: track.album || null,
+            durationSecs: get(duration) || null,
+            coverUrl: rawCover,
+        });
+    } catch (err) {
+        console.error('[SMTC] set_metadata failed:', err);
+    }
+    // keep tray now playing labels in sync
+    invoke('tray_update_playback', {
+        isPlaying: get(isPlaying),
+        title: track.title || 'Unknown Title',
+        artist: track.artist || 'Unknown Artist',
+    }).catch(() => { });
+}
+
+// WINDOWS ONLY. windows taskbar icon progress overlay. value is 0-1 fraction played;
+// is_paused swaps the green fill for the yellowish paused color
+function _pushTaskbarProgress(): void {
+    const dur = get(duration);
+    const cur = get(currentTime);
+    const value = dur > 0 ? Math.max(0, Math.min(1, cur / dur)) : 0;
+    invoke('windows_set_taskbar_progress', { value, isPaused: !get(isPlaying) }).catch(() => { });
+}
+
+let _taskbarProgressInterval: ReturnType<typeof setInterval> | null = null;
+
+function _startTaskbarProgressInterval(): void {
+    if (_taskbarProgressInterval !== null) return;
+    _taskbarProgressInterval = setInterval(_pushTaskbarProgress, 1000);
+}
+
+function _stopTaskbarProgressInterval(): void {
+    if (_taskbarProgressInterval !== null) {
+        clearInterval(_taskbarProgressInterval);
+        _taskbarProgressInterval = null;
+    }
+}
+
+export function updateSmtcPlaybackState(state: 'playing' | 'paused' | 'none'): void {
+    invoke('smtc_set_playback', {
+        status: state === 'none' ? 'stopped' : state,
+        positionSecs: get(currentTime),
+    }).catch(() => { /* no-op if SMTC unavailable, e.g. init failed on this platform */ });
+    // keep tray play/pause label in sync
+    // title/artist are set by updateSmtcMetadata
+    invoke('tray_update_playback', {
+        isPlaying: state === 'playing',
+        title: null,
+        artist: null,
+    }).catch(() => { });
+
+    // taskbar icon progress overlay
+    if (state === 'none') {
+        _stopTaskbarProgressInterval();
+        invoke('windows_clear_taskbar_progress', {}).catch(() => { });
+    } else {
+        _pushTaskbarProgress();
+        _startTaskbarProgressInterval();
     }
 }

@@ -30,14 +30,7 @@
     } from "$lib/services/downloadService";
     import { addToast } from "$lib/stores/toast";
     import { contextMenu } from "$lib/stores/ui";
-    import { confirm, prompt } from "$lib/stores/dialogs";
-    import {
-        pinnedItems,
-        pinItem,
-        unpinItem,
-        isPinned
-    } from "$lib/stores/pinned";
-    import { setCustomArtwork } from "$lib/stores/customArtwork";
+    import { buildArtistContextMenu } from "$lib/menus/contextMenus";
     import { _, locale } from "svelte-i18n";
 
     export let artistName: string;
@@ -281,81 +274,16 @@
 
     function handleContextMenu(e: MouseEvent) {
         e.preventDefault();
-        const pinned = isPinned("artist", artistName, $pinnedItems);
         contextMenu.set({
             visible: true,
             x: e.clientX,
             y: e.clientY,
-            items: [
-                {
-                    label: pinned ? $_('contextMenu.unpinFromTop') : $_('contextMenu.pinToTop'),
-                    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2L4.5 9L9 9L9 22L15 22L15 9L19.5 9L12 2Z"/></svg>`,
-                    action: () => {
-                        if (pinned) {
-                            unpinItem("artist", artistName);
-                        } else {
-                            pinItem("artist", artistName);
-                        }
-                    },
-                },
-                { type: "separator" },
-                {
-                    label: $_('contextMenu.changeArtwork'),
-                    submenu: [
-                        {
-                            label: $_('contextMenu.fromFile'),
-                            action: () => {
-                                const input = document.createElement("input");
-                                input.type = "file";
-                                input.accept = "image/*";
-                                input.onchange = (e) => {
-                                    const file = (e.target as HTMLInputElement)
-                                        .files?.[0];
-                                    if (file) {
-                                        const reader = new FileReader();
-                                        reader.onload = () => {
-                                            const result =
-                                                reader.result as string;
-                                            setCustomArtwork(
-                                                "artist",
-                                                artistName,
-                                                result,
-                                            );
-                                            addToast(
-                                                "Artist artwork updated",
-                                                "success",
-                                            );
-                                        };
-                                        reader.readAsDataURL(file);
-                                    }
-                                };
-                                input.click();
-                            },
-                        },
-                        {
-                            label: $_('contextMenu.fromUrl'),
-                            action: async () => {
-                                const url = await prompt("Enter image URL:", {
-                                    title: "Change Artwork",
-                                    placeholder:
-                                        "https://example.com/image.jpg",
-                                });
-                                if (url && url.trim()) {
-                                    setCustomArtwork(
-                                        "artist",
-                                        artistName,
-                                        url.trim(),
-                                    );
-                                    addToast(
-                                        "Artist artwork updated",
-                                        "success",
-                                    );
-                                }
-                            },
-                        },
-                    ],
-                },
-            ],
+            items: buildArtistContextMenu({
+                artist: { name: artistName },
+                showPlay: true,
+                onPlay: handlePlayAll,
+                t: $_,
+            }),
         });
     }
 </script>

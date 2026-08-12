@@ -1,8 +1,11 @@
 <script lang="ts">
-    import { _ } from "svelte-i18n";
-    import { getLikedTracks, type Track } from "$lib/api/tauri";
+    import { getLikedTracks, exportLikedSongsZip, type Track } from "$lib/api/tauri";
     import { likedTrackIds } from "$lib/stores/liked";
-    import { playTracks, shuffle } from "$lib/stores/player";
+    import { playTracks, shuffle, addToQueue } from "$lib/stores/player";
+    import { contextMenu } from "$lib/stores/ui";
+    import { addToast } from "$lib/stores/toast";
+    import { buildLikedSongsContextMenu } from "$lib/menus/contextMenus";
+    import { _ } from "svelte-i18n";
     import TrackList from "./track-list/TrackList.svelte";
 
     let tracks: Track[] = [];
@@ -41,6 +44,43 @@
             playTracks(tracks, randomIndex);
         }
     }
+
+    async function handleExportZip() {
+        if (tracks.length === 0) return;
+        try {
+            addToast("Exporting…", "info");
+            const result = await exportLikedSongsZip();
+            if (!result) return; // user cancelled picker
+            const { track_count, skipped_count } = result;
+            const exported = track_count - skipped_count;
+            const skippedMsg = skipped_count > 0
+                ? ` (${skipped_count} streaming-only track${skipped_count === 1 ? "" : "s"} skipped)`
+                : "";
+            addToast(`Exported ${exported} track${exported === 1 ? "" : "s"}${skippedMsg}`, "success");
+        } catch (err) {
+            console.error("[LikedSongs] exportZip failed:", err);
+            addToast(`Export failed: ${err}`, "error");
+        }
+    }
+
+    function handleHeaderContextMenu(e: MouseEvent) {
+        e.preventDefault();
+        contextMenu.set({
+            visible: true,
+            x: e.clientX,
+            y: e.clientY,
+            items: buildLikedSongsContextMenu({
+                tracks,
+                onPlay: handlePlayAll,
+                onAddToQueue: () => {
+                    if (tracks.length > 0) addToQueue(tracks);
+                },
+                onExportZip: handleExportZip,
+                t: $_,
+            }),
+        });
+    }
+
     function handleScroll(e: Event) {
         scrollTop = (e.target as HTMLElement).scrollTop;
     }
@@ -48,11 +88,13 @@
 
 <div class="liked-songs-view">
     <!-- Header -->
-    <div
+    <header
         class="liked-header"
         class:is-small={isHeaderSmall}
         style:opacity={headerOpacity}
         style:transform="translateY({headerTranslateY}px) scale({headerScale})"
+        on:contextmenu={handleHeaderContextMenu}
+        aria-label="Liked Songs header"
     >
         <div class="liked-gradient-bg">
             <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">
@@ -74,7 +116,7 @@
                 >
             </div>
         </div>
-    </div>
+    </header>
 
     <!-- Controls -->
     <div class="liked-controls">
@@ -182,13 +224,13 @@
         transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         transform-origin: center top;
         z-index: 10;
-        pointer-events: none;
+        pointer-events: auto;
     }
 
     .liked-header.is-small {
         padding-top: 15px;
         padding-bottom: 5px;
-        pointer-events: none;
+        pointer-events: auto;
     }
 
     .liked-gradient-bg {

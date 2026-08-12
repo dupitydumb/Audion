@@ -2,6 +2,7 @@
     import { _ } from "svelte-i18n";
     import { playlists, loadPlaylists } from "$lib/stores/library";
     import { goToPlaylistDetail } from "$lib/stores/view";
+    import type { Playlist } from "$lib/api/tauri";
     import {
         createPlaylist,
         getPlaylistTracks,
@@ -10,11 +11,10 @@
         beginFolderImport,
         pickFolder,
     } from "$lib/api/tauri";
-    import {
-        playlistCovers,
-        setPlaylistCover,
-    } from "$lib/stores/playlistCovers";
+    import { playlistCovers } from "$lib/stores/playlistCovers";
     import { contextMenu } from "$lib/stores/ui";
+    import { buildPlaylistContextMenu } from "$lib/menus/contextMenus";
+    import { confirm } from "$lib/stores/dialogs";
     import {
         playTracks,
         addToQueue,
@@ -23,11 +23,8 @@
         togglePlay,
     } from "$lib/stores/player";
     import type { Writable } from "svelte/store";
-    import { confirm, prompt } from "$lib/stores/dialogs";
     import {
         pinnedItems,
-        pinItem,
-        unpinItem,
         isPinned,
     } from "$lib/stores/pinned";
     import VirtualizedGrid from "./Virtualizedgrid.svelte";
@@ -42,7 +39,6 @@
         saveScroll("playlists", currentScrollTop);
     });
 
-    type Playlist = { id: number; name: string; folder_path?: string | null; cover_url?: string | null };
 
     // playlistCovers
     const typedPlaylistCovers: Writable<Record<string, string>> =
@@ -147,99 +143,20 @@
         goToPlaylistDetail(playlist.id, playlist.name);
     }
 
-    async function handlePlaylistContextMenu(
-        playlist: Playlist,
-        e: MouseEvent,
-    ) {
-        const pinned = isPinned("playlist", playlist.id, $pinnedItems);
+    function handlePlaylistContextMenu(playlist: Playlist, e: MouseEvent) {
         contextMenu.set({
             visible: true,
             x: e.clientX,
             y: e.clientY,
-            items: [
-                {
-                    label: $_("common.play"),
-                    action: () => handlePlayPlaylist(playlist.id),
-                },
-                {
-                    label: $_("contextMenu.addToQueue"),
-                    action: () => handleAddToQueue(playlist.id),
-                },
-                { type: "separator" },
-                {
-                    label: pinned
-                        ? $_("contextMenu.unpinFromTop")
-                        : $_("contextMenu.pinToTop"),
-                    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><path d="M12 2L4.5 9L9 9L9 22L15 22L15 9L19.5 9L12 2Z"/></svg>`,
-                    action: () => {
-                        if (pinned) {
-                            unpinItem("playlist", playlist.id);
-                        } else {
-                            pinItem("playlist", playlist.id);
-                        }
-                    },
-                },
-                { type: "separator" },
-                {
-                    label: $_("common.rename"),
-                    action: () => startRename(playlist),
-                },
-                {
-                    label: $_("playlists.changeCover"),
-                    submenu: [
-                        {
-                            label: $_("contextMenu.fromFile"),
-                            action: () => {
-                                const input = document.createElement("input");
-                                input.type = "file";
-                                input.accept = "image/*";
-                                input.addEventListener(
-                                    "change",
-                                    (e) => {
-                                        const file = (
-                                            e.target as HTMLInputElement
-                                        ).files?.[0];
-                                        if (file) {
-                                            const reader = new FileReader();
-                                            reader.onload = () =>
-                                                setPlaylistCover(
-                                                    playlist.id,
-                                                    reader.result as string,
-                                                );
-                                            reader.readAsDataURL(file);
-                                        }
-                                    },
-                                    { once: true },
-                                );
-                                input.click();
-                            },
-                        },
-                        {
-                            label: $_("contextMenu.fromUrl"),
-                            action: async () => {
-                                const url = await prompt(
-                                    $_("playlists.enterImageUrl"),
-                                    {
-                                        title: $_("playlists.changeCover"),
-                                        placeholder:
-                                            "https://example.com/image.jpg",
-                                    },
-                                );
-                                if (url && url.trim()) {
-                                    setPlaylistCover(playlist.id, url.trim());
-                                }
-                            },
-                        },
-                    ],
-                },
-                { type: "separator" },
-                {
-                    label: $_("playlists.deletePlaylist"),
-                    danger: true,
-                    action: () =>
-                        handleDeletePlaylist(playlist.id, playlist.name),
-                },
-            ],
+            items: buildPlaylistContextMenu({
+                playlist,
+                variant: "grid",
+                onPlay: () => handlePlayPlaylist(playlist.id),
+                onAddToQueue: () => handleAddToQueue(playlist.id),
+                onRename: () => startRename(playlist),
+                onDelete: () => handleDeletePlaylist(playlist.id, playlist.name),
+                t: $_,
+            }),
         });
     }
 

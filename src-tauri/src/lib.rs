@@ -7,6 +7,8 @@ mod db;
 mod discord;
 #[cfg(desktop)]
 mod windows_thumbar;
+#[cfg(desktop)]
+mod smtc;
 mod scanner;
 mod security;
 mod sync;
@@ -26,8 +28,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{Emitter, Listener, Manager, WindowEvent};
 #[cfg(desktop)]
 use tauri::{
-    menu::{Menu, MenuItem},
-    tray::TrayIconBuilder,
+    menu::{CheckMenuItem, IconMenuItem, Menu, MenuItem, PredefinedMenuItem},
+    tray::{MouseButton, TrayIcon, TrayIconBuilder},
 };
 
 // =============================================================================
@@ -74,12 +76,42 @@ fn ota_confirm_exit(window: tauri::Window) {
         gate.confirmed.store(true, Ordering::SeqCst);
     }
     let _ = window.close();
+}    
+// TRAY STATE
+// holds handles to the menu items that need dynamic updates:
+// 1) now_playing_title / now_playing_artist  => updated by smtc_set_metadata
+// 2) play_pause                              => updated by smtc_set_playback
+// 3) shuffle / repeat                        => updated by tray_update_toggles
+// the TrayIcon itself is kept alive here (dropping it removes the tray icon)
+// =============================================================================
+#[cfg(desktop)]
+pub struct TrayState {
+    pub _tray: TrayIcon,
+    pub now_playing_title: MenuItem<tauri::Wry>,
+    pub now_playing_artist: MenuItem<tauri::Wry>,
+    pub play_pause: MenuItem<tauri::Wry>,
+    pub shuffle: CheckMenuItem<tauri::Wry>,
+    pub repeat: MenuItem<tauri::Wry>,
+    // last known artist name, used by the artist menu item click handler
+    pub current_artist: std::sync::Mutex<String>,
 }
 
 struct PendingPluginInstall(pub std::sync::Mutex<Option<String>>);
 
 #[tauri::command]
 fn get_pending_plugin_install(state: tauri::State<'_, PendingPluginInstall>) -> Option<String> {
+    let mut pending = state.0.lock().unwrap();
+    pending.take()
+}
+
+// mirrors PendingPluginInstall: on a cold start via jump list
+// a bare emit is silently dropped on cold start 
+// it only works when the app is already running and the listener is live
+// stashing the track id here lets the frontend pull it once it's actually ready to play it
+struct PendingPlayTrack(pub std::sync::Mutex<Option<String>>);
+
+#[tauri::command]
+fn get_pending_play_track(state: tauri::State<'_, PendingPlayTrack>) -> Option<String> {
     let mut pending = state.0.lock().unwrap();
     pending.take()
 }
@@ -98,8 +130,10 @@ fn handle_deep_link_url(app_handle: &tauri::AppHandle, url_str: &str) {
         }
     };
 
-    let path = url.path().trim_matches('/');
-    if path == "install-plugin" || path == "plugin/install" {
+    // audion://install-plugin?url=... or audion://plugin/install?url=...
+    if url.host_str() == Some("install-plugin")
+        || (url.host_str() == Some("plugin") && url.path().trim_matches('/') == "install")
+    {
         let mut repo_url = None;
         for (key, value) in url.query_pairs() {
             if key == "url" || key == "repo" {
@@ -118,10 +152,31 @@ fn handle_deep_link_url(app_handle: &tauri::AppHandle, url_str: &str) {
         return;
     }
 
-    if path != "auth/callback" {
+    // audion://play/<track_id> => emitted by jump list entries
+    if url.host_str() == Some("play") {
+        let track_id = url.path().trim_start_matches('/');
+        tracing::info!("Deep link: play track id={}", track_id);
+        // always stash it => covers the cold-start race
+        // emit still fires for the already running case where the listener is live
+        if let Some(pending_state) = app_handle.try_state::<PendingPlayTrack>() {
+            *pending_state.0.lock().unwrap() = Some(track_id.to_string());
+        }
+        let _ = app_handle.emit("app://play-track", track_id.to_string());
+        // focus the window so the user sees playback start (desktop only)
+        #[cfg(not(target_os = "android"))]
+        if let Some(window) = app_handle.get_webview_window("main") {
+            let _ = window.unminimize();
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+        return;
+    }
+
+    // audion://auth/callback
+    if url.host_str() != Some("auth") || url.path().trim_matches('/') != "callback" {
         tracing::info!(
             "Deep link is not an auth callback or plugin install, ignoring: {}",
-            url.path()
+            url
         );
         return;
     }
@@ -237,18 +292,13 @@ fn init_logging(log_dir: &PathBuf) {
         .init();
 }
 
-#[cfg(mobile)]
+#[cfg(target_os = "android")]
 fn init_logging(_log_dir: &PathBuf) {
-    use tracing_subscriber::{fmt, EnvFilter};
-
-    let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn,audion=info"));
-
-    fmt::Subscriber::builder()
-        .with_env_filter(filter)
-        .with_ansi(true)
-        .with_target(true)
-        .init();
+    android_logger::init_once(
+        android_logger::Config::default()
+            .with_max_level(log::LevelFilter::Debug)
+            .with_tag("audion"),
+    );
 }
 
 /// Remove log files in `log_dir` that are older than `keep_days` days.
@@ -308,6 +358,61 @@ fn init_panic_hook() {
     }));
 }
 
+// =============================================================================
+// TRAY COMMANDS
+// called from player.ts to keep tray menu items in sync with playback state
+// =============================================================================
+
+/// update the play/pause menu item label and the now-playing title/artist lines
+/// called from player.ts at the same sites that call smtc_set_playback and smtc_set_metadata
+#[tauri::command]
+#[cfg(desktop)]
+fn tray_update_playback(
+    app: tauri::AppHandle,
+    is_playing: bool,
+    title: Option<String>,
+    artist: Option<String>,
+) {
+    let state = app.state::<TrayState>();
+    let label = if is_playing { "⏸  Pause" } else { "▶  Play" };
+    if let Err(e) = state.play_pause.set_text(label) {
+        tracing::warn!("[Tray] Failed to update play/pause label: {}", e);
+    }
+    if let Some(t) = title {
+        let _ = state.now_playing_title.set_text(if t.is_empty() { "—".into() } else { t });
+    }
+    if let Some(a) = artist {
+        let _ = state.now_playing_artist.set_text(if a.is_empty() { "—".into() } else { a.clone() });
+        if let Ok(mut guard) = state.current_artist.lock() {
+            *guard = a;
+        }
+    }
+}
+
+/// update the shuffle and repeat menu items
+/// called from player.ts via store subscriptions on shuffle / repeat
+#[tauri::command]
+#[cfg(desktop)]
+fn tray_update_toggles(
+    app: tauri::AppHandle,
+    shuffle: bool,
+    // none | one | all
+    repeat: String,
+) {
+    let state = app.state::<TrayState>();
+    if let Err(e) = state.shuffle.set_checked(shuffle) {
+        tracing::warn!("[Tray] Failed to update shuffle checkmark: {}", e);
+    }
+    let repeat_label = match repeat.as_str() {
+        "all" => "🔁  Repeat: All",
+        "one" => "🔁  Repeat: One",
+        _     => "🔁  Repeat: Off",
+    };
+    if let Err(e) = state.repeat.set_text(repeat_label) {
+        tracing::warn!("[Tray] Failed to update repeat label: {}", e);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // ------------------------------------------------------------------
@@ -353,6 +458,8 @@ pub fn run() {
 
             // Focus the existing window
             if let Some(window) = app.get_webview_window("main") {
+                // the window may be hidden (minimized-to-tray via window.hide())
+                window.show().ok();
                 window.unminimize().ok();
                 window.set_focus().ok();
             }
@@ -381,6 +488,17 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_global_shortcut::Builder::new().build());
     }
 
+    // autostart (launch on startup) is desktop-only
+    // not enabled by default
+    // driven entirely by the settings toggle via get/set_autostart_enabled
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ));
+    }
+
     // Updater is desktop-only (not available on Android/iOS)
     #[cfg(desktop)]
     {
@@ -392,6 +510,18 @@ pub fn run() {
 
     builder
         .setup(|app| {
+            // set AppUserModelID before any UI or jump list manipulation
+            #[cfg(target_os = "windows")]
+            {
+                use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
+                use windows::core::HSTRING;
+                if let Err(e) = unsafe {
+                    SetCurrentProcessExplicitAppUserModelID(&HSTRING::from("com.audion.app"))
+                } {
+                    tracing::warn!("[App] SetCurrentProcessExplicitAppUserModelID failed: {:?}", e);
+                }
+            }
+
             // Get app data directory and create database
             let app_dir = app
                 .path()
@@ -418,6 +548,7 @@ pub fn run() {
 
             app.manage(database.clone());
             app.manage(commands::listenbrainz::ListenBrainzState::new());
+            app.manage(commands::window::CloseConfirmed::default());
 
             // OTA install-on-close gate => starts un-armed; see ota_set_close_intercept
             #[cfg(desktop)]
@@ -428,6 +559,7 @@ pub fn run() {
             });
 
             app.manage(PendingPluginInstall(std::sync::Mutex::new(None)));
+            app.manage(PendingPlayTrack(std::sync::Mutex::new(None)));
 
             // Initialize Discord RPC state (desktop only)
             #[cfg(desktop)]
@@ -443,6 +575,20 @@ pub fn run() {
             {
                 tracing::info!("Registering native audio backend state (lazy init)");
                 app.manage(audio::PlaybackStateSync::new(app.handle().clone()));
+            }
+
+            // SMTC / OS media controls init (desktop only)
+            // =============================================================================
+            // driven entirely by player.ts over invoke/listen, regardless
+            // of whether native or html5 playback is active
+            // needs the main window's HWND
+            // on windows, so state is registered now but init (which grabs the handle)
+            // runs later in setup(), after the window is confirmed to exist
+            // =============================================================================
+            #[cfg(desktop)]
+            {
+                tracing::info!("Registering SMTC state");
+                app.manage(smtc::SmtcState::uninitialized());
             }
 
             // =============================================================================
@@ -559,38 +705,143 @@ pub fn run() {
                 } else {
                     tracing::warn!("Main webview window not found during setup");
                 }
+
+                // SMTC init needs a real HWND on windows, so this runs only after
+                // the main window block above has confirmed the window exists
+                if let Err(e) = smtc::init(app.handle().clone()) {
+                    tracing::warn!("SMTC initialization failed (non-fatal): {}", e);
+                }
             }
 
             // =============================================================================
             // SYSTEM TRAY SETUP (desktop only)
             // =============================================================================
+            // menu layout:
+            //   [icon] Now Playing             <= focuses window on click
+            //   <title>                        <= focuses window on click
+            //   <artist>                       <= focuses window + navigates to artist
+            //   __________________________________
+            //   ⏮ Previous
+            //   ⏸ Play / Pause
+            //   ⏭ Next
+            //   ____________________________________
+            //   🔀 Shuffle
+            //   🔁 Repeat: Off / All / One
+            //   ____________________________________
+            //   Quit
+            // =============================================================================
             #[cfg(desktop)]
             {
-                let show_i = MenuItem::with_id(app, "show", "Show Audion", true, None::<&str>)?;
+                let icon_img = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png")).unwrap();
+
+                // static header (clicking focuses the window, reuses show handler) =================================
+                let header_i = IconMenuItem::with_id(
+                    app, "show", "Now Playing", true,
+                    Some(icon_img.clone()), None::<&str>,
+                )?;
+
+                // track info (dynamic) =====================================
+                let title_i  = MenuItem::with_id(app, "now_playing_title",  "—", true, None::<&str>)?;
+                let artist_i = MenuItem::with_id(app, "now_playing_artist", "—", true, None::<&str>)?;
+
+                let sep1 = PredefinedMenuItem::separator(app)?;
+
+                // transport =================================
+                let prev_i  = MenuItem::with_id(app, "previous",  "⏮  Previous", true, None::<&str>)?;
+                let pp_i    = MenuItem::with_id(app, "play_pause", "⏸  Pause",    true, None::<&str>)?;
+                let next_i  = MenuItem::with_id(app, "next",       "⏭  Next",     true, None::<&str>)?;
+
+                let sep2 = PredefinedMenuItem::separator(app)?;
+
+                // toggles ==========================
+                let shuffle_i = CheckMenuItem::with_id(app, "shuffle", "🔀  Shuffle", true, false, None::<&str>)?;
+                let repeat_i  = MenuItem::with_id(app, "repeat", "🔁  Repeat: Off", true, None::<&str>)?;
+
+                let sep3 = PredefinedMenuItem::separator(app)?;
+
                 let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-                let menu = Menu::with_items(app, &[&show_i, &quit_i])?;
 
-                let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png")).unwrap();
+                let menu = Menu::with_items(app, &[
+                    &header_i,
+                    &title_i,
+                    &artist_i,
+                    &sep1,
+                    &prev_i,
+                    &pp_i,
+                    &next_i,
+                    &sep2,
+                    &shuffle_i,
+                    &repeat_i,
+                    &sep3,
+                    &quit_i,
+                ])?;
 
-                let _tray = TrayIconBuilder::new()
-                    .icon(icon)
+                let tray = TrayIconBuilder::new()
+                    .icon(icon_img)
                     .tooltip("Audion")
                     .menu(&menu)
-                    .on_menu_event(|app, event| match event.id.as_ref() {
-                        "quit" => {
-                            app.exit(0);
-                        }
-                        "show" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                window.show().ok();
-                                window.unminimize().ok();
-                                window.set_focus().ok();
+                    .on_menu_event(|app, event| {
+                        match event.id.as_ref() {
+                            // Now Playing header => focus window
+                            "show" => {
+                                if let Some(window) = app.get_webview_window("main") {
+                                    window.show().ok();
+                                    window.unminimize().ok();
+                                    window.set_focus().ok();
+                                }
                             }
+                            // track title => focus window and togglefullscreen
+                            "now_playing_title" => {
+                                if let Some(window) = app.get_webview_window("main") {
+                                    window.show().ok();
+                                    window.unminimize().ok();
+                                    window.set_focus().ok();
+                                }
+                                let _ = app.emit("tray://open-fullscreen", ());
+                            }
+                            // artist name => focus window + navigate to artist
+                            "now_playing_artist" => {
+                                if let Some(window) = app.get_webview_window("main") {
+                                    window.show().ok();
+                                    window.unminimize().ok();
+                                    window.set_focus().ok();
+                                }
+                                let artist = app
+                                    .state::<TrayState>()
+                                    .current_artist
+                                    .lock()
+                                    .map(|g| g.clone())
+                                    .unwrap_or_default();
+                                if !artist.is_empty() {
+                                    let _ = app.emit("tray://go-to-artist", artist);
+                                }
+                            }
+                            // transport => reuse smtc://event
+                            "previous" => {
+                                let _ = app.emit("smtc://event", serde_json::json!({ "type": "Previous" }));
+                            }
+                            "play_pause" => {
+                                let _ = app.emit("smtc://event", serde_json::json!({ "type": "Toggle" }));
+                            }
+                            "next" => {
+                                let _ = app.emit("smtc://event", serde_json::json!({ "type": "Next" }));
+                            }
+                            "shuffle" => {
+                                let _ = app.emit("tray://toggle-shuffle", ());
+                            }
+                            "repeat" => {
+                                let _ = app.emit("tray://toggle-repeat", ());
+                            }
+                            "quit" => {
+                                app.exit(0);
+                            }
+                            _ => {}
                         }
-                        _ => {}
                     })
                     .on_tray_icon_event(|tray, event| {
-                        if let tauri::tray::TrayIconEvent::Click { .. } = event {
+                        if let tauri::tray::TrayIconEvent::Click {
+                            button: MouseButton::Left, ..
+                        } = event {
                             let app = tray.app_handle();
                             if let Some(window) = app.get_webview_window("main") {
                                 window.show().ok();
@@ -599,7 +850,19 @@ pub fn run() {
                             }
                         }
                     })
+                    .show_menu_on_left_click(false)
                     .build(app)?;
+
+                app.manage(TrayState {
+                    _tray: tray,
+                    now_playing_title: title_i,
+                    now_playing_artist: artist_i,
+                    play_pause: pp_i,
+                    shuffle: shuffle_i,
+                    repeat: repeat_i,
+                    current_artist: std::sync::Mutex::new(String::new()),
+                });
+
                 tracing::info!("System tray initialized");
             }
 
@@ -620,7 +883,9 @@ pub fn run() {
                     commands::add_folder,
                     commands::set_single_music_folder,
                     commands::rescan_music,
+                    commands::scan_folder,
                     commands::get_default_music_dirs,
+                    commands::get_music_folders,
                     commands::get_library,
                     commands::get_tracks_paginated,
                     commands::get_albums_paginated,
@@ -634,6 +899,7 @@ pub fn run() {
                     commands::begin_folder_import,
                     commands::delete_track,
                     commands::delete_album,
+                    commands::remove_folder,
                     commands::reset_database,
                     commands::sync_cover_paths_from_files,
                     // Cover Management commands
@@ -651,18 +917,22 @@ pub fn run() {
                     commands::create_playlist,
                     commands::get_playlists,
                     commands::get_playlist_tracks,
+                    commands::get_playlist_track_counts,
                     commands::add_track_to_playlist,
                     commands::remove_track_from_playlist,
                     commands::delete_playlist,
                     commands::rename_playlist,
                     commands::update_playlist_cover,
                     commands::reorder_playlist_tracks,
+                    commands::export_playlist_zip,
+                    commands::get_export_temp_path,
                     // Activity commands (liked tracks + play history)
                     commands::like_track,
                     commands::unlike_track,
                     commands::is_track_liked,
                     commands::get_liked_track_ids,
                     commands::get_liked_tracks,
+                    commands::export_liked_songs_zip,
                     commands::record_play,
                     commands::get_top_tracks,
                     commands::get_top_albums,
@@ -678,6 +948,7 @@ pub fn run() {
                     commands::save_user_lyrics_file,
                     commands::load_user_lyrics_file,
                     commands::delete_user_lyrics_file,
+                    commands::delete_lyrics_by_token,
                     commands::musixmatch_request,
                     commands::get_lyrics,
                     commands::get_current_lyric,
@@ -785,6 +1056,15 @@ pub fn run() {
                     audio::audio_get_stream_url,
                     windows_thumbar::windows_init_thumbar,
                     windows_thumbar::windows_update_thumbar_state,
+                    windows_thumbar::windows_set_taskbar_progress,
+                    windows_thumbar::windows_clear_taskbar_progress,
+                    windows_thumbar::windows_update_jump_list,
+                    windows_thumbar::windows_clear_jump_list,
+                    smtc::smtc_set_metadata,
+                    smtc::smtc_set_playback,
+                    smtc::smtc_set_volume,
+                    tray_update_playback,
+                    tray_update_toggles,
                     commands::proxy_fetch_bytes,
                     commands::save_image_to_gallery,
                     // Window close-to-tray and minimize-to-tray commands
@@ -795,7 +1075,13 @@ pub fn run() {
                     // OTA install-on-close
                     ota_set_close_intercept,
                     ota_confirm_exit,
+                    // launch on startup (desktop only)
+                    commands::window::get_autostart_enabled,
+                    commands::window::set_autostart_enabled,
+                    // last visited view (startup page = last-visited)
+                    commands::window::confirm_close,
                     get_pending_plugin_install,
+                    get_pending_play_track,
                 ]
             }
             #[cfg(mobile)]
@@ -806,7 +1092,9 @@ pub fn run() {
                     commands::add_folder,
                     commands::set_single_music_folder,
                     commands::rescan_music,
+                    commands::scan_folder,
                     commands::get_default_music_dirs,
+                    commands::get_music_folders,
                     commands::get_library,
                     commands::get_tracks_paginated,
                     commands::get_albums_paginated,
@@ -820,6 +1108,7 @@ pub fn run() {
                     commands::begin_folder_import,
                     commands::delete_track,
                     commands::delete_album,
+                    commands::remove_folder,
                     commands::reset_database,
                     commands::sync_cover_paths_from_files,
                     // Cover Management commands
@@ -837,18 +1126,22 @@ pub fn run() {
                     commands::create_playlist,
                     commands::get_playlists,
                     commands::get_playlist_tracks,
+                    commands::get_playlist_track_counts,
                     commands::add_track_to_playlist,
                     commands::remove_track_from_playlist,
                     commands::delete_playlist,
                     commands::rename_playlist,
                     commands::update_playlist_cover,
                     commands::reorder_playlist_tracks,
+                    commands::export_playlist_zip,
+                    commands::get_export_temp_path,
                     // Activity commands (liked tracks + play history)
                     commands::like_track,
                     commands::unlike_track,
                     commands::is_track_liked,
                     commands::get_liked_track_ids,
                     commands::get_liked_tracks,
+                    commands::export_liked_songs_zip,
                     commands::record_play,
                     commands::get_top_tracks,
                     commands::get_top_albums,
@@ -973,19 +1266,55 @@ pub fn run() {
                 }
 
                 // real quit path
-                // only intercept if the frontend explicitly
-                // armed the gate (user picked Later on a downloaded OTA
-                // update)
-                let gate = window.app_handle().state::<OtaExitGate>();
-                if !gate.intercept.load(Ordering::SeqCst) || gate.confirmed.load(Ordering::SeqCst) {
+
+                // if we already confirmed the close and are closing for real
+                // (see confirm_close), let this CloseRequested through
+                // regardless of the OTA gate below
+                let confirmed = window
+                    .app_handle()
+                    .state::<commands::window::CloseConfirmed>();
+                if confirmed.0.load(std::sync::atomic::Ordering::SeqCst) {
                     return;
                 }
 
-                api.prevent_close();
-                if !gate.notified.swap(true, Ordering::SeqCst) {
-                    tracing::info!("Close requested, notifying frontend for OTA install-on-close");
-                    let _ = window.emit(OTA_BEFORE_EXIT_EVENT, ());
+                // only intercept for OTA reasons if the frontend armed the gate
+                let gate = window.app_handle().state::<OtaExitGate>();
+                if gate.intercept.load(Ordering::SeqCst) && !gate.confirmed.load(Ordering::SeqCst) {
+                    api.prevent_close();
+                    if !gate.notified.swap(true, Ordering::SeqCst) {
+                        tracing::info!("Close requested, notifying frontend for OTA install-on-close");
+                        let _ = window.emit(OTA_BEFORE_EXIT_EVENT, ());
+                    }
+                    return;
                 }
+
+                // first close attempt: hold the window open,
+                // let the frontend react to app://request-last-view (e.g.
+                // cache the current view to localStorage), then it calls
+                // confirm_close to re-trigger the real close
+                api.prevent_close();
+
+                let app_handle = window.app_handle().clone();
+                let window_clone = window.clone();
+                let _ = window.emit("app://request-last-view", ());
+                tracing::info!("CloseRequested: notifying frontend before close");
+
+                // fallback in case the frontend never responds
+                // without this the app would become unclosable
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                    let confirmed = app_handle.state::<commands::window::CloseConfirmed>();
+                    if !confirmed.0.load(std::sync::atomic::Ordering::SeqCst) {
+                        tracing::warn!(
+                            "No response from frontend for close notification, closing anyway"
+                        );
+                        confirmed.0.store(true, std::sync::atomic::Ordering::SeqCst);
+                        let close_target = window_clone.clone();
+                        let _ = window_clone.run_on_main_thread(move || {
+                            let _ = close_target.close();
+                        });
+                    }
+                });
             }
         })
         .run(tauri::generate_context!())

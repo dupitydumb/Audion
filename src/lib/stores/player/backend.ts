@@ -27,7 +27,8 @@ import {
 } from './reckoning';
 import {
     initWindowsThumbarIntegration, registerMediaSessionActions,
-    updateMediaSessionPlaybackState,
+    updateMediaSessionPlaybackState, registerSmtcActions,
+    initSmtcIntegration, cleanupSmtcIntegration, updateSmtcPlaybackState,
 } from './media-session';
 import {
     handleTrackEnd, handleGaplessAdvance, nextTrack, previousTrack,
@@ -38,8 +39,12 @@ import {
 import { handleRemoteCommand, handleRemotePlayerState, transferPlayback } from './remote';
 import { registerRemoteCallbacks } from './remote';
 import { seek, setVolume, toggleShuffle } from './playback';
-import { playTrack } from './playback';
+import { playTrack, playFromQueue } from './playback';
 import { updateMediaSessionPosition } from './media-session';
+import { getTrackByIdSync } from '$lib/stores/library';
+import { isFullScreen, toggleFullScreen } from '$lib/stores/ui';
+import { invoke } from '@tauri-apps/api/core'
+
 
 // Wire up media-session action delegates
 registerMediaSessionActions(
@@ -47,6 +52,17 @@ registerMediaSessionActions(
     () => void togglePlay(),
     () => nextTrack(),
 );
+
+// SMTC action delegates
+registerSmtcActions({
+    resume,
+    pause,
+    togglePlay,
+    next: nextTrack,
+    previous: previousTrack,
+    seek,
+    setVolume,
+});
 
 // Wire up remote command callbacks
 registerRemoteCallbacks({
@@ -77,6 +93,7 @@ export async function initAudioBackend(): Promise<void> {
             if (get(activeBackend) === 'html5') {
                 isPlaying.set(playing);
                 updateMediaSessionPlaybackState(playing ? 'playing' : 'paused');
+                updateSmtcPlaybackState(playing ? 'playing' : 'paused');
             }
         },
     });
@@ -100,15 +117,18 @@ export async function initAudioBackend(): Promise<void> {
                 if (event.data.position === 0) {
                     isPlaying.set(true);
                     updateMediaSessionPlaybackState('playing');
+                    updateSmtcPlaybackState('playing');
                 }
             } else if (event.type === 'DeviceListChanged') {
                 console.log('[Player] Device list updated');
             } else if (event.type === 'Error') {
+                console.error('[Player] Backend error event:', JSON.stringify(event));
                 console.error('[Player] Backend error:', event.data.message);
                 const errCount = incrementPlayerNativeErrorCount();
                 _stopReckoning(get(currentTime));
                 isPlaying.set(false);
                 updateMediaSessionPlaybackState('paused');
+                updateSmtcPlaybackState('paused');
 
                 if (errCount >= PLAYER_NATIVE_ERROR_FALLBACK_THRESHOLD) {
                     setPlayerNativeAudioUsed(false);
@@ -196,6 +216,43 @@ export async function initAudioBackend(): Promise<void> {
         }
     }
 
+    // =============================================================================
+    // TRAY TOGGLE SYNC
+    // keep the tray shuffle/repeat checkmarks in sync with the store values
+    // =============================================================================
+    shuffle.subscribe((val) => {
+        invoke('tray_update_toggles', { shuffle: val, repeat: get(repeat) }).catch(() => { });
+    });
+    repeat.subscribe((val) => {
+        invoke('tray_update_toggles', { shuffle: get(shuffle), repeat: val }).catch(() => { });
+    });
+
+    // tray://toggle-shuffle / tray://toggle-repeat are emitted by the tray
+    // on_menu_event when the user clicks the checkboxes. route them through
+    // the same functions the keyboard shortcuts and remote commands already use,
+    // so all state transitions happen in one place.
+    listen<void>('tray://toggle-shuffle', () => {
+        toggleShuffle();
+    }).catch(() => { });
+
+    listen<void>('tray://toggle-repeat', () => {
+        // cycle none => all => one => none
+        const current = get(repeat);
+        const next = current === 'none' ? 'all' : current === 'all' ? 'one' : 'none';
+        repeat.set(next);
+        if (get(activeBackend) === 'native') {
+            nativeAudioSetRepeatOne(next === 'one').catch(console.error);
+        }
+    }).catch(() => { });
+
+    // emitted when the user clicks the track title in the tray menu
+    // (lib.rs already focuses the window before emitting this)
+    listen<void>('tray://open-fullscreen', () => {
+        if (!get(isFullScreen)) {
+            toggleFullScreen();
+        }
+    }).catch(() => { });
+
     // Subscribe to WebSocket messages
     wsStore.onMessage((type, payload) => {
         switch (type) {
@@ -212,6 +269,77 @@ export async function initAudioBackend(): Promise<void> {
     });
 
     await initWindowsThumbarIntegration();
+    await initSmtcIntegration();
+
+    // queue and queueIndex stores are subscribed so the jump list updates when
+    // the track changes or when tracks are added/removed from the queue
+    let jumpListDisabledToastShown = false;
+    const JUMP_LIST_DISABLED_MARKER = 'JUMPLIST_DISABLED_BY_SETTINGS';
+
+    const handleJumpListError = (action: 'update' | 'clear', e: unknown) => {
+        if (e === JUMP_LIST_DISABLED_MARKER) {
+            // windows blocks jump list writes when the user
+            // has "Show recently opened items in Jump Lists" turned off
+            // surface it once per session
+            if (!jumpListDisabledToastShown) {
+                jumpListDisabledToastShown = true;
+                addToast(
+                    'Jump list is disabled in Windows settings. To enable "Next Up" in the taskbar, turn on Settings > Personalization > Start > "Show recently opened items in Jump Lists..."',
+                    'info',
+                    8000,
+                );
+            }
+            return;
+        }
+        console.error(`[JumpList] ${action} failed:`, e);
+    };
+
+    const syncJumpList = () => {
+        const $queue = get(queue);
+        const currentIdx = get(queueIndex);
+        const nextItems = $queue
+            .slice(currentIdx + 1, currentIdx + 6)
+            .map((t) => ({
+                track_id: t.id,
+                title: t.title ?? 'Unknown Title',
+                artist: t.artist ?? null,
+                path: t.path,
+            }));
+        if (nextItems.length > 0) {
+            invoke('windows_update_jump_list', { tracks: nextItems })
+                .then(() => console.log('[JumpList] Updated with', nextItems))
+                .catch((e) => handleJumpListError('update', e));
+        } else {
+            invoke('windows_clear_jump_list')
+                .then(() => console.log('[JumpList] Cleared'))
+                .catch((e) => handleJumpListError('clear', e));
+        }
+    };
+    queue.subscribe(syncJumpList);
+    queueIndex.subscribe(syncJumpList);
+
+    // listen for audion://play/<id> deep links routed from lib.rs (already running case)
+    await listen<string>('app://play-track', ({ payload }) => {
+        const trackId = Number(payload);
+        if (!trackId || isNaN(trackId)) return;
+        const track = getTrackByIdSync(trackId);
+        if (!track) {
+            console.warn('[Player] jump list play-track: id not found in library:', trackId);
+            return;
+        }
+        // jump list entries are sourced from the current queue (see syncJumpList
+        // below)
+        // playFromQueue handles the index update, userQueueCount, and shuffle pointer sync
+        const idxInQueue = get(queue).findIndex((t) => t.id === trackId);
+        if (idxInQueue !== -1) {
+            playFromQueue(idxInQueue);
+        } else {
+            // queue has changed since the jump list was built (or cleared)
+            // fall back to just playing the track on its own
+            void playTrack(track);
+        }
+    });
+    // cold-start case (app launched via jump list click) is handled in +page.svelte, coordinated with initializeFromPersistedState
 }
 
 export function cleanupPlayer(): void {
@@ -229,6 +357,7 @@ export function cleanupPlayer(): void {
     duration.set(0);
 
     updateMediaSessionPlaybackState('none');
+    cleanupSmtcIntegration();
     if ('mediaSession' in navigator) {
         try { navigator.mediaSession.metadata = null; } catch (_) { /* ignore */ }
     }

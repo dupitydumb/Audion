@@ -14,7 +14,22 @@
     "pinToTop": "Pin to Top",
     "unpinFromTop": "Unpin from Top",
     "goToArtist": "Go to Artist",
-    "goToAlbum": "Go to Album"
+    "goToAlbum": "Go to Album",
+    "addedToQueue": "Added to queue",
+    "like": "Like",
+    "unlike": "Unlike",
+    "unlikeAll": "Unlike All",
+    "exportToZip": "Export to Zip",
+    "deleteAlbum": "Delete Album",
+    "deletePlaylist": "Delete Playlist",
+    "rename": "Rename",
+    "changeCover": "Change Cover",
+    "configureDownloadLocation": "Please configure a download location in Settings first",
+    "artworkUpdated": {
+      "track": "Track artwork updated",
+      "album": "Album artwork updated",
+      "artist": "Artist artwork updated"
+    }
   },
   "trackList": {
     "title": "Title",
@@ -389,7 +404,45 @@
     "unlock": "Unlock",
     "upgradeSubtitle": "Unlock unlimited sync and professional features",
     "urlLabel": "URL:",
-    "userLabel": "User:"
+    "userLabel": "User:",
+    "signInToSync": "Sign in to sync your library and settings across devices",
+    "requiresRestart": "Requires restart to apply",
+    "restartNow": "Restart now",
+    "customPreset": "Custom Preset",
+    "resetToFlat": "Reset to Flat",
+    "replayGainUnsupported": "Only supported with the Native audio driver",
+    "outputDeviceUnsupported": "Only supported with the Native audio driver",
+    "selectOutputDevice": "Select output device",
+    "systemDefaultNamed": "System default ({name})",
+    "defaultBadge": "Default",
+    "outputDevices": "Output devices",
+    "lyricsPriorityTitle": "Auto-fetch source priority",
+    "lyricsPriorityDesc": "Controls the order sources are tried automatically, e.g. {example}. Lowercase letters and single \"/\" separators only. Leave blank to use the default order. Manual source selection in the lyrics panel is unaffected.",
+    "lyricsPriorityPlaceholder": "apple/imported/genius",
+    "lyricsPriorityInputLabel": "Lyrics source priority",
+    "save": "Save",
+    "lyricsPriorityResetToDefault": "Reset to default",
+    "lyricsPrioritySaved": "Lyrics source priority saved",
+    "lyricsPriorityInvalidFormat": "Invalid format — lowercase letters and single \"/\" separators only, e.g. {example}. Unknown tokens are also rejected.",
+    "lyricsPriorityInvalidToast": "Invalid lyrics priority format",
+    "lyricsDeleteTitle": "Delete cached lyrics",
+    "lyricsDeleteDesc": "Permanently delete every cached lyrics file for a given source, across your whole library. Type a source token (e.g. {apple}, {imported}, or {all} for everything).",
+    "lyricsDeleteAllLabel": "Delete all",
+    "lyricsDeleteLyricsLabel": "lyrics",
+    "lyricsDeleteTokenPlaceholder": "token",
+    "lyricsDeleteTokenInputLabel": "Lyrics source token to delete",
+    "lyricsDeleteButtonLabel": "Delete lyrics for this source",
+    "lyricsDeleteButtonTitle": "Delete all cached lyrics for this source",
+    "lyricsDeleteEmptyToken": "Type a source token first",
+    "lyricsDeleteAllConfirm": "Delete ALL cached lyrics — every source, including imported files — for every track in your library? This cannot be undone.",
+    "lyricsDeleteTokenConfirm": "Delete all \"{label}\" lyrics for every track in your library? This cannot be undone.",
+    "lyricsDeleteAllConfirmTitle": "Delete All Lyrics",
+    "lyricsDeleteTokenConfirmTitle": "Delete {label} Lyrics",
+    "lyricsDeleteConfirmLabel": "Delete",
+    "lyricsDeleteSuccess": "Deleted {count} {label} lyrics file{plural}",
+    "lyricsDeleteNoneFound": "No cached {label} lyrics found to delete",
+    "lyricsDeleteFailed": "Failed to delete {label} lyrics",
+    "lyricsTokenAll": "All"
   },
   "updatePopup": {
     "restartToUpdate": "Restart to update",
@@ -822,5 +875,8 @@
     "lastSynced": "Last synced: {time}",
     "minutesAgo": "{minutes}m ago",
     "pendingCount": "{count} pending"
+  },
+  "search": {
+    "loadMore": "Load more ({count} left)"
   }
 }

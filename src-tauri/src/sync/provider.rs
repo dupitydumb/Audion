@@ -172,6 +172,22 @@ pub trait LibraryProvider: Send + Sync {
     async fn create_playlist(&self, name: &str, cover_url: Option<&str>) -> Result<i64, String>;
     async fn get_playlists(&self) -> Result<Vec<queries::Playlist>, String>;
     async fn get_playlist_tracks(&self, playlist_id: i64) -> Result<Vec<queries::Track>, String>;
+    /// track count per playlist id, keyed by playlist_id
+    /// playlists with zero tracks are absent from the map 
+    /// default impl fans out to get_playlist_tracks per playlist (used by providers without a
+    /// dedicated batch-count endpoint)
+    /// LocalProvider overrides this with a single grouped SQL query
+    async fn get_playlist_track_counts(
+        &self,
+        playlist_ids: &[i64],
+    ) -> Result<std::collections::HashMap<i64, i64>, String> {
+        let mut counts = std::collections::HashMap::new();
+        for &id in playlist_ids {
+            let tracks = self.get_playlist_tracks(id).await?;
+            counts.insert(id, tracks.len() as i64);
+        }
+        Ok(counts)
+    }
     async fn add_track_to_playlist(&self, playlist_id: i64, track_id: i64) -> Result<(), String>;
     async fn remove_track_from_playlist(&self, playlist_id: i64, track_id: i64) -> Result<(), String>;
     async fn delete_playlist(&self, playlist_id: i64) -> Result<(), String>;
@@ -390,6 +406,21 @@ impl LibraryProvider for LocalProvider {
         let token = queries::get_sync_meta(&conn, "access_token").ok().flatten();
         resolve_tracks(&mut tracks, &self.server_url, token.as_deref());
         Ok(tracks)
+    }
+
+    async fn get_playlist_track_counts(
+        &self,
+        playlist_ids: &[i64],
+    ) -> Result<std::collections::HashMap<i64, i64>, String> {
+        let conn = self.db.conn.lock().map_err(|e| e.to_string())?;
+        let all_counts = queries::get_playlist_track_counts(&conn).map_err(|e| e.to_string())?;
+        let requested_ids: std::collections::HashSet<i64> = playlist_ids.iter().copied().collect();
+        // only return counts for the requested ids (playlists not in
+        // all_counts have zero tracks and are omitted)
+        Ok(all_counts
+            .into_iter()
+            .filter(|(id, _)| requested_ids.contains(id))
+            .collect())
     }
 
     async fn add_track_to_playlist(&self, playlist_id: i64, track_id: i64) -> Result<(), String> {
@@ -938,6 +969,15 @@ impl ProviderEnum {
         match self {
             Self::Local(p) => p.get_playlist_tracks(playlist_id).await,
             Self::Server(p) => p.get_playlist_tracks(playlist_id).await,
+        }
+    }
+    pub async fn get_playlist_track_counts(
+        &self,
+        playlist_ids: &[i64],
+    ) -> Result<std::collections::HashMap<i64, i64>, String> {
+        match self {
+            Self::Local(p) => p.get_playlist_track_counts(playlist_ids).await,
+            Self::Server(p) => p.get_playlist_track_counts(playlist_ids).await,
         }
     }
     pub async fn add_track_to_playlist(&self, playlist_id: i64, track_id: i64) -> Result<(), String> {

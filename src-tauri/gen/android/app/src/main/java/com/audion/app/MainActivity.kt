@@ -15,12 +15,15 @@ import androidx.activity.OnBackPressedCallback
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.documentfile.provider.DocumentFile
+import java.io.File
 
 class MainActivity : TauriActivity() {
   private var webViewRef: WebView? = null
+  private var activeCopyThread: Thread? = null
 
   companion object {
     const val REQUEST_FOLDER_PICKER = 1001
+    const val REQUEST_SAVE_FILE = 1002
   }
 
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -63,12 +66,20 @@ class MainActivity : TauriActivity() {
     })
   }
 
+  override fun onDestroy() {
+    // app is closing => stop any in-flight file copy
+    activeCopyThread?.interrupt()
+    activeCopyThread = null
+    super.onDestroy()
+  }
+
   override fun onWebViewCreate(webView: WebView) {
     super.onWebViewCreate(webView)
     webViewRef = webView
     MediaNotificationService.webViewRef = webView
     webView.addJavascriptInterface(AudioInterface(this), "AndroidMediaNotification")
     webView.addJavascriptInterface(FolderPickerInterface(this), "AndroidFolderPicker")
+    webView.addJavascriptInterface(FileSaverInterface(this), "AndroidFileSaver")
   }
 
   /**
@@ -80,6 +91,19 @@ class MainActivity : TauriActivity() {
       addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
     }
     startActivityForResult(intent, REQUEST_FOLDER_PICKER)
+  }
+
+  /**
+   * launch the system Save As dialog (SAF)
+   * resulting URI is returned back via js: window.__onAndroidFileSaved(uri)
+   */
+  fun launchSaveFilePicker(name: String, mimeType: String) {
+    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+      addCategory(Intent.CATEGORY_OPENABLE)
+      type = mimeType
+      putExtra(Intent.EXTRA_TITLE, name)
+    }
+    startActivityForResult(intent, REQUEST_SAVE_FILE)
   }
 
   override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -143,6 +167,32 @@ class MainActivity : TauriActivity() {
         }
       }
     }
+
+    if (requestCode == REQUEST_SAVE_FILE) {
+      val wv = webViewRef ?: return
+      if (resultCode == Activity.RESULT_OK && data != null) {
+        val uri: Uri = data.data ?: return
+
+        // persist permission so the app can write to this file again later if needed
+        val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        try {
+          contentResolver.takePersistableUriPermission(uri, takeFlags)
+        } catch (e: SecurityException) {
+          // some providers don't support persistable permissions
+          // the URI is still valid for this immediate write
+        }
+
+        val uriStr = uri.toString().replace("'", "\\'")
+        wv.post {
+          wv.evaluateJavascript("window.__onAndroidFileSaved('$uriStr')", null)
+        }
+      } else {
+        // user cancelled
+        wv.post {
+          wv.evaluateJavascript("window.__onAndroidFileSaved(null)", null)
+        }
+      }
+    }
   }
 
   /**
@@ -199,6 +249,85 @@ class MainActivity : TauriActivity() {
       runOnUiThread {
         launchFolderPicker()
       }
+    }
+  }
+
+  inner class FileSaverInterface(private val context: Context) {
+    /**
+     * 1: show the system Save As picker
+     * result comes back via window.__onAndroidFileSaved(uriOrNull)
+     */
+    @JavascriptInterface
+    fun saveFile(name: String, mimeType: String) {
+      runOnUiThread {
+        launchSaveFilePicker(name, mimeType)
+      }
+    }
+
+    /**
+     * 3: copy a temp file (real filesystem path) into the picked content:// URI
+     * result comes back via window.__onAndroidFileCopied(true/false) => unless the
+     * activity is being destroyed mid-copy, in which case we abandon silently
+     * (no point calling back into a webview that's gone)
+     */
+    @JavascriptInterface
+    fun copyTempToUri(tempPath: String, uriString: String) {
+      val srcFile = File(tempPath)
+      val destUri = Uri.parse(uriString)
+
+      val thread = Thread {
+        var success = false
+        var interrupted = false
+        try {
+          context.contentResolver.openOutputStream(destUri)?.use { out ->
+            srcFile.inputStream().use { input ->
+              val buffer = ByteArray(8 * 1024)
+              while (true) {
+                if (Thread.currentThread().isInterrupted) {
+                  interrupted = true
+                  break
+                }
+                val read = input.read(buffer)
+                if (read == -1) break
+                out.write(buffer, 0, read)
+              }
+            }
+          }
+          success = !interrupted
+        } catch (e: Exception) {
+          e.printStackTrace()
+          success = false
+        } finally {
+          activeCopyThread = null
+        }
+
+        if (interrupted) {
+          // app is going away => clean up rather than leaving a truncated file
+          // and an orphaned temp file behind
+          try {
+            context.contentResolver.delete(destUri, null, null)
+          } catch (e: Exception) {
+            e.printStackTrace()
+          }
+          try {
+            srcFile.delete()
+          } catch (e: Exception) {
+            e.printStackTrace()
+          }
+        } else {
+          // copy finished. regardless of success or failure we have to clean up temp files
+          try {
+            srcFile.delete()
+          } catch (e: Exception) {
+            e.printStackTrace()
+          }
+          webViewRef?.post {
+            webViewRef?.evaluateJavascript("window.__onAndroidFileCopied($success)", null)
+          }
+        }
+      }
+      activeCopyThread = thread
+      thread.start()
     }
   }
 

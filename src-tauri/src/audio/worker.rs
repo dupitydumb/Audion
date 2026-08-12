@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering, AtomicU32};
 use std::time::{Duration, Instant};
 use std::num::NonZero;
 use crossbeam::channel::{unbounded, Receiver, Sender};
+use tauri::Emitter;
 
 use super::dsp::EqSettings;
 use super::mod_types::{AudioEvent, ReadySource, DeviceList};
@@ -69,6 +70,11 @@ impl PlaybackStateSync {
         let device_list_clone = Arc::clone(&device_list);
 
         std::thread::spawn(move || {
+            // retry a bounded number of times with fresh engine state
+            const MAX_RESTARTS: u32 = 5;
+            let mut restarts = 0u32;
+
+            'restart: loop {
             let mut engine_opt: Option<AudioEngine> = None;
             let mut eq_settings = EqSettings::default();
 
@@ -82,7 +88,7 @@ impl PlaybackStateSync {
                 }
             };
 
-            loop {
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| { loop {
                 crossbeam::select! {
                     recv(rx) -> msg => {
                         let cmd = match msg {
@@ -91,20 +97,30 @@ impl PlaybackStateSync {
                         };
 
                         if engine_opt.is_none() {
-                            match AudioEngine::new(&eq_settings, None) {
-                                Ok((e, evt_rx, open_rx, dl)) => {
-                                    event_rx = evt_rx;
-                                    open_result_rx = open_rx;
-                                    engine_opt = Some(e);
-                                    if let Ok(mut cached) = device_list_clone.lock() {
-                                        *cached = dl;
+                            let mut last_err = String::new();
+                            for attempt in 0..8u32 {
+                                match AudioEngine::new(&eq_settings, None) {
+                                    Ok((e, evt_rx, open_rx, dl)) => {
+                                        event_rx = evt_rx;
+                                        open_result_rx = open_rx;
+                                        engine_opt = Some(e);
+                                        if let Ok(mut cached) = device_list_clone.lock() {
+                                            *cached = dl;
+                                        }
+                                        last_err.clear();
+                                        break;
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("[AUDIO] Engine init attempt {} failed: {}", attempt + 1, e);
+                                        last_err = e;
+                                        std::thread::sleep(std::time::Duration::from_millis(250 * (1u64 << attempt.min(4))));
                                     }
                                 }
-                                Err(e) => {
-                                    tracing::error!("[AUDIO] Engine init failed: {}", e);
-                                    emit(AudioEvent::Error { message: e });
-                                    continue;
-                                }
+                            }
+                            if !last_err.is_empty() {
+                                tracing::error!("[AUDIO] Engine init failed after retries: {}", last_err);
+                                emit(AudioEvent::Error { message: last_err });
+                                continue;
                             }
                         }
 
@@ -388,7 +404,45 @@ impl PlaybackStateSync {
                         }
                     }
                 }
+            }})); // closes: loop, AssertUnwindSafe closure, catch_unwind
+
+            match result {
+                // rx disconnected (app shutting down) or an explicit break: exit for real.
+                Ok(()) => break 'restart,
+                Err(payload) => {
+                    let msg = payload
+                        .downcast_ref::<&str>()
+                        .copied()
+                        .or_else(|| payload.downcast_ref::<String>().map(|s| s.as_str()))
+                        .unwrap_or("(non-string panic payload)");
+                    tracing::error!("[AUDIO] Command thread panicked: {}", msg);
+
+                    restarts += 1;
+                    if restarts > MAX_RESTARTS {
+                        tracing::error!(
+                            "[AUDIO] Command thread panicked {} times, giving up",
+                            restarts
+                        );
+                        if let Err(e) = app_handle.emit("audio://event", &AudioEvent::Error {
+                            message: format!(
+                                "Audio engine crashed repeatedly and could not recover: {}",
+                                msg
+                            ),
+                        }) {
+                            tracing::warn!("[AUDIO] Failed to emit panic error event: {}", e);
+                        }
+                        break 'restart;
+                    }
+
+                    if let Err(e) = app_handle.emit("audio://event", &AudioEvent::Error {
+                        message: format!("Audio engine crashed, recovering: {}", msg),
+                    }) {
+                        tracing::warn!("[AUDIO] Failed to emit panic error event: {}", e);
+                    }
+                    // loop back around and rebuild engine_opt/event_rx from scratch
+                }
             }
+            } // restart loop
         });
 
         Self {
