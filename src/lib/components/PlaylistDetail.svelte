@@ -338,7 +338,7 @@
         if (!playlist) return;
 
         try {
-            addToast("Exporting…", "info");
+            addToast($_("playlist.exporting"), "info");
 
             const result = await exportPlaylistZip(playlistId, playlist.name);
             if (!result) return; // user cancelled
@@ -346,11 +346,14 @@
             const skipped_count = result.skipped_count;
             const exported = result.track_count - skipped_count;
             const skippedMsg = skipped_count > 0
-                ? ` (${skipped_count} streaming-only track${skipped_count === 1 ? "" : "s"} skipped)`
+                ? ` (${$_("playlist.exportedSkipped", { values: { count: skipped_count } })})`
                 : "";
-            addToast(`Exported ${exported} track${exported === 1 ? "" : "s"}${skippedMsg}`, "success");
+            addToast(
+                `${$_("playlist.exportedTracks", { values: { count: exported } })}${skippedMsg}`,
+                "success",
+            );
         } catch (e) {
-            addToast(`Export failed: ${e}`, "error");
+            addToast($_("playlist.exportFailed", { values: { error: String(e) } }), "error");
         }
     }
 </script>
@@ -375,7 +378,7 @@
                     <button
                         class="back-btn"
                         on:click={toggleMenu}
-                        title="More options"
+                        title={$_("playlist.moreOptions")}
                         bind:this={menuTriggerEl}
                         aria-haspopup="menu"
                         aria-expanded={menuOpen}
@@ -413,7 +416,7 @@
                     {/if}
                 </div>
 
-                <button class="back-btn close-btn" on:click={goToPlaylists} title="Close">
+                <button class="back-btn close-btn" on:click={goToPlaylists} title={$_("common.close")}>
                     <svg
                         viewBox="0 0 24 24"
                         fill="currentColor"
