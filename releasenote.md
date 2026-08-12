@@ -28,3 +28,4 @@
 * **Tray Restore**: Fixed window not showing when activated from tray while minimized.
 * **SDK**: Bumped SDK version to resolve flagged build issues.
 
+Thanks to @SmileofHaven
