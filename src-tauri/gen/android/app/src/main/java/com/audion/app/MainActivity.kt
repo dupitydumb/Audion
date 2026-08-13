@@ -21,6 +21,11 @@ class MainActivity : TauriActivity() {
   private var webViewRef: WebView? = null
   private var activeCopyThread: Thread? = null
 
+  // see initAudioContext in src-tauri/src/lib.rs
+  // non static native method
+  // JNI passes 'this' (the activity) as the implicit second parameter automatically
+  private external fun initAudioContext()
+
   companion object {
     const val REQUEST_FOLDER_PICKER = 1001
     const val REQUEST_SAVE_FILE = 1002
@@ -29,6 +34,12 @@ class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+
+    // one time handoff of the JavaVM/Activity to rust's ndk_context
+    // so cpal's AAudio backend can open a stream
+    // safe to call multiple times 
+    // initAudioContext guards against re initializing on the rust side
+    initAudioContext()
 
     // Request permissions for music scanning
     if (Build.VERSION.SDK_INT >= 33) {

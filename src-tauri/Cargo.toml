@@ -191,3 +191,5 @@ lofty = { git = "https://github.com/SmileofHaven/lofty-rs", branch = "main" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.14"
+jni = "0.21"
+ndk-context = "0.1"

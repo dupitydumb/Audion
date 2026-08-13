@@ -18,6 +18,59 @@ mod utils;
 // =============================================================================
 mod audio;
 
+// =============================================================================
+// ANDROID AUDIO CONTEXT INIT (JNI)
+// =============================================================================
+// cpal's android backend needs ndk_context::initialize_android_context called once before it can open an AAudio stream
+// called from Kotlin (MainActivity.onCreate) via this JNI export
+// =============================================================================
+#[cfg(target_os = "android")]
+mod android_audio_context {
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+
+    /// JNI export for MainActivity
+    // initAudioContext. non static native method
+    /// so the second parameter is the calling Activity instance rather than a jclass
+    /// passed implicitly by the JVM
+    #[no_mangle]
+    pub extern "system" fn Java_com_audion_app_MainActivity_initAudioContext(
+        env: jni::JNIEnv<'_>,
+        activity: jni::objects::JObject<'_>,
+    ) {
+        INIT.call_once(|| {
+            let vm = match env.get_java_vm() {
+                Ok(vm) => vm,
+                Err(e) => {
+                    tracing::error!("[Android] Failed to get JavaVM for audio context: {e}");
+                    return;
+                }
+            };
+            let global_activity = match env.new_global_ref(&activity) {
+                Ok(g) => g,
+                Err(e) => {
+                    tracing::error!("[Android] Failed to create global ref for activity: {e}");
+                    return;
+                }
+            };
+
+            let vm_ptr = vm.get_java_vm_pointer() as *mut std::ffi::c_void;
+            let activity_ptr = global_activity.as_obj().as_raw() as *mut std::ffi::c_void;
+
+            // ndk_context needs this pointer to stay valid for the lifetime of the process
+            std::mem::forget(global_activity);
+
+            // called exactly once with valid pointers obtained from the current JNI call
+            // guarded by 'Once' above
+            unsafe {
+                ndk_context::initialize_android_context(vm_ptr, activity_ptr);
+            }
+            tracing::info!("[Android] ndk_context initialized for native audio (cpal/AAudio)");
+        });
+    }
+}
+
 use db::Database;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -568,7 +621,10 @@ pub fn run() {
             }
 
             // "Play with Audion" right click context menu entry - idempotent
-            integrations::context_menu::register_context_menu(ASSOCIATED_AUDIO_EXTENSIONS);
+            #[cfg(desktop)]
+            {
+                integrations::context_menu::register_context_menu(ASSOCIATED_AUDIO_EXTENSIONS);
+            }
 
             // Get app data directory and create database
             let app_dir = app
