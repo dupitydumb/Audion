@@ -2,7 +2,6 @@
   import { fade, fly } from "svelte/transition";
   import { cubicInOut } from "svelte/easing";
   import { flip } from "svelte/animate";
-  import { derived } from "svelte/store";
   import {
     isFullScreen,
     toggleFullScreen,
@@ -32,7 +31,13 @@
   import { goToArtistDetail, goToAlbumDetail } from "$lib/stores/view";
   import ArtistLinks from "$lib/components/ArtistLinks.svelte";
   import MarqueeText from "$lib/components/MarqueeText.svelte";
-  import { lyricsData, activeLine } from "$lib/stores/lyrics";
+  import {
+    lyricsData,
+    activeLine,
+    wordSyncState,
+    getLineSyncState,
+    type LineSyncState,
+  } from "$lib/stores/lyrics";
   import {
     getTrackCoverSrc,
     formatDuration,
@@ -49,6 +54,7 @@
   import MeshBackgroundSettings from "./MeshBackgroundSettings.svelte";
   import FullScreenMobileBottomSheet from "./FullScreenMobileBottomSheet.svelte";
   import FullScreenPlaybackControls from "./FullScreenPlaybackControls.svelte";
+  import LyricsView from "../LyricsView.svelte";
 
   let showMeshSettings = false;
 
@@ -57,78 +63,40 @@
   $: connectedDevices = $wsStore.devices.length;
 
   let albumArt: string | null = null;
-  let lyricsContainer: HTMLDivElement;
   let isSeeking = false;
   let isAndroid = false;
   $: hideAndroidLyricsControls = isAndroid && $isMobile && $lyricsVisible;
-  $: isUnsynced = !$lyricsData?.lines || $lyricsData.lines.length === 0 || !$lyricsData.lines.some((line) => line.time > 0);
   let desktopArtWrapperEl: HTMLDivElement | null = null;
   $: if (desktopArtWrapperEl) {
     desktopArtWrapperEl.style.viewTransitionName = $isFullScreen ? 'player-album-art' : 'none';
   }
 
-  // Combined reactive state for word-by-word sync
-  const wordSyncState = derived(
-    [lyricsData, currentTime, activeLine],
-    ([$lyrics, $time, $activeLineIdx]) => {
-      // Guard against missing lyrics data
-      if (!$lyrics?.lines || $activeLineIdx < 0) {
-        return { activeWordIdx: -1, progress: 0 };
-      }
-
-      const line = $lyrics.lines[$activeLineIdx];
-      if (!line?.words || line.words.length === 0) {
-        return { activeWordIdx: -1, progress: 0 };
-      }
-
-      // Find the word that's currently active
-      let activeWordIdx = -1;
-      for (let i = 0; i < line.words.length; i++) {
-        const word = line.words[i];
-        if ($time >= word.time && $time <= word.endTime) {
-          activeWordIdx = i;
-          break;
-        }
-        if ($time >= word.time) {
-          const nextWord = line.words[i + 1];
-          if (!nextWord || $time < nextWord.time) {
-            activeWordIdx = i;
-          }
-        }
-      }
-
-      // Calculate progress for active word
-      let progress = 0;
-      if (activeWordIdx >= 0) {
-        const word = line.words[activeWordIdx];
-        const wordStart = word.time;
-        const wordEnd = word.endTime;
-        const duration = wordEnd - wordStart;
-
-        if (duration > 0) {
-          const elapsed = $time - wordStart;
-          progress = Math.min(100, Math.max(0, (elapsed / duration) * 100));
-        } else {
-          progress = 100;
-        }
-      }
-
-      return { activeWordIdx, progress };
-    },
-  );
-
-  // Get word progress percentage for smooth filling
+  /*
+   * pinning a fixed dark palette here (via the same 'style' prop used for sizing)
+   * guarantees contrast regardless of app theme
+   * since fullscreen's background is always black
+   */
+  const lyricsDarkPalette =
+    "--text-primary: #ffffff; " +
+    "--text-secondary: rgba(255, 255, 255, 0.7); " +
+    "--text-subdued: rgba(255, 255, 255, 0.4); " +
+    "--lyrics-inactive: rgba(255, 255, 255, 0.22); " +
+    "--lyrics-near: rgba(255, 255, 255, 0.55); " +
+    "--lyrics-mid: rgba(255, 255, 255, 0.35); " +
+    "--lyrics-far: rgba(255, 255, 255, 0.15); " +
+    "--lyrics-past-near: rgba(255, 255, 255, 0.45); " +
+    "--lyrics-past-mid: rgba(255, 255, 255, 0.3); " +
+    "--lyrics-past-far: rgba(255, 255, 255, 0.15);";
   function getWordPercentage(
     lineIdx: number,
     wordIdx: number,
     currentActiveLine: number,
-    currentActiveWordIdx: number,
-    currentWordProgress: number,
+    ws: LineSyncState,
   ): number {
     if (lineIdx < currentActiveLine) return 100;
     if (lineIdx > currentActiveLine) return 0;
-    if (wordIdx < currentActiveWordIdx) return 100;
-    if (wordIdx === currentActiveWordIdx) return currentWordProgress;
+    if (wordIdx < ws.activeWordIdx) return 100;
+    if (wordIdx === ws.activeWordIdx) return ws.wordProgress;
     return 0;
   }
 
@@ -138,67 +106,6 @@
     albumArt = trackCover || null;
   } else {
     albumArt = null;
-  }
-
-  // Apple Music-style smooth scroll with custom easing
-  let scrollAnimationId: number | null = null;
-  let prevActiveLine = -1;
-
-  $: if (
-    $activeLine !== -1 &&
-    lyricsContainer &&
-    $activeLine !== prevActiveLine
-  ) {
-    prevActiveLine = $activeLine;
-    scrollToCurrentLine();
-  }
-
-  function easeOutExpo(t: number): number {
-    return t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
-  }
-
-  async function scrollToCurrentLine() {
-    await tick();
-    if (!lyricsContainer) return;
-
-    const activeEl = lyricsContainer.querySelector(
-      ".lyric-line.active, .desktop-lyric-line.active",
-    ) as HTMLElement;
-    if (!activeEl) return;
-
-    if (scrollAnimationId) {
-      cancelAnimationFrame(scrollAnimationId);
-    }
-
-    const containerRect = lyricsContainer.getBoundingClientRect();
-    const activeRect = activeEl.getBoundingClientRect();
-    const containerCenter = containerRect.height / 2;
-    const activeCenter =
-      activeRect.top - containerRect.top + activeRect.height / 2;
-    const targetScroll =
-      lyricsContainer.scrollTop + (activeCenter - containerCenter);
-
-    const startScroll = lyricsContainer.scrollTop;
-    const distance = targetScroll - startScroll;
-    const duration = 600;
-    let startTime: number | null = null;
-
-    function step(timestamp: number) {
-      if (!startTime) startTime = timestamp;
-      const elapsed = timestamp - startTime;
-      const prog = Math.min(elapsed / duration, 1);
-      const eased = easeOutExpo(prog);
-
-      lyricsContainer.scrollTop = startScroll + distance * eased;
-
-      if (prog < 1) {
-        scrollAnimationId = requestAnimationFrame(step);
-      } else {
-        scrollAnimationId = null;
-      }
-    }
-
-    scrollAnimationId = requestAnimationFrame(step);
   }
 
   // --- Unified pointer-based seeking ---
@@ -316,18 +223,20 @@
     <div class="backdrop-layer"></div>
 
     {#if !$isMobile}
-      <button
-        class="mesh-settings-toggle"
-        class:active={showMeshSettings}
-        on:click={() => (showMeshSettings = !showMeshSettings)}
-        aria-label="Background settings"
-      >
-        <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-          <path
-            d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.5.5 0 00.12-.61l-1.92-3.32a.5.5 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 00-.48-.41h-3.84a.48.48 0 00-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.5.5 0 00-.59.22L3.34 8.87a.5.5 0 00.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.5.5 0 00-.12.61l1.92 3.32c.12.22.39.3.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.25.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.49 0 .59-.22l1.92-3.32a.5.5 0 00-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"
-          />
-        </svg>
-      </button>
+      {#if !showMeshSettings}
+        <button
+          class="mesh-settings-toggle"
+          class:active={showMeshSettings}
+          on:click={() => (showMeshSettings = !showMeshSettings)}
+          aria-label="Background settings"
+        >
+          <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+            <path
+              d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.5.5 0 00.12-.61l-1.92-3.32a.5.5 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 00-.48-.41h-3.84a.48.48 0 00-.48.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.5.5 0 00-.59.22L3.34 8.87a.5.5 0 00.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.5.5 0 00-.12.61l1.92 3.32c.12.22.39.3.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.25.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.49 0 .59-.22l1.92-3.32a.5.5 0 00-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1112 8.4a3.6 3.6 0 010 7.2z"
+            />
+          </svg>
+        </button>
+      {/if}
       {#if showMeshSettings}
         <MeshBackgroundSettings onClose={() => (showMeshSettings = false)} />
       {/if}
@@ -477,58 +386,18 @@
             class="mobile-lyrics-wrapper"
             in:fade={{ duration: isAndroid ? 140 : 300 }}
           >
-            <div class="lyrics-container" bind:this={lyricsContainer}>
-              {#if $lyricsData?.lines && $lyricsData.lines.length > 0}
-                {#each $lyricsData.lines as line, i}
-                  {@const hasWordSync = line.words && line.words.length > 0}
-                  {#if line.structure && (i === 0 || line.structure !== $lyricsData.lines[i - 1].structure)}
-                    <div class="section-label" aria-hidden="true">{line.structure}</div>
-                  {/if}
-                  <div
-                    class="lyric-line"
-                    class:active={i === $activeLine}
-                    class:past={i < $activeLine}
-                    class:upcoming={i > $activeLine}
-                    class:opposite={!!line.opposite_turn && !line.is_background}
-                    class:opposite-bg={!!line.opposite_turn && !!line.is_background}
-                    role="button"
-                    tabindex="0"
-                    on:click={() => {
-                      const dur = $duration;
-                      if (dur && dur > 0) seek(line.time / dur);
-                    }}
-                    on:keydown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        const dur = $duration;
-                        if (dur && dur > 0) seek(line.time / dur);
-                      }
-                    }}
-                  >
-                    {#if hasWordSync && i === $activeLine && line.words}
-                      {#each line.words as word, wordIdx}
-                        {@const wordProgress = getWordPercentage(
-                          i,
-                          wordIdx,
-                          $activeLine,
-                          $wordSyncState.activeWordIdx,
-                          $wordSyncState.progress,
-                        )}
-                        <span
-                          class="lyric-word"
-                          style="--word-progress: {wordProgress}%;"
-                          >{word.word}</span
-                        >
-                        {#if wordIdx < line.words.length - 1}{" "}{/if}
-                      {/each}
-                    {:else}
-                      {line.text}
-                    {/if}
-                  </div>
-                {/each}
-              {:else}
-                <div class="no-lyrics"><p>No lyrics available</p></div>
-              {/if}
-            </div>
+            {#if $lyricsData?.lines && $lyricsData.lines.length > 0}
+              <LyricsView
+                transparent
+                reducedMotion={isAndroid}
+                style={(isAndroid
+                  ? "--lyrics-content-padding: 0.75rem 1.5rem 0.75rem; --lyrics-font-size: 1.22rem; --lyrics-active-font-size: 1.22rem; --lyrics-line-padding: 0.5rem 0; --label-beam-max-width: 180px;"
+                  : "--lyrics-content-padding: 2rem 1.5rem 25vh; --lyrics-font-size: 22px; --lyrics-active-font-size: 24px; --lyrics-line-padding: 0.75rem 0; --label-beam-max-width: 195px;")
+                  + " " + lyricsDarkPalette}
+              />
+            {:else}
+              <div class="no-lyrics"><p>No lyrics available</p></div>
+            {/if}
           </div>
         {/if}
 
@@ -680,8 +549,7 @@
                       lineIdx,
                       wordIdx,
                       $activeLine,
-                      $wordSyncState.activeWordIdx,
-                      $wordSyncState.progress,
+                      getLineSyncState($wordSyncState, lineIdx),
                     )}
                     <span
                       class="lyric-word"
@@ -882,58 +750,13 @@
 
             <div class="tab-content-wrapper">
               {#if activeTab === "lyrics"}
-                <div
-                  class="desktop-lyrics-container"
-                  class:unsynced={isUnsynced}
-                  bind:this={lyricsContainer}
-                  in:fade
-                >
+                <div class="desktop-lyrics-container" in:fade>
                   {#if $lyricsData?.lines && $lyricsData.lines.length > 0}
-                    {#each $lyricsData.lines as line, i}
-                      {@const isActiveLine = i === $activeLine}
-                      {@const hasWordSync = line.words && line.words.length > 0}
-                      {#if line.structure && (i === 0 || line.structure !== $lyricsData.lines[i - 1].structure)}
-                        <div class="section-label" aria-hidden="true">{line.structure}</div>
-                      {/if}
-                      <div
-                        class="desktop-lyric-line"
-                        class:active={isActiveLine}
-                        class:past={i < $activeLine}
-                        class:upcoming={i > $activeLine}
-                        class:opposite={!!line.opposite_turn && !line.is_background}
-                        class:opposite-bg={!!line.opposite_turn && !!line.is_background}
-                        role="button"
-                        tabindex="0"
-                        on:click={() => {
-                          $duration && seek(line.time / $duration);
-                        }}
-                        on:keydown={(e) => {
-                          (e.key === "Enter" || e.key === " ") &&
-                            $duration &&
-                            seek(line.time / $duration);
-                        }}
-                      >
-                        {#if hasWordSync && isActiveLine && line.words}
-                          {#each line.words as word, wordIdx}
-                            {@const wordProgress = getWordPercentage(
-                              i,
-                              wordIdx,
-                              $activeLine,
-                              $wordSyncState.activeWordIdx,
-                              $wordSyncState.progress,
-                            )}
-                            <span
-                              class="desktop-lyric-word"
-                              style="--word-progress: {wordProgress}%;"
-                              >{word.word}</span
-                            >
-                            {#if wordIdx < line.words.length - 1}{" "}{/if}
-                          {/each}
-                        {:else}
-                          <span class="lyric-text-fallback">{line.text}</span>
-                        {/if}
-                      </div>
-                    {/each}
+                    <LyricsView
+                      transparent
+                      reducedMotion={isAndroid}
+                      style={"--lyrics-content-padding: 2rem 3rem 2rem 0; --lyrics-font-size: clamp(20px, 2.2vh, 32px); --lyrics-active-font-size: clamp(22px, 2.5vh, 36px); --lyrics-line-padding: 0.7rem 0; --label-beam-max-width: 230px; " + lyricsDarkPalette}
+                    />
                   {:else}
                     <div class="no-lyrics-desktop">
                       <p>No lyrics available for this track.</p>
@@ -1272,47 +1095,35 @@
 
   .tab-switcher {
     display: flex;
-    gap: 2rem;
-    background: none;
-    padding: 0;
-    border-radius: 0;
+    gap: 2px;
+    background: rgba(255, 255, 255, 0.06);
+    padding: 3px;
+    border-radius: 999px;
     align-self: flex-start;
     margin-bottom: 1.5rem;
     border: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    width: 100%;
   }
 
   .tab-btn {
     background: none;
     border: none;
-    color: rgba(255, 255, 255, 0.35);
-    padding: 0.5rem 0;
-    border-radius: 0;
+    color: rgba(255, 255, 255, 0.5);
+    padding: 0.4rem 1.1rem;
+    border-radius: 999px;
     font-weight: var(--font-weight-semibold);
-    font-size: 0.95rem;
+    font-size: 0.88rem;
     cursor: pointer;
     position: relative;
-    transition: color 0.2s ease;
+    transition: color 0.2s ease, background 0.2s ease;
   }
 
   .tab-btn:hover {
-    color: rgba(255, 255, 255, 0.75);
+    color: rgba(255, 255, 255, 0.8);
   }
 
   .tab-btn.active {
-    background: none;
+    background: rgba(255, 255, 255, 0.14);
     color: #fff;
-  }
-
-  .tab-btn.active::after {
-    content: '';
-    position: absolute;
-    bottom: -1px;
-    left: 0;
-    right: 0;
-    height: 1.5px;
-    background-color: #fff;
   }
 
   .tab-content-wrapper {
@@ -1326,139 +1137,16 @@
     justify-content: center;
   }
 
-  /* Lyrics Content Styling */
+  /*
+   * lyrics rendering (proximity grading, word/syllable sync, alignment,
+   * section labels, scrolling) now lives in LyricsView.svelte
+   * this is just a sizing wrapper around it
+   */
   .desktop-lyrics-container {
     height: 100%;
     width: 100%;
-    overflow: hidden;
-    padding: 35vh 3rem 35vh 0;
-    scrollbar-width: none;
-    will-change: transform;
-    mask-image: linear-gradient(
-      to bottom,
-      transparent,
-      black 20%,
-      black 80%,
-      transparent
-    );
-    -webkit-mask-image: linear-gradient(
-      to bottom,
-      transparent,
-      black 20%,
-      black 80%,
-      transparent
-    );
-  }
-
-  .desktop-lyrics-container::-webkit-scrollbar {
-    display: none;
-  }
-
-  /* Unsynced container & lines overrides */
-  .desktop-lyrics-container.unsynced {
-    overflow-y: auto;
-    height: 100%;
-    padding: 2rem 3rem 2rem 0;
-    mask-image: none;
-    -webkit-mask-image: none;
-  }
-
-  .desktop-lyrics-container.unsynced .desktop-lyric-line {
-    color: rgba(255, 255, 255, 0.75);
-    opacity: 1;
-    transform: none !important;
-    cursor: default;
-  }
-
-  .desktop-lyrics-container.unsynced .desktop-lyric-line:hover {
-    color: #ffffff;
-  }
-
-  .section-label {
-    font-size: 0.7rem;
-    font-weight: var(--font-weight-bold);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.4);
-    padding: 16px 0 4px;
-    user-select: none;
-    pointer-events: none;
-    width: 100%;
-  }
-
-  .desktop-lyric-line {
-    font-size: clamp(20px, 2.2vh, 32px);
-    font-weight: 800;
-    color: rgba(255, 255, 255, 0.15);
-    padding: 0.7rem 0;
-    cursor: pointer;
-    transition:
-      color 0.4s ease,
-      opacity 0.4s ease,
-      transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    transform-origin: left;
-    line-height: 1.4;
-    letter-spacing: -0.01em;
-    will-change: transform, opacity;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
-    width: 100%;
-    max-width: 90%;
-    overflow-wrap: break-word;
-    word-break: break-word;
-    white-space: normal;
-  }
-
-  .desktop-lyric-line.opposite {
-    text-align: right;
-    transform-origin: right center;
-    font-style: italic;
-  }
-
-  .desktop-lyric-line.opposite-bg {
-    text-align: right;
-    transform-origin: right center;
-    font-style: italic;
-    opacity: 0.6;
-  }
-
-  .desktop-lyric-line.past {
-    color: rgba(255, 255, 255, 0.15);
-  }
-
-  .desktop-lyric-line.upcoming {
-    color: rgba(255, 255, 255, 0.45);
-  }
-
-  .desktop-lyric-line:hover {
-    color: rgba(255, 255, 255, 0.7);
-  }
-
-  .desktop-lyric-line.active {
-    color: #fff;
-    font-size: clamp(22px, 2.5vh, 36px);
-    transform: scale(1.04);
-    margin: 0;
-    text-shadow: 0 0 15px rgba(255, 255, 255, 0.1);
-  }
-
-  .desktop-lyric-word {
-    position: relative;
-    display: inline-block;
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
-    background-clip: text;
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    color: transparent;
-    background-image: linear-gradient(
-      to right,
-      #ffffff 0%,
-      #ffffff calc(var(--word-progress, 0%) - 4%),
-      rgba(255, 255, 255, 0.2) calc(var(--word-progress, 0%) + 4%),
-      rgba(255, 255, 255, 0.2) 100%
-    );
-    transition: text-shadow 0.2s ease;
+    display: flex;
+    flex-direction: column;
   }
 
   .no-lyrics-desktop {
@@ -1671,28 +1359,6 @@
     margin-bottom: 0;
   }
 
-  .mobile-lyrics-wrapper .lyrics-container {
-    height: 100%;
-    width: 100%;
-    overflow-y: auto;
-    overflow-x: hidden;
-    scrollbar-width: none;
-    padding: 2rem 1.5rem 25vh;
-    mask-image: linear-gradient(
-      to bottom,
-      transparent,
-      black 15%,
-      black 75%,
-      transparent
-    );
-    -webkit-mask-image: linear-gradient(
-      to bottom,
-      transparent,
-      black 15%,
-      black 75%,
-      transparent
-    );
-  }
 
   .compact-lyrics-mobile {
     margin-top: 1rem;
@@ -1722,46 +1388,6 @@
     opacity: 0.4;
   }
 
-  .mobile-lyrics-wrapper .lyric-line {
-    font-size: 22px;
-    font-weight: var(--font-weight-bold);
-    line-height: 1.4;
-    padding: 0.75rem 0;
-    color: rgba(255, 255, 255, 0.15);
-    transition: all 0.3s ease;
-    width: 100%;
-    max-width: 94%;
-    overflow-wrap: break-word;
-    word-break: break-word;
-    white-space: normal;
-  }
-
-  .mobile-lyrics-wrapper .lyric-line.opposite {
-    text-align: right;
-    transform-origin: right center;
-    font-style: italic;
-  }
-
-  .mobile-lyrics-wrapper .lyric-line.opposite-bg {
-    text-align: right;
-    transform-origin: right center;
-    font-style: italic;
-    opacity: 0.6;
-  }
-
-  .mobile-lyrics-wrapper .lyric-line.past {
-    color: rgba(255, 255, 255, 0.15);
-  }
-
-  .mobile-lyrics-wrapper .lyric-line.upcoming {
-    color: rgba(255, 255, 255, 0.45);
-  }
-
-  .mobile-lyrics-wrapper .lyric-line.active {
-    color: #fff;
-    font-size: 24px;
-    transform: scale(1.04);
-  }
 
   .lyric-word {
     position: relative;
@@ -1781,30 +1407,21 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .desktop-lyric-line,
-    .desktop-lyric-word,
     .lyric-word {
       animation: none !important;
       transition: none !important;
     }
   }
 
-  /* Android webview fallback: lighter composition to avoid transition glitches */
+  /*
+   * Android webview fallback: lighter composition to avoid transition
+   * glitches
+   * now handled by LyricsView's own 'reducedMotion' prop
+   */
   .fullscreen-player.android-lite .title-marquee,
-  .fullscreen-player.android-lite .artist-marquee,
-  .fullscreen-player.android-lite .desktop-lyrics-container,
-  .fullscreen-player.android-lite .mobile-lyrics-wrapper .lyrics-container {
+  .fullscreen-player.android-lite .artist-marquee {
     mask-image: none;
     -webkit-mask-image: none;
-  }
-
-  .fullscreen-player.android-lite .desktop-lyric-line,
-  .fullscreen-player.android-lite .mobile-lyrics-wrapper .lyric-line {
-    transform: none !important;
-    text-shadow: none;
-    transition:
-      color 0.2s ease,
-      opacity 0.2s ease;
   }
 
   .fullscreen-player.android-lite .compact-line {
@@ -1814,16 +1431,5 @@
   .fullscreen-player.android-lite .mobile-lyrics-wrapper {
     margin-top: 0;
     padding-bottom: 0.5rem;
-  }
-
-  .fullscreen-player.android-lite .mobile-lyrics-wrapper .lyrics-container {
-    padding: 0.75rem 0 0.75rem;
-  }
-
-  .fullscreen-player.android-lite .mobile-lyrics-wrapper .lyric-line {
-    font-size: 1.22rem;
-    line-height: 1.3;
-    padding: 0.5rem 0;
-    word-break: break-word;
   }
 </style>
