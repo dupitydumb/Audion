@@ -74,9 +74,7 @@ mod android_audio_context {
 use db::Database;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{Emitter, Listener, Manager, WindowEvent};
-use crate::integrations::discord;
-use crate::integrations::smtc;
+use tauri::{Emitter, Listener, Manager};
 #[cfg(desktop)]
 use tauri::{
     menu::{CheckMenuItem, IconMenuItem, Menu, MenuItem, PredefinedMenuItem},
@@ -668,6 +666,7 @@ pub fn run() {
 
             app.manage(database.clone());
             app.manage(commands::listenbrainz::ListenBrainzState::new());
+            #[cfg(desktop)]
             app.manage(integrations::window::CloseConfirmed::default());
 
             // OTA install-on-close gate => starts un-armed; see ota_set_close_intercept

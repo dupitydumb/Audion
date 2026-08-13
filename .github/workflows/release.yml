@@ -133,7 +133,21 @@ jobs:
           platform: windows
 
       - name: Build Tauri app
-        run: npm run tauri build
+        shell: pwsh
+        run: |
+          $maxAttempts = 3
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            Write-Host "Build attempt $attempt of $maxAttempts"
+            npm run tauri build
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -eq $maxAttempts) {
+              Write-Host "::error::Tauri build failed after $maxAttempts attempts"
+              exit $LASTEXITCODE
+            }
+            Write-Host "Build failed (likely a transient WiX3 download issue), clearing WiX cache and retrying in 15s..."
+            Remove-Item -Recurse -Force "$env:LOCALAPPDATA\tauri\WixTools314" -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 15
+          }
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -146,6 +160,13 @@ jobs:
           echo "prerelease=${{ needs.create-release.outputs.prerelease }}" >> $env:GITHUB_OUTPUT
           echo "tag_name=${{ needs.create-release.outputs.tag_name }}" >> $env:GITHUB_OUTPUT
 
+      - name: Upload compiled exe for MSIX packaging job
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: src-tauri/target/release/audion.exe
+          retention-days: 1
+
       - name: Rename artifacts
         shell: pwsh
         run: |
@@ -153,28 +174,6 @@ jobs:
           Get-ChildItem src-tauri/target/release/bundle/msi/*.msi | Rename-Item -NewName "audion_${ver}_windows.msi"
           Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Rename-Item -NewName "audion_${ver}_windows.exe"
           Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe.sig | Rename-Item -NewName "audion_${ver}_windows.exe.sig"
-
-      - name: Decode MSIX signing cert
-        shell: pwsh
-        run: |
-          $bytes = [Convert]::FromBase64String("${{ secrets.MSIX_CERT_BASE64 }}")
-          [IO.File]::WriteAllBytes("audion-msix.pfx", $bytes)
-
-      - name: Build MSIX bundle (sideload, self-signed)
-        run: npm run tauri:windows:build
-        env:
-          MSIX_PFX_PASSWORD: ${{ secrets.MSIX_CERT_PASSWORD }}
-
-      - name: Rename MSIX artifact
-        shell: pwsh
-        run: |
-          $ver = "${{ steps.info.outputs.version }}"
-          Get-ChildItem src-tauri/target/msix/*.msix | Rename-Item -NewName "audion_${ver}_windows.msix"
-
-      - name: Clean up cert from workspace
-        if: always()
-        shell: pwsh
-        run: Remove-Item -Path audion-msix.pfx -ErrorAction SilentlyContinue
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v3.0.1
@@ -185,7 +184,6 @@ jobs:
             src-tauri/target/release/bundle/msi/audion_*_windows.msi
             src-tauri/target/release/bundle/nsis/audion_*_windows.exe
             src-tauri/target/release/bundle/nsis/audion_*_windows.exe.sig
-            src-tauri/target/msix/audion_*_windows.msix
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -203,6 +201,83 @@ jobs:
               @{
                 title = "🪟 Windows build $env:TAG_NAME"
                 description = "Windows release has been ${{ github.event_name == 'push' && 'created' || 'updated' }}"
+                color = 1947988
+                url = "https://github.com/${{ github.repository }}/releases/tag/v$env:VERSION"
+              }
+            )
+          } | ConvertTo-Json
+          Invoke-RestMethod -Uri $env:DISCORD_WEBHOOK_URL -Method Post -Body $payload -ContentType "application/json"
+
+  # ---------------------------------------------------------------------------
+  # Windows MSIX Build
+  # ---------------------------------------------------------------------------
+  release-windows-msix:
+    runs-on: windows-latest
+    needs: [create-release, release-windows]
+    if: needs.release-windows.result == 'success'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup (Node, Rust, cache, deps)
+        uses: ./.github/actions/setup
+        with:
+          platform: windows
+
+      - name: Download compiled exe from build job
+        uses: actions/download-artifact@v6
+        with:
+          name: windows-exe
+          path: src-tauri/target/release
+
+      - name: Decode MSIX signing cert
+        shell: pwsh
+        run: |
+          $bytes = [Convert]::FromBase64String("${{ secrets.MSIX_CERT_BASE64 }}")
+          [IO.File]::WriteAllBytes("audion-msix.pfx", $bytes)
+
+      - name: Build MSIX bundle (sideload, self-signed)
+        run: npm run tauri:windows:build -- --runner npm
+        env:
+          MSIX_PFX_PASSWORD: ${{ secrets.MSIX_CERT_PASSWORD }}
+
+      - name: Rename MSIX artifact
+        shell: pwsh
+        run: |
+          $ver = "${{ needs.create-release.outputs.version }}"
+          Get-ChildItem src-tauri/target/msix/*.msix | Rename-Item -NewName "audion_${ver}_windows.msix"
+
+      - name: Clean up cert from workspace
+        if: always()
+        shell: pwsh
+        run: Remove-Item -Path audion-msix.pfx -ErrorAction SilentlyContinue
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v3.0.1
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
+          overwrite_files: ${{ inputs.overwrite }}
+          files: |
+            src-tauri/target/msix/audion_*_windows.msix
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Discord notification
+        if: success()
+        shell: pwsh
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+          TAG_NAME: ${{ needs.create-release.outputs.tag_name }}
+        run: |
+          if (-not $env:DISCORD_WEBHOOK_URL) { return }
+          $payload = @{
+            embeds = @(
+              @{
+                title = "📦 Windows MSIX build $env:TAG_NAME"
+                description = "Windows MSIX package has been ${{ github.event_name == 'push' && 'created' || 'updated' }}"
                 color = 1947988
                 url = "https://github.com/${{ github.repository }}/releases/tag/v$env:VERSION"
               }
@@ -760,14 +835,26 @@ jobs:
           fi
 
       - name: Upload Android artifacts
-        uses: softprops/action-gh-release@v3.0.1
-        with:
-          tag_name: ${{ steps.info.outputs.tag_name }}
-          overwrite_files: ${{ inputs.overwrite }}
-          files: |
-            src-tauri/gen/android/app/build/outputs/apk/audion_*_android.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name "audion_*_android.apk")
+          TAG="${{ steps.info.outputs.tag_name }}"
+          CLOBBER=""
+          if [ "${{ inputs.overwrite }}" = "true" ]; then CLOBBER="--clobber"; fi
+          maxAttempts=3
+          for attempt in $(seq 1 $maxAttempts); do
+            echo "Upload attempt $attempt of $maxAttempts"
+            if gh release upload "$TAG" "$APK" --repo "${{ github.repository }}" $CLOBBER; then
+              break
+            fi
+            if [ "$attempt" -eq "$maxAttempts" ]; then
+              echo "::error::Upload to release failed after $maxAttempts attempts"
+              exit 1
+            fi
+            echo "Upload failed (likely a transient GitHub API error), retrying in 15s..."
+            sleep 15
+          done
 
       - name: Discord notification
         if: success()
