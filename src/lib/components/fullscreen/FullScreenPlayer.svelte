@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n";
   import { fade, fly } from "svelte/transition";
   import { cubicInOut } from "svelte/easing";
   import { flip } from "svelte/animate";
@@ -36,7 +37,6 @@
   } from "$lib/api/tauri";
   import { onMount, tick } from "svelte";
   import { likedTrackIds, toggleLike } from "$lib/stores/liked";
-  import { _ } from "svelte-i18n";
   import { buildTrackContextMenu } from "$lib/menus/contextMenus";
   import { addToast } from "$lib/stores/toast";
   import QueuePanel from "../QueuePanel.svelte";
@@ -328,7 +328,7 @@
             <path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6 1.41-1.41z" />
           </svg>
         </button>
-        <span class="now-playing-label">Now Playing</span>
+        <span class="now-playing-label">{$_('player.nowPlaying')}</span>
         <div class="mobile-header-btns">
           <button
             class="chevron-btn"
@@ -423,7 +423,7 @@
 
           <div class="track-info">
             <h1 class="track-title">
-              {$currentTrack?.title || "Unknown Title"}
+              {$currentTrack?.title || $_('player.unknownTitle')}
             </h1>
             <button
               class="track-artist"
@@ -434,7 +434,7 @@
                 }
               }}
             >
-              {$currentTrack?.artist || "Unknown Artist"}
+              {$currentTrack?.artist || $_('common.unknownArtist')}
             </button>
             {#if $currentTrack?.album}
               {#if $currentTrack?.album_id}
@@ -511,7 +511,7 @@
                   </div>
                 {/each}
               {:else}
-                <div class="no-lyrics"><p>No lyrics available</p></div>
+                <div class="no-lyrics"><p>{$_('lyrics.unavailable')}</p></div>
               {/if}
             </div>
           </div>
@@ -738,11 +738,11 @@
                       class="desktop-title"
                       bind:clientWidth={titleContentWidth}
                     >
-                      {$currentTrack?.title || "Unknown Title"}
+                      {$currentTrack?.title || $_('player.unknownTitle')}
                     </h1>
                     {#if isTitleOverflowing}
                       <span class="desktop-title" aria-hidden="true"
-                        >{$currentTrack?.title || "Unknown Title"}</span
+                        >{$currentTrack?.title || $_('player.unknownTitle')}</span
                       >
                     {/if}
                   </div>
@@ -767,11 +767,11 @@
                         goToArtistDetail($currentTrack.artist));
                     }}
                   >
-                    {$currentTrack?.artist || "Unknown Artist"}
+                    {$currentTrack?.artist || $_('common.unknownArtist')}
                   </button>
                   {#if isArtistOverflowing}
                     <button class="desktop-subtitle" aria-hidden="true"
-                      >{$currentTrack?.artist || "Unknown Artist"}</button
+                      >{$currentTrack?.artist || $_('common.unknownArtist')}</button
                     >
                   {/if}
                 </div>
@@ -883,12 +883,12 @@
               <button
                 class="tab-btn"
                 class:active={activeTab === "lyrics"}
-                on:click={() => (activeTab = "lyrics")}>Lyrics</button
+                on:click={() => (activeTab = "lyrics")}>{$_('player.lyrics')}</button
               >
               <button
                 class="tab-btn"
                 class:active={activeTab === "queue"}
-                on:click={() => (activeTab = "queue")}>Queue</button
+                on:click={() => (activeTab = "queue")}>{$_('player.queue')}</button
               >
             </div>
 
@@ -948,7 +948,7 @@
                     {/each}
                   {:else}
                     <div class="no-lyrics-desktop">
-                      <p>No lyrics available for this track.</p>
+                      <p>{$_('lyrics.unavailableTrack')}</p>
                     </div>
                   {/if}
                 </div>

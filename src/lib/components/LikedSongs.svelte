@@ -104,10 +104,16 @@
             </svg>
         </div>
         <div class="liked-header-info">
-            <span class="liked-label">PLAYLIST</span>
-            <h1 class="liked-title">Liked Songs</h1>
+            <span class="liked-label"
+                >{$_("common.playlist")}</span
+            >
+            <h1 class="liked-title">
+                {$_("sidebar.likedSongs")}
+            </h1>
             <div class="liked-count-container">
-                <span class="liked-count">{tracks.length} songs</span>
+                <span class="liked-count"
+                    >{$_("liked.songsCount", { values: { count: tracks.length } })}</span
+                >
             </div>
         </div>
     </header>
@@ -131,7 +137,7 @@
                         <path d="M8 5v14l11-7z" />
                     </svg>
                 </div>
-                <span>Play All</span>
+                <span>{$_("artist.playAll")}</span>
             </button>
 
             <button
@@ -150,7 +156,7 @@
                         d="M10.59 9.17L5.41 4L4 5.41l5.17 5.17l1.42-1.41zM14.5 4l2.04 2.04L4 18.59L5.41 20L17.96 7.45L20 9.5V4h-5.5zm.33 9.41l-1.41 1.41l3.13 3.13L14.5 20H20v-5.5l-2.04 2.04l-3.13-3.13z"
                     />
                 </svg>
-                <span>Shuffle</span>
+                <span>{$_("liked.shuffle")}</span>
             </button>
         </div>
     </div>
@@ -158,7 +164,9 @@
     <!-- Track List -->
     <div class="liked-body" on:scroll={handleScroll}>
         {#if loading}
-            <div class="loading">Loading liked songs...</div>
+            <div class="loading">
+                {$_("liked.loading")}
+            </div>
         {:else if tracks.length === 0}
             <div class="empty-state">
                 <svg
@@ -173,9 +181,11 @@
                         d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
                     />
                 </svg>
-                <p>Songs you like will appear here</p>
+                <p>
+                    {$_("liked.emptyTitle")}
+                </p>
                 <span class="empty-hint"
-                    >Find songs and tap the heart icon to save them.</span
+                    >{$_("liked.emptyHint")}</span
                 >
             </div>
         {:else}

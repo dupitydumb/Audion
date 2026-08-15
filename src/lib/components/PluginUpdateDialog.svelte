@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import { createEventDispatcher } from "svelte";
     import {
         pluginStore,
@@ -41,7 +42,11 @@
     $: updatedCount = Object.values(itemStates).filter(s => s === 'success').length;
     $: totalCount = $pluginStore.pendingUpdates.length;
     $: allDone = updatedCount === totalCount && totalCount > 0;
-    $: skipLabel = updatedCount > 0 && !allDone ? 'Skip Remaining' : allDone ? 'Close' : 'Not Now';
+    $: skipLabel = updatedCount > 0 && !allDone
+        ? $_('pluginUpdate.skipRemaining')
+        : allDone
+        ? $_('pluginUpdate.close')
+        : $_('pluginUpdate.notNow');
 
     async function handleUpdateOne(update: PluginUpdateInfo) {
         if (itemStates[update.name] === 'loading' || itemStates[update.name] === 'success') return;
@@ -114,7 +119,7 @@
 <div class="modal-overlay" on:click={close} role="presentation">
     <div class="modal-content" on:click|stopPropagation role="presentation">
         <div class="modal-header">
-            <h2>Plugin Updates Available</h2>
+            <h2>{$_('pluginUpdate.title')}</h2>
             <button class="close-btn" on:click={close} aria-label="Close">
                 <svg
                     viewBox="0 0 24 24"
@@ -134,8 +139,7 @@
 
         <div class="modal-body">
             <p class="description">
-                The following plugins have updates available. Would you like to
-                update them now?
+                {$_('pluginUpdate.description')}
             </p>
 
             <div class="update-list">
@@ -156,7 +160,7 @@
                         </div>
                         <div class="item-actions">
                             <a href={update.repo_url} target="_blank" rel="noopener noreferrer" class="changelog-link">
-                                Changelog
+                                {$_('pluginUpdate.changelogLink')}
                             </a>
                             <button
                                 class="btn-update-one"
@@ -181,7 +185,7 @@
                                         <path d="M18 6L6 18M6 6l12 12" stroke-width="2.5"/>
                                     </svg>
                                 {:else}
-                                    Update
+                                    {$_('pluginUpdate.updateBtn')}
                                 {/if}
                             </button>
                         </div>
@@ -208,21 +212,23 @@
                         <circle cx="12" cy="12" r="10" stroke-width="3" opacity="0.25"/>
                         <path d="M12 2a10 10 0 0 1 10 10" stroke-width="3" stroke-linecap="round"/>
                     </svg>
-                    Updating...
+                    {$_('pluginUpdate.updating')}
                 {:else if updateAllState === 'success'}
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16" stroke-linecap="round" stroke-linejoin="round">
                         <polyline class="check-path" points="4,12 10,18 20,6" stroke-width="2.5"/>
                     </svg>
-                    Done!
+                    {$_('pluginUpdate.done')}
                 {:else if updateAllState === 'error'}
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16" stroke-linecap="round">
                         <path d="M18 6L6 18M6 6l12 12" stroke-width="2.5"/>
                     </svg>
-                    Some Failed
+                    {$_('pluginUpdate.someFailed')}
                 {:else if allDone}
-                    All Updated
+                    {$_('pluginUpdate.allUpdated')}
                 {:else}
-                    Update All{updatedCount > 0 ? ` Remaining (${totalCount - updatedCount})` : ''}
+                    {updatedCount > 0
+                        ? $_('pluginUpdate.updateAllRemaining', { values: { count: totalCount - updatedCount } })
+                        : $_('pluginUpdate.updateAll')}
                 {/if}
             </button>
         </div>

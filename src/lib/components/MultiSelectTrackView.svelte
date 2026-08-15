@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import { onMount } from "svelte";
     import TrackList from "./track-list/TrackList.svelte";
     import { tracks as allTracks } from "$lib/stores/library";
@@ -53,7 +54,10 @@
 
     async function handleAddToPlaylist() {
         if (selectedCount === 0) {
-            addToast("Please select at least one track", "error");
+            addToast(
+                $_("playlist.selectAtLeastOne"),
+                "error",
+            );
             return;
         }
 
@@ -65,14 +69,18 @@
 
             if (result.success > 0) {
                 addToast(
-                    `Added ${result.success} track${result.success !== 1 ? "s" : ""} to playlist`,
+                    $_("playlist.addedTracks", { values: {
+                            count: result.success,
+                        } }),
                     "success"
                 );
             }
 
             if (result.failed > 0) {
                 addToast(
-                    `Failed to add ${result.failed} track${result.failed !== 1 ? "s" : ""}`,
+                    $_("playlist.failedTracks", { values: {
+                            count: result.failed,
+                        } }),
                     "error"
                 );
             }
@@ -85,7 +93,10 @@
             goToPlaylistDetail(playlistId, playlist?.name ?? '');
         } catch (error) {
             console.error("Failed to add tracks:", error);
-            addToast("Failed to add tracks to playlist", "error");
+            addToast(
+                $_("playlist.addTracksFailed"),
+                "error",
+            );
         } finally {
             isAdding = false;
         }
@@ -111,20 +122,30 @@
                     </svg>
                 </button>
                 <div class="mobile-header-info">
-                    <h3 class="mobile-title">Add to <span class="playlist-highlight">{playlist?.name || "Playlist"}</span></h3>
+                    <h3 class="mobile-title">
+                        {$_("playlist.addTo")}
+                        <span class="playlist-highlight"
+                            >{playlist?.name ||
+                                $_("common.playlist")}</span
+                        >
+                    </h3>
                     <span class="mobile-subtitle">
                         {#if selectedCount > 0}
-                            {selectedCount} selected
+                            {$_("playlist.selectedCount", { values: { count: selectedCount } })}
                         {:else}
-                            Tap tracks to select
+                            {$_("playlist.tapToSelect")}
                         {/if}
                     </span>
                 </div>
                 <div class="mobile-header-actions">
                     {#if selectedCount > 0}
-                        <button class="mobile-text-btn" on:click={handleClearAll}>Clear</button>
+                        <button class="mobile-text-btn" on:click={handleClearAll}
+                            >{$_("common.clear")}</button
+                        >
                     {:else}
-                        <button class="mobile-text-btn" on:click={handleSelectAll}>All</button>
+                        <button class="mobile-text-btn" on:click={handleSelectAll}
+                            >{$_("common.all")}</button
+                        >
                     {/if}
                 </div>
             </div>
@@ -135,7 +156,7 @@
                 <input
                     type="text"
                     class="filter-input"
-                    placeholder="Filter tracks..."
+                    placeholder={$_("playlist.filterTracksPlaceholder")}
                     bind:value={filterInput}
                     on:input={handleFilterInput}
                     spellcheck="false"
@@ -165,7 +186,11 @@
         <div class="action-bar-content">
             <div class="left-section">
                 <h3 class="playlist-name">
-                    Add to <span class="playlist-highlight">{playlist?.name || "Playlist"}</span>
+                    {$_("playlist.addTo")}
+                    <span class="playlist-highlight"
+                        >{playlist?.name ||
+                            $_("common.playlist")}</span
+                    >
                 </h3>
                 <div class="selection-info">
                     {#if selectedCount > 0}
@@ -173,15 +198,19 @@
                             <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
                                 <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
                             </svg>
-                            {selectedCount} track{selectedCount !== 1 ? "s" : ""} selected
+                            {$_("playlist.tracksSelected", { values: {
+                                    count: selectedCount,
+                                } })}
                         </span>
                         <button class="text-btn" on:click={handleClearAll}>
-                            Clear all
+                            {$_("playlist.clearAll")}
                         </button>
                     {:else}
-                        <span class="no-selection">No tracks selected</span>
+                        <span class="no-selection"
+                            >{$_("playlist.noTracksSelected")}</span
+                        >
                         <button class="text-btn" on:click={handleSelectAll}>
-                            Select all
+                            {$_("playlist.selectAll")}
                         </button>
                     {/if}
                 </div>
@@ -192,7 +221,7 @@
                     on:click={handleCancel}
                     disabled={isAdding}
                 >
-                    Cancel
+                    {$_("common.cancel")}
                 </button>
                 <button 
                     class="btn-primary" 
@@ -201,12 +230,12 @@
                 >
                     {#if isAdding}
                         <div class="spinner-sm"></div>
-                        Adding...
+                        {$_("playlist.adding")}
                     {:else}
                         <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
                             <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
                         </svg>
-                        Add to Playlist
+                        {$_("contextMenu.addToPlaylist")}
                     {/if}
                 </button>
             </div>
@@ -229,7 +258,15 @@
                         <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
                     </svg>
                 {/if}
-                <span>{isAdding ? 'Adding...' : `Add ${selectedCount > 0 ? selectedCount : ''} Song${selectedCount !== 1 ? 's' : ''}`}</span>
+                <span
+                    >{isAdding
+                        ? $_("playlist.adding")
+                        : selectedCount > 0
+                          ? $_("playlist.addSongsButton", {
+                                values: { count: selectedCount },
+                            })
+                          : $_("playlist.addSongs")}</span
+                >
             </button>
         </div>
     {/if}

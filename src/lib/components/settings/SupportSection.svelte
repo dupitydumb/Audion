@@ -13,8 +13,8 @@
       <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l8.84-8.84 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
     </svg>
     <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.support', { default: 'Support' })}</span>
-      <span class="accordion-subtitle">{$_('settings.supportSubtitle', { default: 'Help support development and unlock features' })}</span>
+      <span class="accordion-title">{$_('settings.support')}</span>
+      <span class="accordion-subtitle">{$_('settings.supportSubtitle')}</span>
     </div>
     <svg class="accordion-chevron" class:rotated={open} viewBox="0 0 24 24" width="16" height="16">
       <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
@@ -23,11 +23,11 @@
   {#if open}
     <div class="section-body" transition:slide|local>
       <div class="settings-card support-card-premium">
-        <div class="premium-card-badge">Donate</div>
+        <div class="premium-card-badge">{$_('settings.donate')}</div>
         <div class="support-content">
           <div class="support-text">
-            <h3 class="support-title">{$_('settings.supportAudion', { default: 'Support Audion' })}</h3>
-            <p class="support-description">{$_('settings.supportDesc', { default: 'Help keep development active and unlock unlimited sync features.' })}</p>
+            <h3 class="support-title">{$_('settings.supportAudion')}</h3>
+            <p class="support-description">{$_('settings.supportDesc')}</p>
           </div>
           <div class="support-icon-large">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -43,7 +43,7 @@
             class="support-platform-card kofi"
           >
             <span class="platform-name">Ko-fi</span>
-            <span class="platform-tag">One-time / Monthly</span>
+            <span class="platform-tag">{$_('settings.kofiTag')}</span>
           </a>
           <a
             href="https://www.patreon.com/AudionPlayer"
@@ -52,7 +52,7 @@
             class="support-platform-card patreon"
           >
             <span class="platform-name">Patreon</span>
-            <span class="platform-tag">Membership</span>
+            <span class="platform-tag">{$_('settings.patreonTag')}</span>
           </a>
         </div>
       </div>

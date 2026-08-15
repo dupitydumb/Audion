@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import { fade, fly } from "svelte/transition";
     import { isQueueVisible, toggleQueue } from "$lib/stores/ui";
     import { isMobile } from "$lib/stores/mobile";
@@ -330,21 +331,21 @@
     >
     {#if !hideheader}
         <header class="queue-header">
-            <h3>Queue</h3>
+            <h3>{$_('player.queue')}</h3>
             <div class="header-actions">
                 {#if hasUpcoming}
                     <button
                         class="clear-btn"
                         on:click={clearUpcoming}
-                        title="Clear upcoming"
+                        title={$_('player.clearUpcoming')}
                     >
-                        Clear
+                        {$_('common.clear')}
                     </button>
                 {/if}
                 <button
                     class="close-btn"
                     on:click={toggleQueue}
-                    title="Close queue"
+                    title={$_('player.closeQueue')}
                     aria-label="Close queue"
                 >
                     <svg
@@ -365,7 +366,7 @@
         <div class="queue-content">
             {#if $currentTrack}
                 <section class="queue-section">
-                    <h4 class="section-title">Now Playing</h4>
+                    <h4 class="section-title">{$_('player.nowPlaying')}</h4>
                     <div class="now-playing">
                         <div class="queue-track current">
                             <div class="track-art">
@@ -401,11 +402,11 @@
                             <div class="track-info">
                                 <span class="track-title truncate"
                                     >{$currentTrack.title ||
-                                        "Unknown Title"}</span
+                                        $_('player.unknownTitle')}</span
                                 >
                                 <span class="track-artist truncate"
                                     >{$currentTrack.artist ||
-                                        "Unknown Artist"}</span
+                                        $_('common.unknownArtist')}</span
                                 >
                             </div>
                             <span class="track-duration"
@@ -419,7 +420,7 @@
             {#if upcomingTracks.length > 0}
                 <section class="queue-section">
                     <h4 class="section-title">
-                        Next Up
+                        {$_('player.nextUp')}
                         <span class="count">{upcomingTracks.length}</span>
                     </h4>
                     <div 
@@ -448,7 +449,7 @@
                                                 handlePointerDown(e, item.index)}
                                             on:click|stopPropagation
                                             on:dblclick|stopPropagation
-                                            title="Drag to reorder"
+                                            title={$_('player.dragToReorder')}
                                             role="button"
                                             tabindex="-1"
                                         >
@@ -493,11 +494,11 @@
                                             <div class="track-info">
                                                 <span class="track-title truncate"
                                                     >{item.track.title ||
-                                                        "Unknown Title"}</span
+                                                        $_('player.unknownTitle')}</span
                                                 >
                                                 <span class="track-artist truncate"
                                                     >{item.track.artist ||
-                                                        "Unknown Artist"}</span
+                                                        $_('common.unknownArtist')}</span
                                                 >
                                             </div>
                                         </button>
@@ -507,7 +508,7 @@
                                         <button
                                             class="remove-btn"
                                             on:click={() => handleRemove(item.index)}
-                                            title="Remove from queue"
+                                            title={$_('player.removeFromQueueTooltip')}
                                         >
                                             <svg
                                                 viewBox="0 0 24 24"
@@ -531,7 +532,7 @@
             {#if historyTracks.length > 0}
                 <section class="queue-section history">
                     <h4 class="section-title">
-                        Recently Played
+                        {$_('player.recentlyPlayed')}
                         <span class="count">{historyTracks.length}</span>
                     </h4>
                     <div 
@@ -579,11 +580,11 @@
                                             <div class="track-info">
                                                 <span class="track-title truncate"
                                                     >{item.track.title ||
-                                                        "Unknown Title"}</span
+                                                        $_('player.unknownTitle')}</span
                                                 >
                                                 <span class="track-artist truncate"
                                                     >{item.track.artist ||
-                                                        "Unknown Artist"}</span
+                                                        $_('common.unknownArtist')}</span
                                                 >
                                             </div>
                                         </button>
@@ -610,8 +611,8 @@
                             d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"
                         />
                     </svg>
-                    <p>Queue is empty</p>
-                    <span>Play some tracks to fill the queue</span>
+                    <p>{$_('player.queueEmpty')}</p>
+                    <span>{$_('player.queueEmptyHint')}</span>
                 </div>
             {/if}
         </div>

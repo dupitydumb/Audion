@@ -17,7 +17,7 @@
   import { confirm } from "$lib/stores/dialogs";
 
   function formatSupporterUntil(ts: number | null): string {
-    if (ts === null) return "Active (subscription)";
+    if (ts === null) return $_('settings.activeSubscription');
     const d = new Date(ts);
     return d.toLocaleDateString(undefined, {
       year: "numeric",
@@ -34,8 +34,8 @@
       <circle cx="12" cy="7" r="4" />
     </svg>
     <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.account', { default: 'Account' })}</span>
-      <span class="accordion-subtitle">{$_('settings.accountSubtitle', { default: 'Manage your user profile and login details' })}</span>
+      <span class="accordion-title">{$_('settings.account')}</span>
+      <span class="accordion-subtitle">{$_('settings.accountSubtitle')}</span>
     </div>
     <svg class="accordion-chevron" class:rotated={open} viewBox="0 0 24 24" width="16" height="16">
       <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
@@ -48,31 +48,31 @@
           <div class="account-profile-row">
             <div class="avatar avatar-placeholder">S</div>
             <div class="account-details">
-              <span class="setting-title">Self-Hosted Server</span>
-              <span class="setting-description">URL: {$customServerStatus.url}</span>
-              <span class="setting-description">User: {$customServerStatus.user || 'Unknown'}</span>
+              <span class="setting-title">{$_('settings.selfHostedServer')}</span>
+              <span class="setting-description">{$_('settings.urlLabel')} {$customServerStatus.url}</span>
+              <span class="setting-description">{$_('settings.userLabel')} {$customServerStatus.user || $_('common.unknown')}</span>
             </div>
             <button
               class="btn-outline-compact"
               on:click={async () => {
                 const ok = await confirm(
-                  "Are you sure you want to disconnect from this server?",
-                  { title: "Disconnect Server" },
+                  $_('settings.disconnectServerConfirm'),
+                  { title: $_('settings.disconnectServerTitle') },
                 );
                 if (ok) disconnectCustomServer();
               }}
               aria-label="Disconnect Server"
-            >Disconnect</button>
+            >{$_('settings.disconnect')}</button>
           </div>
 
           <div class="divider"></div>
 
           <div class="toggle-container">
             <div class="toggle-info">
-              <span class="setting-title">Stream server tracks</span>
-              <span class="setting-description">Play server tracks instantly without caching them locally.</span>
+              <span class="setting-title">{$_('settings.streamServerTracks')}</span>
+              <span class="setting-description">{$_('settings.streamServerTracksDesc')}</span>
               <span class="setting-description" style="color: var(--accent-warning, #ffae42); margin-top: 4px;">
-                ⚠️ Please change your Output Driver to HTML5 (in Audio settings) for reliable streaming playback.
+                {$_('settings.streamHtml5Warning')}
               </span>
             </div>
             <button
@@ -104,14 +104,14 @@
               <span class="setting-description">{accountEmail}</span>
               <span class="setting-description">
                 {#if $isSupporter}
-                  {$_('settings.supporterUntil', { default: 'Supporter access until' })}
+                  {$_('settings.supporterUntil')}
                   {#if $authState.supporter_until}
                     {formatSupporterUntil($authState.supporter_until)}
                   {:else}
-                    {$_('settings.activeSubscription', { default: 'Active (subscription)' })}
+                    {$_('settings.activeSubscription')}
                   {/if}
                 {:else}
-                  {$_('settings.freePlan', { default: 'Free plan' })}
+                  {$_('settings.freePlan')}
                 {/if}
               </span>
             </div>
@@ -120,12 +120,12 @@
               on:click={async () => {
                 const ok = await confirm(
                   "Are you sure you want to log out? Unsynced changes will be lost.",
-                  { title: $_('settings.logout', { default: 'Log Out' }) },
+                  { title: $_('settings.logout') },
                 );
                 if (ok) logout();
               }}
-              aria-label={$_('settings.logout', { default: 'Log out' })}
-            >{$_('settings.logout', { default: 'Log out' })}</button>
+              aria-label={$_('settings.logout')}
+            >{$_('settings.logout')}</button>
           </div>
         {:else}
           <div class="account-options-grid">
@@ -136,17 +136,17 @@
                     <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
                   </svg>
                 </div>
-                <h3 class="option-title">{$_('settings.cloudSync', { default: 'Cloud Sync' })}</h3>
+                <h3 class="option-title">{$_('settings.cloudSync')}</h3>
               </div>
               <p class="option-description">
-                {$_('settings.cloudSyncDesc', { default: 'Sync your library and settings across devices using Audion Cloud.' })}
+                {$_('settings.cloudSyncDesc')}
               </p>
               <button
                 class="btn-outline-compact btn-full-width"
                 style="margin-top: auto;"
                 on:click={() => { loginModalMode.set("oauth"); showLoginModal.set(true); }}
-                aria-label={$_('settings.signIn', { default: 'Sign In' })}
-              >{$_('settings.signIn', { default: 'Sign In' })}</button>
+                aria-label={$_('settings.signIn')}
+              >{$_('settings.signIn')}</button>
             </div>
 
             <div class="account-option-card">
@@ -159,17 +159,17 @@
                     <line x1="6" y1="18" x2="6.01" y2="18" />
                   </svg>
                 </div>
-                <h3 class="option-title">{$_('settings.customServer', { default: 'Self-Hosted / Custom Server' })}</h3>
+                <h3 class="option-title">{$_('settings.customServer')}</h3>
               </div>
               <p class="option-description">
-                {$_('settings.customServerDesc', { default: 'Sync with your own self-hosted Audion server for complete data privacy.' })}
+                {$_('settings.customServerDesc')}
               </p>
               <button
                 class="btn-outline-compact btn-full-width"
                 style="margin-top: auto;"
                 on:click={() => { loginModalMode.set("custom_server"); showLoginModal.set(true); }}
-                aria-label={$_('settings.connectServer', { default: 'Connect Server' })}
-              >{$_('settings.connectServer', { default: 'Connect Server' })}</button>
+                aria-label={$_('settings.connectServer')}
+              >{$_('settings.connectServer')}</button>
             </div>
           </div>
 
@@ -183,9 +183,9 @@
               </svg>
             </div>
             <div class="docker-guide-info">
-              <span class="setting-title" style="margin: 0; font-size: 0.9375rem;">{$_('settings.runOwnServer', { default: 'Run your own Audion Server' })}</span>
+              <span class="setting-title" style="margin: 0; font-size: 0.9375rem;">{$_('settings.runOwnServer')}</span>
               <span class="setting-description" style="margin: 2px 0 6px 0; font-size: 0.8125rem;">
-                {$_('settings.runOwnServerDesc', { default: 'Easily deploy your own server using Docker. View setup instructions on GitHub.' })}
+                {$_('settings.runOwnServerDesc')}
               </span>
               <a
                 href="https://github.com/dupitydumb/audion-server-docker"
@@ -193,7 +193,7 @@
                 rel="noreferrer"
                 class="docker-guide-link"
               >
-                {$_('settings.dockerSetupGuide', { default: 'Get audion-server-docker on GitHub' })}
+                {$_('settings.dockerSetupGuide')}
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12" style="margin-left: 4px; display: inline-block; vertical-align: middle;">
                   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                   <polyline points="15 3 21 3 21 9" />

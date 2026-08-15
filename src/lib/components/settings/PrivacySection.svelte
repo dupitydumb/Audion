@@ -16,8 +16,8 @@
       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
     </svg>
     <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.privacy', { default: 'Privacy' })}</span>
-      <span class="accordion-subtitle">{$_('settings.privacySubtitle', { default: 'Manage analytics, remote control, and diagnostic logs' })}</span>
+      <span class="accordion-title">{$_('settings.privacy')}</span>
+      <span class="accordion-subtitle">{$_('settings.privacySubtitle')}</span>
     </div>
     <svg class="accordion-chevron" class:rotated={open} viewBox="0 0 24 24" width="16" height="16">
       <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
@@ -28,8 +28,8 @@
       <div class="settings-card">
     <div class="toggle-container">
       <div class="toggle-info">
-        <span class="setting-title">{$_('settings.remoteControl', { default: 'Remote control' })}</span>
-        <span class="setting-description">{$_('settings.remoteControlDesc', { default: 'Other devices can discover and control this app' })}</span>
+        <span class="setting-title">{$_('settings.remoteControl')}</span>
+        <span class="setting-description">{$_('settings.remoteControlDesc')}</span>
       </div>
       <button
         class="toggle-btn"
@@ -47,8 +47,8 @@
 
     <div class="toggle-container">
       <div class="toggle-info">
-        <span class="setting-title">{$_('settings.developerMode', { default: 'Developer mode' })}</span>
-        <span class="setting-description">{$_('settings.developerModeDesc', { default: 'Enable inspection tools and debug menus' })}</span>
+        <span class="setting-title">{$_('settings.developerMode')}</span>
+        <span class="setting-description">{$_('settings.developerModeDesc')}</span>
       </div>
       <button
         class="toggle-btn"
@@ -65,8 +65,8 @@
     <div class="divider"></div>
 
     <div class="card-title-group compact">
-      <h3 class="setting-title" style="color: var(--error-color)">{$_('settings.dangerZone', { default: 'Danger zone' })}</h3>
-      <span class="setting-description">{$_('settings.dangerZoneDesc', { default: 'Irreversible actions like resetting data' })}</span>
+      <h3 class="setting-title" style="color: var(--error-color)">{$_('settings.dangerZone')}</h3>
+      <span class="setting-description">{$_('settings.dangerZoneDesc')}</span>
     </div>
 
     <div class="button-group-row">
@@ -77,12 +77,12 @@
           );
           if (!confirmed) return;
           // Reset modal flow handled by parent
-        }}>{$_('settings.resetDatabase', { default: 'Reset Database' })}</button>
+        }}>{$_('settings.resetDatabase')}</button>
       {#if $isLoggedIn}
         <button class="btn-outline-compact danger" on:click={async () => {
-          const ok = await confirm($_('settings.deleteAccount', { default: 'Delete account permanently?' }), { title: $_('settings.deleteAccount', { default: 'Delete Account' }), danger: true });
+          const ok = await confirm($_('settings.deleteAccount'), { title: $_('settings.deleteAccount'), danger: true });
           if (ok) await deleteAccount();
-        }}>{$_('settings.deleteAccount', { default: 'Delete Account' })}</button>
+        }}>{$_('settings.deleteAccount')}</button>
       {/if}
     </div>
     </div>

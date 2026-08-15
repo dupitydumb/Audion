@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import { playlists, loadPlaylists } from "$lib/stores/library";
     import { goToPlaylistDetail } from "$lib/stores/view";
     import type { Playlist } from "$lib/api/tauri";
@@ -14,7 +15,6 @@
     import { contextMenu } from "$lib/stores/ui";
     import { buildPlaylistContextMenu } from "$lib/menus/contextMenus";
     import { confirm } from "$lib/stores/dialogs";
-    import { _ } from "svelte-i18n";
     import {
         playTracks,
         addToQueue,
@@ -81,11 +81,14 @@
 
     async function handleDeletePlaylist(id: number, name: string) {
         if (
-            !(await confirm(`Delete playlist "${name}"?`, {
-                title: "Delete Playlist",
-                confirmLabel: "Delete",
-                danger: true,
-            }))
+            !(await confirm(
+                $_("playlists.deleteConfirm", { values: { name } }),
+                {
+                    title: $_("playlists.deletePlaylist"),
+                    confirmLabel: $_("playlists.delete"),
+                    danger: true,
+                },
+            ))
         )
             return;
         try {
@@ -282,16 +285,16 @@
         return 0;
     });
 
-    const emptyState = {
+    $: emptyState = {
         icon: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/></svg>`,
-        title: "No playlists yet",
-        description: "Create your first playlist to organize your music",
+        title: $_("playlists.emptyTitle"),
+        description: $_("playlists.emptyDescription"),
     };
 </script>
 
 <div class="playlist-view">
     <header class="view-header">
-        <h1>Playlists</h1>
+        <h1>{$_("sidebar.playlists")}</h1>
         <div class="header-actions">
             <button
                 class="btn-secondary"
@@ -300,7 +303,7 @@
                 <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20" aria-hidden="true">
                     <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
                 </svg>
-                Import Folder
+                {$_("playlists.importFolder")}
             </button>
             <button
             class="btn-secondary"
@@ -317,7 +320,7 @@
             >
                 <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
             </svg>
-            New Playlist
+            {$_("playlists.newPlaylist")}
         </button>
         </div>
     </header>
@@ -333,7 +336,7 @@
                 type="text"
                 bind:value={newPlaylistName}
                 on:keydown={handleCreateKeyDown}
-                placeholder="Playlist name..."
+                placeholder={$_("playlists.playlistNamePlaceholder")}
                 aria-label="Playlist name"
             />
             <button
@@ -341,7 +344,9 @@
                 on:click={handleCreatePlaylist}
                 disabled={isCreating || !newPlaylistName.trim()}
             >
-                {isCreating ? "Creating..." : "Create"}
+                {isCreating
+                    ? $_("playlists.creating")
+                    : $_("common.create")}
             </button>
             <button
                 class="btn-secondary"
@@ -350,7 +355,7 @@
                     newPlaylistName = "";
                 }}
             >
-                Cancel
+                {$_("common.cancel")}
             </button>
         </div>
     {/if}
@@ -361,12 +366,14 @@
             role="form"
             aria-label="Rename playlist"
         >
-            <span class="rename-label">Renaming "{renamingPlaylist.name}"</span>
+            <span class="rename-label"
+                >{$_("playlists.renaming", { values: { name: renamingPlaylist.name } })}</span
+            >
             <input
                 type="text"
                 bind:value={renameValue}
                 on:keydown={handleRenameKeyDown}
-                placeholder="New name..."
+                placeholder={$_("playlists.newNamePlaceholder")}
                 aria-label="New playlist name"
             />
             <button
@@ -374,9 +381,12 @@
                 on:click={commitRename}
                 disabled={isRenaming || !renameValue.trim()}
             >
-                {isRenaming ? "Saving..." : "Rename"}
+                {isRenaming
+                    ? $_("common.saving")
+                    : $_("common.rename")}
             </button>
-            <button class="btn-secondary" on:click={cancelRename}>Cancel</button
+            <button class="btn-secondary" on:click={cancelRename}
+                >{$_("common.cancel")}</button
             >
         </div>
     {/if}
@@ -398,12 +408,12 @@
             {isNowPlaying}
             {isPaused}
             isPinned={isPinned("playlist", playlist.id, $pinnedItems)}
-            playTooltip="Play playlist"
-            resumeTooltip="Resume playlist"
-            pauseTooltip="Pause"
+            playTooltip={$_("common.playPlaylist")}
+            resumeTooltip={$_("common.resumePlaylist")}
+            pauseTooltip={$_("common.pause")}
             ariaLabel={playlist.name}
             primaryText={playlist.name}
-            secondaryText="Playlist"
+            secondaryText={$_("common.playlist")}
             on:play={() => handlePlayPlaylist(playlist.id)}
             on:pause={togglePlay}
         >

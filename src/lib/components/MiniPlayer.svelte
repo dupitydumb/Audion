@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import { fly } from "svelte/transition";
     import {
         isMiniPlayer,
@@ -172,7 +173,7 @@
             <button
                 class="art"
                 on:click={handleExpand}
-                title="Open full player"
+                title={$_('player.openFullPlayer')}
                 tabindex="-1"
             >
                 {#if albumArt && !imageLoadFailed}
@@ -202,9 +203,9 @@
             <div class="info">
                 <span
                     class="title"
-                    title={$currentTrack?.title || "No track playing"}
+                    title={$currentTrack?.title || $_('player.noTrack')}
                 >
-                    {$currentTrack?.title || "No track playing"}
+                    {$currentTrack?.title || $_('player.noTrack')}
                 </span>
                 <span class="artist">{$currentTrack?.artist || ""}</span>
             </div>
@@ -217,8 +218,8 @@
                     class:pill-active={mode === "lyrics"}
                     on:click|stopPropagation={toggleMode}
                     title={mode === "controls"
-                        ? "Show lyrics"
-                        : "Show controls"}
+                        ? $_('player.showLyrics')
+                        : $_('player.showControls')}
                 >
                     {#if mode === "controls"}
                         <svg
@@ -231,7 +232,7 @@
                                 d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
                             />
                         </svg>
-                        Lyrics
+                        {$_('player.lyrics')}
                     {:else}
                         <svg
                             viewBox="0 0 24 24"
@@ -241,7 +242,7 @@
                         >
                             <path d="M8 5v14l11-7z" />
                         </svg>
-                        Controls
+                        {$_('player.controls')}
                     {/if}
                 </button>
 
@@ -249,7 +250,7 @@
                 <button
                     class="wbtn close"
                     on:click|stopPropagation={handleClose}
-                    title="Close PIP"
+                    title={$_('player.closePip')}
                 >
                     <svg
                         viewBox="0 0 24 24"
@@ -295,7 +296,7 @@
 
             <!-- Controls row -->
             <div class="row-ctrl">
-                <button class="cbtn" on:click={previousTrack} title="Previous">
+                <button class="cbtn" on:click={previousTrack} title={$_('player.previous')}>
                     <svg
                         viewBox="0 0 24 24"
                         fill="currentColor"
@@ -309,7 +310,7 @@
                 <button
                     class="pbtn"
                     on:click={togglePlay}
-                    title={$isPlaying ? "Pause" : "Play"}
+                    title={$isPlaying ? $_('common.pause') : $_('common.play')}
                 >
                     {#if $isPlaying}
                         <svg
@@ -332,7 +333,7 @@
                     {/if}
                 </button>
 
-                <button class="cbtn" on:click={nextTrack} title="Next">
+                <button class="cbtn" on:click={nextTrack} title={$_('player.next')}>
                     <svg
                         viewBox="0 0 24 24"
                         fill="currentColor"
@@ -347,7 +348,7 @@
             <!-- Lyrics row (replaces seek + controls) -->
             <div class="row-lyrics">
                 {#if $lyricsLoading}
-                    <span class="ly-muted">Loading…</span>
+                    <span class="ly-muted">{$_('common.loading')}</span>
                 {:else if hasLyrics && currentLine}
                     {#key $activeLine}
                         <span class="ly-now">{currentLine}</span>
@@ -358,13 +359,13 @@
                 {:else if hasLyrics}
                     <span class="ly-muted">♪</span>
                 {:else}
-                    <span class="ly-muted">No lyrics available</span>
+                    <span class="ly-muted">{$_('lyrics.unavailable')}</span>
                 {/if}
             </div>
 
             <!-- Compact controls under lyrics -->
             <div class="row-ctrl compact" style="display: none;">
-                <button class="cbtn" on:click={previousTrack} title="Previous">
+                <button class="cbtn" on:click={previousTrack} title={$_('player.previous')}>
                     <svg
                         viewBox="0 0 24 24"
                         fill="currentColor"
@@ -377,7 +378,7 @@
                 <button
                     class="pbtn sm"
                     on:click={togglePlay}
-                    title={$isPlaying ? "Pause" : "Play"}
+                    title={$isPlaying ? $_('common.pause') : $_('common.play')}
                 >
                     {#if $isPlaying}
                         <svg
@@ -399,7 +400,7 @@
                         </svg>
                     {/if}
                 </button>
-                <button class="cbtn" on:click={nextTrack} title="Next">
+                <button class="cbtn" on:click={nextTrack} title={$_('player.next')}>
                     <svg
                         viewBox="0 0 24 24"
                         fill="currentColor"

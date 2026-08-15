@@ -39,9 +39,9 @@
             x: e.clientX,
             y: e.clientY,
             items: [
-                { label: "Play", action: () => playAlbum(album) },
-                { label: "Go to Album", action: () => goToAlbumDetail(album.id) },
-                { label: "Go to Artist", action: () => goToArtistDetail(album.artist || "") },
+                { label: $_('contextMenu.play'), action: () => playAlbum(album) },
+                { label: $_('contextMenu.goToAlbum'), action: () => goToAlbumDetail(album.id) },
+                { label: $_('contextMenu.goToArtist'), action: () => goToArtistDetail(album.artist || "") },
             ],
         });
     }
@@ -105,12 +105,12 @@
                     <button
                         class="top-track-artist link"
                         on:click|stopPropagation={() => goToArtistDetail(album.artist || "")}
-                        title="Go to artist"
+                        title={$_('contextMenu.goToArtist')}
                     >
-                        {album.artist || "Unknown Artist"}
+                        {album.artist || $_('common.unknownArtist')}
                     </button>
                 </div>
-                <span class="top-track-plays">{play_count} plays</span>
+                <span class="top-track-plays">{$_('home.playsCount', { values: { count: play_count } })}</span>
             </div>
         {/each}
     </div>

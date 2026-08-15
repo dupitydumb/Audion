@@ -1,4 +1,5 @@
 <script context="module" lang="ts">
+    import { _ } from "svelte-i18n";
     export type SectionKey = "tracks" | "albums" | "artists" | "playlists";
 </script>
 
@@ -32,7 +33,6 @@
         buildArtistContextMenu,
         isTrackUnavailable,
     } from "$lib/menus/contextMenus";
-    import { _ } from "svelte-i18n";
 
     import EmptyState from "./EmptyState.svelte";
 
@@ -211,8 +211,8 @@
     {#if !$searchResults.hasResults && $searchQuery}
         <EmptyState
             icon="search"
-            title="No results found"
-            description="Try searching for something else"
+            title={$_("main.noResultsFound")}
+            description={$_("main.noResultsHint")}
         />
     {:else}
         {#each sectionOrder as key (key)}
@@ -220,8 +220,8 @@
                 {#if key === "tracks" && $searchResults.tracks.length > 0}
                     <section class="result-section">
                         <h2 class="section-title">
-                            <button class="section-pill pill-inactive" aria-pressed="false" title="Tracks">
-                                <span class="pill-label">Tracks</span>
+                            <button class="section-pill pill-inactive" aria-pressed="false" title={$_("common.tracks")}>
+                                <span class="pill-label">{$_("common.tracks")}</span>
                                 <span class="pill-count">{$searchResults.tracks.length}</span>
                             </button>
                         </h2>
@@ -266,15 +266,19 @@
                                     </div>
                                     <div class="track-info">
                                         <span class="track-title truncate"
-                                            >{track.title || "Unknown Title"}</span
+                                            >{track.title ||
+                                                $_("player.unknownTitle")}</span
                                         >
                                         <button
                                             class="track-artist truncate link-text"
                                             on:click|stopPropagation={() =>
                                                 handleArtistClick(
-                                                    track.artist || "Unknown Artist",
+                                                    track.artist ||
+                                                        $_(
+                                                            "common.unknownArtist"),
                                                 )}
-                                            >{track.artist || "Unknown Artist"}</button
+                                            >{track.artist ||
+                                                $_("common.unknownArtist")}</button
                                         >
                                     </div>
                                     <button
@@ -300,8 +304,8 @@
                 {:else if key === "albums" && $searchResults.albums.length > 0}
                     <section class="result-section">
                         <h2 class="section-title">
-                            <button class="section-pill pill-inactive" aria-pressed="false" title="Albums">
-                                <span class="pill-label">Albums</span>
+                            <button class="section-pill pill-inactive" aria-pressed="false" title={$_("sidebar.albums")}>
+                                <span class="pill-label">{$_("sidebar.albums")}</span>
                                 <span class="pill-count">{$searchResults.albums.length}</span>
                             </button>
                         </h2>
@@ -352,9 +356,12 @@
                                             class="album-artist truncate link-text"
                                             on:click|stopPropagation={() =>
                                                 handleArtistClick(
-                                                    album.artist || "Unknown Artist",
+                                                    album.artist ||
+                                                        $_(
+                                                            "common.unknownArtist"),
                                                 )}
-                                            >{album.artist || "Unknown Artist"}</button
+                                            >{album.artist ||
+                                                $_("common.unknownArtist")}</button
                                         >
                                     </div>
                                 </div>
@@ -370,8 +377,8 @@
                 {:else if key === "artists" && $searchResults.artists.length > 0}
                     <section class="result-section">
                         <h2 class="section-title">
-                            <button class="section-pill pill-inactive" aria-pressed="false" title="Artists">
-                                <span class="pill-label">Artists</span>
+                            <button class="section-pill pill-inactive" aria-pressed="false" title={$_("sidebar.artists")}>
+                                <span class="pill-label">{$_("sidebar.artists")}</span>
                                 <span class="pill-count">{$searchResults.artists.length}</span>
                             </button>
                         </h2>
@@ -393,8 +400,13 @@
                                             >{artist.name}</span
                                         >
                                         <span class="artist-meta"
-                                            >{artist.album_count} albums • {artist.track_count}
-                                            songs</span
+                                            >{$_("artist.albums", { values: {
+                                                    count: artist.album_count,
+                                                } })}
+                                            •
+                                            {$_("artist.songs", { values: {
+                                                    count: artist.track_count,
+                                                } })}</span
                                         >
                                     </div>
                                 </button>
@@ -410,8 +422,8 @@
                 {:else if key === "playlists" && $searchResults.playlists?.length > 0}
                     <section class="result-section">
                         <h2 class="section-title">
-                            <button class="section-pill pill-inactive" aria-pressed="false" title="Playlists">
-                                <span class="pill-label">Playlists</span>
+                            <button class="section-pill pill-inactive" aria-pressed="false" title={$_("sidebar.playlists")}>
+                                <span class="pill-label">{$_("sidebar.playlists")}</span>
                                 <span class="pill-count">{$searchResults.playlists.length}</span>
                             </button>
                         </h2>

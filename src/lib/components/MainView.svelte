@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import {
         currentView,
         goToTracks,
@@ -71,11 +72,12 @@
     }
     let dropTargetPlaylist: ViewState | null = null;
 
-    const SECTION_LABELS: Record<SectionKey, string> = {
-        tracks: "Tracks",
-        albums: "Albums",
-        artists: "Artists",
-        playlists: "Playlists",
+    let sectionLabels: Record<SectionKey, string>;
+    $: sectionLabels = {
+        tracks: $_("common.tracks"),
+        albums: $_("sidebar.albums"),
+        artists: $_("sidebar.artists"),
+        playlists: $_("sidebar.playlists"),
     };
 
     let sectionOrder: SectionKey[] = [
@@ -124,10 +126,9 @@
         "alac",
     ]);
     const LYRICS_EXTENSIONS = new Set(["lrc", "ttml", "xml", "srt"]);
-    const UNSUPPORTED_DROP_MSG =
-        "Unsupported file type. Drop an audio file (MP3, FLAC, WAV, OGG, M4A, AAC, ALAC).";
-    const LYRICS_DROP_MSG =
-        "Drop lyrics files on the lyrics panel. Open it first with the lyrics button.";
+    const AUDIO_FORMATS_LABEL = [...AUDIO_EXTENSIONS]
+        .map((ext) => ext.toUpperCase())
+        .join(", ");
 
     function getExt(name: string): string {
         return name.split(".").pop()?.toLowerCase() ?? "";
@@ -194,7 +195,7 @@
         }
 
         if (!incomingFiles.length) {
-            dropError = "No audio files detected.";
+            dropError = $_("main.noAudioFilesDetected");
             return;
         }
 
@@ -205,11 +206,17 @@
             if (fileName) {
                 const ext = getExt(fileName);
                 if (LYRICS_EXTENSIONS.has(ext)) {
-                    addToast(LYRICS_DROP_MSG, "error");
+                    addToast(
+                        $_("main.dropLyricsHint"),
+                        "error",
+                    );
                     continue;
                 }
                 if (!isAudioFile(file as File) && !AUDIO_EXTENSIONS.has(ext)) {
-                    addToast(UNSUPPORTED_DROP_MSG, "error");
+                    addToast(
+                        `${$_("main.unsupportedFileType")} (${AUDIO_FORMATS_LABEL}).`,
+                        "error",
+                    );
                     continue;
                 }
             }
@@ -229,8 +236,11 @@
                     const result = await importAudioFile(maybePath, false);
                     if (result === "duplicate") {
                         const overwrite = await confirm(
-                            `File '${(file as any).name}' already exists. Overwrite?`,
-                            { confirmLabel: "Overwrite", cancelLabel: "Skip" },
+                            $_("main.fileExistsOverwrite", { values: { name: (file as any).name } }),
+                            {
+                                confirmLabel: $_("main.overwrite"),
+                                cancelLabel: $_("main.skip"),
+                            },
                         );
                         if (overwrite) {
                             const r2 = await importAudioFile(maybePath, true);
@@ -242,7 +252,11 @@
                                 addTrackToLibrary(r2);
                                 await maybeAddToPlaylist(r2);
                             } else {
-                                dropError = `Failed to import ${(file as any).name || maybePath}: ${r2}`;
+                                dropError = $_("main.importFailed", { values: {
+                                        name:
+                                            (file as any).name || maybePath,
+                                        error: String(r2),
+                                    } });
                             }
                         }
                     } else if (typeof result === "object") {
@@ -250,10 +264,16 @@
                         addTrackToLibrary(result);
                         await maybeAddToPlaylist(result);
                     } else {
-                        dropError = `Failed to import ${(file as any).name || maybePath}: ${result}`;
+                        dropError = $_("main.importFailed", { values: {
+                                name: (file as any).name || maybePath,
+                                error: String(result),
+                            } });
                     }
                 } catch (e) {
-                    dropError = `Failed to import ${(file as any).name || maybePath}: ${e}`;
+                    dropError = $_("main.importFailed", { values: {
+                            name: (file as any).name || maybePath,
+                            error: String(e),
+                        } });
                 }
             } else if ((file as any).arrayBuffer) {
                 // Browser File: read bytes and call importAudioBytes
@@ -271,8 +291,11 @@
                     );
                     if (result === "duplicate") {
                         const overwrite = await confirm(
-                            `File '${(file as any).name}' already exists. Overwrite?`,
-                            { confirmLabel: "Overwrite", cancelLabel: "Skip" },
+                            $_("main.fileExistsOverwrite", { values: { name: (file as any).name } }),
+                            {
+                                confirmLabel: $_("main.overwrite"),
+                                cancelLabel: $_("main.skip"),
+                            },
                         );
                         if (overwrite) {
                             const r2 = await importAudioBytes(
@@ -288,7 +311,10 @@
                                 addTrackToLibrary(r2);
                                 await maybeAddToPlaylist(r2);
                             } else {
-                                dropError = `Failed to import ${(file as any).name}: ${r2}`;
+                                dropError = $_("main.importFailed", { values: {
+                                        name: (file as any).name,
+                                        error: String(r2),
+                                    } });
                             }
                         }
                     } else if (typeof result === "object") {
@@ -296,10 +322,10 @@
                         addTrackToLibrary(result);
                         await maybeAddToPlaylist(result);
                     } else {
-                        dropError = `Failed to import ${(file as any).name}: ${result}`;
+                        dropError = $_("main.importFailed", { values: { name: (file as any).name, error: String(result) } });
                     }
                 } catch (e) {
-                    dropError = `Failed to read ${(file as any).name}: ${e}`;
+                    dropError = $_("main.readFailed", { values: { name: (file as any).name, error: String(e) } });
                 }
             } else {
                 console.warn("Unsupported drop item", file);
@@ -443,7 +469,7 @@
                                             e,
                                         );
                                         addToast(
-                                            "Failed to import lyrics file.",
+                                            $_("main.lyricsImportFailed"),
                                             "error",
                                         );
                                     }
@@ -459,10 +485,11 @@
                                         const name =
                                             fp.split(/[\\\/]/).pop() || fp;
                                         const overwrite = await confirm(
-                                            `File '${name}' already exists. Overwrite?`,
+                                            $_("main.fileExistsOverwrite", { values: { name } }),
                                             {
-                                                confirmLabel: "Overwrite",
-                                                cancelLabel: "Skip",
+                                                confirmLabel: $_(
+                                                    "main.overwrite"),
+                                                cancelLabel: $_("main.skip"),
                                             },
                                         );
                                         if (overwrite) {
@@ -597,7 +624,9 @@
                             />
                         </svg>
                     </div>
-                    <div class="drop-text">Drop lyrics file</div>
+                    <div class="drop-text">
+                        {$_("main.dropLyricsFile")}
+                    </div>
                     <div class="drop-subtext">.lrc · .ttml · .srt</div>
                 {:else}
                     <div class="drop-icon">
@@ -616,13 +645,15 @@
                     </div>
                     {#if dropTargetPlaylist}
                         <div class="drop-text">
-                            Add to "{dropTargetPlaylist.name}"
+                            {$_("main.dropAddToPlaylist", { values: { name: dropTargetPlaylist.name } })}
                         </div>
                         <div class="drop-subtext">
-                            Track will also be added to your library
+                            {$_("main.dropAddToLibraryHint")}
                         </div>
                     {:else}
-                        <div class="drop-text">Drop your music here</div>
+                        <div class="drop-text">
+                            {$_("main.dropMusicHere")}
+                        </div>
                         <div class="drop-subtext">
                             MP3, FLAC, M4A, WAV, OGG, ALAC
                         </div>
@@ -682,7 +713,7 @@
                 <input
                     type="text"
                     class="search-input"
-                    placeholder="Search your library..."
+                    placeholder={$_("main.searchPlaceholder")}
                     bind:value={mobileSearchInput}
                     bind:this={mobileSearchInputEl}
                     on:input={handleMobileSearchInput}
@@ -719,28 +750,28 @@
                         class:active={$currentView.type === "tracks"}
                         on:click={goToTracks}
                     >
-                        Songs
+                        {$_("sidebar.allTracks")}
                     </button>
                     <button
                         class="lib-tab"
                         class:active={$currentView.type === "albums"}
                         on:click={goToAlbums}
                     >
-                        Albums
+                        {$_("sidebar.albums")}
                     </button>
                     <button
                         class="lib-tab"
                         class:active={$currentView.type === "artists"}
                         on:click={goToArtists}
                     >
-                        Artists
+                        {$_("sidebar.artists")}
                     </button>
                     <button
                         class="lib-tab"
                         class:active={$currentView.type === "playlists"}
                         on:click={goToPlaylists}
                     >
-                        Playlists
+                        {$_("sidebar.playlists")}
                     </button>
                 </div>
             </div>
@@ -757,7 +788,9 @@
                 {#if isSearching}
                     <div class="view-container">
                         <header class="view-header search-view-header">
-                            <h1>Search Results</h1>
+                            <h1>
+                                {$_("main.searchResults")}
+                            </h1>
                             {#if $searchResults.hasResults}
                                 <div class="results-pills">
                                     {#each sectionOrder as key (key)}
@@ -801,7 +834,7 @@
                                                         toggleSection(key)}
                                                 >
                                                     <span class="pill-label"
-                                                        >{SECTION_LABELS[
+                                                        >{sectionLabels[
                                                             key
                                                         ]}</span
                                                     >
@@ -822,10 +855,12 @@
                 {:else if $currentView.type === "tracks"}
                     <div class="view-container">
                         <header class="view-header">
-                            <h1>All Tracks</h1>
+                            <h1>
+                                {$_("sidebar.allTracks")}
+                            </h1>
                             {#if $isScanning}
                                 <div class="scan-status">
-                                    Scanning... {$tracks.length} tracks found
+                                    {$_("main.scanningTracksFound", { values: { count: $tracks.length } })}
                                 </div>
                             {/if}
                         </header>
@@ -844,7 +879,9 @@
                 {:else if $currentView.type === "albums"}
                     <div class="view-container">
                         <header class="view-header">
-                            <h1>Albums</h1>
+                            <h1>
+                                {$_("sidebar.albums")}
+                            </h1>
                         </header>
                         <div class="view-content">
                             <AlbumGrid albums={$albums} />
@@ -857,7 +894,9 @@
                 {:else if $currentView.type === "artists"}
                     <div class="view-container">
                         <header class="view-header">
-                            <h1>Artists</h1>
+                            <h1>
+                                {$_("sidebar.artists")}
+                            </h1>
                         </header>
                         <div class="view-content">
                             <ArtistGrid artists={$artists} />
@@ -906,7 +945,9 @@
                 {:else}
                     <div class="view-container">
                         <div class="empty-state">
-                            <h2>Select a view from the sidebar</h2>
+                            <h2>
+                                {$_("main.selectView")}
+                            </h2>
                         </div>
                     </div>
                 {/if}

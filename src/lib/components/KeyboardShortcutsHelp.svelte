@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import { fade, fly } from "svelte/transition";
     import {
         isShortcutsHelpVisible,
@@ -147,8 +148,7 @@
                 shortcutBindings.markGlobalError(
                     binding.action,
                     binding.keyDisplay,
-                    "This key combination cannot be registered as a global shortcut " +
-                    "(bare arrow keys and Space are not supported globally)."
+                    $_('shortcuts.globalErrorBareKeys')
                 );
                 return;
             }
@@ -223,21 +223,21 @@
         use:focusOnMount
     >
         <div class="capture-prompt">
-            <p>Press a key combination…</p>
-            <p class="capture-hint">Press <kbd>Esc</kbd> to cancel</p>
+            <p>{$_('shortcuts.pressKeyCombo')}</p>
+            <p class="capture-hint">{$_('shortcuts.pressToCancelPrefix')} <kbd>Esc</kbd> {$_('shortcuts.pressToCancelSuffix')}</p>
 
             {#if pendingConflict}
                 <div class="conflict-warning">
                     <p>
-                        <strong>{pendingConflict.candidate.keyDisplay}</strong> is already bound to
+                        <strong>{pendingConflict.candidate.keyDisplay}</strong> {$_('shortcuts.alreadyBoundTo')}
                         <strong>{getDescription(pendingConflict.conflicting.action)}</strong>.
                     </p>
                     <div class="conflict-actions">
                         <button class="btn-danger" on:click={resolveConflictForce}>
-                            Overwrite
+                            {$_('shortcuts.overwrite')}
                         </button>
                         <button class="btn-secondary" on:click={cancelCapture}>
-                            Cancel
+                            {$_('common.cancel')}
                         </button>
                     </div>
                 </div>
@@ -267,30 +267,30 @@
         >
             <!-- Header -->
             <header class="modal-header">
-                <h2>Keyboard Shortcuts</h2>
+                <h2>{$_('settings.shortcuts')}</h2>
                 <div class="header-actions">
                     {#if editMode}
-                        <button class="btn-text-danger" on:click={handleResetAll} title="Reset all to defaults">
-                            Reset all
+                        <button class="btn-text-danger" on:click={handleResetAll} title={$_('shortcuts.resetAllTitle')}>
+                            {$_('shortcuts.resetAll')}
                         </button>
                     {/if}
                     <button
                         class="edit-btn"
                         class:active={editMode}
                         on:click={toggleEditMode}
-                        title={editMode ? "Done editing" : "Edit shortcuts"}
+                        title={editMode ? $_('shortcuts.doneEditingTitle') : $_('shortcuts.editShortcutsTitle')}
                     >
                         {#if editMode}
-                            Done
+                            {$_('shortcuts.doneEditing')}
                         {:else}
                             <!-- pencil icon -->
                             <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
                                 <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
                             </svg>
-                            Edit
+                            {$_('shortcuts.editMode')}
                         {/if}
                     </button>
-                    <button class="close-btn" on:click={handleClose} title="Close (Esc)">
+                    <button class="close-btn" on:click={handleClose} title={$_('shortcuts.closeWithEsc')}>
                         <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
                             <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
                         </svg>
@@ -316,10 +316,10 @@
                                                     class="key-capture-btn"
                                                     class:capturing={capturing?.action === binding.action && capturing?.oldKeyDisplay === binding.keyDisplay}
                                                     on:click={() => startCapture(binding.action, binding.keyDisplay)}
-                                                    title="Click to rebind"
+                                                    title={$_('shortcuts.clickToRebind')}
                                                 >
                                                     {#if isUnbound(binding)}
-                                                        <span class="unbound-label">unbound</span>
+                                                        <span class="unbound-label">{$_('shortcuts.unboundLabel')}</span>
                                                     {:else}
                                                         {#each formatKeyDisplay(binding.keyDisplay) as part, i}
                                                             {#if i > 0}<span class="key-separator">+</span>{/if}
@@ -338,8 +338,8 @@
                                                         hasError
                                                             ? binding.globalError
                                                             : binding.isGlobal
-                                                                ? "Global shortcut ON — click to disable"
-                                                                : "Make global shortcut"
+                                                                ? $_('shortcuts.globalOnHint')
+                                                                : $_('shortcuts.makeGlobalHint')
                                                     }
                                                     disabled={isUnbound(binding)}
                                                 >
@@ -353,7 +353,7 @@
                                                 <button
                                                     class="reset-action-btn"
                                                     on:click={() => handleResetAction(binding.action)}
-                                                    title="Reset to default"
+                                                    title={$_('shortcuts.resetToDefaultTitle')}
                                                 >
                                                     <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
                                                         <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
@@ -372,7 +372,7 @@
                                                     {/each}
                                                 {/if}
                                                 {#if binding.isGlobal}
-                                                    <span class="global-badge" title="Global shortcut">G</span>
+                                                    <span class="global-badge" title={$_('shortcuts.globalShortcutTitle')}>G</span>
                                                 {/if}
                                             </span>
                                         {/if}
@@ -394,9 +394,9 @@
             <!-- Footer -->
             <footer class="modal-footer">
                 {#if editMode}
-                    <p class="hint">Click a key badge to rebind — <kbd>Esc</kbd> cancels capture</p>
+                    <p class="hint">{$_('shortcuts.clickBadgeToRebind')} <kbd>Esc</kbd> {$_('shortcuts.cancelsCapture')}</p>
                 {:else}
-                    <p class="hint">Press <kbd>?</kbd> to toggle this help · <kbd>Esc</kbd> to close</p>
+                    <p class="hint">{$_('shortcuts.pressToToggleHelpPrefix')} <kbd>?</kbd> {$_('shortcuts.toToggleHelp')} <kbd>Esc</kbd> {$_('shortcuts.toClose')}</p>
                 {/if}
             </footer>
         </div>

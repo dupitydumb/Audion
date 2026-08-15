@@ -39,8 +39,8 @@
       <path d="M2 12h20" />
     </svg>
     <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.appearance', { default: 'Appearance' })}</span>
-      <span class="accordion-subtitle">{$_('settings.appearanceSubtitle', { default: 'Customize application theme, language, and scaling' })}</span>
+      <span class="accordion-title">{$_('settings.appearance')}</span>
+      <span class="accordion-subtitle">{$_('settings.appearanceSubtitle')}</span>
     </div>
     <svg class="accordion-chevron" class:rotated={open} viewBox="0 0 24 24" width="16" height="16">
       <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
@@ -50,7 +50,7 @@
     <div class="section-body" transition:slide|local>
       <div class="settings-card">
     <div class="inner-section">
-      <span class="setting-title">{$_('settings.selectLanguage', { default: 'Language' })}</span>
+      <span class="setting-title">{$_('settings.selectLanguage')}</span>
       <div class="segmented-pill" style="margin-top: 6px;">
         <button class="segment-btn" class:active={$locale === 'en'} on:click={() => changeLanguage('en')}>English</button>
         <button class="segment-btn" class:active={$locale === 'es'} on:click={() => changeLanguage('es')}>Español</button>
@@ -62,18 +62,18 @@
     <div class="divider"></div>
 
     <div class="inner-section">
-      <span class="setting-title">{$_('settings.themeMode', { default: 'Theme mode' })}</span>
+      <span class="setting-title">{$_('settings.themeMode')}</span>
       <div class="segmented-pill" style="margin-top: 6px;">
-        <button class="segment-btn" class:active={$theme.mode === 'dark'} on:click={() => handleModeChange('dark')}>{$_('settings.dark', { default: 'Dark' })}</button>
-        <button class="segment-btn" class:active={$theme.mode === 'light'} on:click={() => handleModeChange('light')}>{$_('settings.light', { default: 'Light' })}</button>
-        <button class="segment-btn" class:active={$theme.mode === 'system'} on:click={() => handleModeChange('system')}>{$_('settings.system', { default: 'System' })}</button>
+        <button class="segment-btn" class:active={$theme.mode === 'dark'} on:click={() => handleModeChange('dark')}>{$_('settings.dark')}</button>
+        <button class="segment-btn" class:active={$theme.mode === 'light'} on:click={() => handleModeChange('light')}>{$_('settings.light')}</button>
+        <button class="segment-btn" class:active={$theme.mode === 'system'} on:click={() => handleModeChange('system')}>{$_('settings.system')}</button>
       </div>
     </div>
 
     <div class="divider"></div>
 
     <div class="inner-section">
-      <span class="setting-title">Accent color</span>
+      <span class="setting-title">{$_('settings.accentColor')}</span>
       <div class="color-grid-compact" style="margin-top: 6px;">
         {#each presetAccents as preset}
           <button

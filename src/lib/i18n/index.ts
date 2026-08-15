@@ -18,6 +18,14 @@ export function setupI18n(savedLocale?: string) {
     init({
         fallbackLocale: 'en',
         initialLocale,
+        handleMissingMessage: import.meta.env.DEV
+            ? ({ locale, id }) => {
+                  console.warn(
+                      `[i18n] Missing message "${id}" for locale "${locale}"`,
+                  );
+                  return id;
+              }
+            : undefined,
     });
 
     i18nInitialized = true;

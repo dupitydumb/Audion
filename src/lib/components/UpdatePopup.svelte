@@ -92,7 +92,7 @@
                     {#if mode === "ota" && otaPhase === "ready"}
                         {$_('updatePopup.restartToUpdate')}
                     {:else}
-                        {release?.name || release?.tag_name || "Update Available"}
+                        {release?.name || release?.tag_name || $_('settings.updateAvailable')}
                     {/if}
                 </h2>
                 <div class="meta">
@@ -180,7 +180,7 @@
                 {/if}
             {:else if release?.assets && release.assets.length > 0}
                 <div class="assets-section">
-                    <h3>Assets</h3>
+                    <h3>{$_('updatePopup.assets')}</h3>
                     <div class="assets-list">
                         {#each release.assets as asset}
                             <div class="asset-item">
@@ -215,7 +215,7 @@
                                         <line x1="12" y1="15" x2="12" y2="3"
                                         ></line>
                                     </svg>
-                                    Download
+                                    {$_('updatePopup.download')}
                                 </button>
                             </div>
                         {/each}

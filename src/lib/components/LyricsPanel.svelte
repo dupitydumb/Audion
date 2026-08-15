@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import { onMount } from "svelte";
     import { derived } from "svelte/store";
     import {
@@ -140,11 +141,11 @@
     // Source picker
     // -------------------------------------------------------------------------
 
-    const ALL_SOURCE_LABELS: Record<string, string> = {
-        user:     'Imported',
-        embedded: 'Embedded',
+    $: ALL_SOURCE_LABELS = {
+        user:     $_('lyrics.imported'),
+        embedded: $_('lyrics.embedded'),
         ...Object.fromEntries(LYRICS_SOURCES.map((s: LyricsSource) => [s.id, s.label])),
-    };
+    } as Record<string, string>;
 
     $: showSourcePicker = LYRICS_SOURCES.length > 1 || $availableSources.includes('embedded');
     $: activeSourceLabel  = $lyricsData
@@ -344,7 +345,7 @@
 
         <!-- Header --------------------------------------------------------- -->
         <header class="lyrics-header">
-            <h3>Lyrics</h3>
+            <h3>{$_('player.lyrics')}</h3>
 
             <div class="header-actions">
 
@@ -360,7 +361,7 @@
                             class:open={sourceMenuOpen}
                             aria-haspopup="listbox"
                             aria-expanded={sourceMenuOpen}
-                            title="Switch lyrics source"
+                            title={$_('lyrics.switchSource')}
                         >
                             <span class="source-pill-label">{activeSourceLabel}</span>
                             <svg class="source-pill-chevron" viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
@@ -417,7 +418,7 @@
                                         on:click={() => handleSourceSelect('embedded')}
                                         on:keydown={(e) => e.key === 'Enter' && handleSourceSelect('embedded')}
                                     >
-                                        <span class="source-menu-label">Embedded</span>
+                                        <span class="source-menu-label">{$_('lyrics.embedded')}</span>
                                         <span class="source-menu-format">
                                             {#if $lyricsData?.source === 'embedded' && $lyricsData?.format}
                                                 {$lyricsData.format.toUpperCase()}
@@ -449,7 +450,7 @@
                                                 <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
                                             </svg>
                                         {:else if isCached}
-                                            <span class="source-menu-cached" title="Cached">●</span>
+                                            <span class="source-menu-cached" title={$_('lyrics.cached')}>●</span>
                                         {/if}
                                         <button
                                             class="source-menu-delete"
@@ -472,7 +473,7 @@
                 <!-- Import button -->
                 <button
                     class="icon-btn"
-                    title="Import lyrics (.lrc or .ttml)"
+                    title={$_('lyrics.importTooltip')}
                     aria-label="Import lyrics file"
                     on:click={handleImportLyrics}
                 >
@@ -491,7 +492,7 @@
                 <button
                     class="close-btn"
                     on:click={() => lyricsVisible.set(false)}
-                    title="Close lyrics panel"
+                    title={$_('lyrics.closePanel')}
                     aria-label="Close lyrics panel"
                 >
                     <svg
@@ -514,7 +515,7 @@
             {#if $lyricsLoading}
                 <div class="lyrics-status">
                     <div class="loading-spinner"></div>
-                    <span>Searching for lyrics...</span>
+                    <span>{$_('lyrics.searching')}</span>
                 </div>
 
             {:else if $lyricsError && !$lyricsData}
@@ -529,8 +530,12 @@
                             d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
                         />
                     </svg>
-                    <span>No lyrics found</span>
+                    <span>{$_('lyrics.notFound')}</span>
                     {#if $currentTrack}
+                        <span class="lyrics-track-info">
+                            {$currentTrack.title || $_('common.unknown')} - {$currentTrack.artist ||
+                                $_('common.unknown')}
+                        </span>
                         <div class="custom-query-block">
                             <span class="custom-query-hint">Try a different query?</span>
                             <div class="custom-query-row">
@@ -563,7 +568,7 @@
 
                     {#if showSourcePicker}
                         <div class="no-lyrics-sources">
-                            <span class="no-lyrics-hint">Try a different source:</span>
+                            <span class="no-lyrics-hint">{$_('lyrics.trySource')}</span>
                             <div class="no-lyrics-source-btns">
                                 {#if $availableSources.includes('user')}
                                     <button class="source-try-btn" on:click={() => handleSourceSelect('user')}>
@@ -572,7 +577,7 @@
                                 {/if}
                                 {#if $availableSources.includes('embedded')}
                                     <button class="source-try-btn" on:click={() => handleSourceSelect('embedded')}>
-                                        Embedded
+                                        {$_('lyrics.embedded')}
                                     </button>
                                 {/if}
                                 {#each LYRICS_SOURCES as source}
@@ -715,7 +720,7 @@
                             d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
                         />
                     </svg>
-                    <span>Play a track to see lyrics</span>
+                    <span>{$_('lyrics.idle')}</span>
                 </div>
             {/if}
 
@@ -726,16 +731,16 @@
             <footer class="lyrics-footer">
                 <span class="lyrics-source">
                     {#if ($lyricsData.source as string) === 'user'}
-                        Imported · {$lyricsData.format.toUpperCase()}{#if $lyricsData.hasSyllableSync} · Syllable sync{:else if $lyricsData.hasWordSync} · Word sync{:else if hasLineSync} · Line sync{/if}
+                        {$_('lyrics.imported')} · {$lyricsData.format.toUpperCase()}{#if $lyricsData.hasSyllableSync} · {$_('lyrics.syllableSync')}{:else if $lyricsData.hasWordSync} · {$_('lyrics.wordSync')}{:else if hasLineSync} · {$_('lyrics.lineSync')}{/if}
                     {:else if ($lyricsData.source as string) === 'embedded'}
-                        Embedded tag · {($lyricsData as any).synced ? 'Line sync' : 'Unsynced'}
+                        {$_('lyrics.embeddedTag')} · {($lyricsData as any).synced ? $_('lyrics.lineSync') : $_('lyrics.unsynced')}
                     {:else}
                         {ALL_SOURCE_LABELS[$lyricsData.source] ?? $lyricsData.source}
                         · {$lyricsData.format.toUpperCase()}
-                        {#if $lyricsData.hasSyllableSync} · Syllable sync
-                        {:else if $lyricsData.hasWordSync} · Word sync
-                        {:else if hasLineSync} · Line sync
-                        {:else} · Unsynced
+                        {#if $lyricsData.hasSyllableSync} · {$_('lyrics.syllableSync')}
+                        {:else if $lyricsData.hasWordSync} · {$_('lyrics.wordSync')}
+                        {:else if hasLineSync} · {$_('lyrics.lineSync')}
+                        {:else} · {$_('lyrics.unsynced')}
                         {/if}
                     {/if}
                 </span>

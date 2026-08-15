@@ -87,7 +87,7 @@
     }
 
     let isScanning = false;
-    let scanStatus = "Scanning...";
+    let scanStatus = $_("common.scanning");
     let scanError: string | null = null;
     let showUpdatePopup = false;
     let popupRelease: any = null;
@@ -177,7 +177,7 @@
             const path = await pickFolder();
             if (path) {
                 isScanning = true;
-                scanStatus = "Scanning...";
+                scanStatus = $_("common.scanning");
                 scanError = null;
 
                 // Progressive scan: clear existing, stream new tracks in batches
@@ -202,23 +202,38 @@
                 // success toast
                 const parts = [];
                 if (result.tracks_added > 0)
-                    parts.push(`${result.tracks_added} added`);
+                    parts.push(
+                        $_("scanStatus.tracksAdded", {
+                            values: { count: result.tracks_added },
+                        }),
+                    );
                 if (result.tracks_updated > 0)
-                    parts.push(`${result.tracks_updated} updated`);
+                    parts.push(
+                        $_("scanStatus.tracksUpdated", {
+                            values: { count: result.tracks_updated },
+                        }),
+                    );
                 if (result.tracks_deleted > 0)
-                    parts.push(`${result.tracks_deleted} deleted`);
+                    parts.push(
+                        $_("scanStatus.tracksDeleted", {
+                            values: { count: result.tracks_deleted },
+                        }),
+                    );
 
                 const message =
                     parts.length > 0
-                        ? `Library scan complete: ${parts.join(", ")}`
-                        : "Library scan complete";
+                        ? $_("menu.scanComplete", { values: { parts: parts.join(", ") } })
+                        : $_("menu.scanCompleteSimple");
 
                 addToast(message, "success", 4000);
             }
         } catch (error) {
             scanError = error instanceof Error ? error.message : String(error);
             console.error("Scan failed:", error);
-            addToast("Failed to scan music folder", "error");
+            addToast(
+                $_("sidebar.scanFailed"),
+                "error",
+            );
         } finally {
             isScanning = false;
             progressiveScan.reset();
@@ -233,7 +248,9 @@
                 playTracks(tracks, 0, {
                     type: "playlist",
                     playlistId: id,
-                    displayName: playlist?.name ?? "Playlist",
+                    displayName:
+                        playlist?.name ??
+                        $_("common.playlist"),
                 });
             }
         } catch (error) {
@@ -254,11 +271,14 @@
 
     async function handleDeletePlaylist(id: number, name: string) {
         if (
-            !(await confirm(`Delete playlist "${name}"?`, {
-                title: "Delete Playlist",
-                confirmLabel: "Delete",
-                danger: true,
-            }))
+            !(await confirm(
+                $_("playlist.deleteConfirm", { values: { name } }),
+                {
+                    title: $_("playlist.deletePlaylist"),
+                    confirmLabel: $_("playlist.delete"),
+                    danger: true,
+                },
+            ))
         )
             return;
 
@@ -390,7 +410,7 @@
             {#if $otaState.phase === "ready"}
                 <div
                     class="update-badge restart-badge"
-                    title="Update installed · click to restart"
+                    title={$_("sidebar.updateInstalledTooltip")}
                     on:click={openOtaPopup}
                     role="button"
                     tabindex="0"
@@ -401,7 +421,7 @@
             {:else if $otaState.phase === "downloading"}
                 <div
                     class="update-badge"
-                    title="Downloading update · click for details"
+                    title={$_("sidebar.downloadingUpdateTooltip")}
                     on:click={openOtaPopup}
                     role="button"
                     tabindex="0"
@@ -412,25 +432,25 @@
             {:else if $otaState.phase === "available"}
                 <div
                     class="update-badge"
-                    title="View update details"
+                    title={$_("sidebar.viewUpdateDetails")}
                     on:click={openOtaPopup}
                     role="button"
                     tabindex="0"
                     on:keydown={(e) => e.key === "Enter" && openOtaPopup()}
                 >
-                    Update
+                    {$_("sidebar.update")}
                 </div>
             {:else if $updates.hasUpdate}
                 <div
                     class="update-badge"
-                    title="View update details"
+                    title={$_("sidebar.viewUpdateDetails")}
                     on:click={openGithubPopup}
                     role="button"
                     tabindex="0"
                     on:keydown={(e) =>
                         e.key === "Enter" && openGithubPopup()}
                 >
-                    Update
+                    {$_("sidebar.update")}
                 </div>
             {/if}
         </div>
@@ -441,7 +461,7 @@
         <div class="plugin-slot" bind:this={slotTop}></div>
 
         <section class="nav-section">
-            <h3 class="nav-section-title">{$_('sidebar.library', { default: 'Library' })}</h3>
+            <h3 class="nav-section-title">{$_('sidebar.library')}</h3>
             <ul class="nav-list">
                 <li>
                     <button
@@ -457,7 +477,7 @@
                         >
                             <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
                         </svg>
-                        <span>{$_('sidebar.home', { default: 'Home' })}</span>
+                        <span>{$_('sidebar.home')}</span>
                     </button>
                 </li>
                 <li>
@@ -476,7 +496,7 @@
                                 d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
                             />
                         </svg>
-                        <span>{$_('sidebar.likedSongs', { default: 'Liked Songs' })}</span>
+                        <span>{$_('sidebar.likedSongs')}</span>
                         <span class="nav-count">{$likedCount}</span>
                     </button>
                 </li>
@@ -496,7 +516,7 @@
                                 d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"
                             />
                         </svg>
-                        <span>{$_('sidebar.discover', { default: 'Discover' })}</span>
+                        <span>{$_('sidebar.discover')}</span>
                     </button>
                 </li>
                 {#if $appSettings.listenBrainzEnabled && $appSettings.listenBrainzTokenSet}
@@ -520,7 +540,7 @@
                                 <line x1="11" y1="8" x2="11" y2="14"></line>
                                 <line x1="8" y1="11" x2="14" y2="11"></line>
                             </svg>
-                            <span>{$_('sidebar.recommendations', { default: 'Recommendations' })}</span>
+                            <span>{$_('sidebar.recommendations')}</span>
                         </button>
                     </li>
                 {/if}
@@ -540,7 +560,7 @@
                                 d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
                             />
                         </svg>
-                        <span>{$_('sidebar.allTracks', { default: 'All Tracks' })}</span>
+                        <span>{$_('sidebar.allTracks')}</span>
                         <span class="nav-count">{$trackCount}</span>
                     </button>
                 </li>
@@ -560,7 +580,7 @@
                                 d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
                             />
                         </svg>
-                        <span>{$_('sidebar.albums', { default: 'Albums' })}</span>
+                        <span>{$_('sidebar.albums')}</span>
                         <span class="nav-count">{$albumCount}</span>
                     </button>
                 </li>
@@ -580,7 +600,7 @@
                                 d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
                             />
                         </svg>
-                        <span>{$_('sidebar.artists', { default: 'Artists' })}</span>
+                        <span>{$_('sidebar.artists')}</span>
                         <span class="nav-count">{$artistCount}</span>
                     </button>
                 </li>
@@ -589,7 +609,7 @@
 
         <section class="nav-section">
             <div class="nav-section-header">
-                <h3 class="nav-section-title">{$_('sidebar.playlists', { default: 'Playlists' })}</h3>
+                <h3 class="nav-section-title">{$_('sidebar.playlists')}</h3>
             </div>
             <ul class="nav-list">
                 <li>
@@ -608,7 +628,7 @@
                                 d="M19 9H5V7h14v2zm0 4H5v-2h14v2zm-8 4H5v-2h6v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"
                             />
                         </svg>
-                        <span>{$_('sidebar.allPlaylists', { default: 'All Playlists' })}</span>
+                        <span>{$_('sidebar.allPlaylists')}</span>
                         <span class="nav-count">{$playlists.length}</span>
                     </button>
                 </li>
@@ -677,7 +697,7 @@
                             {#if isPinned("playlist", playlist.id, $pinnedItems)}
                                 <span
                                     class="pinned-indicator-sidebar"
-                                    title="Pinned to top"
+                                    title={$_("home.pinned")}
                                 >
                                     <svg
                                         viewBox="0 0 24 24"
@@ -705,7 +725,7 @@
         </section>
 
         <section class="nav-section">
-            <h3 class="nav-section-title">{$_('sidebar.settings', { default: 'Settings' })}</h3>
+            <h3 class="nav-section-title">{$_('sidebar.settings')}</h3>
             <ul class="nav-list">
                 <li>
                     <button
@@ -723,7 +743,7 @@
                                 d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"
                             />
                         </svg>
-                        <span>{$_('sidebar.plugins', { default: 'Plugins' })}</span>
+                        <span>{$_('sidebar.plugins')}</span>
                     </button>
                 </li>
                 <li>
@@ -742,14 +762,14 @@
                                 d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"
                             />
                         </svg>
-                        <span>{$_('sidebar.settings', { default: 'Settings' })}</span>
+                        <span>{$_('sidebar.settings')}</span>
                     </button>
                 </li>
             </ul>
         </section>
 
         <section class="nav-section">
-            <h3 class="nav-section-title">{$_('sidebar.community', { default: 'Community' })}</h3>
+            <h3 class="nav-section-title">{$_('sidebar.community')}</h3>
             <ul class="nav-list">
                 {#if $appSettings.showDiscord}
                     <li>
@@ -768,7 +788,7 @@
                                     d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057a.082.082 0 0 0 .031.057 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.09 14.09 0 0 0 1.226-1.994.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0 a.074.074 0 0 1 .078.01c.118.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.086 2.157 2.419 0 1.334-.956 2.419-2.157 2.419zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.086 2.157 2.419 0 1.334-.946 2.419-2.157 2.419z"
                                 />
                             </svg>
-                            <span>{$_('sidebar.joinDiscord', { default: 'Join Discord' })}</span>
+                            <span>{$_('sidebar.joinDiscord')}</span>
                         </a>
                     </li>
                 {/if}
@@ -780,7 +800,7 @@
                             class="nav-item resonate-item"
                         >
                             <img src="/resonate.png" alt="Resonate" class="resonate-icon" />
-                            <span>{$_('sidebar.resonate', { default: 'Resonate Playlists' })}</span>
+                            <span>{$_('sidebar.resonate')}</span>
                         </a>
                     </li>
                 {/if}
@@ -829,7 +849,7 @@
                 >
                     <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
                 </svg>
-                <span>{$_('sidebar.addMusicFolder', { default: 'Add Music Folder' })}</span>
+                <span>{$_('sidebar.addMusicFolder')}</span>
             {/if}
         </button>
         {#if scanError}

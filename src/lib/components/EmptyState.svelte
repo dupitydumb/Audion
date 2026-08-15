@@ -1,8 +1,9 @@
 <script lang="ts">
     import { createEventDispatcher } from "svelte";
+    import { _ } from "svelte-i18n";
 
     export let icon: string = "music"; // icon name: "music" | "search" | "folder" | "playlist"
-    export let title: string = "Nothing here yet";
+    export let title: string = "";
     export let description: string = "";
     export let actionLabel: string = "";
     export let onAction: (() => void) | null = null;
@@ -23,7 +24,9 @@
             <path d={ICONS[icon] || ICONS.music} />
         </svg>
     </div>
-    <h2 class="empty-title">{title}</h2>
+    <h2 class="empty-title">
+        {title || $_('emptyState.title')}
+    </h2>
     {#if description}
         <p class="empty-description">{description}</p>
     {/if}
