@@ -36,6 +36,7 @@
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
   import PromptDialog from "$lib/components/PromptDialog.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
+  import LinuxResizeHandles from "$lib/components/LinuxResizeHandles.svelte";
   import ProgressiveScanStatus from "$lib/components/ProgressiveScanStatus.svelte";
   import SyncProgressOverlay from "$lib/components/SyncProgressOverlay.svelte";
   import LoginModal from "$lib/components/LoginModal.svelte";
@@ -312,6 +313,7 @@
 {#if !$isLoading}
 {#if !$isMobile && !$isMiniPlayer}
   <TitleBar />
+  <LinuxResizeHandles />
 {/if}
 <ConfirmDialog />
 <PromptDialog />

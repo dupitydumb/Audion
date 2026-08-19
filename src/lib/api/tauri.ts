@@ -64,6 +64,13 @@ export async function initPlatformDetection(): Promise<void> {
     await detectWindows();
 }
 
+// getter for cached linux detection result
+// returns false until initPlatformDetection has resolved at least once
+// used to scope linux only workarounds (e.g. custom window resize handles)
+export function getIsLinux(): boolean {
+    return isLinuxPlatform === true;
+}
+
 export async function initWindowsThumbar(): Promise<boolean> {
     if (!isTauri()) return false;
     const onWindows = await detectWindows();
