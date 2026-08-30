@@ -696,7 +696,12 @@ pub fn run() {
             // =============================================================================
             {
                 tracing::info!("Registering native audio backend state (lazy init)");
-                app.manage(audio::PlaybackStateSync::new(app.handle().clone()));
+                // player.rs needs to observe the same TrackAdvanced/TrackFinished events the
+                // frontend gets over audio://event
+                // without owning the audio thread itself
+                let (player_event_tx, player_event_rx) = crossbeam::channel::unbounded::<audio::AudioEvent>();
+                app.manage(audio::PlaybackStateSync::new(app.handle().clone(), player_event_tx));
+                app.manage(audio::PlayerStateSync::new(app.handle().clone(), player_event_rx));
             }
 
             // SMTC / OS media controls init (desktop only)
@@ -1203,6 +1208,12 @@ pub fn run() {
                     audio::audio_set_limiter_enabled,
                     audio::audio_set_crossfade_seconds,
                     audio::audio_trigger_crossfade,
+                    audio::player::player_sync_queue,
+                    audio::player::player_advance,
+                    audio::player::player_set_current,
+                    audio::player::player_native_started,
+                    audio::player::player_html5_crossfade_committed,
+                    audio::player::player_html5_ended,
                     audio::audio_list_output_devices,
                     audio::audio_set_output_device,
                     audio::audio_get_device_info,
@@ -1406,6 +1417,12 @@ pub fn run() {
                     audio::audio_set_limiter_enabled,
                     audio::audio_set_crossfade_seconds,
                     audio::audio_trigger_crossfade,
+                    audio::player::player_sync_queue,
+                    audio::player::player_advance,
+                    audio::player::player_set_current,
+                    audio::player::player_native_started,
+                    audio::player::player_html5_crossfade_committed,
+                    audio::player::player_html5_ended,
                     audio::audio_list_output_devices,
                     audio::audio_set_output_device,
                     audio::audio_get_device_info,

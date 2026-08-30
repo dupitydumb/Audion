@@ -32,11 +32,12 @@ import {
     initSmtcIntegration, cleanupSmtcIntegration, updateSmtcPlaybackState,
 } from './media-session';
 import {
-    handleTrackEnd, handleGaplessAdvance, nextTrack, previousTrack,
+    handleTrackEnd, nextTrack, previousTrack,
     togglePlay, pause, resume, setPlayerNativeAudioUsed,
     getPlayerNativeAudioUsed, incrementPlayerNativeErrorCount,
-    PLAYER_NATIVE_ERROR_FALLBACK_THRESHOLD,
+    PLAYER_NATIVE_ERROR_FALLBACK_THRESHOLD, syncPlayerQueue,
 } from './playback';
+import { initPlayerBridge } from './player';
 import { handleRemoteCommand, handleRemotePlayerState, transferPlayback } from './remote';
 import { registerRemoteCallbacks } from './remote';
 import { seek, setVolume, toggleShuffle, cycleRepeat } from './playback';
@@ -83,6 +84,11 @@ registerPositionUpdateCallback(() => updateMediaSessionPosition());
 export async function initAudioBackend(): Promise<void> {
     console.log('[Player] Initializing audio backend');
 
+    // bring up the player.rs directive listener before anything else can fire a track change
+    // otherwise an early Advance directive could arrive with nothing registered to handle it
+    await initPlayerBridge();
+    syncPlayerQueue();
+
     // Wire up HTML5 backend callbacks
     html5SetCallbacks({
         onEnded: () => handleTrackEnd(),
@@ -108,11 +114,20 @@ export async function initAudioBackend(): Promise<void> {
     if (nativeUsed) {
         listen<AudioEventType>('audio://event', ({ payload: event }) => {
             if (event.type === 'TrackFinished') {
+                // player.rs's actor also observes this event (worker.rs fans it out) and
+                // will independently decide + emit the next Advance/QueueExhausted
+                // directive over player://event
+                // see registerPlayerDirectiveHandler in playback.ts
+                // this listener only does local reckoning bookkeeping
                 _stopReckoning(get(currentTime));
-                handleTrackEnd();
             } else if (event.type === 'TrackAdvanced') {
                 _startReckoning(0);
-                handleGaplessAdvance();
+                // correct duration from the engine's real decoded value
+                if (event.data.duration != null) {
+                    const secs = event.data.duration.secs + (event.data.duration.nanos ?? 0) / 1e9;
+                    if (secs > 0 && !isNaN(secs)) duration.set(secs);
+                }
+                // advance/track-metadata update itself comes from player.rs's directive
             } else if (event.type === 'StateChanged') {
                 _correctReckoning(event.data.position);
                 if (event.data.position === 0) {

@@ -1,6 +1,7 @@
 // Core playback: playTrack, togglePlay, pause, resume, seek, setVolume,
 // nextTrack, previousTrack, playTracks, playFromQueue, toggleShuffle, cycleRepeat,
-// handleTrackEnd, handleGaplessAdvance, gapless preload scheduling.
+// handleTrackEnd (HTML5 only), gapless preload scheduling, and the player.rs bridge
+// (syncPlayerQueue / registerPlayerDirectiveHandler) owns queue advance decisions
 import { get } from 'svelte/store';
 import type { Track } from '$lib/api/tauri';
 import {
@@ -18,7 +19,6 @@ import { pluginStore } from '$lib/stores/plugin-store';
 import {
     nativeAudioPlay, nativeAudioPreload, nativeAudioPause, nativeAudioResume,
     nativeAudioStop, nativeAudioSetVolume, nativeAudioSeek, nativeAudioSetRepeatOne,
-    nativeAudioTriggerCrossfade,
 } from '$lib/services/native-audio';
 import {
     html5Play, html5Pause, html5Resume, html5Stop, html5Seek,
@@ -36,8 +36,7 @@ import {
 } from './stores';
 import {
     _startReckoning, _stopReckoning, _correctReckoning,
-    resetCrossfadeFlags, setNativePreloadScheduled, _hasCrossfaded, _nativePreloadScheduled,
-    registerCrossfadeCallback, registerHtml5CrossfadeCallback,
+    resetCrossfadeFlags,
 } from './reckoning';
 import {
     updateMediaSessionMetadata, updateMediaSessionPlaybackState, updateMediaSessionPosition,
@@ -46,6 +45,11 @@ import {
 import { _advanceQueueIndex, shuffleArray, registerReorderCallback } from './queue';
 import { sendRemoteCommand, throttledRemoteCommand } from './remote';
 import { wsStore } from '$lib/stores/websocket';
+import {
+    registerPlayerDirectiveHandler, playerSyncQueue, playerAdvance,
+    playerNativeStarted, playerHtml5CrossfadeCommitted, playerHtml5Ended,
+    type PlayerDirective, type PlayerTrackRef,
+} from './player';
 
 // Module-level mutable state (mirrors the original module-level vars)
 let _currentSessionId = 0;
@@ -110,31 +114,104 @@ async function _triggerHtml5Crossfade(): Promise<void> {
 
     const started = await html5StartCrossfade(nextTrackObj.id, vol, settings.crossfadeSeconds);
     if (started) {
-        handleGaplessAdvance();
+        // tell player.rs the transition happened
+        // it owns the queue navigation decision and will emit an Advance directive back with the new generation,
+        // which the registered handler applies via _advanceUiToTrack
+        // don't call it directly here
+        // so native and HTML5 auto advances go through exactly one code path
+        playerHtml5CrossfadeCommitted().catch(console.error);
     } else {
-        // reset so the tick can retry
-        (reckoning as any)._hasCrossfaded = false;
+        // reset (reckoning as any)._hasCrossfaded = false
+        reckoning.resetHasCrossfaded();
     }
 }
 
-async function _triggerNativeCrossfade(): Promise<void> {
-    console.log('[Player] Triggering native crossfade');
-    try {
-        await nativeAudioTriggerCrossfade();
-        // Do NOT call handleGaplessAdvance() here — backend emits TrackAdvanced
-    } catch (err) {
-        console.warn('[Player] Native crossfade failed:', err);
-        // reset flag via reckoning module
-    }
-}
+// AudioEngine::maybe_auto_crossfade fires it itself from real decoded sample position
+// worker.rs's fan out feeds the resulting TrackAdvanced/TrackFinished into player.rs,
+// which emits the Advance directive
+// see registerPlayerDirectiveHandler below
 
-// Wire up crossfade callbacks into reckoning module
+// wire up the HTML5 crossfade callback into reckoning module
+// native no longer needs a callback here
 import * as reckoning from './reckoning';
-reckoning.registerCrossfadeCallback(() => void _triggerNativeCrossfade());
 reckoning.registerHtml5CrossfadeCallback(() => void _triggerHtml5Crossfade());
 
-// Wire up reorder → reschedule preload
-registerReorderCallback(() => _schedulePreload());
+// player.rs bridge ===========================================
+// player.rs owns the queue navigation decision :
+// what's next/previous, respecting repeat/shuffle) and guards it with a generation counter
+// this section keeps its queue mirror in sync and applies whatever it decides
+
+function _trackRefFor(track: Track): PlayerTrackRef {
+    return {
+        id: track.id,
+        path: track.local_src || track.path || '',
+        duration_secs: track.duration ?? null,
+        is_streaming: isStreaming(track),
+    };
+}
+
+/** call whenever the queue array, index, repeat mode, or shuffle state changes */
+export function syncPlayerQueue(): void {
+    const q = get(queue);
+    const repeatValue = get(repeat);
+    const rustRepeat: 'off' | 'all' | 'one' = repeatValue === 'none' ? 'off' : repeatValue;
+    playerSyncQueue({
+        tracks: q.map(_trackRefFor),
+        index: get(queueIndex),
+        repeat: rustRepeat,
+        shuffle: get(shuffle),
+        shuffledIndices: get(shuffledIndices),
+        shuffledIndex: get(shuffledIndex),
+    }).catch(e => console.warn('[Player] syncPlayerQueue failed:', e));
+}
+
+registerPlayerDirectiveHandler((directive: PlayerDirective) => {
+    if (directive.type === 'QueueExhausted') {
+        // player.rs has no library/DB access
+        // so autoplay from library fallback stays here
+        const settings = get(appSettings);
+        if (settings.autoplay) {
+            playRandomFromLibrary();
+        } else {
+            isPlaying.set(false);
+        }
+        return;
+    }
+
+    const { reason, track: trackRef, queue_index, generation } = directive.data;
+    const q = get(queue);
+    const track = q[queue_index]?.id === trackRef.id ? q[queue_index] : q.find(t => t.id === trackRef.id);
+    if (!track) {
+        // queue mirror in rust and js disagreed
+        // shouldn't happen since SyncQueue is sent on every mutation
+        // but for safety
+        console.warn('[Player] Advance directive referenced a track not found in queue:', trackRef);
+        return;
+    }
+
+    queueIndex.set(queue_index);
+
+    if (reason === 'user_next' || reason === 'user_previous' || reason === 'user_direct_select') {
+        // nothing is playing this track yet => actually start it
+        playTrack(track, false, 0, reason === 'user_previous' ? 'previous' : 'next')
+            .then(() => {
+                if (get(activeBackend) === 'native') {
+                    playerNativeStarted(generation, track.id).catch(() => { });
+                }
+            })
+            .catch(console.error);
+    } else {
+        // native (via engine self trigger) or HTML5 (via the report in _triggerHtml5Crossfade / html5's onEnded)
+        // already committed this transition on its own
+        // this is metadata/store sync only
+        // dont call playTrack here => would restart audio that's already playing
+        _advanceUiToTrack(track);
+    }
+});
+
+// Wire up reorder → reschedule preload + keep player.rs's queue mirror current
+// covers : add/remove/reorder and shuffle/repeat toggles, everywhere in queue.ts that already calls this callback
+registerReorderCallback(() => { _schedulePreload(); syncPlayerQueue(); });
 
 // ─── Core playback ────────────────────────────────────────────────────────────
 
@@ -403,6 +480,7 @@ export function playTracks(
     }
 
     pluginEvents.emit('queueChange', { queue: tracks, index: startIndex });
+    syncPlayerQueue();
 
     if (tracks.length > 0 && startIndex < tracks.length) {
         playTrack(tracks[startIndex]);
@@ -494,19 +572,13 @@ export function nextTrack(): void {
         return;
     }
 
-    const idx = _advanceQueueIndex();
-
-    if (idx === null) {
-        if (settings.autoplay) {
-            playRandomFromLibrary();
-        } else {
-            isPlaying.set(false);
-        }
-        return;
-    }
-
-    queueIndex.set(idx);
-    playTrack(q[idx], false, 0, 'next');
+    // the actual queue index decision happens in player.rs
+    // see registerPlayerDirectiveHandler below
+    // it owns the current generation and is the only thing allowed to move queueIndex
+    // => so a stale in-flight native/HTML5 auto advance can never stomp a manual skip or vice versa
+    // falling through to still needs to happen locally since player.rs has no library access
+    // it reports QueueExhausted and the directive handler below falls back to it
+    playerAdvance('next').catch(console.error);
 }
 
 function playRandomFromLibrary(): void {
@@ -529,6 +601,7 @@ function playRandomFromLibrary(): void {
     queue.update(q => [...q, randomTrack]);
     const newQueue = get(queue);
     queueIndex.set(newQueue.length - 1);
+    syncPlayerQueue();
 
     playTrack(randomTrack);
 }
@@ -543,13 +616,12 @@ export async function previousTrack(): Promise<void> {
     }
 
     const q = get(queue);
-    const shuf = get(shuffle);
-    let idx = get(queueIndex);
-
     if (q.length === 0) return;
 
+    // restarting current track vs actually going back is a position based ui decision => it stays here
+    // only the actual backward movement through the queue is delegated to player.rs
     try {
-        let pos = get(currentTime);
+        const pos = get(currentTime);
 
         if (pos > 3) {
             if (get(activeBackend) === 'html5') {
@@ -563,26 +635,7 @@ export async function previousTrack(): Promise<void> {
         console.error('[Player] Restart track failed:', err);
     }
 
-    if (shuf) {
-        const shufIndices = get(shuffledIndices);
-        let shufIdx = get(shuffledIndex);
-
-        shufIdx = shufIdx - 1;
-        if (shufIdx < 0) {
-            shufIdx = get(repeat) === 'all' ? shufIndices.length - 1 : 0;
-        }
-
-        shuffledIndex.set(shufIdx);
-        idx = shufIndices[shufIdx];
-    } else {
-        idx = idx - 1;
-        if (idx < 0) {
-            idx = get(repeat) === 'all' ? q.length - 1 : 0;
-        }
-    }
-
-    queueIndex.set(idx);
-    playTrack(q[idx], false, 0, 'previous');
+    playerAdvance('previous').catch(console.error);
 }
 
 export async function seek(position: number, previousPositionOverride?: number): Promise<void> {
@@ -688,6 +741,7 @@ export function toggleShuffle(): void {
     });
     broadcastState(true);
     updateSmtcPlaybackState(get(isPlaying) ? 'playing' : 'paused', { shuffle: get(shuffle) });
+    syncPlayerQueue();
 }
 
 export function cycleRepeat(): void {
@@ -709,6 +763,7 @@ export function cycleRepeat(): void {
         return next;
     });
     broadcastState(true);
+    syncPlayerQueue();
     const currentRepeat = get(repeat);
     const repeatMode = currentRepeat === 'none' ? 'off' : currentRepeat;
     updateSmtcPlaybackState(get(isPlaying) ? 'playing' : 'paused', { repeatMode });
@@ -737,6 +792,8 @@ export function playFromQueue(index: number): void {
                 shuffledIndex.set(ptr);
             }
         }
+
+        syncPlayerQueue();
     }
 }
 
@@ -759,6 +816,8 @@ function _scrobblePrev(track: Track, durationPlayed: number): void {
 }
 
 export function handleTrackEnd(): void {
+    // HTML5 only : native's natural end path goes straight through :
+    // worker.rs's event fan out => player.rs -+=> the Advance/QueueExhausted directive handler above
     const track = get(currentTrack);
     if (track && _playStartTime > 0) {
         const durationPlayed = Math.floor((Date.now() - _playStartTime) / 1000);
@@ -775,33 +834,10 @@ export function handleTrackEnd(): void {
         return;
     }
 
-    nextTrack();
-}
-
-export function handleGaplessAdvance(): void {
-    const q = get(queue);
-
-    const prevTrack = get(currentTrack);
-    if (prevTrack && _playStartTime > 0) {
-        const durationPlayed = Math.floor((Date.now() - _playStartTime) / 1000);
-        if (durationPlayed > 5) {
-            recordTrackPlay(prevTrack.id, prevTrack.album_id ?? null, durationPlayed);
-            _scrobblePrev(prevTrack, durationPlayed);
-        }
-    }
-    _playStartTime = Date.now();
-
-    const idx = _advanceQueueIndex();
-    if (idx === null) {
-        handleTrackEnd();
-        return;
-    }
-
-    queueIndex.set(idx);
-    const nextTrackObj = q[idx];
-    if (!nextTrackObj) return;
-
-    _advanceUiToTrack(nextTrackObj);
+    // report to player.rs rather than recomputing the queue index locally
+    // it owns that decision
+    // it will emit the resulting Advance/QueueExhausted directive back
+    playerHtml5Ended().catch(console.error);
 }
 
 async function _advanceUiToTrack(track: Track): Promise<void> {
@@ -860,9 +896,11 @@ export function _schedulePreload(): void {
     const nextPath = nextTrackObj.local_src || nextTrackObj.path;
     if (!nextPath) return;
 
-    setNativePreloadScheduled(true);
+    // no setNativePreloadScheduled bookkeeping here
+    // engine's own decision.next_slot (DecisionThread, rust)
+    // nothing in js tracks it in parallel
+    // prevents this flag going stale bug
     nativeAudioPreload(nextPath, nextTrackObj.id, (nextTrackObj as any).replay_gain_db ?? null, get(appSettings).crossfadeSeconds).catch(e => {
-        setNativePreloadScheduled(false);
         console.warn('[Player] Preload failed (non-fatal):', e);
     });
 }

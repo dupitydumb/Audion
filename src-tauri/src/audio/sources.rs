@@ -1,125 +1,63 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
 use std::time::Duration;
 use std::num::NonZero;
-use std::f32::consts::PI;
 use crossbeam::channel::Receiver;
 use rodio::Source;
 
 use super::dsp::{EqSettings, FilterBank, Limiter};
+use super::gated::SharedClock;
+
+// pause lives on GatedSource itself now,
+// and crossfade timing is DecisionThread writing an absolute target frame rather than mixing a captured buffer in-place
 
 // =============================================================================
-// PausableQueue — wraps queue output, emits silence when paused
+// ClockAdvancingSource — advances the shared render-callback clock
 // =============================================================================
-
-pub struct PausableQueue<S: Source<Item = f32>> {
-    pub inner: S,
-    pub paused: Arc<AtomicBool>,
-    pub frame_pos: usize,
+// it sits directly around gated_mixer_output, 
+// the single point every real interleaved sample passes through exactly once per render pull,
+// regardless of how many gated tracks are registered on the mixer
+// counts channel-boundary crossings the same way GatedSource already tracks frame_pos,
+// and calls clock.advance(1) once per full interleaved frame
+pub struct ClockAdvancingSource<S: Source<Item = f32>> {
+    inner: S,
+    clock: Arc<SharedClock>,
+    channels: usize,
+    current_ch: usize,
 }
 
-impl<S: Source<Item = f32>> Iterator for PausableQueue<S> {
-    type Item = f32;
-    #[inline]
-    fn next(&mut self) -> Option<f32> {
-        let is_paused = self.paused.load(Ordering::Relaxed);
-
-        if is_paused {
-            let channels = self.inner.channels().get() as usize;
-            self.frame_pos = (self.frame_pos + 1) % channels;
-            return Some(0.0);
-        }
-
-        if self.frame_pos != 0 {
-            let channels = self.inner.channels().get() as usize;
-            self.frame_pos = (self.frame_pos + 1) % channels;
-            return Some(0.0);
-        }
-
-        self.inner.next()
+impl<S: Source<Item = f32>> ClockAdvancingSource<S> {
+    pub fn new(inner: S, clock: Arc<SharedClock>) -> Self {
+        let channels = inner.channels().get() as usize;
+        Self { inner, clock, channels, current_ch: 0 }
     }
 }
 
-impl<S: Source<Item = f32>> Source for PausableQueue<S> {
-    fn current_span_len(&self) -> Option<usize> {
-        self.inner.current_span_len()
-    }
-    fn channels(&self) -> NonZero<u16> {
-        self.inner.channels()
-    }
-    fn sample_rate(&self) -> NonZero<u32> {
-        self.inner.sample_rate()
-    }
-    fn total_duration(&self) -> Option<Duration> {
-        None
-    }
-}
-
-// =============================================================================
-// CrossfadeState — owned crossfade buffer, lives exclusively on the audio thread
-// =============================================================================
-
-pub struct CrossfadeState {
-    pub buffer: Vec<f32>,
-    pub pos: usize,
-    pub total_samples: usize,
-}
-
-// =============================================================================
-// CrossfadeSource — wraps inner Source, mixes with crossfade buffer when active
-// =============================================================================
-
-pub struct CrossfadeSource<S: Source<Item = f32>> {
-    pub inner: S,
-    pub active: Arc<AtomicBool>,
-    pub pending: Arc<Mutex<Option<CrossfadeState>>>,
-    pub local: Option<CrossfadeState>,
-}
-
-impl<S: Source<Item = f32>> CrossfadeSource<S> {
-    pub fn new(
-        inner: S,
-        active: Arc<AtomicBool>,
-        pending: Arc<Mutex<Option<CrossfadeState>>>,
-    ) -> Self {
-        Self { inner, active, pending, local: None }
-    }
-}
-
-impl<S: Source<Item = f32>> Iterator for CrossfadeSource<S> {
+impl<S: Source<Item = f32>> Iterator for ClockAdvancingSource<S> {
     type Item = f32;
 
     #[inline]
     fn next(&mut self) -> Option<f32> {
+        // re-check channel count each pull, mirroring EqSource's handling of a mid-stream format change,
+        // so a channel-count switch can't leave current_ch permanently desynced from the real frame boundary
+        let ch_now = self.inner.channels().get() as usize;
+        if ch_now != self.channels {
+            self.channels = ch_now;
+            self.current_ch = 0;
+        }
+
         let sample = self.inner.next()?;
 
-        if !self.active.load(Ordering::Acquire) {
-            return Some(sample);
+        self.current_ch += 1;
+        if self.current_ch >= self.channels {
+            self.current_ch = 0;
+            self.clock.advance(1);
         }
-
-        if self.local.is_none() {
-            self.local = self.pending.lock().unwrap().take();
-        }
-
-        if let Some(ref mut cf) = self.local {
-            if cf.pos < cf.total_samples {
-                let progress = cf.pos as f32 / cf.total_samples as f32;
-                let fade_out = (progress * PI * 0.5).cos();
-                let fade_in  = (progress * PI * 0.5).sin();
-                let next_sample = cf.buffer[cf.pos];
-                cf.pos += 1;
-                return Some((sample * fade_out + next_sample * fade_in).clamp(-1.0, 1.0));
-            }
-            self.local = None;
-            self.active.store(false, Ordering::Relaxed);
-        }
-
         Some(sample)
     }
 }
 
-impl<S: Source<Item = f32>> Source for CrossfadeSource<S> {
+impl<S: Source<Item = f32>> Source for ClockAdvancingSource<S> {
     fn current_span_len(&self) -> Option<usize> {
         self.inner.current_span_len()
     }
@@ -132,10 +70,13 @@ impl<S: Source<Item = f32>> Source for CrossfadeSource<S> {
     fn total_duration(&self) -> Option<Duration> {
         None
     }
+    fn try_seek(&mut self, pos: Duration) -> Result<(), rodio::source::SeekError> {
+        self.inner.try_seek(pos)
+    }
 }
 
 // =============================================================================
-// EqSource — wraps inner Source (now CrossfadeSource), applies EQ in the audio callback
+// EqSource — wraps inner Source, applies EQ in the audio callback
 // =============================================================================
 
 pub struct EqSource<S: Source<Item = f32>> {

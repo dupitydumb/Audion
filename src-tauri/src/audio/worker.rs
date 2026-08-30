@@ -1,43 +1,17 @@
 use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering, AtomicU32};
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
-use std::num::NonZero;
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use tauri::Emitter;
 
 use super::dsp::EqSettings;
-use super::mod_types::{AudioEvent, ReadySource, DeviceList};
-use super::sources::CrossfadeState;
+use super::mod_types::{AudioEvent, DeviceList};
 use super::engine::{AudioEngine, TrackInfo};
+// gated_open_result_rx (GatedOpenResult) is the only open-result channel selected on in the command loop below
+use super::gated_worker::GatedOpenResult;
+use super::decision::TrackSlot;
+use super::directive;
 
-
-pub struct OpenTask {
-    pub path: String,
-    pub replay_gain_db: Option<f32>,
-    pub generation: u64,
-    pub seek_rx: Receiver<Duration>,
-    pub repeat_one_rx: Receiver<bool>,
-    pub seek_tx: Sender<Duration>,
-    pub repeat_one_tx: Sender<bool>,
-    pub event_tx: Sender<AudioEvent>,
-    pub volume: Arc<AtomicU32>,
-    pub replay_gain_enabled: Arc<AtomicBool>,
-    pub device_sample_rate: NonZero<u32>,
-    pub device_channels: NonZero<u16>,
-    pub abort: Arc<AtomicBool>,
-    pub initial_seek: Option<Duration>,
-    pub crossfade_seconds: u32,
-    pub is_preload: bool,
-}
-
-pub struct OpenResult {
-    pub generation: u64,
-    pub seek_tx: Sender<Duration>,
-    pub repeat_one_tx: Sender<bool>,
-    pub duration: Option<Duration>,
-    pub source: Result<ReadySource, String>,
-    pub preload_buffer: Option<Vec<f32>>,
-}
 
 pub enum AudioCommand {
     Play(String, Option<f32>),
@@ -62,7 +36,9 @@ pub struct PlaybackStateSync {
 }
 
 impl PlaybackStateSync {
-    pub fn new(app_handle: tauri::AppHandle) -> Self {
+    /// player_event_tx receives a copy of every AudioEvent originally only meant for the fronted
+    /// this is how player.rs's actor learns about TrackAdvanced/TrackFinished
+    pub fn new(app_handle: tauri::AppHandle, player_event_tx: Sender<AudioEvent>) -> Self {
         let (tx, rx) = unbounded::<AudioCommand>();
         let device_list = Arc::new(Mutex::new(DeviceList {
             devices: Vec::new(),
@@ -80,17 +56,65 @@ impl PlaybackStateSync {
             let mut eq_settings = EqSettings::default();
 
             let mut event_rx: Receiver<AudioEvent> = crossbeam::channel::never();
-            let mut open_result_rx: Receiver<OpenResult> = crossbeam::channel::never();
+            // carries both play()- and preload()-generation results from the gated pipeline
+            // the is_play / is_preload cases
+            let mut gated_open_result_rx: Receiver<GatedOpenResult> = crossbeam::channel::never();
 
             let emit = |evt: AudioEvent| {
                 use tauri::Emitter;
+                let _ = player_event_tx.send(evt.clone());
                 if let Err(e) = app_handle.emit("audio://event", &evt) {
                     tracing::warn!("[AUDIO] Failed to emit event: {}", e);
                 }
             };
 
+            // polls DecisionThread for a completed crossfade/skip transition
+            // and if one is found, reconciles AudioEngine's own current_generation/current_info
+            // with the newly promoted "current" slot before emitting the TrackAdvanced event
+            // directive::poll_completed_transition only owns the DecisionThread-internal
+            // promotion + event construction
+            // AudioEngine's own bookkeeping (used by seek(),
+            // the gated_open_result_rx generation matching arms, etc.) has to be kept in sync here
+            // at the one call site all three trigger paths (tick, manual, natural end gapless handoff) funnel through
+            let poll_and_apply = |engine: &mut AudioEngine, emit: &dyn Fn(AudioEvent)| {
+                // _with_outgoing variant (see directive.rs)
+                // so the promoted away outgoing slot gets kept in engine.fading_out
+                // instead of dropped
+                // a mid-crossfade device switch (set_output_device's case B) needs it to still be there
+                if let Some((evt, outgoing)) =
+                    directive::poll_completed_transition_with_outgoing(&mut engine.decision)
+                {
+                    if let AudioEvent::TrackAdvanced { generation, ref new_path, duration } = evt {
+                        engine.current_generation = generation;
+                        engine.current_info = Some(TrackInfo {
+                            path: new_path.clone(),
+                            duration,
+                            started: Instant::now(),
+                            offset: Duration::ZERO,
+                        });
+                    }
+                    engine.fading_out = outgoing;
+                    emit(evt);
+                }
+            };
+
+            // drives AudioEngine::maybe_auto_crossfade
+            // 100ms is cheap enough to run unconditionally even when nothing is playing
+            let crossfade_tick = crossbeam::channel::tick(std::time::Duration::from_millis(100));
+
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| { loop {
                 crossbeam::select! {
+                    recv(crossfade_tick) -> _ => {
+                        if let Some(engine) = engine_opt.as_mut() {
+                            engine.maybe_auto_crossfade();
+                            // the tick may just have caused DecisionThread to fire an auto-crossfade
+                            // poll once to see if that fire has ALSO become live on the shared clock
+                            // has_fired() alone isn't enough (see directive.rs's doc comment)
+                            // if so, promote next=>current and emit TrackAdvanced
+                            poll_and_apply(engine, &emit);
+                        }
+                    }
+
                     recv(rx) -> msg => {
                         let cmd = match msg {
                             Ok(c) => c,
@@ -101,9 +125,9 @@ impl PlaybackStateSync {
                             let mut last_err = String::new();
                             for attempt in 0..8u32 {
                                 match AudioEngine::new(&eq_settings, None) {
-                                    Ok((e, evt_rx, open_rx, dl)) => {
+                                    Ok((e, evt_rx, gated_open_rx, dl)) => {
                                         event_rx = evt_rx;
-                                        open_result_rx = open_rx;
+                                        gated_open_result_rx = gated_open_rx;
                                         engine_opt = Some(e);
                                         if let Ok(mut cached) = device_list_clone.lock() {
                                             *cached = dl;
@@ -157,11 +181,19 @@ impl PlaybackStateSync {
                                 engine.set_limiter_enabled(v);
                             }
                             AudioCommand::SetOutputDevice(name) => {
-                                match engine.set_output_device(name, &mut event_rx, &mut open_result_rx) {
+                                tracing::info!("[AUDIO] SetOutputDevice command received: {:?}", name);
+                                match engine.set_output_device(name, &mut event_rx, &mut gated_open_result_rx) {
                                     Ok(new_device_list) => {
                                         if let Ok(mut cached) = device_list_clone.lock() {
                                             *cached = new_device_list.clone();
                                         }
+                                        tracing::info!(
+                                            "[AUDIO] SetOutputDevice succeeded — current_generation={}, \
+                                             gated_preload_generation={}, pending_fade_resume={}, \
+                                             current_info_present={}",
+                                            engine.current_generation, engine.gated_preload_generation,
+                                            engine.pending_fade_resume.is_some(), engine.current_info.is_some(),
+                                        );
                                         emit(AudioEvent::DeviceListChanged { devices: new_device_list });
                                     }
                                     Err(e) => {
@@ -175,15 +207,23 @@ impl PlaybackStateSync {
                             }
                             AudioCommand::TriggerCrossfade => {
                                 engine.trigger_crossfade();
+                                // same reasoning as the crossfade_tick arm above
+                                // a manual trigger_manual() fire needs the same live-check-then-promote-
+                                // then-emit step
+                                poll_and_apply(engine, &emit);
                             }
                         }
                     }
 
-                    recv(open_result_rx) -> msg => {
+                    // results from the gated pipeline's play()/preload() dispatch
+                    // there's no queue/seek_tx/repeat_one_tx bookkeeping to do
+                    // beyond what's on GatedTrackHandle itself
+                    // registering the source on gated_mixer, and scheduling it now (play) or leaving it UNSCHEDULED (preload), is the entire hand-off
+                    recv(gated_open_result_rx) -> msg => {
                         let result = match msg {
                             Ok(r) => r,
                             Err(_) => {
-                                open_result_rx = crossbeam::channel::never();
+                                gated_open_result_rx = crossbeam::channel::never();
                                 continue;
                             }
                         };
@@ -193,71 +233,148 @@ impl PlaybackStateSync {
                             None => continue,
                         };
 
-                        let is_play   = result.generation == engine.current_generation;
-                        let is_preload = result.generation == engine.next_generation
+                        // mid-crossfade device switch resume (set_output_device's case B):
+                        // checked before is_play/is_preload below because in_generation is
+                        // also current_generation
+                        // (so the incoming track's own decision.rs bookkeeping still works everywhere else)
+                        // which would otherwise make the plain is_play arm hard schedule it via schedule_now
+                        // instead of the fade-in ramp reconstructed here
+                        if let Some(pfr) = engine.pending_fade_resume.as_ref() {
+                            tracing::info!(
+                                "[AUDIO] gated_open_result gen={} — pending_fade_resume out_gen={:?} in_gen={:?}",
+                                result.generation, pfr.out_generation, pfr.in_generation
+                            );
+                        }
+                        if let Some(pfr) = engine.pending_fade_resume.as_mut() {
+                            let matched = if pfr.out_generation == Some(result.generation) {
+                                Some(false)
+                            } else if pfr.in_generation == Some(result.generation) {
+                                Some(true)
+                            } else {
+                                None
+                            };
+
+                            if let Some(is_incoming) = matched {
+                                let sample_rate = engine.device_sample_rate.get() as f64;
+                                let fade_elapsed_frames =
+                                    (pfr.fade_elapsed.as_secs_f64() * sample_rate) as u64;
+                                let fade_total_frames =
+                                    (pfr.fade_total.as_secs_f64() * sample_rate).max(1.0) as u64;
+
+                                if is_incoming {
+                                    pfr.in_generation = None;
+                                } else {
+                                    pfr.out_generation = None;
+                                }
+                                let resume_done = engine.pending_fade_resume.as_ref()
+                                    .is_some_and(|p| p.out_generation.is_none() && p.in_generation.is_none());
+                                if resume_done {
+                                    engine.pending_fade_resume = None;
+                                }
+
+                                match result.result {
+                                    Err(e) => {
+                                        tracing::error!(
+                                            "[AUDIO] gated open error (fade-resume {}): {}",
+                                            if is_incoming { "incoming" } else { "outgoing" }, e
+                                        );
+                                        if is_incoming {
+                                            emit(AudioEvent::Error { message: e });
+                                            engine.current_info = None;
+                                        }
+                                    }
+                                    Ok((gated_source, handle)) => {
+                                        engine.gated_mixer.add(gated_source);
+                                        let now = engine.gated_clock.now();
+                                        let start = now.saturating_sub(fade_elapsed_frames);
+
+                                        tracing::info!(
+                                            "[AUDIO] fade-resume {} Ok: path='{}' now={} fade_elapsed_frames={} \
+                                             fade_total_frames={} computed_start={}",
+                                            if is_incoming { "incoming" } else { "outgoing" },
+                                            handle.path, now, fade_elapsed_frames, fade_total_frames, start,
+                                        );
+
+                                        if is_incoming {
+                                            handle.schedule_fade_in_at(start, fade_total_frames);
+
+                                            let duration = handle.duration;
+                                            if let Some(ref mut info) = engine.current_info {
+                                                info.duration = duration;
+                                            }
+
+                                            let slot = TrackSlot::new(handle, engine.device_sample_rate.get());
+                                            if engine.pending_paused {
+                                                engine.pending_paused = false;
+                                                slot.handle.set_paused(true);
+                                                engine.paused_flag.store(true, Ordering::Relaxed);
+                                                engine.paused_at = Some(engine.gated_clock.now());
+                                            }
+                                            engine.decision.load_current(slot);
+                                            tracing::info!(
+                                                "[AUDIO] fade-resume incoming: decision.load_current done — \
+                                                 decision.current().is_some()={}",
+                                                engine.decision.current().is_some()
+                                            );
+                                        } else {
+                                            handle.schedule_at(start);
+                                            handle.schedule_fade_out(start, fade_total_frames);
+                                            engine.fading_out =
+                                                Some(TrackSlot::new(handle, engine.device_sample_rate.get()));
+                                        }
+
+                                        tracing::info!(
+                                            "[AUDIO] Device switch: {} crossfade track resumed (gen {})",
+                                            if is_incoming { "incoming" } else { "outgoing" },
+                                            result.generation
+                                        );
+                                    }
+                                }
+                                continue;
+                            }
+                        }
+
+                        let is_play = result.generation == engine.current_generation;
+                        let is_preload = result.generation == engine.gated_preload_generation
                             && result.generation != engine.current_generation;
 
                         if !is_play && !is_preload {
-                            tracing::debug!(
-                                "[AUDIO] Discarding stale open result (gen {} — current {}, next {})",
-                                result.generation, engine.current_generation, engine.next_generation
+                            tracing::info!(
+                                "[AUDIO] Discarding stale gated open result (gen {} — current {}, preload {}, \
+                                 pending_fade_resume={})",
+                                result.generation, engine.current_generation, engine.gated_preload_generation,
+                                engine.pending_fade_resume.is_some(),
                             );
                             continue;
                         }
 
-                        match result.source {
+                        match result.result {
                             Err(e) => {
-                                tracing::error!("[AUDIO] open error: {}", e);
+                                tracing::error!("[AUDIO] gated open error: {}", e);
                                 emit(AudioEvent::Error { message: e });
                                 if is_play {
                                     engine.current_info = None;
-                                } else {
-                                    engine.next_path = None;
-                                    engine.next_duration = None;
                                 }
+                                // is_preload: nothing was registered on decision/gated_mixer for this generation
+                                // so there's nothing to unwind beyond the error event above
+                                // decision.next_slot simply stays whatever it was before this preload was attempted
                             }
-                            Ok(source) => {
+                            Ok((gated_source, handle)) => {
+                                engine.gated_mixer.add(gated_source);
+                                tracing::info!(
+                                    "[AUDIO] gated_open_result gen={} Ok — is_play={} is_preload={} path='{}'",
+                                    result.generation, is_play, is_preload, handle.path,
+                                );
+
                                 if is_play {
-                                    engine.queue_input.clear();
-                                    if let Some(ref tx) = engine.seek_tx {
-                                        let _ = tx.send(Duration::MAX);
-                                    }
+                                    // nothing preceded this track through the gated pipeline yet
+                                    // so a freshly opened current track just starts playing immediately
+                                    // the same primitive schedule_now exists for
+                                    handle.schedule_now(&engine.gated_clock);
 
-                                    engine.append_ready_source(source);
-                                    engine.seek_tx = Some(result.seek_tx);
-                                    engine.repeat_one_tx = Some(result.repeat_one_tx);
-
-                                    if let Some(pos) = engine.pending_seek.take() {
-                                        if let Some(ref tx) = engine.seek_tx {
-                                            let _ = tx.send(pos);
-                                        }
-                                        if let Some(ref mut info) = engine.current_info {
-                                            info.offset = pos;
-                                            info.started = Instant::now();
-                                        }
-                                    }
-
-                                    if let Some(fraction) = engine.pending_seek_fraction.take() {
-                                        if let Some(duration) = result.duration {
-                                            let pos = Duration::from_secs_f64(
-                                                duration.as_secs_f64() * fraction
-                                            );
-                                            if let Some(ref tx) = engine.seek_tx {
-                                                let _ = tx.send(pos);
-                                            }
-                                            if let Some(ref mut info) = engine.current_info {
-                                                info.offset = pos;
-                                                info.started = Instant::now();
-                                            }
-                                        }
-                                    }
-                                    if engine.pending_paused {
-                                        engine.pending_paused = false;
-                                        engine.paused_flag.store(true, Ordering::Relaxed);
-                                    }
-
+                                    let duration = handle.duration;
                                     if let Some(ref mut info) = engine.current_info {
-                                        info.duration = result.duration;
+                                        info.duration = duration;
                                     }
 
                                     if engine.pending_track_advanced {
@@ -271,60 +388,48 @@ impl PlaybackStateSync {
                                         }
                                     }
 
+                                    let slot = TrackSlot::new(handle, engine.device_sample_rate.get());
+
+                                    // implement pending_paused
+                                    // (set by set_output_device's device-switch snapshot restore,
+                                    // or by the natural end deferred preload path below)
+                                    // paused_flag is kept in sync too
+                                    // since it's what set_output_device itself reads back as
+                                    // was_paused on a subsequent switch
+                                    if engine.pending_paused {
+                                        engine.pending_paused = false;
+                                        slot.handle.set_paused(true);
+                                        engine.paused_flag.store(true, Ordering::Relaxed);
+                                        engine.paused_at = Some(engine.gated_clock.now());
+                                    }
+
+                                    engine.decision.load_current(slot);
+
                                     tracing::info!(
-                                        "[AUDIO] Source ready and appended (gen {}), duration={:?}",
-                                        result.generation, result.duration
+                                        "[AUDIO] Gated source ready and scheduled (gen {}), duration={:?}",
+                                        result.generation, duration
                                     );
                                 } else {
-                                    engine.append_ready_source(source);
-                                    engine.next_seek_tx = Some(result.seek_tx);
-                                    engine.next_repeat_one_tx = Some(result.repeat_one_tx);
-                                    engine.next_duration = Some(result.duration);
-                                    engine.next_preload_buffer = result.preload_buffer;
-                                    tracing::debug!(
-                                        "[AUDIO] Preloaded source ready and appended (gen {})",
-                                        result.generation
-                                    );
+                                    // is_preload: registered on the mixer above, but left UNSCHEDULED 
+                                    // (schedule_now not called)
+                                    // silent until decision.trigger_manual()/tick() writes a real target frame into it
+                                    // decision.next_slot is the state to check if something is preloaded
+                                    let duration = handle.duration;
+                                    let slot = TrackSlot::new(handle, engine.device_sample_rate.get());
+                                    engine.decision.load_next(slot);
 
-                                    if engine.pending_crossfade_gen == Some(result.generation) {
-                                        engine.pending_crossfade_gen = None;
-                                        if let Some(buf) = engine.next_preload_buffer.take() {
-                                            let total = buf.len();
-                                            tracing::info!(
-                                                "[AUDIO] Deferred crossfade: starting mix with {} samples ({:.1}s)",
-                                                total,
-                                                total as f64 / (engine.device_sample_rate.get() as f64 * engine.device_channels.get() as f64)
-                                            );
-                                            let path = engine.next_path.take().unwrap_or_default();
-                                            let duration = engine.next_duration.take().flatten();
-                                            *engine.cf_pending.lock().unwrap() = Some(CrossfadeState {
-                                                buffer: buf,
-                                                pos: 0,
-                                                total_samples: total,
-                                            });
-                                            engine.cf_active.store(true, Ordering::Release);
-                                            engine.seek_tx = engine.next_seek_tx.take();
-                                            engine.repeat_one_tx = engine.next_repeat_one_tx.take();
-                                            engine.current_generation = engine.next_generation;
-                                            engine.current_info = Some(TrackInfo {
-                                                path: path.clone(),
-                                                duration,
-                                                started: Instant::now(),
-                                                offset: Duration::ZERO,
-                                            });
-                                            engine.next_seek_tx = None;
-                                            engine.next_repeat_one_tx = None;
-                                            engine.next_generation = 0;
-                                            let _ = engine.event_tx.try_send(AudioEvent::TrackAdvanced {
-                                                generation: engine.current_generation,
-                                                new_path: path,
-                                                duration,
-                                            });
-                                        } else {
-                                            tracing::warn!("[AUDIO] Deferred crossfade: preload_buffer still empty, using gapless handoff");
-                                            engine.perform_gapless_handoff();
-                                        }
-                                    }
+                                    // defensive :
+                                    // trigger_manual()/tick() both already bail when next.is_none()
+                                    // so nothing can have fired without a next slot already present before this load_next call
+                                    // included anyway for polling after every state changing DecisionThread call
+                                    // not just the two that are currently known to matter
+                                    // so a future change to that bail out logic doesn't reopen a missed emission gap here
+                                    poll_and_apply(engine, &emit);
+
+                                    tracing::debug!(
+                                        "[AUDIO] Gated preload ready and registered (gen {}), duration={:?}",
+                                        result.generation, duration
+                                    );
                                 }
                             }
                         }
@@ -348,46 +453,41 @@ impl PlaybackStateSync {
                                             );
                                             continue;
                                         }
-                                        if engine.next_path.is_some() && engine.next_seek_tx.is_some() {
-                                            engine.seek_tx = engine.next_seek_tx.take();
-                                            engine.repeat_one_tx = engine.next_repeat_one_tx.take();
-                                            engine.current_generation = engine.next_generation;
-                                            let duration = engine.next_duration.take().flatten();
-                                            let path = engine.next_path.take().unwrap_or_default();
-                                            engine.current_info = Some(TrackInfo {
-                                                path: path.clone(),
-                                                duration,
-                                                started: Instant::now(),
-                                                offset: Duration::ZERO,
-                                            });
-                                            emit(AudioEvent::TrackAdvanced {
-                                                generation: engine.current_generation,
-                                                new_path: path,
-                                                duration,
-                                            });
-                                        } else if engine.next_path.is_some() {
-                                            tracing::debug!(
-                                                "[AUDIO] TrackFinished but preload worker still in flight \
-                                                 (gen {}), waiting for result",
-                                                engine.next_generation
-                                            );
-                                            engine.current_generation = engine.next_generation;
-                                            engine.seek_tx = None;
-                                            engine.repeat_one_tx = None;
-                                            let path = engine.next_path.take().unwrap_or_default();
-                                            engine.current_info = Some(TrackInfo {
-                                                path: path.clone(),
-                                                duration: None,
-                                                started: Instant::now(),
-                                                offset: Duration::ZERO,
-                                            });
-                                            engine.next_duration = None;
-                                            engine.pending_track_advanced = true;
-                                        } else {
-                                            engine.seek_tx = None;
-                                            engine.repeat_one_tx = None;
-                                            engine.current_info = None;
-                                            emit(AudioEvent::TrackFinished { generation });
+
+                                        match directive::decide_natural_end_action(
+                                            engine.decision.next_slot().is_some(),
+                                            engine.gated_preload_generation,
+                                        ) {
+                                            directive::NaturalEndAction::GaplessHandoff => {
+                                                // gapless hand-off into the already decoded, preloaded next track
+                                                // if a crossfade/skip had already fired for this transition
+                                                // has_fired is already true and trigger_manualbelow is skipped
+                                                // poll_and_apply just observes the already fired state
+                                                if !engine.decision.has_fired() {
+                                                    engine.decision.trigger_manual();
+                                                }
+                                                poll_and_apply(engine, &emit);
+                                            }
+                                            directive::NaturalEndAction::DeferToInFlightPreload => {
+                                                // a preload is in flight but hasn't finished decoding yet
+                                                // nothing to gaplessly hand off to right now
+                                                // adopt its generation as "current"
+                                                // so the gated_open_result_rx arm's is_play branch recognizes the eventual result as this pending transition 
+                                                // and defer the TrackAdvanced emission
+                                                // until that result actually arrives
+                                                tracing::debug!(
+                                                    "[AUDIO] TrackFinished but preload worker still in flight \
+                                                     (gen {}), waiting for result",
+                                                    engine.gated_preload_generation
+                                                );
+                                                engine.current_generation = engine.gated_preload_generation;
+                                                engine.current_info = None;
+                                                engine.pending_track_advanced = true;
+                                            }
+                                            directive::NaturalEndAction::PlainFinish => {
+                                                engine.current_info = None;
+                                                emit(AudioEvent::TrackFinished { generation });
+                                            }
                                         }
                                     }
 

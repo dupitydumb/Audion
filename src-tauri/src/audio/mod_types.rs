@@ -34,6 +34,8 @@ pub enum AudioEvent {
     Error { message: String },
 }
 
+// the gated dual source pipeline (dual_track.rs) has no overlap buffer to capture a replay prefix from
+// sp every ReadySource in the pipeline is either 'Raw' or 'Resampled'
 pub enum ReadySource {
     Raw(SymphoniaSource),
     Resampled(RubatoResampler),

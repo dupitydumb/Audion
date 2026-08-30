@@ -165,8 +165,8 @@ export async function nativeAudioSetRepeatOne(enabled: boolean): Promise<void> {
 // =============================================================================
 
 export type AudioEventType =
-    | { type: 'TrackFinished' }
-    | { type: 'TrackAdvanced'; data: { new_path: string } }
+    | { type: 'TrackFinished'; data: { generation: number } }
+    | { type: 'TrackAdvanced'; data: { generation: number; new_path: string; duration: { secs: number; nanos: number } | null } }
     | { type: 'StateChanged'; data: { position: number } }
     | { type: 'DeviceListChanged'; data: { devices: DeviceList } }
     | { type: 'Error'; data: { message: string } };
