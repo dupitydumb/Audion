@@ -997,65 +997,60 @@
     }
 
     /* ── Mobile ── */
-    @media (max-width: 768px) {
-        .playlist-header {
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-            padding: calc(var(--safe-area-top) + var(--spacing-md))
-                var(--spacing-md) var(--spacing-md);
-            gap: var(--spacing-md);
-        }
+    :global(html.layout-mobile) .playlist-header {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: calc(var(--safe-area-top) + var(--spacing-md))
+            var(--spacing-md) var(--spacing-md);
+        gap: var(--spacing-md);
+    }
 
-        .header-actions {
-            top: calc(var(--safe-area-top) + var(--spacing-sm));
-            right: var(--spacing-sm);
-        }
+    :global(html.layout-mobile) .header-actions {
+        top: calc(var(--safe-area-top) + var(--spacing-sm));
+        right: var(--spacing-sm);
+    }
 
-        .playlist-cover {
-            width: 160px;
-            height: 160px;
-        }
+    :global(html.layout-mobile) .playlist-cover {
+        width: 160px;
+        height: 160px;
+    }
 
-        .playlist-info {
-            align-items: center;
-        }
+    :global(html.layout-mobile) .playlist-info {
+        align-items: center;
+    }
 
-        .playlist-title {
-            font-size: 1.5rem;
-            word-break: break-word;
-        }
+    :global(html.layout-mobile) .playlist-title {
+        font-size: 1.5rem;
+        word-break: break-word;
+    }
 
-        .edit-input {
-            font-size: 1.5rem;
-        }
+    :global(html.layout-mobile) .edit-input {
+        font-size: 1.5rem;
+    }
 
-        .playlist-meta {
-            flex-wrap: wrap;
-            justify-content: center;
-            margin-bottom: var(--spacing-md);
-        }
+    :global(html.layout-mobile) .playlist-meta {
+        flex-wrap: wrap;
+        justify-content: center;
+        margin-bottom: var(--spacing-md);
+    }
 
-        .playlist-actions {
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: var(--spacing-sm);
-        }
+    :global(html.layout-mobile) .playlist-actions {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: var(--spacing-sm);
+    }
 
-        .play-all-btn,
-        .add-songs-btn,
-        .btn-secondary {
-            padding: var(--spacing-sm) var(--spacing-lg);
-            font-size: var(--font-size-base);
-            min-height: 44px;
-        }
+    :global(html.layout-mobile) .play-all-btn,
+    :global(html.layout-mobile) .add-songs-btn,
+    :global(html.layout-mobile) .btn-secondary {
+        padding: var(--spacing-sm) var(--spacing-lg);
+        font-size: var(--font-size-base);
+        min-height: 44px;
+    }
 
-        .icon-btn {
-            min-width: 44px;
-            min-height: 44px;
-        }
-
-        .playlist-tracks {
-        }
+    :global(html.layout-mobile) .icon-btn {
+        min-width: 44px;
+        min-height: 44px;
     }
 </style>

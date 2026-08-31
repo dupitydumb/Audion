@@ -174,8 +174,8 @@ export async function setMiniPlayer(enable: boolean) {
                 const pipX = screenWidth - PIP_WIDTH - PIP_MARGIN;
                 const pipY = screenHeight - PIP_HEIGHT - PIP_MARGIN;
 
-                // ⚠️ Set store BEFORE resizing so that isMobile stays false
-                // when the resize event fires and isMobileViewport turns true.
+                // ⚠️ Set store BEFORE resizing so isMobile's PIP guard (!$pip)
+                // is already active when the resize happens.
                 isMiniPlayer.set(true);
 
                 // Resize and reposition

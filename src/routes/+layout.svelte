@@ -69,18 +69,20 @@
   let permissionDenied = false;
 
   $: {
-    if (migrationPhase === "loading") {
-      migrationStatus = $_("app.migratingCovers");
-    } else if (migrationPhase === "success") {
-      migrationStatus = $_("app.migrationSuccess", {
-        values: { tracks: migrationTracks, albums: migrationAlbums },
-      });
-    } else if (migrationPhase === "errors") {
-      migrationStatus = $_("app.migrationErrors", {
-        values: { count: migrationErrorCount },
-      });
-    } else {
-      migrationStatus = $_("app.migrationFailed");
+    if ($locale) {
+      if (migrationPhase === "loading") {
+        migrationStatus = $_("app.migratingCovers");
+      } else if (migrationPhase === "success") {
+        migrationStatus = $_("app.migrationSuccess", {
+          values: { tracks: migrationTracks, albums: migrationAlbums },
+        });
+      } else if (migrationPhase === "errors") {
+        migrationStatus = $_("app.migrationErrors", {
+          values: { count: migrationErrorCount },
+        });
+      } else {
+        migrationStatus = $_("app.migrationFailed");
+      }
     }
   }
 

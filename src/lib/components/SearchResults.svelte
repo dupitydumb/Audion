@@ -486,12 +486,10 @@
         padding: var(--spacing-md);
     }
 
-    @media (max-width: 768px) {
-        .search-results {
-            padding-bottom: calc(
-                var(--mobile-bottom-inset, 130px) + var(--spacing-md)
-            );
-        }
+    :global(html.layout-mobile) .search-results {
+        padding-bottom: calc(
+            var(--mobile-bottom-inset, 130px) + var(--spacing-md)
+        );
     }
 
     .no-results {

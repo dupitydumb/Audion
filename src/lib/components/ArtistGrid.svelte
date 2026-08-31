@@ -214,9 +214,7 @@
     color: var(--text-primary);
   }
 
-  @media (max-width: 768px) {
-    .artist-initial {
-      font-size: 2rem;
-    }
+  :global(html.layout-mobile) .artist-initial {
+    font-size: 2rem;
   }
 </style>

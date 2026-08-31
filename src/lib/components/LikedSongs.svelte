@@ -418,25 +418,20 @@
         color: var(--text-secondary);
     }
 
-    @media (max-width: 768px) {
-        .liked-header {
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-            padding: calc(var(--safe-area-top) + var(--spacing-md))
-                var(--spacing-md) var(--spacing-md);
-        }
+    :global(html.layout-mobile) .liked-header {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: calc(var(--safe-area-top) + var(--spacing-md))
+            var(--spacing-md) var(--spacing-md);
+    }
 
-        .liked-gradient-bg {
-            width: 120px;
-            height: 120px;
-        }
+    :global(html.layout-mobile) .liked-gradient-bg {
+        width: 120px;
+        height: 120px;
+    }
 
-        .liked-title {
-            font-size: 2rem;
-        }
-
-        .liked-body {
-        }
+    :global(html.layout-mobile) .liked-title {
+        font-size: 2rem;
     }
 </style>
