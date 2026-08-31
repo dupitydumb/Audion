@@ -1,9 +1,9 @@
 {
   "app": {
     "logoAlt": "Logo de Audion",
-    "notInTauriTitle": "Abre la aplicación de escritorio Tauri",
-    "notInTauriDesc": "Esta aplicación requiere la ventana de escritorio de Tauri para funcionar.",
-    "notInTauriHint": "La ventana de Tauri debería abrirse automáticamente al ejecutar",
+    "tauriRequired": "Abre la aplicación de escritorio Tauri",
+    "tauriRequiredDesc": "Esta aplicación requiere la ventana de escritorio de Tauri para funcionar.",
+    "tauriRunHint": "La ventana de Tauri debería abrirse automáticamente al ejecutar",
     "loadingLibrary": "Cargando tu biblioteca musical..."
   },
   "contextMenu": {
@@ -96,7 +96,11 @@
     "pinned": "Fijado arriba",
     "continueListening": "Continuar escuchando",
     "recentlyAdded": "Añadido recientemente",
-    "stats": "Tus estadísticas"
+    "stats": {
+      "plays": "Reproducciones",
+      "timePlayed": "Tiempo escuchado",
+      "topArtist": "Artista principal"
+    }
   },
   "sidebar": {
     "library": "Biblioteca",
@@ -173,6 +177,8 @@
     "restartNow": "Reiniciar ahora",
     "equalizer": "Ecualizador",
     "equalizerDesc": "Ajusta los niveles de frecuencia en múltiples bandas",
+    "equalizerBandCount": "{count} bandas",
+    "customizeEqualizer": "Personalizar ecualizador",
     "customPreset": "Personalizado",
     "resetToFlat": "Restablecer a plano",
     "community": "Comunidad",

@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import { onMount } from "svelte";
     import { fade, fly } from "svelte/transition";
     import {
@@ -73,8 +74,10 @@
 
 <div class="rec-view">
     <header class="view-header">
-        <h1>Discover</h1>
-        <p class="subtitle">Personalised picks from ListenBrainz</p>
+        <h1>{$_("sidebar.discover")}</h1>
+        <p class="subtitle">
+            {$_("recs.subtitle")}
+        </p>
         {#if state === "done"}
             <button
                 class="refresh-btn"
@@ -92,7 +95,7 @@
                     <polyline points="23 4 23 10 17 10"></polyline>
                     <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
                 </svg>
-                Refresh
+                {$_("recs.refresh")}
             </button>
         {/if}
     </header>
@@ -101,7 +104,9 @@
         {#if state === "idle" || state === "loading"}
             <div class="state-card" in:fade>
                 <div class="spinner"></div>
-                <p>Fetching recommendations…</p>
+                <p>
+                    {$_("recs.fetching")}
+                </p>
             </div>
         {:else if state === "not-configured"}
             <div class="state-card" in:fade>
@@ -116,13 +121,14 @@
                     <circle cx="12" cy="12" r="10"></circle>
                     <path d="M12 8v4m0 4h.01"></path>
                 </svg>
-                <h3>ListenBrainz not set up</h3>
+                <h3>
+                    {$_("recs.notConfiguredTitle")}
+                </h3>
                 <p>
-                    Enable ListenBrainz and save a token in Settings to receive
-                    personalised recommendations.
+                    {$_("recs.notConfiguredDesc")}
                 </p>
                 <button class="action-btn" on:click={goToSettings}
-                    >Open Settings</button
+                    >{$_("common.openSettings")}</button
                 >
             </div>
         {:else if state === "error"}
@@ -139,9 +145,13 @@
                     <line x1="12" y1="8" x2="12" y2="12"></line>
                     <line x1="12" y1="16" x2="12.01" y2="16"></line>
                 </svg>
-                <h3>Could not load recommendations</h3>
+                <h3>
+                    {$_("recs.errorTitle")}
+                </h3>
                 <p>{errorMessage}</p>
-                <button class="action-btn" on:click={load}>Try again</button>
+                <button class="action-btn" on:click={load}
+                    >{$_("common.tryAgain")}</button
+                >
             </div>
         {:else if state === "done" && recs.length === 0}
             <div class="state-card" in:fade>
@@ -159,21 +169,22 @@
                     <line x1="1" y1="1" x2="23" y2="23" stroke-width="1.5"
                     ></line>
                 </svg>
-                <h3>No recommendations yet</h3>
+                <h3>
+                    {$_("recs.emptyTitle")}
+                </h3>
                 <p>
-                    ListenBrainz hasn't generated personalised picks for your
-                    account yet. This usually happens after scrobbling a few
-                    albums — check back in a day or two.
+                    {$_("recs.emptyDesc")}
                 </p>
                 <div class="empty-actions">
                     <button class="action-btn" on:click={load}
-                        >Check again</button
+                        >{$_("recs.checkAgain")}</button
                     >
                     <a
                         class="action-link"
                         href="https://listenbrainz.org"
                         target="_blank"
-                        rel="noreferrer">View on ListenBrainz ↗</a
+                        rel="noreferrer"
+                        >{$_("recs.viewOnListenBrainz")}</a
                     >
                 </div>
             </div>
@@ -264,7 +275,7 @@
                             {:else}
                                 <span
                                     class="not-in-library"
-                                    title="Search in Discover"
+                                    title={$_("recs.searchInDiscover")}
                                 >
                                     <svg
                                         viewBox="0 0 24 24"

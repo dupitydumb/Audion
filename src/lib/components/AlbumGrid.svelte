@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import type { Album } from "$lib/api/tauri";
     import { goToAlbumDetail, goToArtistDetail } from "$lib/stores/view";
     import ArtistLinks from "./ArtistLinks.svelte";
@@ -20,7 +21,6 @@
     import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
     import { pinnedItems, isPinned } from "$lib/stores/pinned";
     import { buildAlbumContextMenu } from "$lib/menus/contextMenus";
-    import { _ } from "svelte-i18n";
 
     let currentScrollTop = getScroll("albums");
 
@@ -109,8 +109,8 @@
 
     const emptyState = {
         icon: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"/></svg>`,
-        title: "No albums found",
-        description: "Add a music folder to see your albums",
+        title: $_("album.noAlbumsFound"),
+        description: $_("album.emptyHint"),
     };
 </script>
 
@@ -134,9 +134,9 @@
         {isNowPlaying}
         {isPaused}
         isPinned={isPinned("album", album.id, $pinnedItems)}
-        playTooltip="Play album"
-        resumeTooltip="Resume album"
-        pauseTooltip="Pause"
+        playTooltip={$_("common.playAlbum")}
+        resumeTooltip={$_("common.resumeAlbum")}
+        pauseTooltip={$_("common.pause")}
         ariaLabel={album.name}
         primaryText={album.name}
         on:play={() => playAlbum(album)}
@@ -144,7 +144,7 @@
     >
         <svelte:fragment slot="secondary" let:isActive>
             <ArtistLinks
-                artist={album.artist}
+                artist={album.artist || $_("common.unknownArtist")}
                 artists={album.artists}
                 chipClass="text-inner secondary-link"
                 marquee

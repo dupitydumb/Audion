@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import { onMount } from "svelte";
     import { get } from "svelte/store";
     import {
@@ -309,10 +310,10 @@
                 </div>
                 <div class="track-details">
                     <span class="track-title truncate"
-                        >{$currentTrack.title || "Unknown Title"}</span
+                        >{$currentTrack.title || $_('player.unknownTitle')}</span
                     >
                     <ArtistLinks
-                        artist={$currentTrack.artist}
+                        artist={$currentTrack.artist || $_('common.unknownArtist')}
                         artists={$currentTrack.artists}
                         chipClass="track-artist truncate"
                         marquee
@@ -329,8 +330,8 @@
                     on:click|stopPropagation={() =>
                         $currentTrack && toggleLike($currentTrack.id)}
                     title={isCurrentLiked
-                        ? "Remove from Liked Songs"
-                        : "Add to Liked Songs"}
+                        ? $_('player.removeFromLiked')
+                        : $_('player.addToLiked')}
                 >
                     <svg
                         viewBox="0 0 24 24"
@@ -351,7 +352,7 @@
                 </button>
             {:else}
                 <div class="no-track">
-                    <span>No track playing</span>
+                    <span>{$_('player.noTrack')}</span>
                 </div>
             {/if}
             <!-- Plugin slot: Left -->
@@ -365,7 +366,7 @@
                     class="icon-btn"
                     class:active={$shuffle}
                     on:click={toggleShuffle}
-                    title="Shuffle"
+                    title={$_('player.shuffle')}
                 >
                     <svg
                         viewBox="0 0 24 24"
@@ -381,7 +382,7 @@
                 <button
                     class="icon-btn"
                     on:click={previousTrack}
-                    title="Previous"
+                    title={$_('player.previous')}
                 >
                     <svg
                         viewBox="0 0 24 24"
@@ -395,7 +396,7 @@
                 <button
                     class="play-btn"
                     on:click={togglePlay}
-                    title={$isPlaying ? "Pause" : "Play"}
+                    title={$isPlaying ? $_('common.pause') : $_('common.play')}
                 >
                     {#if $isPlaying}
                         <svg
@@ -417,7 +418,7 @@
                         </svg>
                     {/if}
                 </button>
-                <button class="icon-btn" on:click={nextTrack} title="Next">
+                <button class="icon-btn" on:click={nextTrack} title={$_('player.next')}>
                     <svg
                         viewBox="0 0 24 24"
                         fill="currentColor"
@@ -431,7 +432,16 @@
                     class="icon-btn"
                     class:active={$repeat !== "none"}
                     on:click={cycleRepeat}
-                    title="Repeat: {$repeat}"
+                    title={$_('player.repeatMode', {
+                        values: {
+                            mode:
+                                $repeat === 'one'
+                                    ? $_('player.repeatOne')
+                                    : $repeat === 'all'
+                                      ? $_('player.repeatAll')
+                                      : $_('player.repeatOff'),
+                        },
+                    })}
                 >
                     <svg
                         viewBox="0 0 24 24"
@@ -452,7 +462,7 @@
             <!-- Progress bar -->
             <div class="progress-container">
                 {#if isLive}
-                    <span class="live-badge">LIVE</span>
+                    <span class="live-badge">{$_('player.live')}</span>
                     <div class="progress-bar live-bar">
                         <div class="progress-track">
                             <div class="progress-fill live-fill"></div>
@@ -499,16 +509,16 @@
             <div class="utility-controls">
                 <!-- Backend indicator -->
                 {#if $activeBackend === 'native'}
-                    <span class="backend-badge native" title="Native audio (Rust/rodio)">N</span>
+                    <span class="backend-badge native" title={$_('player.nativeAudioBackend')}>N</span>
                 {:else if $activeBackend === 'html5'}
-                    <span class="backend-badge html5" title="HTML5 audio (WebAudio)">H</span>
+                    <span class="backend-badge html5" title={$_('player.html5AudioBackend')}>H</span>
                 {/if}
                 <!-- Connect button moved into utility group -->
                 <button
                     class="icon-btn connect-btn"
                     class:active={connectedDevices > 0}
                     on:click={() => (showConnectPanel = !showConnectPanel)}
-                    title="Connect to a device"
+                    title={$_('connect.title')}
                 >
                     <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
                         <path d="M19,2H5A3,3,0,0,0,2,5V15a3,3,0,0,0,3,3H9.17l-1.42,1.41a1,1,0,0,0,0,1.42,1,1,0,0,0,1.42,0L11,18.99,12.83,20.83a1,1,0,0,0,1.42,0,1,1,0,0,0,0-1.42L12.83,18H19a3,3,0,0,0,3-3V5A3,3,0,0,0,19,2Zm1,13a1,1,0,0,1-1,1H5a1,1,0,0,1-1-1V5A1,1,0,0,1,5,4H19a1,1,0,0,1,1,1Z"/>
@@ -523,8 +533,8 @@
                         class:active={$sleepTimerActive}
                         on:click={toggleSleepTimerMenu}
                         title={$sleepTimerActive
-                            ? `Sleep timer: ${formatSleepTimerRemaining($sleepTimerRemainingMs)} remaining`
-                            : "Sleep timer"}
+                            ? $_('player.sleepTimerRemaining', { values: { remaining: formatSleepTimerRemaining($sleepTimerRemainingMs) } })
+                            : $_('player.sleepTimer')}
                     >
                         <svg
                             viewBox="0 0 24 24"
@@ -541,7 +551,7 @@
                     {#if showSleepTimerMenu}
                         <div class="sleep-timer-menu">
                             <div class="sleep-timer-header">
-                                <span class="sleep-timer-title">Sleep timer</span>
+                                <span class="sleep-timer-title">{$_('player.sleepTimer')}</span>
                                 {#if $sleepTimerActive}
                                     <span class="sleep-timer-remaining"
                                         >{formatSleepTimerRemaining(
@@ -571,7 +581,7 @@
                                     class="sleep-cancel-btn"
                                     on:click={cancelSleepTimer}
                                 >
-                                    Cancel timer
+                                    {$_('player.cancelTimer')}
                                 </button>
                             {/if}
                         </div>
@@ -582,7 +592,7 @@
                     class="icon-btn"
                     class:active={$isQueueVisible}
                     on:click={toggleQueue}
-                    title="Queue (Q)"
+                    title={$_('player.queueShortcut')}
                 >
                     <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
                         <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z" />
@@ -592,7 +602,7 @@
                     class="icon-btn"
                     class:active={$lyricsVisible}
                     on:click={toggleLyrics}
-                    title="Lyrics (L)"
+                    title={$_('player.lyricsShortcut')}
                 >
                     <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
                         <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6zm-2 16c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z" />
@@ -602,7 +612,7 @@
                     class="icon-btn"
                     class:active={$pluginDrawerOpen}
                     on:click={() => pluginDrawerOpen.set(true)}
-                    title="Plugin Actions"
+                    title={$_('player.pluginActions')}
                 >
                     <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
                         <path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z" />
@@ -614,7 +624,7 @@
                 <button
                     class="icon-btn"
                     on:click={() => setVolume($volume > 0 ? 0 : 1)}
-                    title={$volume > 0 ? "Mute (M)" : "Unmute (M)"}
+                    title={$volume > 0 ? $_('player.mute') : $_('player.unmute')}
                 >
                     {#if $volume === 0}
                         <svg
@@ -679,7 +689,7 @@
                     class="icon-btn"
                     class:active={$isFullScreen}
                     on:click={toggleFullScreen}
-                    title="Fullscreen"
+                    title={$_('player.fullscreen')}
                 >
                     {#if $isFullScreen}
                         <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
@@ -694,7 +704,7 @@
                 <button
                     class="icon-btn"
                     on:click={toggleMiniPlayer}
-                    title="Mini Player (P)"
+                    title={$_('player.miniPlayer')}
                 >
                     <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
                         <path d="M19 11h-8v6h8v-6zm4 8V4.98C23 3.88 22.1 3 21 3H3c-1.1 0-2 .88-2 1.98V19c0 1.1.9 2 2 2h18c1.1 0 2-.9 2-2zm-2 .02H3V4.97h18v14.05z" />

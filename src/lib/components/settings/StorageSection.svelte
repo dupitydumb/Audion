@@ -379,8 +379,8 @@
       <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
     </svg>
     <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.storage', { default: 'Storage' })}</span>
-      <span class="accordion-subtitle">{$_('settings.storageSubtitle', { default: 'Manage cache, offline downloads, and directory paths' })}</span>
+      <span class="accordion-title">{$_('settings.storage')}</span>
+      <span class="accordion-subtitle">{$_('settings.storageSubtitle')}</span>
     </div>
     <svg class="accordion-chevron" class:rotated={open} viewBox="0 0 24 24" width="16" height="16">
       <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
@@ -390,12 +390,12 @@
     <div class="section-body" transition:slide|local>
       <div class="settings-card">
         <div class="inner-section">
-          <span class="setting-title">{$_('settings.downloadLocation', { default: 'Download location' })}</span>
+          <span class="setting-title">{$_('settings.downloadLocation')}</span>
           <div class="path-selector">
-            <div class="setting-description path-display" style="margin-top: 0;" title={$appSettings.downloadLocation || $_('settings.noDownloadLocation', { default: 'Not set' })}>
-              {$appSettings.downloadLocation || $_('settings.noDownloadLocation', { default: 'No download location set' })}
+            <div class="setting-description path-display" style="margin-top: 0;" title={$appSettings.downloadLocation || $_('settings.noDownloadLocation')}>
+              {$appSettings.downloadLocation || $_('settings.noDownloadLocation')}
             </div>
-            <button class="selector-btn" on:click={handleSetDownloadLocation} aria-label={$_('settings.change', { default: 'Change location' })}>{$_('settings.change', { default: 'Change' })}</button>
+            <button class="selector-btn" on:click={handleSetDownloadLocation} aria-label={$_('settings.change')}>{$_('settings.change')}</button>
           </div>
         </div>
 
@@ -459,23 +459,23 @@
         <div class="divider"></div>
 
         <div class="card-title-group compact">
-          <h3 class="setting-title">{$_('settings.coverManagement', { default: 'Cover Management' })}</h3>
-          <span class="setting-description">{$_('settings.coverManagementDesc', { default: 'Sync or merge cover files to save space' })}</span>
+          <h3 class="setting-title">{$_('settings.coverManagement')}</h3>
+          <span class="setting-description">{$_('settings.coverManagementDesc')}</span>
         </div>
 
         <div class="button-group-row">
           <button class="btn-outline-compact" on:click={handleSyncCovers} disabled={isSyncingCovers}>
-            {isSyncingCovers ? $_('settings.syncing', { default: 'Syncing...' }) : $_('settings.syncCovers', { default: 'Sync Covers' })}
+            {isSyncingCovers ? $_('settings.syncing') : $_('settings.syncCovers')}
           </button>
           <button class="btn-outline-compact" on:click={handleMergeDuplicateCovers} disabled={isMergingCovers}>
-            {isMergingCovers ? $_('settings.merging', { default: 'Merging...' }) : $_('settings.mergeDuplicates', { default: 'Merge Duplicates' })}
+            {isMergingCovers ? $_('settings.merging') : $_('settings.mergeDuplicates')}
           </button>
         </div>
 
         {#if isSyncingCovers || isMergingCovers}
           <div class="divider"></div>
           <div class="progress-notice-inline">
-            <span class="setting-description animate-pulse">{$_('settings.processingCovers', { default: 'Processing covers... view details below for progress' })}</span>
+            <span class="setting-description animate-pulse">{$_('settings.processingCovers')}</span>
           </div>
         {/if}
       </div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n";
   import { createEventDispatcher, onDestroy } from "svelte";
   import MarqueeText from "$lib/components/MarqueeText.svelte";
 
@@ -90,9 +91,9 @@
   on:click={(e) => dispatch("click", e)}
 >
   {#if isNowPlaying}
-    <div class="badge" aria-hidden="true">Now Playing</div>
+    <div class="badge" aria-hidden="true">{$_('player.nowPlaying')}</div>
   {:else if isPaused}
-    <div class="badge paused-badge" aria-hidden="true">Paused</div>
+    <div class="badge paused-badge" aria-hidden="true">{$_('player.paused')}</div>
   {/if}
 
   <div

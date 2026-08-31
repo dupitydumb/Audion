@@ -136,7 +136,7 @@
 
         if (needsDownloadLocation()) {
             addToast(
-                "Please configure a download location in Settings first",
+                $_("playlist.configureDownloadLocation"),
                 "error",
             );
             // Optionally redirect to settings
@@ -144,7 +144,7 @@
         }
 
         isDownloading = true;
-        downloadProgress = "Starting...";
+        downloadProgress = $_("playlist.downloadStarting");
 
         try {
             const result = await downloadTracks(
@@ -168,7 +168,10 @@
             showDownloadResult(result);
         } catch (error) {
             console.error("Download failed:", error);
-            addToast("Download failed unexpectedly", "error");
+            addToast(
+                $_("playlist.downloadFailed"),
+                "error",
+            );
         } finally {
             isDownloading = false;
             downloadProgress = "";
@@ -270,10 +273,11 @@
                 <h1 class="album-title">{album.name}</h1>
                 <div class="album-meta">
                     <ArtistLinks
-                        artist={album.artist}
+                        artist={album.artist || $_("common.unknownArtist")}
                         artists={album.artists}
                         chipClass="album-artist link"
                         wrapClass="album-artist-links"
+                        chipTitle={$_("contextMenu.goToArtist")}
                         on:select={(e) => goToArtistDetail(e.detail)}
                     />
                     <span class="separator">•</span>

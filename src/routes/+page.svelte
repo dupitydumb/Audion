@@ -1,7 +1,7 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n";
   import { onMount, tick } from "svelte";
   import { get } from "svelte/store";
-  import { _ } from "svelte-i18n";
   import "../app.css";
   import Sidebar from "$lib/components/Sidebar.svelte";
   import MainView from "$lib/components/MainView.svelte";
@@ -200,12 +200,13 @@
       <p
         style="color: var(--text-primary); font-size: 1.1rem; margin-top: 1rem;"
       >
-        {$_('app.notInTauriTitle', { default: '🖥️ Please open the Tauri desktop app' })}
+        🖥️ {$_('app.tauriRequired')}
       </p>
-      <p>{$_('app.notInTauriDesc', { default: 'This app requires the Tauri desktop window to function.' })}</p>
+      <p>{$_('app.tauriRequiredDesc')}</p>
       <p style="opacity: 0.7; font-size: 0.8rem;">
-        {$_('app.notInTauriHint', { default: 'The Tauri window should open automatically when running' })}
-        <code>npm run tauri dev</code>
+        {$_('app.tauriRunHint')} <code
+          >npm run tauri dev</code
+        >
       </p>
     </div>
   {:else if isLoading}
@@ -221,7 +222,7 @@
         <span style="view-transition-name: app-logo-text;">Audion</span>
       </div>
       <div class="loading-spinner"></div>
-      <p>{$_('app.loadingLibrary', { default: 'Loading your music library...' })}</p>
+      <p>{$_('app.loadingLibrary')}</p>
     </div>
   {:else}
     {#if $isMiniPlayer}

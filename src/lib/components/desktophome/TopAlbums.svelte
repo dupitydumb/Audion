@@ -43,9 +43,9 @@
             x: e.clientX,
             y: e.clientY,
             items: [
-                { label: "Play", action: () => playAlbum(album) },
-                { label: "Go to Album", action: () => goToAlbumDetail(album.id) },
-                { label: "Go to Artist", action: () => goToArtistDetail((album.artists && album.artists[0]) || album.artist || "") },
+                { label: $_('contextMenu.play'), action: () => playAlbum(album) },
+                { label: $_('contextMenu.goToAlbum'), action: () => goToAlbumDetail(album.id) },
+                { label: $_('contextMenu.goToArtist'), action: () => goToArtistDetail((album.artists && album.artists[0]) || album.artist || "") },
             ],
         });
     }
@@ -117,9 +117,10 @@
                     </MarqueeText>
                     <span class="top-track-artist">
                         <ArtistLinks
-                            artist={album.artist}
+                            artist={album.artist || $_('common.unknownArtist')}
                             artists={album.artists}
                             chipClass="link"
+                            chipTitle={$_('contextMenu.goToArtist')}
                             marquee
                             marqueeTrigger="external"
                             marqueeActive={hoveredAlbumId === album.id}
@@ -128,7 +129,7 @@
                         />
                     </span>
                 </div>
-                <span class="top-track-plays">{play_count} plays</span>
+                <span class="top-track-plays">{$_('home.playsCount', { values: { count: play_count } })}</span>
             </div>
         {/each}
     </div>

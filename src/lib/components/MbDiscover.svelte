@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import { onMount } from "svelte";
     import { formatTrackArtists } from "$lib/utils/artists";
     import { fade, fly } from "svelte/transition";
@@ -275,7 +276,7 @@
 
             if (!streamUrl) {
                 addToast(
-                    "No stream URL available in ListenBrainz metadata",
+                    $_("discover.noStreamUrl"),
                     "error",
                 );
                 return;
@@ -308,7 +309,10 @@
             playTracks([audionTrack], 0);
         } catch (e) {
             console.error("[MbDiscover] Metadata lookup error:", e);
-            addToast("Failed to lookup ListenBrainz metadata", "error");
+            addToast(
+                $_("discover.metadataLookupFailed"),
+                "error",
+            );
         } finally {
             playingStreamId = null;
         }
@@ -378,10 +382,9 @@
                     />
                 </svg>
                 <div>
-                    <h1>Discover</h1>
+                    <h1>{$_("sidebar.discover")}</h1>
                     <p class="header-subtitle">
-                        Search MusicBrainz to find artists &amp; albums beyond
-                        your library
+                        {$_("discover.subtitle")}
                     </p>
                 </div>
             </div>
@@ -404,7 +407,7 @@
             <input
                 type="text"
                 class="search-input"
-                placeholder="Search for artists, albums, songs…"
+                placeholder={$_("discover.searchPlaceholder")}
                 bind:value={searchInput}
                 on:input={debounceSearch}
                 on:keydown={handleKeydown}
@@ -453,7 +456,7 @@
                         d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
                     />
                 </svg>
-                Artists
+                {$_("discover.tabArtists")}
             </button>
             <button
                 class="tab"
@@ -470,7 +473,7 @@
                         d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
                     />
                 </svg>
-                Albums &amp; Releases
+                {$_("discover.tabReleases")}
             </button>
         </div>
     </header>
@@ -490,15 +493,19 @@
                         d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"
                     />
                 </svg>
-                <p>Search the MusicBrainz database</p>
+                <p>
+                    {$_("discover.emptyTitle")}
+                </p>
                 <span class="hint"
-                    >Type an artist name, album title, or keyword to get started</span
+                    >{$_("discover.emptyHint")}</span
                 >
             </div>
         {:else if searchState === "loading"}
             <div class="loading-state" in:fade={{ duration: 150 }}>
                 <div class="spinner"></div>
-                <p>Searching MusicBrainz…</p>
+                <p>
+                    {$_("discover.searching")}
+                </p>
             </div>
         {:else if searchState === "error"}
             <div class="error-state" in:fade={{ duration: 200 }}>
@@ -513,7 +520,9 @@
                         d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
                     />
                 </svg>
-                <p>Search failed</p>
+                <p>
+                    {$_("discover.searchFailedTitle")}
+                </p>
                 <span class="hint">{errorMsg}</span>
             </div>
         {:else if searchState === "done"}
@@ -522,10 +531,10 @@
                 {#if artistResults.length === 0}
                     <div class="no-results" in:fade={{ duration: 200 }}>
                         <p>
-                            No artists found for "<strong>{lastQuery}</strong>"
+                            {$_("discover.noArtistsFoundFor")} "<strong>{lastQuery}</strong>"
                         </p>
                         <span class="hint"
-                            >Try a different spelling or keyword</span
+                            >{$_("discover.tryDifferentKeyword")}</span
                         >
                     </div>
                 {:else}
@@ -585,10 +594,10 @@
                 {#if releaseResults.length === 0}
                     <div class="no-results" in:fade={{ duration: 200 }}>
                         <p>
-                            No releases found for "<strong>{lastQuery}</strong>"
+                            {$_("discover.noReleasesFoundFor")} "<strong>{lastQuery}</strong>"
                         </p>
                         <span class="hint"
-                            >Try a different spelling or keyword</span
+                            >{$_("discover.tryDifferentKeyword")}</span
                         >
                     </div>
                 {:else}
@@ -703,14 +712,18 @@
                 {#if detailLoading}
                     <div class="detail-loading">
                         <div class="spinner"></div>
-                        <p>Loading artist info…</p>
+                        <p>
+                            {$_("discover.loadingArtistInfo")}
+                        </p>
                     </div>
                 {:else if detailInfo}
                     <div class="detail-body">
                         <!-- Bio -->
                         {#if detailInfo.bio}
                             <section class="detail-section">
-                                <h3>Biography</h3>
+                                <h3>
+                                    {$_("discover.biography")}
+                                </h3>
                                 <p class="bio-text">{detailInfo.bio}</p>
                                 {#if detailInfo.wikipedia_url}
                                     <a
@@ -719,7 +732,7 @@
                                         target="_blank"
                                         rel="noopener noreferrer"
                                     >
-                                        Read more on Wikipedia →
+                                        {$_("discover.readMoreOnWikipedia")}
                                     </a>
                                 {/if}
                             </section>
@@ -728,7 +741,9 @@
                         <!-- Genres -->
                         {#if detailInfo.genres.length > 0}
                             <section class="detail-section">
-                                <h3>Genres</h3>
+                                <h3>
+                                    {$_("artist.genres")}
+                                </h3>
                                 <div class="genre-pills detail-genres">
                                     {#each detailInfo.genres as genre}
                                         <span class="genre-pill">{genre}</span>
@@ -739,7 +754,7 @@
 
                         <!-- Meta chips -->
                         <section class="detail-section">
-                            <h3>Details</h3>
+                            <h3>{$_("discover.details")}</h3>
                             <div class="card-meta detail-meta">
                                 {#if detailArtist.artist_type}
                                     <span class="meta-chip type-chip"
@@ -761,11 +776,15 @@
 
                         <!-- Tracks -->
                         <section class="detail-section">
-                            <h3>Featured Tracks</h3>
+                            <h3>
+                                {$_("discover.featuredTracks")}
+                            </h3>
                             {#if detailArtistTracksLoading}
                                 <div class="tracks-loading">
                                     <div class="spinner-small"></div>
-                                    <p>Fetching tracks…</p>
+                                    <p>
+                                        {$_("discover.fetchingTracks")}
+                                    </p>
                                 </div>
                             {:else if detailArtistTracks.length > 0}
                                 <div class="tracks-list">
@@ -793,7 +812,8 @@
                                                         e.stopPropagation();
                                                         playOnPlayback(track);
                                                     }}
-                                                    title="Play Stream"
+                                                    title={$_(
+                                                        "discover.playStream")}
                                                 >
                                                     {#if playingStreamId === track.mbid}
                                                         <div
@@ -811,14 +831,16 @@
                                                             />
                                                         </svg>
                                                     {/if}
-                                                    Play
+                                                    {$_("discover.play")}
                                                 </button>
                                             </div>
                                         </div>
                                     {/each}
                                 </div>
                             {:else}
-                                <p class="no-tracks">No tracks found.</p>
+                                <p class="no-tracks">
+                                    {$_("discover.noTracksFound")}
+                                </p>
                             {/if}
                         </section>
 
@@ -826,7 +848,9 @@
                         {#if detailDiscography.length > 0}
                             <section class="detail-section">
                                 <div class="disco-header">
-                                    <h3>Discography</h3>
+                                    <h3>
+                                        {$_("discover.discography")}
+                                    </h3>
                                     {#if hiddenCount > 0 || showAllReleaseTypes}
                                         <button
                                             class="disco-filter-btn"
@@ -835,8 +859,11 @@
                                                     !showAllReleaseTypes)}
                                         >
                                             {showAllReleaseTypes
-                                                ? "Albums & Singles only"
-                                                : `Show all (${detailDiscography.length})`}
+                                                ? $_(
+                                                      "discover.albumsAndSinglesOnly")
+                                                : $_("discover.showAllCount", { values: {
+                                                          count: detailDiscography.length,
+                                                      } })}
                                         </button>
                                     {/if}
                                 </div>
@@ -1089,11 +1116,13 @@
                     </div>
 
                     <section class="detail-section">
-                        <h3>Tracks</h3>
+                        <h3>{$_("common.tracks")}</h3>
                         {#if detailReleaseLoading}
                             <div class="detail-loading">
                                 <div class="spinner"></div>
-                                <p>Fetching tracklist…</p>
+                                <p>
+                                    {$_("discover.fetchingTracklist")}
+                                </p>
                             </div>
                         {:else if detailReleaseTracks.length > 0}
                             <div class="mb-track-list">
@@ -1113,7 +1142,8 @@
                                         <div class="track-actions">
                                             <button
                                                 class="play-tidal-btn"
-                                                title="Play Stream"
+                                                title={$_(
+                                                    "discover.playStream")}
                                                 on:click={(e) => {
                                                     e.stopPropagation();
                                                     playOnPlayback(track);
@@ -1143,7 +1173,9 @@
                                 {/each}
                             </div>
                         {:else}
-                            <p class="hint">No tracks found for this release</p>
+                            <p class="hint">
+                                {$_("discover.noTracksForRelease")}
+                            </p>
                         {/if}
                     </section>
                 </div>

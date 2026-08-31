@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n";
   import type { Track } from "$lib/api/tauri";
   import ArtistLinks from "$lib/components/ArtistLinks.svelte";
   import { formatDuration } from "$lib/api/tauri";
@@ -43,7 +44,7 @@
   }
 
   function formatDateAdded(dateAdded?: string | null): string {
-    if (!dateAdded) return "Unknown";
+    if (!dateAdded) return $_('common.unknown');
 
     const raw = dateAdded.trim();
     const isoLike = raw.replace(" ", "T").replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
@@ -108,7 +109,7 @@
       on:pointerdown={(e) => onPointerDown(e, actualIndex)}
       on:click|stopPropagation
       on:dblclick|stopPropagation
-      title="Drag to reorder"
+      title={$_('player.dragToReorder')}
       role="button"
       tabindex="-1"
     >
@@ -190,11 +191,11 @@
     <div class="col-title">
       <div class="title-row">
         <span class="track-name truncate"
-          >{track.title || "Unknown Title"}</span
+          >{track.title || $_('player.unknownTitle')}</span
         >
 
         {#if !track.source_type || track.source_type === "local" || track.local_src}
-          <span class="downloaded-icon" title="Downloaded">
+          <span class="downloaded-icon" title={$_('album.downloaded')}>
             <svg
               viewBox="0 0 24 24"
               fill="currentColor"
@@ -230,7 +231,7 @@
         {/if}
       </div>
       <ArtistLinks
-        artist={track.artist}
+        artist={track.artist || $_('common.unknownArtist')}
         artists={track.artists}
         chipClass="track-artist truncate"
         marquee
@@ -269,10 +270,10 @@
       </span>
       <div class="artist-meta">
         <span class="track-name truncate"
-          >{track.title || "Unknown Title"}</span
+          >{track.title || $_('player.unknownTitle')}</span
         >
         <ArtistLinks
-          artist={track.artist}
+          artist={track.artist || $_('common.unknownArtist')}
           artists={track.artists}
           chipClass="track-artist truncate"
           marquee
@@ -283,7 +284,7 @@
         />
         {#if showAdvancedMetadata}
           <span class="media-metadata truncate">
-            {track.format ? track.format.toUpperCase() : "Unknown format"}
+            {track.format ? track.format.toUpperCase() : $_('trackList.unknownFormat')}
             {#if track.bitrate} • {track.bitrate} kbps{/if}
             {#if track.source_type} • {track.source_type}{/if}
           </span>

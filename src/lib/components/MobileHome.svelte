@@ -158,7 +158,7 @@
 
             if (path.startsWith("content://")) {
                 addToast(
-                    "Folder URI not supported yet. Please pick a local Music folder.",
+                    $_('home.folderUriUnsupported'),
                     "error",
                 );
                 return;
@@ -177,21 +177,36 @@
 
             const parts = [];
             if (result.tracks_added > 0)
-                parts.push(`${result.tracks_added} added`);
+                parts.push(
+                    $_("scanStatus.tracksAdded", {
+                        values: { count: result.tracks_added },
+                    }),
+                );
             if (result.tracks_updated > 0)
-                parts.push(`${result.tracks_updated} updated`);
+                parts.push(
+                    $_("scanStatus.tracksUpdated", {
+                        values: { count: result.tracks_updated },
+                    }),
+                );
             if (result.tracks_deleted > 0)
-                parts.push(`${result.tracks_deleted} deleted`);
+                parts.push(
+                    $_("scanStatus.tracksDeleted", {
+                        values: { count: result.tracks_deleted },
+                    }),
+                );
 
             const message =
                 parts.length > 0
-                    ? `Scan complete: ${parts.join(", ")}`
-                    : "Scan complete — no new tracks found";
+                    ? $_('menu.scanComplete', { values: { parts: parts.join(", ") } })
+                    : $_('home.scanCompleteNoTracks');
 
             addToast(message, "success", 4000);
         } catch (error) {
             console.error("Scan failed:", error);
-            addToast("Failed to scan music folder", "error");
+            addToast(
+                $_('sidebar.scanFailed'),
+                "error",
+            );
         } finally {
             progressiveScan.reset();
         }
@@ -213,13 +228,13 @@
             {#if $isScanning}
                 <div class="scanning-indicator">
                     <div class="scanning-spinner"></div>
-                    <span>Scanning…</span>
+                    <span>{$_('common.scanning')}</span>
                 </div>
             {:else}
                 <button
                     class="add-music-btn"
                     on:click={handleAddFolder}
-                    title="Add Music Folder"
+                    title={$_('sidebar.addMusicFolder')}
                 >
                     <svg
                         viewBox="0 0 24 24"
@@ -236,7 +251,7 @@
             <button
                 class="settings-btn"
                 on:click={goToSettings}
-                title="Settings"
+                title={$_('sidebar.settings')}
             >
                 <svg
                     viewBox="0 0 24 24"
@@ -269,10 +284,9 @@
                     </svg>
                 </div>
                 <div class="liked-banner-text">
-                    <span class="liked-banner-title">Liked Songs</span>
+                    <span class="liked-banner-title">{$_('sidebar.likedSongs')}</span>
                     <span class="liked-banner-subtitle"
-                        >{$likedTrackIds.size}
-                        {$likedTrackIds.size === 1 ? "song" : "songs"}</span
+                        >{$_('liked.songsCount', { values: { count: $likedTrackIds.size } })}</span
                     >
                 </div>
             </div>
@@ -303,7 +317,7 @@
                 </div>
 
                 <div class="hero-content">
-                    <div class="hero-tag">YOUR #1 TRACK</div>
+                    <div class="hero-tag">{$_('home.topTrackBadge')}</div>
                     <div class="hero-main-info">
                         <div class="hero-art-container">
                             {#if getTrackArt($topTracks[0].track)}
@@ -402,10 +416,10 @@
             on:click={() => isStatsWrappedOpen.set(true)}
         >
             <div class="recap-card-content">
-                <span class="recap-label">MONTHLY</span>
-                <h2 class="recap-title">{currentMonthName} {$_('home.recap')}</h2>
-                <p class="recap-text">Check out your music month in review</p>
-                <div class="recap-pill">View Recap</div>
+                <span class="recap-label">{$_('home.monthly')}</span>
+                <h2 class="recap-title">{$_('home.recap', { values: { month: currentMonthName } })}</h2>
+                <p class="recap-text">{$_('home.recapTeaser')}</p>
+                <div class="recap-pill">{$_('home.viewRecap')}</div>
             </div>
             <div class="recap-card-decor">
                 <svg
@@ -613,7 +627,7 @@
     <!-- Recently Added -->
     {#if recentTracks.length > 0}
         <section class="carousel-section">
-            <h2 class="section-title">Recently Added</h2>
+            <h2 class="section-title">{$_('home.recentlyAdded')}</h2>
             <div class="carousel-container">
                 {#each recentTracks as track, i}
                     <div
@@ -677,7 +691,7 @@
     <!-- Music Charts Carousel -->
     {#if !loadingCharts && charts.length > 0}
         <section class="carousel-section charts-section">
-            <h2 class="section-title">Music Charts</h2>
+            <h2 class="section-title">{$_('home.musicCharts')}</h2>
             <div class="carousel-container">
                 {#each charts as chart}
                     <div class="chart-card">
@@ -726,15 +740,15 @@
             <div class="empty-home">
                 <div class="empty-scanning">
                     <div class="scanning-spinner large"></div>
-                    <span>Scanning your music…</span>
+                    <span>{$_('common.scanningMusic')}</span>
                 </div>
             </div>
         {:else}
             <EmptyState
                 icon="folder"
-                title="Welcome to Audion"
-                description="Add a music folder to start listening"
-                actionLabel="Add Music Folder"
+                title={$_('home.welcomeTitle')}
+                description={$_('home.welcomeDescription')}
+                actionLabel={$_('sidebar.addMusicFolder')}
                 onAction={handleAddFolder}
             />
         {/if}

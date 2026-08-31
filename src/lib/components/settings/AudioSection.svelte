@@ -163,8 +163,8 @@
       <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
     </svg>
     <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.audio', { default: 'Audio' })}</span>
-      <span class="accordion-subtitle">{$_('settings.audioSubtitle', { default: 'Configure output devices, replay gain, and equalizer' })}</span>
+      <span class="accordion-title">{$_('settings.audio')}</span>
+      <span class="accordion-subtitle">{$_('settings.audioSubtitle')}</span>
     </div>
     <svg class="accordion-chevron" class:rotated={open} viewBox="0 0 24 24" width="16" height="16">
       <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
@@ -175,19 +175,19 @@
       <div class="settings-card">
         <!-- Output Driver -->
         <div class="inner-section">
-          <span class="setting-title">{$_('settings.outputDriver', { default: 'Output driver' })}</span>
-          <span class="setting-description">{$_('settings.outputDriverDesc', { default: 'Select the backend for audio playback' })}</span>
+          <span class="setting-title">{$_('settings.outputDriver')}</span>
+          <span class="setting-description">{$_('settings.outputDriverDesc')}</span>
           <div class="segmented-pill" style="margin-top: 6px;">
-            <button class="segment-btn" class:active={$appSettings.audioBackend === 'auto'} on:click={() => appSettings.setAudioBackend('auto')}>{$_('settings.auto', { default: 'Auto' })}</button>
-            <button class="segment-btn" class:active={$appSettings.audioBackend === 'native'} on:click={() => appSettings.setAudioBackend('native')}>{$_('settings.native', { default: 'Native' })}</button>
-            <button class="segment-btn" class:active={$appSettings.audioBackend === 'html5'} on:click={() => appSettings.setAudioBackend('html5')}>{$_('settings.html5', { default: 'HTML5' })}</button>
+            <button class="segment-btn" class:active={$appSettings.audioBackend === 'auto'} on:click={() => appSettings.setAudioBackend('auto')}>{$_('settings.auto')}</button>
+            <button class="segment-btn" class:active={$appSettings.audioBackend === 'native'} on:click={() => appSettings.setAudioBackend('native')}>{$_('settings.native')}</button>
+            <button class="segment-btn" class:active={$appSettings.audioBackend === 'html5'} on:click={() => appSettings.setAudioBackend('html5')}>{$_('settings.html5')}</button>
           </div>
           {#if showRefreshNotice}
             <div class="refresh-notice">
               <Icon name="info" size="xs" />
-              <span>{$_('settings.restartRequired', { default: 'Audio backend change requires restart' })}</span>
+              <span>{$_('settings.restartRequired')}</span>
               <button class="refresh-btn" on:click={handleRefresh}>
-                <Icon name="refresh" size="sm" />{$_('settings.refresh', { default: 'Refresh' })}
+                <Icon name="refresh" size="sm" />{$_('settings.refresh')}
               </button>
             </div>
           {/if}
@@ -197,8 +197,8 @@
 
         <!-- Output Device -->
         <div class="inner-section">
-          <span class="setting-title">{$_('settings.outputDevice', { default: 'Output device' })}</span>
-          <span class="setting-description">{$_('settings.outputDeviceDesc', { default: 'Select audio output device' })}</span>
+          <span class="setting-title">{$_('settings.outputDevice')}</span>
+          <span class="setting-description">{$_('settings.outputDeviceDesc')}</span>
           <div class="device-dropdown-wrapper" role="listbox" aria-label="Output device" aria-disabled={outputDeviceDisabled}>
             <div class="custom-dropdown" class:disabled={outputDeviceDisabled} bind:this={deviceDropdownRef}>
               <button
@@ -210,7 +210,7 @@
                 {#if $appSettings.outputDevice}
                   {($appSettings.outputDevice.length > 43) ? $appSettings.outputDevice.slice(0, 43) + '...' : $appSettings.outputDevice}
                 {:else}
-                  {$_('settings.defaultDevice', { default: 'System default' })}
+                  {$_('settings.defaultDevice')}
                 {/if}
                 <svg class="dropdown-chevron" class:rotated={deviceDropdownOpen} viewBox="0 0 24 24" width="14" height="14">
                   <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
@@ -221,7 +221,7 @@
                   {#if isLoadingDevices}
                     <div class="dropdown-item loading-item">
                       <Icon name="loader" size="sm" />
-                      <span>{$_('settings.loadingDevices', { default: 'Loading devices...' })}</span>
+                      <span>{$_('settings.loadingDevices')}</span>
                     </div>
                   {:else if deviceList && deviceList.devices && deviceList.devices.length > 0}
                     <button
@@ -232,7 +232,7 @@
                       aria-selected={!$appSettings.outputDevice}
                     >
                       <Icon name="speaker" size="xs" />
-                      <span class="device-item-name">{$_('settings.systemDefault', { default: 'System default' })}</span>
+                      <span class="device-item-name">{$_('settings.systemDefault')}</span>
                     </button>
                     {#each deviceList.devices as device (device.id)}
                       <div class="dropdown-item-wrapper">
@@ -257,11 +257,11 @@
                           {#if infoPopoverDevice?.id === device.id}
                             <div class="device-info-popover" role="tooltip">
                               <div class="device-info-primary">{device.extended[0] ?? device.name}</div>
-                              {#if device.driver}<div class="device-info-row"><span class="device-info-label">Driver</span><span>{device.driver}</span></div>{/if}
-                              {#if device.manufacturer}<div class="device-info-row"><span class="device-info-label">Manufacturer</span><span>{device.manufacturer}</span></div>{/if}
-                              <div class="device-info-row"><span class="device-info-label">Interface</span><span>{device.interface_type}</span></div>
-                              <div class="device-info-row"><span class="device-info-label">Type</span><span>{device.device_type}</span></div>
-                              {#if device.address}<div class="device-info-row"><span class="device-info-label">Address</span><span>{device.address}</span></div>{/if}
+                              {#if device.driver}<div class="device-info-row"><span class="device-info-label">{$_('settings.deviceDriver')}</span><span>{device.driver}</span></div>{/if}
+                              {#if device.manufacturer}<div class="device-info-row"><span class="device-info-label">{$_('settings.deviceManufacturer')}</span><span>{device.manufacturer}</span></div>{/if}
+                              <div class="device-info-row"><span class="device-info-label">{$_('settings.deviceInterface')}</span><span>{device.interface_type}</span></div>
+                              <div class="device-info-row"><span class="device-info-label">{$_('settings.deviceType')}</span><span>{device.device_type}</span></div>
+                              {#if device.address}<div class="device-info-row"><span class="device-info-label">{$_('settings.deviceAddress')}</span><span>{device.address}</span></div>{/if}
                               <div class="device-info-id">{device.id}</div>
                             </div>
                           {/if}
@@ -270,7 +270,7 @@
                     {/each}
                   {:else}
                     <div class="dropdown-item empty-item">
-                      <span>{$_('settings.noDevices', { default: 'No devices found' })}</span>
+                      <span>{$_('settings.noDevices')}</span>
                     </div>
                   {/if}
                 </div>
@@ -283,8 +283,8 @@
         <div class="inner-section">
           <div class="toggle-container">
             <div class="toggle-info">
-              <span class="setting-title">{$_('settings.replayGain', { default: 'Replay Gain' })}</span>
-              <span class="setting-description">{$_('settings.replayGainDesc', { default: 'Normalize playback volume across tracks' })}</span>
+              <span class="setting-title">{$_('settings.replayGain')}</span>
+              <span class="setting-description">{$_('settings.replayGainDesc')}</span>
             </div>
             <button
               class="toggle-btn"
@@ -292,7 +292,7 @@
               on:click={handleToggleReplayGain}
               role="switch"
               aria-checked={$appSettings.replayGainEnabled}
-              aria-label="Toggle Replay Gain"
+              aria-label={$_('settings.toggleReplayGain')}
             >
               <div class="toggle-handle"></div>
             </button>
@@ -327,8 +327,8 @@
 
         <!-- Crossfade -->
         <div class="inner-section">
-          <span class="setting-title">{$_('settings.crossfade', { default: 'Crossfade' })}</span>
-          <span class="setting-description">{$_('settings.crossfadeDesc', { default: 'Transition between tracks by fading out the current song and fading in the next' })}</span>
+          <span class="setting-title">{$_('settings.crossfade')}</span>
+          <span class="setting-description">{$_('settings.crossfadeDesc')}</span>
           <div class="crossfade-slider">
             <input
               type="range"
@@ -344,7 +344,7 @@
               aria-label="Crossfade duration"
             />
             <span style="font-size: 0.85rem; color: var(--text-secondary); width: 32px; text-align: right; font-weight: 500;">
-              {$appSettings.crossfadeSeconds === 0 ? $_('settings.off', { default: 'Off' }) : `${$appSettings.crossfadeSeconds}s`}
+              {$appSettings.crossfadeSeconds === 0 ? $_('settings.off') : `${$appSettings.crossfadeSeconds}s`}
             </span>
           </div>
         </div>
@@ -353,8 +353,8 @@
         <div class="inner-section">
           <div class="toggle-container">
             <div class="toggle-info">
-              <span class="setting-title">{$_('settings.equalizer', { default: 'Equalizer' })}</span>
-              <span class="setting-description">{$_('settings.equalizerDesc', { default: 'Adjust frequency response' })}</span>
+              <span class="setting-title">{$_('settings.equalizer')}</span>
+              <span class="setting-description">{$_('settings.equalizerDesc')}</span>
             </div>
             <button
               class="toggle-btn"
@@ -379,11 +379,11 @@
               {/each}
             </div>
             <div class="eq-compact-info">
-              <span>{$equalizer.currentPreset ?? 'Custom'}</span>
-              <span class="eq-compact-band-count">{$equalizer.bands.length} bands</span>
+              <span>{$equalizer.currentPreset ?? $_('settings.customPreset')}</span>
+              <span class="eq-compact-band-count">{$_('settings.equalizerBandCount', { values: { count: $equalizer.bands.length } })}</span>
             </div>
             <button class="btn-secondary-small" on:click={() => dispatch('openEqEditor')}>
-              Customize Equalizer
+              {$_('settings.customizeEqualizer')}
             </button>
           </div>
         </div>

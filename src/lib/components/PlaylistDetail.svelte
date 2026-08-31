@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import { onMount } from "svelte";
     import type { Track, Playlist } from "$lib/api/tauri";
     import {
@@ -12,7 +13,6 @@
     import { pinnedItems } from "$lib/stores/pinned";
     import { contextMenu } from "$lib/stores/ui";
     import { buildPlaylistContextMenu } from "$lib/menus/contextMenus";
-    import { _ } from "svelte-i18n";
     import { playTracks, addToQueue } from "$lib/stores/player";
     import { goToPlaylists, goToTracksMultiSelect } from "$lib/stores/view";
     import { loadPlaylists, playlists, playlistPendingTracks, drainPendingTracks } from "$lib/stores/library";
@@ -114,11 +114,14 @@
         if (!playlist) return;
 
         if (
-            !(await confirm(`Remove custom cover for "${playlist.name}"?`, {
-                title: "Remove Cover",
-                confirmLabel: "Remove",
-                danger: true,
-            }))
+            !(await confirm(
+                $_("playlist.removeCoverConfirm", { values: { name: playlist.name } }),
+                {
+                    title: $_("playlist.removeCoverTitle"),
+                    confirmLabel: $_("playlist.remove"),
+                    danger: true,
+                },
+            ))
         )
             return;
 
@@ -164,14 +167,14 @@
 
         if (needsDownloadLocation()) {
             addToast(
-                "Please configure a download location in Settings first",
+                $_("playlist.configureDownloadLocation"),
                 "error",
             );
             return;
         }
 
         isDownloading = true;
-        downloadProgress = "Starting...";
+        downloadProgress = $_("playlist.downloadStarting");
 
         try {
             const result = await downloadTracks(
@@ -197,7 +200,10 @@
             loadPlaylistData();
         } catch (error) {
             console.error("Download failed:", error);
-            addToast("Download failed unexpectedly", "error");
+            addToast(
+                $_("playlist.downloadFailed"),
+                "error",
+            );
         } finally {
             isDownloading = false;
             downloadProgress = "";
@@ -231,11 +237,14 @@
 
     async function handleDelete() {
         if (
-            !(await confirm(`Delete playlist "${playlist?.name}"?`, {
-                title: "Delete Playlist",
-                confirmLabel: "Delete",
-                danger: true,
-            }))
+            !(await confirm(
+                $_("playlist.deleteConfirm", { values: { name: playlist?.name } }),
+                {
+                    title: $_("playlist.deletePlaylist"),
+                    confirmLabel: $_("playlist.delete"),
+                    danger: true,
+                },
+            ))
         )
             return;
 
@@ -329,7 +338,7 @@
         if (!playlist) return;
 
         try {
-            addToast("Exporting…", "info");
+            addToast($_("playlist.exporting"), "info");
 
             const result = await exportPlaylistZip(playlistId, playlist.name);
             if (!result) return; // user cancelled
@@ -337,11 +346,14 @@
             const skipped_count = result.skipped_count;
             const exported = result.track_count - skipped_count;
             const skippedMsg = skipped_count > 0
-                ? ` (${skipped_count} streaming-only track${skipped_count === 1 ? "" : "s"} skipped)`
+                ? ` (${$_("playlist.exportedSkipped", { values: { count: skipped_count } })})`
                 : "";
-            addToast(`Exported ${exported} track${exported === 1 ? "" : "s"}${skippedMsg}`, "success");
+            addToast(
+                `${$_("playlist.exportedTracks", { values: { count: exported } })}${skippedMsg}`,
+                "success",
+            );
         } catch (e) {
-            addToast(`Export failed: ${e}`, "error");
+            addToast($_("playlist.exportFailed", { values: { error: String(e) } }), "error");
         }
     }
 </script>
@@ -350,7 +362,9 @@
     {#if loading}
         <div class="loading">
             <div class="spinner"></div>
-            <span>Loading playlist...</span>
+            <span
+                >{$_("playlist.loading")}</span
+            >
         </div>
     {:else if playlist}
         <header
@@ -364,7 +378,7 @@
                     <button
                         class="back-btn"
                         on:click={toggleMenu}
-                        title="More options"
+                        title={$_("playlist.moreOptions")}
                         bind:this={menuTriggerEl}
                         aria-haspopup="menu"
                         aria-expanded={menuOpen}
@@ -402,7 +416,7 @@
                     {/if}
                 </div>
 
-                <button class="back-btn close-btn" on:click={goToPlaylists} title="Close">
+                <button class="back-btn close-btn" on:click={goToPlaylists} title={$_("common.close")}>
                     <svg
                         viewBox="0 0 24 24"
                         fill="currentColor"
@@ -421,7 +435,11 @@
                 on:mouseleave={() => (coverHovered = false)}
                 role="presentation"
             >
-                <img src={coverSrc} alt="Playlist cover" class="cover-image" />
+                <img
+                    src={coverSrc}
+                    alt={$_("playlist.coverAlt")}
+                    class="cover-image"
+                />
                 <input
                     type="file"
                     accept="image/*"
@@ -435,7 +453,7 @@
                             <button
                                 class="cover-overlay-btn cover-delete-btn"
                                 on:click={handleRemoveCover}
-                                title="Remove cover"
+                                title={$_("playlist.removeCoverTooltip")}
                             >
                                 <svg
                                     viewBox="0 0 24 24"
@@ -453,8 +471,8 @@
                             class="cover-overlay-btn cover-add-btn"
                             on:click={() => coverInput?.click()}
                             title={hasCustomCover
-                                ? "Change cover"
-                                : "Add cover"}
+                                ? $_("playlist.changeCoverTooltip")
+                                : $_("playlist.addCoverTooltip")}
                         >
                             <svg
                                 viewBox="0 0 24 24"
@@ -483,7 +501,7 @@
                             <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
                         </svg>
                     {/if}
-                    Playlist
+                    {$_("common.playlist")}
                 </span>
                 {#if isEditing}
                     <input
@@ -499,7 +517,9 @@
                     </h1>
                 {/if}
                 <div class="playlist-meta">
-                    <span>{tracks.length} songs</span>
+                    <span
+                        >{$_("playlist.songsCount", { values: { count: tracks.length } })}</span
+                    >
                     <span class="separator">•</span>
                     <span>{formatDuration(totalDuration)}</span>
                 </div>
@@ -517,7 +537,7 @@
                         >
                             <path d="M8 5v14l11-7z" />
                         </svg>
-                        Play
+                        {$_("common.play")}
                     </button>
 
                     <button
@@ -532,7 +552,7 @@
                         >
                             <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
                         </svg>
-                        Add Songs
+                        {$_("playlist.addSongs")}
                     </button>
 
                     {#if hasDownloadable || allDownloaded}
@@ -558,7 +578,9 @@
                                         d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"
                                     />
                                 </svg>
-                                <span>Downloaded</span>
+                                <span
+                                    >{$_("album.downloaded")}</span
+                                >
                             {:else}
                                 <svg
                                     viewBox="0 0 24 24"
@@ -570,7 +592,9 @@
                                         d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"
                                     />
                                 </svg>
-                                <span>Download</span>
+                                <span
+                                    >{$_("album.download")}</span
+                                >
                             {/if}
                         </button>
                     {/if}
@@ -603,16 +627,20 @@
                             d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
                         />
                     </svg>
-                    <h3>This playlist is empty</h3>
-                    <p>Add songs from your library</p>
+                    <h3>
+                        {$_("playlist.emptyTitle")}
+                    </h3>
+                    <p>
+                        {$_("playlist.emptyDescription")}
+                    </p>
                 </div>
             {/if}
         </div>
     {:else}
         <div class="not-found">
-            <h2>Playlist not found</h2>
+            <h2>{$_("playlist.notFound")}</h2>
             <button class="btn-secondary" on:click={goToPlaylists}
-                >Back to Playlists</button
+                >{$_("playlist.backToPlaylists")}</button
             >
         </div>
     {/if}

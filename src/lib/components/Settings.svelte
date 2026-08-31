@@ -29,7 +29,7 @@
 
 <div class="settings-view">
   <header class="view-header">
-    <h1>{$_('settings.title', { default: 'Settings' })}</h1>
+    <h1>{$_('settings.title')}</h1>
   </header>
 
   <div class="settings-content">

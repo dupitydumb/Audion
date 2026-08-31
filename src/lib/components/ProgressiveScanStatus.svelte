@@ -11,6 +11,7 @@
     } from '$lib/stores/progressiveScan';
     import { trackCount } from '$lib/stores/library';
     import { fade, slide } from 'svelte/transition';
+    import { _ } from 'svelte-i18n';
     
     $: progress = $scanProgress;
     $: percentage = $scanPercentage;
@@ -19,7 +20,9 @@
     $: elapsed = $elapsedTime;
     $: added = $tracksAdded;
     $: updated = $tracksUpdated;
-    $: title = $scanMode === 'folder' ? 'Importing folder...' : 'Scanning library...';
+    $: title = $scanMode === 'folder'
+        ? $_('scanStatus.importingFolder')
+        : $_('scanStatus.scanningLibrary');
 </script>
 
 {#if $isScanning}
@@ -38,15 +41,15 @@
                 <div class="scan-details">
                     {#if progress}
                         <span class="progress-text">
-                            {progress.current.toLocaleString()} of {progress.total.toLocaleString()} files
+                            {$_('scanStatus.filesProgress', { values: { current: progress.current.toLocaleString(), total: progress.total.toLocaleString() } })}
                         </span>
                         {#if eta}
                             <span class="eta-separator">·</span>
-                            <span class="eta-text">{eta} remaining</span>
+                            <span class="eta-text">{$_('scanStatus.etaRemaining', { values: { eta } })}</span>
                         {/if}
                         {#if elapsed}
                             <span class="eta-separator">·</span>
-                            <span class="elapsed-text">{elapsed} elapsed</span>
+                            <span class="elapsed-text">{$_('scanStatus.elapsed', { values: { elapsed } })}</span>
                         {/if}
                     {/if}
                 </div>
@@ -55,19 +58,19 @@
             <!-- Stats -->
             <div class="scan-stats">
                 <div class="tracks-loaded" class:pulsing={loaded > 0}>
-                    ✓ {loaded.toLocaleString()} tracks ready
+                    ✓ {$_('scanStatus.tracksReady', { values: { count: loaded.toLocaleString() } })}
                 </div>
                 <div class="scan-counts">
                     {#if added > 0}
-                        <span class="count-item added">+{added.toLocaleString()} added</span>
+                        <span class="count-item added">+{$_('scanStatus.tracksAdded', { values: { count: added } })}</span>
                     {/if}
                     {#if updated > 0}
-                        <span class="count-item updated">↻ {updated.toLocaleString()} updated</span>
+                        <span class="count-item updated">↻ {$_('scanStatus.tracksUpdated', { values: { count: updated } })}</span>
                     {/if}
                 </div>
                 {#if progress}
                     <div class="batch-info">
-                        Batch #{progress.current_batch} ({progress.batch_size} tracks)
+                        {$_('scanStatus.batchInfo', { values: { batch: progress.current_batch, size: progress.batch_size } })}
                     </div>
                 {/if}
             </div>

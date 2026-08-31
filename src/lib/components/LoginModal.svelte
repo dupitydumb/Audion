@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import { showLoginModal, startLogin, connectCustomServerPassword, testCustomServerConnection, loginModalMode } from "$lib/stores/sync";
     import { fade, scale, slide } from "svelte/transition";
 
@@ -41,11 +42,11 @@
 
     async function handleTestConnection() {
         if (!serverUrl) {
-            errorText = "Server URL is required";
+            errorText = $_('auth.serverUrlRequired');
             return;
         }
         if (!username || !password) {
-            errorText = "Username and password are required";
+            errorText = $_('auth.usernamePasswordRequired');
             return;
         }
 
@@ -54,7 +55,7 @@
         successText = "";
         try {
             await testCustomServerConnection(serverUrl, username, password);
-            successText = "Connection test successful!";
+            successText = $_('auth.connectionTestSuccess');
         } catch (err) {
             console.error("[Custom Server Test Connection] Failed:", err);
             errorText = String(err);
@@ -65,11 +66,11 @@
 
     async function handleCustomConnect() {
         if (!serverUrl) {
-            errorText = "Server URL is required";
+            errorText = $_('auth.serverUrlRequired');
             return;
         }
         if (!username || !password) {
-            errorText = "Username and password are required";
+            errorText = $_('auth.usernamePasswordRequired');
             return;
         }
 
@@ -108,15 +109,14 @@
         >
             <div class="modal-header">
                 {#if $loginModalMode === "oauth"}
-                    <h2>Sign in to Audion</h2>
+                    <h2>{$_('auth.signInTitle')}</h2>
                     <p class="subtitle">
-                        Sync your playlists, liked songs, and settings across all
-                        your devices.
+                        {$_('auth.signInSubtitle')}
                     </p>
                 {:else}
-                    <h2>Connect to Custom Server</h2>
+                    <h2>{$_('auth.customServerTitle')}</h2>
                     <p class="subtitle">
-                        Connect and sync with your self-hosted Audion server.
+                        {$_('auth.customServerSubtitle')}
                     </p>
                 {/if}
             </div>
@@ -146,7 +146,7 @@
                                 d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
                             />
                         </svg>
-                        <span>Continue with Google</span>
+                        <span>{$_('auth.continueWithGoogle')}</span>
                     </button>
 
                     <button
@@ -160,7 +160,7 @@
                                 d="M12 1C5.37 1 0 6.37 0 13c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 13c0-6.63-5.37-12-12-12z"
                             />
                         </svg>
-                        <span>Continue with GitHub</span>
+                        <span>{$_('auth.continueWithGithub')}</span>
                     </button>
 
                     <button
@@ -168,16 +168,16 @@
                         on:click={() => loginModalMode.set("custom_server")}
                         disabled={isLoading}
                     >
-                        Connect to Custom Server
+                        {$_('auth.connectCustomServerBtn')}
                     </button>
                 {:else}
                     <form on:submit|preventDefault={handleCustomConnect} class="custom-server-form">
                         <div class="form-group">
-                            <label for="server-url">Server URL</label>
+                            <label for="server-url">{$_('auth.serverUrl')}</label>
                             <input
                                 id="server-url"
                                 type="url"
-                                placeholder="e.g., http://localhost:8080"
+                                placeholder={$_('auth.serverUrlPlaceholder')}
                                 bind:value={serverUrl}
                                 on:input={clearMessages}
                                 disabled={isLoading || isTesting}
@@ -185,11 +185,11 @@
                         </div>
 
                         <div class="form-group">
-                            <label for="username">Username</label>
+                            <label for="username">{$_('auth.username')}</label>
                             <input
                                 id="username"
                                 type="text"
-                                placeholder="Username"
+                                placeholder={$_('auth.username')}
                                 bind:value={username}
                                 on:input={clearMessages}
                                 disabled={isLoading || isTesting}
@@ -197,11 +197,11 @@
                         </div>
 
                         <div class="form-group">
-                            <label for="password">Password</label>
+                            <label for="password">{$_('auth.password')}</label>
                             <input
                                 id="password"
                                 type="password"
-                                placeholder="Password"
+                                placeholder={$_('auth.password')}
                                 bind:value={password}
                                 on:input={clearMessages}
                                 disabled={isLoading || isTesting}
@@ -228,10 +228,10 @@
                                     <path d="M7.5 4.5l3.5 2.5" />
                                     <path d="M16.5 4.5L13 7" />
                                 </svg>
-                                <span>Self-Hosting Guide</span>
+                                <span>{$_('auth.selfHostingGuide')}</span>
                             </div>
                             <p class="docker-info-text">
-                                Run your own Audion Server in minutes using Docker. Read the setup guide on GitHub:
+                                {$_('auth.selfHostingGuideDesc')}
                             </p>
                             <a href="https://github.com/dupitydumb/audion-server-docker" target="_blank" rel="noreferrer" class="docker-info-link">
                                 github.com/dupitydumb/audion-server-docker
@@ -246,14 +246,14 @@
                                     on:click={handleTestConnection}
                                     disabled={isLoading || isTesting}
                                 >
-                                    {isTesting ? "Testing..." : "Test Connection"}
+                                    {isTesting ? $_('auth.testing') : $_('auth.testConnection')}
                                 </button>
                                 <button
                                     type="submit"
                                     class="btn-primary"
                                     disabled={isLoading || isTesting}
                                 >
-                                    {isLoading ? "Connecting..." : "Connect"}
+                                    {isLoading ? $_('auth.connecting') : $_('auth.connect')}
                                 </button>
                             </div>
                             <button
@@ -262,7 +262,7 @@
                                 on:click={() => loginModalMode.set("oauth")}
                                 disabled={isLoading || isTesting}
                             >
-                                Back
+                                {$_('auth.back')}
                             </button>
                         </div>
                     </form>
@@ -272,12 +272,10 @@
             <div class="modal-footer">
                 {#if $loginModalMode === "oauth"}
                     <p class="privacy-note">
-                        By signing in, you agree to sync your music data with
-                        Audion's servers. We only store your playlists, liked songs,
-                        and app settings — never your music files.
+                        {$_('auth.privacyNote')}
                     </p>
                 {/if}
-                <button class="btn-text" on:click={close}>Cancel</button>
+                <button class="btn-text" on:click={close}>{$_('common.cancel')}</button>
             </div>
         </div>
     </div>

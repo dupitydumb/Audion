@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import type { Track } from "$lib/api/tauri";
 
     export let track: Track;
@@ -66,9 +67,9 @@
     >
         <header class="modal-header">
             <div class="modal-title">
-                <h2>{track.title ?? "Unknown Track"}</h2>
+                <h2>{track.title ?? $_('common.unknownTrack')}</h2>
                 <p class="subtitle">
-                    {track.artist ?? "Unknown Artist"}{track.album
+                    {track.artist ?? $_('common.unknownArtist')}{track.album
                         ? " · " + track.album
                         : ""}
                 </p>
@@ -81,11 +82,11 @@
         <div class="modal-body">
             <!-- Core info always shown -->
             <section class="metadata-section">
-                <h3 class="section-label">File Info</h3>
+                <h3 class="section-label">{$_('metadata.fileInfo')}</h3>
                 <div class="metadata-grid">
                     {#if track.format}
                         <div class="metadata-row">
-                            <span class="meta-key">Format</span>
+                            <span class="meta-key">{$_('metadata.format')}</span>
                             <span class="meta-value"
                                 >{track.format.toUpperCase()}</span
                             >
@@ -93,13 +94,13 @@
                     {/if}
                     {#if track.bitrate}
                         <div class="metadata-row">
-                            <span class="meta-key">Bitrate</span>
+                            <span class="meta-key">{$_('metadata.bitrate')}</span>
                             <span class="meta-value">{track.bitrate} kbps</span>
                         </div>
                     {/if}
                     {#if track.duration}
                         <div class="metadata-row">
-                            <span class="meta-key">Duration</span>
+                            <span class="meta-key">{$_('trackList.duration')}</span>
                             <span class="meta-value"
                                 >{Math.floor(track.duration / 60)}:{String(
                                     Math.floor(track.duration % 60),
@@ -109,7 +110,7 @@
                     {/if}
                     {#if track.date_added}
                         <div class="metadata-row">
-                            <span class="meta-key">Date Added</span>
+                            <span class="meta-key">{$_('trackList.dateAdded')}</span>
                             <span class="meta-value"
                                 >{new Date(
                                     track.date_added,
@@ -119,7 +120,7 @@
                     {/if}
                     {#if track.path}
                         <div class="metadata-row file-path-row">
-                            <span class="meta-key">Path</span>
+                            <span class="meta-key">{$_('metadata.path')}</span>
                             <span class="meta-value path">{track.path}</span>
                         </div>
                     {/if}
@@ -129,13 +130,13 @@
             <!-- Embedded tags -->
             {#if metadata && Object.keys(metadata).length > 0}
                 <section class="metadata-section">
-                    <h3 class="section-label">Embedded Tags</h3>
+                    <h3 class="section-label">{$_('metadata.embeddedTags')}</h3>
                     <div class="metadata-grid">
                         {#each Object.entries(metadata) as [key, value]}
                             {#if value && key !== "Lyrics"}
                                 <div class="metadata-row">
                                     <span class="meta-key"
-                                        >{formatKey(key)}</span
+                                        >{$_(`metadata.field.${key}`, { default: formatKey(key) })}</span
                                     >
                                     <span class="meta-value">{value}</span>
                                 </div>
@@ -147,13 +148,13 @@
                 <!-- Lyrics shown separately if present -->
                 {#if metadata["Lyrics"]}
                     <section class="metadata-section">
-                        <h3 class="section-label">Embedded Lyrics</h3>
+                        <h3 class="section-label">{$_('metadata.embeddedLyrics')}</h3>
                         <pre class="lyrics-block">{metadata["Lyrics"]}</pre>
                     </section>
                 {/if}
             {:else}
                 <div class="no-metadata">
-                    <span>No additional metadata available.</span>
+                    <span>{$_('metadata.noMetadata')}</span>
                 </div>
             {/if}
         </div>

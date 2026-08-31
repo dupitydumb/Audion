@@ -41,24 +41,48 @@
   import SyncProgressOverlay from "$lib/components/SyncProgressOverlay.svelte";
   import LoginModal from "$lib/components/LoginModal.svelte";
   import { initSync, destroySync } from "$lib/stores/sync";
+  import { browser } from "$app/environment";
   import { setupI18n } from "$lib/i18n";
-  import { isLoading } from "svelte-i18n";
+  import { _, isLoading, locale } from "svelte-i18n";
   import "../app.css";
   import MobileMiniPlayer from "$lib/components/MobileMiniPlayer.svelte";
 
   // initialize i18n synchronously
   // during this component's construction and before any template evaluates
   // not inside onMount, it crashes the whole render
-  const savedLang = localStorage.getItem("audion_language");
-  setupI18n(savedLang || undefined);
+  // guarded by `browser` since localStorage isn't available during SSR
+  if (browser) {
+    const savedLang = localStorage.getItem("audion_language");
+    setupI18n(savedLang || undefined);
+  }
 
   let handleVisibilityChange: (() => void) | null = null;
   let unlistenRequestLastView: (() => void) | null = null;
+  let migrationPhase: "loading" | "success" | "errors" | "failed" = "loading";
+  let migrationTracks = 0;
+  let migrationAlbums = 0;
+  let migrationErrorCount = 0;
   let unlistenGoToArtist: (() => void) | null = null;
   let migrationStatus = "";
   let showMigrationBanner = false;
   let showPermissionBanner = false;
   let permissionDenied = false;
+
+  $: {
+    if (migrationPhase === "loading") {
+      migrationStatus = $_("app.migratingCovers");
+    } else if (migrationPhase === "success") {
+      migrationStatus = $_("app.migrationSuccess", {
+        values: { tracks: migrationTracks, albums: migrationAlbums },
+      });
+    } else if (migrationPhase === "errors") {
+      migrationStatus = $_("app.migrationErrors", {
+        values: { count: migrationErrorCount },
+      });
+    } else {
+      migrationStatus = $_("app.migrationFailed");
+    }
+  }
 
   // =========================================================================
   // ANDROID BACK BUTTON HANDLER
@@ -210,7 +234,7 @@
     if (migrated !== "true") {
       try {
         showMigrationBanner = true;
-        migrationStatus = "Migrating cover images to file storage...";
+        migrationPhase = "loading";
         console.log("[MIGRATION FRONTEND] Starting migration...");
 
         const result = await migrateCoversToFiles();
@@ -237,7 +261,9 @@
 
         if (result.errors.length === 0) {
           localStorage.setItem("covers_migrated", "true");
-          migrationStatus = ` Successfully migrated ${result.tracks_migrated} track covers and ${result.albums_migrated} album covers`;
+          migrationTracks = result.tracks_migrated;
+          migrationAlbums = result.albums_migrated;
+          migrationPhase = "success";
           console.log("[MIGRATION FRONTEND] Migration completed successfully!");
 
           setTimeout(() => {
@@ -245,7 +271,8 @@
           }, 3000);
         } else {
           console.error("[MIGRATION FRONTEND] Migration completed with errors");
-          migrationStatus = `Migration completed with ${result.errors.length} errors. Check console for details.`;
+          migrationErrorCount = result.errors.length;
+          migrationPhase = "errors";
 
           setTimeout(() => {
             showMigrationBanner = false;
@@ -253,7 +280,7 @@
         }
       } catch (error) {
         console.error("[MIGRATION FRONTEND] Migration failed:", error);
-        migrationStatus = "Migration failed. Please try again from settings.";
+        migrationPhase = "failed";
 
         setTimeout(() => {
           showMigrationBanner = false;
@@ -310,7 +337,7 @@
   }
 </script>
 
-{#if !$isLoading}
+{#if !$isLoading && $locale}
 {#if !$isMobile && !$isMiniPlayer}
   <TitleBar />
   <LinuxResizeHandles />
@@ -324,9 +351,9 @@
 {#if showMigrationBanner}
   <div class="migration-banner">
     <div class="migration-content">
-      {#if migrationStatus.startsWith("")}
+      {#if migrationPhase === "success"}
         <span class="success-icon"></span>
-      {:else if migrationStatus.includes("error") || migrationStatus.includes("failed")}
+      {:else if migrationPhase === "errors" || migrationPhase === "failed"}
         <span class="error-icon"></span>
       {:else}
         <span class="loading-icon">⏳</span>
@@ -342,21 +369,21 @@
       <span class="permission-icon">🎵</span>
       <span class="permission-text">
         {#if permissionDenied}
-          Audio permission required to play local music files.
+          {$_("app.audioPermissionRequired")}
         {:else}
-          Requesting audio permission...
+          {$_("app.requestingAudioPermission")}
         {/if}
       </span>
       {#if permissionDenied}
         <button class="permission-button" on:click={handleOpenSettings}>
-          Open Settings
+          {$_("common.openSettings")}
         </button>
       {/if}
     </div>
   </div>
 {/if}
 
-<a href="#main-content" class="skip-link">Skip to main content</a>
+<a href="#main-content" class="skip-link">{$_("app.skipToMainContent")}</a>
 
 <div class="app-content" class:mobile={$isMobile} class:pip={$isMiniPlayer} class:has-mini-player={$isMobile && $currentTrack && !$isFullScreen} id="main-content">
   <slot />

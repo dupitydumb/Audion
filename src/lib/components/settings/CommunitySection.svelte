@@ -48,8 +48,8 @@
       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
     </svg>
     <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.community', { default: 'Community' })}</span>
-      <span class="accordion-subtitle">{$_('settings.communitySubtitle', { default: 'Connect with other users, share tracks, and enable integrations' })}</span>
+      <span class="accordion-title">{$_('settings.community')}</span>
+      <span class="accordion-subtitle">{$_('settings.communitySubtitle')}</span>
     </div>
     <svg class="accordion-chevron" class:rotated={open} viewBox="0 0 24 24" width="16" height="16">
       <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
@@ -60,8 +60,8 @@
       <div class="settings-card">
     <div class="toggle-container">
       <div class="toggle-info">
-        <span class="setting-title">{$_('settings.listenBrainz', { default: 'ListenBrainz' })}</span>
-        <span class="setting-description">{$_('settings.listenBrainzDesc', { default: 'Submit listening history to ListenBrainz' })}</span>
+        <span class="setting-title">{$_('settings.listenBrainz')}</span>
+        <span class="setting-description">{$_('settings.listenBrainzDesc')}</span>
       </div>
       <button
         class="toggle-btn"
@@ -83,19 +83,19 @@
             <input
               type="password"
               bind:value={lbTokenInput}
-              placeholder={$_('settings.userToken', { default: 'User Token' })}
+              placeholder={$_('settings.userToken')}
               class="input-compact"
               style="flex: 1; min-width: 0;"
             />
             <button class="btn-outline-compact" on:click={handleVerifyLbToken} disabled={lbIsVerifying}>
-              {lbIsVerifying ? "..." : $_('settings.verify', { default: 'Verify' })}
+              {lbIsVerifying ? "..." : $_('settings.verify')}
             </button>
           </div>
           {#if lbVerifyError}<p class="text-error" style="font-size: 0.7rem; margin-top: 4px;">{lbVerifyError}</p>{/if}
         {:else}
           <div class="lb-status-row" style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 0.8125rem;">{$_('settings.loggedInAs', { default: 'Logged in as' })} <strong>{$appSettings.listenBrainzUsername || 'User'}</strong></span>
-            <button class="btn-text-small" on:click={handleRemoveLbToken}>{$_('settings.remove', { default: 'Remove' })}</button>
+            <span style="font-size: 0.8125rem;">{$_('settings.loggedInAs')} <strong>{$appSettings.listenBrainzUsername || 'User'}</strong></span>
+            <button class="btn-text-small" on:click={handleRemoveLbToken}>{$_('settings.remove')}</button>
           </div>
         {/if}
       </div>
@@ -105,7 +105,7 @@
 
     <div class="toggle-container">
       <div class="toggle-info">
-        <span class="setting-title">{$_('settings.discordButton', { default: 'Discord button' })}</span>
+        <span class="setting-title">{$_('settings.discordButton')}</span>
       </div>
       <button
         class="toggle-btn"
@@ -123,7 +123,7 @@
 
     <div class="toggle-container">
       <div class="toggle-info">
-        <span class="setting-title">{$_('settings.resonateButton', { default: 'Resonate button' })}</span>
+        <span class="setting-title">{$_('settings.resonateButton')}</span>
       </div>
       <button
         class="toggle-btn"
@@ -138,8 +138,8 @@
     </div>
 
     <div class="button-group-row" style="margin-top: var(--spacing-sm); gap: var(--spacing-sm);">
-      <a href="https://discord.gg/27XRVQsBd9" target="_blank" rel="noreferrer" class="btn-outline-compact" style="flex: 1; text-align: center;">{$_('settings.openDiscord', { default: 'Open Discord' })}</a>
-      <a href="https://resonate.audionplayer.com?ref=audion" target="_blank" rel="noreferrer" class="btn-outline-compact" style="flex: 1; text-align: center;">{$_('settings.openResonate', { default: 'Open Resonate' })}</a>
+      <a href="https://discord.gg/27XRVQsBd9" target="_blank" rel="noreferrer" class="btn-outline-compact" style="flex: 1; text-align: center;">{$_('settings.openDiscord')}</a>
+      <a href="https://resonate.audionplayer.com?ref=audion" target="_blank" rel="noreferrer" class="btn-outline-compact" style="flex: 1; text-align: center;">{$_('settings.openResonate')}</a>
     </div>
     </div>
   </div>

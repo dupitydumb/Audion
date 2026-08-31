@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n";
   import { fade, fly } from "svelte/transition";
   import { get } from "svelte/store";
   import { currentTrack, addToQueue } from "$lib/stores/player";
@@ -43,31 +44,31 @@
       action: async () => {
         try {
           await addTrackToPlaylist(playlist.id, track.id);
-          addToast(`Added to ${playlist.name}`, "success");
+          addToast($_('player.addedToPlaylist', { values: { name: playlist.name } }), "success");
         } catch (error) {
           console.error("Failed to add track to playlist:", error);
-          addToast("Failed to add to playlist", "error");
+          addToast($_('player.addToPlaylistFailed'), "error");
         }
       },
     }));
 
     const menuItems: any[] = [
       {
-        label: "Add to Queue",
+        label: $_('contextMenu.addToQueue'),
         action: () => {
           addToQueue([track]);
-          addToast("Added to queue", "success");
+          addToast($_('player.addedToQueue'), "success");
         },
       },
       { type: "separator" },
       {
-        label: "Add to Playlist",
+        label: $_('contextMenu.addToPlaylist'),
         submenu:
           playlistItems.length > 0
             ? playlistItems
             : [
                 {
-                  label: "No playlists",
+                  label: $_('contextMenu.noPlaylists'),
                   action: () => {},
                   disabled: true,
                 },
@@ -75,14 +76,14 @@
       },
       { type: "separator" },
       {
-        label: "Delete from Library",
+        label: $_('contextMenu.deleteFromLibrary'),
         danger: true,
         action: async () => {
           const confirmed = await confirm(
-            `Are you sure you want to delete "${track.title}" from your library?`,
+            $_('player.deleteTrackConfirm', { values: { title: track.title } }),
             {
-              title: "Delete Track",
-              confirmLabel: "Delete",
+              title: $_('player.deleteTrackTitle'),
+              confirmLabel: $_('player.delete'),
               danger: true,
             },
           );
@@ -107,13 +108,13 @@
       items: onlyAddToPlaylist
         ? [
             {
-              label: "Add to Playlist",
+              label: $_('contextMenu.addToPlaylist'),
               submenu:
                 playlistItems.length > 0
                   ? playlistItems
                   : [
                       {
-                        label: "No playlists",
+                        label: $_('contextMenu.noPlaylists'),
                         action: () => {},
                         disabled: true,
                       },
@@ -156,8 +157,8 @@
           {/if}
         {/key}
         <div class="sheet-track-details">
-          <span class="sheet-track-title">{$currentTrack.title || "Unknown Title"}</span>
-          <span class="sheet-track-artist">{formatArtists($currentTrack.artists) || $currentTrack.artist || "Unknown Artist"}</span>
+          <span class="sheet-track-title">{$currentTrack.title || $_('player.unknownTitle')}</span>
+          <span class="sheet-track-artist">{formatArtists($currentTrack.artists) || $currentTrack.artist || $_('common.unknownArtist')}</span>
         </div>
       </div>
     {/if}
@@ -193,7 +194,7 @@
         <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
           <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
         </svg>
-        <span>Go to Artist</span>
+        <span>{$_('contextMenu.goToArtist')}</span>
       </button>
     {/if}
 
@@ -210,7 +211,7 @@
         <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
           <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z" />
         </svg>
-        <span>Go to Album</span>
+        <span>{$_('contextMenu.goToAlbum')}</span>
       </button>
     {/if}
 
@@ -220,10 +221,10 @@
         <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
           <path d="M9.37 5.51A7 7 0 0 0 18.5 14.63a8 8 0 1 1-9.13-9.12z" />
         </svg>
-        <span>Sleep Timer</span>
+        <span>{$_('player.sleepTimer')}</span>
         {#if $sleepTimerActive}
           <span class="sheet-timer-badge">
-            {Math.ceil($sleepTimerRemainingMs / 60000)}m left
+            {$_('player.minutesLeft', { values: { minutes: Math.ceil($sleepTimerRemainingMs / 60000) } })}
           </span>
         {/if}
       </div>
@@ -241,7 +242,7 @@
             class="sheet-timer-btn cancel"
             on:click={() => { stopSleepTimer(); showMobileMenu = false; }}
           >
-            Cancel
+            {$_('common.cancel')}
           </button>
         {/if}
       </div>
@@ -255,7 +256,7 @@
       <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
         <path d="M19,2H5A3,3,0,0,0,2,5V15a3,3,0,0,0,3,3H9.17l-1.42,1.41a1,1,0,0,0,0,1.42,1,1,0,0,0,1.42,0L11,18.99,12.83,20.83a1,1,0,0,0,1.42,0,1,1,0,0,0,0-1.42L12.83,18H19a3,3,0,0,0,3-3V5A3,3,0,0,0,19,2Zm1,13a1,1,0,0,1-1,1H5a1,1,0,0,1-1-1V5A1,1,0,0,1,5,4H19a1,1,0,0,1,1,1Z"/>
       </svg>
-      <span>Connect to a Device</span>
+      <span>{$_('connect.connectToDevice')}</span>
       {#if connectedDevices > 0}
         <span class="sheet-connected-badge">{connectedDevices}</span>
       {/if}
@@ -269,7 +270,7 @@
       <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
         <path d="M14 10H2v2h12v-2zm0-4H2v2h12V6zm4 8v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zM2 16h8v-2H2v2z" />
       </svg>
-      <span>Add to Playlist</span>
+      <span>{$_('contextMenu.addToPlaylist')}</span>
     </button>
   </div>
 </div>

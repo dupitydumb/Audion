@@ -93,16 +93,16 @@
                     {/if}
                 </div>
                 <div class="top-track-info">
-                    <span class="top-track-title" class:accent={isNowPlaying || isPaused}>{track.title || "Unknown"}</span>
+                    <span class="top-track-title" class:accent={isNowPlaying || isPaused}>{track.title || $_('common.unknown')}</span>
                     <button
                         class="top-track-artist link"
                         on:click|stopPropagation={() => goToArtistDetail(track.artist || "")}
-                        title="Go to artist"
+                        title={$_('contextMenu.goToArtist')}
                     >
-                        {track.artist || "Unknown"}
+                        {track.artist || $_('common.unknown')}
                     </button>
                 </div>
-                <span class="top-track-plays">{play_count} plays</span>
+                <span class="top-track-plays">{$_('home.playsCount', { values: { count: play_count } })}</span>
                 <span class="top-track-duration">{formatDuration(track.duration)}</span>
             </div>
         {/each}

@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { _ } from "svelte-i18n";
     import { goToAlbumDetail, goToArtistDetail } from "$lib/stores/view";
     import { getAlbumCoverFromTracks } from "$lib/stores/library";
     import ArtistLinks from "$lib/components/ArtistLinks.svelte";
@@ -94,6 +95,7 @@
                                     artist={album.artist}
                                     artists={album.artists}
                                     chipClass="quick-play-artist"
+                                    chipTitle={$_('contextMenu.goToArtist')}
                                     marquee
                                     marqueeTrigger="external"
                                     marqueeActive={marqueeActive[album.id]}

@@ -45,6 +45,8 @@
   export let resetKey: unknown = undefined;
   /** optional artist picker popover for touch surfaces (compact mode only) */
   export let tapMenu = false;
+  /** optional title/tooltip applied to each artist chip button */
+  export let chipTitle = "";
 
   const dispatch = createEventDispatcher<{ select: string }>();
 
@@ -122,6 +124,7 @@
     <button
       type="button"
       class="artist-chip {chipClass}"
+      title={chipTitle}
       on:click={(e) => (useTapMenu ? openTapMenu(e) : handleClick(e, names[0]))}
       on:keydown={(e) => handleKeydown(e, names[0])}
     >{names[0]}</button>
@@ -165,6 +168,7 @@
         <button
           type="button"
           class="artist-chip {chipClass}"
+          title={chipTitle}
           on:click={(e) => handleClick(e, name)}
           on:keydown={(e) => handleKeydown(e, name)}
         >{name}</button>
@@ -178,6 +182,7 @@
       <button
         type="button"
         class="artist-chip {chipClass}"
+        title={chipTitle}
         on:click={(e) => handleClick(e, name)}
         on:keydown={(e) => handleKeydown(e, name)}
       >{name}</button>

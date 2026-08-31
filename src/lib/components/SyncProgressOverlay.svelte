@@ -2,6 +2,7 @@
     import { syncProgress, isSyncing } from "$lib/stores/sync";
     import { fade, fly } from "svelte/transition";
     import { isMobile } from "$lib/stores/mobile";
+    import { _ } from "svelte-i18n";
 
     $: visible = $isSyncing && $syncProgress.phase !== "";
     $: progressPercent =
@@ -12,15 +13,15 @@
     function getPhaseLabel(phase: string) {
         switch (phase) {
             case "push":
-                return "Pushing metadata...";
+                return $_('syncOverlay.pushing');
             case "pull":
-                return "Pulling metadata...";
+                return $_('syncOverlay.pulling');
             case "sync":
-                return "Synchronizing...";
+                return $_('syncOverlay.synchronizing');
             case "auth":
-                return "Authenticating...";
+                return $_('syncOverlay.authenticating');
             default:
-                return "Cloud Syncing...";
+                return $_('syncOverlay.cloudSyncing');
         }
     }
 </script>

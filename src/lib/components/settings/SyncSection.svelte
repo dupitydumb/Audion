@@ -22,7 +22,7 @@
   }
 
   function formatLastSynced(isoString: string | null): string {
-    if (!isoString) return "Not synced yet";
+    if (!isoString) return $_('syncSection.notSyncedYet');
     try {
       const date = new Date(isoString);
       const now = new Date();
@@ -30,9 +30,9 @@
       const diffSec = Math.floor(diffMs / 1000);
       const diffMin = Math.floor(diffSec / 60);
       const diffHour = Math.floor(diffMin / 60);
-      if (diffSec < 60) return "just now";
-      if (diffMin < 60) return `${diffMin}m ago`;
-      if (diffHour < 24) return `${diffHour}h ago`;
+      if (diffSec < 60) return $_('syncStatus.justNow');
+      if (diffMin < 60) return $_('syncStatus.minutesAgo', { values: { minutes: diffMin } });
+      if (diffHour < 24) return $_('syncStatus.hoursAgo', { values: { hours: diffHour } });
       const day = String(date.getDate()).padStart(2, "0");
       const month = String(date.getMonth() + 1).padStart(2, "0");
       const year = date.getFullYear();
@@ -71,8 +71,8 @@
       <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
     </svg>
     <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.sync', { default: 'Sync' })}</span>
-      <span class="accordion-subtitle">{$_('settings.syncSubtitle', { default: 'Configure track synchronization and cloud settings' })}</span>
+      <span class="accordion-title">{$_('settings.sync')}</span>
+      <span class="accordion-subtitle">{$_('settings.syncSubtitle')}</span>
     </div>
     <svg class="accordion-chevron" class:rotated={open} viewBox="0 0 24 24" width="16" height="16">
       <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
@@ -83,19 +83,19 @@
       <div class="settings-card">
     <div class="card-header-row">
       <div class="card-title-group">
-        <h3 class="setting-title">{$_('settings.libraryStatus', { default: 'Library status' })}</h3>
+        <h3 class="setting-title">{$_('settings.libraryStatus')}</h3>
         <span class="setting-description" aria-live="polite">
           {#if $isSyncing}
-            <span class="animate-pulse">{$_('settings.syncingTracks', { default: 'Syncing tracks...' })}</span>
+            <span class="animate-pulse">{$_('settings.syncingTracks')}</span>
           {:else}
-            {$_('settings.synced', { default: 'Synced' })} {formatLastSyncedRelative($syncStatus.last_sync_at)}
+            {$_('settings.synced')} {formatLastSyncedRelative($syncStatus.last_sync_at)}
             {#if $syncStatus.pending_changes > 0}
-              · {$syncStatus.pending_changes} {$_('settings.pending', { default: 'pending' })}
+              · {$syncStatus.pending_changes} {$_('settings.pending')}
             {/if}
           {/if}
         </span>
       </div>
-      <div class="pill-badge">{$_('settings.autoEvery12h', { default: 'Auto every 12h' })}</div>
+      <div class="pill-badge">{$_('settings.autoEvery12h')}</div>
     </div>
 
     <button
@@ -103,14 +103,14 @@
       style="margin-top: var(--spacing-md);"
       on:click={() => triggerSync()}
       disabled={$isSyncing}
-      aria-label={$_('settings.syncNow', { default: 'Sync now' })}
-    >{$isSyncing ? $_('settings.syncing', { default: 'Syncing...' }) : $_('settings.syncNow', { default: 'Sync now' })}</button>
+      aria-label={$_('settings.syncNow')}
+    >{$isSyncing ? $_('settings.syncing') : $_('settings.syncNow')}</button>
 
     <div class="divider"></div>
     <div class="tier-limits" role="group" aria-label="Usage Limits">
       <div class="tier-limit-item">
         <div class="limit-header">
-          <span id="limit-label-music" class="setting-title" style="font-size: 11px; opacity: 0.8">Tracks</span>
+          <span id="limit-label-music" class="setting-title" style="font-size: 11px; opacity: 0.8">{$_('common.tracks')}</span>
           <span class="setting-title" style="font-size: 11px; opacity: 0.8">{$trackCount} / 100</span>
         </div>
         <div class="limit-bar-thick-wrap" role="progressbar" aria-valuenow={$trackCount} aria-valuemin="0" aria-valuemax="100" aria-labelledby="limit-label-music">
@@ -120,7 +120,7 @@
 
       <div class="tier-limit-item">
         <div class="limit-header">
-          <span id="limit-label-playlists" class="setting-title" style="font-size: 11px; opacity: 0.8">Playlists</span>
+          <span id="limit-label-playlists" class="setting-title" style="font-size: 11px; opacity: 0.8">{$_('sidebar.playlists')}</span>
           <span class="setting-title" style="font-size: 11px; opacity: 0.8">{$playlists.length} / 3</span>
         </div>
         <div class="limit-bar-thick-wrap" role="progressbar" aria-valuenow={$playlists.length} aria-valuemin="0" aria-valuemax="3" aria-labelledby="limit-label-playlists">
@@ -140,17 +140,17 @@
           <div class="error-text">
             <span class="error-message">
               {#if $syncStatus.last_error.includes("Limit Exceeded") || $syncStatus.last_error.includes("limit exceeded")}
-                {$_('settings.limitExceeded', { default: 'Sync limit exceeded' })}
+                {$_('settings.limitExceeded')}
               {:else}
                 {formatSyncError($syncStatus.last_error)}
               {/if}
             </span>
             {#if $syncStatus.last_error.includes("Limit Exceeded") || $syncStatus.last_error.includes("limit exceeded")}
               <p class="error-hint">
-                {$_('settings.limitExceededDesc', { default: "You've reached the free tier limit of 100 tracks. Support development to get unlimited sync!" })}
+                {$_('settings.limitExceededDesc')}
                 <br />
                 <a href="https://ko-fi.com/N4N5UMNR1" target="_blank" rel="noreferrer" class="donate-link">
-                  {$_('settings.supportAudion', { default: 'Support Audion' })}
+                  {$_('settings.supportAudion')}
                 </a>
               </p>
             {/if}

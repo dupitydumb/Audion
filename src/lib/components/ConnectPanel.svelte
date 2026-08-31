@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n";
   import { fade, fly, slide } from "svelte/transition";
   import {
     wsStore,
@@ -105,10 +106,10 @@
   >
     <header>
       <div class="title-wrap">
-        <h2>Connect to a device</h2>
+        <h2>{$_('connect.title')}</h2>
         <div class="sync-pill" class:online={$wsStore.connected}>
           <div class="dot"></div>
-          <span>{$wsStore.connected ? "Cloud Active" : "Offline"}</span>
+          <span>{$wsStore.connected ? $_('connect.cloudActive') : $_('connect.offline')}</span>
         </div>
       </div>
       <button class="close-btn" on:click={close} aria-label="Close">
@@ -136,11 +137,11 @@
         </div>
         <div class="status-info">
           {#if $activeBackend === "remote"}
-            <span class="label">Controlling Remote</span>
-            <span class="value">Active Session</span>
+            <span class="label">{$_('connect.controllingRemote')}</span>
+            <span class="value">{$_('connect.activeSession')}</span>
           {:else}
-            <span class="label">Local Playback</span>
-            <span class="value">This Device</span>
+            <span class="label">{$_('connect.localPlayback')}</span>
+            <span class="value">{$_('connect.thisDevice')}</span>
           {/if}
         </div>
         {#if $isPlaying || $activeBackend === "remote"}
@@ -153,7 +154,7 @@
 
     <div class="device-section">
       <div class="section-header">
-        <span>Available to connect</span>
+        <span>{$_('connect.availableToConnect')}</span>
         <div class="line"></div>
       </div>
 
@@ -175,8 +176,8 @@
                 />
               </svg>
             </div>
-            <p>No other devices discovered</p>
-            <span>Ensure Audion is open on your other devices.</span>
+            <p>{$_('connect.noDevicesFound')}</p>
+            <span>{$_('connect.noDevicesHint')}</span>
           </div>
         {:else if !$appSettings.remoteControlEnabled}
           <div class="empty-state" in:fade>
@@ -195,10 +196,9 @@
                 />
               </svg>
             </div>
-            <p>Remote Control Disabled</p>
+            <p>{$_('connect.remoteControlDisabled')}</p>
             <span
-              >Enable "Remote Control & Device Connection" in settings to use
-              this feature.</span
+              >{$_('connect.remoteControlDisabledHint')}</span
             >
           </div>
         {:else}
@@ -251,7 +251,7 @@
                       >
                     </div>
                   {:else}
-                    <span class="idle-text">Ready to stream</span>
+                    <span class="idle-text">{$_('connect.readyToStream')}</span>
                   {/if}
                 </div>
 
@@ -323,14 +323,14 @@
                     on:click={() => toggleControl(device)}
                   >
                     {$activeRemoteDevice === device.deviceId
-                      ? "Stop Control"
-                      : "Remote Control"}
+                      ? $_('connect.stopControl')
+                      : $_('connect.remoteControl')}
                   </button>
                   <button
                     class="btn primary"
                     on:click={() => handleTransfer(device)}
                   >
-                    Play Here
+                    {$_('connect.playHere')}
                   </button>
                 </div>
               {/if}
@@ -349,14 +349,14 @@
                 d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
               /></svg
             >
-            <span>Guest mode: Sync limited to local network</span>
+            <span>{$_('connect.guestModeWarning')}</span>
           </div>
         {/if}
         <div class="server-status">
           <span class="status-msg">{$wsStore.statusText}</span>
           {#if !$wsStore.connected}
             <button class="text-btn" on:click={() => wsStore.connect()}
-              >Retry Connection</button
+              >{$_('connect.retryConnection')}</button
             >
           {/if}
         </div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n";
   import { pickFolder, addFolder, rescanMusic } from "$lib/api/tauri";
   import {
     loadLibrary,
@@ -87,16 +88,16 @@
 
         // Add success toast
         const parts = [];
-        if (result.tracks_added > 0) parts.push(`${result.tracks_added} added`);
+        if (result.tracks_added > 0) parts.push(`${result.tracks_added} ${$_('menu.added')}`);
         if (result.tracks_updated > 0)
-          parts.push(`${result.tracks_updated} updated`);
+          parts.push(`${result.tracks_updated} ${$_('menu.updated')}`);
         if (result.tracks_deleted > 0)
-          parts.push(`${result.tracks_deleted} deleted`);
+          parts.push(`${result.tracks_deleted} ${$_('menu.deleted')}`);
 
         const message =
           parts.length > 0
-            ? `Library scan complete: ${parts.join(", ")}`
-            : "Library scan complete";
+            ? $_('menu.scanComplete', { values: { parts: parts.join(", ") } })
+            : $_('menu.scanCompleteSimple');
 
         addToast(message, "success", 4000);
       } else {
@@ -104,7 +105,7 @@
       }
     } catch (error) {
       console.error("Failed to load folder:", error);
-      addToast("Failed to load folder", "error");
+      addToast($_('menu.loadFolderFailed'), "error");
     } finally {
       isScanning = false;
       progressiveScan.reset();
@@ -159,21 +160,21 @@
 
       // success toast
       const parts = [];
-      if (result.tracks_added > 0) parts.push(`${result.tracks_added} added`);
+      if (result.tracks_added > 0) parts.push(`${result.tracks_added} ${$_('menu.added')}`);
       if (result.tracks_updated > 0)
-        parts.push(`${result.tracks_updated} updated`);
+        parts.push(`${result.tracks_updated} ${$_('menu.updated')}`);
       if (result.tracks_deleted > 0)
-        parts.push(`${result.tracks_deleted} deleted`);
+        parts.push(`${result.tracks_deleted} ${$_('menu.deleted')}`);
 
       const message =
         parts.length > 0
-          ? `Rescan complete: ${parts.join(", ")}`
-          : "Rescan complete - no changes";
+          ? $_('menu.rescanComplete', { values: { parts: parts.join(", ") } })
+          : $_('menu.rescanCompleteNoChanges');
 
       addToast(message, "success", 4000);
     } catch (error) {
       console.error("Failed to rescan:", error);
-      addToast("Failed to rescan library", "error");
+      addToast($_('menu.rescanFailed'), "error");
     } finally {
       isScanning = false;
       progressiveScan.reset();
@@ -184,10 +185,10 @@
     closeMenus();
 
     const confirmed = await confirm(
-      "Are you sure you want to clear the application cache? This will clear all track data, search indices, and lyrics. Your music files will not be affected.",
+      $_('menu.clearCacheConfirm'),
       {
-        title: "Clear Cache",
-        confirmLabel: "Clear",
+        title: $_('menu.clearCache'),
+        confirmLabel: $_('common.clear'),
         danger: true,
       },
     );
@@ -227,7 +228,7 @@
     on:click|stopPropagation={() => toggleMenu("file")}
     class:active={openMenu === "file"}
     aria-label="Open menu"
-    title="Menu"
+    title={$_('menu.menuTitle')}
   >
     <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
       <circle cx="12" cy="12" r="2" />
@@ -239,7 +240,7 @@
   {#if openMenu}
     <div class="menu-dropdown">
       <div class="menu-section">
-        <div class="menu-header">File</div>
+        <div class="menu-header">{$_('menu.file')}</div>
         <button
           class="menu-item"
           on:click={handleLoadFolder}
@@ -250,7 +251,7 @@
               d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"
             />
           </svg>
-          <span>Load Folder</span>
+          <span>{$_('menu.loadFolder')}</span>
           <span class="shortcut">Ctrl+O</span>
         </button>
         <button class="menu-item" on:click={handleRescan} disabled={isScanning}>
@@ -259,7 +260,7 @@
               d="M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
             />
           </svg>
-          <span>Rescan Library</span>
+          <span>{$_('menu.rescanLibrary')}</span>
           <span class="shortcut">Ctrl+R</span>
         </button>
       </div>
@@ -267,7 +268,7 @@
       <div class="menu-divider"></div>
 
       <div class="menu-section">
-        <div class="menu-header">View</div>
+        <div class="menu-header">{$_('menu.view')}</div>
         <button
           class="menu-item"
           on:click={() => {
@@ -281,7 +282,7 @@
               d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"
             />
           </svg>
-          <span>Refresh Page</span>
+          <span>{$_('menu.refreshPage')}</span>
           <span class="shortcut">Ctrl+Shift+R</span>
         </button>
       </div>
@@ -289,14 +290,14 @@
       <div class="menu-divider"></div>
 
       <div class="menu-section">
-        <div class="menu-header">Settings</div>
+        <div class="menu-header">{$_('sidebar.settings')}</div>
         <button class="menu-item" on:click={handleClearCache}>
           <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
             <path
               d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
             />
           </svg>
-          <span>Clear Cache</span>
+          <span>{$_('menu.clearCache')}</span>
         </button>
       </div>
     </div>
