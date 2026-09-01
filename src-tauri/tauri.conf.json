@@ -94,6 +94,13 @@
         "role": "Viewer"
       },
       {
+        "ext": ["opus"],
+        "name": "Opus Audio",
+        "description": "Opus Audio File",
+        "mimeType": "audio/opus",
+        "role": "Viewer"
+      },
+      {
         "ext": ["m4a"],
         "name": "M4A Audio",
         "description": "M4A Audio File",

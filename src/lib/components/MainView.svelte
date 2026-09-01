@@ -121,6 +121,7 @@
         "flac",
         "wav",
         "ogg",
+        "opus",
         "m4a",
         "aac",
         "alac",

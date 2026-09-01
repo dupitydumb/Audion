@@ -175,7 +175,7 @@ fn get_pending_open_file(state: tauri::State<'_, PendingOpenFile>) -> Option<Str
 }
 
 const ASSOCIATED_AUDIO_EXTENSIONS: &[&str] =
-    &["flac", "mp3", "wav", "ogg", "m4a", "aac", "alac"];
+    &["flac", "mp3", "wav", "ogg", "opus", "m4a", "aac", "alac"];
 
 fn is_associated_audio_file(path: &str) -> bool {
     std::path::Path::new(path)
