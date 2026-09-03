@@ -1,6 +1,6 @@
 
 import { get } from 'svelte/store';
-import { currentTrack, isPlaying, togglePlay, nextTrack, previousTrack, currentTime, duration } from '$lib/stores/player';
+import { currentTrack, isPlaying, togglePlay, nextTrack, previousTrack, currentTime, duration, shuffle, repeat, toggleShuffle, cycleRepeat } from '$lib/stores/player';
 import { nativeAudioStop } from '$lib/services/native-audio';
 import { getTrackCoverSrc } from '$lib/api/tauri';
 import { formatDuration } from '$lib/api/tauri';
@@ -16,7 +16,9 @@ interface AndroidInterface {
         isLoved: boolean,
         artUrl: string | null,
         currentTime: string,
-        duration: string
+        duration: string,
+        isShuffled: boolean,
+        repeatMode: string
     ): void;
     updateNotification(
         title: string,
@@ -26,7 +28,9 @@ interface AndroidInterface {
         isLoved: boolean,
         artUrl: string | null,
         currentTime: string,
-        duration: string
+        duration: string,
+        isShuffled: boolean,
+        repeatMode: string
     ): void;
     stopNotification(): void;
 }
@@ -35,7 +39,7 @@ interface AndroidInterface {
 declare global {
     interface Window {
         AndroidMediaNotification?: AndroidInterface;
-        __audionMediaAction?: (action: 'playPause' | 'next' | 'previous' | 'love' | 'stop') => void;
+        __audionMediaAction?: (action: 'playPause' | 'next' | 'previous' | 'love' | 'stop' | 'toggleShuffle' | 'cycleRepeat') => void;
     }
 }
 
@@ -71,6 +75,12 @@ export async function initAndroidNotification() {
             case 'stop':
                 nativeAudioStop();
                 isPlaying.set(false);
+                break;
+            case 'toggleShuffle':
+                toggleShuffle();
+                break;
+            case 'cycleRepeat':
+                cycleRepeat();
                 break;
         }
     };
@@ -128,7 +138,9 @@ export async function initAndroidNotification() {
             loved,
             artData,
             formatDuration(pos),
-            formatDuration(dur)
+            formatDuration(dur),
+            get(shuffle),
+            get(repeat)
         );
     });
 
@@ -146,7 +158,9 @@ export async function initAndroidNotification() {
                 loved,
                 lastArtBase64,
                 formatDuration(pos),
-                formatDuration(dur)
+                formatDuration(dur),
+                get(shuffle),
+                get(repeat)
             );
         }
     });
@@ -174,7 +188,9 @@ export async function initAndroidNotification() {
             get(isLoved),
             lastArtBase64,
             formatDuration(pos),
-            formatDuration(dur)
+            formatDuration(dur),
+            get(shuffle),
+            get(repeat)
         );
     });
 
@@ -201,9 +217,34 @@ export async function initAndroidNotification() {
             get(isLoved),
             lastArtBase64,
             formatDuration(pos),
-            formatDuration(dur)
+            formatDuration(dur),
+            get(shuffle),
+            get(repeat)
         );
     });
+
+    // pushes shuffle/repeat toggles made in-app (not from android auto) to the
+    // session too, so auto's shuffle/repeat icons stay in sync either direction
+    shuffle.subscribe(() => pushSessionUpdate());
+    repeat.subscribe(() => pushSessionUpdate());
+
+    function pushSessionUpdate() {
+        const track = get(currentTrack);
+        if (!track) return;
+
+        window.AndroidMediaNotification?.updateNotification(
+            track.title || 'Unknown Title',
+            track.artist || 'Unknown Artist',
+            track.album || '',
+            get(isPlaying),
+            get(isLoved),
+            lastArtBase64,
+            formatDuration(get(currentTime)),
+            formatDuration(get(duration)),
+            get(shuffle),
+            get(repeat)
+        );
+    }
 
     notificationInitialized = true;
 }

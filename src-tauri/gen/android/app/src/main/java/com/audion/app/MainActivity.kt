@@ -353,7 +353,9 @@ class MainActivity : TauriActivity() {
       isLoved: Boolean,
       artUrl: String?,
       currentTime: String?,
-      duration: String?
+      duration: String?,
+      isShuffled: Boolean,
+      repeatMode: String?
     ) {
       try {
         val intent = Intent(context, MediaNotificationService::class.java).apply {
@@ -365,6 +367,8 @@ class MainActivity : TauriActivity() {
           putExtra(MediaNotificationService.EXTRA_ART_URL, artUrl)
           putExtra(MediaNotificationService.EXTRA_CURRENT_TIME, currentTime)
           putExtra(MediaNotificationService.EXTRA_DURATION, duration)
+          putExtra(MediaNotificationService.EXTRA_IS_SHUFFLED, isShuffled)
+          putExtra(MediaNotificationService.EXTRA_REPEAT_MODE, repeatMode)
         }
         ContextCompat.startForegroundService(context, intent)
       } catch (e: Exception) {
@@ -382,9 +386,11 @@ class MainActivity : TauriActivity() {
       isLoved: Boolean,
       artUrl: String?,
       currentTime: String?,
-      duration: String?
+      duration: String?,
+      isShuffled: Boolean,
+      repeatMode: String?
     ) {
-      startNotification(title, artist, album, isPlaying, isLoved, artUrl, currentTime, duration)
+      startNotification(title, artist, album, isPlaying, isLoved, artUrl, currentTime, duration, isShuffled, repeatMode)
     }
 
     @JavascriptInterface

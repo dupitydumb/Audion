@@ -9,6 +9,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
+import android.os.Bundle
 import android.support.v4.media.MediaBrowserCompat.MediaItem
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
@@ -19,6 +20,7 @@ import androidx.media.MediaBrowserServiceCompat
 import androidx.media.MediaBrowserServiceCompat.BrowserRoot
 import androidx.media.MediaBrowserServiceCompat.Result
 import androidx.media.app.NotificationCompat.MediaStyle
+import androidx.media.utils.MediaConstants
 import java.net.URL
 import kotlinx.coroutines.*
 
@@ -51,6 +53,8 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
         const val EXTRA_ART_URL = "art_url"
         const val EXTRA_CURRENT_TIME = "current_time"
         const val EXTRA_DURATION = "duration"
+        const val EXTRA_IS_SHUFFLED = "is_shuffled"
+        const val EXTRA_REPEAT_MODE = "repeat_mode"
 
         // Reference to the WebView for evaluating JS commands
         var webViewRef: WebView? = null
@@ -75,10 +79,14 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
     override fun onGetRoot(
         clientPackageName: String,
         clientUid: Int,
-        rootHints: android.os.Bundle?
+        rootHints: Bundle?
     ): BrowserRoot {
         // rootHints/clientPackageName let us vary the tree per caller later
-        return BrowserRoot(AudionLibraryBridge.ROOT_ID, null)
+        // (e.g. a slimmer tree for bluetooth avrcp vs full for auto) (not needed yet)
+        val extras = Bundle().apply {
+            putBoolean(MediaConstants.BROWSER_SERVICE_EXTRAS_KEY_SEARCH_SUPPORTED, true)
+        }
+        return BrowserRoot(AudionLibraryBridge.ROOT_ID, extras)
     }
 
     override fun onLoadChildren(parentId: String, result: Result<List<MediaItem>>) {
@@ -88,6 +96,21 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
             val children = AudionLibraryBridge.getChildren(applicationContext, parentId)
             withContext(Dispatchers.Main) {
                 result.sendResult(children)
+            }
+        }
+    }
+
+    override fun onSearch(query: String, extras: Bundle?, result: Result<List<MediaItem>>) {
+        // auto's search box has no concept of our 4 library chips (tracks/
+        // albums/artists/playlists) => query every scope and merge, capped
+        // to a single reasonable list length rather than 4x the per-scope limit
+        result.detach()
+        serviceScope.launch {
+            val merged = listOf("tracks", "albums", "artists", "playlists")
+                .flatMap { scope -> AudionLibraryBridge.search(applicationContext, scope, query) }
+                .take(30)
+            withContext(Dispatchers.Main) {
+                result.sendResult(merged)
             }
         }
     }
@@ -121,8 +144,10 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
                 val artUrl = intent?.getStringExtra(EXTRA_ART_URL)
                 val currentTime = intent?.getStringExtra(EXTRA_CURRENT_TIME) ?: null
                 val duration = intent?.getStringExtra(EXTRA_DURATION) ?: null
+                val isShuffled = intent?.getBooleanExtra(EXTRA_IS_SHUFFLED, false) ?: false
+                val repeatMode = intent?.getStringExtra(EXTRA_REPEAT_MODE) ?: "none"
 
-                updateNotification(title, artist, album, isPlaying, isLoved, artUrl, currentTime, duration)
+                updateNotification(title, artist, album, isPlaying, isLoved, artUrl, currentTime, duration, isShuffled, repeatMode)
             }
         }
 
@@ -170,6 +195,15 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
                     evaluateJs("window.__audionMediaAction?.('stop')")
                     stopSelf()
                 }
+                override fun onSetShuffleMode(shuffleMode: Int) {
+                    // the frontend only exposes a toggle, not "set to this exact
+                    // mode" => each tap just flips current state
+                    evaluateJs("window.__audionMediaAction?.('toggleShuffle')")
+                }
+                override fun onSetRepeatMode(repeatMode: Int) {
+                    // same deal as shuffle, but cycling none -> one -> all -> none
+                    evaluateJs("window.__audionMediaAction?.('cycleRepeat')")
+                }
             })
 
             isActive = true
@@ -184,7 +218,9 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
         isLoved: Boolean,
         artUrl: String?,
         currentTime: String?,
-        duration: String?
+        duration: String?,
+        isShuffled: Boolean,
+        repeatMode: String
     ) {
         // Update media session metadata
         val durationMs = parseTimeToMillis(duration)
@@ -205,6 +241,13 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
 
         mediaSession?.setMetadata(metadataBuilder.build())
 
+        // shuffle/repeat live on the session itself, not the playback state =>
+        // this drives auto/aaos's shuffle/repeat icon highlight state
+        mediaSession?.setShuffleMode(
+            if (isShuffled) PlaybackStateCompat.SHUFFLE_MODE_ALL else PlaybackStateCompat.SHUFFLE_MODE_NONE
+        )
+        mediaSession?.setRepeatMode(repeatModeToCompat(repeatMode))
+
         // Update playback state with transport controls.
         val positionMs = parseTimeToMillis(currentTime) ?: PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN
         val stateBuilder = PlaybackStateCompat.Builder()
@@ -212,7 +255,9 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
                 PlaybackStateCompat.ACTION_PLAY_PAUSE or
                 PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
                 PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-                PlaybackStateCompat.ACTION_STOP
+                PlaybackStateCompat.ACTION_STOP or
+                PlaybackStateCompat.ACTION_SET_SHUFFLE_MODE or
+                PlaybackStateCompat.ACTION_SET_REPEAT_MODE
             )
             .setState(
                 if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED,
@@ -232,7 +277,7 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
                         currentArtBitmap = bitmap
                         // Re-update with the loaded bitmap
                         withContext(Dispatchers.Main) {
-                            updateNotification(title, artist, album, isPlaying, isLoved, null, currentTime, duration)
+                            updateNotification(title, artist, album, isPlaying, isLoved, null, currentTime, duration, isShuffled, repeatMode)
                         }
                     }
                 } catch (e: Exception) {
@@ -363,6 +408,12 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
                 null
             }
         }
+    }
+
+    private fun repeatModeToCompat(mode: String): Int = when (mode) {
+        "one" -> PlaybackStateCompat.REPEAT_MODE_ONE
+        "all" -> PlaybackStateCompat.REPEAT_MODE_ALL
+        else -> PlaybackStateCompat.REPEAT_MODE_NONE
     }
 
     /**
