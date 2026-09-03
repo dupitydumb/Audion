@@ -3,6 +3,7 @@
 
 mod commands;
 mod db;
+mod android_auto;
 #[cfg(desktop)]
 mod integrations;
 mod scanner;
@@ -665,6 +666,8 @@ pub fn run() {
             tracing::info!("Database initialized");
 
             app.manage(database.clone());
+            #[cfg(target_os = "android")]
+            android_auto::jni_bridge::set_database(database.clone());
             app.manage(commands::listenbrainz::ListenBrainzState::new());
             #[cfg(desktop)]
             app.manage(integrations::window::CloseConfirmed::default());

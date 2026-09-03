@@ -4,28 +4,34 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
-import android.os.IBinder
+import android.support.v4.media.MediaBrowserCompat.MediaItem
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
 import android.webkit.WebView
 import androidx.core.app.NotificationCompat
+import androidx.media.MediaBrowserServiceCompat
+import androidx.media.MediaBrowserServiceCompat.BrowserRoot
+import androidx.media.MediaBrowserServiceCompat.Result
 import androidx.media.app.NotificationCompat.MediaStyle
 import java.net.URL
 import kotlinx.coroutines.*
 
 /**
- * Foreground service for persistent media notification with playback controls.
- * Shows track title, artist, album art, and play/pause/next/prev buttons,
- * similar to Spotify's media notification.
+ * foreground service for persistent media notification with playback controls
+ * shows track title, artist, album art, and play/pause/next/prev buttons,
+ * similar to spotify's media notification
+ *
+ * also acts as the media browser service for android auto / aaos / bluetooth
+ * avrcp browsing => this is the same service google's own samples use for
+ * both roles, since auto needs the session token this service already owns
  */
-class MediaNotificationService : Service() {
+class MediaNotificationService : MediaBrowserServiceCompat() {
 
     companion object {
         const val CHANNEL_ID = "audion_media_channel"
@@ -55,12 +61,35 @@ class MediaNotificationService : Service() {
     private var currentArtBitmap: Bitmap? = null
     private var currentArtUrl: String? = null
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    // no manual onBind override => MediaBrowserServiceCompat's own implementation
+    // handles the browse binding protocol auto/aaos/bluetooth avrcp clients use
 
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
         setupMediaSession()
+        // exposes the session to browsing clients, required for MediaBrowserServiceCompat
+        sessionToken = mediaSession?.sessionToken
+    }
+
+    override fun onGetRoot(
+        clientPackageName: String,
+        clientUid: Int,
+        rootHints: android.os.Bundle?
+    ): BrowserRoot {
+        // rootHints/clientPackageName let us vary the tree per caller later
+        return BrowserRoot(AudionLibraryBridge.ROOT_ID, null)
+    }
+
+    override fun onLoadChildren(parentId: String, result: Result<List<MediaItem>>) {
+        // detach because the bridge call may not resolve synchronously
+        result.detach()
+        serviceScope.launch {
+            val children = AudionLibraryBridge.getChildren(applicationContext, parentId)
+            withContext(Dispatchers.Main) {
+                result.sendResult(children)
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -158,10 +187,17 @@ class MediaNotificationService : Service() {
         duration: String?
     ) {
         // Update media session metadata
+        val durationMs = parseTimeToMillis(duration)
         val metadataBuilder = MediaMetadataCompat.Builder()
             .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
             .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, artist)
             .putString(MediaMetadataCompat.METADATA_KEY_ALBUM, album)
+
+        // only claim a duration when we actually parsed one => auto/wear/lock-screen
+        // progress bars read this, leaving it unset is safer than reporting 0
+        if (durationMs != null) {
+            metadataBuilder.putLong(MediaMetadataCompat.METADATA_KEY_DURATION, durationMs)
+        }
 
         currentArtBitmap?.let {
             metadataBuilder.putBitmap(MediaMetadataCompat.METADATA_KEY_ALBUM_ART, it)
@@ -170,6 +206,7 @@ class MediaNotificationService : Service() {
         mediaSession?.setMetadata(metadataBuilder.build())
 
         // Update playback state with transport controls.
+        val positionMs = parseTimeToMillis(currentTime) ?: PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN
         val stateBuilder = PlaybackStateCompat.Builder()
             .setActions(
                 PlaybackStateCompat.ACTION_PLAY_PAUSE or
@@ -179,7 +216,7 @@ class MediaNotificationService : Service() {
             )
             .setState(
                 if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED,
-                PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN,
+                positionMs,
                 1f
             )
 
@@ -325,6 +362,26 @@ class MediaNotificationService : Service() {
             } catch (e: Exception) {
                 null
             }
+        }
+    }
+
+    /**
+     * inverse of the frontend's formatDuration
+     * (parses "m:ss" or "h:mm:ss") back into milliseconds
+     * returns null for the "--:--" unknown sentinel or anything else that doesn't parse, so callers can fall back safely
+     */
+    private fun parseTimeToMillis(time: String?): Long? {
+        if (time.isNullOrEmpty()) return null
+        val parts = time.split(":")
+        return try {
+            val seconds = when (parts.size) {
+                2 -> parts[0].toLong() * 60 + parts[1].toLong()
+                3 -> parts[0].toLong() * 3600 + parts[1].toLong() * 60 + parts[2].toLong()
+                else -> return null
+            }
+            seconds * 1000
+        } catch (e: NumberFormatException) {
+            null
         }
     }
 
