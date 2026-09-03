@@ -192,6 +192,9 @@ raw-window-handle = "0.6"
 [patch.crates-io]
 lofty = { git = "https://github.com/SmileofHaven/lofty-rs", branch = "main" }
 
+[patch."https://github.com/restsend/opus-rs"]
+opus-rs = { git = "https://github.com/SmileofHaven/opus-rs", branch = "main" }
+
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.14"
 jni = "0.21"
