@@ -85,6 +85,8 @@
     function navigateAndClose(fn: () => void) {
         fn();
         dispatch("navigate");
+        // Blur so spacebar shortcuts aren't captured by the clicked nav button
+        (document.activeElement as HTMLElement | null)?.blur();
     }
 
     let isScanning = false;

@@ -6,6 +6,7 @@
   import { slide } from "svelte/transition";
   import { createEventDispatcher, tick } from "svelte";
   import Icon from "$lib/components/Icon.svelte";
+  import { appSettings } from "$lib/stores/settings";
 
   export let open: boolean = false;
   const dispatch = createEventDispatcher();
@@ -135,6 +136,30 @@
   {#if open}
     <div class="section-body" transition:slide|local>
       <div class="settings-card">
+
+        <!-- auto-fetch toggle -->
+        <div class="toggle-container">
+          <div class="toggle-info">
+            <span class="setting-title">{$_('settings.lyricsAutoFetchTitle', { default: 'Auto-fetch lyrics' })}</span>
+            <span class="setting-description">
+              {$_('settings.lyricsAutoFetchDesc', {
+                default: 'Automatically search for lyrics when a track starts playing. Turn off to save bandwidth or prevent unwanted lookups.',
+              })}
+            </span>
+          </div>
+          <button
+            class="toggle-btn"
+            class:active={$appSettings.lyricsAutoFetch}
+            on:click={() => appSettings.setLyricsAutoFetch(!$appSettings.lyricsAutoFetch)}
+            role="switch"
+            aria-checked={$appSettings.lyricsAutoFetch}
+            aria-label={$_('settings.lyricsAutoFetchToggleLabel', { default: 'Toggle automatic lyrics fetching' })}
+          >
+            <div class="toggle-handle"></div>
+          </button>
+        </div>
+
+        <div class="divider"></div>
 
         <!-- render mode -->
         <div class="toggle-container">
