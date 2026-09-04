@@ -106,7 +106,11 @@
                     role="menuitem"
                     tabindex="0"
                 >
-                    <span class="menu-item-icon"></span>
+                    <span class="menu-item-icon">
+                        {#if item.icon}
+                            <Icon name={item.icon} size={14} />
+                        {/if}
+                    </span>
                     <span class="menu-item-label">{item.label}</span>
                     <Icon name="chevron-right" size={14} />
                     {#if activeSubmenu === item.label}
@@ -125,7 +129,12 @@
                                             subitem.action &&
                                             handleItemClick(subitem.action)}
                                     >
-                                        {subitem.label}
+                                        <span class="menu-item-icon">
+                                            {#if subitem.icon}
+                                                <Icon name={subitem.icon} size={14} />
+                                            {/if}
+                                        </span>
+                                        <span class="menu-item-label">{subitem.label}</span>
                                     </button>
                                 {/if}
                             {/each}
