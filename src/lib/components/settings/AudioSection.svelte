@@ -1,8 +1,9 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
   import { appSettings } from "$lib/stores/settings";
-  import { equalizer, EQ_PRESETS } from "$lib/stores/equalizer";
-  import { nativeAudioStop, nativeAudioSetReplayGainEnabled, nativeAudioListDevices, nativeAudioGetDeviceInfo, nativeAudioSetOutputDevice, type DeviceList, type AudioDeviceInfo } from "$lib/services/native-audio";
+  import { equalizer } from "$lib/stores/equalizer";
+  import { nativeAudioStop, nativeAudioSetReplayGainEnabled, nativeAudioSetLimiterEnabled, nativeAudioListDevices, nativeAudioGetDeviceInfo, nativeAudioSetOutputDevice, type DeviceList, type AudioDeviceInfo } from "$lib/services/native-audio";
+  import { html5SetReplayGainEnabled } from "$lib/services/html5-audio";
   import Icon from "$lib/components/Icon.svelte";
   import { onMount, onDestroy } from "svelte";
   import { slide } from "svelte/transition";
@@ -15,7 +16,6 @@
   let initialAudioBackend = $appSettings.audioBackend;
   let showRefreshNotice = false;
   $: showRefreshNotice = $appSettings.audioBackend !== initialAudioBackend;
-  $: replayGainDisabled = $appSettings.audioBackend === 'html5';
   $: outputDeviceDisabled = $appSettings.audioBackend === 'html5';
 
   let deviceList: DeviceList | null = null;
@@ -91,9 +91,13 @@
   }
 
   async function handleToggleReplayGain() {
-    if (replayGainDisabled) return;
     const next = !$appSettings.replayGainEnabled;
     appSettings.setReplayGainEnabled(next);
+    if ($appSettings.audioBackend === 'html5') {
+      // html5 replay gain is applied synchronously via WebAudio
+      html5SetReplayGainEnabled(next);
+      return;
+    }
     try {
       await nativeAudioSetReplayGainEnabled(next);
     } catch (e) {
@@ -102,14 +106,22 @@
     }
   }
 
+  // limiter is native/rodio-only - no WebAudio equivalent
+  // +hidden entirely on the html5 backend
+  async function handleToggleLimiter() {
+    const next = !$appSettings.limiterEnabled;
+    appSettings.setLimiterEnabled(next);
+    try {
+      await nativeAudioSetLimiterEnabled(next);
+    } catch (e) {
+      console.warn('[AudioSection] Failed to set limiter:', e);
+      appSettings.setLimiterEnabled(!next);
+    }
+  }
+
   function handleRefresh() {
     nativeAudioStop();
     window.location.reload();
-  }
-
-  function formatEqGain(gain: number): string {
-    const rounded = Math.round(gain * 10) / 10;
-    return `${rounded > 0 ? "+" : ""}${rounded.toFixed(1)} dB`;
   }
 
   function handleInfoClick(e: Event, device: AudioDeviceInfo) {
@@ -285,13 +297,31 @@
               <div class="toggle-handle"></div>
             </button>
           </div>
-          {#if replayGainDisabled}
-            <div class="disabled-notice">
-              <Icon name="info" size="xs" />
-              <span>{$_('settings.replayGainDisabled')}</span>
-            </div>
-          {/if}
         </div>
+
+        {#if $appSettings.audioBackend !== 'html5'}
+          <div class="divider"></div>
+
+          <!-- limiter - native/rodio only, no html5 equivalent -->
+          <div class="inner-section">
+            <div class="toggle-container">
+              <div class="toggle-info">
+                <span class="setting-title">{$_('settings.limiter', { default: 'Safety Limiter' })}</span>
+                <span class="setting-description">{$_('settings.limiterDesc', { default: 'Prevent clipping from Replay Gain and EQ boosts. Turning this off plays audio completely unprocessed, which can distort if Replay Gain or EQ push a track past full volume.' })}</span>
+              </div>
+              <button
+                class="toggle-btn"
+                class:active={$appSettings.limiterEnabled}
+                on:click={handleToggleLimiter}
+                role="switch"
+                aria-checked={$appSettings.limiterEnabled}
+                aria-label="Toggle Safety Limiter"
+              >
+                <div class="toggle-handle"></div>
+              </button>
+            </div>
+          </div>
+        {/if}
 
         <div class="divider"></div>
 
@@ -337,46 +367,25 @@
               <div class="toggle-handle"></div>
             </button>
           </div>
-          {#if $equalizer.enabled}
-            <div class="eq-controls">
-              <div class="eq-bands">
-                {#each $equalizer.bands as band, i}
-                  <div class="eq-band">
-                    <span class="eq-band-label">{band.label}</span>
-                    <input
-                      type="range"
-                      min="-12"
-                      max="12"
-                      step="0.5"
-                      value={band.gain}
-                      style="--eq-fill: {((band.gain + 12) / 24 * 100).toFixed(1)}%"
-                      on:input={(e) => {
-                        const val = parseFloat(e.currentTarget.value);
-                        equalizer.setBandGain(i, val);
-                      }}
-                      aria-label="{band.frequency} band"
-                    />
-                    <span class="eq-band-value">{formatEqGain(band.gain)}</span>
-                  </div>
-                {/each}
-              </div>
-              <div class="eq-presets">
-                <span class="eq-presets-label">{$_('settings.presets')}</span>
-                <div class="eq-preset-pills">
-                  {#each EQ_PRESETS as preset}
-                    <button
-                      class="preset-pill"
-                      class:active={$equalizer.currentPreset === preset.name}
-                      on:click={() => equalizer.applyPreset(preset.name)}
-                      title={preset.name}
-                    >
-                      {preset.name}
-                    </button>
-                  {/each}
-                </div>
-              </div>
+
+          <div class="eq-compact-preview" class:dimmed={!$equalizer.enabled}>
+            <div class="eq-compact-bars" aria-hidden="true">
+              {#each $equalizer.bands as band}
+                <div
+                  class="eq-compact-bar"
+                  class:bypassed={!band.enabled}
+                  style="--bar-h: {Math.max(4, ((band.gain + 12) / 24) * 100)}%"
+                ></div>
+              {/each}
             </div>
-          {/if}
+            <div class="eq-compact-info">
+              <span>{$equalizer.currentPreset ?? $_('settings.customPreset')}</span>
+              <span class="eq-compact-band-count">{$_('settings.equalizerBandCount', { values: { count: $equalizer.bands.length } })}</span>
+            </div>
+            <button class="btn-secondary-small" on:click={() => dispatch('openEqEditor')}>
+              {$_('settings.customizeEqualizer')}
+            </button>
+          </div>
         </div>
       </div>
     </div>

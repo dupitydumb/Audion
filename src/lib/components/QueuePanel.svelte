@@ -19,6 +19,8 @@
     } from "$lib/stores/player";
     import { albums } from "$lib/stores/library";
     import { formatDuration, getAlbumArtSrc, getTrackCoverSrc, getAlbumCoverSrc } from "$lib/api/tauri";
+    import ArtistLinks from "$lib/components/ArtistLinks.svelte";
+    import { goToArtistDetail } from "$lib/stores/view";
     import { onMount, onDestroy } from "svelte";
     
     export let hideheader: boolean = false;
@@ -246,6 +248,8 @@
     let dragOverIndex: number | null = null;
     let isDragging = false;
     let cleanupDragListeners: (() => void) | null = null;
+    let hoveredCurrentTrack = false;
+    let hoveredQueueKey: string | null = null;
 
     function handlePointerDown(e: PointerEvent, actualIndex: number) {
         e.preventDefault();
@@ -368,7 +372,10 @@
                 <section class="queue-section">
                     <h4 class="section-title">{$_('player.nowPlaying')}</h4>
                     <div class="now-playing">
-                        <div class="queue-track current">
+                        <div class="queue-track current"
+                            on:mouseenter={() => (hoveredCurrentTrack = true)}
+                            on:mouseleave={() => (hoveredCurrentTrack = false)}
+                        >
                             <div class="track-art">
                                 {#if getTrackArt($currentTrack)}
                                     <img
@@ -404,10 +411,16 @@
                                     >{$currentTrack.title ||
                                         $_('player.unknownTitle')}</span
                                 >
-                                <span class="track-artist truncate"
-                                    >{$currentTrack.artist ||
-                                        $_('common.unknownArtist')}</span
-                                >
+                                <ArtistLinks
+                                    artist={$currentTrack.artist || $_('common.unknownArtist')}
+                                    artists={$currentTrack.artists}
+                                    chipClass="track-artist truncate"
+                                    marquee
+                                    marqueeTrigger="external"
+                                    marqueeActive={hoveredCurrentTrack}
+                                    resetKey={$currentTrack.id}
+                                    on:select={(e) => goToArtistDetail(e.detail)}
+                                />
                             </div>
                             <span class="track-duration"
                                 >{formatDuration($currentTrack.duration)}</span
@@ -442,6 +455,9 @@
                                         data-index={item.index}
                                         role="listitem"
                                         style="height: {TRACK_ROW_HEIGHT}px;"
+                                        on:mouseenter={() =>
+                                            (hoveredQueueKey = item.track.id + "-next-" + item.index)}
+                                        on:mouseleave={() => (hoveredQueueKey = null)}
                                     >
                                         <div
                                             class="drag-handle"
@@ -496,10 +512,16 @@
                                                     >{item.track.title ||
                                                         $_('player.unknownTitle')}</span
                                                 >
-                                                <span class="track-artist truncate"
-                                                    >{item.track.artist ||
-                                                        $_('common.unknownArtist')}</span
-                                                >
+                                                <ArtistLinks
+                                                    artist={item.track.artist || $_('common.unknownArtist')}
+                                                    artists={item.track.artists}
+                                                    chipClass="track-artist truncate"
+                                                    marquee
+                                                    marqueeTrigger="external"
+                                                    marqueeActive={hoveredQueueKey === item.track.id + "-next-" + item.index}
+                                                    resetKey={item.track.id}
+                                                    on:select={(e) => goToArtistDetail(e.detail)}
+                                                />
                                             </div>
                                         </button>
                                         <span class="track-duration"
@@ -549,6 +571,9 @@
                                     <div 
                                         class="queue-track past"
                                         style="height: {TRACK_ROW_HEIGHT}px;"
+                                        on:mouseenter={() =>
+                                            (hoveredQueueKey = item.track.id + "-history-" + item.index)}
+                                        on:mouseleave={() => (hoveredQueueKey = null)}
                                     >
                                         <button
                                             class="track-btn"
@@ -582,10 +607,16 @@
                                                     >{item.track.title ||
                                                         $_('player.unknownTitle')}</span
                                                 >
-                                                <span class="track-artist truncate"
-                                                    >{item.track.artist ||
-                                                        $_('common.unknownArtist')}</span
-                                                >
+                                                <ArtistLinks
+                                                    artist={item.track.artist || $_('common.unknownArtist')}
+                                                    artists={item.track.artists}
+                                                    chipClass="track-artist truncate"
+                                                    marquee
+                                                    marqueeTrigger="external"
+                                                    marqueeActive={hoveredQueueKey === item.track.id + "-history-" + item.index}
+                                                    resetKey={item.track.id}
+                                                    on:select={(e) => goToArtistDetail(e.detail)}
+                                                />
                                             </div>
                                         </button>
                                         <span class="track-duration"

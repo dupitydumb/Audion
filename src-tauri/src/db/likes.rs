@@ -2,6 +2,7 @@
 use rusqlite::{params, Connection, OptionalExtension, Result};
 
 use super::models::Track;
+use super::artists;
 
 pub fn like_track(conn: &Connection, track_id: i64) -> Result<()> {
     conn.execute(
@@ -44,7 +45,7 @@ pub fn get_liked_tracks(conn: &Connection) -> Result<Vec<Track>> {
          ORDER BY lt.liked_at DESC",
     )?;
 
-    let tracks = stmt
+    let mut tracks = stmt
         .query_map([], |row| {
             Ok(Track {
                 id: row.get(0)?,
@@ -66,10 +67,12 @@ pub fn get_liked_tracks(conn: &Connection) -> Result<Vec<Track>> {
                 disc_number: row.get(15)?,
                 metadata_json: row.get(16)?,
                 date_added: row.get(17)?,
+                artists: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>>>()?;
 
+    artists::attach_artists(conn, &mut tracks)?;
     Ok(tracks)
 }
 
@@ -88,7 +91,7 @@ pub fn get_continue_listening(conn: &Connection, limit: i32) -> Result<Vec<Track
          LIMIT ?1",
     )?;
 
-    let tracks = stmt
+    let mut tracks = stmt
         .query_map(params![limit], |row| {
             Ok(Track {
                 id: row.get(0)?,
@@ -110,9 +113,11 @@ pub fn get_continue_listening(conn: &Connection, limit: i32) -> Result<Vec<Track
                 disc_number: row.get(15)?,
                 metadata_json: row.get(16)?,
                 date_added: row.get(17)?,
+                artists: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>>>()?;
 
+    artists::attach_artists(conn, &mut tracks)?;
     Ok(tracks)
 }

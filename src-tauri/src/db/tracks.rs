@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 use super::models::{Album, Playlist, Artist, Track, TrackInsert};
+use super::artists;
 
 // ─── Private helpers ─────────────────────────────────────────────────────────
 
@@ -11,8 +12,18 @@ fn get_or_create_album(
     conn: &Connection,
     name: &str,
     artist: Option<&str>,
+    album_artist_tag: Option<&str>,
     _art_data: Option<&[u8]>,
 ) -> Result<i64> {
+    // decide which raw string to store as the album's artist
+    // per the active AlbumArtistMode (commands::app_settings)
+    // TagIfPresent prefers the file's own AlbumArtist tag
+    // FirstTrack (default) ignores it and falls back to whichever track's artist wins
+    let chosen_artist = match super::artists::active_album_artist_mode() {
+        super::models::AlbumArtistMode::TagIfPresent => album_artist_tag.or(artist),
+        super::models::AlbumArtistMode::FirstTrack => artist,
+    };
+
     // Match by album name only to avoid splitting albums when tracks have different artists
     let existing: Option<i64> = conn
         .query_row(
@@ -24,11 +35,14 @@ fn get_or_create_album(
 
     if let Some(id) = existing {
         // Update artist if not set yet
-        if let Some(album_artist) = artist {
-            conn.execute(
+        if let Some(album_artist) = chosen_artist {
+            let updated = conn.execute(
                 "UPDATE albums SET artist = ?1 WHERE id = ?2 AND artist IS NULL",
                 params![album_artist, id],
             )?;
+            if updated > 0 {
+                super::artists::sync_album_artists_for_album(conn, id, Some(album_artist))?;
+            }
         }
         return Ok(id);
     }
@@ -36,10 +50,12 @@ fn get_or_create_album(
     // Create new album (without art_data, we'll save file separately)
     conn.execute(
         "INSERT INTO albums (name, artist) VALUES (?1, ?2)",
-        params![name, artist],
+        params![name, chosen_artist],
     )?;
 
-    Ok(conn.last_insert_rowid())
+    let album_id = conn.last_insert_rowid();
+    super::artists::sync_album_artists_for_album(conn, album_id, chosen_artist)?;
+    Ok(album_id)
 }
 
 fn build_fts_query(query: &str) -> Option<String> {
@@ -67,7 +83,7 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
     if let Some(ref hash) = track.content_hash {
         let existing: Option<i64> = conn
             .query_row(
-                "SELECT id FROM tracks WHERE content_hash = ?1 AND path != ?2",
+                "SELECT id FROM tracks WHERE content_hash = ?1 AND path != ?2 COLLATE NOCASE",
                 params![hash, track.path],
                 |row| row.get(0),
             )
@@ -80,9 +96,10 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
     }
 
     // Check if track already exists by path
+    // collate nocase helps with windows case-insensitive NTFS paths
     let existing_id: Option<i64> = conn
         .query_row(
-            "SELECT id FROM tracks WHERE path = ?1",
+            "SELECT id FROM tracks WHERE path = ?1 COLLATE NOCASE",
             params![track.path],
             |row| row.get(0),
         )
@@ -91,10 +108,12 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
     // First, handle album if present
     let album_id = if let Some(album_name) = &track.album {
         let artist = track.artist.as_deref();
+        let album_artist_tag = track.album_artist.as_deref();
         Some(get_or_create_album(
             conn,
             album_name,
             artist,
+            album_artist_tag,
             track.album_art.as_deref(),
         )?)
     } else {
@@ -144,6 +163,8 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
             ],
         )?;
 
+        super::artists::sync_track_artists_for_track(conn, track_id, track.artist.as_deref())?;
+
         Ok((track_id, false)) // Return (existing_id, was_new = false)
     } else {
         // insert new track
@@ -171,7 +192,10 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
             ],
         )?;
 
-        Ok((conn.last_insert_rowid(), true)) // Return (new_id, was_new = true)
+        let new_id = conn.last_insert_rowid();
+        super::artists::sync_track_artists_for_track(conn, new_id, track.artist.as_deref())?;
+
+        Ok((new_id, true)) // Return (new_id, was_new = true)
     }
 }
 
@@ -201,7 +225,7 @@ pub fn delete_track(conn: &Connection, track_id: i64) -> Result<bool> {
 
 /// Get a track by its ID
 pub fn get_track_by_id(conn: &Connection, track_id: i64) -> Result<Option<Track>> {
-    conn.query_row(
+    let track = conn.query_row(
         "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, track_cover, track_cover_path, disc_number, metadata_json, date_added
          FROM tracks WHERE id = ?1",
         params![track_id],
@@ -226,10 +250,17 @@ pub fn get_track_by_id(conn: &Connection, track_id: i64) -> Result<Option<Track>
                 disc_number: row.get(16)?,
                 metadata_json: row.get(17)?,
                 date_added: row.get(18)?,
+                artists: Vec::new(),
             })
         },
     )
-    .optional()
+    .optional()?;
+
+    let mut track = track;
+    if let Some(ref mut t) = track {
+        artists::attach_artists(conn, std::slice::from_mut(t))?;
+    }
+    Ok(track)
 }
 
 /// Delete an album and all its associated tracks
@@ -314,13 +345,14 @@ pub fn search_tracks(conn: &Connection, query: &str, limit: i32, offset: i32) ->
                 disc_number: row.get(15)?,
                 metadata_json: row.get(16)?,
                 date_added: row.get(17)?,
+                artists: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>>>()?;
+    let mut tracks = tracks;
+    artists::attach_artists(conn, &mut tracks)?;
     Ok(tracks)
 }
-
-/// given track IDs already returned by the provider's search, derive the related
 /// albums, artists, and playlists.called from search_library after the provider
 /// has done its own track search (local FTS5 or remote)
 pub fn search_related(
@@ -351,14 +383,18 @@ pub fn search_related(
                 artist: row.get(2)?,
                 art_data: None,
                 art_path: row.get(3)?,
+                artists: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>>>()?;
 
     let artist_sql = format!(
-        "SELECT artist, COUNT(*) as track_count, COUNT(DISTINCT album) as album_count
-         FROM tracks WHERE id IN ({}) AND artist IS NOT NULL
-         GROUP BY artist ORDER BY artist",
+        "SELECT ar.name, COUNT(DISTINCT ta.track_id) as track_count, COUNT(DISTINCT t.album_id) as album_count
+         FROM artists ar
+         INNER JOIN track_artists ta ON ta.artist_id = ar.id
+         INNER JOIN tracks t ON t.id = ta.track_id
+         WHERE t.id IN ({})
+         GROUP BY ar.id ORDER BY ar.name COLLATE NOCASE",
         placeholders
     );
     let mut artist_stmt = conn.prepare(&artist_sql)?;
@@ -428,7 +464,7 @@ pub fn get_tracks_paginated(conn: &Connection, limit: i32, offset: i32) -> Resul
          LIMIT ?1 OFFSET ?2",
     )?;
 
-    let tracks = stmt
+    let mut tracks = stmt
         .query_map(params![limit, offset], |row| {
             Ok(Track {
                 id: row.get(0)?,
@@ -450,10 +486,12 @@ pub fn get_tracks_paginated(conn: &Connection, limit: i32, offset: i32) -> Resul
                 disc_number: row.get(15)?,
                 metadata_json: row.get(16)?,
                 date_added: row.get(17)?,
+                artists: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>>>()?;
 
+    artists::attach_artists(conn, &mut tracks)?;
     Ok(tracks)
 }
 
@@ -471,7 +509,7 @@ pub fn get_all_tracks(conn: &Connection) -> Result<Vec<Track>> {
     println!("[DB] get_all_tracks: Query prepared in {:?}", prepare_time);
 
     let map_start = Instant::now();
-    let tracks = stmt
+    let mut tracks = stmt
         .query_map([], |row| {
             Ok(Track {
                 id: row.get(0)?,
@@ -493,6 +531,7 @@ pub fn get_all_tracks(conn: &Connection) -> Result<Vec<Track>> {
                 disc_number: row.get(16)?,
                 metadata_json: row.get(17)?,
                 date_added: row.get(18)?,
+                artists: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -506,6 +545,7 @@ pub fn get_all_tracks(conn: &Connection) -> Result<Vec<Track>> {
         total_time
     );
 
+    artists::attach_artists(conn, &mut tracks)?;
     Ok(tracks)
 }
 
@@ -526,7 +566,7 @@ pub fn get_all_tracks_lightweight(conn: &Connection) -> Result<Vec<Track>> {
     );
 
     let map_start = Instant::now();
-    let tracks = stmt
+    let mut tracks = stmt
         .query_map([], |row| {
             Ok(Track {
                 id: row.get(0)?,
@@ -548,6 +588,7 @@ pub fn get_all_tracks_lightweight(conn: &Connection) -> Result<Vec<Track>> {
                 disc_number: row.get(14)?,
                 metadata_json: row.get(15)?,
                 date_added: row.get(16)?,
+                artists: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -563,6 +604,7 @@ pub fn get_all_tracks_lightweight(conn: &Connection) -> Result<Vec<Track>> {
         map_time
     );
 
+    artists::attach_artists(conn, &mut tracks)?;
     Ok(tracks)
 }
 
@@ -585,7 +627,7 @@ pub fn get_all_tracks_with_paths(conn: &Connection) -> Result<Vec<Track>> {
          FROM tracks ORDER BY artist, album, disc_number, track_number, title",
     )?;
 
-    let tracks = stmt
+    let mut tracks = stmt
         .query_map([], |row| {
             Ok(Track {
                 id: row.get(0)?,
@@ -607,6 +649,7 @@ pub fn get_all_tracks_with_paths(conn: &Connection) -> Result<Vec<Track>> {
                 disc_number: row.get(15)?,
                 metadata_json: row.get(16)?,
                 date_added: row.get(17)?,
+                artists: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>>>()?;
@@ -618,6 +661,7 @@ pub fn get_all_tracks_with_paths(conn: &Connection) -> Result<Vec<Track>> {
         total_time
     );
 
+    artists::attach_artists(conn, &mut tracks)?;
     Ok(tracks)
 }
 

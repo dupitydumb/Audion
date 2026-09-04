@@ -1008,69 +1008,67 @@
 
   :global(.equalizer-bars) { display: none; }
 
-  @media (max-width: 768px) {
-    .list-toolbar { display: none; }
-    :global(.list-header) { display: none; }
-    :global(.quality-tag) { display: none; }
-    :global(.cover-play-overlay) { display: none; }
-    :global(.drag-handle) { opacity: 1; }
-    :global(.track-row) { gap: var(--spacing-sm); padding: var(--spacing-xs) var(--spacing-sm); height: 60px; min-height: 60px; }
+  :global(html.layout-mobile) .list-toolbar { display: none; }
+  :global(html.layout-mobile .list-header) { display: none; }
+  :global(html.layout-mobile .quality-tag) { display: none; }
+  :global(html.layout-mobile .cover-play-overlay) { display: none; }
+  :global(html.layout-mobile .drag-handle) { opacity: 1; }
+  :global(html.layout-mobile .track-row) { gap: var(--spacing-sm); padding: var(--spacing-xs) var(--spacing-sm); height: 60px; min-height: 60px; }
 
-    .list-body.mobile-album :global(.track-row) { grid-template-columns: 32px 1fr 48px; padding-left: var(--spacing-sm); }
-    .list-body.mobile-album :global(.col-num) { display: flex; align-items: center; justify-content: center; font-size: 0.9375rem; color: var(--text-subdued); }
-    .list-body.mobile-album :global(.track-row.playing .col-num) { color: var(--accent-primary); }
-    .list-body.mobile-album :global(.col-cover) { display: none; }
-    .list-body.mobile-album :global(.col-album-cell) { display: none; }
-    .list-body.mobile-album :global(.equalizer-bars) { display: flex; align-items: flex-end; justify-content: center; gap: 2px; height: 16px; width: 16px; }
-    .list-body.mobile-album :global(.playing-icon) { display: none; }
-    :global(.eq-bar) { width: 3px; background-color: var(--accent-primary); border-radius: 1px; animation: eq-bounce 1.2s ease-in-out infinite; }
-    :global(.eq-bar:nth-child(1)) { height: 60%; animation-delay: 0s; }
-    :global(.eq-bar:nth-child(2)) { height: 100%; animation-delay: 0.2s; }
-    :global(.eq-bar:nth-child(3)) { height: 40%; animation-delay: 0.4s; }
-    :global(.eq-bar:nth-child(4)) { height: 80%; animation-delay: 0.6s; }
-    @keyframes eq-bounce { 0%, 100% { height: 20%; } 50% { height: 100%; } }
-    .list-body.mobile-album :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); }
-    .list-body.mobile-album :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-secondary); }
-    .list-body.mobile-album :global(.col-duration) { font-size: var(--font-size-xs); color: var(--text-subdued); }
-    .list-body.mobile-album.with-drag :global(.track-row) { grid-template-columns: 28px 32px 1fr 48px; }
-    .list-body.mobile-album.multiselect :global(.track-row) { grid-template-columns: 36px 32px 1fr 48px; }
+  :global(html.layout-mobile) .list-body.mobile-album :global(.track-row) { grid-template-columns: 32px 1fr 48px; padding-left: var(--spacing-sm); }
+  :global(html.layout-mobile) .list-body.mobile-album :global(.col-num) { display: flex; align-items: center; justify-content: center; font-size: 0.9375rem; color: var(--text-subdued); }
+  :global(html.layout-mobile) .list-body.mobile-album :global(.track-row.playing .col-num) { color: var(--accent-primary); }
+  :global(html.layout-mobile) .list-body.mobile-album :global(.col-cover) { display: none; }
+  :global(html.layout-mobile) .list-body.mobile-album :global(.col-album-cell) { display: none; }
+  :global(html.layout-mobile) .list-body.mobile-album :global(.equalizer-bars) { display: flex; align-items: flex-end; justify-content: center; gap: 2px; height: 16px; width: 16px; }
+  :global(html.layout-mobile) .list-body.mobile-album :global(.playing-icon) { display: none; }
+  :global(html.layout-mobile .eq-bar) { width: 3px; background-color: var(--accent-primary); border-radius: 1px; animation: eq-bounce 1.2s ease-in-out infinite; }
+  :global(html.layout-mobile .eq-bar:nth-child(1)) { height: 60%; animation-delay: 0s; }
+  :global(html.layout-mobile .eq-bar:nth-child(2)) { height: 100%; animation-delay: 0.2s; }
+  :global(html.layout-mobile .eq-bar:nth-child(3)) { height: 40%; animation-delay: 0.4s; }
+  :global(html.layout-mobile .eq-bar:nth-child(4)) { height: 80%; animation-delay: 0.6s; }
+  @keyframes eq-bounce { 0%, 100% { height: 20%; } 50% { height: 100%; } }
+  :global(html.layout-mobile) .list-body.mobile-album :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); }
+  :global(html.layout-mobile) .list-body.mobile-album :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-secondary); }
+  :global(html.layout-mobile) .list-body.mobile-album :global(.col-duration) { font-size: var(--font-size-xs); color: var(--text-subdued); }
+  :global(html.layout-mobile) .list-body.mobile-album.with-drag :global(.track-row) { grid-template-columns: 28px 32px 1fr 48px; }
+  :global(html.layout-mobile) .list-body.mobile-album.multiselect :global(.track-row) { grid-template-columns: 36px 32px 1fr 48px; }
 
-    .list-body.mobile-playlist :global(.track-row) { grid-template-columns: 48px 1fr 48px; padding-left: var(--spacing-sm); }
-    .list-body.mobile-playlist :global(.col-num) { display: none; }
-    .list-body.mobile-playlist :global(.col-album-cell) { display: none; }
-    .list-body.mobile-playlist :global(.cover-wrapper), .list-body.mobile-playlist :global(.cover-image), .list-body.mobile-playlist :global(.cover-placeholder) { width: 48px; height: 48px; border-radius: var(--radius-sm); }
-    .list-body.mobile-playlist :global(.col-cover) { justify-content: flex-start; align-items: center; }
-    .list-body.mobile-playlist :global(.col-title) { padding-top: 0; justify-content: center; }
-    .list-body.mobile-playlist :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); }
-    .list-body.mobile-playlist :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-secondary); margin-top: 0; }
-    .list-body.mobile-playlist :global(.col-duration) { font-size: var(--font-size-xs); color: var(--text-subdued); }
-    .list-body.mobile-playlist.with-drag :global(.track-row) { grid-template-columns: 28px 48px 1fr 48px; }
-    .list-body.mobile-playlist.multiselect :global(.track-row) { grid-template-columns: 36px 48px 1fr 48px; }
+  :global(html.layout-mobile) .list-body.mobile-playlist :global(.track-row) { grid-template-columns: 48px 1fr 48px; padding-left: var(--spacing-sm); }
+  :global(html.layout-mobile) .list-body.mobile-playlist :global(.col-num) { display: none; }
+  :global(html.layout-mobile) .list-body.mobile-playlist :global(.col-album-cell) { display: none; }
+  :global(html.layout-mobile) .list-body.mobile-playlist :global(.cover-wrapper), :global(html.layout-mobile) .list-body.mobile-playlist :global(.cover-image), :global(html.layout-mobile) .list-body.mobile-playlist :global(.cover-placeholder) { width: 48px; height: 48px; border-radius: var(--radius-sm); }
+  :global(html.layout-mobile) .list-body.mobile-playlist :global(.col-cover) { justify-content: flex-start; align-items: center; }
+  :global(html.layout-mobile) .list-body.mobile-playlist :global(.col-title) { padding-top: 0; justify-content: center; }
+  :global(html.layout-mobile) .list-body.mobile-playlist :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); }
+  :global(html.layout-mobile) .list-body.mobile-playlist :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-secondary); margin-top: 0; }
+  :global(html.layout-mobile) .list-body.mobile-playlist :global(.col-duration) { font-size: var(--font-size-xs); color: var(--text-subdued); }
+  :global(html.layout-mobile) .list-body.mobile-playlist.with-drag :global(.track-row) { grid-template-columns: 28px 48px 1fr 48px; }
+  :global(html.layout-mobile) .list-body.mobile-playlist.multiselect :global(.track-row) { grid-template-columns: 36px 48px 1fr 48px; }
 
-    .list-body.mobile-library :global(.track-row) { grid-template-columns: 48px 1fr 48px; padding-left: var(--spacing-sm); }
-    .list-body.mobile-library :global(.col-num) { display: none; }
-    .list-body.mobile-library :global(.col-album-cell) { display: none; }
-    .list-body.mobile-library :global(.cover-wrapper), .list-body.mobile-library :global(.cover-image), .list-body.mobile-library :global(.cover-placeholder) { width: 48px; height: 48px; border-radius: var(--radius-sm); }
-    .list-body.mobile-library :global(.col-cover) { justify-content: flex-start; align-items: center; }
-    .list-body.mobile-library :global(.col-title) { padding-top: 0; justify-content: center; }
-    .list-body.mobile-library :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); }
-    .list-body.mobile-library :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-secondary); margin-top: 2px; }
-    .list-body.mobile-library :global(.col-duration) { font-size: var(--font-size-xs); color: var(--text-subdued); }
-    .list-body.mobile-library.with-drag :global(.track-row) { grid-template-columns: 28px 48px 1fr 48px; }
-    .list-body.mobile-library.multiselect :global(.track-row),
-    .list-body.mobile-library.multiselect.no-album :global(.track-row) { grid-template-columns: 36px 48px 1fr 48px; }
+  :global(html.layout-mobile) .list-body.mobile-library :global(.track-row) { grid-template-columns: 48px 1fr 48px; padding-left: var(--spacing-sm); }
+  :global(html.layout-mobile) .list-body.mobile-library :global(.col-num) { display: none; }
+  :global(html.layout-mobile) .list-body.mobile-library :global(.col-album-cell) { display: none; }
+  :global(html.layout-mobile) .list-body.mobile-library :global(.cover-wrapper), :global(html.layout-mobile) .list-body.mobile-library :global(.cover-image), :global(html.layout-mobile) .list-body.mobile-library :global(.cover-placeholder) { width: 48px; height: 48px; border-radius: var(--radius-sm); }
+  :global(html.layout-mobile) .list-body.mobile-library :global(.col-cover) { justify-content: flex-start; align-items: center; }
+  :global(html.layout-mobile) .list-body.mobile-library :global(.col-title) { padding-top: 0; justify-content: center; }
+  :global(html.layout-mobile) .list-body.mobile-library :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); }
+  :global(html.layout-mobile) .list-body.mobile-library :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-secondary); margin-top: 2px; }
+  :global(html.layout-mobile) .list-body.mobile-library :global(.col-duration) { font-size: var(--font-size-xs); color: var(--text-subdued); }
+  :global(html.layout-mobile) .list-body.mobile-library.with-drag :global(.track-row) { grid-template-columns: 28px 48px 1fr 48px; }
+  :global(html.layout-mobile) .list-body.mobile-library.multiselect :global(.track-row),
+  :global(html.layout-mobile) .list-body.mobile-library.multiselect.no-album :global(.track-row) { grid-template-columns: 36px 48px 1fr 48px; }
 
-    :global(.track-row.playing .track-name) { color: var(--accent-primary); }
-    :global(.track-row.playing .col-num) { color: var(--accent-primary); }
-    :global(.downloaded-icon) { margin-left: 2px; }
-    :global(.downloaded-icon svg) { width: 12px; height: 12px; }
+  :global(html.layout-mobile .track-row.playing .track-name) { color: var(--accent-primary); }
+  :global(html.layout-mobile .track-row.playing .col-num) { color: var(--accent-primary); }
+  :global(html.layout-mobile .downloaded-icon) { margin-left: 2px; }
+  :global(html.layout-mobile .downloaded-icon svg) { width: 12px; height: 12px; }
 
-    :global(.track-row) { position: relative; will-change: transform; }
-    :global(.track-row::before) { content: ""; position: absolute; inset: 0; border-radius: var(--radius-md); background-color: transparent; transition: background-color 0.15s ease; z-index: -1; pointer-events: none; }
-    :global(.track-row.swipe-queue-ready::before) { background-color: color-mix(in srgb, var(--accent-primary), transparent 80%); }
-    :global(.track-row.swipe-queue-added::before) { background-color: color-mix(in srgb, var(--accent-primary), transparent 65%); }
-    :global(.track-row::after) { content: "+"; position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 1.25rem; font-weight: var(--font-weight-bold); color: var(--accent-primary); opacity: 0; transition: opacity 0.15s ease; pointer-events: none; z-index: -1; }
-    :global(.track-row.swipe-queue-ready::after) { opacity: 1; }
-    :global(.track-row.swipe-queue-added::after) { content: "✓"; opacity: 1; }
-  }
+  :global(html.layout-mobile .track-row) { position: relative; will-change: transform; }
+  :global(html.layout-mobile .track-row::before) { content: ""; position: absolute; inset: 0; border-radius: var(--radius-md); background-color: transparent; transition: background-color 0.15s ease; z-index: -1; pointer-events: none; }
+  :global(html.layout-mobile .track-row.swipe-queue-ready::before) { background-color: color-mix(in srgb, var(--accent-primary), transparent 80%); }
+  :global(html.layout-mobile .track-row.swipe-queue-added::before) { background-color: color-mix(in srgb, var(--accent-primary), transparent 65%); }
+  :global(html.layout-mobile .track-row::after) { content: "+"; position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 1.25rem; font-weight: var(--font-weight-bold); color: var(--accent-primary); opacity: 0; transition: opacity 0.15s ease; pointer-events: none; z-index: -1; }
+  :global(html.layout-mobile .track-row.swipe-queue-ready::after) { opacity: 1; }
+  :global(html.layout-mobile .track-row.swipe-queue-added::after) { content: "✓"; opacity: 1; }
 </style>

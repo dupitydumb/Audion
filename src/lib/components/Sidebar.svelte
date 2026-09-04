@@ -404,8 +404,8 @@
 <aside class="sidebar">
     <div class="sidebar-header">
         <div class="logo">
-            <img src="/logo.png" alt="Audion Logo" width="32" height="32" />
-            <span class="logo-text">Audion</span>
+            <img src="/logo.png" alt="Audion Logo" width="32" height="32" style="view-transition-name: app-logo-icon;" />
+            <span class="logo-text" style="view-transition-name: app-logo-text;">Audion</span>
             <SyncStatus />
             {#if $otaState.phase === "ready"}
                 <div
@@ -1159,21 +1159,19 @@
     }
 
     /* Mobile: sidebar fills its container (the drawer) */
-    @media (max-width: 768px) {
-        .sidebar {
-            width: 100%;
-            border-right: none;
-            height: 100%;
-        }
+    :global(html.layout-mobile) .sidebar {
+        width: 100%;
+        border-right: none;
+        height: 100%;
+    }
 
-        .sidebar-header {
-            padding-top: var(--spacing-md);
-        }
+    :global(html.layout-mobile) .sidebar-header {
+        padding-top: var(--spacing-md);
+    }
 
-        .nav-item {
-            padding: 14px var(--spacing-md);
-            min-height: 48px;
-        }
+    :global(html.layout-mobile) .nav-item {
+        padding: 14px var(--spacing-md);
+        min-height: 48px;
     }
     .playlist-icon-container {
         width: 24px;

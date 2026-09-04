@@ -24,12 +24,10 @@
     }
 
     /* Mobile: above mini-player + bottom nav + safe area */
-    @media (max-width: 768px) {
-        .toast-container {
-            /* mini-player ~64px + bottom-nav ~60px + safe area + spacing */
-            bottom: calc(64px + 60px + env(safe-area-inset-bottom, 0px) + var(--spacing-sm));
-            width: 100%;
-            padding: 0 var(--spacing-md);
-        }
+    :global(html.layout-mobile) .toast-container {
+        /* mini-player ~64px + bottom-nav ~60px + safe area + spacing */
+        bottom: calc(64px + 60px + env(safe-area-inset-bottom, 0px) + var(--spacing-sm));
+        width: 100%;
+        padding: 0 var(--spacing-md);
     }
 </style>

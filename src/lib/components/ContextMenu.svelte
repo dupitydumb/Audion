@@ -123,17 +123,19 @@
                             transition:fade={{ duration: 100 }}
                         >
                             {#each item.submenu as subitem}
-                                <button
-                                    class="menu-item"
-                                    class:disabled={subitem.disabled}
-                                    disabled={subitem.disabled}
-                                    on:click|stopPropagation={() =>
-                                        !subitem.disabled &&
-                                        subitem.action &&
-                                        handleItemClick(subitem.action)}
-                                >
-                                    {subitem.label}
-                                </button>
+                                {#if subitem.type !== 'separator'}
+                                    <button
+                                        class="menu-item"
+                                        class:disabled={subitem.disabled}
+                                        disabled={subitem.disabled}
+                                        on:click|stopPropagation={() =>
+                                            !subitem.disabled &&
+                                            subitem.action &&
+                                            handleItemClick(subitem.action)}
+                                    >
+                                        {subitem.label}
+                                    </button>
+                                {/if}
                             {/each}
                         </div>
                     {/if}
@@ -241,65 +243,63 @@
     }
 
     /* ── Mobile ── */
-    @media (max-width: 768px) {
-        .context-menu-backdrop {
-            position: fixed;
-            inset: 0;
-            background-color: rgba(0, 0, 0, 0.6);
-            backdrop-filter: blur(2px);
-            z-index: 9998;
-        }
+    :global(html.layout-mobile) .context-menu-backdrop {
+        position: fixed;
+        inset: 0;
+        background-color: rgba(0, 0, 0, 0.6);
+        backdrop-filter: blur(2px);
+        z-index: 9998;
+    }
 
-        .context-menu {
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            top: auto;
-            width: 100%;
-            min-width: 100%;
-            max-width: 100%;
-            border-bottom-left-radius: 0;
-            border-bottom-right-radius: 0;
-            border-top-left-radius: 16px;
-            border-top-right-radius: 16px;
-            padding: var(--spacing-sm);
-            padding-bottom: calc(
-                var(--safe-area-bottom, 0px) + var(--spacing-md)
-            );
-            box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
-            border: none;
-            border-top: 1px solid var(--border-color);
-        }
+    :global(html.layout-mobile) .context-menu {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        top: auto;
+        width: 100%;
+        min-width: 100%;
+        max-width: 100%;
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+        border-top-left-radius: 16px;
+        border-top-right-radius: 16px;
+        padding: var(--spacing-sm);
+        padding-bottom: calc(
+            var(--safe-area-bottom, 0px) + var(--spacing-md)
+        );
+        box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
+        border: none;
+        border-top: 1px solid var(--border-color);
+    }
 
-        .mobile-handle {
-            width: 40px;
-            height: 4px;
-            background-color: var(--bg-highlight);
-            border-radius: var(--radius-full);
-            margin: var(--spacing-xs) auto var(--spacing-md);
-        }
+    :global(html.layout-mobile) .mobile-handle {
+        width: 40px;
+        height: 4px;
+        background-color: var(--bg-highlight);
+        border-radius: var(--radius-full);
+        margin: var(--spacing-xs) auto var(--spacing-md);
+    }
 
-        .menu-item,
-        .menu-item.has-submenu {
-            padding: var(--spacing-md);
-            font-size: var(--font-size-md);
-            min-height: 48px;
-            display: flex;
-            align-items: center;
-            border-radius: var(--radius-md);
-        }
+    :global(html.layout-mobile) .menu-item,
+    :global(html.layout-mobile) .menu-item.has-submenu {
+        padding: var(--spacing-md);
+        font-size: var(--font-size-md);
+        min-height: 48px;
+        display: flex;
+        align-items: center;
+        border-radius: var(--radius-md);
+    }
 
-        .submenu {
-            position: static;
-            width: 100%;
-            margin-top: var(--spacing-xs);
-            margin-left: var(--spacing-md);
-            border: none;
-            background-color: transparent;
-            box-shadow: none;
-            padding: 0;
-            max-height: none;
-        }
+    :global(html.layout-mobile) .submenu {
+        position: static;
+        width: 100%;
+        margin-top: var(--spacing-xs);
+        margin-left: var(--spacing-md);
+        border: none;
+        background-color: transparent;
+        box-shadow: none;
+        padding: 0;
+        max-height: none;
     }
 </style>

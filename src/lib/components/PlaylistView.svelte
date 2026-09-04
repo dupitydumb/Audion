@@ -490,12 +490,7 @@
         flex-shrink: 0;
     }
 
-    @media (max-width: 768px) {
-        .playlist-view {
-        }
-
-        .rename-label {
-            display: none;
-        }
+    :global(html.layout-mobile) .rename-label {
+        display: none;
     }
 </style>

@@ -4,12 +4,17 @@
   import { locale } from "svelte-i18n";
   import { slide } from "svelte/transition";
   import { createEventDispatcher } from "svelte";
+  import { layoutOverride, type LayoutOverride } from "$lib/stores/mobile";
 
   export let open: boolean = false;
   const dispatch = createEventDispatcher();
 
   function handleModeChange(mode: ThemeMode) {
     theme.setMode(mode);
+  }
+
+  function handleLayoutOverrideChange(value: LayoutOverride) {
+    layoutOverride.set(value);
   }
 
   function handleAccentChange(color: string) {
@@ -56,6 +61,18 @@
         <button class="segment-btn" class:active={$locale === 'es'} on:click={() => changeLanguage('es')}>Español</button>
         <button class="segment-btn" class:active={$locale === 'fr'} on:click={() => changeLanguage('fr')}>Français</button>
         <button class="segment-btn" class:active={$locale === 'ru'} on:click={() => changeLanguage('ru')}>Русский</button>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="inner-section">
+      <span class="setting-title">{$_('settings.layoutMode')}</span>
+      <span class="setting-description">{$_('settings.layoutModeDesc')}</span>
+      <div class="segmented-pill" style="margin-top: 6px;">
+        <button class="segment-btn" class:active={$layoutOverride === 'auto'} on:click={() => handleLayoutOverrideChange('auto')}>{$_('settings.layoutAuto')}</button>
+        <button class="segment-btn" class:active={$layoutOverride === 'desktop'} on:click={() => handleLayoutOverrideChange('desktop')}>{$_('settings.layoutDesktop')}</button>
+        <button class="segment-btn" class:active={$layoutOverride === 'mobile'} on:click={() => handleLayoutOverrideChange('mobile')}>{$_('settings.layoutMobile')}</button>
       </div>
     </div>
 

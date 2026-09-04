@@ -27,6 +27,7 @@
   } from "$lib/stores/view";
   import {
     isFullScreen,
+    closeFullScreen,
     isQueueVisible,
     contextMenu,
     isMiniPlayer,
@@ -35,6 +36,7 @@
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
   import PromptDialog from "$lib/components/PromptDialog.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
+  import LinuxResizeHandles from "$lib/components/LinuxResizeHandles.svelte";
   import ProgressiveScanStatus from "$lib/components/ProgressiveScanStatus.svelte";
   import SyncProgressOverlay from "$lib/components/SyncProgressOverlay.svelte";
   import LoginModal from "$lib/components/LoginModal.svelte";
@@ -45,8 +47,13 @@
   import "../app.css";
   import MobileMiniPlayer from "$lib/components/MobileMiniPlayer.svelte";
 
+  // initialize i18n synchronously
+  // during this component's construction and before any template evaluates
+  // not inside onMount, it crashes the whole render
+  // guarded by `browser` since localStorage isn't available during SSR
   if (browser) {
-    setupI18n(localStorage.getItem("audion_language") || undefined);
+    const savedLang = localStorage.getItem("audion_language");
+    setupI18n(savedLang || undefined);
   }
 
   let handleVisibilityChange: (() => void) | null = null;
@@ -62,18 +69,20 @@
   let permissionDenied = false;
 
   $: {
-    if (migrationPhase === "loading") {
-      migrationStatus = $_("app.migratingCovers");
-    } else if (migrationPhase === "success") {
-      migrationStatus = $_("app.migrationSuccess", {
-        values: { tracks: migrationTracks, albums: migrationAlbums },
-      });
-    } else if (migrationPhase === "errors") {
-      migrationStatus = $_("app.migrationErrors", {
-        values: { count: migrationErrorCount },
-      });
-    } else {
-      migrationStatus = $_("app.migrationFailed");
+    if ($locale) {
+      if (migrationPhase === "loading") {
+        migrationStatus = $_("app.migratingCovers");
+      } else if (migrationPhase === "success") {
+        migrationStatus = $_("app.migrationSuccess", {
+          values: { tracks: migrationTracks, albums: migrationAlbums },
+        });
+      } else if (migrationPhase === "errors") {
+        migrationStatus = $_("app.migrationErrors", {
+          values: { count: migrationErrorCount },
+        });
+      } else {
+        migrationStatus = $_("app.migrationFailed");
+      }
     }
   }
 
@@ -95,7 +104,7 @@
 
       // 2. Close full-screen player
       if (get(isFullScreen)) {
-        isFullScreen.set(false);
+        closeFullScreen();
         return true;
       }
 
@@ -333,6 +342,7 @@
 {#if !$isLoading && $locale}
 {#if !$isMobile && !$isMiniPlayer}
   <TitleBar />
+  <LinuxResizeHandles />
 {/if}
 <ConfirmDialog />
 <PromptDialog />
@@ -521,5 +531,33 @@
 
   .permission-button:active {
     background: rgba(255, 255, 255, 0.4);
+  }
+
+  /* album art morph between the mini PlayerBar and FullScreenPlayer
+     View-transition pseudo elements render outside any component's scope,
+     so these rules must be :global */
+  :global(::view-transition-group(player-album-art)) {
+    animation-duration: 550ms;
+    animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  /* audion icon morph from startup loading screen into the sidebar
+  (see +page.svelte's withViewTransition call around the isLoading flip)
+  only present on desktop layouts, since sidebar isn't rendered on mobile */
+  :global(::view-transition-group(app-logo-icon)),
+  :global(::view-transition-group(app-logo-text)) {
+    animation-duration: 550ms;
+    animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  /* browser's default page level crossfade (everything without its own
+     view-transition-name) */
+  :global(::view-transition-group(root)) {
+    animation-duration: 450ms;
+  }
+
+  :global(::view-transition-old(root)),
+  :global(::view-transition-new(root)) {
+    animation-duration: 450ms;
   }
 </style>

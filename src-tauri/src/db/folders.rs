@@ -148,3 +148,12 @@ pub fn cleanup_empty_albums(conn: &Connection) -> Result<usize> {
     )?;
     Ok(deleted)
 }
+
+/// clears every album's artist column (and its album_artists rows)
+/// via db::artists::sync_album_artists_for_album's own DELETE, triggered as each album gets re touched during re import) 
+/// so the next scan rederives album artist using whatever AlbumArtistMode/split rules are currently active
+/// call this once at the start of a rescan (alongside cleanup_deleted_tracks/cleanup_empty_albums)
+pub fn reset_album_artist_assignments(conn: &Connection) -> Result<usize> {
+    let updated = conn.execute("UPDATE albums SET artist = NULL", [])?;
+    Ok(updated)
+}

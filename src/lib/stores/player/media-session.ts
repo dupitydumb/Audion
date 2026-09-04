@@ -245,51 +245,56 @@ export function updateMediaSessionPosition(): void {
 let smtcInitialized = false;
 let _unlistenSmtc: (() => void) | null = null;
 
+// dispatches one smtc event payload to the registered action handlers
+export function dispatchSmtcEvent(payload: { type: string; data?: any }): void {
+    switch (payload.type) {
+        case 'Play':
+            void _onSmtcResume();
+            break;
+        case 'Pause':
+            void _onSmtcPause();
+            break;
+        case 'Toggle':
+            void _onSmtcTogglePlay();
+            break;
+        case 'Next':
+            _onSmtcNext();
+            break;
+        case 'Previous':
+            void _onSmtcPrevious();
+            break;
+        case 'Stop':
+            void _onSmtcPause();
+            break;
+        case 'SeekForward':
+            _smtcSeekRelative(10);
+            break;
+        case 'SeekBackward':
+            _smtcSeekRelative(-10);
+            break;
+        case 'SeekByForward':
+            _smtcSeekRelative(payload.data.secs);
+            break;
+        case 'SeekByBackward':
+            _smtcSeekRelative(-payload.data.secs);
+            break;
+        case 'SetPosition': {
+            const dur = get(duration);
+            if (dur > 0) void _onSmtcSeek(payload.data.secs / dur);
+            break;
+        }
+        case 'SetVolume':
+            void _smtcApplyVolume(payload.data.level);
+            break;
+    }
+}
+
 export async function initSmtcIntegration(): Promise<void> {
     if (smtcInitialized) return;
 
     try {
         _unlistenSmtc = await listen<{ type: string; data?: any }>('smtc://event', ({ payload }) => {
-            switch (payload.type) {
-                case 'Play':
-                    void _onSmtcResume();
-                    break;
-                case 'Pause':
-                    void _onSmtcPause();
-                    break;
-                case 'Toggle':
-                    void _onSmtcTogglePlay();
-                    break;
-                case 'Next':
-                    _onSmtcNext();
-                    break;
-                case 'Previous':
-                    void _onSmtcPrevious();
-                    break;
-                case 'Stop':
-                    void _onSmtcPause();
-                    break;
-                case 'SeekForward':
-                    _smtcSeekRelative(10);
-                    break;
-                case 'SeekBackward':
-                    _smtcSeekRelative(-10);
-                    break;
-                case 'SeekByForward':
-                    _smtcSeekRelative(payload.data.secs);
-                    break;
-                case 'SeekByBackward':
-                    _smtcSeekRelative(-payload.data.secs);
-                    break;
-                case 'SetPosition': {
-                    const dur = get(duration);
-                    if (dur > 0) void _onSmtcSeek(payload.data.secs / dur);
-                    break;
-                }
-                case 'SetVolume':
-                    void _smtcApplyVolume(payload.data.level);
-                    break;
-            }
+            dispatchSmtcEvent(payload);
         });
         smtcInitialized = true;
         console.log('[Player] SMTC integration initialized');
@@ -326,7 +331,7 @@ async function _smtcApplyVolume(level: number): Promise<void> {
     }
 }
 
-export async function updateSmtcMetadata(track: Track): Promise<void> {
+export async function updateSmtcMetadata(track: Track, direction?: 'next' | 'previous'): Promise<void> {
     // raw source only => never a webview asset:// URL here. smtc.rs does the
     // platform specific file:// / percent-encoding conversion on its side
     const rawCover = track.track_cover_path || track.cover_url || null;
@@ -337,6 +342,7 @@ export async function updateSmtcMetadata(track: Track): Promise<void> {
             album: track.album || null,
             durationSecs: get(duration) || null,
             coverUrl: rawCover,
+            direction: direction ?? null,
         });
     } catch (err) {
         console.error('[SMTC] set_metadata failed:', err);
@@ -372,10 +378,20 @@ function _stopTaskbarProgressInterval(): void {
     }
 }
 
-export function updateSmtcPlaybackState(state: 'playing' | 'paused' | 'none'): void {
+export function updateSmtcPlaybackState(
+    state: 'playing' | 'paused' | 'none',
+    options?: {
+        shuffle?: boolean;
+        repeatMode?: 'off' | 'all' | 'one';
+        seekDirection?: 'forward' | 'backward';
+    },
+): void {
     invoke('smtc_set_playback', {
         status: state === 'none' ? 'stopped' : state,
         positionSecs: get(currentTime),
+        seekDirection: options?.seekDirection ?? null,
+        shuffle: options?.shuffle ?? null,
+        repeatMode: options?.repeatMode ?? null,
     }).catch(() => { /* no-op if SMTC unavailable, e.g. init failed on this platform */ });
     // keep tray play/pause label in sync
     // title/artist are set by updateSmtcMetadata

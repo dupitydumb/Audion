@@ -23,16 +23,15 @@
     initializeFromPersistedState,
     setupAutoSave,
   } from "$lib/stores/persist";
-  import { playTrack, playFromQueue, queue } from "$lib/stores/player";
+  import { playTrack, playFromQueue, queue, openAssociatedFile, dispatchSmtcEvent } from "$lib/stores/player";
   import { theme } from "$lib/stores/theme";
-  import { isMiniPlayer } from "$lib/stores/ui";
+  import { isMiniPlayer, withViewTransition, isStatsWrappedOpen } from "$lib/stores/ui";
   import { pluginStore } from "$lib/stores/plugin-store";
   import { appSettings } from "$lib/stores/settings";
   import { isMobile, mobileSearchOpen } from "$lib/stores/mobile";
   import MobileBottomNav from "$lib/components/MobileBottomNav.svelte";
   import { searchQuery, clearSearch } from "$lib/stores/search";
   import PluginUpdateDialog from "$lib/components/PluginUpdateDialog.svelte";
-  import { isStatsWrappedOpen } from "$lib/stores/ui";
   import PluginDrawer from "$lib/components/PluginDrawer.svelte";
 
   let isLoading = true;
@@ -96,6 +95,19 @@
     initializeFromPersistedState(pendingJumpListTrackId);
     setupAutoSave();
 
+    // check for a cold start file association open
+    // stashed the same way as the jump list track above, for the same cold start race
+    if (isTauri()) {
+      try {
+        const pendingFile = await invoke<string | null>("get_pending_open_file");
+        if (pendingFile) {
+          void openAssociatedFile(pendingFile);
+        }
+      } catch (error) {
+        console.error("[Player] Failed to check pending open-file:", error);
+      }
+    }
+
     // Check if we're in Tauri environment
     if (!isTauri()) {
       notInTauri = true;
@@ -124,10 +136,37 @@
           );
         }
       }
+
+      // check for a cold start cli playback flag
+      // (--play/--next/etc e.g. from the .desktop file's quick actions)
+      // stashed by PendingCliAction
+      // see cli.rs. deliberately checked here
+      if (isTauri()) {
+        try {
+          const pendingCliAction = await invoke<{ type: string; data?: any } | null>(
+            "get_pending_cli_action",
+          );
+          if (pendingCliAction) {
+            dispatchSmtcEvent(pendingCliAction);
+          }
+        } catch (error) {
+          console.error("[Player] Failed to check pending cli action:", error);
+        }
+      }
     } catch (error) {
       console.error("Failed to load library:", error);
     } finally {
-      isLoading = false;
+      // morph the loading screen logo into the sidebar's logo
+      // see app-logo-icon/app-logo-text view-transition-name below
+      // and the group rules in +layout.svelte
+      // sidebar (the morph target) doesn't render on mobile so disabled here
+      if (get(isMobile)) {
+        isLoading = false;
+      } else {
+        withViewTransition(() => {
+          isLoading = false;
+        }, 'app-boot-logo');
+      }
 
       // Lazy load plugins- reduce startup time
       requestIdleCallback(() => {
@@ -155,7 +194,7 @@
   {#if notInTauri}
     <div class="loading-screen">
       <div class="logo">
-        <img src="/logo.png" alt="Audion Logo" width="48" height="48" />
+        <img src="/logo.png" alt={$_('app.logoAlt', { default: 'Audion Logo' })} width="48" height="48" />
         <span>Audion</span>
       </div>
       <p
@@ -173,8 +212,14 @@
   {:else if isLoading}
     <div class="loading-screen">
       <div class="logo">
-        <img src="/logo.png" alt="Audion Logo" width="48" height="48" />
-        <span>Audion</span>
+        <img
+          src="/logo.png"
+          alt={$_('app.logoAlt', { default: 'Audion Logo' })}
+          width="48"
+          height="48"
+          style="view-transition-name: app-logo-icon;"
+        />
+        <span style="view-transition-name: app-logo-text;">Audion</span>
       </div>
       <div class="loading-spinner"></div>
       <p>{$_('app.loadingLibrary')}</p>

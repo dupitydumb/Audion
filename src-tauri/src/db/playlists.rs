@@ -2,6 +2,7 @@
 use rusqlite::{params, Connection, Result};
 
 use super::models::{Playlist, Track};
+use super::artists;
 
 // Playlist operations
 pub fn create_playlist(conn: &Connection, name: &str, cover_url: Option<&str>) -> Result<i64> {
@@ -40,7 +41,7 @@ pub fn get_playlist_tracks(conn: &Connection, playlist_id: i64) -> Result<Vec<Tr
          ORDER BY pt.position",
     )?;
 
-    let tracks = stmt
+    let mut tracks = stmt
         .query_map([playlist_id], |row| {
             Ok(Track {
                 id: row.get(0)?,
@@ -62,10 +63,12 @@ pub fn get_playlist_tracks(conn: &Connection, playlist_id: i64) -> Result<Vec<Tr
                 disc_number: row.get(16)?,
                 metadata_json: row.get(17)?,
                 date_added: row.get(18)?,
+                artists: Vec::new(),
             })
         })?
         .collect::<Result<Vec<_>>>()?;
 
+    artists::attach_artists(conn, &mut tracks)?;
     Ok(tracks)
 }
 

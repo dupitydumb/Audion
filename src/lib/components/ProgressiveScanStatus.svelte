@@ -234,23 +234,21 @@
     }
     
     /* Responsive adjustments */
-    @media (max-width: 768px) {
-        .scan-content {
-            padding: 10px 16px;
-            gap: 12px;
-        }
-        
-        .scan-title {
-            font-size: 13px;
-        }
-        
-        .scan-details {
-            font-size: 11px;
-        }
-        
-        .batch-info {
-            display: none;
-        }
+    :global(html.layout-mobile) .scan-content {
+        padding: 10px 16px;
+        gap: 12px;
+    }
+    
+    :global(html.layout-mobile) .scan-title {
+        font-size: 13px;
+    }
+    
+    :global(html.layout-mobile) .scan-details {
+        font-size: 11px;
+    }
+    
+    :global(html.layout-mobile) .batch-info {
+        display: none;
     }
     
     @media (max-width: 480px) {
