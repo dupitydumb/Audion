@@ -174,7 +174,7 @@
             <button
                 class="art"
                 on:click={handleExpand}
-                title={$_('player.openFullPlayer')}
+                data-tip={$_('player.openFullPlayer')}
                 tabindex="-1"
             >
                 {#if albumArt && !imageLoadFailed}
@@ -209,7 +209,7 @@
                     class="pill"
                     class:pill-active={mode === "lyrics"}
                     on:click|stopPropagation={toggleMode}
-                    title={mode === "controls"
+                    data-tip={mode === "controls"
                         ? $_('player.showLyrics')
                         : $_('player.showControls')}
                 >
@@ -226,7 +226,7 @@
                 <button
                     class="wbtn close"
                     on:click|stopPropagation={handleClose}
-                    title={$_('player.closePip')}
+                    data-tip={$_('player.closePip')}
                 >
                     <Icon name="x" size={11} />
                 </button>
@@ -263,19 +263,19 @@
 
             <!-- Controls row -->
             <div class="row-ctrl">
-                <button class="cbtn" on:click={previousTrack} title={$_('player.previous')}>
+                <button class="cbtn" on:click={previousTrack} data-tip={$_('player.previous')}>
                     <Icon name="skip-back" size={17} />
                 </button>
 
                 <button
                     class="pbtn"
                     on:click={togglePlay}
-                    title={$isPlaying ? $_('common.pause') : $_('common.play')}
+                    data-tip={$isPlaying ? $_('common.pause') : $_('common.play')}
                 >
                     <Icon name={$isPlaying ? "pause" : "play"} size={19} />
                 </button>
 
-                <button class="cbtn" on:click={nextTrack} title={$_('player.next')}>
+                <button class="cbtn" on:click={nextTrack} data-tip={$_('player.next')}>
                     <Icon name="skip-forward" size={17} />
                 </button>
             </div>
@@ -300,17 +300,17 @@
 
             <!-- Compact controls under lyrics -->
             <div class="row-ctrl compact" style="display: none;">
-                <button class="cbtn" on:click={previousTrack} title={$_('player.previous')}>
+                <button class="cbtn" on:click={previousTrack} data-tip={$_('player.previous')}>
                     <Icon name="skip-back" size={15} />
                 </button>
                 <button
                     class="pbtn sm"
                     on:click={togglePlay}
-                    title={$isPlaying ? $_('common.pause') : $_('common.play')}
+                    data-tip={$isPlaying ? $_('common.pause') : $_('common.play')}
                 >
                     <Icon name={$isPlaying ? "pause" : "play"} size={16} />
                 </button>
-                <button class="cbtn" on:click={nextTrack} title={$_('player.next')}>
+                <button class="cbtn" on:click={nextTrack} data-tip={$_('player.next')}>
                     <Icon name="skip-forward" size={15} />
                 </button>
                 <span class="t-label" style="margin-left:8px"
@@ -713,5 +713,41 @@
             #1ed760
         );
         transition: width 0.1s linear;
+    }
+
+    /* ── Custom tooltip system (avoids OS-level window clipping) ──────── */
+    [data-tip] {
+        position: relative;
+    }
+
+    [data-tip]::after {
+        content: attr(data-tip);
+        position: absolute;
+        bottom: calc(100% + 5px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(20, 20, 30, 0.97);
+        color: rgba(255, 255, 255, 0.88);
+        font-size: 0.62rem;
+        font-weight: var(--font-weight-medium);
+        white-space: nowrap;
+        padding: 3px 7px;
+        border-radius: 5px;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.12s ease;
+        z-index: 10001;
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        box-shadow: 0 3px 8px rgba(0, 0, 0, 0.6);
+    }
+
+    [data-tip]:hover::after {
+        opacity: 1;
+    }
+
+    /* Top-row buttons: tooltip opens downward to stay inside the window */
+    .row-top [data-tip]::after {
+        bottom: auto;
+        top: calc(100% + 5px);
     }
 </style>

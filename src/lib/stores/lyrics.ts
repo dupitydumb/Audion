@@ -1,6 +1,7 @@
 // Lyrics store — manages lyrics state, source selection, and sync with the player.
 import { writable, derived, get } from 'svelte/store';
 import { currentTrack, currentTime } from './player';
+import { appSettings } from './settings';
 import {
     lyricsManager,
     LYRICS_SOURCES,
@@ -986,7 +987,15 @@ export function initLyricsSync(): void {
 
     _unsubscribe = currentTrack.subscribe(track => {
         if (track) {
-            fetchLyricsForTrack();
+            if (get(appSettings).lyricsAutoFetch) {
+                fetchLyricsForTrack();
+            } else {
+                // Auto-fetch disabled: clear stale lyrics but don't search
+                lyricsData.set(null);
+                lyricsError.set(null);
+                availableSources.set([]);
+                refreshAvailableSources(track.path, !!track.source_type);
+            }
         } else {
             lyricsData.set(null);
             lyricsError.set(null);

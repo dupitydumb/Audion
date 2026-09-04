@@ -23,6 +23,8 @@
 
   function closeMenus() {
     openMenu = null;
+    // Return focus to body so spacebar works as a global shortcut
+    (document.activeElement as HTMLElement | null)?.blur();
   }
 
   async function handleLoadFolder() {
