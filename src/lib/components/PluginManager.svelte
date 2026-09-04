@@ -35,6 +35,19 @@
   let pendingPermissions: string[] = [];
   let searchQuery = "";
   let activeTab: "curated" | "community" | "installed" = "curated";
+  let sortBy: 'stars' | 'downloads' | 'name' | 'updated' = $pluginStore.sortBy;
+  let sortOpen = false;
+
+  function handleSortOutside(e: MouseEvent) {
+    const target = e.target as HTMLElement;
+    if (!target.closest('.sort-selector')) sortOpen = false;
+  }
+
+  function selectSort(val: typeof sortBy) {
+    sortBy = val;
+    pluginStore.setSortBy(val);
+    sortOpen = false;
+  }
 
   // Install State
   type InstallState = "idle" | "loading" | "success" | "error";
@@ -281,6 +294,8 @@
   }
 </script>
 
+<svelte:window on:mousedown={handleSortOutside} />
+
 <div class="plugin-view">
   <header class="view-header">
     <h1>{$_('pluginManager.title')}</h1>
@@ -311,16 +326,25 @@
 
       {#if activeTab !== "installed"}
         <div class="sort-selector">
-          <select
-            value={$pluginStore.sortBy}
-            on:change={(e) => pluginStore.setSortBy(e.currentTarget.value as any)}
+          <button
+            class="sort-btn"
+            on:click={() => (sortOpen = !sortOpen)}
           >
-            <option value="stars">{$_('pluginManager.sortStars')}</option>
-            <option value="downloads">{$_('pluginManager.sortDownloads')}</option>
-            <option value="updated">{$_('pluginManager.sortUpdated')}</option>
-            <option value="name">{$_('pluginManager.sortName')}</option>
-          </select>
-          <Icon name="chevron-down" size={14} className="select-icon" />
+            {#if sortBy === 'stars'}{$_('pluginManager.sortStars')}
+            {:else if sortBy === 'downloads'}{$_('pluginManager.sortDownloads')}
+            {:else if sortBy === 'updated'}{$_('pluginManager.sortUpdated')}
+            {:else}{$_('pluginManager.sortName')}
+            {/if}
+            <Icon name="chevron-down" size={14} className="select-icon {sortOpen ? 'open' : ''}" />
+          </button>
+          {#if sortOpen}
+            <div class="sort-dropdown">
+              <button class="sort-option" class:active={sortBy === 'stars'} on:click={() => selectSort('stars')}>{$_('pluginManager.sortStars')}</button>
+              <button class="sort-option" class:active={sortBy === 'downloads'} on:click={() => selectSort('downloads')}>{$_('pluginManager.sortDownloads')}</button>
+              <button class="sort-option" class:active={sortBy === 'updated'} on:click={() => selectSort('updated')}>{$_('pluginManager.sortUpdated')}</button>
+              <button class="sort-option" class:active={sortBy === 'name'} on:click={() => selectSort('name')}>{$_('pluginManager.sortName')}</button>
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
@@ -1162,31 +1186,71 @@
     align-items: center;
   }
 
-  .sort-selector select {
-    appearance: none;
+  .sort-btn {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
     background-color: var(--bg-surface);
     color: var(--text-primary);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
-    padding: 0 32px 0 var(--spacing-md);
+    padding: 0 var(--spacing-md);
     font-size: var(--font-size-sm);
     font-weight: var(--font-weight-medium);
     height: 36px;
-    box-sizing: border-box;
     cursor: pointer;
     transition: all var(--transition-fast);
+    white-space: nowrap;
   }
 
-  .sort-selector select:hover {
+  .sort-btn:hover {
     background-color: var(--bg-highlight);
     border-color: var(--accent-primary);
   }
 
-  .sort-selector .select-icon {
-    position: absolute;
-    right: 12px;
-    pointer-events: none;
+  .sort-btn :global(.select-icon) {
     color: var(--text-subdued);
+    transition: transform var(--transition-fast);
+  }
+
+  .sort-btn :global(.select-icon.open) {
+    transform: rotate(180deg);
+  }
+
+  .sort-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    z-index: 200;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    min-width: 100%;
+    overflow: hidden;
+  }
+
+  .sort-option {
+    display: block;
+    width: 100%;
+    padding: 8px var(--spacing-md);
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+    white-space: nowrap;
+  }
+
+  .sort-option:hover {
+    background: var(--bg-highlight);
+    color: var(--text-primary);
+  }
+
+  .sort-option.active {
+    color: var(--accent-primary);
   }
 
   .btn-danger {
@@ -1409,8 +1473,9 @@
     min-width: 140px;
   }
 
-  :global(html.layout-mobile) .sort-selector select {
+  :global(html.layout-mobile) .sort-btn {
     width: 100%;
+    justify-content: space-between;
   }
 
   :global(html.layout-mobile) .plugin-grid {
