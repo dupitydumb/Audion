@@ -43,6 +43,7 @@
         getPlaylistTracks,
     } from "$lib/api/tauri";
     import { playlistCovers } from "$lib/stores/playlistCovers";
+    import Icon from "$lib/components/Icon.svelte";
     import { progressiveScan } from "$lib/stores/progressiveScan";
     import { confirm } from "$lib/stores/dialogs";
     import {
@@ -469,14 +470,7 @@
                         class:active={isActive("home")}
                         on:click={() => navigateAndClose(goToHome)}
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="24"
-                            height="24"
-                        >
-                            <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
-                        </svg>
+                        <Icon name="home" size={24} />
                         <span>{$_('sidebar.home')}</span>
                     </button>
                 </li>
@@ -486,16 +480,7 @@
                         class:active={isActive("liked-songs")}
                         on:click={() => navigateAndClose(goToLikedSongs)}
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="24"
-                            height="24"
-                        >
-                            <path
-                                d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
-                            />
-                        </svg>
+                        <Icon name="heart" size={24} />
                         <span>{$_('sidebar.likedSongs')}</span>
                         <span class="nav-count">{$likedCount}</span>
                     </button>
@@ -506,16 +491,7 @@
                         class:active={isActive("discover")}
                         on:click={() => navigateAndClose(goToDiscover)}
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="24"
-                            height="24"
-                        >
-                            <path
-                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"
-                            />
-                        </svg>
+                        <Icon name="compass" size={24} />
                         <span>{$_('sidebar.discover')}</span>
                     </button>
                 </li>
@@ -526,20 +502,7 @@
                             class:active={isActive("listenbrainz")}
                             on:click={() => navigateAndClose(goToListenBrainz)}
                         >
-                            <svg
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                stroke-width="2"
-                                width="24"
-                                height="24"
-                            >
-                                <circle cx="11" cy="11" r="8"></circle>
-                                <line x1="21" y1="21" x2="16.65" y2="16.65"
-                                ></line>
-                                <line x1="11" y1="8" x2="11" y2="14"></line>
-                                <line x1="8" y1="11" x2="14" y2="11"></line>
-                            </svg>
+                            <Icon name="sparkles" size={24} />
                             <span>{$_('sidebar.recommendations')}</span>
                         </button>
                     </li>
@@ -550,16 +513,7 @@
                         class:active={isActive("tracks")}
                         on:click={() => navigateAndClose(goToTracks)}
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="24"
-                            height="24"
-                        >
-                            <path
-                                d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                            />
-                        </svg>
+                        <Icon name="music" size={24} />
                         <span>{$_('sidebar.allTracks')}</span>
                         <span class="nav-count">{$trackCount}</span>
                     </button>
@@ -570,16 +524,7 @@
                         class:active={isActive("albums")}
                         on:click={() => navigateAndClose(goToAlbums)}
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="24"
-                            height="24"
-                        >
-                            <path
-                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
-                            />
-                        </svg>
+                        <Icon name="disc-3" size={24} />
                         <span>{$_('sidebar.albums')}</span>
                         <span class="nav-count">{$albumCount}</span>
                     </button>
@@ -590,16 +535,7 @@
                         class:active={isActive("artists")}
                         on:click={() => navigateAndClose(goToArtists)}
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="24"
-                            height="24"
-                        >
-                            <path
-                                d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
-                            />
-                        </svg>
+                        <Icon name="user" size={24} />
                         <span>{$_('sidebar.artists')}</span>
                         <span class="nav-count">{$artistCount}</span>
                     </button>
@@ -618,16 +554,7 @@
                         class:active={isActive("playlists")}
                         on:click={() => navigateAndClose(goToPlaylists)}
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="24"
-                            height="24"
-                        >
-                            <path
-                                d="M19 9H5V7h14v2zm0 4H5v-2h14v2zm-8 4H5v-2h6v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"
-                            />
-                        </svg>
+                        <Icon name="list-music" size={24} />
                         <span>{$_('sidebar.allPlaylists')}</span>
                         <span class="nav-count">{$playlists.length}</span>
                     </button>
@@ -678,16 +605,7 @@
                                                 handleImageError(e, playlist)}
                                         />
                                     {:else}
-                                        <svg
-                                            viewBox="0 0 24 24"
-                                            fill="currentColor"
-                                            width="24"
-                                            height="24"
-                                        >
-                                            <path
-                                                d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"
-                                            />
-                                        </svg>
+                                        <Icon name="list-music" size={24} />
                                     {/if}
                                 </div>
                             {/if}
@@ -699,16 +617,7 @@
                                     class="pinned-indicator-sidebar"
                                     title={$_("home.pinned")}
                                 >
-                                    <svg
-                                        viewBox="0 0 24 24"
-                                        fill="currentColor"
-                                        width="12"
-                                        height="12"
-                                    >
-                                        <path
-                                            d="M16 9V4l1 0V2H7v2l1 0v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"
-                                        />
-                                    </svg>
+                                    <Icon name="pin" size={12} />
                                 </span>
                             {/if}
                             {#if $playlistTrackCounts[playlist.id] !== undefined}
@@ -733,16 +642,7 @@
                         class:active={isActive("plugins")}
                         on:click={() => navigateAndClose(goToPlugins)}
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="24"
-                            height="24"
-                        >
-                            <path
-                                d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"
-                            />
-                        </svg>
+                        <Icon name="plugin" size={24} />
                         <span>{$_('sidebar.plugins')}</span>
                     </button>
                 </li>
@@ -752,16 +652,7 @@
                         class:active={isActive("settings")}
                         on:click={() => navigateAndClose(goToSettings)}
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="24"
-                            height="24"
-                        >
-                            <path
-                                d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"
-                            />
-                        </svg>
+                        <Icon name="settings" size={24} />
                         <span>{$_('sidebar.settings')}</span>
                     </button>
                 </li>
@@ -818,37 +709,10 @@
             disabled={isScanning}
         >
             {#if isScanning}
-                <svg
-                    class="animate-spin"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    width="20"
-                    height="20"
-                >
-                    <circle
-                        cx="12"
-                        cy="12"
-                        r="10"
-                        stroke-width="2"
-                        opacity="0.25"
-                    />
-                    <path
-                        d="M12 2a10 10 0 0 1 10 10"
-                        stroke-width="2"
-                        stroke-linecap="round"
-                    />
-                </svg>
+                <Icon name="loader" size={20} />
                 <span>{scanStatus}</span>
             {:else}
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="20"
-                    height="20"
-                >
-                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                </svg>
+                <Icon name="plus" size={20} />
                 <span>{$_('sidebar.addMusicFolder')}</span>
             {/if}
         </button>

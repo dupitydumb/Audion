@@ -5,6 +5,7 @@
   import { slide } from "svelte/transition";
   import { createEventDispatcher } from "svelte";
   import { layoutOverride, type LayoutOverride } from "$lib/stores/mobile";
+  import Icon from "$lib/components/Icon.svelte";
 
   export let open: boolean = false;
   const dispatch = createEventDispatcher();
@@ -38,18 +39,12 @@
 
 <section class="settings-section" aria-labelledby="appearance-heading">
   <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <svg class="accordion-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <circle cx="12" cy="12" r="10" />
-      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
-      <path d="M2 12h20" />
-    </svg>
+    <Icon name="globe" size="lg" className="accordion-icon" />
     <div class="accordion-header-info">
       <span class="accordion-title">{$_('settings.appearance')}</span>
       <span class="accordion-subtitle">{$_('settings.appearanceSubtitle')}</span>
     </div>
-    <svg class="accordion-chevron" class:rotated={open} viewBox="0 0 24 24" width="16" height="16">
-      <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
-    </svg>
+    <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
   </button>
   {#if open}
     <div class="section-body" transition:slide|local>

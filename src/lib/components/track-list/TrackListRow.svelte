@@ -2,6 +2,7 @@
   import { _ } from "svelte-i18n";
   import type { Track } from "$lib/api/tauri";
   import ArtistLinks from "$lib/components/ArtistLinks.svelte";
+  import Icon from "$lib/components/Icon.svelte";
   import { formatDuration } from "$lib/api/tauri";
   import { isMobile } from "$lib/stores/mobile";
   import { multiSelect } from "$lib/stores/multiselect";
@@ -89,16 +90,7 @@
     >
       <div class="custom-checkbox" class:checked={isSelected}>
         {#if isSelected}
-          <svg
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            width="14"
-            height="14"
-          >
-            <path
-              d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"
-            />
-          </svg>
+          <Icon name="check" size={14} />
         {/if}
       </div>
     </div>
@@ -113,31 +105,11 @@
       role="button"
       tabindex="-1"
     >
-      <svg
-        viewBox="0 0 24 24"
-        fill="currentColor"
-        width="16"
-        height="16"
-      >
-        <path
-          d="M3 15h18v-2H3v2zm0 4h18v-2H3v2zm0-8h18V9H3v2zm0-6v2h18V5H3z"
-        />
-      </svg>
+      <Icon name="drag-handle" size={16} />
     </div>
   {/if}
   <span class="col-num">
     {#if playingTrackId === track.id && isPlaying}
-      <svg
-        class="playing-icon"
-        viewBox="0 0 24 24"
-        fill="currentColor"
-        width="14"
-        height="14"
-      >
-        <path
-          d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-        />
-      </svg>
       <span class="equalizer-bars">
         <span class="eq-bar"></span>
         <span class="eq-bar"></span>
@@ -164,27 +136,11 @@
           />
         {:else}
           <div class="cover-placeholder">
-            <svg
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              width="16"
-              height="16"
-            >
-              <path
-                d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-              />
-            </svg>
+            <Icon name="music" size={16} />
           </div>
         {/if}
         <div class="cover-play-overlay">
-          <svg
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            width="18"
-            height="18"
-          >
-            <path d="M8 5v14l11-7z" />
-          </svg>
+          <Icon name="play" size={18} />
         </div>
       </div>
     </span>
@@ -196,16 +152,7 @@
 
         {#if !track.source_type || track.source_type === "local" || track.local_src}
           <span class="downloaded-icon" title={$_('album.downloaded')}>
-            <svg
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              width="14"
-              height="14"
-            >
-              <path
-                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
-              />
-            </svg>
+            <Icon name="check-circle" size={14} />
           </span>
         {/if}
 
@@ -255,16 +202,7 @@
           />
         {:else}
           <span class="cover-placeholder-small">
-            <svg
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              width="12"
-              height="12"
-            >
-              <path
-                d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-              />
-            </svg>
+            <Icon name="music" size={12} />
           </span>
         {/if}
       </span>
