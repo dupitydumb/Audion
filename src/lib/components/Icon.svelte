@@ -1,5 +1,5 @@
 <script lang="ts">
-    export let name: 'speaker' | 'headphone' | 'chevron-down' | 'check' | 'info' | 'refresh' | 'loader';
+    export let name: 'speaker' | 'headphone' | 'chevron-down' | 'chevron-up' | 'x' | 'check' | 'info' | 'refresh' | 'loader';
     export let size: number | string = 16;
 
     const sizeMap: Record<string, number> = { xs: 12, sm: 14, md: 16, lg: 20, xl: 24 };
@@ -27,6 +27,12 @@
   
     {:else if name === 'chevron-down'}
       <path d="M3 5.5L8 10.5L13 5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+    {:else if name === 'chevron-up'}
+      <path d="M3 10.5L8 5.5L13 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+    {:else if name === 'x'}
+      <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
   
     {:else if name === 'check'}
       <path d="M2.5 8L6 11.5L13.5 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>

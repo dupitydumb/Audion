@@ -1032,12 +1032,10 @@
     overscroll-behavior-y: contain;
   }
 
-  @media (max-width: 768px) {
-    .plugin-content {
-      padding-bottom: calc(
-        var(--mobile-bottom-inset, 130px) + var(--spacing-xl)
-      );
-    }
+  :global(html.layout-mobile) .plugin-content {
+    padding-bottom: calc(
+      var(--mobile-bottom-inset, 130px) + var(--spacing-xl)
+    );
   }
 
   .plugin-grid {
@@ -1562,64 +1560,62 @@
   }
 
   /* ── Mobile ── */
-  @media (max-width: 768px) {
-    .view-header {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: var(--spacing-md);
-    }
+  :global(html.layout-mobile) .view-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-md);
+  }
 
-    .view-header h1 {
-      font-size: 1.25rem;
-    }
+  :global(html.layout-mobile) .view-header h1 {
+    font-size: 1.25rem;
+  }
 
-    .header-actions {
-      width: 100%;
-      flex-wrap: wrap;
-      gap: var(--spacing-sm);
-    }
+  :global(html.layout-mobile) .header-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+  }
 
-    .header-actions button,
-    .sort-selector {
-      flex: 1;
-      min-width: 140px;
-    }
+  :global(html.layout-mobile) .header-actions button,
+  :global(html.layout-mobile) .sort-selector {
+    flex: 1;
+    min-width: 140px;
+  }
 
-    .sort-selector select {
-      width: 100%;
-    }
+  :global(html.layout-mobile) .sort-selector select {
+    width: 100%;
+  }
 
-    .plugin-grid {
-      grid-template-columns: 1fr;
-      gap: var(--spacing-md);
-    }
+  :global(html.layout-mobile) .plugin-grid {
+    grid-template-columns: 1fr;
+    gap: var(--spacing-md);
+  }
 
-    .remove-btn {
-      opacity: 1;
-    }
+  :global(html.layout-mobile) .remove-btn {
+    opacity: 1;
+  }
 
-    .tabs {
-      overflow-x: auto;
-      padding-bottom: 4px;
-      gap: var(--spacing-xs);
-    }
+  :global(html.layout-mobile) .tabs {
+    overflow-x: auto;
+    padding-bottom: 4px;
+    gap: var(--spacing-xs);
+  }
 
-    .tab {
-      padding: var(--spacing-xs) var(--spacing-sm);
-      font-size: var(--font-size-sm);
-      white-space: nowrap;
-    }
+  :global(html.layout-mobile) .tab {
+    padding: var(--spacing-xs) var(--spacing-sm);
+    font-size: var(--font-size-sm);
+    white-space: nowrap;
+  }
 
-    .category-filters {
-      padding-left: var(--spacing-sm);
-      padding-right: var(--spacing-sm);
-    }
+  :global(html.layout-mobile) .category-filters {
+    padding-left: var(--spacing-sm);
+    padding-right: var(--spacing-sm);
+  }
 
-    .category-chip {
-      min-height: unset;
-      min-width: unset;
-      padding: 6px var(--spacing-sm);
-      font-size: var(--font-size-xs);
-    }
+  :global(html.layout-mobile) .category-chip {
+    min-height: unset;
+    min-width: unset;
+    padding: 6px var(--spacing-sm);
+    font-size: var(--font-size-xs);
   }
 </style>

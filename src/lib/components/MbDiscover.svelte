@@ -1,6 +1,7 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
     import { onMount } from "svelte";
+    import { formatTrackArtists } from "$lib/utils/artists";
     import { fade, fly } from "svelte/transition";
     import {
         searchArtistsMb,
@@ -798,7 +799,7 @@
                                                         >{track.title}</span
                                                     >
                                                     <span class="track-artist"
-                                                        >{track.artist}</span
+                                                        >{formatTrackArtists(track)}</span
                                                     >
                                                 </div>
                                             </div>
@@ -1135,7 +1136,7 @@
                                                 >{track.title}</span
                                             >
                                             <span class="track-artist"
-                                                >{track.artist}</span
+                                                >{formatTrackArtists(track)}</span
                                             >
                                         </div>
                                         <div class="track-actions">

@@ -7,6 +7,7 @@ import { appSettings } from '$lib/stores/settings';
 import { pluginStore } from '$lib/stores/plugin-store';
 import { addToast } from '$lib/stores/toast';
 import { loadLibrary } from '$lib/stores/library';
+import { isMobilePlatform } from '$lib/stores/mobile';
 import { type Track, audioGetStreamUrl } from '$lib/api/tauri';
 import { lyricsManager } from '$lib/lyrics';
 
@@ -71,9 +72,8 @@ export function getDownloadLocation(): string | null {
     const location = get(appSettings).downloadLocation;
     if (location) return location;
 
-    // Detect mobile platform
-    const isMobile = typeof navigator !== 'undefined' && /android|iphone|ipad|ipod/i.test(navigator.userAgent);
-    if (isMobile) {
+    // Detect mobile platform (see $lib/stores/mobile)
+    if (get(isMobilePlatform)) {
         // Use the public Downloads directory for better compatibility
         return '/storage/emulated/0/Download'; // Android public Downloads directory
     }

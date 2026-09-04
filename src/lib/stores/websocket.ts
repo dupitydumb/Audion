@@ -2,6 +2,7 @@ import { writable, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 import { authState, triggerSync, isLoggedIn } from '$lib/stores/sync';
 import { appSettings } from '$lib/stores/settings';
+import { isMobilePlatform } from '$lib/stores/mobile';
 
 export interface RemoteDevice {
     deviceId: string;
@@ -77,8 +78,7 @@ function createWebsocketStore() {
                 
                 let deviceName = "Unknown Device";
                 if (typeof window !== 'undefined') {
-                    const isMobileDev = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-                    deviceName = isMobileDev ? "Mobile Player" : "Desktop Player";
+                    deviceName = get(isMobilePlatform) ? "Mobile Player" : "Desktop Player";
                 }
                 
                 send('identify', { deviceId, deviceName });

@@ -64,6 +64,13 @@ export async function initPlatformDetection(): Promise<void> {
     await detectWindows();
 }
 
+// getter for cached linux detection result
+// returns false until initPlatformDetection has resolved at least once
+// used to scope linux only workarounds (e.g. custom window resize handles)
+export function getIsLinux(): boolean {
+    return isLinuxPlatform === true;
+}
+
 export async function initWindowsThumbar(): Promise<boolean> {
     if (!isTauri()) return false;
     const onWindows = await detectWindows();
@@ -141,6 +148,14 @@ export interface Track {
     path: string;
     title: string | null;
     artist: string | null;
+    /**
+     * individual artist names split from (e.g. Dua Lipa & Drake =>
+     * [Dua Lipa, Drake]), in original order
+     * artist` is still the raw display string and is unaffected.
+     * may be an empty array for data paths the backend hasn't wired up yet
+     * see formatArtists in artists.ts
+     */
+    artists?: string[];
     album: string | null;
     track_number: number | null;
     duration: number | null;
@@ -162,6 +177,11 @@ export interface Album {
     id: number;
     name: string;
     artist: string | null;
+    /**
+     * individual album artist names split from artist, in original order
+     * may be an empty array for data paths the backend hasn't wired up yet
+     */
+    artists?: string[];
     art_data: string | null; // old - base64 album art
     art_path?: string | null; // File path to album art
 }
@@ -266,6 +286,37 @@ export async function getDefaultMusicDirs(): Promise<string[]> {
 
 export async function getMusicFolders(): Promise<string[]> {
     return await invoke('get_music_folders');
+}
+
+/** ordered artist name delimiter rules. index 0 = highest priority */
+export interface ArtistSplitRules {
+    delimiters: string[];
+}
+
+export type AlbumArtistMode = 'tag_if_present' | 'first_track';
+
+export async function getArtistSplitRules(): Promise<ArtistSplitRules> {
+    return await invoke('get_artist_split_rules');
+}
+
+/** saves new delimiter rules. call resplitAllArtists afterward to apply them to the existing library without a full rescan */
+export async function setArtistSplitRules(rules: ArtistSplitRules): Promise<void> {
+    return await invoke('set_artist_split_rules', { rules });
+}
+
+export async function getAlbumArtistMode(): Promise<AlbumArtistMode> {
+    return await invoke('get_album_artist_mode');
+}
+
+/** existing albums keep whatever artist was assigned at scan time, rescan to reapply this mode to them */
+export async function setAlbumArtistMode(mode: AlbumArtistMode): Promise<void> {
+    return await invoke('set_album_artist_mode', { mode });
+}
+
+/** re derives track_artists for the whole library using the currently active split rules
+ * returns the number of tracks re derived */
+export async function resplitAllArtists(): Promise<number> {
+    return await invoke('resplit_all_artists');
 }
 
 export async function getLibrary(): Promise<Library> {

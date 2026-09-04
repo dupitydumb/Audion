@@ -2,6 +2,7 @@
     import { _ } from "svelte-i18n";
     import type { Album } from "$lib/api/tauri";
     import { goToAlbumDetail, goToArtistDetail } from "$lib/stores/view";
+    import ArtistLinks from "./ArtistLinks.svelte";
     import {
         getAlbumCoverFromTracks,
         loadMoreAlbums,
@@ -138,14 +139,21 @@
         pauseTooltip={$_("common.pause")}
         ariaLabel={album.name}
         primaryText={album.name}
-        secondaryText={album.artist ||
-            $_("common.unknownArtist")}
-        secondaryAction={album.artist
-            ? () => goToArtistDetail(album.artist!)
-            : null}
         on:play={() => playAlbum(album)}
         on:pause={togglePlay}
     >
+        <svelte:fragment slot="secondary" let:isActive>
+            <ArtistLinks
+                artist={album.artist || $_("common.unknownArtist")}
+                artists={album.artists}
+                chipClass="text-inner secondary-link"
+                marquee
+                marqueeTrigger="external"
+                marqueeActive={isActive}
+                resetKey={album.id}
+                on:select={(e) => goToArtistDetail(e.detail)}
+            />
+        </svelte:fragment>
         <svelte:fragment slot="cover">
             {#if cover && !failedImages.has(cover)}
                 <img

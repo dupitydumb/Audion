@@ -92,7 +92,7 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
  */
 export const defaultBindings: ShortcutBinding[] = [
     // Playback
-    { action: "togglePlay",      key: "Space",      matchType: "key",  modifiers: {},              keyDisplay: "Space",       isGlobal: false, globalString: null },
+    { action: "togglePlay",      key: "Space",      matchType: "code", modifiers: {},              keyDisplay: "Space",       isGlobal: false, globalString: null },
     { action: "nextTrack",       key: "ArrowRight", matchType: "key",  modifiers: {},              keyDisplay: "→",           isGlobal: false, globalString: null },
     { action: "previousTrack",   key: "ArrowLeft",  matchType: "key",  modifiers: {},              keyDisplay: "←",           isGlobal: false, globalString: null },
     { action: "toggleShuffle",   key: "KeyS",       matchType: "code", modifiers: {},              keyDisplay: "S",           isGlobal: false, globalString: null },

@@ -1145,9 +1145,6 @@
         -webkit-overflow-scrolling: touch;
     }
 
-    @media (max-width: 768px) {
-    }
-
     .empty-state {
         display: flex;
         align-items: center;
@@ -1329,14 +1326,12 @@
     }
 
     /* Mobile view header adjustments */
-    @media (max-width: 768px) {
-        .view-header h1 {
-            font-size: 1.25rem;
-        }
+    :global(html.layout-mobile) .view-header h1 {
+        font-size: 1.25rem;
+    }
 
-        .view-header {
-            padding: calc(var(--safe-area-top) + var(--spacing-md))
-                var(--spacing-md) var(--spacing-md);
-        }
+    :global(html.layout-mobile) .view-header {
+        padding: calc(var(--safe-area-top) + var(--spacing-md))
+            var(--spacing-md) var(--spacing-md);
     }
 </style>

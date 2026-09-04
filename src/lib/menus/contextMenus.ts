@@ -70,6 +70,35 @@ const PIN_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 /** typed separator so spread sites stay readable */
 const SEP: ContextMenuItem = { type: 'separator' };
 
+/**
+ * builds the go to artist menu item for a track
+ * for a multi artist track it
+ * becomes a submenu listing each artist separately
+ */
+function buildGoToArtistItem(
+    t: (key: string) => string,
+    artist: string | null | undefined,
+    artists: string[] | undefined,
+): ContextMenuItem {
+    const names = artists && artists.length > 0 ? artists : (artist ? [artist] : []);
+
+    if (names.length > 1) {
+        return {
+            label: t('contextMenu.goToArtist'),
+            submenu: names.map((name) => ({
+                label: name,
+                action: () => goToArtistDetail(name),
+            })),
+        };
+    }
+
+    return {
+        label: t('contextMenu.goToArtist'),
+        action: () => goToArtistDetail(names[0] || ''),
+        disabled: names.length === 0,
+    };
+}
+
 type Tfn = (key: string) => string;
 
 // internal primitive builders ==============================================================================
@@ -421,11 +450,7 @@ export function buildTrackContextMenu(opts: TrackMenuOptions): ContextMenuItem[]
             },
             likeItem,
             SEP,
-            {
-                label: t('contextMenu.goToArtist'),
-                action: () => goToArtistDetail(track.artist || ''),
-                disabled: !track.artist,
-            },
+            buildGoToArtistItem(t, track.artist, track.artists),
             {
                 label: t('contextMenu.goToAlbum'),
                 action: () => { if (track.album_id) goToAlbumDetail(track.album_id); },
@@ -515,11 +540,7 @@ export function buildTrackContextMenu(opts: TrackMenuOptions): ContextMenuItem[]
             opts.onArtworkCacheInvalidate?.(track.id);
         }),
         SEP,
-        {
-            label: t('contextMenu.goToArtist'),
-            action: () => goToArtistDetail(track.artist || ''),
-            disabled: !track.artist,
-        },
+        buildGoToArtistItem(t, track.artist, track.artists),
         {
             label: t('contextMenu.goToAlbum'),
             action: () => { if (track.album_id) goToAlbumDetail(track.album_id); },

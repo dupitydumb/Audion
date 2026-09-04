@@ -1,6 +1,7 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
     import { onMount } from "svelte";
+    import { get } from "svelte/store";
     import {
         currentTrack,
         isPlaying,
@@ -40,6 +41,7 @@
     import { goToArtistDetail } from "$lib/stores/view";
     import { isMobile } from "$lib/stores/mobile";
     import type { Album } from "$lib/api/tauri";
+    import ArtistLinks from "$lib/components/ArtistLinks.svelte";
     import { likedTrackIds, toggleLike } from "$lib/stores/liked";
     import {
         sleepTimerActive,
@@ -152,8 +154,9 @@
         // Update UI immediately for smooth drag — fire-and-forget to backend
         // i know the drag is buggy. but this is the best we can do
         // Poller will correct position on next tick if keyframe alignment differs.
+        const previousSecs = get(currentTime);
         currentTime.set(pos * $duration);
-        seek(pos);
+        seek(pos, previousSecs);
     }
 
     function handleSeekEnd() {
@@ -279,7 +282,10 @@
     <!-- Track info -->
     <div class="track-info desktop-track-info">
             {#if $currentTrack}
-                <div class="album-art">
+                <div
+                    class="album-art"
+                    style="view-transition-name: {$isFullScreen ? 'none' : 'player-album-art'};"
+                >
                     {#if albumArt && !imageLoadFailed}
                         <img
                             src={albumArt}
@@ -306,21 +312,15 @@
                     <span class="track-title truncate"
                         >{$currentTrack.title || $_('player.unknownTitle')}</span
                     >
-                    <span
-                        class="track-artist truncate"
-                        role="button"
-                        tabindex="0"
-                        on:click|stopPropagation={() => {
-                            if ($currentTrack?.artist) {
-                                goToArtistDetail($currentTrack.artist);
-                            }
-                        }}
-                        on:keydown={(e) => {
-                            if (e.key === "Enter" && $currentTrack?.artist) {
-                                goToArtistDetail($currentTrack.artist);
-                            }
-                        }}>{$currentTrack.artist || $_('common.unknownArtist')}</span
-                    >
+                    <ArtistLinks
+                        artist={$currentTrack.artist || $_('common.unknownArtist')}
+                        artists={$currentTrack.artists}
+                        chipClass="track-artist truncate"
+                        marquee
+                        marqueeTrigger="always"
+                        resetKey={$currentTrack.id}
+                        on:select={(e) => goToArtistDetail(e.detail)}
+                    />
                 </div>
 
                 <!-- Like button (desktop) -->
@@ -755,7 +755,7 @@
     .album-art {
         width: 54px;
         height: 54px;
-        border-radius: var(--radius-md);
+        border-radius: 14px;
         overflow: hidden;
         flex-shrink: 0;
         background-color: var(--bg-surface);

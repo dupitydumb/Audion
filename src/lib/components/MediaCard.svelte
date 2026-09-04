@@ -1,6 +1,7 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
   import { createEventDispatcher, onDestroy } from "svelte";
+  import MarqueeText from "$lib/components/MarqueeText.svelte";
 
   const dispatch = createEventDispatcher<{
     play: void;
@@ -25,60 +26,21 @@
   $: isRound = variant === "round";
   $: isCentered = variant === "round";
 
-  // Marquee
-  let primaryEl: HTMLSpanElement;
-  let secondaryEl: HTMLSpanElement;
-
-  let primaryOverflows = false;
-  let secondaryOverflows = false;
-  let primaryDuration = "0s";
-  let secondaryDuration = "0s";
-
-  let measureRafId: number | null = null;
-
-  function measureOverflow(onDone?: () => void) {
-    if (measureRafId !== null) cancelAnimationFrame(measureRafId);
-    measureRafId = requestAnimationFrame(() => {
-      measureRafId = null;
-      if (primaryEl) {
-        primaryOverflows = primaryEl.scrollWidth > primaryEl.clientWidth;
-        if (primaryOverflows) {
-          primaryDuration = `${Math.max(4, (primaryEl.scrollWidth + 64) / 60).toFixed(1)}s`;
-        }
-      }
-      if (secondaryEl) {
-        secondaryOverflows = secondaryEl.scrollWidth > secondaryEl.clientWidth;
-        if (secondaryOverflows) {
-          secondaryDuration = `${Math.max(4, (secondaryEl.scrollWidth + 64) / 60).toFixed(1)}s`;
-        }
-      }
-      onDone?.();
-    });
-  }
-
-  function resetOverflow() {
-    if (measureRafId !== null) {
-      cancelAnimationFrame(measureRafId);
-      measureRafId = null;
-    }
-    primaryOverflows = false;
-    secondaryOverflows = false;
-    primaryDuration = "0s";
-    secondaryDuration = "0s";
-  }
-
-  // Hover
+  // hover => drives both this card's own title/subtitle marquee
+  // via MarqueeText's external trigger below
+  // exposed to the secondary slot so callers (e.g. ArtistLinks chips)
+  // can sync their own marquee to the same whole card hover
   let isActive = false;
   let touchTimeout: ReturnType<typeof setTimeout> | null = null;
+  // fixed window to keep a touch triggered marquee visible before it
+  const TOUCH_MARQUEE_MS = 8000;
 
   function handleMouseEnter() {
     isActive = true;
-    measureOverflow();
   }
 
   function handleMouseLeave() {
     isActive = false;
-    resetOverflow();
   }
 
   function handleTouchStart(e: TouchEvent) {
@@ -92,19 +54,9 @@
 
     isActive = true;
 
-    measureOverflow(() => {
-      const longest = Math.max(
-        parseFloat(primaryDuration) || 0,
-        parseFloat(secondaryDuration) || 0,
-      );
-      touchTimeout = setTimeout(
-        () => {
-          isActive = false;
-          resetOverflow();
-        },
-        Math.min(Math.max(6000, longest * 2 * 1000), 10000),
-      );
-    });
+    touchTimeout = setTimeout(() => {
+      isActive = false;
+    }, TOUCH_MARQUEE_MS);
   }
 
   // Keyboard
@@ -121,10 +73,6 @@
 
   onDestroy(() => {
     if (touchTimeout) clearTimeout(touchTimeout);
-    if (measureRafId !== null) {
-      cancelAnimationFrame(measureRafId);
-      measureRafId = null;
-    }
   });
 </script>
 
@@ -215,63 +163,35 @@
   </div>
 
   <div class="info">
-    <div class="text-track" class:animate={isActive && primaryOverflows}>
-      <span
-        class="text-inner"
-        bind:this={primaryEl}
-        style="--marquee-duration: {primaryDuration};"
-        class:marquee={isActive && primaryOverflows}>{primaryText}</span
-      >
-      {#if isActive && primaryOverflows}
-        <span
-          class="text-inner marquee"
-          aria-hidden="true"
-          style="--marquee-duration: {primaryDuration};"
-        >
-          {primaryText}
-        </span>
-      {/if}
-    </div>
+    <MarqueeText
+      trigger="external"
+      active={isActive}
+      resetKey={primaryText}
+      containerClass="text-track"
+    >
+      <span class="text-inner">{primaryText}</span>
+    </MarqueeText>
 
-    {#if secondaryText}
-      <div
-        class="text-track secondary"
-        class:animate={isActive && secondaryOverflows}
+    {#if $$slots.secondary}
+      <div class="text-track secondary">
+        <slot name="secondary" {isActive} />
+      </div>
+    {:else if secondaryText}
+      <MarqueeText
+        trigger="external"
+        active={isActive}
+        resetKey={secondaryText}
+        containerClass="text-track secondary"
       >
         {#if secondaryAction}
           <button
             class="text-inner secondary-link"
-            bind:this={secondaryEl}
-            style="--marquee-duration: {secondaryDuration};"
-            class:marquee={isActive && secondaryOverflows}
             on:click|stopPropagation={secondaryAction}>{secondaryText}</button
           >
-          {#if isActive && secondaryOverflows}
-            <button
-              class="text-inner secondary-link marquee"
-              aria-hidden="true"
-              style="--marquee-duration: {secondaryDuration};"
-              on:click|stopPropagation={secondaryAction}>{secondaryText}</button
-            >
-          {/if}
         {:else}
-          <span
-            class="text-inner"
-            bind:this={secondaryEl}
-            style="--marquee-duration: {secondaryDuration};"
-            class:marquee={isActive && secondaryOverflows}>{secondaryText}</span
-          >
-          {#if isActive && secondaryOverflows}
-            <span
-              class="text-inner marquee"
-              aria-hidden="true"
-              style="--marquee-duration: {secondaryDuration};"
-            >
-              {secondaryText}
-            </span>
-          {/if}
+          <span class="text-inner">{secondaryText}</span>
         {/if}
-      </div>
+      </MarqueeText>
     {/if}
 
     <slot name="extra-info" />
@@ -317,14 +237,12 @@
     align-items: center;
     width: 100%;
   }
-  .media-card.centered .text-track {
-    width: 100%;
-  }
-  .media-card.centered .text-track:not(.animate) .text-inner {
+  .media-card.centered :global(.text-track) {
+    /* shrink-to-fit + auto margins: when the content is narrower than the card, this centers it
+    once content is wide enough to hit max-width:100%, it falls back to flush-left with the overflow clipped */
+    width: max-content;
     max-width: 100%;
-    width: 100%;
-    display: block;
-    text-align: center;
+    margin: 0 auto;
   }
 
   /* Cover */
@@ -349,11 +267,9 @@
     aspect-ratio: unset;
   }
 
-  @media (max-width: 768px) {
-    .cover.round {
-      width: 100px;
-      height: 100px;
-    }
+  :global(html.layout-mobile) .cover.round {
+    width: 100px;
+    height: 100px;
   }
 
   .cover :global(img) {
@@ -580,65 +496,43 @@
     overflow: hidden;
   }
 
-  /* Marquee */
-  .text-track {
-    position: relative;
-    display: flex;
-    flex-direction: row;
-    overflow: hidden;
-    -webkit-mask-image: linear-gradient(
-      to right,
-      transparent 0%,
-      black 4%,
-      black 92%,
-      transparent 100%
-    );
-    mask-image: linear-gradient(
-      to right,
-      transparent 0%,
-      black 4%,
-      black 92%,
-      transparent 100%
-    );
-  }
-
-  .text-track:not(.animate) {
-    -webkit-mask-image: none;
-    mask-image: none;
-  }
-
-  .text-inner {
+  /* Marquee: 
+  overflow/scroll animation lives in the shared
+  MarqueeText component
+  these rules just style the text and layout, not the motion
+  svelte only allows :global to wrap a whole selector or a leading/trailing segment of it, not an inner segment
+  so each rule below wraps its entire selector */
+  :global(.text-inner) {
     white-space: nowrap;
     flex-shrink: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
   }
 
-  .text-track:not(.secondary) .text-inner {
+  :global(.text-track:not(.secondary) .text-inner) {
     font-size: 0.9375rem;
     font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
   }
 
-  .media-card.now-playing .text-track:not(.secondary) .text-inner,
-  .media-card.paused .text-track:not(.secondary) .text-inner {
+  :global(.media-card.now-playing .text-track:not(.secondary) .text-inner),
+  :global(.media-card.paused .text-track:not(.secondary) .text-inner) {
     color: var(--accent-primary);
   }
 
-  .text-track.secondary .text-inner {
+  :global(.text-track.secondary .text-inner) {
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
   }
 
-  .media-card.now-playing .text-track.secondary .text-inner,
-  .media-card.paused .text-track.secondary .text-inner {
+  :global(.media-card.now-playing .text-track.secondary .text-inner),
+  :global(.media-card.paused .text-track.secondary .text-inner) {
     color: var(--accent-primary);
     opacity: 0.8;
   }
 
-  /* Secondary text as a clickable button */
-  .secondary-link {
+  /* Secondary text as a clickable button
+  global wrapped for the same reason above
+  used cross component via chipClass="... secondary-link" passed to ArtistLinks */
+  :global(.secondary-link) {
     background: none;
     border: none;
     padding: 0;
@@ -649,56 +543,37 @@
     color: var(--text-secondary);
   }
 
-  .secondary-link:hover {
+  :global(.secondary-link:hover) {
     text-decoration: underline;
     color: var(--text-primary);
   }
 
-  .media-card.now-playing .secondary-link,
-  .media-card.paused .secondary-link {
+  :global(.media-card.now-playing .secondary-link),
+  :global(.media-card.paused .secondary-link) {
     color: var(--accent-primary);
     opacity: 0.8;
   }
 
-  .media-card.now-playing .secondary-link:hover,
-  .media-card.paused .secondary-link:hover {
+  :global(.media-card.now-playing .secondary-link:hover),
+  :global(.media-card.paused .secondary-link:hover) {
     opacity: 1;
   }
 
-  .text-inner.marquee {
-    overflow: visible;
-    text-overflow: clip;
-    max-width: none;
-    padding-right: 64px;
-    animation: marquee-scroll var(--marquee-duration) linear infinite;
-  }
-
-  @keyframes marquee-scroll {
-    from {
-      transform: translateX(0);
-    }
-    to {
-      transform: translateX(-100%);
-    }
-  }
-
   /* Mobile */
-  @media (max-width: 768px) {
-    .media-card {
-      padding: var(--spacing-sm);
-    }
-    .cover {
-      margin-bottom: var(--spacing-sm);
-    }
-    .text-track:not(.secondary) .text-inner {
-      font-size: var(--font-size-sm);
-    }
-    .text-track.secondary .text-inner {
-      font-size: var(--font-size-xs);
-    }
-    .badge {
-      font-size: 0.625rem;
-      padding: 2px 6px;
-    }
+  :global(html.layout-mobile) .media-card {
+    padding: var(--spacing-sm);
+  }
+  :global(html.layout-mobile) .cover {
+    margin-bottom: var(--spacing-sm);
+  }
+  :global(html.layout-mobile .text-track:not(.secondary)) .text-inner {
+    font-size: var(--font-size-sm);
+  }
+  :global(html.layout-mobile .text-track.secondary) .text-inner {
+    font-size: var(--font-size-xs);
+  }
+  :global(html.layout-mobile) .badge {
+    font-size: 0.625rem;
+    padding: 2px 6px;
   }
 </style>

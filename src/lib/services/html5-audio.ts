@@ -2,7 +2,7 @@
 // player.ts interacts exclusively through the public interface below.
 
 import { get } from 'svelte/store';
-import { equalizer, EQ_FREQUENCIES, type EqualizerState } from '$lib/stores/equalizer';
+import { equalizer, type EqualizerState, type FilterType } from '$lib/stores/equalizer';
 import { addToast } from '$lib/stores/toast';
 import { appSettings } from '$lib/stores/settings';
 
@@ -22,9 +22,11 @@ export function html5SetCallbacks(callbacks: Html5Callbacks): void {
     registeredCallbacks = callbacks;
 }
 
-export async function html5Play(path: string, volume: number, startTime = 0): Promise<void> {
+export async function html5Play(path: string, volume: number, startTime = 0, replayGainDb: number | null = null): Promise<void> {
     html5ClearPreload();
     let audio = getHtml5Audio();
+
+    html5SetTrackReplayGain(replayGainDb);
 
     // Pause and reset before switching tracks
     audio.pause();
@@ -71,12 +73,13 @@ export async function html5Play(path: string, volume: number, startTime = 0): Pr
     }
 }
 
-export async function html5Preload(path: string, trackId: string | number | null = null): Promise<void> {
+export async function html5Preload(path: string, trackId: string | number | null = null, replayGainDb: number | null = null): Promise<void> {
     html5ClearPreload();
 
     preloadPath = path;
     preloadTrackId = trackId;
     preloadReady = false;
+    preloadReplayGainDb = replayGainDb;
 
     if (typeof window === 'undefined') return;
 
@@ -169,10 +172,13 @@ export async function html5SwapPreload(trackId: string | number | null, volume: 
     html5Audio = preloadAudio;
     dashPlayer = preloadDashPlayer;
 
+    html5SetTrackReplayGain(preloadReplayGainDb);
+
     preloadAudio = null;
     preloadDashPlayer = null;
     preloadPath = null;
     preloadReady = false;
+    preloadReplayGainDb = null;
     if (preloadTimeoutId) {
         clearTimeout(preloadTimeoutId);
         preloadTimeoutId = null;
@@ -187,8 +193,9 @@ export async function html5SwapPreload(trackId: string | number | null, volume: 
 
     const eqEnabled = get(equalizer).enabled;
     const canUseEq = nextPath ? canUseHtml5EqForPath(nextPath) : false;
+    const useGraph = (eqEnabled && canUseEq) || (nextPath ? replayGainNeedsGraph(nextPath) : false);
 
-    if (eqEnabled && canUseEq) {
+    if (useGraph) {
         ensureHtml5EqGraph(html5Audio);
         await resumeHtml5AudioContext();
     } else {
@@ -237,6 +244,7 @@ export function html5ClearPreload(): void {
     preloadPath = null;
     preloadTrackId = null;
     preloadReady = false;
+    preloadReplayGainDb = null;
     isPreloadDash = false;
 }
 
@@ -287,6 +295,7 @@ export async function html5StartCrossfade(trackId: string | number | null, targe
     dashPlayer = preloadDashPlayer;
 
     const nextPath = preloadPath;
+    html5SetTrackReplayGain(preloadReplayGainDb);
 
     // Clear preload slots
     preloadAudio = null;
@@ -294,6 +303,7 @@ export async function html5StartCrossfade(trackId: string | number | null, targe
     preloadPath = null;
     preloadTrackId = null;
     preloadReady = false;
+    preloadReplayGainDb = null;
 
     if (preloadTimeoutId) {
         clearTimeout(preloadTimeoutId);
@@ -417,6 +427,21 @@ export function html5SetEq(state: EqualizerState): void {
     applyHtml5EqState(state);
 }
 
+/** enable/disable replay gain application for the html5 backend */
+export function html5SetReplayGainEnabled(enabled: boolean): void {
+    html5ReplayGainEnabled = enabled;
+    applyHtml5ReplayGain();
+}
+
+/**
+ * set the replay gain (dB) for the currently playing HTML5 track
+ * pass null when no prescanned value is available (gain is then unity)
+ */
+export function html5SetTrackReplayGain(replayGainDb: number | null): void {
+    currentReplayGainDb = replayGainDb;
+    applyHtml5ReplayGain();
+}
+
 export function html5GetState(): { position: number; duration: number; isPlaying: boolean } {
     const audio = html5Audio;
     if (!audio) return { position: 0, duration: 0, isPlaying: false };
@@ -456,7 +481,13 @@ let html5AudioSourceNode: MediaElementAudioSourceNode | null = null;
 let html5AudioSourceElement: HTMLAudioElement | null = null; // which element the source node was built from
 let html5EqFilters: BiquadFilterNode[] = [];
 let html5EqGainNode: GainNode | null = null;
+let html5ReplayGainNode: GainNode | null = null;
 let lastEqBypassWarningHost: string | null = null;
+
+// replay gain state
+let html5ReplayGainEnabled = true;
+let currentReplayGainDb: number | null = null;
+let preloadReplayGainDb: number | null = null;
 
 // dash.js player instance for Hi-Res DASH/MPD streaming
 let dashPlayer: any | null = null;
@@ -629,12 +660,20 @@ function canUseHtml5EqForPath(path: string): boolean {
     return true;
 }
 
+// scope replay gain only graph usage to local files and blob/DASH sources. streams still get replay gain when EQ is independently on
+function replayGainNeedsGraph(path: string): boolean {
+    if (!html5ReplayGainEnabled) return false;
+    const kind = classifyAudioPath(path);
+    return kind === 'local' || kind === 'blob';
+}
+
 async function prepareHtml5AudioForPath(audio: HTMLAudioElement, path: string): Promise<HTMLAudioElement> {
     const eqEnabled = get(equalizer).enabled;
     const canUseEq = canUseHtml5EqForPath(path);
+    const useGraph = (eqEnabled && canUseEq) || replayGainNeedsGraph(path);
 
-    if (eqEnabled && canUseEq) {
-        if (classifyAudioPath(path) === 'stream') {
+    if (useGraph) {
+        if (eqEnabled && classifyAudioPath(path) === 'stream') {
             audio.crossOrigin = 'anonymous';
         }
         ensureHtml5EqGraph(audio);
@@ -678,7 +717,10 @@ function ensureHtml5EqGraph(audio: HTMLAudioElement): void {
         html5AudioSourceElement = null;
     }
 
-    if (html5AudioSourceNode && html5EqGainNode && html5EqFilters.length > 0) return;
+    const bandCount = get(equalizer).bands.length;
+    const graphIsCurrent = html5AudioSourceNode && html5EqGainNode
+        && html5ReplayGainNode && html5EqFilters.length === bandCount;
+    if (graphIsCurrent) return;
 
     try {
         if (!html5AudioContext) {
@@ -702,37 +744,111 @@ function ensureHtml5EqGraph(audio: HTMLAudioElement): void {
             html5EqGainNode.gain.value = 1;
         }
 
-        if (html5EqFilters.length === 0) {
-            html5EqFilters = EQ_FREQUENCIES.map((freq) => {
-                const filter = ctx.createBiquadFilter();
-                filter.type = 'peaking';
-                filter.frequency.value = freq;
-                filter.Q.value = 1.41;
-                filter.gain.value = 0;
-                return filter;
-            });
+        if (!html5ReplayGainNode) {
+            html5ReplayGainNode = ctx.createGain();
+            html5ReplayGainNode.gain.value = 1;
         }
+
+        rebuildHtml5FilterChain(ctx, bandCount);
 
         try { html5AudioSourceNode.disconnect(); } catch (_) { }
         html5EqFilters.forEach((filter) => {
             try { filter.disconnect(); } catch (_) { }
         });
+        try { html5ReplayGainNode.disconnect(); } catch (_) { }
         try { html5EqGainNode.disconnect(); } catch (_) { }
 
-        html5AudioSourceNode.connect(html5EqFilters[0]);
-        for (let i = 0; i < html5EqFilters.length - 1; i++) {
-            html5EqFilters[i].connect(html5EqFilters[i + 1]);
+        if (html5EqFilters.length > 0) {
+            html5AudioSourceNode.connect(html5EqFilters[0]);
+            for (let i = 0; i < html5EqFilters.length - 1; i++) {
+                html5EqFilters[i].connect(html5EqFilters[i + 1]);
+            }
+            html5EqFilters[html5EqFilters.length - 1].connect(html5ReplayGainNode);
+        } else {
+            // no bands at all => route straight through
+            html5AudioSourceNode.connect(html5ReplayGainNode);
         }
-        html5EqFilters[html5EqFilters.length - 1].connect(html5EqGainNode);
+        html5ReplayGainNode.connect(html5EqGainNode);
         html5EqGainNode.connect(ctx.destination);
 
         applyHtml5EqState(get(equalizer));
+        applyHtml5ReplayGain();
     } catch (err) {
         console.error('[Html5Audio] Failed to initialize EQ graph:', err);
         html5AudioSourceNode = null;
         html5EqFilters = [];
         html5EqGainNode = null;
+        html5ReplayGainNode = null;
     }
+}
+
+// (re)create the BiquadFilterNode chain to match the current number of bands
+// called whenever the graph is (re)built or the band count changes structurally
+// (add/remove band) => see equalizer.onStructureChange subscription below
+function rebuildHtml5FilterChain(ctx: AudioContext, bandCount: number): void {
+    html5EqFilters.forEach((filter) => {
+        try { filter.disconnect(); } catch (_) { }
+    });
+    html5EqFilters = Array.from({ length: bandCount }, () => {
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'peaking';
+        filter.frequency.value = 1000;
+        filter.Q.value = 1.41;
+        filter.gain.value = 0;
+        return filter;
+    });
+}
+
+/**
+ * rewire the graph after a structural change (band added/removed) while a track
+ * is already playing.
+ * no-op if the graph hasn't been built yet => it'll pick up
+ * the current band count next time ensureHtml5EqGraph runs
+ */
+function handleHtml5EqStructureChange(): void {
+    if (!html5AudioContext || !html5AudioSourceNode || !html5ReplayGainNode || !html5EqGainNode) return;
+    const ctx = html5AudioContext;
+    const bandCount = get(equalizer).bands.length;
+    if (html5EqFilters.length === bandCount) {
+        applyHtml5EqState(get(equalizer));
+        return;
+    }
+
+    try { html5AudioSourceNode.disconnect(); } catch (_) { }
+    rebuildHtml5FilterChain(ctx, bandCount);
+
+    if (html5EqFilters.length > 0) {
+        html5AudioSourceNode.connect(html5EqFilters[0]);
+        for (let i = 0; i < html5EqFilters.length - 1; i++) {
+            html5EqFilters[i].connect(html5EqFilters[i + 1]);
+        }
+        html5EqFilters[html5EqFilters.length - 1].connect(html5ReplayGainNode);
+    } else {
+        html5AudioSourceNode.connect(html5ReplayGainNode);
+    }
+
+    applyHtml5EqState(get(equalizer));
+}
+
+equalizer.onStructureChange(handleHtml5EqStructureChange);
+
+
+// map our FilterType
+const WEBAUDIO_FILTER_TYPE: Record<FilterType, BiquadFilterType> = {
+    peaking: 'peaking',
+    lowShelf: 'lowshelf',
+    highShelf: 'highshelf',
+    lowPass: 'lowpass',
+    highPass: 'highpass',
+    bandPass: 'bandpass',
+    notch: 'notch',
+    allPass: 'allpass',
+};
+
+const GAINLESS_FILTERS = new Set<FilterType>(['lowPass', 'highPass', 'bandPass', 'notch', 'allPass']);
+
+function dbToLinear(db: number): number {
+    return Math.pow(10, db / 20);
 }
 
 function applyHtml5EqState(state: EqualizerState): void {
@@ -740,10 +856,53 @@ function applyHtml5EqState(state: EqualizerState): void {
 
     const now = html5AudioContext.currentTime;
     for (let i = 0; i < html5EqFilters.length; i++) {
-        const gain = state.enabled ? (state.bands[i]?.gain ?? 0) : 0;
-        html5EqFilters[i].gain.cancelScheduledValues(now);
-        html5EqFilters[i].gain.setTargetAtTime(gain, now, 0.01);
+        const band = state.bands[i];
+        const filter = html5EqFilters[i];
+        if (!band) continue;
+
+        const filterType = WEBAUDIO_FILTER_TYPE[band.filterType] ?? 'peaking';
+        if (filter.type !== filterType) filter.type = filterType;
+        const nyquist = html5AudioContext.sampleRate / 2;
+        const freq = Math.min(band.frequency, nyquist * 0.998);
+        if (filter.frequency.value !== freq) filter.frequency.value = freq;
+
+        const q = Math.max(0.1, Math.min(10, band.q ?? 1.41));
+        filter.Q.cancelScheduledValues(now);
+        filter.Q.setTargetAtTime(q, now, 0.01);
+
+        // bypassed bands are flattened to 0 gain; gainless filter types (LP/HP/BP/Notch/AP)
+        // don't use the gain param at all, so it's left untouched for them
+        const isEnabled = state.enabled && band.enabled;
+        const gain = isEnabled && !GAINLESS_FILTERS.has(band.filterType) ? band.gain : 0;
+        filter.gain.cancelScheduledValues(now);
+        filter.gain.setTargetAtTime(gain, now, 0.01);
+
+        // for gainless filter types, bypassing the band means routing frequency out of range
+        // we approximate bypass by pinning Q/gain
+        // to a neutral peaking response at unity when disabled
+        if (!state.enabled || !band.enabled) {
+            if (GAINLESS_FILTERS.has(band.filterType) && filter.type !== 'peaking') {
+            }
+        }
     }
+
+    if (html5EqGainNode) {
+        const preampLinear = state.enabled ? dbToLinear(state.preampDb ?? 0) : 1;
+        html5EqGainNode.gain.cancelScheduledValues(now);
+        html5EqGainNode.gain.setTargetAtTime(preampLinear, now, 0.01);
+    }
+}
+
+function applyHtml5ReplayGain(): void {
+    if (!html5AudioContext || !html5ReplayGainNode) return;
+
+    const linear = html5ReplayGainEnabled && currentReplayGainDb !== null
+        ? dbToLinear(currentReplayGainDb)
+        : 1;
+
+    const now = html5AudioContext.currentTime;
+    html5ReplayGainNode.gain.cancelScheduledValues(now);
+    html5ReplayGainNode.gain.setTargetAtTime(linear, now, 0.01);
 }
 
 async function resumeHtml5AudioContext(): Promise<void> {

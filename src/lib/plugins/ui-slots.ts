@@ -12,6 +12,7 @@ export interface UISlotContent {
 export class UISlotManager {
     private slots: Map<UISlotName, UISlotContent[]> = new Map();
     private containers: Map<UISlotName, HTMLElement> = new Map();
+    private layoutUnsubscribers: Map<UISlotName, () => void> = new Map();
 
     /**
      * Register a slot container element in the DOM
@@ -27,6 +28,19 @@ export class UISlotManager {
             this.injectSharedStyles(container.shadowRoot!);
         }
 
+        // shadow DOM styles can't see ancestor classes (like html.layout-mobile)
+        // across the shadow boundary, so mirror the resolved layout mode onto
+        // the host element itself via a class, kept in sync with the same
+        // override-aware store the rest of the app uses
+        this.layoutUnsubscribers.get(slotName)?.();
+        import('$lib/stores/mobile').then(({ isMobile }) => {
+            const unsubscribe = isMobile.subscribe(($mobile) => {
+                container.classList.toggle('layout-mobile', $mobile);
+                container.classList.toggle('layout-desktop', !$mobile);
+            });
+            this.layoutUnsubscribers.set(slotName, unsubscribe);
+        });
+
         // Render any pending content
         this.renderSlot(slotName);
     }
@@ -36,6 +50,8 @@ export class UISlotManager {
      */
     unregisterContainer(slotName: UISlotName): void {
         this.containers.delete(slotName);
+        this.layoutUnsubscribers.get(slotName)?.();
+        this.layoutUnsubscribers.delete(slotName);
     }
 
     /**
@@ -252,21 +268,19 @@ export class UISlotManager {
             }
 
             /* Mobile: larger touch targets */
-            @media (max-width: 768px) {
-                :host > *:not(style) {
-                    padding: 14px 12px;
-                    min-height: 44px;
-                    -webkit-tap-highlight-color: transparent;
-                }
+            :host(.layout-mobile) > *:not(style) {
+                padding: 14px 12px;
+                min-height: 44px;
+                -webkit-tap-highlight-color: transparent;
+            }
 
-                :host > *:not(style):hover {
-                    transform: none;
-                }
+            :host(.layout-mobile) > *:not(style):hover {
+                transform: none;
+            }
 
-                :host > *:not(style):active {
-                    background-color: var(--bg-highlight);
-                    color: var(--text-primary);
-                }
+            :host(.layout-mobile) > *:not(style):active {
+                background-color: var(--bg-highlight);
+                color: var(--text-primary);
             }
         `;
 

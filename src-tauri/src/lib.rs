@@ -4,11 +4,7 @@
 mod commands;
 mod db;
 #[cfg(desktop)]
-mod discord;
-#[cfg(desktop)]
-mod windows_thumbar;
-#[cfg(desktop)]
-mod smtc;
+mod integrations;
 mod scanner;
 mod security;
 mod sync;
@@ -22,10 +18,63 @@ mod utils;
 // =============================================================================
 mod audio;
 
+// =============================================================================
+// ANDROID AUDIO CONTEXT INIT (JNI)
+// =============================================================================
+// cpal's android backend needs ndk_context::initialize_android_context called once before it can open an AAudio stream
+// called from Kotlin (MainActivity.onCreate) via this JNI export
+// =============================================================================
+#[cfg(target_os = "android")]
+mod android_audio_context {
+    use std::sync::Once;
+
+    static INIT: Once = Once::new();
+
+    /// JNI export for MainActivity
+    // initAudioContext. non static native method
+    /// so the second parameter is the calling Activity instance rather than a jclass
+    /// passed implicitly by the JVM
+    #[no_mangle]
+    pub extern "system" fn Java_com_audion_app_MainActivity_initAudioContext(
+        env: jni::JNIEnv<'_>,
+        activity: jni::objects::JObject<'_>,
+    ) {
+        INIT.call_once(|| {
+            let vm = match env.get_java_vm() {
+                Ok(vm) => vm,
+                Err(e) => {
+                    tracing::error!("[Android] Failed to get JavaVM for audio context: {e}");
+                    return;
+                }
+            };
+            let global_activity = match env.new_global_ref(&activity) {
+                Ok(g) => g,
+                Err(e) => {
+                    tracing::error!("[Android] Failed to create global ref for activity: {e}");
+                    return;
+                }
+            };
+
+            let vm_ptr = vm.get_java_vm_pointer() as *mut std::ffi::c_void;
+            let activity_ptr = global_activity.as_obj().as_raw() as *mut std::ffi::c_void;
+
+            // ndk_context needs this pointer to stay valid for the lifetime of the process
+            std::mem::forget(global_activity);
+
+            // called exactly once with valid pointers obtained from the current JNI call
+            // guarded by 'Once' above
+            unsafe {
+                ndk_context::initialize_android_context(vm_ptr, activity_ptr);
+            }
+            tracing::info!("[Android] ndk_context initialized for native audio (cpal/AAudio)");
+        });
+    }
+}
+
 use db::Database;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{Emitter, Listener, Manager, WindowEvent};
+use tauri::{Emitter, Listener, Manager};
 #[cfg(desktop)]
 use tauri::{
     menu::{CheckMenuItem, IconMenuItem, Menu, MenuItem, PredefinedMenuItem},
@@ -114,6 +163,50 @@ struct PendingPlayTrack(pub std::sync::Mutex<Option<String>>);
 fn get_pending_play_track(state: tauri::State<'_, PendingPlayTrack>) -> Option<String> {
     let mut pending = state.0.lock().unwrap();
     pending.take()
+}
+
+// same cold start race as PendingPlayTrack, but for files opened via file association
+struct PendingOpenFile(pub std::sync::Mutex<Option<String>>);
+
+#[tauri::command]
+fn get_pending_open_file(state: tauri::State<'_, PendingOpenFile>) -> Option<String> {
+    let mut pending = state.0.lock().unwrap();
+    pending.take()
+}
+
+const ASSOCIATED_AUDIO_EXTENSIONS: &[&str] =
+    &["flac", "mp3", "wav", "ogg", "m4a", "aac", "alac"];
+
+fn is_associated_audio_file(path: &str) -> bool {
+    std::path::Path::new(path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ASSOCIATED_AUDIO_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+/// handle a file opened via file association
+/// stash then emit pattern for the cold start race
+/// path is stashed in PendingOpenFile regardless of whether the emit lands
+fn handle_open_file(app_handle: &tauri::AppHandle, path: &str) {
+    if !is_associated_audio_file(path) {
+        tracing::info!("Ignoring opened file with unsupported extension: {}", path);
+        return;
+    }
+
+    tracing::info!("Opening file via file association: {}", path);
+
+    if let Some(pending_state) = app_handle.try_state::<PendingOpenFile>() {
+        *pending_state.0.lock().unwrap() = Some(path.to_string());
+    }
+    let _ = app_handle.emit("app://open-file", path.to_string());
+
+    #[cfg(not(target_os = "android"))]
+    if let Some(window) = app_handle.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
 }
 
 /// Handle a deep link URL — extract tokens, store them, fetch profile, trigger sync.
@@ -453,6 +546,10 @@ pub fn run() {
             for arg in argv.iter().skip(1) {
                 if arg.starts_with("audion://") {
                     handle_deep_link_url(app, arg);
+                } else if is_associated_audio_file(arg) {
+                    handle_open_file(app, arg);
+                } else {
+                    integrations::cli::handle(app, arg);
                 }
             }
 
@@ -474,8 +571,7 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_notification::init());
+        .plugin(tauri_plugin_fs::init());
 
     #[cfg(desktop)]
     {
@@ -522,6 +618,12 @@ pub fn run() {
                 }
             }
 
+            // "Play with Audion" right click context menu entry - idempotent
+            #[cfg(desktop)]
+            {
+                integrations::context_menu::register_context_menu(ASSOCIATED_AUDIO_EXTENSIONS);
+            }
+
             // Get app data directory and create database
             let app_dir = app
                 .path()
@@ -539,6 +641,22 @@ pub fn run() {
             scanner::cover_storage::init_app_data_dir(app_dir.clone());
             tracing::info!("Cover storage initialized");
 
+            // into the process wide caches used by scanner::artist_parser and
+            // load persisted artist split delimiter rules and album artist mode
+            // db::artists before opening the database - init_schema
+            // called from Database::new below
+            // runs the one time track_artists/album_artists backfill immediately
+            // so the caches must already reflect the user's saved settings
+            {
+                let app_settings = commands::app_settings::load_app_settings(app.handle());
+                crate::scanner::artist_parser::set_active_delimiters(
+                    app_settings.artist_split_rules.delimiters,
+                );
+                crate::db::artists::set_active_album_artist_mode(
+                    app_settings.album_artist_mode,
+                );
+            }
+
             // Initialize database
             let database = Database::new(&app_dir).map_err(|e| {
                 tracing::error!(error = %e, "Failed to initialize database");
@@ -548,7 +666,8 @@ pub fn run() {
 
             app.manage(database.clone());
             app.manage(commands::listenbrainz::ListenBrainzState::new());
-            app.manage(commands::window::CloseConfirmed::default());
+            #[cfg(desktop)]
+            app.manage(integrations::window::CloseConfirmed::default());
 
             // OTA install-on-close gate => starts un-armed; see ota_set_close_intercept
             #[cfg(desktop)]
@@ -560,10 +679,13 @@ pub fn run() {
 
             app.manage(PendingPluginInstall(std::sync::Mutex::new(None)));
             app.manage(PendingPlayTrack(std::sync::Mutex::new(None)));
+            app.manage(PendingOpenFile(std::sync::Mutex::new(None)));
+            #[cfg(desktop)]
+            app.manage(integrations::cli::PendingCliAction(std::sync::Mutex::new(None)));
 
             // Initialize Discord RPC state (desktop only)
             #[cfg(desktop)]
-            app.manage(discord::DiscordState(std::sync::Mutex::new(None)));
+            app.manage(integrations::discord::DiscordState(std::sync::Mutex::new(None)));
 
             // =============================================================================
             // NATIVE AUDIO BACKEND INITIALIZATION (Non-blocking, thread-safe)
@@ -574,7 +696,12 @@ pub fn run() {
             // =============================================================================
             {
                 tracing::info!("Registering native audio backend state (lazy init)");
-                app.manage(audio::PlaybackStateSync::new(app.handle().clone()));
+                // player.rs needs to observe the same TrackAdvanced/TrackFinished events the
+                // frontend gets over audio://event
+                // without owning the audio thread itself
+                let (player_event_tx, player_event_rx) = crossbeam::channel::unbounded::<audio::AudioEvent>();
+                app.manage(audio::PlaybackStateSync::new(app.handle().clone(), player_event_tx));
+                app.manage(audio::PlayerStateSync::new(app.handle().clone(), player_event_rx));
             }
 
             // SMTC / OS media controls init (desktop only)
@@ -588,7 +715,7 @@ pub fn run() {
             #[cfg(desktop)]
             {
                 tracing::info!("Registering SMTC state");
-                app.manage(smtc::SmtcState::uninitialized());
+                app.manage(integrations::smtc::SmtcState::uninitialized());
             }
 
             // =============================================================================
@@ -657,6 +784,31 @@ pub fn run() {
                 }
             }
 
+            // =============================================================================
+            // FILE ASSOCIATION + CLI PLAYBACK FLAGS - COLD START (windows/linux)
+            // =============================================================================
+            // double clicking an associated file (or "Open with Audion") launches the
+            // process with the file path as a plain CLI argument on these platforms
+            // deep-link plugin only recognizes registered URL schemes, not bare paths
+            // if second instance was launched instead, this is handled by the
+            // single-instance callback above
+            //
+            // playback flags (--play/--next/etc, e.g. from .desktop file quick actions)
+            // are also handled here
+            // PendingCliAction stashes them for the frontend
+            // which applies them after persisted queue state is restored
+            //=============================================================================
+            #[cfg(any(windows, target_os = "linux"))]
+            {
+                for arg in std::env::args().skip(1) {
+                    if is_associated_audio_file(&arg) {
+                        handle_open_file(app.handle(), &arg);
+                        break;
+                    }
+                    integrations::cli::handle(app.handle(), &arg);
+                }
+            }
+
             // Register deep-link schemes at runtime (required on Windows/Linux for dev builds)
             #[cfg(any(windows, target_os = "linux"))]
             {
@@ -669,18 +821,18 @@ pub fn run() {
             // Handle window start mode (desktop only)
             #[cfg(desktop)]
             {
-                let window_config = commands::window::load_window_config(app.handle());
+                let window_config = integrations::window::load_window_config(app.handle());
                 if let Some(window) = app.get_webview_window("main") {
                     match window_config.start_mode {
-                        commands::window::WindowStartMode::Maximized => {
+                        integrations::window::WindowStartMode::Maximized => {
                             tracing::info!("Window start mode: Maximized");
                             window.maximize().ok();
                         }
-                        commands::window::WindowStartMode::Minimized => {
+                        integrations::window::WindowStartMode::Minimized => {
                             tracing::info!("Window start mode: Minimized");
                             window.minimize().ok();
                         }
-                        commands::window::WindowStartMode::Normal => {
+                        integrations::window::WindowStartMode::Normal => {
                             tracing::info!("Window start mode: Normal");
                         }
                     }
@@ -708,7 +860,7 @@ pub fn run() {
 
                 // SMTC init needs a real HWND on windows, so this runs only after
                 // the main window block above has confirmed the window exists
-                if let Err(e) = smtc::init(app.handle().clone()) {
+                if let Err(e) = integrations::smtc::init(app.handle().clone()) {
                     tracing::warn!("SMTC initialization failed (non-fatal): {}", e);
                 }
             }
@@ -886,6 +1038,11 @@ pub fn run() {
                     commands::scan_folder,
                     commands::get_default_music_dirs,
                     commands::get_music_folders,
+                    commands::get_artist_split_rules,
+                    commands::set_artist_split_rules,
+                    commands::get_album_artist_mode,
+                    commands::set_album_artist_mode,
+                    commands::resplit_all_artists,
                     commands::get_library,
                     commands::get_tracks_paginated,
                     commands::get_albums_paginated,
@@ -895,6 +1052,7 @@ pub fn run() {
                     commands::get_album,
                     commands::get_albums_by_artist,
                     commands::add_external_track,
+                    commands::open_or_import_track_by_path,
                     commands::import_audio_file,
                     commands::begin_folder_import,
                     commands::delete_track,
@@ -977,6 +1135,7 @@ pub fn run() {
                     commands::check_plugin_updates,
                     commands::update_plugin,
                     commands::save_notification_image,
+                    integrations::notifications::show_native_notification,
                     commands::plugin_save_data,
                     commands::plugin_get_data,
                     commands::plugin_list_keys,
@@ -1003,15 +1162,15 @@ pub fn run() {
                     commands::get_release_group_tracks_mb,
                     commands::get_artist_top_tracks_mb,
                     // Window commands
-                    commands::window::get_window_start_mode,
-                    commands::window::set_window_start_mode,
+                    integrations::window::get_window_start_mode,
+                    integrations::window::set_window_start_mode,
                     // Discord RPC commands (desktop only)
-                    discord::discord_connect,
-                    discord::discord_update_presence,
-                    discord::discord_clear_presence,
-                    discord::discord_resolve_cover,
-                    discord::discord_disconnect,
-                    discord::discord_reconnect,
+                    integrations::discord::discord_connect,
+                    integrations::discord::discord_update_presence,
+                    integrations::discord::discord_clear_presence,
+                    integrations::discord::discord_resolve_cover,
+                    integrations::discord::discord_disconnect,
+                    integrations::discord::discord_reconnect,
                     // =========================================================================
                     // SYNC COMMANDS
                     // =========================================================================
@@ -1046,42 +1205,51 @@ pub fn run() {
                     audio::audio_set_repeat_one,
                     audio::audio_set_eq,
                     audio::audio_set_replay_gain_enabled,
+                    audio::audio_set_limiter_enabled,
                     audio::audio_set_crossfade_seconds,
                     audio::audio_trigger_crossfade,
+                    audio::player::player_sync_queue,
+                    audio::player::player_advance,
+                    audio::player::player_set_current,
+                    audio::player::player_native_started,
+                    audio::player::player_html5_crossfade_committed,
+                    audio::player::player_html5_ended,
                     audio::audio_list_output_devices,
                     audio::audio_set_output_device,
                     audio::audio_get_device_info,
                     audio::native_audio_available,
                     audio::audio_resolve_path,
                     audio::audio_get_stream_url,
-                    windows_thumbar::windows_init_thumbar,
-                    windows_thumbar::windows_update_thumbar_state,
-                    windows_thumbar::windows_set_taskbar_progress,
-                    windows_thumbar::windows_clear_taskbar_progress,
-                    windows_thumbar::windows_update_jump_list,
-                    windows_thumbar::windows_clear_jump_list,
-                    smtc::smtc_set_metadata,
-                    smtc::smtc_set_playback,
-                    smtc::smtc_set_volume,
+                    integrations::windows_thumbar::windows_init_thumbar,
+                    integrations::windows_thumbar::windows_update_thumbar_state,
+                    integrations::windows_thumbar::windows_set_taskbar_progress,
+                    integrations::windows_thumbar::windows_clear_taskbar_progress,
+                    integrations::windows_thumbar::windows_update_jump_list,
+                    integrations::windows_thumbar::windows_clear_jump_list,
+                    integrations::smtc::smtc_set_metadata,
+                    integrations::smtc::smtc_set_playback,
+                    integrations::smtc::smtc_set_volume,
                     tray_update_playback,
                     tray_update_toggles,
                     commands::proxy_fetch_bytes,
                     commands::save_image_to_gallery,
                     // Window close-to-tray and minimize-to-tray commands
-                    commands::window::get_close_to_tray,
-                    commands::window::set_close_to_tray,
-                    commands::window::get_minimize_to_tray,
-                    commands::window::set_minimize_to_tray,
+                    integrations::window::get_close_to_tray,
+                    integrations::window::set_close_to_tray,
+                    integrations::window::get_minimize_to_tray,
+                    integrations::window::set_minimize_to_tray,
                     // OTA install-on-close
                     ota_set_close_intercept,
                     ota_confirm_exit,
                     // launch on startup (desktop only)
-                    commands::window::get_autostart_enabled,
-                    commands::window::set_autostart_enabled,
+                    integrations::window::get_autostart_enabled,
+                    integrations::window::set_autostart_enabled,
                     // last visited view (startup page = last-visited)
-                    commands::window::confirm_close,
+                    integrations::window::confirm_close,
                     get_pending_plugin_install,
                     get_pending_play_track,
+                    get_pending_open_file,
+                    integrations::cli::get_pending_cli_action,
                 ]
             }
             #[cfg(mobile)]
@@ -1095,6 +1263,11 @@ pub fn run() {
                     commands::scan_folder,
                     commands::get_default_music_dirs,
                     commands::get_music_folders,
+                    commands::get_artist_split_rules,
+                    commands::set_artist_split_rules,
+                    commands::get_album_artist_mode,
+                    commands::set_album_artist_mode,
+                    commands::resplit_all_artists,
                     commands::get_library,
                     commands::get_tracks_paginated,
                     commands::get_albums_paginated,
@@ -1104,6 +1277,7 @@ pub fn run() {
                     commands::get_album,
                     commands::get_albums_by_artist,
                     commands::add_external_track,
+                    commands::open_or_import_track_by_path,
                     commands::import_audio_file,
                     commands::begin_folder_import,
                     commands::delete_track,
@@ -1240,8 +1414,15 @@ pub fn run() {
                     audio::audio_seek,
                     audio::audio_set_eq,
                     audio::audio_set_replay_gain_enabled,
+                    audio::audio_set_limiter_enabled,
                     audio::audio_set_crossfade_seconds,
                     audio::audio_trigger_crossfade,
+                    audio::player::player_sync_queue,
+                    audio::player::player_advance,
+                    audio::player::player_set_current,
+                    audio::player::player_native_started,
+                    audio::player::player_html5_crossfade_committed,
+                    audio::player::player_html5_ended,
                     audio::audio_list_output_devices,
                     audio::audio_set_output_device,
                     audio::audio_get_device_info,
@@ -1257,7 +1438,7 @@ pub fn run() {
             #[cfg(desktop)]
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 // Check if close-to-tray is enabled
-                let config = commands::window::load_window_config(window.app_handle());
+                let config = integrations::window::load_window_config(window.app_handle());
                 if config.close_to_tray {
                     api.prevent_close();
                     let _ = window.hide();
@@ -1272,7 +1453,7 @@ pub fn run() {
                 // regardless of the OTA gate below
                 let confirmed = window
                     .app_handle()
-                    .state::<commands::window::CloseConfirmed>();
+                    .state::<integrations::window::CloseConfirmed>();
                 if confirmed.0.load(std::sync::atomic::Ordering::SeqCst) {
                     return;
                 }
@@ -1303,7 +1484,7 @@ pub fn run() {
                 // without this the app would become unclosable
                 tauri::async_runtime::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
-                    let confirmed = app_handle.state::<commands::window::CloseConfirmed>();
+                    let confirmed = app_handle.state::<integrations::window::CloseConfirmed>();
                     if !confirmed.0.load(std::sync::atomic::Ordering::SeqCst) {
                         tracing::warn!(
                             "No response from frontend for close notification, closing anyway"
@@ -1317,6 +1498,26 @@ pub fn run() {
                 });
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // file association open event
+            // mac only
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            {
+                if let tauri::RunEvent::Opened { urls } = event {
+                    for url in urls {
+                        if url.scheme() == "file" {
+                            if let Ok(path) = url.to_file_path() {
+                                handle_open_file(app_handle, &path.to_string_lossy());
+                            }
+                        }
+                    }
+                }
+            }
+            #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+            {
+                let _ = (app_handle, event);
+            }
+        });
 }

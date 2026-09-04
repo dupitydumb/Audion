@@ -6,12 +6,16 @@
     import { contextMenu } from "$lib/stores/ui";
     import { getAlbumCoverFromTracks } from "$lib/stores/library";
     import { goToArtistDetail, goToAlbumDetail } from "$lib/stores/view";
+    import ArtistLinks from "$lib/components/ArtistLinks.svelte";
+    import MarqueeText from "$lib/components/MarqueeText.svelte";
     import { _ } from "svelte-i18n";
 
     export let topAlbums: AlbumWithCount[];
     export let playingAlbumId: number | null;
     export let pausedAlbumId: number | null;
     export let playing: boolean;
+
+    let hoveredAlbumId: number | null = null;
 
     async function playAlbum(album: Album) {
         if (playingAlbumId === album.id) {
@@ -41,7 +45,7 @@
             items: [
                 { label: $_('contextMenu.play'), action: () => playAlbum(album) },
                 { label: $_('contextMenu.goToAlbum'), action: () => goToAlbumDetail(album.id) },
-                { label: $_('contextMenu.goToArtist'), action: () => goToArtistDetail(album.artist || "") },
+                { label: $_('contextMenu.goToArtist'), action: () => goToArtistDetail((album.artists && album.artists[0]) || album.artist || "") },
             ],
         });
     }
@@ -77,6 +81,8 @@
                 on:click={(e) => handleContainerClick(e, () => goToAlbumDetail(album.id))}
                 on:keydown={(e) => handleKeyActivate(e, () => goToAlbumDetail(album.id))}
                 on:contextmenu={(e) => albumContextMenu(album, e)}
+                on:mouseenter={() => (hoveredAlbumId = album.id)}
+                on:mouseleave={() => (hoveredAlbumId = null)}
             >
                 <span class="top-track-rank">
                     {#if isNowPlaying}
@@ -101,14 +107,27 @@
                     {/if}
                 </div>
                 <div class="top-track-info">
-                    <span class="top-track-title" class:accent={isNowPlaying || isPaused}>{album.name}</span>
-                    <button
-                        class="top-track-artist link"
-                        on:click|stopPropagation={() => goToArtistDetail(album.artist || "")}
-                        title={$_('contextMenu.goToArtist')}
+                    <MarqueeText
+                        trigger="external"
+                        active={hoveredAlbumId === album.id}
+                        resetKey={album.id}
+                        containerClass="top-track-title-track"
                     >
-                        {album.artist || $_('common.unknownArtist')}
-                    </button>
+                        <span class="top-track-title" class:accent={isNowPlaying || isPaused}>{album.name}</span>
+                    </MarqueeText>
+                    <span class="top-track-artist">
+                        <ArtistLinks
+                            artist={album.artist || $_('common.unknownArtist')}
+                            artists={album.artists}
+                            chipClass="link"
+                            chipTitle={$_('contextMenu.goToArtist')}
+                            marquee
+                            marqueeTrigger="external"
+                            marqueeActive={hoveredAlbumId === album.id}
+                            resetKey={album.id}
+                            on:select={(e) => goToArtistDetail(e.detail)}
+                        />
+                    </span>
                 </div>
                 <span class="top-track-plays">{$_('home.playsCount', { values: { count: play_count } })}</span>
             </div>
@@ -231,8 +250,7 @@
         font-weight: var(--font-weight-medium);
         color: var(--text-primary);
         white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        flex-shrink: 0;
     }
 
     .top-track-title.accent { color: var(--accent-primary); }

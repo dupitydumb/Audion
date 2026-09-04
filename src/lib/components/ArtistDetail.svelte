@@ -1097,68 +1097,63 @@
     }
 
     /* ── Mobile ── */
-    @media (max-width: 768px) {
-        .artist-header {
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-            padding: calc(var(--safe-area-top) + var(--spacing-md))
-                var(--spacing-md) var(--spacing-md);
-            gap: var(--spacing-md);
-        }
+    :global(html.layout-mobile) .artist-header {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: calc(var(--safe-area-top) + var(--spacing-md))
+            var(--spacing-md) var(--spacing-md);
+        gap: var(--spacing-md);
+    }
 
-        .back-btn {
-            top: calc(var(--safe-area-top) + var(--spacing-sm));
-            left: var(--spacing-sm);
-        }
+    :global(html.layout-mobile) .back-btn {
+        top: calc(var(--safe-area-top) + var(--spacing-sm));
+        left: var(--spacing-sm);
+    }
 
-        .artist-avatar {
-            width: 120px;
-            height: 120px;
-        }
+    :global(html.layout-mobile) .artist-avatar {
+        width: 120px;
+        height: 120px;
+    }
 
-        .artist-initial {
-            font-size: 2.5rem;
-        }
+    :global(html.layout-mobile) .artist-initial {
+        font-size: 2.5rem;
+    }
 
-        .artist-info {
-            align-items: center;
-        }
+    :global(html.layout-mobile) .artist-info {
+        align-items: center;
+    }
 
-        .artist-name {
-            font-size: 1.5rem;
-            word-break: break-word;
-        }
+    :global(html.layout-mobile) .artist-name {
+        font-size: 1.5rem;
+        word-break: break-word;
+    }
 
-        .artist-meta {
-            flex-wrap: wrap;
-            justify-content: center;
-            margin-bottom: var(--spacing-md);
-        }
+    :global(html.layout-mobile) .artist-meta {
+        flex-wrap: wrap;
+        justify-content: center;
+        margin-bottom: var(--spacing-md);
+    }
 
-        .artist-actions {
-            flex-wrap: wrap;
-            justify-content: center;
-        }
+    :global(html.layout-mobile) .artist-actions {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
 
-        .play-all-btn,
-        .btn-secondary {
-            padding: var(--spacing-sm) var(--spacing-lg);
-            font-size: var(--font-size-base);
-            min-height: 44px;
-        }
+    :global(html.layout-mobile) .play-all-btn,
+    :global(html.layout-mobile) .btn-secondary {
+        padding: var(--spacing-sm) var(--spacing-lg);
+        font-size: var(--font-size-base);
+        min-height: 44px;
+    }
 
-        .tabs {
-            overflow-x: auto;
-            -webkit-overflow-scrolling: touch;
-        }
+    :global(html.layout-mobile) .tabs {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
 
-        .tab {
-            min-height: 44px;
-            white-space: nowrap;
-        }
-
-        .artist-content {
-        }
+    :global(html.layout-mobile) .tab {
+        min-height: 44px;
+        white-space: nowrap;
     }
 </style>

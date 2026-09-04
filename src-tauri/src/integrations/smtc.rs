@@ -29,12 +29,20 @@ use serde::Serialize;
 
 pub struct SmtcState {
     controls: Mutex<Option<MediaControls>>,
+    // tracking for the taskbar overlay's transient icons (see smtc_set_playback/smtc_set_volume below)
+    // detecting a play/pause transition or a volume direction needs to compare against the previous call
+    // seek direction is passed explicitly
+    // smtc_set_playback's seek_direction doc
+    last_status: Mutex<Option<String>>,
+    last_volume: Mutex<Option<f64>>,
 }
 
 impl SmtcState {
     pub fn uninitialized() -> Self {
         Self {
             controls: Mutex::new(None),
+            last_status: Mutex::new(None),
+            last_volume: Mutex::new(None),
         }
     }
 }
@@ -299,11 +307,14 @@ fn set_metadata_with_cover(
 
 #[tauri::command]
 pub fn smtc_set_metadata(
+    app: AppHandle,
     title: String,
     artist: Option<String>,
     album: Option<String>,
     duration_secs: Option<f64>,
     cover_url: Option<String>, // raw path or http(s) URL . see set_metadata_with_cover
+    // next | previous | None =? only set at the two call sites in playback.ts that actually know the direction (nextTrack/previousTrack)
+    direction: Option<String>,
     state: tauri::State<'_, SmtcState>,
 ) -> Result<(), String> {
     let mut guard = state.controls.lock().map_err(|_| "SMTC lock poisoned".to_string())?;
@@ -312,20 +323,37 @@ pub fn smtc_set_metadata(
         None => return Ok(()), // not initialized yet (e.g. SMTC unsupported/failed) => no-op
     };
 
-    set_metadata_with_cover(
+    let result = set_metadata_with_cover(
         controls,
         cover_url.as_deref(),
         title.as_str(),
         artist.as_deref(),
         album.as_deref(),
         duration_secs.map(Duration::from_secs_f64),
-    )
+    );
+
+    if let Some(dir) = direction.as_deref() {
+        crate::integrations::windows_thumbar::taskbar_flash_overlay(&app, dir);
+    }
+
+    result
 }
 
 #[tauri::command]
 pub fn smtc_set_playback(
+    app: AppHandle,
     status: String, // playing | paused | stopped
     position_secs: Option<f64>,
+    // explicit forward/backward/None
+    // playback.ts's seek() always knows the exact before/after position already
+    // since everything routes through there. hence no need to infer direction
+    seek_direction: Option<String>,
+    // toggle state for the taskbar overlay's persistent icon
+    // None means unchanged since last call
+    // playback.ts sends Some(...) only from the toggleShuffle/cycleRepeat call sites, and None from everywhere else
+    // mute => toggleMute lives locally in KeyboardShortcuts.svelte), so it's inferred from volume level instead, in smtc_set_volume below
+    shuffle: Option<bool>,
+    repeat_mode: Option<String>, // off | all | one
     state: tauri::State<'_, SmtcState>,
 ) -> Result<(), String> {
     let mut guard = state.controls.lock().map_err(|_| "SMTC lock poisoned".to_string())?;
@@ -343,15 +371,54 @@ pub fn smtc_set_playback(
         other => return Err(format!("Unknown playback status: {}", other)),
     };
 
-    controls.set_playback(playback).map_err(|e| format!("{:?}", e))
+    let result = controls.set_playback(playback).map_err(|e| format!("{:?}", e));
+
+    // taskbar overlay: play/pause transition (transient) -----------------
+    {
+        let mut last_status = state.last_status.lock().unwrap();
+        if last_status.as_deref() != Some(status.as_str()) {
+            match status.as_str() {
+                "playing" => crate::integrations::windows_thumbar::taskbar_flash_overlay(&app, "play"),
+                "paused" => crate::integrations::windows_thumbar::taskbar_flash_overlay(&app, "pause"),
+                _ => {}
+            }
+        }
+        *last_status = Some(status);
+    }
+
+    // taskbar overlay: seek direction (transient) -------------------------
+    match seek_direction.as_deref() {
+        Some("forward") => crate::integrations::windows_thumbar::taskbar_flash_overlay(&app, "seek_forward"),
+        Some("backward") => crate::integrations::windows_thumbar::taskbar_flash_overlay(&app, "seek_backward"),
+        _ => {}
+    }
+
+    // taskbar overlay: shuffle/repeat (persistent) -------------------------
+    if shuffle.is_some() || repeat_mode.is_some() {
+        crate::integrations::windows_thumbar::taskbar_update_persistent_overlay(
+            &app,
+            shuffle,
+            repeat_mode,
+            None,
+        );
+    }
+
+    result
 }
 
 // MPRIS only ack: call this after applying the volume the os asked for
 // (via a SetVolume MediaControlEvent). MediaControls::set_volume only
 // exists in souvlaki's linux/MPRIS platform module. so the call must
 // be cfg-gated
+// taskbar overlay direction detection below applies on all platforms
+// windows has no MPRIS equivalent volume property
+// but still wants the overlay feedback
 #[tauri::command]
-pub fn smtc_set_volume(level: f64, state: tauri::State<'_, SmtcState>) -> Result<(), String> {
+pub fn smtc_set_volume(
+    app: AppHandle,
+    level: f64,
+    state: tauri::State<'_, SmtcState>,
+) -> Result<(), String> {
     #[cfg(target_os = "linux")]
     {
         let mut guard = state.controls.lock().map_err(|_| "SMTC lock poisoned".to_string())?;
@@ -365,10 +432,24 @@ pub fn smtc_set_volume(level: f64, state: tauri::State<'_, SmtcState>) -> Result
             .map_err(|e| format!("{:?}", e))?;
     }
 
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (level, &state); // no MPRIS volume property on Windows/macOS
+    // muted is just volume == 0. runs before the transient volume_up/volume_down flash below
+    // both are synchronous, so whichever runs second is what's actually left showing
+    crate::integrations::windows_thumbar::taskbar_update_persistent_overlay(
+        &app,
+        None,
+        None,
+        Some(level <= 0.001),
+    );
+
+    let mut last_volume = state.last_volume.lock().unwrap();
+    if let Some(previous) = *last_volume {
+        if level > previous {
+            crate::integrations::windows_thumbar::taskbar_flash_overlay(&app, "volume_up");
+        } else if level < previous {
+            crate::integrations::windows_thumbar::taskbar_flash_overlay(&app, "volume_down");
+        }
     }
+    *last_volume = Some(level);
 
     Ok(())
 }

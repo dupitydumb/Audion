@@ -414,6 +414,7 @@
             </button>
           </div>
           <span class="setting-description">{$_('settings.musicFoldersDesc', { default: 'Folders included when scanning your library' })}</span>
+          <span class="setting-description" style="margin-top: 4px;">{$_('settings.multiArtistTaggingHint', { default: 'Tracks with multiple artists (e.g. "Artist A & Artist B") are split automatically. In places with limited space, only the first-listed artist is shown - tag your files with the primary artist first for the best results.' })}</span>
 
           {#if isLoadingFolders}
             <span class="setting-description" style="margin-top: 8px;">{$_('settings.loading', { default: 'Loading...' })}</span>

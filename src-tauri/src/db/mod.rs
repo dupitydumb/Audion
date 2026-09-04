@@ -2,6 +2,7 @@
 pub mod models;
 pub mod tracks;
 pub mod albums;
+pub mod artists;
 pub mod playlists;
 pub mod folders;
 pub mod likes;

@@ -254,19 +254,17 @@
     }
 
     /* Mobile: slide up from bottom instead */
-    @media (max-width: 768px) {
-        .plugin-drawer {
-            top: auto;
-            right: 0;
-            left: 0;
-            bottom: 0;
-            width: 100%;
-            max-width: 100%;
-            border-left: none;
-            border-top: 1px solid var(--border-color);
-            border-radius: var(--radius-lg, 12px) var(--radius-lg, 12px) 0 0;
-            max-height: 70vh;
-            box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.4);
-        }
+    :global(html.layout-mobile) .plugin-drawer {
+        top: auto;
+        right: 0;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        max-width: 100%;
+        border-left: none;
+        border-top: 1px solid var(--border-color);
+        border-radius: var(--radius-lg, 12px) var(--radius-lg, 12px) 0 0;
+        max-height: 70vh;
+        box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.4);
     }
 </style>

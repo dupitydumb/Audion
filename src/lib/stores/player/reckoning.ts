@@ -14,14 +14,21 @@ let _reckoningStartedAt: number = 0;
 let _reckoningActive: boolean = false;
 let _reckoningRafId: number | null = null;
 
-// Crossfade flags — accessed by both reckoning and the html5 ticker
+// Crossfade flags
+// HTML5 backend owns the "already tried a crossfade for this track" guard locally
+// see _html5Tick below
+// native does not needs either flag: 
+// AudioEngine::maybe_auto_crossfade decides timing itself from real decoded sample position, on its own periodic tick
 export let _hasCrossfaded = false;
-export let _nativePreloadScheduled = false;
 export function resetCrossfadeFlags(): void {
     _hasCrossfaded = false;
-    _nativePreloadScheduled = false;
 }
-export function setNativePreloadScheduled(val: boolean): void { _nativePreloadScheduled = val; }
+/**
+ * the actual reset function => call this, never assign to the exported _hasCrossfaded
+ */
+export function resetHasCrossfaded(): void {
+    _hasCrossfaded = false;
+}
 
 export function _startReckoning(offsetSecs: number): void {
     _reckoningOffset = offsetSecs;
@@ -56,12 +63,9 @@ export function _correctReckoning(confirmedSecs: number): void {
 }
 
 // Lazy import to avoid circular dep: reckoning.ts -> playback.ts -> reckoning.ts
-// We call _triggerNativeCrossfade from inside the tick.
-// The actual implementation lives in playback.ts; we hold a slot for it here.
-let _onCrossfadeThreshold: (() => void) | null = null;
-export function registerCrossfadeCallback(cb: () => void): void {
-    _onCrossfadeThreshold = cb;
-}
+// native does not have a crossfade-threshold callback
+// see the note by _hasCrossfaded above
+// HTML5 only
 
 function _reckoningTick(): void {
     if (!_reckoningActive) {
@@ -81,15 +85,9 @@ function _reckoningTick(): void {
         _onPositionUpdate?.();
     }
 
-    // Check for early crossfade trigger (native backend)
-    const settings = get(appSettings);
-    if (settings.crossfadeSeconds > 0 && dur > settings.crossfadeSeconds && !_hasCrossfaded && _nativePreloadScheduled) {
-        const threshold = dur - settings.crossfadeSeconds;
-        if (position >= threshold) {
-            _hasCrossfaded = true;
-            _onCrossfadeThreshold?.();
-        }
-    }
+    // the decision lives in AudioEngine::maybe_auto_crossfade
+    // driven by real sample position on its own periodic tick
+    // this loop is purely a position display for the native backend
 
     _reckoningRafId = requestAnimationFrame(_reckoningTick);
 }

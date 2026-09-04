@@ -6,13 +6,13 @@ import {
     sliderToAudioVolume, pluginEvents,
 } from './stores';
 import { appSettings } from '$lib/stores/settings';
-import { equalizer } from '$lib/stores/equalizer';
+import { equalizer, toNativeBands } from '$lib/stores/equalizer';
 import { addToast } from '$lib/stores/toast';
 import { wsStore } from '$lib/stores/websocket';
 import { activeRemoteDevice } from '$lib/stores/websocket';
 import {
     shouldUseNativeAudio, nativeAudioStop, nativeAudioSetVolume,
-    nativeAudioSetEq, nativeAudioSetRepeatOne, nativeAudioSetReplayGainEnabled,
+    nativeAudioSetEq, nativeAudioSetRepeatOne, nativeAudioSetReplayGainEnabled, nativeAudioSetLimiterEnabled,
     nativeAudioSetCrossfadeSeconds, nativeAudioSetOutputDevice,
     type AudioEventType,
 } from '$lib/services/native-audio';
@@ -21,6 +21,7 @@ import {
 } from '$lib/services/html5-audio';
 import { listen } from '$lib/api/tauri';
 import { updateWindowsThumbarState } from '$lib/api/tauri';
+import type { Track } from '$lib/api/tauri';
 import {
     _startReckoning, _stopReckoning, _correctReckoning,
     _startHtml5Ticker, _stopHtml5Ticker, registerPositionUpdateCallback,
@@ -31,14 +32,15 @@ import {
     initSmtcIntegration, cleanupSmtcIntegration, updateSmtcPlaybackState,
 } from './media-session';
 import {
-    handleTrackEnd, handleGaplessAdvance, nextTrack, previousTrack,
+    handleTrackEnd, nextTrack, previousTrack,
     togglePlay, pause, resume, setPlayerNativeAudioUsed,
     getPlayerNativeAudioUsed, incrementPlayerNativeErrorCount,
-    PLAYER_NATIVE_ERROR_FALLBACK_THRESHOLD,
+    PLAYER_NATIVE_ERROR_FALLBACK_THRESHOLD, syncPlayerQueue,
 } from './playback';
+import { initPlayerBridge } from './player';
 import { handleRemoteCommand, handleRemotePlayerState, transferPlayback } from './remote';
 import { registerRemoteCallbacks } from './remote';
-import { seek, setVolume, toggleShuffle } from './playback';
+import { seek, setVolume, toggleShuffle, cycleRepeat } from './playback';
 import { playTrack, playFromQueue } from './playback';
 import { updateMediaSessionPosition } from './media-session';
 import { getTrackByIdSync } from '$lib/stores/library';
@@ -82,6 +84,11 @@ registerPositionUpdateCallback(() => updateMediaSessionPosition());
 export async function initAudioBackend(): Promise<void> {
     console.log('[Player] Initializing audio backend');
 
+    // bring up the player.rs directive listener before anything else can fire a track change
+    // otherwise an early Advance directive could arrive with nothing registered to handle it
+    await initPlayerBridge();
+    syncPlayerQueue();
+
     // Wire up HTML5 backend callbacks
     html5SetCallbacks({
         onEnded: () => handleTrackEnd(),
@@ -107,11 +114,20 @@ export async function initAudioBackend(): Promise<void> {
     if (nativeUsed) {
         listen<AudioEventType>('audio://event', ({ payload: event }) => {
             if (event.type === 'TrackFinished') {
+                // player.rs's actor also observes this event (worker.rs fans it out) and
+                // will independently decide + emit the next Advance/QueueExhausted
+                // directive over player://event
+                // see registerPlayerDirectiveHandler in playback.ts
+                // this listener only does local reckoning bookkeeping
                 _stopReckoning(get(currentTime));
-                handleTrackEnd();
             } else if (event.type === 'TrackAdvanced') {
                 _startReckoning(0);
-                handleGaplessAdvance();
+                // correct duration from the engine's real decoded value
+                if (event.data.duration != null) {
+                    const secs = event.data.duration.secs + (event.data.duration.nanos ?? 0) / 1e9;
+                    if (secs > 0 && !isNaN(secs)) duration.set(secs);
+                }
+                // advance/track-metadata update itself comes from player.rs's directive
             } else if (event.type === 'StateChanged') {
                 _correctReckoning(event.data.position);
                 if (event.data.position === 0) {
@@ -200,8 +216,13 @@ export async function initAudioBackend(): Promise<void> {
         try {
             const state = equalizer.getState();
             nativeAudioSetRepeatOne(get(repeat) === 'one').catch(console.error);
-            await nativeAudioSetEq(state);
+            await nativeAudioSetEq({
+                enabled: state.enabled,
+                bands: toNativeBands(state.bands),
+                preamp_db: state.preampDb,
+            });
             nativeAudioSetReplayGainEnabled(get(appSettings).replayGainEnabled).catch(console.error);
+            nativeAudioSetLimiterEnabled(get(appSettings).limiterEnabled).catch(console.error);
             nativeAudioSetCrossfadeSeconds(get(appSettings).crossfadeSeconds).catch(console.error);
             console.log('[Player] Applied initial EQ settings to native backend');
         } catch (err) {
@@ -236,13 +257,7 @@ export async function initAudioBackend(): Promise<void> {
     }).catch(() => { });
 
     listen<void>('tray://toggle-repeat', () => {
-        // cycle none => all => one => none
-        const current = get(repeat);
-        const next = current === 'none' ? 'all' : current === 'all' ? 'one' : 'none';
-        repeat.set(next);
-        if (get(activeBackend) === 'native') {
-            nativeAudioSetRepeatOne(next === 'one').catch(console.error);
-        }
+        cycleRepeat();
     }).catch(() => { });
 
     // emitted when the user clicks the track title in the tray menu
@@ -339,7 +354,27 @@ export async function initAudioBackend(): Promise<void> {
             void playTrack(track);
         }
     });
+
+    // file opened via os file association
+    // while the app is already running - lib.rs's handle_open_file emits this
+    await listen<string>('app://open-file', ({ payload }) => {
+        void openAssociatedFile(payload);
+    });
     // cold-start case (app launched via jump list click) is handled in +page.svelte, coordinated with initializeFromPersistedState
+}
+
+/**
+ * opens a file received via os file association
+ * open_or_import_track_by_path checks the library for this exact path first and returns it as is if found
+ * otherwise it reads the file's tags and adds it, then returns the new track
+ */
+export async function openAssociatedFile(path: string): Promise<void> {
+    try {
+        const track = await invoke<Track>('open_or_import_track_by_path', { path });
+        await playTrack(track);
+    } catch (error) {
+        console.error('[Player] Failed to open associated file:', path, error);
+    }
 }
 
 export function cleanupPlayer(): void {

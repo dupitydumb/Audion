@@ -178,6 +178,49 @@ pub async fn import_audio_bytes(
     handle_track_import(db, track_data, overwrite).await
 }
 
+/// used when a file is opened via os file association
+/// if the exact path is already a known track, returns it as is
+/// otherwise extracts metadata and adds it to the library
+/// bypassing the content hash duplicate check
+#[tauri::command]
+pub async fn open_or_import_track_by_path(
+    path: String,
+    db: State<'_, Database>,
+) -> Result<queries::Track, String> {
+    // canonicalize first - every other path in the db was stored this way
+    // (see add_folder/scan_folder/rescan_music, which all canonicalize before storing)
+    let path = std::path::Path::new(&path)
+        .canonicalize()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or(path);
+
+    // fast path: this exact file is already in the library
+    // COLLATE NOCASE matters here: Windows filesystem paths are case insensitive
+    {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        let existing_id: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM tracks WHERE path = ?1 COLLATE NOCASE",
+                rusqlite::params![path],
+                |row| row.get(0),
+            )
+            .ok();
+        if let Some(id) = existing_id {
+            if let Some(track) =
+                queries::get_track_by_id(&conn, id).map_err(|e| e.to_string())?
+            {
+                return Ok(track);
+            }
+        }
+    }
+
+    // not in the library yet => read tags and add it now
+    let track_data = crate::scanner::extract_metadata(&path)
+        .ok_or_else(|| format!("Failed to read audio metadata from {path}"))?;
+
+    handle_track_import(db, track_data, true).await
+}
+
 async fn handle_track_import(
     db: State<'_, Database>,
     track_data: queries::TrackInsert,
@@ -278,6 +321,7 @@ async fn handle_track_import(
         disc_number: track_data.disc_number,
         metadata_json: track_data.metadata_json.clone(),
         date_added,
+        artists: track_data.artist.as_deref().map(crate::scanner::artist_parser::split_artists).unwrap_or_default(),
     };
 
     Ok(track)
@@ -710,6 +754,7 @@ async fn run_scan_and_import(
                             disc_number: track_data.disc_number,
                             metadata_json: track_data.metadata_json.clone(),
                             date_added,
+                            artists: track_data.artist.as_deref().map(crate::scanner::artist_parser::split_artists).unwrap_or_default(),
                         });
                     }
                     Ok(_) => {}
@@ -829,6 +874,11 @@ pub async fn rescan_music(
             .map_err(|e| format!("Failed to cleanup deleted tracks: {}", e))?;
 
         let _ = queries::cleanup_empty_albums(&conn);
+
+        // reset album->artist assignment
+        // so this rescan rederives it fresh
+        // using the currently active AlbumArtistMode/split rules
+        let _ = queries::reset_album_artist_assignments(&conn);
 
         let folder_playlists = queries::get_folder_playlists(&conn).unwrap_or_default();
 
@@ -1209,6 +1259,7 @@ pub async fn add_external_track(
         title: Some(track.title),
         artist: Some(track.artist),
         album: track.album,
+        album_artist: None,
         track_number: track.track_number,
         disc_number: track.disc_number,
         duration: track.duration,

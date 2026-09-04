@@ -36,6 +36,93 @@ export const lyricsError = writable<string | null>(null);
 export const availableSources = writable<string[]>([]);
 
 /**
+ * lyrics rendering mode (persisted to localStorage)
+ * legacy: original alignment rules
+ * opposite_turn lines right aligned everything else left aligned
+ * 
+ * dynamic: structure aware alignment
+ * see lyricsAlignment below
+ * default is dynamic
+ */
+export type LyricsRenderMode = 'legacy' | 'dynamic';
+
+export const lyricsRenderMode = writable<LyricsRenderMode>(
+    (localStorage.getItem('lyrics_render_mode') as LyricsRenderMode | null) ?? 'dynamic'
+);
+
+lyricsRenderMode.subscribe(value => {
+    localStorage.setItem('lyrics_render_mode', value);
+});
+
+/**
+ * per line horizontal alignment for dynamic mode
+ *
+ * block = a run of consecutive lines sharing one structure value
+ * that is, everything under one separator up to the next one
+ * block where every line is opposite_turn  => block: right
+ * block that is all normal (no opposite_turn lines)
+ * and is immediately followed by a pure opposite block => block: left
+ * any other all normal block => block: center
+ * mixed block (some opposite_turn, some not) =>
+ * each opposite_turn line: right; each normal line: left
+ * section labels are always centered
+ */
+export type LineAlign = 'left' | 'center' | 'right';
+
+export interface LyricsAlignment {
+    /** alignment for each line, by index*/
+    line: LineAlign[];
+}
+
+const EMPTY_ALIGNMENT: LyricsAlignment = { line: [] };
+
+export const lyricsAlignment = derived(lyricsData, ($lyrics): LyricsAlignment => {
+    if (!$lyrics || $lyrics.lines.length === 0) return EMPTY_ALIGNMENT;
+    const lines = $lyrics.lines;
+
+    // locate every block's start index in one linear pass
+    const blockStarts: number[] = [];
+    for (let i = 0; i < lines.length; i++) {
+        if (i === 0 || lines[i].structure !== lines[i - 1].structure) blockStarts.push(i);
+    }
+
+    const line: LineAlign[] = new Array(lines.length);
+
+    for (let b = 0; b < blockStarts.length; b++) {
+        const start = blockStarts[b];
+        const end   = b + 1 < blockStarts.length ? blockStarts[b + 1] : lines.length;
+
+        let pureOppo = true;
+        let pureNormal = true;
+        for (let k = start; k < end; k++) {
+            if (lines[k].opposite_turn) pureNormal = false; else pureOppo = false;
+        }
+        const isMixed = !pureOppo && !pureNormal;
+
+        let nextIsPureOppo = false;
+        if (end < lines.length) {
+            const nextEnd = b + 2 < blockStarts.length ? blockStarts[b + 2] : lines.length;
+            nextIsPureOppo = true;
+            for (let k = end; k < nextEnd; k++) {
+                if (!lines[k].opposite_turn) { nextIsPureOppo = false; break; }
+            }
+        }
+
+        const blockAlign: LineAlign = pureOppo ? 'right' : (nextIsPureOppo ? 'left' : 'center');
+
+        for (let k = start; k < end; k++) {
+            if (isMixed) {
+                line[k] = lines[k].opposite_turn ? 'right' : 'left';
+            } else {
+                line[k] = blockAlign;
+            }
+        }
+    }
+
+    return { line };
+});
+
+/**
  * The source the user has manually selected (persisted to localStorage).
  * null = "auto" .use the first available source in registry priority order.
  */
@@ -112,23 +199,44 @@ export function getSourcePriorityIds(): string[] {
     return resolved.length > 0 ? resolved : ['user', 'embedded', ...SOURCE_IDS];
 }
 
-/** Index of the currently active lyric line based on playback time. */
-export const activeLine = derived(
+/**
+ * indices of every lyric line whose window currently contains playback time
+ * lines can overlap, so this can hold more than one index at once
+ *
+ * falls back to the single most recently started line during gaps between phrases
+ * so something is always highlighted
+ */
+export const activeLines = derived(
     [lyricsData, currentTime],
     ([$lyrics, $time]) => {
-        if (!$lyrics || $lyrics.lines.length === 0) return -1;
+        if (!$lyrics || $lyrics.lines.length === 0) return [];
 
-        // Find the line that's currently active
-        let activeIdx = -1;
+        const containing: number[] = [];
+        let lastStarted = -1;
         for (let i = 0; i < $lyrics.lines.length; i++) {
-            if ($lyrics.lines[i].time <= $time) {
-                activeIdx = i;
+            const line = $lyrics.lines[i];
+            if (line.time <= $time) {
+                lastStarted = i;
+                // when missing, fall back to "ends where the next line starts"
+                // (or never, for the last line)
+                const effectiveEnd = line.endTime ?? $lyrics.lines[i + 1]?.time ?? Infinity;
+                if ($time < effectiveEnd) containing.push(i);
             } else {
                 break;
             }
         }
-        return activeIdx;
+        return containing.length > 0 ? containing : (lastStarted >= 0 ? [lastStarted] : []);
     }
+);
+
+/**
+ * primary active line
+ * the earliest started line still in activeLines
+ * used for auto scroll target and the section label lookup
+ */
+export const activeLine = derived(
+    activeLines,
+    ($lines) => $lines.length > 0 ? $lines[0] : -1
 );
 
 // ---------------------------------------------------------------------------
@@ -206,50 +314,75 @@ function computeWordSyncState(
     return { activeWordIdx, wordProgress, activeSyllableIdx, syllableProgress };
 }
 
+export interface LineSyncState {
+    activeWordIdx:       number;
+    wordProgress:        number;
+    activeSyllableIdx:   number;
+    syllableProgress:    number;
+    bgActiveWordIdx:     number;
+    bgWordProgress:      number;
+    bgActiveSyllableIdx: number;
+    bgSyllableProgress:  number;
+}
+
+const EMPTY_LINE_SYNC_STATE: LineSyncState = {
+    activeWordIdx:       -1,
+    wordProgress:         0,
+    activeSyllableIdx:   -1,
+    syllableProgress:     0,
+    bgActiveWordIdx:     -1,
+    bgWordProgress:       0,
+    bgActiveSyllableIdx: -1,
+    bgSyllableProgress:   0,
+};
+
 /**
- * Full sync state for the currently active line.
- * Tracks primary words and background words independently at word + syllable level.
+ * full sync state for every currently active line
+ * (see activeLines)
+ * keyed by line index
+ * each line tracks its primary words and background words independently at word + syllable level
+ * so multiple lines can be mid fill simultaneously
  */
 export const wordSyncState = derived(
-    [lyricsData, currentTime, activeLine],
-    ([$lyrics, $time, $activeIdx]) => {
-        const empty = {
-            activeWordIdx:       -1,
-            wordProgress:         0,
-            activeSyllableIdx:   -1,
-            syllableProgress:     0,
-            bgActiveWordIdx:     -1,
-            bgWordProgress:       0,
-            bgActiveSyllableIdx: -1,
-            bgSyllableProgress:   0,
-        };
+    [lyricsData, currentTime, activeLines],
+    ([$lyrics, $time, $activeIdxs]) => {
+        const result = new Map<number, LineSyncState>();
+        if (!$lyrics || $activeIdxs.length === 0) return result;
 
-        if (!$lyrics || $activeIdx < 0) return empty;
-        const line = $lyrics.lines[$activeIdx];
-        if (!line) return empty;
+        for (const idx of $activeIdxs) {
+            const line = $lyrics.lines[idx];
+            if (!line) continue;
 
-        // Primary vocal
-        const primary = line.words?.length
-            ? computeWordSyncState(line.words, $time)
-            : { activeWordIdx: -1, wordProgress: 0, activeSyllableIdx: -1, syllableProgress: 0 };
+            const primary = line.words?.length
+                ? computeWordSyncState(line.words, $time)
+                : { activeWordIdx: -1, wordProgress: 0, activeSyllableIdx: -1, syllableProgress: 0 };
 
-        // Background vocal . independent tracking against the same clock
-        const bg = line.background_words?.length
-            ? computeWordSyncState(line.background_words, $time)
-            : { activeWordIdx: -1, wordProgress: 0, activeSyllableIdx: -1, syllableProgress: 0 };
+            const bg = line.background_words?.length
+                ? computeWordSyncState(line.background_words, $time)
+                : { activeWordIdx: -1, wordProgress: 0, activeSyllableIdx: -1, syllableProgress: 0 };
 
-        return {
-            activeWordIdx:       primary.activeWordIdx,
-            wordProgress:        primary.wordProgress,
-            activeSyllableIdx:   primary.activeSyllableIdx,
-            syllableProgress:    primary.syllableProgress,
-            bgActiveWordIdx:     bg.activeWordIdx,
-            bgWordProgress:      bg.wordProgress,
-            bgActiveSyllableIdx: bg.activeSyllableIdx,
-            bgSyllableProgress:  bg.syllableProgress,
-        };
+            result.set(idx, {
+                activeWordIdx:       primary.activeWordIdx,
+                wordProgress:        primary.wordProgress,
+                activeSyllableIdx:   primary.activeSyllableIdx,
+                syllableProgress:    primary.syllableProgress,
+                bgActiveWordIdx:     bg.activeWordIdx,
+                bgWordProgress:      bg.wordProgress,
+                bgActiveSyllableIdx: bg.activeSyllableIdx,
+                bgSyllableProgress:  bg.syllableProgress,
+            });
+        }
+        return result;
     }
 );
+
+/** sync state for a given line index, or a safe empty state */
+export function getLineSyncState(
+    map: Map<number, LineSyncState>,
+    idx: number,
+): LineSyncState {
+    return map.get(idx) ?? EMPTY_LINE_SYNC_STATE;
+}
 
 /**
  * The current song section label (Verse / Chorus / Bridge / …).

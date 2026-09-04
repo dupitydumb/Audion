@@ -36,6 +36,10 @@ export interface AppSettings {
     remoteControlEnabled: boolean;
     showResonate: boolean;
     replayGainEnabled: boolean;
+    /** master safety limiter after ReplayGain/volume/EQ
+     * native backend only
+     * off means audio is passed through untouched, so RG/EQ boosts can clip */
+    limiterEnabled: boolean;
     outputDevice: string | null;
     streamServerTracks: boolean;
     /** persisted keyboard shortcut bindings. null means use defaults. */
@@ -66,6 +70,7 @@ const defaultSettings: AppSettings = {
     remoteControlEnabled: true,
     showResonate: true,
     replayGainEnabled: true,
+    limiterEnabled: true,
     outputDevice: null,
     streamServerTracks: true,
     keyboardBindings: null,
@@ -175,6 +180,14 @@ function createSettingsStore() {
         setReplayGainEnabled(enabled: boolean) {
             update(state => {
                 const newState = { ...state, replayGainEnabled: enabled };
+                saveSettings(newState);
+                return newState;
+            });
+        },
+
+        setLimiterEnabled(enabled: boolean) {
+            update(state => {
+                const newState = { ...state, limiterEnabled: enabled };
                 saveSettings(newState);
                 return newState;
             });

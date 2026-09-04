@@ -20,7 +20,7 @@ runs:
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: "1.89.0"
+        toolchain: "1.90.0"
         targets: ${{ inputs.rust_targets }}
 
     - name: Rust cache

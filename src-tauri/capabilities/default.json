@@ -30,7 +30,6 @@
     "opener:default",
     "opener:allow-reveal-item-in-dir",
     "dialog:default",
-    "notification:default",
     "os:default",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",

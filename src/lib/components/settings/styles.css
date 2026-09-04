@@ -1,5 +1,4 @@
-
-  .settings-view {
+.settings-view {
     height: 100%;
     min-height: 0;
     display: flex;
@@ -25,15 +24,21 @@
   .settings-content {
     flex: 1;
     min-height: 0;
-    overflow-y: auto;
-    padding: var(--spacing-md);
-    padding-bottom: calc(var(--player-height) + var(--spacing-lg));
+    overflow: hidden;
+    position: relative;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
   }
 
+  .settings-content .settings-pane {
+    padding: var(--spacing-md);
+  }
+  .settings-content .settings-pane.settings-container {
+    padding-bottom: calc(var(--player-height) + var(--spacing-lg));
+  }
+
   @media (max-width: 768px) {
-    .settings-content {
+    .settings-content .settings-pane.settings-container {
       padding-bottom: calc(
         var(--mobile-bottom-inset, 130px) + var(--spacing-xl)
       );
@@ -379,6 +384,217 @@
     border: 2px solid var(--bg-base);
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
     cursor: pointer;
+  }
+
+  .eq-band input[type="range"]:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* eq band label button */
+  .eq-band-label-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 3px 5px;
+    border-radius: var(--radius-sm);
+    transition: background-color 0.15s, color 0.15s;
+    line-height: 1;
+  }
+
+  .eq-band-label-btn:hover {
+    background-color: rgba(255, 255, 255, 0.07);
+    color: var(--text-primary);
+  }
+
+  .eq-band-label-btn.active {
+    background-color: rgba(var(--accent-rgb, 29, 185, 84), 0.15);
+    color: var(--accent-primary);
+  }
+
+  .eq-band-label-btn.bypassed {
+    opacity: 0.5;
+  }
+
+  /* eq band detail panel */
+  .eq-band-detail {
+    background-color: var(--bg-highlight);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+    animation: eqFadeSlideIn 0.15s ease;
+  }
+
+  @keyframes eqFadeSlideIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .eq-band-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .eq-detail-title-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .eq-detail-subtitle {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+  }
+
+  .eq-detail-header-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .toggle-btn-sm {
+    width: 36px;
+    height: 20px;
+  }
+
+  .toggle-btn-sm .toggle-handle {
+    width: 14px;
+    height: 14px;
+    top: 2px;
+    left: 2px;
+  }
+
+  .toggle-btn-sm.active .toggle-handle {
+    transform: translateX(16px);
+  }
+
+  .eq-band-detail-row {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+  }
+
+  .eq-detail-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .eq-q-value {
+    font-family: monospace;
+    color: var(--accent-primary);
+    font-weight: 700;
+  }
+
+  .eq-filter-type-grid {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-xs);
+  }
+
+  .eq-filter-group {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .eq-filter-group-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--text-subdued);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    width: 36px;
+    flex-shrink: 0;
+  }
+
+  .eq-filter-pill {
+    flex: 1;
+    border-radius: var(--radius-md);
+  }
+
+  .eq-segment-sm {
+    min-height: 30px;
+    font-size: 0.7rem;
+    padding: var(--spacing-xs) var(--spacing-sm);
+  }
+
+  .eq-q-slider {
+    width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    background: var(--bg-surface);
+    border-radius: 3px;
+    cursor: pointer;
+    outline: none;
+    border: 1px solid var(--border-color);
+  }
+
+  .eq-q-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--accent-primary);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  .eq-q-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--accent-primary);
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  .eq-q-range-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.65rem;
+    color: var(--text-subdued);
+    padding: 0 2px;
+  }
+
+  .eq-gainless-note {
+    font-size: 0.7rem;
+    color: var(--text-subdued);
+    margin: 0;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    background: var(--bg-surface);
+    border-radius: var(--radius-sm);
+    border-left: 2px solid var(--border-color);
+  }
+
+  .eq-preamp-row {
+    padding: var(--spacing-sm) 0 0;
+    border-top: 1px solid var(--border-color);
+    margin-top: var(--spacing-xs);
+  }
+
+  /* reset band button in detail header */
+  .eq-reset-band-btn {
+    font-size: 0.7rem;
+    color: var(--text-subdued);
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    transition: color 0.15s, background 0.15s;
+  }
+
+  .eq-reset-band-btn:hover {
+    color: var(--text-primary);
+    background: var(--bg-surface);
   }
 
   .crossfade-slider {
@@ -3017,4 +3233,241 @@ animation: spin 0.8s linear infinite;
 .startup-page-dropdown-menu {
 max-height: 280px;
 overflow-y: auto;
+}
+
+/* =============================================================================
+   EQUALIZER SUBSECTION EDITOR => slides in over the settings list
+   ============================================================================= */
+
+.eq-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.eq-editor-topbar {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.eq-back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.eq-back-btn:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+}
+
+.eq-graph-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.eq-graph-title {
+  font-size: 0.95rem;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.eq-editor-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+  padding: 2px 2px var(--spacing-md);
+}
+
+.eq-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.eq-band-count {
+  font-size: 0.7rem;
+  color: var(--text-subdued);
+  font-family: monospace;
+}
+
+.btn-secondary-small {
+  font-size: 0.75rem;
+  font-weight: var(--font-weight-medium);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+}
+
+.btn-secondary-small:hover:not(:disabled) {
+  background-color: var(--bg-highlight);
+  border-color: var(--accent-primary);
+}
+
+.btn-secondary-small:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.eq-preamp-hint {
+  font-size: 0.68rem;
+  color: var(--text-subdued);
+  margin: 4px 0 0;
+  line-height: 1.4;
+}
+
+.eq-presets-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.preset-pill-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.preset-delete-btn {
+  background: none;
+  border: none;
+  color: var(--text-subdued);
+  font-size: 0.6rem;
+  cursor: pointer;
+  padding: 2px 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+}
+
+.preset-delete-btn:hover {
+  color: var(--danger, #e33);
+}
+
+/* save preset modal */
+.eq-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.eq-modal {
+  background: var(--bg-highlight);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  width: 280px;
+}
+
+.eq-preset-name-input {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+.eq-preset-name-input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.eq-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+}
+
+/* sliding pane: main settings list vs. the equalizer subsection editor */
+.settings-pane-slider {
+  display: flex;
+  width: 200%;
+  height: 100%;
+  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.settings-pane-slider.show-subsection {
+  transform: translateX(-50%);
+}
+
+.settings-pane {
+  width: 50%;
+  flex-shrink: 0;
+  min-width: 0;
+  height: 100%;
+  overflow-y: auto;
+}
+
+/* compact eq preview shown inline in audio settings (full editor is a subsection) */
+.eq-compact-preview {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: var(--spacing-sm) 0;
+}
+
+.eq-compact-preview.dimmed {
+  opacity: 0.5;
+}
+
+.eq-compact-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 28px;
+  flex: 1;
+  min-width: 80px;
+}
+
+.eq-compact-bar {
+  flex: 1;
+  height: var(--bar-h, 50%);
+  background: var(--accent-primary);
+  border-radius: 1px;
+  min-width: 2px;
+  transition: height 0.15s;
+}
+
+.eq-compact-bar.bypassed {
+  background: var(--text-subdued);
+  opacity: 0.5;
+}
+
+.eq-compact-info {
+  display: flex;
+  flex-direction: column;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  gap: 1px;
+}
+
+.eq-compact-band-count {
+  color: var(--text-subdued);
+  font-size: 0.62rem;
 }

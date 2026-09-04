@@ -102,6 +102,12 @@ export function addToQueue(tracks: Track[]): void {
             return [...shifted, ...shuffledNew];
         });
     }
+
+    // notify playback module to
+    // reschedule preload + resync player.rs's queue mirror
+    // otherwise, rust's advance/crossfade decisions run off a stale queue
+    // it never sees the track we just added
+    _onReorderComplete?.();
 }
 
 export function removeFromQueue(index: number): void {
@@ -133,6 +139,10 @@ export function removeFromQueue(index: number): void {
             shuffledIndex.set(ptr);
         }
     }
+
+    // notify playback module to
+    // reschedule preload + resync player.rs's queue mirror
+    _onReorderComplete?.();
 }
 
 export function reorderQueue(fromIndex: number, toIndex: number): void {
@@ -217,6 +227,10 @@ export function clearUpcoming(): void {
         const ptr = get(shuffledIndices).indexOf(currentIdx);
         shuffledIndex.set(ptr !== -1 ? ptr : 0);
     }
+
+    // notify playback module to
+    // reschedule preload + resync player.rs's queue mirror
+    _onReorderComplete?.();
 }
 
 // ─── Context predicates ───────────────────────────────────────────────────────

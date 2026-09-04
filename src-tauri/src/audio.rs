@@ -5,11 +5,21 @@ pub mod symphonia;
 pub mod resampler;
 pub mod engine;
 pub mod worker;
+pub mod player;
+pub mod gated;
+pub mod dual_track;
+pub mod gated_worker;
+pub mod decision;
+pub mod directive;
+
+#[cfg(test)]
+mod tests_native_playback;
 
 // Re-export key types that lib.rs / other modules use
-pub use dsp::{EqBand, EqSettings};
+pub use dsp::{EqSettings};
 pub use mod_types::{AudioDeviceInfo, DeviceList, AudioEvent};
 pub use worker::PlaybackStateSync;
+pub use player::PlayerStateSync;
 
 // Tauri Commands + resolve_audio_path helper defined directly here
 // so that Tauri's generate_handler! macro can resolve the cmd helpers properly.
@@ -246,6 +256,14 @@ pub fn audio_set_replay_gain_enabled(
     state: State<'_, PlaybackStateSync>,
 ) -> Result<(), String> {
     state.send(AudioCommand::SetReplayGainEnabled(enabled))
+}
+
+#[tauri::command]
+pub fn audio_set_limiter_enabled(
+    enabled: bool,
+    state: State<'_, PlaybackStateSync>,
+) -> Result<(), String> {
+    state.send(AudioCommand::SetLimiterEnabled(enabled))
 }
 
 #[tauri::command]

@@ -1,0 +1,25 @@
+[Desktop Entry]
+Categories={{categories}}
+{{#if comment}}Comment={{comment}}
+{{/if}}Exec={{exec}}
+Icon={{icon}}
+Name={{name}}
+Terminal=false
+Type=Application
+Actions=Play;Pause;Next;Previous;
+
+[Desktop Action Play]
+Name=Play
+Exec={{exec}} --play
+
+[Desktop Action Pause]
+Name=Pause
+Exec={{exec}} --pause
+
+[Desktop Action Next]
+Name=Next
+Exec={{exec}} --next
+
+[Desktop Action Previous]
+Name=Previous
+Exec={{exec}} --previous

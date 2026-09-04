@@ -13,6 +13,7 @@
     } from "$lib/api/tauri";
     import { playTracks, currentTrack, isPlaying } from "$lib/stores/player";
     import { goToAlbums, goToArtistDetail } from "$lib/stores/view";
+    import ArtistLinks from "$lib/components/ArtistLinks.svelte";
     import { getAlbumCoverFromTracks } from "$lib/stores/library";
     import TrackList from "./track-list/TrackList.svelte";
     import {
@@ -271,20 +272,14 @@
                 <span class="album-type">{$_("album.type")}</span>
                 <h1 class="album-title">{album.name}</h1>
                 <div class="album-meta">
-                    <button
-                        class="album-artist link"
-                        on:click={() => {
-                            if (album)
-                                goToArtistDetail(
-                                    album.artist ||
-                                        $_("common.unknownArtist"),
-                                );
-                        }}
-                        title={$_("contextMenu.goToArtist")}
-                    >
-                        {album.artist ||
-                            $_("common.unknownArtist")}
-                    </button>
+                    <ArtistLinks
+                        artist={album.artist || $_("common.unknownArtist")}
+                        artists={album.artists}
+                        chipClass="album-artist link"
+                        wrapClass="album-artist-links"
+                        chipTitle={$_("contextMenu.goToArtist")}
+                        on:select={(e) => goToArtistDetail(e.detail)}
+                    />
                     <span class="separator">•</span>
                     <span
                         >{$_("album.songs", {
@@ -754,54 +749,49 @@
     }
 
     /* ── Mobile ── */
-    @media (max-width: 768px) {
-        .album-header {
-            flex-direction: column;
-            align-items: center;
-            text-align: center;
-            padding: calc(var(--safe-area-top) + var(--spacing-md))
-                var(--spacing-md) var(--spacing-md);
-            gap: var(--spacing-md);
-        }
+    :global(html.layout-mobile) .album-header {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: calc(var(--safe-area-top) + var(--spacing-md))
+            var(--spacing-md) var(--spacing-md);
+        gap: var(--spacing-md);
+    }
 
-        .back-btn {
-            top: calc(var(--safe-area-top) + var(--spacing-sm));
-            left: var(--spacing-sm);
-        }
+    :global(html.layout-mobile) .back-btn {
+        top: calc(var(--safe-area-top) + var(--spacing-sm));
+        left: var(--spacing-sm);
+    }
 
-        .album-cover {
-            width: 160px;
-            height: 160px;
-        }
+    :global(html.layout-mobile) .album-cover {
+        width: 160px;
+        height: 160px;
+    }
 
-        .album-info {
-            align-items: center;
-        }
+    :global(html.layout-mobile) .album-info {
+        align-items: center;
+    }
 
-        .album-title {
-            font-size: 1.5rem;
-            word-break: break-word;
-        }
+    :global(html.layout-mobile) .album-title {
+        font-size: 1.5rem;
+        word-break: break-word;
+    }
 
-        .album-meta {
-            flex-wrap: wrap;
-            justify-content: center;
-            margin-bottom: var(--spacing-md);
-        }
+    :global(html.layout-mobile) .album-meta {
+        flex-wrap: wrap;
+        justify-content: center;
+        margin-bottom: var(--spacing-md);
+    }
 
-        .album-actions {
-            flex-wrap: wrap;
-            justify-content: center;
-        }
+    :global(html.layout-mobile) .album-actions {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
 
-        .play-all-btn,
-        .btn-secondary {
-            padding: var(--spacing-sm) var(--spacing-lg);
-            font-size: var(--font-size-base);
-            min-height: 44px;
-        }
-
-        .track-list-section {
-        }
+    :global(html.layout-mobile) .play-all-btn,
+    :global(html.layout-mobile) .btn-secondary {
+        padding: var(--spacing-sm) var(--spacing-lg);
+        font-size: var(--font-size-base);
+        min-height: 44px;
     }
 </style>

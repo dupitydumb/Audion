@@ -15,6 +15,8 @@
         goToPlaylistDetail,
     } from "$lib/stores/view";
     import { playTracks } from "$lib/stores/player";
+    import ArtistLinks from "$lib/components/ArtistLinks.svelte";
+    import MarqueeText from "$lib/components/MarqueeText.svelte";
     import {
         getAlbumArtSrc,
         getTrackCoverSrc,
@@ -45,6 +47,8 @@
     let visibleAlbums = 6;
     let visibleArtists = 6;
     let visiblePlaylists = 6;
+    let hoveredTrackIndex: number | null = null;
+    let hoveredAlbumId: number | null = null;
 
     $: $searchResults, resetVisible();
     function resetVisible() {
@@ -240,6 +244,8 @@
                                     }}
                                     on:contextmenu={(e) =>
                                         handleTrackContextMenu(e, track, index)}
+                                    on:mouseenter={() => (hoveredTrackIndex = index)}
+                                    on:mouseleave={() => (hoveredTrackIndex = null)}
                                 >
                                     <div class="track-art">
                                         {#if albumArt}
@@ -265,21 +271,26 @@
                                         {/if}
                                     </div>
                                     <div class="track-info">
-                                        <span class="track-title truncate"
-                                            >{track.title ||
-                                                $_("player.unknownTitle")}</span
+                                        <MarqueeText
+                                            trigger="external"
+                                            active={hoveredTrackIndex === index}
+                                            resetKey={track.id}
+                                            containerClass="track-title-track"
                                         >
-                                        <button
-                                            class="track-artist truncate link-text"
-                                            on:click|stopPropagation={() =>
-                                                handleArtistClick(
-                                                    track.artist ||
-                                                        $_(
-                                                            "common.unknownArtist"),
-                                                )}
-                                            >{track.artist ||
-                                                $_("common.unknownArtist")}</button
-                                        >
+                                            <span class="track-title"
+                                                >{track.title || $_("player.unknownTitle")}</span
+                                            >
+                                        </MarqueeText>
+                                        <ArtistLinks
+                                            artist={track.artist || $_("common.unknownArtist")}
+                                            artists={track.artists}
+                                            chipClass="track-artist truncate link-text"
+                                            marquee
+                                            marqueeTrigger="external"
+                                            marqueeActive={hoveredTrackIndex === index}
+                                            resetKey={track.id}
+                                            on:select={(e) => handleArtistClick(e.detail)}
+                                        />
                                     </div>
                                     <button
                                         class="track-album truncate"
@@ -324,6 +335,8 @@
                                     }}
                                     on:contextmenu={(e) =>
                                         handleAlbumContextMenu(e, album)}
+                                    on:mouseenter={() => (hoveredAlbumId = album.id)}
+                                    on:mouseleave={() => (hoveredAlbumId = null)}
                                 >
                                     <div class="album-art">
                                         {#if coverSrc}
@@ -349,20 +362,26 @@
                                         {/if}
                                     </div>
                                     <div class="album-info">
-                                        <span class="album-name truncate"
-                                            >{album.name}</span
+                                        <MarqueeText
+                                            trigger="external"
+                                            active={hoveredAlbumId === album.id}
+                                            resetKey={album.id}
+                                            containerClass="album-name-track"
                                         >
-                                        <button
-                                            class="album-artist truncate link-text"
-                                            on:click|stopPropagation={() =>
-                                                handleArtistClick(
-                                                    album.artist ||
-                                                        $_(
-                                                            "common.unknownArtist"),
-                                                )}
-                                            >{album.artist ||
-                                                $_("common.unknownArtist")}</button
-                                        >
+                                            <span class="album-name">{album.name}</span>
+                                        </MarqueeText>
+                                        <span class="album-artist truncate">
+                                            <ArtistLinks
+                                                artist={album.artist}
+                                                artists={album.artists}
+                                                chipClass="link-text"
+                                                marquee
+                                                marqueeTrigger="external"
+                                                marqueeActive={hoveredAlbumId === album.id}
+                                                resetKey={album.id}
+                                                on:select={(e) => handleArtistClick(e.detail)}
+                                            />
+                                        </span>
                                     </div>
                                 </div>
                             {/each}
@@ -467,12 +486,10 @@
         padding: var(--spacing-md);
     }
 
-    @media (max-width: 768px) {
-        .search-results {
-            padding-bottom: calc(
-                var(--mobile-bottom-inset, 130px) + var(--spacing-md)
-            );
-        }
+    :global(html.layout-mobile) .search-results {
+        padding-bottom: calc(
+            var(--mobile-bottom-inset, 130px) + var(--spacing-md)
+        );
     }
 
     .no-results {
@@ -620,6 +637,8 @@
         font-size: 0.9375rem;
         font-weight: var(--font-weight-medium);
         color: var(--text-primary);
+        white-space: nowrap;
+        flex-shrink: 0;
     }
 
     .track-artist {
@@ -722,6 +741,8 @@
         font-size: var(--font-size-base);
         font-weight: var(--font-weight-semibold);
         color: var(--text-primary);
+        white-space: nowrap;
+        flex-shrink: 0;
     }
 
     .album-artist {

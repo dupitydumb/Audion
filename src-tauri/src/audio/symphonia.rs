@@ -675,7 +675,7 @@ impl Iterator for SymphoniaSource {
                     self.sample_pos += 1;
                     let s = if self.replay_gain_enabled.load(Ordering::Relaxed) {
                         match self.replay_gain {
-                            Some(gain) => (s * gain).clamp(-1.0, 1.0),
+                            Some(gain) => s * gain,
                             None => s,
                         }
                     } else {

@@ -155,19 +155,17 @@
     }
 
     /* ── Mobile ── */
-    @media (max-width: 768px) {
-        .toast {
-            min-width: 0;
-            max-width: calc(100vw - 32px);
-            width: auto;
-            padding: 10px 14px;
-        }
+    :global(html.layout-mobile) .toast {
+        min-width: 0;
+        max-width: calc(100vw - 32px);
+        width: auto;
+        padding: 10px 14px;
+    }
 
-        .close-btn {
-            width: 32px;
-            height: 32px;
-            min-width: 32px;
-            min-height: 32px;
-        }
+    :global(html.layout-mobile) .close-btn {
+        width: 32px;
+        height: 32px;
+        min-width: 32px;
+        min-height: 32px;
     }
 </style>

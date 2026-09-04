@@ -1,0 +1,22 @@
+{
+    "publisher": "CN=Audion, O=Audion Team, C=ID",
+    "publisherDisplayName": "Audion Team",
+    "capabilities": {
+      "general": [
+        "internetClient"
+      ]
+    },
+    "extensions": {
+      "shareTarget": false,
+      "fileAssociations": [],
+      "protocolHandlers": []
+    },
+    "signing": {
+      "pfx": "audion-msix.pfx",
+      "pfxPassword": null
+    },
+    "resourceIndex": {
+      "enabled": false,
+      "keepConfig": false
+    }
+  }
