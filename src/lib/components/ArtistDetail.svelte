@@ -32,6 +32,7 @@
     import { contextMenu } from "$lib/stores/ui";
     import { buildArtistContextMenu } from "$lib/menus/contextMenus";
     import { _, locale } from "svelte-i18n";
+    import Icon from "$lib/components/Icon.svelte";
 
     export let artistName: string;
 
@@ -305,16 +306,7 @@
                 on:click={goToArtists}
                 aria-label="Go back to artists"
             >
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="24"
-                    height="24"
-                >
-                    <path
-                        d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"
-                    />
-                </svg>
+                <Icon name="arrow-left" size={24} />
             </button>
             <div class="artist-avatar">
                 {#if artistPictureUrl && !failedImage}
@@ -345,14 +337,7 @@
                         class="btn-primary play-all-btn"
                         on:click={handlePlayAll}
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="24"
-                            height="24"
-                        >
-                            <path d="M8 5v14l11-7z" />
-                        </svg>
+                        <Icon name="play" size={24} />
                         {$_('artist.playAll')}
                     </button>
 
@@ -366,16 +351,7 @@
                                 <div class="spinner-sm"></div>
                                 <span>{downloadProgress}</span>
                             {:else}
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="24"
-                                    height="24"
-                                >
-                                    <path
-                                        d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"
-                                    />
-                                </svg>
+                                <Icon name="download" size={24} />
                                 <span>{$_('artist.downloadAll')}</span>
                             {/if}
                         </button>
@@ -457,16 +433,7 @@
                                 target="_blank"
                                 rel="noopener noreferrer"
                             >
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="16"
-                                    height="16"
-                                >
-                                    <path
-                                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15v-4H7l5-8v4h4l-5 8z"
-                                    />
-                                </svg>
+                                <Icon name="external-link" size={16} />
                                 {$_('artist.readOnWikipedia')}
                             </a>
                         {/if}
@@ -580,75 +547,19 @@
                                                     )}"
                                                 >
                                                     {#if item.release_type.toLowerCase() === "album"}
-                                                        <svg
-                                                            viewBox="0 0 24 24"
-                                                            fill="currentColor"
-                                                            width="28"
-                                                            height="28"
-                                                            ><path
-                                                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
-                                                            /></svg
-                                                        >
+                                                        <Icon name="disc" size={28} />
                                                     {:else if item.release_type.toLowerCase() === "single"}
-                                                        <svg
-                                                            viewBox="0 0 24 24"
-                                                            fill="currentColor"
-                                                            width="28"
-                                                            height="28"
-                                                            ><path
-                                                                d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                                                            /></svg
-                                                        >
+                                                        <Icon name="music" size={28} />
                                                     {:else if item.release_type.toLowerCase() === "ep"}
-                                                        <svg
-                                                            viewBox="0 0 24 24"
-                                                            fill="currentColor"
-                                                            width="28"
-                                                            height="28"
-                                                            ><path
-                                                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"
-                                                            /></svg
-                                                        >
+                                                        <Icon name="disc" size={28} />
                                                     {:else if item.release_type.toLowerCase() === "live"}
-                                                        <svg
-                                                            viewBox="0 0 24 24"
-                                                            fill="currentColor"
-                                                            width="28"
-                                                            height="28"
-                                                            ><path
-                                                                d="M12 3v9.28c-.47-.17-.97-.28-1.5-.28C8.01 12 6 14.01 6 16.5S8.01 21 10.5 21c2.31 0 4.2-1.75 4.45-4H15V6h4V3h-7z"
-                                                            /></svg
-                                                        >
+                                                        <Icon name="mic-2" size={28} />
                                                     {:else if item.release_type.toLowerCase() === "compilation"}
-                                                        <svg
-                                                            viewBox="0 0 24 24"
-                                                            fill="currentColor"
-                                                            width="28"
-                                                            height="28"
-                                                            ><path
-                                                                d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"
-                                                            /></svg
-                                                        >
+                                                        <Icon name="library" size={28} />
                                                     {:else if item.release_type.toLowerCase() === "soundtrack"}
-                                                        <svg
-                                                            viewBox="0 0 24 24"
-                                                            fill="currentColor"
-                                                            width="28"
-                                                            height="28"
-                                                            ><path
-                                                                d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"
-                                                            /></svg
-                                                        >
+                                                        <Icon name="disc-3" size={28} />
                                                     {:else}
-                                                        <svg
-                                                            viewBox="0 0 24 24"
-                                                            fill="currentColor"
-                                                            width="28"
-                                                            height="28"
-                                                            ><path
-                                                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
-                                                            /></svg
-                                                        >
+                                                        <Icon name="disc" size={28} />
                                                     {/if}
                                                 </div>
                                             {/if}

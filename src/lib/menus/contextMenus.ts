@@ -65,8 +65,6 @@ export function isTrackUnavailable(track: Track): boolean {
 
 // internal constants ====================================================================================
 
-const PIN_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>`;
-
 /** typed separator so spread sites stay readable */
 const SEP: ContextMenuItem = { type: 'separator' };
 
@@ -111,7 +109,6 @@ function buildPinItem(
     const pinned = isPinned(entityType, id, get(pinnedItems));
     return {
         label: pinned ? t('contextMenu.unpinFromTop') : t('contextMenu.pinToTop'),
-        icon: PIN_ICON,
         action: () => {
             if (pinned) unpinItem(entityType, id);
             else pinItem(entityType, id);

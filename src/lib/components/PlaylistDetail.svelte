@@ -31,6 +31,7 @@
         type DownloadProgress,
     } from "$lib/services/downloadService";
     import { addToast } from "$lib/stores/toast";
+    import Icon from "$lib/components/Icon.svelte";
 
     export let playlistId: number;
 
@@ -383,33 +384,23 @@
                         aria-haspopup="menu"
                         aria-expanded={menuOpen}
                     >
-                        <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-                            <circle cx="12" cy="5" r="1.5"/>
-                            <circle cx="12" cy="12" r="1.5"/>
-                            <circle cx="12" cy="19" r="1.5"/>
-                        </svg>
+                        <Icon name="more-horizontal" size={20} />
                     </button>
 
                     {#if menuOpen}
                         <div class="menu-backdrop" role="presentation" on:click={closeMenu}></div>
                         <div class="dropdown-menu" role="menu">
                             <button class="dropdown-item" role="menuitem" on:click={() => { closeMenu(); startEditing(); }}>
-                                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                                    <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-                                </svg>
+                                <Icon name="edit" size={16} />
                                 {$_('contextMenu.rename')}
                             </button>
                             <button class="dropdown-item" role="menuitem" on:click={handleExportZip}>
-                                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                                    <path d="M20 6h-2.18c.07-.44.18-.88.18-1a3 3 0 0 0-6 0c0 .12.11.56.18 1H10V4c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-8-1c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm8 15H4V8h16v12z"/>
-                                </svg>
+                                <Icon name="folder" size={16} />
                                 {$_('contextMenu.exportToZip')}
                             </button>
                             <div class="dropdown-separator"></div>
                             <button class="dropdown-item danger" role="menuitem" on:click={() => { closeMenu(); handleDelete(); }}>
-                                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                                    <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
-                                </svg>
+                                <Icon name="trash" size={16} />
                                 {$_('contextMenu.deletePlaylist')}
                             </button>
                         </div>
@@ -417,16 +408,7 @@
                 </div>
 
                 <button class="back-btn close-btn" on:click={goToPlaylists} title={$_("common.close")}>
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="20"
-                        height="20"
-                    >
-                        <path
-                            d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                        />
-                    </svg>
+                    <Icon name="x" size={20} />
                 </button>
             </div>
             <div
@@ -455,16 +437,7 @@
                                 on:click={handleRemoveCover}
                                 title={$_("playlist.removeCoverTooltip")}
                             >
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="20"
-                                    height="20"
-                                >
-                                    <path
-                                        d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
-                                    />
-                                </svg>
+                                <Icon name="trash" size={20} />
                             </button>
                         {/if}
                         <button
@@ -474,22 +447,11 @@
                                 ? $_("playlist.changeCoverTooltip")
                                 : $_("playlist.addCoverTooltip")}
                         >
-                            <svg
-                                viewBox="0 0 24 24"
-                                fill="currentColor"
-                                width="20"
-                                height="20"
-                            >
-                                {#if hasCustomCover}
-                                    <path
-                                        d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"
-                                    />
-                                {:else}
-                                    <path
-                                        d="M19 7v2.99s-1.99.01-2 0V7h-3s.01-1.99 0-2h3V2h2v3h3v2h-3zm-3 4V8h-3V5H5c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2v-8h-3zM5 19l3-4 2 3 3-4 4 5H5z"
-                                    />
-                                {/if}
-                            </svg>
+                            {#if hasCustomCover}
+                                <Icon name="edit" size={20} />
+                            {:else}
+                                <Icon name="plus" size={20} />
+                            {/if}
                         </button>
                     </div>
                 {/if}
@@ -497,9 +459,7 @@
             <div class="playlist-info">
                 <span class="playlist-type" title={playlist.folder_path ?? undefined}>
                     {#if playlist.folder_path}
-                        <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12" style="vertical-align: middle; margin-right: 4px;">
-                            <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
-                        </svg>
+                        <Icon name="folder" size={12} />
                     {/if}
                     {$_("common.playlist")}
                 </span>
@@ -529,14 +489,7 @@
                         on:click={handlePlayAll}
                         disabled={tracks.length === 0}
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="24"
-                            height="24"
-                        >
-                            <path d="M8 5v14l11-7z" />
-                        </svg>
+                        <Icon name="play" size={24} />
                         {$_("common.play")}
                     </button>
 
@@ -544,14 +497,7 @@
                         class="btn-primary add-songs-btn"
                         on:click={handleAddSongs}
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="24"
-                            height="24"
-                        >
-                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                        </svg>
+                        <Icon name="plus" size={24} />
                         {$_("playlist.addSongs")}
                     </button>
 
@@ -568,30 +514,12 @@
                                 <div class="spinner-sm"></div>
                                 <span>{downloadProgress}</span>
                             {:else if allDownloaded}
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="24"
-                                    height="24"
-                                >
-                                    <path
-                                        d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"
-                                    />
-                                </svg>
+                                <Icon name="download" size={24} />
                                 <span
                                     >{$_("album.downloaded")}</span
                                 >
                             {:else}
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="24"
-                                    height="24"
-                                >
-                                    <path
-                                        d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"
-                                    />
-                                </svg>
+                                <Icon name="download" size={24} />
                                 <span
                                     >{$_("album.download")}</span
                                 >
@@ -617,16 +545,7 @@
                 />
             {:else}
                 <div class="empty-state">
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="48"
-                        height="48"
-                    >
-                        <path
-                            d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                        />
-                    </svg>
+                    <Icon name="music" size={48} />
                     <h3>
                         {$_("playlist.emptyTitle")}
                     </h3>

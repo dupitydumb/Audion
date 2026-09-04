@@ -2,6 +2,7 @@
     import { homeLayout, toggleSection } from "$lib/stores/homeLayout";
     import { createEventDispatcher } from "svelte";
     import { _ } from "svelte-i18n";
+    import Icon from "$lib/components/Icon.svelte";
 
     const dispatch = createEventDispatcher<{ close: void }>();
 
@@ -108,14 +109,7 @@
                         tabindex="0"
                         on:pointerdown={(e) => startDrag(i, e)}
                     >
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" width="16" height="16" aria-hidden="true">
-                            <circle cx="9" cy="5" r="1" fill="currentColor"></circle>
-                            <circle cx="9" cy="12" r="1" fill="currentColor"></circle>
-                            <circle cx="9" cy="19" r="1" fill="currentColor"></circle>
-                            <circle cx="15" cy="5" r="1" fill="currentColor"></circle>
-                            <circle cx="15" cy="12" r="1" fill="currentColor"></circle>
-                            <circle cx="15" cy="19" r="1" fill="currentColor"></circle>
-                        </svg>
+                        <Icon name="drag-handle" size={16} />
                     </span>
                     <span class="section-name">{getSectionDisplayName(section.id)}</span>
                     <label class="switch-container">

@@ -26,6 +26,7 @@
     import { addToast } from "$lib/stores/toast";
     import { goto } from "$app/navigation";
     import { _, locale } from "svelte-i18n";
+    import Icon from "$lib/components/Icon.svelte";
 
     export let albumId: number;
 
@@ -235,16 +236,7 @@
                 on:click={goToAlbums}
                 aria-label="Back to Albums"
             >
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="24"
-                    height="24"
-                >
-                    <path
-                        d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"
-                    />
-                </svg>
+                <Icon name="arrow-left" size={24} />
             </button>
             <div class="album-cover">
                 {#if getAlbumCoverFromTracks(album.id)}
@@ -255,16 +247,7 @@
                     />
                 {:else}
                     <div class="album-cover-placeholder">
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="64"
-                            height="64"
-                        >
-                            <path
-                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
-                            />
-                        </svg>
+                        <Icon name="disc" size={64} />
                     </div>
                 {/if}
             </div>
@@ -294,14 +277,7 @@
                         class="btn-primary play-all-btn"
                         on:click={handlePlayAll}
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="24"
-                            height="24"
-                        >
-                            <path d="M8 5v14l11-7z" />
-                        </svg>
+                        <Icon name="play" size={24} />
                         {$_("album.play")}
                     </button>
 
@@ -318,28 +294,10 @@
                                 <div class="spinner-sm"></div>
                                 <span>{downloadProgress}</span>
                             {:else if allDownloaded}
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="24"
-                                    height="24"
-                                >
-                                    <path
-                                        d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"
-                                    />
-                                </svg>
+                                <Icon name="download" size={24} />
                                 <span>{$_("album.downloaded")}</span>
                             {:else}
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="24"
-                                    height="24"
-                                >
-                                    <path
-                                        d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"
-                                    />
-                                </svg>
+                                <Icon name="download" size={24} />
                                 <span>{$_("album.download")}</span>
                             {/if}
                         </button>
@@ -368,17 +326,7 @@
                 {/if}
                 {#if mbRelease.label}
                     <span class="mb-chip">
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="12"
-                            height="12"
-                            style="opacity:0.6;flex-shrink:0"
-                        >
-                            <path
-                                d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"
-                            />
-                        </svg>
+                        <Icon name="tag" size={12} />
                         {mbRelease.label}
                     </span>
                 {/if}
@@ -396,16 +344,7 @@
                     <div class="disc-group">
                         <div class="disc-header">
                             <span class="disc-icon">
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="16"
-                                    height="16"
-                                >
-                                    <path
-                                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-13c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zm0 8c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z"
-                                    />
-                                </svg>
+                                <Icon name="disc" size={16} />
                             </span>
                             <h3>
                                 {$_("album.disc", {

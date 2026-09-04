@@ -3,6 +3,7 @@
     import { fade } from "svelte/transition";
     import { onMount } from "svelte";
     import { isMobile } from "$lib/stores/mobile";
+    import Icon from "$lib/components/Icon.svelte";
 
     import { tick } from "svelte";
 
@@ -106,17 +107,7 @@
                     tabindex="0"
                 >
                     <span>{item.label}</span>
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="14"
-                        height="14"
-                        aria-hidden="true"
-                    >
-                        <path
-                            d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"
-                        />
-                    </svg>
+                    <Icon name="chevron-right" size={14} />
                     {#if activeSubmenu === item.label}
                         <div
                             class="submenu"

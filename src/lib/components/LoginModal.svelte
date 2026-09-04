@@ -2,6 +2,7 @@
     import { _ } from "svelte-i18n";
     import { showLoginModal, startLogin, connectCustomServerPassword, testCustomServerConnection, loginModalMode } from "$lib/stores/sync";
     import { fade, scale, slide } from "svelte/transition";
+    import Icon from "$lib/components/Icon.svelte";
 
     let isLoading = false;
     let isTesting = false;
@@ -222,12 +223,7 @@
 
                         <div class="docker-info-box">
                             <div class="docker-info-header">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="docker-info-icon" width="16" height="16">
-                                    <path d="M22 12.5a8.25 8.25 0 0 1-16.5 0c0-2.5 1.5-4.5 4-5.5h2.5c2.5 1 4 3 4 5.5z" />
-                                    <path d="M12 2v5" />
-                                    <path d="M7.5 4.5l3.5 2.5" />
-                                    <path d="M16.5 4.5L13 7" />
-                                </svg>
+                                <Icon name="info" size={16} className="docker-info-icon" />
                                 <span>{$_('auth.selfHostingGuide')}</span>
                             </div>
                             <p class="docker-info-text">

@@ -14,6 +14,7 @@
         goToArtistDetail,
         goToDiscover,
     } from "$lib/stores/view";
+    import Icon from "$lib/components/Icon.svelte";
 
     type LoadState = "idle" | "loading" | "done" | "error" | "not-configured";
 
@@ -84,17 +85,7 @@
                 on:click={load}
                 aria-label="Refresh recommendations"
             >
-                <svg
-                    viewBox="0 0 24 24"
-                    width="18"
-                    height="18"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2.5"
-                >
-                    <polyline points="23 4 23 10 17 10"></polyline>
-                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
-                </svg>
+                <Icon name="refresh" size={18} />
                 {$_("recs.refresh")}
             </button>
         {/if}
@@ -110,17 +101,7 @@
             </div>
         {:else if state === "not-configured"}
             <div class="state-card" in:fade>
-                <svg
-                    viewBox="0 0 24 24"
-                    width="48"
-                    height="48"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                >
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <path d="M12 8v4m0 4h.01"></path>
-                </svg>
+                <Icon name="info" size={48} />
                 <h3>
                     {$_("recs.notConfiguredTitle")}
                 </h3>
@@ -133,18 +114,7 @@
             </div>
         {:else if state === "error"}
             <div class="state-card error" in:fade>
-                <svg
-                    viewBox="0 0 24 24"
-                    width="48"
-                    height="48"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                >
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <line x1="12" y1="8" x2="12" y2="12"></line>
-                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
-                </svg>
+                <Icon name="alert-circle" size={48} />
                 <h3>
                     {$_("recs.errorTitle")}
                 </h3>
@@ -155,20 +125,7 @@
             </div>
         {:else if state === "done" && recs.length === 0}
             <div class="state-card" in:fade>
-                <svg
-                    viewBox="0 0 24 24"
-                    width="56"
-                    height="56"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.3"
-                >
-                    <path d="M9 18V5l12-2v13"></path>
-                    <circle cx="6" cy="18" r="3"></circle>
-                    <circle cx="18" cy="16" r="3"></circle>
-                    <line x1="1" y1="1" x2="23" y2="23" stroke-width="1.5"
-                    ></line>
-                </svg>
+                <Icon name="music" size={56} />
                 <h3>
                     {$_("recs.emptyTitle")}
                 </h3>
@@ -201,31 +158,7 @@
                         on:keydown={(e) => e.key === "Enter" && handlePlay(rec)}
                     >
                         <div class="rec-cover">
-                            {#if rec.local_track_id !== null}
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="28"
-                                    height="28"
-                                >
-                                    <path
-                                        d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"
-                                    />
-                                </svg>
-                            {:else}
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="none"
-                                    stroke="currentColor"
-                                    stroke-width="1.5"
-                                    width="28"
-                                    height="28"
-                                >
-                                    <path
-                                        d="M12 3v10.55A4 4 0 1 0 14 17V7h4V3h-6z"
-                                    />
-                                </svg>
-                            {/if}
+                            <Icon name="music" size={28} />
                         </div>
 
                         <div class="rec-meta">
@@ -262,37 +195,14 @@
                                         handlePlay(rec)}
                                     aria-label="Play {rec.track_name}"
                                 >
-                                    <svg
-                                        viewBox="0 0 24 24"
-                                        fill="currentColor"
-                                        width="16"
-                                        height="16"
-                                    >
-                                        <polygon points="5 3 19 12 5 21 5 3"
-                                        ></polygon>
-                                    </svg>
+                                    <Icon name="play" size={16} />
                                 </button>
                             {:else}
                                 <span
                                     class="not-in-library"
                                     title={$_("recs.searchInDiscover")}
                                 >
-                                    <svg
-                                        viewBox="0 0 24 24"
-                                        fill="none"
-                                        stroke="currentColor"
-                                        stroke-width="2.5"
-                                        width="14"
-                                        height="14"
-                                    >
-                                        <circle cx="11" cy="11" r="8"></circle>
-                                        <line
-                                            x1="21"
-                                            y1="21"
-                                            x2="16.65"
-                                            y2="16.65"
-                                        ></line>
-                                    </svg>
+                                    <Icon name="search" size={14} />
                                 </span>
                             {/if}
                         </div>

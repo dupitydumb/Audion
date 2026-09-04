@@ -33,9 +33,9 @@
 
   let offlineCtx: OfflineAudioContext | null = null;
   let scratchFilter: BiquadFilterNode | null = null;
-  let freqArray: Float32Array<ArrayBuffer> | null = null;
-  let magOut: Float32Array<ArrayBuffer> | null = null;
-  let phaseOut: Float32Array<ArrayBuffer> | null = null;
+  let freqArray: Float32Array | null = null;
+  let magOut: Float32Array | null = null;
+  let phaseOut: Float32Array | null = null;
 
   let dragIndex: number | null = null;
   let dragMoved = false;

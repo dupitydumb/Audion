@@ -16,6 +16,7 @@
     getAlbum,
     getAlbumCoverSrc,
   } from "$lib/api/tauri";
+  import Icon from "$lib/components/Icon.svelte";
 
   let albumArt: string | null = null;
   let imageLoadFailed = false;
@@ -96,9 +97,7 @@
             />
           {:else}
             <div class="cover-placeholder">
-              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
-              </svg>
+              <Icon name="music" size={16} />
             </div>
           {/if}
         </div>
@@ -122,13 +121,9 @@
           aria-label={$isPlaying ? "Pause" : "Play"}
         >
           {#if $isPlaying}
-            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-              <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-            </svg>
+            <Icon name="pause" size={20} />
           {:else}
-            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-              <path d="M8 5v14l11-7z" />
-            </svg>
+            <Icon name="play" size={20} />
           {/if}
         </button>
 
@@ -137,9 +132,7 @@
           on:click={handleNext}
           aria-label="Next track"
         >
-          <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-            <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
-          </svg>
+          <Icon name="skip-forward" size={20} />
         </button>
       </div>
     </div>

@@ -40,6 +40,7 @@
     import Settings from "./Settings.svelte";
     import Recommendations from "./Recommendations.svelte";
     import MbDiscover from "./MbDiscover.svelte";
+    import Icon from "$lib/components/Icon.svelte";
 
     import { tick, onMount } from "svelte";
     import { fade, fly } from "svelte/transition";
@@ -611,18 +612,7 @@
             >
                 {#if $isDraggingLyrics}
                     <div class="drop-icon">
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                        >
-                            <path
-                                d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            />
-                        </svg>
+                        <Icon name="music" size={40} />
                     </div>
                     <div class="drop-text">
                         {$_("main.dropLyricsFile")}
@@ -630,18 +620,7 @@
                     <div class="drop-subtext">.lrc · .ttml · .srt</div>
                 {:else}
                     <div class="drop-icon">
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                        >
-                            <path
-                                d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            />
-                        </svg>
+                        <Icon name="upload" size={40} />
                     </div>
                     {#if dropTargetPlaylist}
                         <div class="drop-text">
@@ -666,16 +645,7 @@
     {#if dropError}
         <div class="drop-error" transition:fly={{ y: -20, duration: 300 }}>
             <div class="error-icon">
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                >
-                    <circle cx="12" cy="12" r="10" />
-                    <line x1="12" y1="8" x2="12" y2="12" />
-                    <line x1="12" y1="16" x2="12.01" y2="16" />
-                </svg>
+                <Icon name="alert-circle" size={24} />
             </div>
             <div class="error-message">{dropError}</div>
             <button
@@ -683,14 +653,7 @@
                 on:click={() => (dropError = "")}
                 aria-label="Close error"
             >
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                >
-                    <path d="M18 6L6 18M6 6l12 12" />
-                </svg>
+                <Icon name="x" size={18} />
             </button>
         </div>
     {/if}
@@ -699,17 +662,7 @@
     {#if $isMobile && isLibraryView}
         <div class="mobile-library-header">
             <div class="mobile-search-bar">
-                <svg
-                    class="search-icon"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="18"
-                    height="18"
-                >
-                    <path
-                        d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
-                    />
-                </svg>
+                <Icon name="search" size={18} className="search-icon" />
                 <input
                     type="text"
                     class="search-input"
@@ -727,16 +680,7 @@
                         on:click={closeMobileSearch}
                         aria-label="Clear search"
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="18"
-                            height="18"
-                        >
-                            <path
-                                d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                            />
-                        </svg>
+                        <Icon name="x" size={18} />
                     </button>
                 {/if}
             </div>
