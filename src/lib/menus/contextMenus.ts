@@ -83,6 +83,7 @@ function buildGoToArtistItem(
     if (names.length > 1) {
         return {
             label: t('contextMenu.goToArtist'),
+            icon: 'user',
             submenu: names.map((name) => ({
                 label: name,
                 action: () => goToArtistDetail(name),
@@ -92,6 +93,7 @@ function buildGoToArtistItem(
 
     return {
         label: t('contextMenu.goToArtist'),
+        icon: 'user',
         action: () => goToArtistDetail(names[0] || ''),
         disabled: names.length === 0,
     };
@@ -109,6 +111,7 @@ function buildPinItem(
     const pinned = isPinned(entityType, id, get(pinnedItems));
     return {
         label: pinned ? t('contextMenu.unpinFromTop') : t('contextMenu.pinToTop'),
+        icon: pinned ? 'x' : 'pin',
         action: () => {
             if (pinned) unpinItem(entityType, id);
             else pinItem(entityType, id);
@@ -130,9 +133,11 @@ function buildChangeArtworkItem(
 
     return {
         label: t('contextMenu.changeArtwork'),
+        icon: 'edit',
         submenu: [
             {
                 label: t('contextMenu.fromFile'),
+                icon: 'folder',
                 action: () => {
                     const input = document.createElement('input');
                     input.type = 'file';
@@ -149,6 +154,7 @@ function buildChangeArtworkItem(
             },
             {
                 label: t('contextMenu.fromUrl'),
+                icon: 'globe',
                 action: async () => {
                     const url = await prompt('Enter image URL:', {
                         title: 'Change Artwork',
@@ -174,9 +180,11 @@ function buildChangeCoverItem(
 ): ContextMenuItem {
     return {
         label: t('contextMenu.changeCover'),
+        icon: 'edit',
         submenu: [
             {
                 label: t('contextMenu.fromFile'),
+                icon: 'folder',
                 action: () => {
                     if (boundInput) {
                         // template owns the input; just trigger it
@@ -198,6 +206,7 @@ function buildChangeCoverItem(
             },
             {
                 label: t('contextMenu.fromUrl'),
+                icon: 'globe',
                 action: async () => {
                     const url = await prompt('Enter image URL:', {
                         title: 'Change Cover',
@@ -221,6 +230,7 @@ function buildAddToPlaylistItem(
 
     return {
         label: t('contextMenu.addToPlaylist'),
+        icon: 'list-music',
         submenu: items.length > 0
             ? items
             : [{ label: t('contextMenu.noPlaylists'), action: () => {}, disabled: true }],
@@ -245,6 +255,7 @@ function buildMoveToPlaylistItem(
 
     return {
         label: t('contextMenu.moveToPlaylist'),
+        icon: 'arrow-right',
         submenu: items.length > 0
             ? items
             : [{ label: t('contextMenu.noPlaylists'), action: () => {}, disabled: true }],
@@ -425,8 +436,8 @@ export function buildTrackContextMenu(opts: TrackMenuOptions): ContextMenuItem[]
     // like/unlike => same item everywhere, label/action flip on current state
     // read fresh at build time (isLiked wraps get() internally), not subscribed
     const likeItem: ContextMenuItem = isLiked(track.id)
-        ? { label: t('contextMenu.unlike'), action: () => toggleLike(track.id) }
-        : { label: t('contextMenu.like'), action: () => toggleLike(track.id) };
+        ? { label: t('contextMenu.unlike'), icon: 'heart-filled', action: () => toggleLike(track.id) }
+        : { label: t('contextMenu.like'), icon: 'heart', action: () => toggleLike(track.id) };
 
     // playlist-only (FullscreenPlayer mobile long-press) ===============================
     if (variant === 'playlist-only') {
@@ -436,9 +447,10 @@ export function buildTrackContextMenu(opts: TrackMenuOptions): ContextMenuItem[]
     // home (DesktopHome cards)===========================================================
     if (variant === 'home') {
         return [
-            { label: t('contextMenu.play'), action: doPlay, disabled: isUnavailable },
+            { label: t('contextMenu.play'), icon: 'play', action: doPlay, disabled: isUnavailable },
             {
                 label: t('contextMenu.addToQueue'),
+                icon: 'queue',
                 disabled: isUnavailable,
                 action: () => {
                     addToQueue([track]);
@@ -450,6 +462,7 @@ export function buildTrackContextMenu(opts: TrackMenuOptions): ContextMenuItem[]
             buildGoToArtistItem(t, track.artist, track.artists),
             {
                 label: t('contextMenu.goToAlbum'),
+                icon: 'disc',
                 action: () => { if (track.album_id) goToAlbumDetail(track.album_id); },
                 disabled: !track.album_id,
             },
@@ -464,6 +477,7 @@ export function buildTrackContextMenu(opts: TrackMenuOptions): ContextMenuItem[]
         return [
             {
                 label: t('contextMenu.addToQueue'),
+                icon: 'queue',
                 action: () => {
                     addToQueue([track]);
                     addToast(t('contextMenu.addedToQueue'), 'success');
@@ -475,6 +489,7 @@ export function buildTrackContextMenu(opts: TrackMenuOptions): ContextMenuItem[]
             SEP,
             {
                 label: t('contextMenu.deleteFromLibrary'),
+                icon: 'trash',
                 danger: true,
                 disabled: !isDeletable,
                 action: async () => {
@@ -500,10 +515,11 @@ export function buildTrackContextMenu(opts: TrackMenuOptions): ContextMenuItem[]
     //
 
     const items: ContextMenuItem[] = [
-        { label: t('contextMenu.play'), action: doPlay, disabled: isUnavailable },
+        { label: t('contextMenu.play'), icon: 'play', action: doPlay, disabled: isUnavailable },
         SEP,
         {
             label: t('contextMenu.addToQueue'),
+            icon: 'queue',
             disabled: isUnavailable,
             action: () => {
                 addToQueue([track]);
@@ -514,6 +530,7 @@ export function buildTrackContextMenu(opts: TrackMenuOptions): ContextMenuItem[]
         SEP,
         {
             label: t('contextMenu.download'),
+            icon: 'download',
             disabled: !canDownload(track) || (isUnavailable && !isTidalAvailable && !track.local_src),
             action: async () => {
                 if (needsDownloadLocation()) {
@@ -540,12 +557,14 @@ export function buildTrackContextMenu(opts: TrackMenuOptions): ContextMenuItem[]
         buildGoToArtistItem(t, track.artist, track.artists),
         {
             label: t('contextMenu.goToAlbum'),
+            icon: 'disc',
             action: () => { if (track.album_id) goToAlbumDetail(track.album_id); },
             disabled: !track.album_id,
         },
         SEP,
         {
             label: t('contextMenu.showMoreInfo'),
+            icon: 'info',
             action: () => opts.onMetadataOpen?.(track),
         },
     ];
@@ -570,6 +589,7 @@ export function buildTrackContextMenu(opts: TrackMenuOptions): ContextMenuItem[]
             }),
             {
                 label: t('contextMenu.removeFromPlaylist'),
+                icon: 'minus',
                 action: async () => {
                     try {
                         await removeTrackFromPlaylist(playlistId, track.id);
@@ -587,6 +607,7 @@ export function buildTrackContextMenu(opts: TrackMenuOptions): ContextMenuItem[]
         SEP,
         {
             label: t('contextMenu.deleteFromLibrary'),
+            icon: 'trash',
             danger: true,
             disabled: !isDeletable,
             action: async () => {
@@ -624,11 +645,12 @@ export function buildAlbumContextMenu(opts: AlbumMenuOptions): ContextMenuItem[]
 
     return [
         ...(showPlay ? [
-            { label: t('contextMenu.play'), action: () => opts.onPlay?.(album) },
+            { label: t('contextMenu.play'), icon: 'play', action: () => opts.onPlay?.(album) },
         ] : []),
         ...(showAddToQueue ? [
             {
                 label: t('contextMenu.addToQueue'),
+                icon: 'queue',
                 action: async () => {
                     try {
                         const tracks = await getTracksByAlbum(album.id);
@@ -651,6 +673,7 @@ export function buildAlbumContextMenu(opts: AlbumMenuOptions): ContextMenuItem[]
             SEP,
             {
                 label: t('contextMenu.goToArtist'),
+                icon: 'user',
                 action: () => goToArtistDetail(album.artist || ''),
                 disabled: !album.artist,
             },
@@ -659,6 +682,7 @@ export function buildAlbumContextMenu(opts: AlbumMenuOptions): ContextMenuItem[]
             SEP,
             {
                 label: t('contextMenu.deleteAlbum'),
+                icon: 'trash',
                 danger: true,
                 action: async () => {
                     const ok = await confirm(
@@ -710,7 +734,7 @@ export function buildArtistContextMenu<A extends Artist | { name: string } = Art
 
     return [
         ...(showPlay ? [
-            { label: t('contextMenu.play'), action: () => opts.onPlay?.(artist) },
+            { label: t('contextMenu.play'), icon: 'play', action: () => opts.onPlay?.(artist) },
             SEP,
         ] : []),
         buildPinItem(t, 'artist', artist.name),
@@ -763,12 +787,13 @@ export function buildPlaylistContextMenu(opts: PlaylistMenuOptions): ContextMenu
         };
 
     return [
-        { label: t('contextMenu.play'), action: onPlay, disabled: isEmpty },
-        { label: t('contextMenu.addToQueue'), action: onAddToQueue, disabled: isEmpty },
+        { label: t('contextMenu.play'), icon: 'play', action: onPlay, disabled: isEmpty },
+        { label: t('contextMenu.addToQueue'), icon: 'queue', action: onAddToQueue, disabled: isEmpty },
         SEP,
         ...(onExportZip ? [
             {
                 label: t('contextMenu.exportToZip'),
+                icon: 'download',
                 disabled: isEmpty,
                 action: onExportZip,
             },
@@ -776,11 +801,12 @@ export function buildPlaylistContextMenu(opts: PlaylistMenuOptions): ContextMenu
         ] : []),
         buildPinItem(t, 'playlist', playlist.id),
         SEP,
-        renameItem,
+        { ...renameItem, icon: 'edit' },
         buildChangeCoverItem(t, playlist.id, coverInput),
         SEP,
         {
             label: t('contextMenu.deletePlaylist'),
+            icon: 'trash',
             danger: true,
             action: onDelete,
         },
@@ -793,17 +819,19 @@ export function buildLikedSongsContextMenu(opts: LikedSongsMenuOptions): Context
     const isEmpty = tracks.length === 0;
 
     return [
-        { label: t('contextMenu.play'), action: onPlay, disabled: isEmpty },
-        { label: t('contextMenu.addToQueue'), action: onAddToQueue, disabled: isEmpty },
+        { label: t('contextMenu.play'), icon: 'play', action: onPlay, disabled: isEmpty },
+        { label: t('contextMenu.addToQueue'), icon: 'queue', action: onAddToQueue, disabled: isEmpty },
         SEP,
         {
             label: t('contextMenu.exportToZip'),
+            icon: 'download',
             disabled: isEmpty,
             action: () => opts.onExportZip?.(),
         },
         SEP,
         {
             label: t('contextMenu.unlikeAll'),
+            icon: 'trash',
             danger: true,
             disabled: isEmpty,
             action: async () => {

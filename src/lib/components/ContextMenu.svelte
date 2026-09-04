@@ -106,7 +106,8 @@
                     role="menuitem"
                     tabindex="0"
                 >
-                    <span>{item.label}</span>
+                    <span class="menu-item-icon"></span>
+                    <span class="menu-item-label">{item.label}</span>
                     <Icon name="chevron-right" size={14} />
                     {#if activeSubmenu === item.label}
                         <div
@@ -142,7 +143,12 @@
                         item.action &&
                         handleItemClick(item.action)}
                 >
-                    {item.label}
+                    <span class="menu-item-icon">
+                        {#if item.icon}
+                            <Icon name={item.icon} size={14} />
+                        {/if}
+                    </span>
+                    <span class="menu-item-label">{item.label}</span>
                 </button>
             {/if}
         {/each}
@@ -170,6 +176,23 @@
         color: var(--text-primary);
         border-radius: var(--radius-sm);
         transition: background-color var(--transition-fast);
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        width: 100%;
+    }
+
+    .menu-item-icon {
+        width: 14px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-subdued);
+    }
+
+    .menu-item-label {
+        flex: 1;
     }
 
     .menu-item:hover {
@@ -210,6 +233,8 @@
         color: var(--text-primary);
         border-radius: var(--radius-sm);
         transition: background-color var(--transition-fast);
+        gap: var(--spacing-sm);
+        width: 100%;
     }
 
     .menu-item.has-submenu:hover,
@@ -279,7 +304,12 @@
         min-height: 48px;
         display: flex;
         align-items: center;
+        gap: var(--spacing-md);
         border-radius: var(--radius-md);
+    }
+
+    :global(html.layout-mobile) .menu-item-icon {
+        width: 18px;
     }
 
     :global(html.layout-mobile) .submenu {
