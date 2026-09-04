@@ -31,6 +31,7 @@
         albums as libraryAlbums,
     } from "$lib/stores/library";
     import MediaCard from "./MediaCard.svelte";
+    import Icon from "$lib/components/Icon.svelte";
 
     type Tab = "artists" | "releases";
     type SearchState = "idle" | "loading" | "done" | "error";
@@ -370,17 +371,7 @@
     <header class="discover-header">
         <div class="header-row">
             <div class="header-title-group">
-                <svg
-                    class="header-icon"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="28"
-                    height="28"
-                >
-                    <path
-                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"
-                    />
-                </svg>
+                <Icon name="globe" size={28} className="header-icon" />
                 <div>
                     <h1>{$_("sidebar.discover")}</h1>
                     <p class="header-subtitle">
@@ -392,18 +383,7 @@
 
         <!-- Search bar -->
         <div class="search-bar">
-            <svg
-                class="search-icon"
-                viewBox="0 0 24 24"
-                width="20"
-                height="20"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-            >
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
+            <Icon name="search" size={20} className="search-icon" />
             <input
                 type="text"
                 class="search-input"
@@ -425,16 +405,7 @@
                         detailArtist = null;
                     }}
                 >
-                    <svg
-                        viewBox="0 0 24 24"
-                        width="18"
-                        height="18"
-                        fill="currentColor"
-                    >
-                        <path
-                            d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                        />
-                    </svg>
+                    <Icon name="x" size={18} />
                 </button>
             {/if}
         </div>
@@ -446,16 +417,7 @@
                 class:active={activeTab === "artists"}
                 on:click={() => switchTab("artists")}
             >
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="16"
-                    height="16"
-                >
-                    <path
-                        d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
-                    />
-                </svg>
+                <Icon name="users" size={16} />
                 {$_("discover.tabArtists")}
             </button>
             <button
@@ -463,16 +425,7 @@
                 class:active={activeTab === "releases"}
                 on:click={() => switchTab("releases")}
             >
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="16"
-                    height="16"
-                >
-                    <path
-                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
-                    />
-                </svg>
+                <Icon name="disc" size={16} />
                 {$_("discover.tabReleases")}
             </button>
         </div>
@@ -482,17 +435,7 @@
     <div class="discover-content">
         {#if searchState === "idle"}
             <div class="empty-state" in:fade={{ duration: 200 }}>
-                <svg
-                    viewBox="0 0 24 24"
-                    width="64"
-                    height="64"
-                    fill="currentColor"
-                    opacity="0.15"
-                >
-                    <path
-                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"
-                    />
-                </svg>
+                <Icon name="globe" size={64} />
                 <p>
                     {$_("discover.emptyTitle")}
                 </p>
@@ -509,17 +452,7 @@
             </div>
         {:else if searchState === "error"}
             <div class="error-state" in:fade={{ duration: 200 }}>
-                <svg
-                    viewBox="0 0 24 24"
-                    width="48"
-                    height="48"
-                    fill="currentColor"
-                    opacity="0.4"
-                >
-                    <path
-                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
-                    />
-                </svg>
+                <Icon name="alert-circle" size={48} />
                 <p>
                     {$_("discover.searchFailedTitle")}
                 </p>
@@ -636,17 +569,7 @@
                                                 );
                                             }}
                                         />
-                                        <svg
-                                            class="hidden"
-                                            viewBox="0 0 24 24"
-                                            fill="currentColor"
-                                            width="32"
-                                            height="32"
-                                        >
-                                            <path
-                                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
-                                            />
-                                        </svg>
+                                        <Icon name="disc" size={32} className="hidden" />
                                     </div>
                                     <div slot="extra-info" class="card-meta">
                                         {#if release.release_type}
@@ -688,16 +611,7 @@
                         aria-label="Close detail panel"
                         on:click={closeDetail}
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="24"
-                            height="24"
-                        >
-                            <path
-                                d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"
-                            />
-                        </svg>
+                        <Icon name="arrow-left" size={24} />
                     </button>
                     <div class="detail-title-block">
                         <h2>{detailArtist.name}</h2>
@@ -820,16 +734,7 @@
                                                             class="spinner-tiny"
                                                         ></div>
                                                     {:else}
-                                                        <svg
-                                                            viewBox="0 0 24 24"
-                                                            width="16"
-                                                            height="16"
-                                                            fill="currentColor"
-                                                        >
-                                                            <path
-                                                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z"
-                                                            />
-                                                        </svg>
+                                                        <Icon name="play" size={16} />
                                                     {/if}
                                                     {$_("discover.play")}
                                                 </button>
@@ -918,75 +823,19 @@
                                                     class="hidden icon-fallback"
                                                 >
                                                     {#if item.release_type.toLowerCase() === "album"}
-                                                        <svg
-                                                            viewBox="0 0 24 24"
-                                                            fill="currentColor"
-                                                            width="18"
-                                                            height="18"
-                                                            ><path
-                                                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
-                                                            /></svg
-                                                        >
+                                                        <Icon name="disc" size={18} />
                                                     {:else if item.release_type.toLowerCase() === "single"}
-                                                        <svg
-                                                            viewBox="0 0 24 24"
-                                                            fill="currentColor"
-                                                            width="18"
-                                                            height="18"
-                                                            ><path
-                                                                d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                                                            /></svg
-                                                        >
+                                                        <Icon name="music" size={18} />
                                                     {:else if item.release_type.toLowerCase() === "ep"}
-                                                        <svg
-                                                            viewBox="0 0 24 24"
-                                                            fill="currentColor"
-                                                            width="18"
-                                                            height="18"
-                                                            ><path
-                                                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"
-                                                            /></svg
-                                                        >
+                                                        <Icon name="disc" size={18} />
                                                     {:else if item.release_type.toLowerCase() === "live"}
-                                                        <svg
-                                                            viewBox="0 0 24 24"
-                                                            fill="currentColor"
-                                                            width="18"
-                                                            height="18"
-                                                            ><path
-                                                                d="M12 3v9.28c-.47-.17-.97-.28-1.5-.28C8.01 12 6 14.01 6 16.5S8.01 21 10.5 21c2.31 0 4.2-1.75 4.45-4H15V6h4V3h-7z"
-                                                            /></svg
-                                                        >
+                                                        <Icon name="mic-2" size={18} />
                                                     {:else if item.release_type.toLowerCase() === "compilation"}
-                                                        <svg
-                                                            viewBox="0 0 24 24"
-                                                            fill="currentColor"
-                                                            width="18"
-                                                            height="18"
-                                                            ><path
-                                                                d="M4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6zm16-4H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-1 9h-4v4h-2v-4H9V9h4V5h2v4h4v2z"
-                                                            /></svg
-                                                        >
+                                                        <Icon name="library" size={18} />
                                                     {:else if item.release_type.toLowerCase() === "soundtrack"}
-                                                        <svg
-                                                            viewBox="0 0 24 24"
-                                                            fill="currentColor"
-                                                            width="18"
-                                                            height="18"
-                                                            ><path
-                                                                d="M18 4l2 4h-3l-2-4h-2l2 4h-3l-2-4H8l2 4H7L5 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V4h-4z"
-                                                            /></svg
-                                                        >
+                                                        <Icon name="disc-3" size={18} />
                                                     {:else}
-                                                        <svg
-                                                            viewBox="0 0 24 24"
-                                                            fill="currentColor"
-                                                            width="18"
-                                                            height="18"
-                                                            ><path
-                                                                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
-                                                            /></svg
-                                                        >
+                                                        <Icon name="disc" size={18} />
                                                     {/if}
                                                 </div>
                                             </div>
@@ -1024,16 +873,7 @@
                         aria-label="Close detail panel"
                         on:click={closeDetail}
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="24"
-                            height="24"
-                        >
-                            <path
-                                d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"
-                            />
-                        </svg>
+                        <Icon name="arrow-left" size={24} />
                     </button>
                     <div class="detail-title-block">
                         <h2>{detailRelease.title}</h2>
@@ -1080,16 +920,7 @@
                                 }}
                             />
                             <div class="hidden icon-fallback">
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="48"
-                                    height="48"
-                                >
-                                    <path
-                                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
-                                    />
-                                </svg>
+                                <Icon name="disc" size={48} />
                             </div>
                         </div>
                         <div class="release-detail-info-block">
@@ -1156,16 +987,7 @@
                                                         class="spinner-xs"
                                                     ></div>
                                                 {:else}
-                                                    <svg
-                                                        viewBox="0 0 24 24"
-                                                        fill="currentColor"
-                                                        width="18"
-                                                        height="18"
-                                                    >
-                                                        <path
-                                                            d="M8 5v14l11-7z"
-                                                        />
-                                                    </svg>
+                                                    <Icon name="play" size={18} />
                                                 {/if}
                                             </button>
                                         </div>

@@ -22,6 +22,7 @@
     import ArtistLinks from "$lib/components/ArtistLinks.svelte";
     import { goToArtistDetail } from "$lib/stores/view";
     import { onMount, onDestroy } from "svelte";
+    import Icon from "$lib/components/Icon.svelte";
     
     export let hideheader: boolean = false;
     export let forceVisible: boolean = false;
@@ -352,16 +353,7 @@
                     title={$_('player.closeQueue')}
                     aria-label="Close queue"
                 >
-                    <svg
-                        viewBox="0 0 24 24"
-                        width="20"
-                        height="20"
-                        fill="currentColor"
-                    >
-                        <path
-                            d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                        />
-                    </svg>
+                    <Icon name="x" size={20} />
                 </button>
             </div>
         </header>
@@ -386,16 +378,7 @@
                                     />
                                 {:else}
                                     <div class="art-placeholder">
-                                        <svg
-                                            viewBox="0 0 24 24"
-                                            fill="currentColor"
-                                            width="16"
-                                            height="16"
-                                        >
-                                            <path
-                                                d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                                            />
-                                        </svg>
+                                        <Icon name="music" size={16} />
                                     </div>
                                 {/if}
                                 {#if $isPlaying}
@@ -469,16 +452,7 @@
                                             role="button"
                                             tabindex="-1"
                                         >
-                                            <svg
-                                                viewBox="0 0 24 24"
-                                                fill="currentColor"
-                                                width="16"
-                                                height="16"
-                                            >
-                                                <path
-                                                    d="M3 15h18v-2H3v2zm0 4h18v-2H3v2zm0-8h18V9H3v2zm0-6v2h18V5H3z"
-                                                />
-                                            </svg>
+                                            <Icon name="drag-handle" size={16} />
                                         </div>
                                         <button
                                             class="track-btn"
@@ -494,16 +468,7 @@
                                                     />
                                                 {:else}
                                                     <div class="art-placeholder">
-                                                        <svg
-                                                            viewBox="0 0 24 24"
-                                                            fill="currentColor"
-                                                            width="16"
-                                                            height="16"
-                                                        >
-                                                            <path
-                                                                d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                                                            />
-                                                        </svg>
+                                                        <Icon name="music" size={16} />
                                                     </div>
                                                 {/if}
                                             </div>
@@ -532,16 +497,7 @@
                                             on:click={() => handleRemove(item.index)}
                                             title={$_('player.removeFromQueueTooltip')}
                                         >
-                                            <svg
-                                                viewBox="0 0 24 24"
-                                                fill="currentColor"
-                                                width="16"
-                                                height="16"
-                                            >
-                                                <path
-                                                    d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                                                />
-                                            </svg>
+                                            <Icon name="x" size={16} />
                                         </button>
                                     </div>
                                 {/each}
@@ -589,16 +545,7 @@
                                                     />
                                                 {:else}
                                                     <div class="art-placeholder">
-                                                        <svg
-                                                            viewBox="0 0 24 24"
-                                                            fill="currentColor"
-                                                            width="16"
-                                                            height="16"
-                                                        >
-                                                            <path
-                                                                d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                                                            />
-                                                        </svg>
+                                                        <Icon name="music" size={16} />
                                                     </div>
                                                 {/if}
                                             </div>
@@ -632,16 +579,7 @@
 
             {#if $queue.length === 0}
                 <div class="empty-state">
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="48"
-                        height="48"
-                    >
-                        <path
-                            d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"
-                        />
-                    </svg>
+                    <Icon name="list-music" size={48} />
                     <p>{$_('player.queueEmpty')}</p>
                     <span>{$_('player.queueEmptyHint')}</span>
                 </div>

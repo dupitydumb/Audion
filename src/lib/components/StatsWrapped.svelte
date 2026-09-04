@@ -18,6 +18,7 @@
         saveImageToGallery,
         type Track,
     } from "$lib/api/tauri";
+    import Icon from "$lib/components/Icon.svelte";
 
     export let show = false;
     export let onClose: () => void = () => {};
@@ -489,15 +490,7 @@
                     {/each}
                 </div>
                 <button class="close-btn" on:click={onClose} aria-label="Close">
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2.5"
-                    >
-                        <line x1="18" y1="6" x2="6" y2="18"></line>
-                        <line x1="6" y1="6" x2="18" y2="18"></line>
-                    </svg>
+                    <Icon name="x" size={24} strokeWidth={2.5} />
                 </button>
             </header>
 
@@ -778,34 +771,14 @@
                     on:click={prevSlide}
                     aria-label="Previous"
                 >
-                    <svg
-                        viewBox="0 0 24 24"
-                        width="28"
-                        height="28"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="3"
-                    >
-                        <polyline points="15 18 9 12 15 6"></polyline>
-                    </svg>
+                    <Icon name="chevron-left" size={28} strokeWidth={3} />
                 </button>
                 <button
                     class="share-btn"
                     on:click={exportToImage}
                     disabled={isExporting}
                 >
-                    <svg
-                        viewBox="0 0 24 24"
-                        width="20"
-                        height="20"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2.5"
-                    >
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                        <polyline points="7 10 12 15 17 10" />
-                        <line x1="12" y1="15" x2="12" y2="3" />
-                    </svg>
+                    <Icon name="download" size={20} strokeWidth={2.5} />
                     <span>{isExporting ? $_('recap.saving') : $_('recap.downloadImage')}</span>
                 </button>
                 <button
@@ -814,16 +787,7 @@
                     on:click={nextSlide}
                     aria-label="Next"
                 >
-                    <svg
-                        viewBox="0 0 24 24"
-                        width="28"
-                        height="28"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="3"
-                    >
-                        <polyline points="9 18 15 12 9 6"></polyline>
-                    </svg>
+                    <Icon name="chevron-right" size={28} strokeWidth={3} />
                 </button>
             </footer>
         </div>

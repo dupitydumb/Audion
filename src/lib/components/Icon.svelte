@@ -44,6 +44,7 @@
     ChevronRight,
     GripVertical,
     Download,
+    Upload,
     Maximize2,
     Minimize2,
     Sparkles,
@@ -76,10 +77,22 @@
     Clock,
     Share2,
     FileText,
-    Monitor
+    Monitor,
+    BarChart2,
+    Star,
+    ArrowLeft,
+    ArrowRight,
+    ArrowUp,
+    ArrowDown,
+    Tag
   } from 'lucide-svelte';
 
   export let name:
+    | 'tag'
+    | 'arrow-left'
+    | 'arrow-right'
+    | 'arrow-up'
+    | 'arrow-down'
     | 'play'
     | 'pause'
     | 'skip-back'
@@ -135,6 +148,7 @@
     | 'drag-handle'
     | 'downloaded'
     | 'download'
+    | 'upload'
     | 'fullscreen'
     | 'maximize'
     | 'minimize'
@@ -243,6 +257,7 @@
     'drag-handle': GripVertical,
     downloaded: Download,
     download: Download,
+    upload: Upload,
     fullscreen: Maximize2,
     maximize: Maximize2,
     minimize: Minimize2,
@@ -277,7 +292,15 @@
     clock: Clock,
     share: Share2,
     'file-text': FileText,
-    monitor: Monitor
+    monitor: Monitor,
+    'bar-chart': BarChart2,
+    'bar-chart-2': BarChart2,
+    star: Star,
+    'arrow-left': ArrowLeft,
+    'arrow-right': ArrowRight,
+    'arrow-up': ArrowUp,
+    'arrow-down': ArrowDown,
+    tag: Tag
   };
 
   $: component = iconMap[name] || HelpCircle;

@@ -1,5 +1,6 @@
 <script lang="ts" generics="T">
     import { onMount, onDestroy } from 'svelte';
+    import Icon from '$lib/components/Icon.svelte';
 
     // Generic type T
     type Item = T;
@@ -267,7 +268,11 @@
     </div>
 {:else if emptyStateConfig}
     <div class="empty-state">
-        {@html emptyStateConfig.icon}
+        {#if emptyStateConfig.icon && emptyStateConfig.icon.includes('<svg')}
+            {@html emptyStateConfig.icon}
+        {:else if emptyStateConfig.icon}
+            <Icon name={emptyStateConfig.icon} size={48} />
+        {/if}
         <h3>{emptyStateConfig.title}</h3>
         <p>{emptyStateConfig.description}</p>
     </div>

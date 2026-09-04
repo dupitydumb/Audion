@@ -15,6 +15,7 @@
     type FilterType,
   } from '$lib/stores/equalizer';
   import EqResponseCurve from './EqResponseCurve.svelte';
+  import Icon from '$lib/components/Icon.svelte';
 
   $: allPresets = [...BUILTIN_PRESETS, ...$customEqPresets];
 
@@ -75,9 +76,7 @@
 <div class="eq-editor">
   <div class="eq-editor-topbar">
     <button class="eq-back-btn" on:click={() => dispatch('back')} aria-label="Back to Audio settings">
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path d="M10 3L5 8L10 13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
+      <Icon name="chevron-left" size={16} />
     </button>
   </div>
 

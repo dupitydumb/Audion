@@ -8,6 +8,7 @@
     import { goToArtistDetail, goToAlbumDetail } from "$lib/stores/view";
     import ArtistLinks from "$lib/components/ArtistLinks.svelte";
     import MarqueeText from "$lib/components/MarqueeText.svelte";
+    import Icon from "$lib/components/Icon.svelte";
     import { _ } from "svelte-i18n";
 
     export let topAlbums: AlbumWithCount[];
@@ -100,9 +101,7 @@
                         <img src={getAlbumCoverFromTracks(album.id)} alt={album.name} loading="lazy" decoding="async" />
                     {:else}
                         <div class="top-track-art-placeholder">
-                            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" aria-hidden="true">
-                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z" />
-                            </svg>
+                            <Icon name="disc" size={16} />
                         </div>
                     {/if}
                 </div>

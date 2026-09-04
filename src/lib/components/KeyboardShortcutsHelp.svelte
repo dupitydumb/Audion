@@ -15,6 +15,7 @@
         type ShortcutBinding,
         type ShortcutDefinition,
     } from "$lib/stores/shortcuts";
+    import Icon from "$lib/components/Icon.svelte";
 
     let editMode = false;
 
@@ -283,17 +284,12 @@
                         {#if editMode}
                             {$_('shortcuts.doneEditing')}
                         {:else}
-                            <!-- pencil icon -->
-                            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-                                <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>
-                            </svg>
+                            <Icon name="edit" size={18} />
                             {$_('shortcuts.editMode')}
                         {/if}
                     </button>
                     <button class="close-btn" on:click={handleClose} title={$_('shortcuts.closeWithEsc')}>
-                        <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-                            <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-                        </svg>
+                        <Icon name="x" size={24} />
                     </button>
                 </div>
             </header>
@@ -343,10 +339,7 @@
                                                     }
                                                     disabled={isUnbound(binding)}
                                                 >
-                                                    <!-- globe icon -->
-                                                    <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
-                                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
-                                                    </svg>
+                                                    <Icon name="globe" size={14} />
                                                 </button>
 
                                                 <!-- reset this action -->
@@ -355,9 +348,7 @@
                                                     on:click={() => handleResetAction(binding.action)}
                                                     title={$_('shortcuts.resetToDefaultTitle')}
                                                 >
-                                                    <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
-                                                        <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
-                                                    </svg>
+                                                    <Icon name="sync" size={14} />
                                                 </button>
                                             </div>
                                         {:else}

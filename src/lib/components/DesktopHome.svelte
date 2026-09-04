@@ -43,6 +43,7 @@
     import TopTracks from "./desktophome/TopTracks.svelte";
     import TopAlbums from "./desktophome/TopAlbums.svelte";
     import ChartsSection from "./desktophome/ChartsSection.svelte";
+    import Icon from "$lib/components/Icon.svelte";
 
     let homeEl: HTMLDivElement;
     let scrollRestored = false;
@@ -274,21 +275,7 @@
                 on:click={() => isStatsWrappedOpen.set(true)}
                 aria-label={$_('home.recap', { values: { month: currentMonthName } })}
             >
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    width="18"
-                    height="18"
-                    aria-hidden="true"
-                >
-                    <path
-                        d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
-                    ></path>
-                </svg>
+                <Icon name="star" size={18} />
                 <span>{$_('home.recap', { values: { month: currentMonthName } })}</span>
             </button>
             <button
@@ -296,20 +283,7 @@
                 on:click={() => showCustomizeMenu = !showCustomizeMenu}
                 aria-label="Customize Home Layout"
             >
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    width="18"
-                    height="18"
-                    aria-hidden="true"
-                >
-                    <circle cx="12" cy="12" r="3"></circle>
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                </svg>
+                <Icon name="sliders" size={18} />
                 <span>{$_('home.customize')}</span>
             </button>
         </div>
@@ -380,9 +354,7 @@
                                                     />
                                                 {:else}
                                                     <div class="cover-placeholder">
-                                                        <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-                                                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z" />
-                                                        </svg>
+                                                        <Icon name="disc" size={24} />
                                                     </div>
                                                 {/if}
                                             {:else}
@@ -465,17 +437,7 @@
                                                 />
                                             {:else}
                                                 <div class="cover-placeholder">
-                                                    <svg
-                                                        viewBox="0 0 24 24"
-                                                        fill="currentColor"
-                                                        width="24"
-                                                        height="24"
-                                                        aria-hidden="true"
-                                                    >
-                                                        <path
-                                                            d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                                                        />
-                                                    </svg>
+                                                    <Icon name="music" size={24} />
                                                 </div>
                                             {/if}
                                         </svelte:fragment>
@@ -528,17 +490,7 @@
                                                 />
                                             {:else}
                                                 <div class="cover-placeholder">
-                                                    <svg
-                                                        viewBox="0 0 24 24"
-                                                        fill="currentColor"
-                                                        width="24"
-                                                        height="24"
-                                                        aria-hidden="true"
-                                                    >
-                                                        <path
-                                                            d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                                                        />
-                                                    </svg>
+                                                    <Icon name="music" size={24} />
                                                 </div>
                                             {/if}
                                         </svelte:fragment>
@@ -592,9 +544,7 @@
                                                 />
                                             {:else}
                                                 <div class="cover-placeholder">
-                                                    <svg viewBox="0 0 24 24" fill="currentColor" width="24" height="24">
-                                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z" />
-                                                    </svg>
+                                                    <Icon name="disc" size={24} />
                                                 </div>
                                             {/if}
                                         </svelte:fragment>

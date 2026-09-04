@@ -3,6 +3,7 @@
     import { fade, fly } from "svelte/transition";
     import { isMobile } from "$lib/stores/mobile";
     import { _ } from "svelte-i18n";
+    import Icon from "$lib/components/Icon.svelte";
 
     $: visible = $isSyncing && $syncProgress.phase !== "";
     $: progressPercent =
@@ -36,10 +37,7 @@
         <div class="sync-card">
             <div class="sync-main">
                 <div class="loader">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <circle cx="12" cy="12" r="10" stroke-opacity="0.2" stroke-width="3" />
-                        <path d="M12 2a10 10 0 0 1 10 10" stroke-width="3" stroke-linecap="round" />
-                    </svg>
+                    <Icon name="loader" size={24} />
                 </div>
                 
                 <div class="content">

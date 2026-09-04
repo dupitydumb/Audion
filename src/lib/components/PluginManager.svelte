@@ -18,6 +18,7 @@
   import { invoke, convertFileSrc } from "@tauri-apps/api/core";
   import { onDestroy } from "svelte";
   import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
+  import Icon from "$lib/components/Icon.svelte";
 
   let pluginContentEl: HTMLDivElement;
   let scrollRestored = false;
@@ -289,17 +290,7 @@
         on:click={openPluginsFolder}
         title={$_('pluginManager.openFolderTitle')}
       >
-        <svg
-          viewBox="0 0 24 24"
-          fill="currentColor"
-          width="16"
-          height="16"
-          style="display: inline-block; margin-right: 4px;"
-        >
-          <path
-            d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10z"
-          />
-        </svg>
+        <Icon name="folder" size={16} />
         {$_('pluginManager.openFolder')}
       </button>
 
@@ -310,36 +301,10 @@
         title="Force update from GitHub registry"
       >
         {#if $pluginStore.loading}
-          <svg
-            class="animate-spin"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            width="16"
-            height="16"
-            style="display: inline-block; margin-right: 4px;"
-          >
-            <circle cx="12" cy="12" r="10" stroke-width="4" opacity="0.25" />
-            <path
-              d="M12 2a10 10 0 0 1 10 10"
-              stroke-width="4"
-              stroke-linecap="round"
-            />
-          </svg>
+          <Icon name="loader" size={16} />
           {$_('pluginManager.refreshing')}
         {:else}
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            width="16"
-            height="16"
-            style="display: inline-block; margin-right: 4px;"
-          >
-            <path
-              d="M21 12a9 9 0 0 1-9 9m9-9a9 9 0 0 0-9-9m9 9H3m9 9a9 9 0 0 1-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 0 1 9-9"
-            />
-          </svg>
+          <Icon name="globe" size={16} />
           {$_('pluginManager.fetchPlugins')}
         {/if}
       </button>
@@ -355,9 +320,7 @@
             <option value="updated">{$_('pluginManager.sortUpdated')}</option>
             <option value="name">{$_('pluginManager.sortName')}</option>
           </select>
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="select-icon">
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
+          <Icon name="chevron-down" size={14} className="select-icon" />
         </div>
       {/if}
     </div>
@@ -436,21 +399,7 @@
   >
     {#if $pluginStore.loading}
       <div class="empty-state">
-        <svg
-          class="animate-spin"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          width="48"
-          height="48"
-        >
-          <circle cx="12" cy="12" r="10" stroke-width="2" opacity="0.25" />
-          <path
-            d="M12 2a10 10 0 0 1 10 10"
-            stroke-width="2"
-            stroke-linecap="round"
-          />
-        </svg>
+        <Icon name="loader" size={48} />
         <h3>{$_('pluginManager.loading')}</h3>
       </div>
     {:else if activeTab === "curated"}
@@ -465,17 +414,7 @@
                   on:error={(e) => ((e.currentTarget as HTMLElement).style.display = "none")}
                 />
               {/if}
-              <svg
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                width="32"
-                height="32"
-                class="fallback-icon"
-              >
-                <path
-                  d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"
-                />
-              </svg>
+              <Icon name="plugin" size={32} className="fallback-icon" />
             </div>
             <div class="plugin-info">
               <span class="plugin-name truncate">{plugin.manifest.name}</span>
@@ -496,17 +435,11 @@
               </div>
               <div class="plugin-stats">
                 <div class="stat-item" title="Stars">
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-                    <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
-                  </svg>
+                  <Icon name="star" size={14} />
                   <span>{plugin.stars || 0}</span>
                 </div>
                 <div class="stat-item" title="Downloads">
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" y1="15" x2="12" y2="3" />
-                  </svg>
+                  <Icon name="download" size={14} />
                   <span>{plugin.downloads || 0}</span>
                 </div>
               </div>
@@ -526,11 +459,7 @@
           </div>
         {:else}
           <div class="empty-state">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="48" height="48">
-              <path
-                d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"
-              />
-            </svg>
+            <Icon name="plugin" size={48} />
             <h3>{$_('pluginManager.noCurated')}</h3>
             <p>{$_('pluginManager.checkBackLater')}</p>
           </div>
@@ -546,19 +475,7 @@
               title="Remove from list"
               aria-label="Remove plugin"
             >
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                width="16"
-                height="16"
-              >
-                <path
-                  d="M18 6L6 18M6 6l12 12"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                />
-              </svg>
+              <Icon name="x" size={16} />
             </button>
             <div class="plugin-icon">
               {#if getIconUrl(plugin)}
@@ -568,17 +485,7 @@
                   on:error={(e) => ((e.currentTarget as HTMLElement).style.display = "none")}
                 />
               {/if}
-              <svg
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                width="32"
-                height="32"
-                class="fallback-icon"
-              >
-                <path
-                  d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"
-                />
-              </svg>
+              <Icon name="plugin" size={32} className="fallback-icon" />
             </div>
             <div class="plugin-info">
               <span class="plugin-name truncate">{plugin.manifest.name}</span>
@@ -596,17 +503,11 @@
               </div>
               <div class="plugin-stats">
                 <div class="stat-item" title="Stars">
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-                    <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
-                  </svg>
+                  <Icon name="star" size={14} />
                   <span>{plugin.stars || 0}</span>
                 </div>
                 <div class="stat-item" title="Downloads">
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                    <polyline points="7 10 12 15 17 10" />
-                    <line x1="12" y1="15" x2="12" y2="3" />
-                  </svg>
+                  <Icon name="download" size={14} />
                   <span>{plugin.downloads || 0}</span>
                 </div>
               </div>
@@ -626,11 +527,7 @@
           </div>
         {:else}
           <div class="empty-state">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="48" height="48">
-              <path
-                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"
-              />
-            </svg>
+            <Icon name="plugin" size={48} />
             <h3>{$_('pluginManager.noCommunity')}</h3>
             <p>{$_('pluginManager.addUrlAbove')}</p>
           </div>
@@ -648,17 +545,7 @@
                   on:error={(e) => ((e.currentTarget as HTMLElement).style.display = "none")}
                 />
               {/if}
-              <svg
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                width="32"
-                height="32"
-                class="fallback-icon"
-              >
-                <path
-                  d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"
-                />
-              </svg>
+              <Icon name="plugin" size={32} className="fallback-icon" />
             </div>
             <div class="plugin-info">
               <span class="plugin-name truncate">{plugin.name}</span>
@@ -712,11 +599,7 @@
           </div>
         {:else}
           <div class="empty-state">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="48" height="48">
-              <path
-                d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"
-              />
-            </svg>
+            <Icon name="plugin" size={48} />
             <h3>{$_('pluginManager.noInstalled')}</h3>
             <p>{$_('pluginManager.browseMarketplace')}</p>
           </div>
@@ -744,11 +627,7 @@
       {#if pendingPermissions.length > 0}
         <div class="permission-section">
           <h3 class="section-title">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-              <path
-                d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"
-              />
-            </svg>
+            <Icon name="shield" size={16} />
             {$_('pluginManager.systemPermissions')}
           </h3>
           <div class="permission-list">
@@ -768,28 +647,14 @@
       {#if selectedPlugin.manifest.cross_plugin_access && selectedPlugin.manifest.cross_plugin_access.length > 0}
         <div class="permission-section">
           <h3 class="section-title">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-            </svg>
+            <Icon name="plus" size={16} />
             {$_('pluginManager.pluginIntegration')}
           </h3>
           <div class="cross-plugin-list">
             {#each selectedPlugin.manifest.cross_plugin_access as access}
               <div class="cross-plugin-item">
                 <div class="cross-plugin-header">
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    width="14"
-                    height="14"
-                  >
-                    <path
-                      d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"
-                      stroke-width="2"
-                      stroke-linejoin="round"
-                    />
-                  </svg>
+                  <Icon name="zap" size={14} />
                   <span class="target-plugin">{access.plugin}</span>
                 </div>
                 <div class="method-list">
@@ -821,51 +686,13 @@
           bind:this={installBtnEl}
         >
           {#if installState === "loading"}
-            <svg
-              class="spin"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              width="18"
-              height="18"
-            >
-              <circle cx="12" cy="12" r="10" stroke-width="3" opacity="0.25" />
-              <path
-                d="M12 2a10 10 0 0 1 10 10"
-                stroke-width="3"
-                stroke-linecap="round"
-              />
-            </svg>
+            <Icon name="loader" size={18} />
             {$_('pluginManager.installing')}
           {:else if installState === "success"}
-            <svg
-              class="checkmark"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              width="18"
-              height="18"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <polyline
-                class="check-path"
-                points="4,12 10,18 20,6"
-                stroke-width="2.5"
-              />
-            </svg>
+            <Icon name="check" size={18} />
             {$_('pluginManager.installedSuccess')}
           {:else if installState === "error"}
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              width="18"
-              height="18"
-              stroke-linecap="round"
-            >
-              <path d="M18 6L6 18M6 6l12 12" stroke-width="2.5" />
-            </svg>
+            <Icon name="x" size={18} />
             {$_('pluginManager.failed')}
           {:else}
             {$_('pluginManager.grantAndInstall')}

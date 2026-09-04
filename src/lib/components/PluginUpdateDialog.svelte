@@ -5,6 +5,7 @@
         pluginStore,
         type PluginUpdateInfo,
     } from "$lib/stores/plugin-store";
+    import Icon from "$lib/components/Icon.svelte";
 
     const dispatch = createEventDispatcher();
 
@@ -121,19 +122,7 @@
         <div class="modal-header">
             <h2>{$_('pluginUpdate.title')}</h2>
             <button class="close-btn" on:click={close} aria-label="Close">
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    width="24"
-                    height="24"
-                >
-                    <line x1="18" y1="6" x2="6" y2="18"></line>
-                    <line x1="6" y1="6" x2="18" y2="18"></line>
-                </svg>
+                <Icon name="x" size={24} />
             </button>
         </div>
 
@@ -172,18 +161,11 @@
                                 on:click={() => handleUpdateOne(update)}
                             >
                                 {#if state === 'loading'}
-                                    <svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14">
-                                        <circle cx="12" cy="12" r="10" stroke-width="3" opacity="0.25"/>
-                                        <path d="M12 2a10 10 0 0 1 10 10" stroke-width="3" stroke-linecap="round"/>
-                                    </svg>
+                                    <Icon name="loader" size={14} />
                                 {:else if state === 'success'}
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14" stroke-linecap="round" stroke-linejoin="round">
-                                        <polyline class="check-path" points="4,12 10,18 20,6" stroke-width="2.5"/>
-                                    </svg>
+                                    <Icon name="check" size={14} />
                                 {:else if state === 'error'}
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="14" height="14" stroke-linecap="round">
-                                        <path d="M18 6L6 18M6 6l12 12" stroke-width="2.5"/>
-                                    </svg>
+                                    <Icon name="x" size={14} />
                                 {:else}
                                     {$_('pluginUpdate.updateBtn')}
                                 {/if}
@@ -208,20 +190,13 @@
                 on:click={handleUpdateAll}
             >
                 {#if updateAllState === 'loading'}
-                    <svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16">
-                        <circle cx="12" cy="12" r="10" stroke-width="3" opacity="0.25"/>
-                        <path d="M12 2a10 10 0 0 1 10 10" stroke-width="3" stroke-linecap="round"/>
-                    </svg>
+                    <Icon name="loader" size={16} />
                     {$_('pluginUpdate.updating')}
                 {:else if updateAllState === 'success'}
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16" stroke-linecap="round" stroke-linejoin="round">
-                        <polyline class="check-path" points="4,12 10,18 20,6" stroke-width="2.5"/>
-                    </svg>
+                    <Icon name="check" size={16} />
                     {$_('pluginUpdate.done')}
                 {:else if updateAllState === 'error'}
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="16" height="16" stroke-linecap="round">
-                        <path d="M18 6L6 18M6 6l12 12" stroke-width="2.5"/>
-                    </svg>
+                    <Icon name="x" size={16} />
                     {$_('pluginUpdate.someFailed')}
                 {:else if allDone}
                     {$_('pluginUpdate.allUpdated')}
