@@ -4,6 +4,7 @@
   import { trackCount, playlists } from "$lib/stores/library";
   import { slide } from "svelte/transition";
   import { createEventDispatcher } from "svelte";
+  import Icon from "$lib/components/Icon.svelte";
 
   export let open: boolean = false;
   const dispatch = createEventDispatcher();
@@ -65,18 +66,12 @@
 
 <section class="settings-section" aria-labelledby="sync-heading">
   <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <svg class="accordion-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <polyline points="23 4 23 10 17 10" />
-      <polyline points="1 20 1 14 7 14" />
-      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-    </svg>
+    <Icon name="sync" size="lg" className="accordion-icon" />
     <div class="accordion-header-info">
       <span class="accordion-title">{$_('settings.sync')}</span>
       <span class="accordion-subtitle">{$_('settings.syncSubtitle')}</span>
     </div>
-    <svg class="accordion-chevron" class:rotated={open} viewBox="0 0 24 24" width="16" height="16">
-      <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
-    </svg>
+    <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
   </button>
   {#if open}
     <div class="section-body" transition:slide|local>
@@ -132,11 +127,7 @@
     {#if $syncStatus.last_error}
       <div class="sync-error-banner">
         <div class="error-content">
-          <svg class="error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="8" x2="12" y2="12" />
-            <line x1="12" y1="16" x2="12.01" y2="16" />
-          </svg>
+          <Icon name="alert-circle" size="lg" className="error-icon" />
           <div class="error-text">
             <span class="error-message">
               {#if $syncStatus.last_error.includes("Limit Exceeded") || $syncStatus.last_error.includes("limit exceeded")}

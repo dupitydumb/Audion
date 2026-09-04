@@ -2,6 +2,7 @@
   import { fly } from "svelte/transition";
   import { meshSettings } from "$lib/stores/meshSettings";
   import { lyricsRenderMode } from "$lib/stores/lyrics";
+  import Icon from "$lib/components/Icon.svelte";
 
   export let onClose: () => void = () => {};
 </script>
@@ -10,9 +11,7 @@
   <div class="panel-header">
     <span class="panel-title">Background</span>
     <button class="close-btn" on:click={onClose} aria-label="Close">
-      <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
-        <path d="M18.3 5.71L12 12.01l-6.3-6.3-1.41 1.42 6.3 6.29-6.3 6.3 1.41 1.41 6.3-6.3 6.3 6.3 1.41-1.41-6.3-6.3 6.3-6.29z" />
-      </svg>
+      <Icon name="x" size={14} />
     </button>
   </div>
 

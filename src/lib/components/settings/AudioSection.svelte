@@ -157,18 +157,12 @@
 
 <section class="settings-section" aria-labelledby="audio-heading">
   <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <svg class="accordion-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-    </svg>
+    <Icon name="volume-2" size="lg" className="accordion-icon" />
     <div class="accordion-header-info">
       <span class="accordion-title">{$_('settings.audio')}</span>
       <span class="accordion-subtitle">{$_('settings.audioSubtitle')}</span>
     </div>
-    <svg class="accordion-chevron" class:rotated={open} viewBox="0 0 24 24" width="16" height="16">
-      <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
-    </svg>
+    <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
   </button>
   {#if open}
     <div class="section-body" transition:slide|local>
@@ -212,9 +206,7 @@
                 {:else}
                   {$_('settings.defaultDevice')}
                 {/if}
-                <svg class="dropdown-chevron" class:rotated={deviceDropdownOpen} viewBox="0 0 24 24" width="14" height="14">
-                  <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
-                </svg>
+                <Icon name="chevron-down" size={14} className="dropdown-chevron {deviceDropdownOpen ? 'rotated' : ''}" />
               </button>
               {#if deviceDropdownOpen}
                 <div class="dropdown-menu" on:keydown={handleDeviceDropdownKeydown} role="listbox">

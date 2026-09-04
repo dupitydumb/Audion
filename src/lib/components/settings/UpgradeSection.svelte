@@ -3,6 +3,7 @@
   import { authState, isSupporter } from "$lib/stores/sync";
   import { slide } from "svelte/transition";
   import { createEventDispatcher } from "svelte";
+  import Icon from "$lib/components/Icon.svelte";
 
   export let open: boolean = false;
   const dispatch = createEventDispatcher();
@@ -20,16 +21,12 @@
 
 <section class="settings-section" aria-labelledby="upgrade-heading">
   <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <svg class="accordion-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-    </svg>
+    <Icon name="zap" size="lg" className="accordion-icon" />
     <div class="accordion-header-info">
       <span class="accordion-title">{$_('settings.upgrade')}</span>
       <span class="accordion-subtitle">{$_('settings.upgradeSubtitle')}</span>
     </div>
-    <svg class="accordion-chevron" class:rotated={open} viewBox="0 0 24 24" width="16" height="16">
-      <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
-    </svg>
+    <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
   </button>
   {#if open}
     <div class="section-body" transition:slide|local>

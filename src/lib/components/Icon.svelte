@@ -1,61 +1,306 @@
 <script lang="ts">
-    export let name: 'speaker' | 'headphone' | 'chevron-down' | 'chevron-up' | 'x' | 'check' | 'info' | 'refresh' | 'loader';
-    export let size: number | string = 16;
+  import {
+    Play,
+    Pause,
+    SkipBack,
+    SkipForward,
+    Shuffle,
+    Repeat,
+    Repeat1,
+    VolumeX,
+    Volume1,
+    Volume2,
+    Volume,
+    Heart,
+    Home,
+    Music,
+    Music2,
+    Disc3,
+    Disc,
+    User,
+    Users,
+    ListMusic,
+    Search,
+    List,
+    Mic2,
+    Plug,
+    Cast,
+    Moon,
+    Timer,
+    Pin,
+    Power,
+    RefreshCw,
+    CloudOff,
+    CheckCircle,
+    Info,
+    AlertTriangle,
+    AlertCircle,
+    Check,
+    X,
+    Loader2,
+    ChevronDown,
+    ChevronUp,
+    ChevronLeft,
+    ChevronRight,
+    GripVertical,
+    Download,
+    Maximize2,
+    Minimize2,
+    Sparkles,
+    Speaker,
+    Headphones,
+    Settings,
+    Folder,
+    Trash2,
+    Pencil,
+    ExternalLink,
+    Plus,
+    Minus,
+    Eye,
+    EyeOff,
+    Globe,
+    Gem,
+    Keyboard,
+    Zap,
+    HelpCircle,
+    Copy,
+    MoreVertical,
+    MoreHorizontal,
+    Shield,
+    Radio,
+    Flame,
+    Compass,
+    Library,
+    Sliders,
+    ArrowUpDown,
+    Clock,
+    Share2,
+    FileText,
+    Monitor
+  } from 'lucide-svelte';
 
-    const sizeMap: Record<string, number> = { xs: 12, sm: 14, md: 16, lg: 20, xl: 24 };
-    $: px = typeof size === 'number' ? size : (sizeMap[size as string] ?? 16);
-  </script>
-  
-  <svg
-    viewBox="0 0 16 16"
-    width={px}
-    height={px}
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    aria-hidden="true"
-    class:spin={name === 'loader'}
-  >
-    {#if name === 'speaker'}
-      <rect x="2" y="4" width="6" height="8" rx="1" stroke="currentColor" stroke-width="1.4"/>
-      <path d="M10.5 6a2.5 2.5 0 0 1 0 4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-      <path d="M12.5 4a5 5 0 0 1 0 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-  
-    {:else if name === 'headphone'}
-      <path d="M2.5 8.5V8a5.5 5.5 0 0 1 11 0v.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-      <rect x="1.5" y="8.5" width="2.5" height="4" rx="1.25" stroke="currentColor" stroke-width="1.4"/>
-      <rect x="12" y="8.5" width="2.5" height="4" rx="1.25" stroke="currentColor" stroke-width="1.4"/>
-  
-    {:else if name === 'chevron-down'}
-      <path d="M3 5.5L8 10.5L13 5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  export let name:
+    | 'play'
+    | 'pause'
+    | 'skip-back'
+    | 'skip-forward'
+    | 'shuffle'
+    | 'repeat'
+    | 'repeat-1'
+    | 'volume-x'
+    | 'volume-mute'
+    | 'volume-1'
+    | 'volume-low'
+    | 'volume-2'
+    | 'volume'
+    | 'heart'
+    | 'heart-filled'
+    | 'home'
+    | 'music'
+    | 'music-2'
+    | 'disc'
+    | 'disc-3'
+    | 'user'
+    | 'users'
+    | 'list-music'
+    | 'playlist'
+    | 'search'
+    | 'queue'
+    | 'list'
+    | 'lyrics'
+    | 'mic-2'
+    | 'plugin'
+    | 'connect'
+    | 'cast'
+    | 'sleep-timer'
+    | 'moon'
+    | 'timer'
+    | 'pin'
+    | 'power'
+    | 'sync'
+    | 'refresh'
+    | 'sync-error'
+    | 'cloud-off'
+    | 'check-circle'
+    | 'info'
+    | 'alert-triangle'
+    | 'alert-circle'
+    | 'check'
+    | 'x'
+    | 'loader'
+    | 'chevron-down'
+    | 'chevron-up'
+    | 'chevron-left'
+    | 'chevron-right'
+    | 'drag-handle'
+    | 'downloaded'
+    | 'download'
+    | 'fullscreen'
+    | 'maximize'
+    | 'minimize'
+    | 'sparkles'
+    | 'speaker'
+    | 'headphone'
+    | 'headphones'
+    | 'settings'
+    | 'folder'
+    | 'trash'
+    | 'edit'
+    | 'external-link'
+    | 'plus'
+    | 'minus'
+    | 'eye'
+    | 'eye-off'
+    | 'globe'
+    | 'gem'
+    | 'keyboard'
+    | 'zap'
+    | 'help-circle'
+    | 'copy'
+    | 'more-vertical'
+    | 'more-horizontal'
+    | 'shield'
+    | 'radio'
+    | 'flame'
+    | 'compass'
+    | 'library'
+    | 'sliders'
+    | 'arrow-up-down'
+    | 'clock'
+    | 'share'
+    | 'file-text'
+    | 'monitor'
+    | string;
 
-    {:else if name === 'chevron-up'}
-      <path d="M3 10.5L8 5.5L13 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  export let size: number | string = 16;
+  export let strokeWidth: number = 2;
+  export let className: string = '';
 
-    {:else if name === 'x'}
-      <path d="M4 4L12 12M12 4L4 12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-  
-    {:else if name === 'check'}
-      <path d="M2.5 8L6 11.5L13.5 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+  const sizeMap: Record<string, number> = {
+    xs: 12,
+    sm: 14,
+    md: 16,
+    lg: 20,
+    xl: 24,
+    '2xl': 32
+  };
 
-    {:else if name === 'info'}
-      <circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.4"/>
-      <path d="M8 7.5v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-      <circle cx="8" cy="4.5" r="0.75" fill="currentColor"/>
+  $: px = typeof size === 'number' ? size : (sizeMap[size] ?? 16);
 
-    {:else if name === 'refresh'}
-      <path d="M2.5 8a5.5 5.5 0 0 1 9.14-3.89L13.5 6M13.5 2v4h-4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
-      <path d="M13.5 8a5.5 5.5 0 0 1-9.14 3.89L2.5 10M2.5 14v-4h4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/>
+  const iconMap: Record<string, any> = {
+    play: Play,
+    pause: Pause,
+    'skip-back': SkipBack,
+    'skip-forward': SkipForward,
+    shuffle: Shuffle,
+    repeat: Repeat,
+    'repeat-1': Repeat1,
+    'volume-x': VolumeX,
+    'volume-mute': VolumeX,
+    'volume-1': Volume1,
+    'volume-low': Volume1,
+    'volume-2': Volume2,
+    volume: Volume2,
+    heart: Heart,
+    'heart-filled': Heart,
+    home: Home,
+    music: Music,
+    'music-2': Music2,
+    disc: Disc,
+    'disc-3': Disc3,
+    user: User,
+    users: Users,
+    'list-music': ListMusic,
+    playlist: ListMusic,
+    search: Search,
+    queue: List,
+    list: List,
+    lyrics: Mic2,
+    'mic-2': Mic2,
+    plugin: Plug,
+    connect: Cast,
+    cast: Cast,
+    'sleep-timer': Moon,
+    moon: Moon,
+    timer: Timer,
+    pin: Pin,
+    power: Power,
+    sync: RefreshCw,
+    refresh: RefreshCw,
+    'sync-error': RefreshCw,
+    'cloud-off': CloudOff,
+    'check-circle': CheckCircle,
+    info: Info,
+    'alert-triangle': AlertTriangle,
+    'alert-circle': AlertCircle,
+    check: Check,
+    x: X,
+    loader: Loader2,
+    'chevron-down': ChevronDown,
+    'chevron-up': ChevronUp,
+    'chevron-left': ChevronLeft,
+    'chevron-right': ChevronRight,
+    'drag-handle': GripVertical,
+    downloaded: Download,
+    download: Download,
+    fullscreen: Maximize2,
+    maximize: Maximize2,
+    minimize: Minimize2,
+    sparkles: Sparkles,
+    speaker: Speaker,
+    headphone: Headphones,
+    headphones: Headphones,
+    settings: Settings,
+    folder: Folder,
+    trash: Trash2,
+    edit: Pencil,
+    'external-link': ExternalLink,
+    plus: Plus,
+    minus: Minus,
+    eye: Eye,
+    'eye-off': EyeOff,
+    globe: Globe,
+    gem: Gem,
+    keyboard: Keyboard,
+    zap: Zap,
+    'help-circle': HelpCircle,
+    copy: Copy,
+    'more-vertical': MoreVertical,
+    'more-horizontal': MoreHorizontal,
+    shield: Shield,
+    radio: Radio,
+    flame: Flame,
+    compass: Compass,
+    library: Library,
+    sliders: Sliders,
+    'arrow-up-down': ArrowUpDown,
+    clock: Clock,
+    share: Share2,
+    'file-text': FileText,
+    monitor: Monitor
+  };
 
-    {:else if name === 'loader'}
-      <path d="M8 2a6 6 0 0 1 5.2 9" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
-    {/if}
-  </svg>
+  $: component = iconMap[name] || HelpCircle;
+  $: isFilledHeart = name === 'heart-filled';
+  $: isSpin = name === 'loader' || name === 'sync';
+</script>
 
-  <style>
-    @keyframes icon-spin {
-      to { transform: rotate(360deg); }
+<svelte:component
+  this={component}
+  size={px}
+  {strokeWidth}
+  fill={isFilledHeart ? 'currentColor' : 'none'}
+  class="{className} {isSpin ? 'icon-spin' : ''}"
+  aria-hidden="true"
+/>
+
+<style>
+  @keyframes icon-spin-anim {
+    to {
+      transform: rotate(360deg);
     }
-    .spin {
-      animation: icon-spin 0.8s linear infinite;
-    }
-  </style>
+  }
+  :global(.icon-spin) {
+    animation: icon-spin-anim 1s linear infinite;
+  }
+</style>
