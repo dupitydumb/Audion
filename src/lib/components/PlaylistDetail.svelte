@@ -815,7 +815,9 @@
         display: flex;
         flex-direction: column;
         justify-content: flex-end;
+        align-items: flex-start;
         min-width: 0;
+        flex: 1;
     }
 
     .playlist-type {
@@ -847,6 +849,8 @@
 
     .playlist-meta {
         display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
         align-items: center;
         gap: var(--spacing-sm);
         font-size: var(--font-size-base);
@@ -950,7 +954,6 @@
 
     :global(html.layout-mobile) .playlist-meta {
         flex-wrap: wrap;
-        justify-content: center;
         margin-bottom: var(--spacing-md);
     }
 
