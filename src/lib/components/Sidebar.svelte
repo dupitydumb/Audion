@@ -661,6 +661,7 @@
             </ul>
         </section>
 
+        {#if $appSettings.showDiscord || $appSettings.showResonate}
         <section class="nav-section">
             <h3 class="nav-section-title">{$_('sidebar.community')}</h3>
             <ul class="nav-list">
@@ -699,6 +700,8 @@
                 {/if}
             </ul>
         </section>
+        {/if}
+
     </nav>
 
     <div class="sidebar-footer">
