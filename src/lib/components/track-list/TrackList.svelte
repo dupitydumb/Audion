@@ -984,7 +984,7 @@
   :global(.track-row:hover .quality-tag) { opacity: 1; }
   :global(.quality-tag.high-quality) { color: var(--accent-primary); border-color: var(--accent-primary); background-color: color-mix(in srgb, var(--accent-primary), transparent 85%); }
 
-  :global(.track-artist) { font-size: var(--font-size-sm); color: var(--text-secondary); background: none; border: none; padding: 0; margin: 0; text-align: left; max-width: fit-content; line-height: var(--line-height-tight); min-height: 0; }
+  :global(.track-artist) { font-size: var(--font-size-sm); color: var(--text-subdued); background: none; border: none; padding: 0; margin: 0; text-align: left; max-width: fit-content; line-height: var(--line-height-tight); min-height: 0; }
   :global(.track-artist:hover:not(:disabled)) { color: var(--text-primary); text-decoration: underline; cursor: pointer; }
   :global(.media-metadata) { font-size: 0.7rem; color: var(--text-subdued); opacity: 0.9; }
 
@@ -1029,7 +1029,7 @@
   :global(html.layout-mobile .eq-bar:nth-child(4)) { height: 80%; animation-delay: 0.6s; }
   @keyframes eq-bounce { 0%, 100% { height: 20%; } 50% { height: 100%; } }
   :global(html.layout-mobile) .list-body.mobile-album :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); }
-  :global(html.layout-mobile) .list-body.mobile-album :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-secondary); }
+  :global(html.layout-mobile) .list-body.mobile-album :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-subdued); }
   :global(html.layout-mobile) .list-body.mobile-album :global(.col-duration) { font-size: var(--font-size-xs); color: var(--text-subdued); }
   :global(html.layout-mobile) .list-body.mobile-album.with-drag :global(.track-row) { grid-template-columns: 28px 32px 1fr 48px; }
   :global(html.layout-mobile) .list-body.mobile-album.multiselect :global(.track-row) { grid-template-columns: 36px 32px 1fr 48px; }
@@ -1041,7 +1041,7 @@
   :global(html.layout-mobile) .list-body.mobile-playlist :global(.col-cover) { justify-content: flex-start; align-items: center; }
   :global(html.layout-mobile) .list-body.mobile-playlist :global(.col-title) { padding-top: 0; justify-content: center; }
   :global(html.layout-mobile) .list-body.mobile-playlist :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); }
-  :global(html.layout-mobile) .list-body.mobile-playlist :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-secondary); margin-top: 0; }
+  :global(html.layout-mobile) .list-body.mobile-playlist :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-subdued); margin-top: 0; }
   :global(html.layout-mobile) .list-body.mobile-playlist :global(.col-duration) { font-size: var(--font-size-xs); color: var(--text-subdued); }
   :global(html.layout-mobile) .list-body.mobile-playlist.with-drag :global(.track-row) { grid-template-columns: 28px 48px 1fr 48px; }
   :global(html.layout-mobile) .list-body.mobile-playlist.multiselect :global(.track-row) { grid-template-columns: 36px 48px 1fr 48px; }
@@ -1053,7 +1053,7 @@
   :global(html.layout-mobile) .list-body.mobile-library :global(.col-cover) { justify-content: flex-start; align-items: center; }
   :global(html.layout-mobile) .list-body.mobile-library :global(.col-title) { padding-top: 0; justify-content: center; }
   :global(html.layout-mobile) .list-body.mobile-library :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); }
-  :global(html.layout-mobile) .list-body.mobile-library :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-secondary); margin-top: 2px; }
+  :global(html.layout-mobile) .list-body.mobile-library :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-subdued); margin-top: 2px; }
   :global(html.layout-mobile) .list-body.mobile-library :global(.col-duration) { font-size: var(--font-size-xs); color: var(--text-subdued); }
   :global(html.layout-mobile) .list-body.mobile-library.with-drag :global(.track-row) { grid-template-columns: 28px 48px 1fr 48px; }
   :global(html.layout-mobile) .list-body.mobile-library.multiselect :global(.track-row),
