@@ -11,6 +11,7 @@
     "addToQueue": "Ajouter à la file",
     "download": "Télécharger",
     "addToPlaylist": "Ajouter à la playlist",
+    "moveToPlaylist": "Déplacer vers la playlist",
     "noPlaylists": "Aucune playlist",
     "changeArtwork": "Changer la pochette",
     "fromFile": "Depuis un fichier",

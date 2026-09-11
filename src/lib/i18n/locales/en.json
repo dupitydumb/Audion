@@ -4,6 +4,7 @@
     "addToQueue": "Add to Queue",
     "download": "Download",
     "addToPlaylist": "Add to Playlist",
+    "moveToPlaylist": "Move to Playlist",
     "noPlaylists": "No playlists",
     "changeArtwork": "Change Artwork",
     "fromFile": "From File",

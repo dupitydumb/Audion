@@ -16,6 +16,7 @@
     import { playTracks, addToQueue } from "$lib/stores/player";
     import { goToPlaylists, goToTracksMultiSelect } from "$lib/stores/view";
     import { loadPlaylists, playlists, playlistPendingTracks, drainPendingTracks } from "$lib/stores/library";
+    import { multiSelect } from "$lib/stores/multiselect";
     import TrackList from "./track-list/TrackList.svelte";
     import {
         playlistCovers,
@@ -41,6 +42,27 @@
     let editName = "";
     let coverInput: HTMLInputElement;
     let coverHovered = false;
+
+    // in-place selection of this playlist's own tracks
+    // (separate from MultiSelectTrackView's "add to playlist" flow)
+    // batch operations are handled via the context menu, not here
+    let selectModeActive = false;
+
+    function enterSelectMode() {
+        multiSelect.clearSelections();
+        selectModeActive = true;
+    }
+
+    function exitSelectMode() {
+        selectModeActive = false;
+        multiSelect.clearSelections();
+    }
+
+    function handleWindowKeydown(e: KeyboardEvent) {
+        if (e.key === "Escape" && selectModeActive) {
+            exitSelectMode();
+        }
+    }
 
     function initialsFromName(name: string) {
         if (!name) return "PL";
@@ -282,9 +304,18 @@
         }
     }
 
+    // in select mode, Add to Queue / Export to Zip in the header menu 
+    // scope to the current selection; everything else (Play, rename, delete...)
+    // always stays scoped to the whole playlist
+    function getSelectedTracks(): Track[] | undefined {
+        if (!selectModeActive) return undefined;
+        return tracks.filter((t) => $multiSelect.selectedTrackIds.has(t.id));
+    }
+
     function handleHeaderContextMenu(e: MouseEvent) {
         e.preventDefault();
         if (!playlist) return;
+        const selectedTracks = getSelectedTracks();
         contextMenu.set({
             visible: true,
             x: e.clientX,
@@ -292,12 +323,16 @@
             items: buildPlaylistContextMenu({
                 playlist,
                 tracks,
+                selectedTracks,
                 variant: "detail",
                 onPlay: handlePlayAll,
-                onAddToQueue: () => { if (tracks.length > 0) addToQueue(tracks); },
+                onAddToQueue: () => {
+                    const targets = selectedTracks ?? tracks;
+                    if (targets.length > 0) addToQueue(targets);
+                },
                 onRename: startEditing,
                 onDelete: handleDelete,
-                onExportZip: handleExportZip,
+                onExportZip: () => handleExportZip(selectedTracks),
                 coverInput,
                 t: $_,
             }),
@@ -333,14 +368,17 @@
         }
     }
 
-    async function handleExportZip() {
+    async function handleExportZip(selected?: Track[]) {
         closeMenu();
         if (!playlist) return;
+        // select mode active with nothing selected => nothing to export
+        if (selected && selected.length === 0) return;
+        const trackIds = selected?.map((t) => t.id);
 
         try {
             addToast($_("playlist.exporting"), "info");
 
-            const result = await exportPlaylistZip(playlistId, playlist.name);
+            const result = await exportPlaylistZip(playlistId, playlist.name, trackIds);
             if (!result) return; // user cancelled
 
             const skipped_count = result.skipped_count;
@@ -357,6 +395,8 @@
         }
     }
 </script>
+
+<svelte:window on:keydown={handleWindowKeydown} />
 
 <div class="playlist-detail">
     {#if loading}
@@ -399,7 +439,7 @@
                                 </svg>
                                 {$_('contextMenu.rename')}
                             </button>
-                            <button class="dropdown-item" role="menuitem" on:click={handleExportZip}>
+                            <button class="dropdown-item" role="menuitem" on:click={() => handleExportZip(getSelectedTracks())}>
                                 <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
                                     <path d="M20 6h-2.18c.07-.44.18-.88.18-1a3 3 0 0 0-6 0c0 .12.11.56.18 1H10V4c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-8-1c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm8 15H4V8h16v12z"/>
                                 </svg>
@@ -609,6 +649,9 @@
                     {tracks}
                     showAlbum={false}
                     {playlistId}
+                    multiSelectMode={selectModeActive}
+                    allowMultiSelectEntry={!selectModeActive}
+                    onEnterMultiSelect={enterSelectMode}
                     playbackContext={{
                         type: "playlist",
                         playlistId,

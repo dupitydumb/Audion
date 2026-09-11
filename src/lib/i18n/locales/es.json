@@ -11,6 +11,7 @@
     "addToQueue": "Añadir a la Cola",
     "download": "Descargar",
     "addToPlaylist": "Añadir a la Lista",
+    "moveToPlaylist": "Mover a la Lista",
     "noPlaylists": "Sin listas",
     "changeArtwork": "Cambiar Portada",
     "fromFile": "Desde Archivo",

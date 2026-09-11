@@ -4,6 +4,7 @@
     "addToQueue": "Добавить в очередь",
     "download": "Скачать",
     "addToPlaylist": "Добавить в плейлист",
+    "moveToPlaylist": "Переместить в плейлист",
     "noPlaylists": "Нет плейлистов",
     "changeArtwork": "Изменить обложку",
     "fromFile": "Из файла",

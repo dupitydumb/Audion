@@ -626,12 +626,15 @@ async function exportZip(
 export async function exportPlaylistZip(
     playlistId: number,
     playlistName = 'playlist',
+    trackIds?: number[],
 ): Promise<ExportPlaylistResult | null> {
     return exportZip(
         `${playlistName}.zip`,
         'Export playlist as ZIP',
         'export_playlist_zip',
-        { playlistId },
+        // omit trackIds entirely for a full export
+        // so the backend takes its normal whole playlist path
+        trackIds && trackIds.length > 0 ? { playlistId, trackIds } : { playlistId },
     );
 }
 

@@ -324,14 +324,27 @@ pub fn build_liked_songs_zip(
 }
 
 // public entry point (call from spawn_blocking) =========================================================
+//
+// track_ids: when Some,
+// only export tracks whose id is in the list
+// (e.g. a multi-selection in PlaylistDetail) instead of the whole playlist
+// filtered after the query rather than pushed into the SQL
+// so we don't need dynamic IN-clause param binding
+// playlist order (from the ORDER BY in load_tracks) is preserved since retain() doesn't reorder
 pub fn build_playlist_zip(
     conn: &Connection,
     playlist_id: i64,
+    track_ids: Option<&[i64]>,
     dest: &Path,
 ) -> Result<ExportSummary, String> {
     // 1: DB work => lock held only for this call
-    let (playlist_name, cover_url, created_at, entries) =
+    let (playlist_name, cover_url, created_at, mut entries) =
         load_tracks(conn, playlist_id)?;
+
+    if let Some(ids) = track_ids {
+        let id_set: std::collections::HashSet<i64> = ids.iter().copied().collect();
+        entries.retain(|e| id_set.contains(&e.export.id));
+    }
 
     // lock is released here before any file I/O begins
 
