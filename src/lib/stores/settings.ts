@@ -49,6 +49,8 @@ export interface AppSettings {
     crossfadeSeconds: number;
     /** which page to show on app launch; see StartupPage for details */
     startupPage: StartupPage;
+    /** when false, never auto-fetch lyrics on track change */
+    lyricsAutoFetch: boolean;
 }
 
 const SETTINGS_STORAGE_KEY = 'audion_settings';
@@ -77,6 +79,7 @@ const defaultSettings: AppSettings = {
     shortcutsEnabled: true,
     crossfadeSeconds: 0,
     startupPage: 'home',
+    lyricsAutoFetch: true,
 };
 
 // Load settings from localStorage
@@ -243,6 +246,14 @@ function createSettingsStore() {
         setStartupPage(page: StartupPage) {
             update(state => {
                 const newState = { ...state, startupPage: page };
+                saveSettings(newState);
+                return newState;
+            });
+        },
+
+        setLyricsAutoFetch(enabled: boolean) {
+            update(state => {
+                const newState = { ...state, lyricsAutoFetch: enabled };
                 saveSettings(newState);
                 return newState;
             });

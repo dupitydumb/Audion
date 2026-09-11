@@ -7,6 +7,7 @@
     import { buildLikedSongsContextMenu } from "$lib/menus/contextMenus";
     import { _ } from "svelte-i18n";
     import TrackList from "./track-list/TrackList.svelte";
+    import Icon from "$lib/components/Icon.svelte";
 
     let tracks: Track[] = [];
     let loading = true;
@@ -97,11 +98,7 @@
         aria-label="Liked Songs header"
     >
         <div class="liked-gradient-bg">
-            <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">
-                <path
-                    d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
-                />
-            </svg>
+            <Icon name="heart-filled" size={64} />
         </div>
         <div class="liked-header-info">
             <span class="liked-label"
@@ -128,14 +125,7 @@
                 aria-label="Play All"
             >
                 <div class="btn-icon">
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="24"
-                        height="24"
-                    >
-                        <path d="M8 5v14l11-7z" />
-                    </svg>
+                    <Icon name="play" size={24} />
                 </div>
                 <span>{$_("artist.playAll")}</span>
             </button>
@@ -146,16 +136,7 @@
                 disabled={tracks.length === 0}
                 aria-label="Shuffle Play"
             >
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="20"
-                    height="20"
-                >
-                    <path
-                        d="M10.59 9.17L5.41 4L4 5.41l5.17 5.17l1.42-1.41zM14.5 4l2.04 2.04L4 18.59L5.41 20L17.96 7.45L20 9.5V4h-5.5zm.33 9.41l-1.41 1.41l3.13 3.13L14.5 20H20v-5.5l-2.04 2.04l-3.13-3.13z"
-                    />
-                </svg>
+                <Icon name="shuffle" size={20} />
                 <span>{$_("liked.shuffle")}</span>
             </button>
         </div>
@@ -169,18 +150,7 @@
             </div>
         {:else if tracks.length === 0}
             <div class="empty-state">
-                <svg
-                    viewBox="0 0 24 24"
-                    width="48"
-                    height="48"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                >
-                    <path
-                        d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
-                    />
-                </svg>
+                <Icon name="heart" size={48} strokeWidth={1.5} />
                 <p>
                     {$_("liked.emptyTitle")}
                 </p>

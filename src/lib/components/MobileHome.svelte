@@ -43,6 +43,7 @@
     import { fetchAllLatestCharts, type ChartData, type AudionApiTrack } from "$lib/api/audion-api";
     import { _, locale } from "svelte-i18n";
     import EmptyState from "./EmptyState.svelte";
+    import Icon from "$lib/components/Icon.svelte";
 
     $: currentMonthName = new Intl.DateTimeFormat($locale || 'en', { month: 'long' }).format(new Date());
 
@@ -236,16 +237,7 @@
                     on:click={handleAddFolder}
                     title={$_('sidebar.addMusicFolder')}
                 >
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="22"
-                        height="22"
-                    >
-                        <path
-                            d="M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm0 12H4V8h16v10zM12.5 9.5v3H16v2h-3.5v3h-2v-3H7v-2h3.5v-3h2z"
-                        />
-                    </svg>
+                    <Icon name="folder" size={22} />
                 </button>
             {/if}
             <button
@@ -253,16 +245,7 @@
                 on:click={goToSettings}
                 title={$_('sidebar.settings')}
             >
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="24"
-                    height="24"
-                >
-                    <path
-                        d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.06.63-.06.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"
-                    />
-                </svg>
+                <Icon name="settings" size={24} />
             </button>
         </div>
     </header>
@@ -272,16 +255,7 @@
         <button class="liked-songs-banner" on:click={goToLikedSongs}>
             <div class="liked-banner-content">
                 <div class="liked-banner-icon">
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="24"
-                        height="24"
-                    >
-                        <path
-                            d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"
-                        />
-                    </svg>
+                    <Icon name="heart-filled" size={24} />
                 </div>
                 <div class="liked-banner-text">
                     <span class="liked-banner-title">{$_('sidebar.likedSongs')}</span>
@@ -327,16 +301,7 @@
                                 />
                             {:else}
                                 <div class="art-placeholder">
-                                    <svg
-                                        viewBox="0 0 24 24"
-                                        fill="currentColor"
-                                        width="32"
-                                        height="32"
-                                    >
-                                        <path
-                                            d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                                        />
-                                    </svg>
+                                    <Icon name="music" size={32} />
                                 </div>
                             {/if}
                         </div>
@@ -360,14 +325,7 @@
                             >{$topTracks[0].play_count} PLAYS</span
                         >
                         <div class="hero-play-btn">
-                            <svg
-                                viewBox="0 0 24 24"
-                                fill="currentColor"
-                                width="24"
-                                height="24"
-                            >
-                                <path d="M8 5v14l11-7z" />
-                            </svg>
+                            <Icon name="play" size={24} />
                         </div>
                     </div>
                 </div>
@@ -388,16 +346,7 @@
                             <img src={getAlbumArt(album)} alt={album.name} />
                         {:else}
                             <div class="art-placeholder-sm">
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="16"
-                                    height="16"
-                                >
-                                    <path
-                                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
-                                    />
-                                </svg>
+                                <Icon name="disc" size={16} />
                             </div>
                         {/if}
                     </div>
@@ -471,16 +420,7 @@
                                 />
                             {:else}
                                 <div class="art-placeholder-sm">
-                                    <svg
-                                        viewBox="0 0 24 24"
-                                        fill="currentColor"
-                                        width="20"
-                                        height="20"
-                                    >
-                                        <path
-                                            d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                                        />
-                                    </svg>
+                                    <Icon name="music" size={20} />
                                 </div>
                             {/if}
                         </div>
@@ -530,16 +470,7 @@
                                 />
                             {:else}
                                 <div class="art-placeholder-xs">
-                                    <svg
-                                        viewBox="0 0 24 24"
-                                        fill="currentColor"
-                                        width="16"
-                                        height="16"
-                                    >
-                                        <path
-                                            d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                                        />
-                                    </svg>
+                                    <Icon name="music" size={16} />
                                 </div>
                             {/if}
                         </div>
@@ -590,16 +521,7 @@
                                 />
                             {:else}
                                 <div class="art-placeholder-xs">
-                                    <svg
-                                        viewBox="0 0 24 24"
-                                        fill="currentColor"
-                                        width="16"
-                                        height="16"
-                                    >
-                                        <path
-                                            d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
-                                        />
-                                    </svg>
+                                    <Icon name="disc" size={16} />
                                 </div>
                             {/if}
                         </div>
@@ -647,27 +569,11 @@
                                 />
                             {:else}
                                 <div class="art-placeholder">
-                                    <svg
-                                        viewBox="0 0 24 24"
-                                        fill="currentColor"
-                                        width="24"
-                                        height="24"
-                                    >
-                                        <path
-                                            d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                                        />
-                                    </svg>
+                                    <Icon name="music" size={24} />
                                 </div>
                             {/if}
                             <div class="card-play-btn">
-                                <svg
-                                    viewBox="0 0 24 24"
-                                    fill="currentColor"
-                                    width="20"
-                                    height="20"
-                                >
-                                    <path d="M8 5v14l11-7z" />
-                                </svg>
+                                <Icon name="play" size={20} />
                             </div>
                         </div>
                         <span class="card-title truncate-text"
@@ -720,9 +626,7 @@
                                             <span class="mini-artist truncate-text">{item.artist}</span>
                                         </div>
                                         <div class="mini-play">
-                                            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-                                                <path d="M8 5v14l11-7z" />
-                                            </svg>
+                                            <Icon name="play" size={16} />
                                         </div>
                                     </div>
                                 {/each}

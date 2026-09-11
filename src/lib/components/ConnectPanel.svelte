@@ -22,6 +22,7 @@
   import { getTrackCoverSrc } from "$lib/api/tauri";
   import { get } from "svelte/store";
   import { createEventDispatcher } from "svelte";
+  import Icon from "$lib/components/Icon.svelte";
 
   const dispatch = createEventDispatcher();
 
@@ -113,27 +114,14 @@
         </div>
       </div>
       <button class="close-btn" on:click={close} aria-label="Close">
-        <svg
-          viewBox="0 0 24 24"
-          width="20"
-          height="20"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2.5"
-        >
-          <path d="M18 6L6 18M6 6l12 12" />
-        </svg>
+        <Icon name="x" size={20} />
       </button>
     </header>
 
     <div class="session-section">
       <div class="status-card" class:remote={$activeBackend === "remote"}>
         <div class="device-icon-glow">
-          <svg viewBox="0 0 24 24" width="24" height="24" fill="currentColor">
-            <path
-              d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"
-            />
-          </svg>
+          <Icon name="monitor" size={24} />
         </div>
         <div class="status-info">
           {#if $activeBackend === "remote"}
@@ -162,19 +150,7 @@
         {#if devices.length === 0}
           <div class="empty-state" in:fade>
             <div class="empty-icon">
-              <svg
-                viewBox="0 0 24 24"
-                width="32"
-                height="32"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-              >
-                <path
-                  d="M12 18.5a6.5 6.5 0 100-13 6.5 6.5 0 000 13zM12 9v3m0 3h.01"
-                  stroke-linecap="round"
-                />
-              </svg>
+              <Icon name="info" size={32} />
             </div>
             <p>{$_('connect.noDevicesFound')}</p>
             <span>{$_('connect.noDevicesHint')}</span>
@@ -182,19 +158,7 @@
         {:else if !$appSettings.remoteControlEnabled}
           <div class="empty-state" in:fade>
             <div class="empty-icon">
-              <svg
-                viewBox="0 0 24 24"
-                width="32"
-                height="32"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-              >
-                <path
-                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
-                  stroke-linecap="round"
-                />
-              </svg>
+              <Icon name="alert-triangle" size={32} />
             </div>
             <p>{$_('connect.remoteControlDisabled')}</p>
             <span
@@ -210,33 +174,7 @@
             >
               <div class="card-main">
                 <div class="platform-icon">
-                  {#if device.deviceName
-                    .toLowerCase()
-                    .includes("phone") || device.deviceName
-                      .toLowerCase()
-                      .includes("android") || device.deviceName
-                      .toLowerCase()
-                      .includes("iphone")}
-                    <svg
-                      viewBox="0 0 24 24"
-                      width="20"
-                      height="20"
-                      fill="currentColor"
-                      ><path
-                        d="M17 1.01L7 1c-1.1 0-2 .9-2 2v18c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2V3c0-1.1-.9-1.99-2-1.99zM17 19H7V5h10v14z"
-                      /></svg
-                    >
-                  {:else}
-                    <svg
-                      viewBox="0 0 24 24"
-                      width="20"
-                      height="20"
-                      fill="currentColor"
-                      ><path
-                        d="M20 18c1.1 0 1.99-.9 1.99-2L22 6c0-1.1-.9-2-2-2H4c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2H0v2h24v-2h-4zM4 6h16v10H4V6z"
-                      /></svg
-                    >
-                  {/if}
+                  <Icon name="monitor" size={20} />
                 </div>
                 <div class="card-details">
                   <span class="device-name">{device.deviceName}</span>
@@ -263,13 +201,7 @@
                         handleRemoteCommand(device.deviceId, "previous")}
                       aria-label="Previous"
                     >
-                      <svg
-                        viewBox="0 0 24 24"
-                        width="14"
-                        height="14"
-                        fill="currentColor"
-                        ><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z" /></svg
-                      >
+                      <Icon name="skip-back" size={14} />
                     </button>
                     <button
                       class="icon-btn highlight"
@@ -281,20 +213,9 @@
                       aria-label={device.playerState?.isPlaying ? "Pause" : "Play"}
                     >
                       {#if device.playerState?.isPlaying}
-                        <svg
-                          viewBox="0 0 24 24"
-                          width="16"
-                          height="16"
-                          fill="currentColor"
-                          ><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg
-                        >
+                        <Icon name="pause" size={16} />
                       {:else}
-                        <svg
-                          viewBox="0 0 24 24"
-                          width="16"
-                          height="16"
-                          fill="currentColor"><path d="M8 5v14l11-7z" /></svg
-                        >
+                        <Icon name="play" size={16} />
                       {/if}
                     </button>
                     <button
@@ -303,13 +224,7 @@
                         handleRemoteCommand(device.deviceId, "next")}
                       aria-label="Next"
                     >
-                      <svg
-                        viewBox="0 0 24 24"
-                        width="14"
-                        height="14"
-                        fill="currentColor"
-                        ><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" /></svg
-                      >
+                      <Icon name="skip-forward" size={14} />
                     </button>
                   </div>
                 {/if}
@@ -344,11 +259,7 @@
       <div class="footer-content">
         {#if !$isLoggedIn}
           <div class="warning-box">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"
-              ><path
-                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"
-              /></svg
-            >
+            <Icon name="alert-circle" size={14} />
             <span>{$_('connect.guestModeWarning')}</span>
           </div>
         {/if}

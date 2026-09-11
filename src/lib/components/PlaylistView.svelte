@@ -31,7 +31,8 @@
     import MediaCard from "./MediaCard.svelte";
     import { onDestroy } from "svelte";
     import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
-    import { progressiveScan } from "$lib/stores/progressiveScan"
+    import { progressiveScan } from "$lib/stores/progressiveScan";
+    import Icon from "$lib/components/Icon.svelte";
 
     let currentScrollTop = getScroll("playlists");
 
@@ -286,7 +287,7 @@
     });
 
     $: emptyState = {
-        icon: `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/></svg>`,
+        icon: "list-music",
         title: $_("playlists.emptyTitle"),
         description: $_("playlists.emptyDescription"),
     };
@@ -300,9 +301,7 @@
                 class="btn-secondary"
                 on:click={handleImportFolder}
             >
-                <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20" aria-hidden="true">
-                    <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
-                </svg>
+                <Icon name="folder" size={20} />
                 {$_("playlists.importFolder")}
             </button>
             <button
@@ -311,15 +310,7 @@
             aria-expanded={showCreateForm}
             aria-controls="create-form"
         >
-            <svg
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                width="20"
-                height="20"
-                aria-hidden="true"
-            >
-                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-            </svg>
+            <Icon name="plus" size={20} />
             {$_("playlists.newPlaylist")}
         </button>
         </div>

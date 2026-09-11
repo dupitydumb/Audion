@@ -4,6 +4,7 @@
   import { verifyListenbrainzToken, setListenbrainzToken, deleteListenbrainzToken } from "$lib/api/tauri";
   import { slide } from "svelte/transition";
   import { createEventDispatcher } from "svelte";
+  import Icon from "$lib/components/Icon.svelte";
 
   export let open: boolean = false;
   const dispatch = createEventDispatcher();
@@ -41,19 +42,12 @@
 
 <section class="settings-section" aria-labelledby="community-heading">
   <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <svg class="accordion-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
+    <Icon name="users" size="lg" className="accordion-icon" />
     <div class="accordion-header-info">
       <span class="accordion-title">{$_('settings.community')}</span>
       <span class="accordion-subtitle">{$_('settings.communitySubtitle')}</span>
     </div>
-    <svg class="accordion-chevron" class:rotated={open} viewBox="0 0 24 24" width="16" height="16">
-      <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
-    </svg>
+    <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
   </button>
   {#if open}
     <div class="section-body" transition:slide|local>

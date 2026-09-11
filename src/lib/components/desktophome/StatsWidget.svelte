@@ -2,6 +2,7 @@
     import type { StatsSummary } from "$lib/api/tauri";
     import { goToArtistDetail } from "$lib/stores/view";
     import { _ } from "svelte-i18n";
+    import Icon from "$lib/components/Icon.svelte";
 
     export let statsSummary: StatsSummary;
 </script>
@@ -10,11 +11,7 @@
     <div class="stats-grid">
         <div class="stat-card">
             <div class="stat-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="24" height="24" aria-hidden="true">
-                    <line x1="18" y1="20" x2="18" y2="10"></line>
-                    <line x1="12" y1="20" x2="12" y2="4"></line>
-                    <line x1="6" y1="20" x2="6" y2="14"></line>
-                </svg>
+                <Icon name="bar-chart-2" size={24} />
             </div>
             <div class="stat-info">
                 <span class="stat-value">{statsSummary.total_plays}</span>
@@ -23,10 +20,7 @@
         </div>
         <div class="stat-card">
             <div class="stat-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="24" height="24" aria-hidden="true">
-                    <circle cx="12" cy="12" r="10"></circle>
-                    <polyline points="12 6 12 12 16 14"></polyline>
-                </svg>
+                <Icon name="clock" size={24} />
             </div>
             <div class="stat-info">
                 <span class="stat-value">{Math.round(statsSummary.total_duration_seconds / 60)} min</span>
@@ -42,9 +36,7 @@
                 on:keydown={(e) => e.key === 'Enter' && statsSummary.top_artist && goToArtistDetail(statsSummary.top_artist)}
             >
                 <div class="stat-icon">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="24" height="24" aria-hidden="true">
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-                    </svg>
+                    <Icon name="star" size={24} />
                 </div>
                 <div class="stat-info">
                     <span class="stat-value">{statsSummary.top_artist}</span>

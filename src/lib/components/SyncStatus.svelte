@@ -8,6 +8,7 @@
         triggerSync,
         showLoginModal,
     } from "$lib/stores/sync";
+    import Icon from "$lib/components/Icon.svelte";
     import { _, locale } from "svelte-i18n";
 
     function handleClick() {
@@ -104,17 +105,7 @@
     {#if $isLoggedIn}
         {#if $isSyncing}
             <!-- Spinning sync icon + progress text -->
-            <svg
-                class="icon spinning"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-            >
-                <path
-                    d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"
-                />
-            </svg>
+            <Icon name="sync" size={16} className="icon spinning" />
             {#if $syncProgress.message}
                 <span class="progress-text">
                     {#if $syncProgress.total > 0}
@@ -126,58 +117,18 @@
             {/if}
         {:else if $syncStatus.last_error}
             <!-- Error icon -->
-            <svg
-                class="icon error"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-            >
-                <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
-            </svg>
+            <Icon name="alert-circle" size={16} className="icon error" />
         {:else if $syncStatus.pending_changes > 0}
             <!-- Pending changes dot -->
-            <svg
-                class="icon pending"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-            >
-                <path
-                    d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"
-                />
-            </svg>
+            <Icon name="sync" size={16} className="icon pending" />
             <span class="badge">{$syncStatus.pending_changes}</span>
         {:else}
             <!-- Synced (check) icon -->
-            <svg
-                class="icon synced"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-            >
-                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-                <polyline points="22 4 12 14.01 9 11.01" />
-            </svg>
+            <Icon name="check-circle" size={16} className="icon synced" />
         {/if}
     {:else}
         <!-- Cloud off icon (not logged in) -->
-        <svg
-            class="icon cloud-off"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-        >
-            <path
-                d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3"
-            />
-            <line x1="1" y1="1" x2="23" y2="23" />
-        </svg>
+        <Icon name="cloud-off" size={16} className="icon cloud-off" />
     {/if}
 </div>
 

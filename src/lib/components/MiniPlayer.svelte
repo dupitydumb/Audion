@@ -24,6 +24,7 @@
         getAlbumCoverSrc,
         formatDuration,
     } from "$lib/api/tauri";
+    import Icon from "$lib/components/Icon.svelte";
     import { getCurrentWindow } from "@tauri-apps/api/window";
     import { isTauri } from "$lib/api/tauri";
     import {
@@ -173,7 +174,7 @@
             <button
                 class="art"
                 on:click={handleExpand}
-                title={$_('player.openFullPlayer')}
+                data-tip={$_('player.openFullPlayer')}
                 tabindex="-1"
             >
                 {#if albumArt && !imageLoadFailed}
@@ -185,16 +186,7 @@
                     />
                 {:else}
                     <div class="art-ph">
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="22"
-                            height="22"
-                        >
-                            <path
-                                d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                            />
-                        </svg>
+                        <Icon name="music" size={22} />
                     </div>
                 {/if}
             </button>
@@ -217,31 +209,15 @@
                     class="pill"
                     class:pill-active={mode === "lyrics"}
                     on:click|stopPropagation={toggleMode}
-                    title={mode === "controls"
+                    data-tip={mode === "controls"
                         ? $_('player.showLyrics')
                         : $_('player.showControls')}
                 >
                     {#if mode === "controls"}
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="10"
-                            height="10"
-                        >
-                            <path
-                                d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                            />
-                        </svg>
+                        <Icon name="lyrics" size={10} />
                         {$_('player.lyrics')}
                     {:else}
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="10"
-                            height="10"
-                        >
-                            <path d="M8 5v14l11-7z" />
-                        </svg>
+                        <Icon name="play" size={10} />
                         {$_('player.controls')}
                     {/if}
                 </button>
@@ -250,18 +226,9 @@
                 <button
                     class="wbtn close"
                     on:click|stopPropagation={handleClose}
-                    title={$_('player.closePip')}
+                    data-tip={$_('player.closePip')}
                 >
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="11"
-                        height="11"
-                    >
-                        <path
-                            d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                        />
-                    </svg>
+                    <Icon name="x" size={11} />
                 </button>
             </div>
         </div>
@@ -296,52 +263,20 @@
 
             <!-- Controls row -->
             <div class="row-ctrl">
-                <button class="cbtn" on:click={previousTrack} title={$_('player.previous')}>
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="17"
-                        height="17"
-                    >
-                        <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" />
-                    </svg>
+                <button class="cbtn" on:click={previousTrack} data-tip={$_('player.previous')}>
+                    <Icon name="skip-back" size={17} />
                 </button>
 
                 <button
                     class="pbtn"
                     on:click={togglePlay}
-                    title={$isPlaying ? $_('common.pause') : $_('common.play')}
+                    data-tip={$isPlaying ? $_('common.pause') : $_('common.play')}
                 >
-                    {#if $isPlaying}
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="19"
-                            height="19"
-                        >
-                            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-                        </svg>
-                    {:else}
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="19"
-                            height="19"
-                        >
-                            <path d="M8 5v14l11-7z" />
-                        </svg>
-                    {/if}
+                    <Icon name={$isPlaying ? "pause" : "play"} size={19} />
                 </button>
 
-                <button class="cbtn" on:click={nextTrack} title={$_('player.next')}>
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="17"
-                        height="17"
-                    >
-                        <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
-                    </svg>
+                <button class="cbtn" on:click={nextTrack} data-tip={$_('player.next')}>
+                    <Icon name="skip-forward" size={17} />
                 </button>
             </div>
         {:else}
@@ -365,50 +300,18 @@
 
             <!-- Compact controls under lyrics -->
             <div class="row-ctrl compact" style="display: none;">
-                <button class="cbtn" on:click={previousTrack} title={$_('player.previous')}>
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="15"
-                        height="15"
-                    >
-                        <path d="M6 6h2v12H6zm3.5 6 8.5 6V6z" />
-                    </svg>
+                <button class="cbtn" on:click={previousTrack} data-tip={$_('player.previous')}>
+                    <Icon name="skip-back" size={15} />
                 </button>
                 <button
                     class="pbtn sm"
                     on:click={togglePlay}
-                    title={$isPlaying ? $_('common.pause') : $_('common.play')}
+                    data-tip={$isPlaying ? $_('common.pause') : $_('common.play')}
                 >
-                    {#if $isPlaying}
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="16"
-                            height="16"
-                        >
-                            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
-                        </svg>
-                    {:else}
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="16"
-                            height="16"
-                        >
-                            <path d="M8 5v14l11-7z" />
-                        </svg>
-                    {/if}
+                    <Icon name={$isPlaying ? "pause" : "play"} size={16} />
                 </button>
-                <button class="cbtn" on:click={nextTrack} title={$_('player.next')}>
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="15"
-                        height="15"
-                    >
-                        <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z" />
-                    </svg>
+                <button class="cbtn" on:click={nextTrack} data-tip={$_('player.next')}>
+                    <Icon name="skip-forward" size={15} />
                 </button>
                 <span class="t-label" style="margin-left:8px"
                     >{formatDuration($currentTime)} / {formatDuration(
@@ -810,5 +713,41 @@
             #1ed760
         );
         transition: width 0.1s linear;
+    }
+
+    /* ── Custom tooltip system (avoids OS-level window clipping) ──────── */
+    [data-tip] {
+        position: relative;
+    }
+
+    [data-tip]::after {
+        content: attr(data-tip);
+        position: absolute;
+        bottom: calc(100% + 5px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(20, 20, 30, 0.97);
+        color: rgba(255, 255, 255, 0.88);
+        font-size: 0.62rem;
+        font-weight: var(--font-weight-medium);
+        white-space: nowrap;
+        padding: 3px 7px;
+        border-radius: 5px;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.12s ease;
+        z-index: 10001;
+        border: 1px solid rgba(255, 255, 255, 0.07);
+        box-shadow: 0 3px 8px rgba(0, 0, 0, 0.6);
+    }
+
+    [data-tip]:hover::after {
+        opacity: 1;
+    }
+
+    /* Top-row buttons: tooltip opens downward to stay inside the window */
+    .row-top [data-tip]::after {
+        bottom: auto;
+        top: calc(100% + 5px);
     }
 </style>

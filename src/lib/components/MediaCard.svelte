@@ -2,6 +2,7 @@
   import { _ } from "svelte-i18n";
   import { createEventDispatcher, onDestroy } from "svelte";
   import MarqueeText from "$lib/components/MarqueeText.svelte";
+  import Icon from "$lib/components/Icon.svelte";
 
   const dispatch = createEventDispatcher<{
     play: void;
@@ -105,11 +106,7 @@
 
     {#if isPinned}
       <div class="pinned-indicator" aria-label="Pinned to top">
-        <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
-          <path
-            d="M16 9V4l1 0V2H7v2l1 0v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"
-          />
-        </svg>
+        <Icon name="pin" size={14} />
       </div>
     {/if}
 
@@ -126,15 +123,7 @@
           on:click|stopPropagation={() => dispatch("pause")}
           aria-label={pauseTooltip}
         >
-          <svg
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            width="24"
-            height="24"
-            aria-hidden="true"
-          >
-            <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-          </svg>
+          <Icon name="pause" size={24} />
         </button>
       </div>
     {/if}
@@ -148,15 +137,7 @@
           aria-label={isPaused ? resumeTooltip : playTooltip}
           on:click|stopPropagation={() => dispatch("play")}
         >
-          <svg
-            viewBox="0 0 24 24"
-            fill="currentColor"
-            width="24"
-            height="24"
-            aria-hidden="true"
-          >
-            <path d="M8 5v14l11-7z" />
-          </svg>
+          <Icon name="play" size={24} />
         </button>
       {/if}
     </div>
