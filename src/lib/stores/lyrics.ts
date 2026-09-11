@@ -4,13 +4,20 @@ import { currentTrack, currentTime } from './player';
 import {
     lyricsManager,
     LYRICS_SOURCES,
+    PRIORITY_TOKENS,
+    DELETABLE_PRIORITY_TOKENS,
     type LyricLine,
     type LyricsResult,
     type LyricsFormat,
     type LyricsSource,
+    type PriorityToken,
     type WordTiming,
 } from '$lib/lyrics';
 import { addToast } from '$lib/stores/toast';
+
+// re-exported so Settings > Lyrics can list
+// every valid priority/delete token without importing from $lib/lyrics directly
+export { PRIORITY_TOKENS, DELETABLE_PRIORITY_TOKENS, type PriorityToken };
 
 // ---------------------------------------------------------------------------
 // Stores
@@ -148,7 +155,7 @@ selectedSource.subscribe(value => {
  * raw string is persisted as-is
  * resolved ids are derived on read
  * so this always reflects whatever is currently registered (no hardcoded alias
- * table => valid ids are user, embedded, plus whatever SOURCE_IDS holds)
+ * table => valid ids are exactly PRIORITY_TOKENS, see $lib/lyrics)
  */
 export const sourcePriorityRaw = writable<string>(
     localStorage.getItem('lyrics_source_priority') ?? ''
@@ -158,7 +165,7 @@ export const sourcePriorityRaw = writable<string>(
 const PRIORITY_FORMAT_RE = /^[a-z]+(\/[a-z]+)*$/;
 
 function knownPriorityIds(): string[] {
-    return ['user', 'embedded', ...SOURCE_IDS];
+    return PRIORITY_TOKENS.map((t) => t.id);
 }
 
 /**
@@ -186,17 +193,18 @@ export function setSourcePriority(raw: string): boolean {
 
 /**
  * resolved, ordered list of source ids to try in auto mode
- * falls back to the default order (user, embedded, then registry order) when no priority is configured
+ * falls back to the default order (PRIORITY_TOKENS order) when no priority is configured
  */
 export function getSourcePriorityIds(): string[] {
     const raw = get(sourcePriorityRaw);
-    if (!raw) return ['user', 'embedded', ...SOURCE_IDS];
+    const defaultOrder = knownPriorityIds();
+    if (!raw) return defaultOrder;
 
     // revalidate against currently known ids in case a source was removed since this was saved
     // drop stale tokens rather than failing
-    const known = new Set(knownPriorityIds());
+    const known = new Set(defaultOrder);
     const resolved = raw.split('/').filter(t => known.has(t));
-    return resolved.length > 0 ? resolved : ['user', 'embedded', ...SOURCE_IDS];
+    return resolved.length > 0 ? resolved : defaultOrder;
 }
 
 /**

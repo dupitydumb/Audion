@@ -66,7 +66,11 @@ fn sanitise_format(format: &str) -> &str {
 }
 
 /// All formats we probe when searching for an existing file.
-const KNOWN_FORMATS: &[&str] = &["lrc", "ttml", "xml", "json"];
+/// must stay in sync with sanitise_format's allow-list
+/// and the frontend's LyricsFormat type
+/// load_user_lyrics_file, delete_user_lyrics_file, delete_lyrics_by_token
+/// (bulk), and get_cached_sources all probe/match against this exact list
+const KNOWN_FORMATS: &[&str] = &["lrc", "ttml", "xml", "srt", "json"];
 
 fn hash_path(music_path: &str) -> u64 {
     let mut hasher = DefaultHasher::new();

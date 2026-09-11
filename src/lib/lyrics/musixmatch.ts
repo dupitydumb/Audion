@@ -118,6 +118,7 @@ export class Musixmatch {
 
             return { synced: body.subtitle.subtitle_body };
         } catch (error) {
+            console.warn(`[Musixmatch] getLrcById failed for trackId=${trackId}:`, error);
             return null;
         }
     }
@@ -151,6 +152,7 @@ export class Musixmatch {
                 return { synced: lrcStr };
             }
         } catch (error) {
+            console.warn(`[Musixmatch] getLrcWordByWord failed for trackId=${trackId}:`, error);
         }
         return { synced: null };
     }
@@ -196,6 +198,7 @@ export class Musixmatch {
 
             return this.getLrcById(trackId);
         } catch (error) {
+            console.warn(`[Musixmatch] getLrc failed for searchTerm="${searchTerm}":`, error);
             return null;
         }
     }

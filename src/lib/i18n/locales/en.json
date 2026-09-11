@@ -437,6 +437,7 @@
     "lyricsDeleteButtonLabel": "Delete lyrics for this source",
     "lyricsDeleteButtonTitle": "Delete all cached lyrics for this source",
     "lyricsDeleteEmptyToken": "Type a source token first",
+    "lyricsDeleteEmbeddedUnsupported": "Embedded lyrics live in the file itself and can't be deleted from here",
     "lyricsDeleteAllConfirm": "Delete ALL cached lyrics — every source, including imported files — for every track in your library? This cannot be undone.",
     "lyricsDeleteTokenConfirm": "Delete all \"{label}\" lyrics for every track in your library? This cannot be undone.",
     "lyricsDeleteAllConfirmTitle": "Delete All Lyrics",

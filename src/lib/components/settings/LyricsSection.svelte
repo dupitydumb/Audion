@@ -1,13 +1,17 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
-  import { sourcePriorityRaw, setSourcePriority, lyricsStore, lyricsRenderMode, type LyricsRenderMode } from "$lib/stores/lyrics";
+  import { sourcePriorityRaw, setSourcePriority, lyricsStore, lyricsRenderMode, PRIORITY_TOKENS, DELETABLE_PRIORITY_TOKENS, type LyricsRenderMode } from "$lib/stores/lyrics";
   import { addToast } from "$lib/stores/toast";
   import { confirm } from "$lib/stores/dialogs";
   import { slide } from "svelte/transition";
-  import { createEventDispatcher, tick } from "svelte";
+  import { createEventDispatcher, tick, onDestroy } from "svelte";
 
   export let open: boolean = false;
   const dispatch = createEventDispatcher();
+
+  // full default priority order, e.g. "user/embedded/applejson/musixmatch/lrclib/genius"
+  const defaultPriorityExample = PRIORITY_TOKENS.map((t) => t.id).join('/');
+  const deleteExampleTokens = [DELETABLE_PRIORITY_TOKENS[0]?.id, DELETABLE_PRIORITY_TOKENS[1]?.id].filter(Boolean);
 
   // =================================================
   // lyrics: render mode (legacy / dynamic alignment)
@@ -31,24 +35,38 @@
   // lyrics: source priority
   // ---------------------------------------------------------------------
 
+  const PRIORITY_INPUT_DEBOUNCE_MS = 500;
+
   let priorityInput = $sourcePriorityRaw;
-  let priorityChanged = false;
+  let lastSyncedPriority = $sourcePriorityRaw;
   let priorityError = "";
+  let priorityChanged = false;
+  let priorityDebounceTimer: ReturnType<typeof setTimeout> | undefined;
 
   // Keep the local field in sync with the store when it changes elsewhere
   // (e.g. reset from another tab), but never clobber an in-progress edit
-  $: if (!priorityChanged && priorityInput !== $sourcePriorityRaw) {
+  // this only depends on the store value, not priorityInput
+  // => it won't re-fire on every keystroke
+  $: if ($sourcePriorityRaw !== lastSyncedPriority) {
     priorityInput = $sourcePriorityRaw;
+    lastSyncedPriority = $sourcePriorityRaw;
+    priorityChanged = false;
   }
 
+  // only check for a real change once the user stops typing
+  // => the save button doesn't flicker in on every keystroke
   function handlePriorityInput() {
-    priorityChanged = priorityInput.trim() !== $sourcePriorityRaw.trim();
     priorityError = "";
+    clearTimeout(priorityDebounceTimer);
+    priorityDebounceTimer = setTimeout(() => {
+      priorityChanged = priorityInput.trim() !== $sourcePriorityRaw.trim();
+    }, PRIORITY_INPUT_DEBOUNCE_MS);
   }
 
   function handlePrioritySave() {
     const ok = setSourcePriority(priorityInput.trim());
     if (ok) {
+      clearTimeout(priorityDebounceTimer);
       priorityChanged = false;
       priorityError = "";
       addToast($_('settings.lyricsPrioritySaved', { default: 'Lyrics source priority saved' }), "success");
@@ -62,10 +80,13 @@
   }
 
   function handlePriorityReset() {
+    clearTimeout(priorityDebounceTimer);
     priorityInput = "";
     priorityChanged = priorityInput.trim() !== $sourcePriorityRaw.trim();
     priorityError = "";
   }
+
+  onDestroy(() => clearTimeout(priorityDebounceTimer));
 
   // ---------------------------------------------------------------------
   // lyrics: bulk delete by token
@@ -78,13 +99,35 @@
     const t = token.trim().toLowerCase();
     if (!t) return "";
     if (t === "all") return $_('settings.lyricsTokenAll', { default: 'All' });
+    const known = PRIORITY_TOKENS.find((p) => p.id === t);
+    if (known) return known.label;
+    // unrecognized token (e.g. a source that's since been removed)
     return t.charAt(0).toUpperCase() + t.slice(1);
   }
+
+  // ==============================
+  // lyrics: available-source text lines
+  // ==============================
+
+  $: prioritySourcesList = PRIORITY_TOKENS.map((t) => `${t.id} (${t.label})`).join(' · ');
+  $: deleteSourcesList = [
+    ...DELETABLE_PRIORITY_TOKENS.map((t) => `${t.id} (${t.label})`),
+    `all (${$_('settings.lyricsTokenAll', { default: 'All' })})`,
+  ].join(' · ');
 
   async function handleBulkDeleteLyrics() {
     const token = deleteToken.trim().toLowerCase();
     if (!token) {
       addToast($_('settings.lyricsDeleteEmptyToken', { default: 'Type a source token first' }), "error");
+      return;
+    }
+
+    // embedded lyrics live in the track's own file tags
+    // be explicit that it is not currently deletable
+    if (token === "embedded") {
+      addToast($_('settings.lyricsDeleteEmbeddedUnsupported', {
+        default: 'Embedded lyrics live in the file itself and can\'t be deleted from here',
+      }), "error");
       return;
     }
 
@@ -170,10 +213,14 @@
           <span class="setting-title">{$_('settings.lyricsPriorityTitle', { default: 'Auto-fetch source priority' })}</span>
           <span class="setting-description">
             {$_('settings.lyricsPriorityDesc', {
-              values: { example: 'apple/imported/genius' },
-              default: 'Controls the order sources are tried automatically, e.g. apple/imported/genius. Lowercase letters and single "/" separators only. Leave blank to use the default order. Manual source selection in the lyrics panel is unaffected.',
+              values: { example: defaultPriorityExample },
+              default: `Controls the order sources are tried automatically, e.g. ${defaultPriorityExample}. Lowercase letters and single "/" separators only. Leave blank to use the default order shown below. Manual source selection in the lyrics panel is unaffected.`,
             })}
           </span>
+          <p class="lyrics-source-list">
+            <span class="lyrics-source-list-label">{$_('settings.lyricsAvailableSourcesLabel', { default: 'Available sources' })}:</span>
+            {prioritySourcesList}
+          </p>
           <div class="lyrics-priority-row">
             <input
               type="text"
@@ -181,7 +228,7 @@
               bind:value={priorityInput}
               on:input={handlePriorityInput}
               on:keydown={(e) => e.key === 'Enter' && priorityChanged && handlePrioritySave()}
-              placeholder={$_('settings.lyricsPriorityPlaceholder', { default: 'apple/imported/genius' })}
+              placeholder={$_('settings.lyricsPriorityPlaceholder', { default: defaultPriorityExample })}
               aria-label={$_('settings.lyricsPriorityInputLabel', { default: 'Lyrics source priority' })}
             />
             {#if priorityChanged}
@@ -203,10 +250,14 @@
           <span class="setting-title">{$_('settings.lyricsDeleteTitle', { default: 'Delete cached lyrics' })}</span>
           <span class="setting-description">
             {$_('settings.lyricsDeleteDesc', {
-              values: { apple: 'apple', imported: 'imported', all: 'all' },
-              default: 'Permanently delete every cached lyrics file for a given source, across your whole library. Type a source token (e.g. apple, imported, or all for everything).',
+              values: { tokenA: deleteExampleTokens[0], tokenB: deleteExampleTokens[1] },
+              default: `Permanently delete every cached lyrics file for a given source, across your whole library. Type a source token (e.g. ${deleteExampleTokens.join(', ')}, or all for everything).`,
             })}
           </span>
+          <p class="lyrics-source-list">
+            <span class="lyrics-source-list-label">{$_('settings.lyricsAvailableSourcesLabel', { default: 'Available sources' })}:</span>
+            {deleteSourcesList}
+          </p>
           <div class="lyrics-delete-row">
             <span class="lyrics-delete-label">{$_('settings.lyricsDeleteAllLabel', { default: 'Delete all' })}</span>
             <input
@@ -228,8 +279,12 @@
               {#if isBulkDeletingLyrics}
                 <div class="lyrics-delete-spinner"></div>
               {:else}
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                  <path d="M6 7h12v2H6zm2 3h2v9H8zm6 0h2v9h-2zM9 4h6l1 2H8z"/>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 7h16" />
+                  <path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" />
+                  <path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13" />
+                  <path d="M10 11v6" />
+                  <path d="M14 11v6" />
                 </svg>
               {/if}
             </button>

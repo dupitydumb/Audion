@@ -269,6 +269,7 @@
     "lyricsDeleteButtonLabel": "Eliminar letras de esta fuente",
     "lyricsDeleteButtonTitle": "Eliminar todas las letras en caché de esta fuente",
     "lyricsDeleteEmptyToken": "Escribe primero un token de fuente",
+    "lyricsDeleteEmbeddedUnsupported": "Las letras incrustadas están en el propio archivo y no se pueden eliminar desde aquí",
     "lyricsDeleteAllConfirm": "¿Eliminar TODAS las letras en caché — todas las fuentes, incluidos los archivos importados — de cada pista de tu biblioteca? Esto no se puede deshacer.",
     "lyricsDeleteTokenConfirm": "¿Eliminar todas las letras \"{label}\" de cada pista de tu biblioteca? Esto no se puede deshacer.",
     "lyricsDeleteAllConfirmTitle": "Eliminar todas las letras",

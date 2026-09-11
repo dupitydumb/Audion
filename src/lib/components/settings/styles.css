@@ -3229,6 +3229,19 @@ border-radius: 50%;
 animation: spin 0.8s linear infinite;
 }
 
+.lyrics-source-list {
+margin-top: var(--spacing-sm);
+font-size: 0.8rem;
+line-height: 1.6;
+color: var(--text-secondary);
+}
+
+.lyrics-source-list-label {
+font-weight: 600;
+color: var(--text-primary);
+margin-right: 4px;
+}
+
 /* startup page has more options than output devices typically do; scroll instead of overflowing the card */
 .startup-page-dropdown-menu {
 max-height: 280px;

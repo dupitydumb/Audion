@@ -269,6 +269,7 @@
     "lyricsDeleteButtonLabel": "Supprimer les paroles de cette source",
     "lyricsDeleteButtonTitle": "Supprimer toutes les paroles en cache pour cette source",
     "lyricsDeleteEmptyToken": "Saisissez d'abord un jeton de source",
+    "lyricsDeleteEmbeddedUnsupported": "Les paroles intégrées se trouvent dans le fichier lui-même et ne peuvent pas être supprimées ici",
     "lyricsDeleteAllConfirm": "Supprimer TOUTES les paroles en cache — toutes sources confondues, y compris les fichiers importés — pour chaque piste de votre bibliothèque ? Cette action est irréversible.",
     "lyricsDeleteTokenConfirm": "Supprimer toutes les paroles \"{label}\" pour chaque piste de votre bibliothèque ? Cette action est irréversible.",
     "lyricsDeleteAllConfirmTitle": "Supprimer toutes les paroles",
