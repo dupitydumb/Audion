@@ -1330,9 +1330,10 @@
         background-color: rgba(255, 255, 255, 0.12);
     }
 
-    /* Mobile view header adjustments */
+    /* Mobile: hide the big heading => the pill tabs above already show
+       which library view is active, so it's redundant */
     :global(html.layout-mobile) .view-header h1 {
-        font-size: 1.25rem;
+        display: none;
     }
 
     :global(html.layout-mobile) .view-header {

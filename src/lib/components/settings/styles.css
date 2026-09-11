@@ -37,13 +37,13 @@
     padding-bottom: calc(var(--player-height) + var(--spacing-lg));
   }
 
-  @media (max-width: 768px) {
-    .settings-content .settings-pane.settings-container {
-      padding-bottom: calc(
-        var(--mobile-bottom-inset, 130px) + var(--spacing-xl)
-      );
-    }
+  /* on real mobile layout, app-content (routes/+layout.svelte) already
+    reserves room for the bottom nav + floating mini player */
+  :global(html.layout-mobile) .settings-content .settings-pane.settings-container {
+    padding-bottom: var(--spacing-lg);
+  }
 
+  @media (max-width: 768px) {
     .view-header h1 {
       font-size: 1.5rem;
     }
@@ -2731,12 +2731,6 @@
       min-height: 52px;
     }
 
-    /* Adjust bottom padding for content */
-    .settings-content {
-      padding-bottom: calc(
-        var(--mobile-bottom-inset, 130px) + var(--spacing-xl)
-      );
-    }
 
     /* Account Section Mobile Fixes */
     .account-card {

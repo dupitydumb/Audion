@@ -469,7 +469,16 @@
 
   .app-content.mobile {
     padding-top: var(--safe-area-top);
-    padding-bottom: var(--safe-area-bottom);
+    /* bottom nav is always present on mobile => reserve its height as the
+       baseline, regardless of whether a track is currently playing */
+    padding-bottom: calc(var(--mobile-nav-height, 60px) + var(--safe-area-bottom, 0px));
+  }
+
+  /* hybrid: mobile page layout, but the desktop title bar is still mounted
+     above it => keep its 48px height instead of the plain mobile safe-area
+     padding */
+  .app-content.mobile.has-titlebar {
+    padding-top: calc(48px + var(--safe-area-top, 0px));
   }
 
   .app-content.mobile.has-mini-player {
