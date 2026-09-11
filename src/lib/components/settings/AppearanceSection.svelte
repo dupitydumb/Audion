@@ -73,6 +73,7 @@
         <button class="segment-btn" class:active={$layoutOverride === 'auto'} on:click={() => handleLayoutOverrideChange('auto')}>{$_('settings.layoutAuto')}</button>
         <button class="segment-btn" class:active={$layoutOverride === 'desktop'} on:click={() => handleLayoutOverrideChange('desktop')}>{$_('settings.layoutDesktop')}</button>
         <button class="segment-btn" class:active={$layoutOverride === 'mobile'} on:click={() => handleLayoutOverrideChange('mobile')}>{$_('settings.layoutMobile')}</button>
+        <button class="segment-btn" class:active={$layoutOverride === 'hybrid'} on:click={() => handleLayoutOverrideChange('hybrid')}>{$_('settings.layoutHybrid')}</button>
       </div>
     </div>
 

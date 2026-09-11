@@ -470,6 +470,7 @@
     "layoutAuto": "Auto",
     "layoutDesktop": "Desktop",
     "layoutMobile": "Mobile",
+    "layoutHybrid": "Hybrid",
     "limiter": "Safety Limiter",
     "limiterDesc": "Prevent clipping from Replay Gain and EQ boosts. Turning this off plays audio completely unprocessed, which can distort if Replay Gain or EQ push a track past full volume.",
     "musicFolders": "Music folders",

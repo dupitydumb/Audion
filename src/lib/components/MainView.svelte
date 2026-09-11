@@ -21,7 +21,7 @@
         searchResults,
         clearSearch,
     } from "$lib/stores/search";
-    import { isMobile } from "$lib/stores/mobile";
+    import { isMobile, useDesktopTitleBar } from "$lib/stores/mobile";
     import MobileHome from "./MobileHome.svelte";
     import DesktopHome from "./DesktopHome.svelte";
     import LikedSongs from "./LikedSongs.svelte";
@@ -698,6 +698,9 @@
 
     <!-- Mobile: Search bar + library sub-tabs (Spotify pill style) -->
     {#if $isMobile && isLibraryView}
+        <!-- search bar hidden in hybrid mode => the desktop title bar already
+             has its own search -->
+        {#if !$useDesktopTitleBar}
         <div class="mobile-library-header">
             <div class="mobile-search-bar">
                 <svg
@@ -742,6 +745,7 @@
                 {/if}
             </div>
         </div>
+        {/if}
 
         {#if !isSearching}
             <div class="mobile-library-tabs-wrapper">

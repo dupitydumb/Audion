@@ -9,7 +9,7 @@
         clearSearch,
         searchResults,
     } from "$lib/stores/search";
-    import { isMobile, toggleMobileSidebar } from "$lib/stores/mobile";
+    import { useDesktopTitleBar, toggleMobileSidebar } from "$lib/stores/mobile";
     import { appSettings } from "$lib/stores/settings";
     import MenuBar from "./MenuBar.svelte";
     import Breadcrumbs from "./Breadcrumbs.svelte";
@@ -142,11 +142,11 @@
     });
 </script>
 
-<div class="titlebar" class:mobile={$isMobile}>
+<div class="titlebar" class:mobile={!$useDesktopTitleBar}>
     <div class="titlebar-left">
         <div class="left-controls">
-            <!-- Mobile: Hamburger menu -->
-            {#if $isMobile}
+            <!-- Mobile: Hamburger menu (not shown in hybrid => desktop bar handles nav) -->
+            {#if !$useDesktopTitleBar}
                 <button
                     class="nav-btn hamburger-btn"
                     on:click={toggleMobileSidebar}
@@ -168,8 +168,8 @@
                 <MenuBar />
             {/if}
 
-            <!-- Navigation (hide on mobile) -->
-            {#if !$isMobile}
+            <!-- Navigation (desktop bar only) -->
+            {#if $useDesktopTitleBar}
                 <div class="nav-group">
                     <button
                         class="nav-btn"
@@ -219,14 +219,14 @@
                 </div>
             {/if}
         </div>
-        <!-- Left Drag Region (desktop only) -->
-        {#if !$isMobile}
+        <!-- Left Drag Region (desktop bar only) -->
+        {#if $useDesktopTitleBar}
             <div class="drag-region" data-tauri-drag-region></div>
         {/if}
     </div>
 
     <!-- Center Search Bar -->
-    {#if $isMobile}
+    {#if !$useDesktopTitleBar}
         <!-- Mobile: search icon toggle or expanded search -->
         <div class="titlebar-center mobile-center">
             {#if mobileSearchOpen}
@@ -350,8 +350,8 @@
     {/if}
 
     <div class="titlebar-right">
-        <!-- Right Drag Region (desktop only) -->
-        {#if !$isMobile}
+        <!-- Right Drag Region (desktop bar only) -->
+        {#if $useDesktopTitleBar}
             <div class="drag-region" data-tauri-drag-region></div>
             <div class="window-controls">
                 <button

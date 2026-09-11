@@ -14,7 +14,7 @@
     initPlatformDetection,
     listen,
   } from "$lib/api/tauri";
-  import { initMobileDetection, isMobile } from "$lib/stores/mobile";
+  import { initMobileDetection, isMobile, useDesktopTitleBar } from "$lib/stores/mobile";
   import { mobileSearchOpen } from "$lib/stores/mobile";
   import { initAndroidNotification } from "$lib/services/android-notification";
   import { loadLikedTracks } from "$lib/stores/liked";
@@ -340,7 +340,7 @@
 </script>
 
 {#if !$isLoading && $locale}
-{#if !$isMobile && !$isMiniPlayer}
+{#if $useDesktopTitleBar && !$isMiniPlayer}
   <TitleBar />
   <LinuxResizeHandles />
 {/if}
@@ -387,7 +387,7 @@
 
 <a href="#main-content" class="skip-link">{$_("app.skipToMainContent")}</a>
 
-<div class="app-content" class:mobile={$isMobile} class:pip={$isMiniPlayer} class:has-mini-player={$isMobile && $currentTrack && !$isFullScreen} id="main-content">
+<div class="app-content" class:mobile={$isMobile} class:has-titlebar={$useDesktopTitleBar} class:pip={$isMiniPlayer} class:has-mini-player={$isMobile && $currentTrack && !$isFullScreen} id="main-content">
   <slot />
 </div>
 
