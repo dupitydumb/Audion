@@ -16,6 +16,9 @@ class AudionApplication : Application() {
             // launching an activity, and the jni bridge needs the lib loaded
             // by the time that service's first native call happens
             System.loadLibrary("audion_lib")
+            // cold-starts the database so browsing works even on that same
+            // direct-start path, before tauri's own setup hook ever runs
+            AudionLibraryBridge.initDatabase(this)
         } catch (e: Exception) {
             // if this fails the app is broken regardless (audion_lib is the
             // whole rust core, not just the auto bridge) . MainActivity's own

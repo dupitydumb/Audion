@@ -439,6 +439,23 @@ export async function playTrack(
     }
 }
 
+/**
+ * resolves a bare track id to a full track and plays it =>
+ * needed because playTrack() reads track.local_src/path/source_type directly from the object it's given 
+ * (not just from its own internal getFullTrack() call)
+ * so a minimal {id} stub isn't enough to actually resolve audio
+ * used by android auto's onPlayFromMediaId,
+ * where all we're handed is the "track:<id>" media id of whatever the user tapped
+ */
+export async function playTrackById(trackId: number): Promise<void> {
+    const track = await getFullTrack(trackId, true);
+    if (!track) {
+        console.warn('[Player] playTrackById: no track found for id', trackId);
+        return;
+    }
+    await playTrack(track);
+}
+
 export function playTracks(
     tracks: Track[],
     startIndex: number = 0,

@@ -20,6 +20,9 @@ pub enum AudioCommand {
     Resume,
     Stop,
     Seek(f64),
+    /// absolute position in seconds rather than Seek's 0.0-1.0 fraction =>
+    /// used by android_auto's jni bridge (see engine::seek_absolute)
+    SeekAbsolute(f64),
     SetVolume(f32),
     SetEq(EqSettings),
     SetRepeatOne(bool),
@@ -166,6 +169,11 @@ impl PlaybackStateSync {
                             AudioCommand::Seek(f) => {
                                 if let Err(e) = engine.seek(f) {
                                     tracing::warn!("[AUDIO] seek error: {}", e);
+                                }
+                            }
+                            AudioCommand::SeekAbsolute(secs) => {
+                                if let Err(e) = engine.seek_absolute(secs) {
+                                    tracing::warn!("[AUDIO] seek_absolute error: {}", e);
                                 }
                             }
                             AudioCommand::SetVolume(v) => engine.set_volume(v),

@@ -239,3 +239,18 @@ pub fn resolve_leaf(conn: &Connection, node_id: &str) -> rusqlite::Result<Option
     }
     Ok(None)
 }
+
+/// (onPlayFromMediaId only gives us the tapped id, not which list it came from),
+/// so the choice is the track's own album
+/// falls back to a single track queue for tracks with no album_id
+///
+/// returns (queue, index of the tapped track within it)
+pub fn resolve_playback_context(conn: &Connection, track: &Track) -> rusqlite::Result<(Vec<Track>, usize)> {
+    if let Some(album_id) = track.album_id {
+        let album_tracks = albums::get_tracks_by_album(conn, album_id)?;
+        if let Some(idx) = album_tracks.iter().position(|t| t.id == track.id) {
+            return Ok((album_tracks, idx));
+        }
+    }
+    Ok((vec![track.clone()], 0))
+}

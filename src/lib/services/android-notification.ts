@@ -1,5 +1,5 @@
 import { get } from 'svelte/store';
-import { currentTrack, isPlaying, togglePlay, nextTrack, previousTrack, currentTime, duration, shuffle, repeat, toggleShuffle, cycleRepeat } from '$lib/stores/player';
+import { currentTrack, isPlaying, togglePlay, nextTrack, previousTrack, currentTime, duration, shuffle, repeat, toggleShuffle, cycleRepeat, playTrackById } from '$lib/stores/player';
 import { nativeAudioStop } from '$lib/services/native-audio';
 import { getTrackCoverSrc } from '$lib/api/tauri';
 import { formatDuration } from '$lib/api/tauri';
@@ -39,6 +39,10 @@ declare global {
     interface Window {
         AndroidMediaNotification?: AndroidInterface;
         __audionMediaAction?: (action: 'playPause' | 'next' | 'previous' | 'love' | 'stop' | 'toggleShuffle' | 'cycleRepeat') => void;
+        // called from MediaSessionCompat.onPlayFromMediaId when a track is
+        // tapped in android auto's browse/search UI => mediaId is one of our
+        // own "track:<id>" node ids from the android_auto rust interpreter
+        __audionPlayTrackId?: (mediaId: string) => void;
     }
 }
 
@@ -82,6 +86,15 @@ export async function initAndroidNotification() {
                 cycleRepeat();
                 break;
         }
+    };
+
+    window.__audionPlayTrackId = (mediaId) => {
+        const match = mediaId.match(/^track:(\d+)$/);
+        if (!match) {
+            console.warn('[Android Notification] Unrecognized media id:', mediaId);
+            return;
+        }
+        playTrackById(parseInt(match[1], 10));
     };
 
     // Subscribe to player state changes

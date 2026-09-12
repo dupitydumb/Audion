@@ -185,28 +185,55 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
             setCallback(object : MediaSessionCompat.Callback() {
                 override fun onPlay() {
                     evaluateJs("window.__audionMediaAction?.('playPause')")
+                    AudionLibraryBridge.resume()
                 }
                 override fun onPause() {
                     evaluateJs("window.__audionMediaAction?.('playPause')")
+                    AudionLibraryBridge.pause()
                 }
                 override fun onSkipToPrevious() {
                     evaluateJs("window.__audionMediaAction?.('previous')")
+                    AudionLibraryBridge.previous()
                 }
                 override fun onSkipToNext() {
                     evaluateJs("window.__audionMediaAction?.('next')")
+                    AudionLibraryBridge.next()
                 }
                 override fun onStop() {
                     evaluateJs("window.__audionMediaAction?.('stop')")
+                    AudionLibraryBridge.stop()
                     stopSelf()
+                }
+                override fun onSeekTo(pos: Long) {
+                    AudionLibraryBridge.seek(pos / 1000.0)
                 }
                 override fun onSetShuffleMode(shuffleMode: Int) {
                     // the frontend only exposes a toggle, not "set to this exact
                     // mode" => each tap just flips current state
                     evaluateJs("window.__audionMediaAction?.('toggleShuffle')")
+                    AudionLibraryBridge.setShuffle(shuffleMode != PlaybackStateCompat.SHUFFLE_MODE_NONE)
                 }
                 override fun onSetRepeatMode(repeatMode: Int) {
                     // same deal as shuffle, but cycling none -> one -> all -> none
                     evaluateJs("window.__audionMediaAction?.('cycleRepeat')")
+                    val mode = when (repeatMode) {
+                        PlaybackStateCompat.REPEAT_MODE_ONE -> "one"
+                        PlaybackStateCompat.REPEAT_MODE_ALL, PlaybackStateCompat.REPEAT_MODE_GROUP -> "all"
+                        else -> "none"
+                    }
+                    AudionLibraryBridge.setRepeat(mode)
+                }
+                override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) {
+                    // fired when a track is tapped in auto's browse/search ui
+                    // (not onPlay() => that's only for the transport play button)
+                    // validate against our own "track:<id>" scheme before it ever reaches evaluateJs,
+                    //  since this string becomes
+                    // literal js source below
+                    if (mediaId == null || !mediaId.matches(Regex("^track:\\d+$"))) {
+                        return
+                    }
+                    evaluateJs("window.__audionPlayTrackId?.('$mediaId')")
+                    AudionLibraryBridge.playTrack(mediaId)
                 }
             })
 
@@ -260,6 +287,7 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
                 PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
                 PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
                 PlaybackStateCompat.ACTION_STOP or
+                PlaybackStateCompat.ACTION_SEEK_TO or
                 PlaybackStateCompat.ACTION_SET_SHUFFLE_MODE or
                 PlaybackStateCompat.ACTION_SET_REPEAT_MODE
             )

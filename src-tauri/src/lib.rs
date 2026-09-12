@@ -695,16 +695,30 @@ pub fn run() {
                 );
             }
 
-            // Initialize database
-            let database = Database::new(&app_dir).map_err(|e| {
-                tracing::error!(error = %e, "Failed to initialize database");
-                e
-            })?;
+            // Initialize database =>
+            // on android, auto/aaos may have already cold started this via jni before MainActivity/this setup hook ever ran
+            // (see android_auto::jni_bridge::init_database_cold_start)
+            // so reuse that connection
+            #[cfg(target_os = "android")]
+            let existing_database = android_auto::jni_bridge::get_database();
+            #[cfg(not(target_os = "android"))]
+            let existing_database: Option<Database> = None;
+
+            let database = if let Some(db) = existing_database {
+                tracing::info!("Reusing database initialized during android cold start");
+                db
+            } else {
+                let db = Database::new(&app_dir).map_err(|e| {
+                    tracing::error!(error = %e, "Failed to initialize database");
+                    e
+                })?;
+                #[cfg(target_os = "android")]
+                android_auto::jni_bridge::set_database(db.clone());
+                db
+            };
             tracing::info!("Database initialized");
 
             app.manage(database.clone());
-            #[cfg(target_os = "android")]
-            android_auto::jni_bridge::set_database(database.clone());
             app.manage(commands::listenbrainz::ListenBrainzState::new());
             #[cfg(desktop)]
             app.manage(integrations::window::CloseConfirmed::default());
@@ -743,6 +757,14 @@ pub fn run() {
                 app.manage(audio::PlaybackStateSync::new(app.handle().clone(), player_event_tx));
                 app.manage(audio::PlayerStateSync::new(app.handle().clone(), player_event_rx));
             }
+
+            // android auto's jni bridge needs a way to reach PlaybackStateSync/ PlayerStateSync
+            // from raw native exports with no Tauri command injection =>
+            // stored here, deliberately after both are managed above,
+            // so a jni call racing in can never see a handle that points at not yet managed state
+            // tauri panics on .state::<T>() for an unmanaged type
+            #[cfg(target_os = "android")]
+            android_auto::jni_bridge::set_app_handle(app.handle().clone());
 
             // SMTC / OS media controls init (desktop only)
             // =============================================================================

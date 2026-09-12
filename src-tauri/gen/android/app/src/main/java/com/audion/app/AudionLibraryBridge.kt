@@ -27,6 +27,70 @@ object AudionLibraryBridge {
     @JvmStatic private external fun getChildrenNative(nodeId: String): String
     @JvmStatic private external fun getItemNative(nodeId: String): String
     @JvmStatic private external fun searchNative(scope: String, query: String): String
+    @JvmStatic private external fun initDatabaseNative(appDataDir: String)
+    @JvmStatic private external fun playTrackNative(mediaId: String)
+    @JvmStatic private external fun resumeNative()
+    @JvmStatic private external fun pauseNative()
+    @JvmStatic private external fun stopNative()
+    @JvmStatic private external fun seekNative(positionSeconds: Double)
+    @JvmStatic private external fun nextNative()
+    @JvmStatic private external fun previousNative()
+    @JvmStatic private external fun setShuffleNative(enabled: Boolean)
+    @JvmStatic private external fun setRepeatNative(mode: String)
+
+    /**
+     * cold-starts the rust database + settings caches
+     * without needing tauri's own App/AppHandle =>
+     * lets android auto (or bluetooth avrcp) browse a real library even when the car started this process directly and
+     * MainActivity/TauriActivity, and therefore tauri's setup hook, never ran
+     *
+     * called once from AudionApplication.onCreate, right after the .so loads
+     *
+     * context.dataDir (NOT context.filesDir) is passed =>
+     * 
+     * this is the exact
+     * path tauri's own app_data_dir() resolves to on android (verified
+     * against tauri's PathPlugin.kt: getDataDir -> activity.dataDir), so a
+     * later tauri setup hook in the same process finds and reuses this same
+     * database rather than opening a second one to a different path
+     */
+    fun initDatabase(context: Context) {
+        try {
+            initDatabaseNative(context.dataDir.absolutePath)
+        } catch (e: UnsatisfiedLinkError) {
+            // audion_lib failed to load =>
+            // MainActivity's own startup will surface the real error
+        }
+    }
+
+    /**
+     * playback controls => bypass evaluateJs/webview entirely
+     * called alongside (not instead of) the existing evaluateJs calls in MediaNotificationService:
+     * when the webview is alive, js still owns updating its own stores/history/ui as before;
+     * this is what makes the same call also work when it isn't
+     *
+     * mediaId for playTrack is one of our own "track:<id>" node ids
+     */
+    fun playTrack(mediaId: String) = safeNativeCall { playTrackNative(mediaId) }
+    fun resume() = safeNativeCall { resumeNative() }
+    fun pause() = safeNativeCall { pauseNative() }
+    fun stop() = safeNativeCall { stopNative() }
+    fun seek(positionSeconds: Double) = safeNativeCall { seekNative(positionSeconds) }
+    fun next() = safeNativeCall { nextNative() }
+    fun previous() = safeNativeCall { previousNative() }
+    fun setShuffle(enabled: Boolean) = safeNativeCall { setShuffleNative(enabled) }
+    /** mode is one of "none" / "one" / "all", matching the frontend's repeat store */
+    fun setRepeat(mode: String) = safeNativeCall { setRepeatNative(mode) }
+
+    /** the .so may not be loaded yet in rare cold-start races =>
+     * fail closed, not crash */
+    private inline fun safeNativeCall(call: () -> Unit) {
+        try {
+            call()
+        } catch (e: UnsatisfiedLinkError) {
+        } catch (e: Exception) {
+        }
+    }
 
     /**
      * returns the browsable/playable children of a given node id
