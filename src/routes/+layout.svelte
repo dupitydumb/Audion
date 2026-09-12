@@ -17,6 +17,7 @@
   import { initMobileDetection, isMobile, useDesktopTitleBar } from "$lib/stores/mobile";
   import { mobileSearchOpen } from "$lib/stores/mobile";
   import { initAndroidNotification } from "$lib/services/android-notification";
+  import { initConsoleCapture } from "$lib/services/console-capture";
   import { loadLikedTracks } from "$lib/stores/liked";
   import {
     goBack,
@@ -179,6 +180,10 @@
 
     // Initialize sync state (auth check, event listeners)
     initSync();
+
+    // forward console output into the backend's unified log file
+    // (no-ops outside Tauri)
+    initConsoleCapture();
 
     // Initialize Android-specific features
     if (isAndroid() && isTauri()) {

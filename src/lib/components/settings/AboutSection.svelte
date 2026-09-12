@@ -7,6 +7,7 @@
   import { slide } from "svelte/transition";
   import { createEventDispatcher } from "svelte";
   import Icon from "$lib/components/Icon.svelte";
+  import { exportLogFile } from "$lib/api/tauri";
 
   export let open: boolean = false;
   const dispatch = createEventDispatcher();
@@ -14,6 +15,31 @@
   let showUpdatePopup = false;
   let updatePopupMode: "github" | "ota" = "github";
   let updatePopupRelease: any = null;
+
+  let exportingLogs = false;
+  let logExportMessage = "";
+  let logExportSuccess = false;
+
+  async function handleExportLogs() {
+    if (exportingLogs) return;
+    exportingLogs = true;
+    logExportMessage = "";
+
+    try {
+      const saved = await exportLogFile();
+      if (saved) {
+        logExportSuccess = true;
+        logExportMessage = $_('settings.exportLogsSuccess');
+      }
+    } catch (error) {
+      logExportSuccess = false;
+      logExportMessage = $_('settings.exportLogsFailed', { values: { error: String(error) } });
+      console.error("Failed to export log file:", error);
+    } finally {
+      exportingLogs = false;
+      setTimeout(() => { logExportMessage = ""; }, 5000);
+    }
+  }
 
   function otaNotesToRelease(notes: PendingUpdateNotes | null) {
     if (!notes) return null;
@@ -105,6 +131,23 @@
       >{$_('settings.updateAvailable')}</button>
     {:else if $updates.hasUpdate}
       <button class="btn-green-compact" on:click={() => { updatePopupRelease = $updates.latestRelease; updatePopupMode = "github"; showUpdatePopup = true; }} style="margin-top: var(--spacing-sm)">{$_('settings.updateAvailable')}</button>
+    {/if}
+
+    <div class="divider"></div>
+
+    <div class="toggle-container">
+      <div class="toggle-info">
+        <span class="setting-title">{$_('settings.exportLogs')}</span>
+        <span class="setting-description">{$_('settings.exportLogsDesc')}</span>
+      </div>
+      <button class="btn-outline-compact" on:click={handleExportLogs} disabled={exportingLogs}>
+        {exportingLogs ? $_('settings.exportLogsInProgress') : $_('settings.exportLogsAction')}
+      </button>
+    </div>
+    {#if logExportMessage}
+      <span class="setting-description" style="color: {logExportSuccess ? 'var(--accent-primary)' : 'var(--error-color)'}">
+        {logExportMessage}
+      </span>
     {/if}
   </div>
   </div>

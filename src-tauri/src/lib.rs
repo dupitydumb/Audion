@@ -356,8 +356,12 @@ fn handle_deep_link_url(app_handle: &tauri::AppHandle, url_str: &str) {
 
 const LOG_RETAIN_DAYS: u64 = 3;
 
-#[cfg(not(mobile))]
-fn init_logging(log_dir: &PathBuf) {
+/// installs the shared file-backed tracing subscriber
+/// used directly by desktop (early, before .setup(),
+/// since dirs::data_local_dir already resolves a real writable path there) 
+/// and by mobile's init_mobile_file_logging below 
+/// (deferred until .setup(), since mobile needs tauri's own path resolver for a writable directory)
+fn init_file_logging(log_dir: &PathBuf) {
     use tracing_appender::rolling;
     use tracing_subscriber::{fmt, EnvFilter};
 
@@ -375,19 +379,34 @@ fn init_logging(log_dir: &PathBuf) {
     Box::leak(Box::new(worker_guard));
 
     let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn,audion=info"));
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn,audion=info,webview=info"));
 
-    fmt::Subscriber::builder()
+    // try_init (not init/expect)
+    // logging setup must never be able to crash the app
+    let subscriber = fmt::Subscriber::builder()
         .with_writer(non_blocking)
         .with_env_filter(filter)
         .with_ansi(false) // No ANSI color codes in log files
         .with_target(true) // Show module path (e.g. audion::audio)
         .with_thread_ids(false) // Keep lines short; enable if debugging races
-        .init();
+        .finish();
+
+    if let Err(e) = tracing::subscriber::set_global_default(subscriber) {
+        eprintln!("[audion] Failed to install file logging subscriber (another one is already active): {e}");
+        return;
+    }
+
+    let _ = commands::logs::LOG_DIR.set(log_dir.clone());
+}
+
+#[cfg(not(mobile))]
+fn init_logging(log_dir: &PathBuf) {
+    init_file_logging(log_dir);
 }
 
 #[cfg(target_os = "android")]
 fn init_logging(_log_dir: &PathBuf) {
+    // a writable app-data dir isn't known yet
     android_logger::init_once(
         android_logger::Config::default()
             .with_max_level(log::LevelFilter::Debug)
@@ -395,8 +414,17 @@ fn init_logging(_log_dir: &PathBuf) {
     );
 }
 
+/// second stage of Android logging:
+/// called from .setup() once the real app-data directory is known
+/// log:: calls from dependencies keep going to logcat via 'android_logger'
+/// (installed separately above)
+/// this only adds our own tracing:: calls (and forwarded webview console output, see log_from_frontend) to a file
+#[cfg(target_os = "android")]
+fn init_mobile_file_logging(log_dir: &PathBuf) {
+    init_file_logging(log_dir);
+}
+
 /// Remove log files in `log_dir` that are older than `keep_days` days.
-#[cfg(not(mobile))]
 fn prune_old_logs(log_dir: &PathBuf, keep_days: u64) {
     let cutoff = std::time::SystemTime::now()
         .checked_sub(std::time::Duration::from_secs(keep_days * 86_400))
@@ -641,6 +669,15 @@ pub fn run() {
             // Initialize cover storage app data directory (cross-platform)
             scanner::cover_storage::init_app_data_dir(app_dir.clone());
             tracing::info!("Cover storage initialized");
+
+            // now that a real, writable app-data dir is known, give android its own log file too 
+            // (see init_mobile_file_logging)
+            #[cfg(target_os = "android")]
+            {
+                let mobile_log_dir = app_dir.join("logs");
+                init_mobile_file_logging(&mobile_log_dir);
+                tracing::info!(path = %mobile_log_dir.display(), "Mobile file logging initialized");
+            }
 
             // into the process wide caches used by scanner::artist_parser and
             // load persisted artist split delimiter rules and album artist mode
@@ -1087,6 +1124,9 @@ pub fn run() {
                     commands::reorder_playlist_tracks,
                     commands::export_playlist_zip,
                     commands::get_export_temp_path,
+                    commands::get_log_file_path,
+                    commands::export_log_file,
+                    commands::log_from_frontend,
                     // Activity commands (liked tracks + play history)
                     commands::like_track,
                     commands::unlike_track,
@@ -1312,6 +1352,9 @@ pub fn run() {
                     commands::reorder_playlist_tracks,
                     commands::export_playlist_zip,
                     commands::get_export_temp_path,
+                    commands::get_log_file_path,
+                    commands::export_log_file,
+                    commands::log_from_frontend,
                     // Activity commands (liked tracks + play history)
                     commands::like_track,
                     commands::unlike_track,
@@ -1333,6 +1376,7 @@ pub fn run() {
                     commands::load_user_lyrics_file,
                     commands::load_source_lyrics_file,
                     commands::delete_user_lyrics_file,
+                    commands::delete_lyrics_by_token,
                     commands::delete_source_lyrics_file,
                     commands::musixmatch_request,
                     commands::get_lyrics,

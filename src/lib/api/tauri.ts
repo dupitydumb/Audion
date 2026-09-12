@@ -623,6 +623,47 @@ async function exportZip(
     return await invoke(cmd, { ...cmdArgs, destPath });
 }
 
+/**
+ * export the currently active log file
+ * (backend + forwarded console output,
+ * see console-capture.ts)
+ * to a user-picked location
+ *
+ * returns false if the user cancelled, throws on a real failure.
+ */
+export async function exportLogFile(): Promise<boolean> {
+    const defaultName = `audion-log-${new Date().toISOString().slice(0, 10)}.txt`;
+
+    if (isAndroid()) {
+        const uri = await saveFile({
+            platform: 'android',
+            defaultPath: defaultName,
+            mimeType: 'text/plain',
+        });
+        if (!uri) return false;
+
+        const tempPath = await invoke<string>('get_export_temp_path', { name: defaultName });
+        await invoke('export_log_file', { destPath: tempPath });
+
+        const ok = await commitAndroidSave(tempPath, uri);
+        if (!ok) {
+            throw new Error('Failed to copy log file to the selected location');
+        }
+        return true;
+    }
+
+    const destPath = await saveFile({
+        platform: 'desktop',
+        title: 'Export log file',
+        defaultPath: defaultName,
+        filters: [{ name: 'Text File', extensions: ['txt', 'log'] }],
+    });
+    if (!destPath) return false;
+
+    await invoke('export_log_file', { destPath });
+    return true;
+}
+
 export async function exportPlaylistZip(
     playlistId: number,
     playlistName = 'playlist',

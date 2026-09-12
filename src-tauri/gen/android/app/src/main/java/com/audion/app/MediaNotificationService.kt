@@ -14,6 +14,7 @@ import android.support.v4.media.MediaBrowserCompat.MediaItem
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
+import android.util.Log
 import android.webkit.WebView
 import androidx.core.app.NotificationCompat
 import androidx.media.MediaBrowserServiceCompat
@@ -38,6 +39,7 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
     companion object {
         const val CHANNEL_ID = "audion_media_channel"
         const val NOTIFICATION_ID = 1001
+        private const val TAG = "AudionNotif"
 
         const val ACTION_PLAY_PAUSE = "com.audion.app.PLAY_PAUSE"
         const val ACTION_PREVIOUS = "com.audion.app.PREVIOUS"
@@ -146,6 +148,8 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
                 val duration = intent?.getStringExtra(EXTRA_DURATION) ?: null
                 val isShuffled = intent?.getBooleanExtra(EXTRA_IS_SHUFFLED, false) ?: false
                 val repeatMode = intent?.getStringExtra(EXTRA_REPEAT_MODE) ?: "none"
+
+                Log.d(TAG, "onStartCommand: title=$title artUrl=${artUrl?.let { it.take(80) + if (it.length > 80) "..." else "" }} (len=${artUrl?.length ?: 0}, prefix=${artUrl?.take(16)})")
 
                 updateNotification(title, artist, album, isPlaying, isLoved, artUrl, currentTime, duration, isShuffled, repeatMode)
             }
@@ -268,20 +272,26 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
         mediaSession?.setPlaybackState(stateBuilder.build())
 
         // Load album art asynchronously if URL changed
+        Log.d(TAG, "updateNotification: artUrl=${artUrl?.take(60)} currentArtUrl=${currentArtUrl?.take(60)} changed=${artUrl != currentArtUrl} hasBitmap=${currentArtBitmap != null}")
+
         if (artUrl != null && artUrl != currentArtUrl && artUrl.isNotEmpty()) {
             currentArtUrl = artUrl
             serviceScope.launch {
                 try {
+                    Log.d(TAG, "Loading art from: ${artUrl.take(120)}")
                     val bitmap = loadBitmap(artUrl)
                     if (bitmap != null) {
+                        Log.d(TAG, "Art loaded successfully: ${bitmap.width}x${bitmap.height}")
                         currentArtBitmap = bitmap
                         // Re-update with the loaded bitmap
                         withContext(Dispatchers.Main) {
                             updateNotification(title, artist, album, isPlaying, isLoved, null, currentTime, duration, isShuffled, repeatMode)
                         }
+                    } else {
+                        Log.w(TAG, "Art load returned null bitmap for url: ${artUrl.take(120)}")
                     }
                 } catch (e: Exception) {
-                    // Ignore art loading failures
+                    Log.e(TAG, "Art loading failed for url: ${artUrl.take(120)}", e)
                 }
             }
         }
@@ -300,6 +310,8 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
         currentTime: String?,
         duration: String?
     ): Notification {
+        Log.d(TAG, "buildNotification: smallIcon=R.drawable.ic_notification hasLargeIconBitmap=${currentArtBitmap != null}${currentArtBitmap?.let { " (${it.width}x${it.height})" } ?: ""}")
+
         // Intent to open the app when notification is tapped
         val contentIntent = packageManager.getLaunchIntentForPackage(packageName)?.let {
             PendingIntent.getActivity(
@@ -343,7 +355,7 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
             .setContentTitle(title)
             .setContentText(artist)
             .setSubText(if (timeInfo.isNotEmpty()) "$album  •  $timeInfo" else album)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(R.drawable.ic_notification)
             .setContentIntent(contentIntent)
             .setDeleteIntent(stopIntent)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -380,7 +392,8 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
 
         currentArtBitmap?.let {
             builder.setLargeIcon(it)
-        }
+            Log.d(TAG, "buildNotification: setLargeIcon applied (${it.width}x${it.height})")
+        } ?: Log.d(TAG, "buildNotification: no largeIcon set (currentArtBitmap is null)")
 
         return builder.build()
     }
@@ -392,10 +405,14 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
                 if (urlStr.startsWith("data:")) {
                     val base64Data = urlStr.substringAfter(",")
                     val decoded = android.util.Base64.decode(base64Data, android.util.Base64.DEFAULT)
-                    return@withContext BitmapFactory.decodeByteArray(decoded, 0, decoded.size)
+                    Log.d(TAG, "loadBitmap: decoding data: URI, base64 len=${base64Data.length}, decoded bytes=${decoded.size}")
+                    val bmp = BitmapFactory.decodeByteArray(decoded, 0, decoded.size)
+                    Log.d(TAG, "loadBitmap: data: URI decode result=${if (bmp != null) "${bmp.width}x${bmp.height}" else "null (bad image data)"}")
+                    return@withContext bmp
                 }
 
                 // Handle file:// and http(s):// URLs
+                Log.d(TAG, "loadBitmap: opening URLConnection to ${urlStr.take(150)}")
                 val url = URL(urlStr)
                 val connection = url.openConnection()
                 connection.connectTimeout = 5000
@@ -403,8 +420,15 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
                 val inputStream = connection.getInputStream()
                 val bitmap = BitmapFactory.decodeStream(inputStream)
                 inputStream.close()
+                Log.d(TAG, "loadBitmap: URLConnection result=${if (bitmap != null) "${bitmap.width}x${bitmap.height}" else "null (decodeStream failed)"}")
                 bitmap
             } catch (e: Exception) {
+                // NOTE: if you see this log line
+                // with an asset.localhost URL, the frontend fix in
+                // android-notification.ts (fetch()+base64 for that host)
+                // isn't taking effect => check it's actually reaching this
+                // function as a data: URI instead
+                Log.e(TAG, "loadBitmap: failed to load '${urlStr.take(150)}': ${e.javaClass.simpleName}: ${e.message}")
                 null
             }
         }
