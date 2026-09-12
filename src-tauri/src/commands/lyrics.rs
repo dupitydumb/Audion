@@ -297,6 +297,14 @@ fn filename_matches_token(filename: &str, token: &str) -> bool {
     }
 }
 
+/// result of a bulk delete by token
+/// 'matched' (found) can be > 'deleted' when some files couldn't actually be removed
+#[derive(serde::Serialize)]
+pub struct BulkDeleteResult {
+    pub matched: u32,
+    pub deleted: u32,
+}
+
 /// delete every cached lyrics file matching token, across the entire library 
 /// sidecar files beside each local music file, fetched directly from the db
 /// and the shared hashed cache dir (used for stream/URL tracks, which have no folder of their own to keep a sidecar file in)
@@ -304,13 +312,12 @@ fn filename_matches_token(filename: &str, token: &str) -> bool {
 /// user matches imported files (no source segment)
 /// all matches every lyrics file regardless of source
 /// matching is filename pattern based only
-/// returns the number of files deleted
 #[tauri::command]
 pub fn delete_lyrics_by_token(
     app: AppHandle,
     db: State<'_, Database>,
     token: String,
-) -> Result<u32, String> {
+) -> Result<BulkDeleteResult, String> {
     let token = token.trim().to_lowercase();
     if token.is_empty() {
         return Err("Empty token".to_string());
@@ -321,6 +328,7 @@ pub fn delete_lyrics_by_token(
         queries::get_all_track_paths(&conn).map_err(|e| e.to_string())?
     };
 
+    let mut matched: u32 = 0;
     let mut deleted: u32 = 0;
 
     // shared hashed cache dir (stream/URL tracks) ==========================================
@@ -331,7 +339,11 @@ pub fn delete_lyrics_by_token(
             if !path.is_file() { continue; }
             let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
             if filename_matches_token(name, &token) {
-                if fs::remove_file(&path).is_ok() { deleted += 1; }
+                matched += 1;
+                match fs::remove_file(&path) {
+                    Ok(()) => deleted += 1,
+                    Err(e) => eprintln!("[lyrics] failed to delete {}: {}", path.display(), e),
+                }
             }
         }
     }
@@ -353,12 +365,16 @@ pub fn delete_lyrics_by_token(
             let Some(name) = epath.file_name().and_then(|n| n.to_str()) else { continue };
             if !name.starts_with(&prefix) { continue; }
             if filename_matches_token(name, &token) {
-                if fs::remove_file(&epath).is_ok() { deleted += 1; }
+                matched += 1;
+                match fs::remove_file(&epath) {
+                    Ok(()) => deleted += 1,
+                    Err(e) => eprintln!("[lyrics] failed to delete {}: {}", epath.display(), e),
+                }
             }
         }
     }
 
-    Ok(deleted)
+    Ok(BulkDeleteResult { matched, deleted })
 }
 
 // ---------------------------------------------------------------------------

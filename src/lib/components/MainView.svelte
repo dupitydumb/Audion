@@ -1275,13 +1275,21 @@
     }
 
     /* Mobile: hide the big heading => the pill tabs above already show
-       which library view is active, so it's redundant */
+       which library view is active, so it's redundant.
+       the search-results header keeps its padding: it still has visible
+       content (the result-count pills) besides its heading */
     :global(html.layout-mobile) .view-header h1 {
         display: none;
     }
 
-    :global(html.layout-mobile) .view-header {
-        padding: calc(var(--safe-area-top) + var(--spacing-md))
-            var(--spacing-md) var(--spacing-md);
+    :global(html.layout-mobile) .view-header:not(.search-view-header) {
+        padding: 0;
+        min-height: 0;
+    }
+
+    /* tracks view: the scan-status line can still appear in the now-empty
+       header */
+    :global(html.layout-mobile) .view-header:not(.search-view-header) .scan-status {
+        padding: var(--spacing-sm) var(--spacing-md) 0;
     }
 </style>

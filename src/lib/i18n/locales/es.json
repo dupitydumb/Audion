@@ -259,6 +259,7 @@
     "otaEnabledDesc": "Descarga e instala las actualizaciones dentro de la app en lugar de mediante GitHub releases",
     "lyricsPriorityTitle": "Prioridad de fuentes de obtención automática",
     "lyricsPriorityDesc": "Controla el orden en que se prueban las fuentes automáticamente, p. ej. {example}. Solo letras minúsculas y separadores \"/\" simples. Déjelo en blanco para usar el orden predeterminado. La selección manual de la fuente en el panel de letras no se ve afectada.",
+    "lyricsAvailableSourcesLabel": "Fuentes disponibles",
     "lyricsPriorityPlaceholder": "apple/imported/genius",
     "lyricsPriorityInputLabel": "Prioridad de fuentes de letras",
     "save": "Guardar",

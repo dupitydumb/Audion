@@ -2762,11 +2762,6 @@
     min-height: 52px;
   }
 
-  /* Adjust bottom padding for content */
-  .settings-content {
-    padding-bottom: calc(var(--mobile-bottom-inset, 130px) + var(--spacing-xl));
-  }
-
   /* Account Section Mobile Fixes */
   .account-card {
     padding: var(--spacing-md);

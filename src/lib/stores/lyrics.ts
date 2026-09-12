@@ -131,21 +131,19 @@ export const lyricsAlignment = derived(lyricsData, ($lyrics): LyricsAlignment =>
 });
 
 /**
- * The source the user has manually selected (persisted to localStorage).
- * null = "auto" .use the first available source in registry priority order.
+ * The source the user has manually selected for the CURRENT track only.
+ * null = "auto" .use the configured priority order (see sourcePriorityRaw)
+ *
+ * intentionally in-memory only (not persisted):
+ * a manual pick is a temporary override not a standing preference
+ * reset every time the current track changes
  */
-export const selectedSource = writable<string | null>(
-    localStorage.getItem('lyrics_selected_source') ?? null
-);
+export const selectedSource = writable<string | null>(null);
 
-// Persist selectedSource automatically
-selectedSource.subscribe(value => {
-    if (value === null) {
-        localStorage.removeItem('lyrics_selected_source');
-    } else {
-        localStorage.setItem('lyrics_selected_source', value);
-    }
-});
+/** true if a API key has been configured (required for Apple Music / Genius) */
+function hasPaxApiKey(): boolean {
+    return !!localStorage.getItem('qobuz_pax_api_key')?.trim();
+}
 
 /**
  * auto mode source priority, e.g. user/embedded/applejson
@@ -170,26 +168,46 @@ function knownPriorityIds(): string[] {
 }
 
 /**
- * validate and persist a raw priority string
- * rejects (leaves the previous config untouched) on malformed input or any token not matching a currently known source id
- * returns true if accepted, false if rejected
+ * result of a setSourcePriority attempt,
+ * so the settings UI can show the right message
  */
-export function setSourcePriority(raw: string): boolean {
+export type SetSourcePriorityResult = 'ok' | 'invalid_format' | 'missing_api_key';
+
+/**
+ * validate and persist a raw priority string
+ * rejects (leaves the previous config untouched) on malformed input.
+ * any token not matching a currently known source id, or
+ * 'applejson' being listed without a API key configured (it would just fail on
+ * every auto-fetch attempt otherwise)
+ *
+ * on success: clears any per-track manual source override and
+ * re-runs lyrics resolution immediately
+ */
+export function setSourcePriority(raw: string): SetSourcePriorityResult {
     if (raw === '') {
         sourcePriorityRaw.set('');
         localStorage.removeItem('lyrics_source_priority');
-        return true;
+        selectedSource.set(null);
+        fetchLyricsForTrack();
+        return 'ok';
     }
 
-    if (!PRIORITY_FORMAT_RE.test(raw)) return false;
+    if (!PRIORITY_FORMAT_RE.test(raw)) return 'invalid_format';
 
     const tokens = raw.split('/');
     const known = new Set(knownPriorityIds());
-    if (!tokens.every(t => known.has(t))) return false;
+    if (!tokens.every(t => known.has(t))) return 'invalid_format';
+
+    if (tokens.includes('applejson') && !hasPaxApiKey()) return 'missing_api_key';
 
     sourcePriorityRaw.set(raw);
     localStorage.setItem('lyrics_source_priority', raw);
-    return true;
+
+    // a manual pick from before this change shouldn't keep overriding the newly configured order
+    selectedSource.set(null);
+    fetchLyricsForTrack();
+
+    return 'ok';
 }
 
 /**
@@ -994,6 +1012,10 @@ export function initLyricsSync(): void {
     if (_unsubscribe) return;
 
     _unsubscribe = currentTrack.subscribe(track => {
+        // a new track always starts fresh and
+        // respects the configured priority order
+        selectedSource.set(null);
+
         if (track) {
             if (get(appSettings).lyricsAutoFetch) {
                 fetchLyricsForTrack();
@@ -1178,13 +1200,15 @@ export const lyricsStore = {
      * token is compared purely by filename pattern on the backend
      * user matches imported files, all matches every source
      * never needs updating when a new source is added
-     * returns the number of files deleted
+     *
+     * returns { matched, deleted }: 
+     * matched can be greater than deleted when files were found but some couldn't actually be removed
      */
-    async deleteLyricsByToken(token: string): Promise<number> {
+    async deleteLyricsByToken(token: string): Promise<{ matched: number; deleted: number }> {
         const normalized = token.trim().toLowerCase();
-        if (!normalized) return 0;
+        if (!normalized) return { matched: 0, deleted: 0 };
         try {
-            return await invoke<number>('delete_lyrics_by_token', { token: normalized });
+            return await invoke<{ matched: number; deleted: number }>('delete_lyrics_by_token', { token: normalized });
         } catch (err) {
             console.warn('[lyrics store] deleteLyricsByToken failed:', err);
             throw err;

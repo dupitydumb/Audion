@@ -66,12 +66,17 @@
   }
 
   function handlePrioritySave() {
-    const ok = setSourcePriority(priorityInput.trim());
-    if (ok) {
+    const result = setSourcePriority(priorityInput.trim());
+    if (result === 'ok') {
       clearTimeout(priorityDebounceTimer);
       priorityChanged = false;
       priorityError = "";
       addToast($_('settings.lyricsPrioritySaved', { default: 'Lyrics source priority saved' }), "success");
+    } else if (result === 'missing_api_key') {
+      priorityError = $_('settings.lyricsPriorityMissingApiKey', {
+        default: 'Apple Music (applejson) needs a Paxsenix API key configured in the Qobuz plugin settings before it can be used in the priority order.',
+      });
+      addToast($_('settings.lyricsPriorityMissingApiKeyToast', { default: 'Add a Paxsenix API key before using Apple Music in the priority order' }), "error");
     } else {
       priorityError = $_('settings.lyricsPriorityInvalidFormat', {
         values: { example: 'apple/imported/genius' },
@@ -150,14 +155,29 @@
 
     isBulkDeletingLyrics = true;
     try {
-      const count = await lyricsStore.deleteLyricsByToken(token);
-      addToast(
-        count > 0
-          ? $_('settings.lyricsDeleteSuccess', { values: { count, label, plural: count === 1 ? '' : 's' }, default: `Deleted ${count} ${label} lyrics file${count === 1 ? "" : "s"}` })
-          : $_('settings.lyricsDeleteNoneFound', { values: { label }, default: `No cached ${label} lyrics found to delete` }),
-        count > 0 ? "success" : "error",
-      );
-      if (count > 0) deleteToken = "";
+      const { matched, deleted } = await lyricsStore.deleteLyricsByToken(token);
+      if (deleted > 0) {
+        addToast(
+          $_('settings.lyricsDeleteSuccess', { values: { count: deleted, label, plural: deleted === 1 ? '' : 's' }, default: `Deleted ${deleted} ${label} lyrics file${deleted === 1 ? "" : "s"}` }),
+          "success",
+        );
+        deleteToken = "";
+      } else if (matched > 0) {
+        // files exist and were matched, but every removal attempt failed
+        // (most likely a storage permission issue)
+        addToast(
+          $_('settings.lyricsDeleteFoundButFailed', {
+            values: { count: matched, label },
+            default: `Found ${matched} cached ${label} lyrics file${matched === 1 ? "" : "s"} but couldn't delete ${matched === 1 ? "it" : "them"} — check the app's storage permissions`,
+          }),
+          "error",
+        );
+      } else {
+        addToast(
+          $_('settings.lyricsDeleteNoneFound', { values: { label }, default: `No cached ${label} lyrics found to delete` }),
+          "error",
+        );
+      }
     } catch (err) {
       console.error("[Settings] Bulk lyrics delete failed:", err);
       addToast($_('settings.lyricsDeleteFailed', { values: { label }, default: `Failed to delete ${label} lyrics` }), "error");
