@@ -37,6 +37,29 @@ object AudionLibraryBridge {
     @JvmStatic private external fun previousNative()
     @JvmStatic private external fun setShuffleNative(enabled: Boolean)
     @JvmStatic private external fun setRepeatNative(mode: String)
+    @JvmStatic private external fun registerNotificationCallbackNative(callback: NativeNotificationCallback)
+
+    /**
+     * receives "now playing" pushes from rust
+     * (see notify_track_changed/notify_position/notify_playing_state in jni_bridge.rs)
+     * called from whichever native thread produced the event
+     * (the audio engine's own thread, not the jvm thread that registered this),
+     * so the implementation needs to hop to the main thread itself before touching any android ui/notification APIs
+     */
+    interface NativeNotificationCallback {
+        fun onNativeAudioEvent(json: String)
+    }
+
+    /** call once, from MediaNotificationService.onCreate */
+    fun registerNotificationCallback(callback: NativeNotificationCallback) {
+        try {
+            registerNotificationCallbackNative(callback)
+        } catch (e: UnsatisfiedLinkError) {
+            android.util.Log.w("AudionLibraryBridge", "failed to register notification callback: .so not loaded yet", e)
+        } catch (e: Exception) {
+            android.util.Log.e("AudionLibraryBridge", "failed to register notification callback", e)
+        }
+    }
 
     /**
      * cold-starts the rust database + settings caches
@@ -88,7 +111,9 @@ object AudionLibraryBridge {
         try {
             call()
         } catch (e: UnsatisfiedLinkError) {
+            android.util.Log.w("AudionLibraryBridge", "native call failed: .so not loaded yet", e)
         } catch (e: Exception) {
+            android.util.Log.e("AudionLibraryBridge", "native call threw", e)
         }
     }
 
@@ -126,8 +151,10 @@ object AudionLibraryBridge {
         return try {
             call()
         } catch (e: UnsatisfiedLinkError) {
+            android.util.Log.w("AudionLibraryBridge", "native call failed: .so not loaded yet", e)
             fallback
         } catch (e: Exception) {
+            android.util.Log.e("AudionLibraryBridge", "native call threw", e)
             fallback
         }
     }

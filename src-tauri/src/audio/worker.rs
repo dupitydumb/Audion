@@ -72,10 +72,14 @@ impl PlaybackStateSync {
             let emit = |evt: AudioEvent| {
                 use tauri::Emitter;
                 let _ = player_event_tx.send(evt.clone());
-                // skip the ui notification
-                // the command channel above is
-                // what drives playback
-                // this is ui only
+
+                // keeps auto/the notification's seek bar moving without a webview
+                // see notify_position's doc comment
+                #[cfg(target_os = "android")]
+                if let AudioEvent::StateChanged { position } = &evt {
+                    crate::android_auto::jni_bridge::notify_position(*position);
+                }
+
                 let Some(app_handle) = event_bridge::get_app_handle() else { return };
                 if let Err(e) = app_handle.emit("audio://event", &evt) {
                     tracing::warn!("[AUDIO] Failed to emit event: {}", e);

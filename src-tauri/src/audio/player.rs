@@ -305,6 +305,11 @@ impl PlayerStateSync {
                                 .send(AudioCommand::Play(track.path.clone(), None))
                             {
                                 tracing::error!("[PLAYER] cold advance: failed to send AudioCommand::Play: {e}");
+                            } else {
+                                // native auto advance (queue moved on its own,no js around to update the notification) =>
+                                // push the new track's metadata to MediaNotificationService
+                                #[cfg(target_os = "android")]
+                                crate::android_auto::jni_bridge::notify_track_changed_by_id(track.id, true);
                             }
                         }
                         emit_directive(&PlayerDirective::Advance {

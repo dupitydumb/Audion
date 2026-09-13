@@ -23,6 +23,7 @@ import androidx.media.MediaBrowserServiceCompat.Result
 import androidx.media.app.NotificationCompat.MediaStyle
 import androidx.media.utils.MediaConstants
 import java.net.URL
+import org.json.JSONObject
 import kotlinx.coroutines.*
 
 /**
@@ -34,7 +35,7 @@ import kotlinx.coroutines.*
  * avrcp browsing => this is the same service google's own samples use for
  * both roles, since auto needs the session token this service already owns
  */
-class MediaNotificationService : MediaBrowserServiceCompat() {
+class MediaNotificationService : MediaBrowserServiceCompat(), AudionLibraryBridge.NativeNotificationCallback {
 
     companion object {
         const val CHANNEL_ID = "audion_media_channel"
@@ -60,6 +61,12 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
 
         // Reference to the WebView for evaluating JS commands
         var webViewRef: WebView? = null
+
+        // mirrors the isPlaying the frontend last reported via onStartCommand's metadata update => 
+        // needed because ACTION_PLAY_PAUSE (unlike MediaSessionCompat.Callback's onPlay()/onPause())
+        // doesn't know which direction to flip without this
+        // note: the very first notification tap after a cold play could pick the wrong direction
+        private var lastKnownIsPlaying = false
     }
 
     private var mediaSession: MediaSessionCompat? = null
@@ -67,9 +74,22 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
     private var currentArtBitmap: Bitmap? = null
     private var currentArtUrl: String? = null
 
-    // onGetRoot is called once per client connection,
-    // before any onLoadChildren/onSearch call from that client, 
-    // so caching it here is safe
+    // merged "last known" state, kept up to date by both the js driven path
+    // (onStartCommand's else branch) and the native path
+    // (onNativeAudioEvent) => whichever fires most recently wins
+    // a native trackChanged event reuses whatever was last known
+    private var currentTitle = "Unknown Title"
+    private var currentArtist = "Unknown Artist"
+    private var currentAlbum = ""
+    private var currentIsLoved = false
+    private var currentIsShuffled = false
+    private var currentRepeatMode = "none"
+    private var currentDurationSecs: Double? = null
+    private var currentPositionSecs: Double = 0.0
+
+    // not readable by that other process until we explicitly grant it read access for exactly this package
+    // onGetRoot is called once per client connection, before any onLoadChildren/onSearch
+    // call from that client, so caching it here is safe
     private var browsingClientPackageName: String? = null
 
     // no manual onBind override => MediaBrowserServiceCompat's own implementation
@@ -81,6 +101,87 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
         setupMediaSession()
         // exposes the session to browsing clients, required for MediaBrowserServiceCompat
         sessionToken = mediaSession?.sessionToken
+        // native (rust) -> kotlin notification sync, 
+        // see onNativeAudioEvent
+        // this needs to happen even if the webview never comes up
+        AudionLibraryBridge.registerNotificationCallback(this)
+    }
+
+    /**
+     * AudionLibraryBridge.NativeNotificationCallback
+     * (see notify_track_changed/notify_position/notify_playing_state in jni_bridge.rs)
+     * on whichever native thread produced the event, => hop over before touching mediaSession/notification apis
+     */
+    override fun onNativeAudioEvent(json: String) {
+        val handler = android.os.Handler(android.os.Looper.getMainLooper())
+        handler.post {
+            try {
+                val obj = JSONObject(json)
+                when (obj.optString("type")) {
+                    "trackChanged" -> {
+                        currentTitle = obj.optString("title", "Unknown Title")
+                        currentArtist = obj.optString("artist", "Unknown Artist")
+                        currentAlbum = obj.optString("album", "")
+                        currentDurationSecs = if (obj.has("durationSecs") && !obj.isNull("durationSecs")) {
+                            obj.optDouble("durationSecs")
+                        } else {
+                            null
+                        }
+                        currentPositionSecs = 0.0
+                        lastKnownIsPlaying = obj.optBoolean("isPlaying", true)
+                        // local paths need the file:// scheme added
+                        val artPath = if (obj.isNull("artPath")) null else obj.optString("artPath", null)
+                        val artUrlForNotification = when {
+                            artPath.isNullOrEmpty() -> null
+                            artPath.startsWith("http://") || artPath.startsWith("https://") || artPath.startsWith("file://") -> artPath
+                            else -> "file://$artPath"
+                        }
+                        // art changed => force a reload by clearing the cached bitmap/url
+                        if (artUrlForNotification != currentArtUrl) {
+                            currentArtBitmap = null
+                        }
+                        applyNotificationState(artUrlForNotification)
+                    }
+                    "position" -> {
+                        currentPositionSecs = obj.optDouble("positionSecs", currentPositionSecs)
+                        applyNotificationState(null)
+                    }
+                    "playbackState" -> {
+                        lastKnownIsPlaying = obj.optBoolean("isPlaying", lastKnownIsPlaying)
+                        applyNotificationState(null)
+                    }
+                    else -> {
+                        Log.w(TAG, "onNativeAudioEvent: unknown type in $json")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "onNativeAudioEvent: failed to parse $json", e)
+            }
+        }
+    }
+
+    private fun applyNotificationState(artUrlOverride: String?) {
+        updateNotification(
+            currentTitle,
+            currentArtist,
+            currentAlbum,
+            lastKnownIsPlaying,
+            currentIsLoved,
+            artUrlOverride,
+            formatSecondsForNotification(currentPositionSecs),
+            currentDurationSecs?.let { formatSecondsForNotification(it) },
+            currentIsShuffled,
+            currentRepeatMode
+        )
+    }
+
+    /** updateNotification expects currentTime/duration as the same string format onStartCommand's EXTRA_CURRENT_TIME/EXTRA_DURATION already use */
+    private fun formatSecondsForNotification(totalSeconds: Double): String {
+        val total = totalSeconds.toLong().coerceAtLeast(0)
+        val h = total / 3600
+        val m = (total % 3600) / 60
+        val s = total % 60
+        return if (h > 0) String.format("%d:%02d:%02d", h, m, s) else String.format("%d:%02d", m, s)
     }
 
     override fun onGetRoot(
@@ -156,18 +257,26 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
         when (intent?.action) {
             ACTION_PLAY_PAUSE -> {
                 evaluateJs("window.__audionMediaAction?.('playPause')")
+                // fallback for when the notification's own buttons are tapped
+                // flip based on the last state the frontend reported
+                if (lastKnownIsPlaying) AudionLibraryBridge.pause() else AudionLibraryBridge.resume()
             }
             ACTION_PREVIOUS -> {
                 evaluateJs("window.__audionMediaAction?.('previous')")
+                AudionLibraryBridge.previous()
             }
             ACTION_NEXT -> {
                 evaluateJs("window.__audionMediaAction?.('next')")
+                AudionLibraryBridge.next()
             }
             ACTION_LOVE -> {
                 evaluateJs("window.__audionMediaAction?.('love')")
+                // no JNI fallback: love/like has no native export
+                // so this action is webview only for now
             }
             ACTION_STOP -> {
                 evaluateJs("window.__audionMediaAction?.('stop')")
+                AudionLibraryBridge.stop()
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -177,12 +286,25 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
                 val artist = intent?.getStringExtra(EXTRA_ARTIST) ?: "Unknown Artist"
                 val album = intent?.getStringExtra(EXTRA_ALBUM) ?: ""
                 val isPlaying = intent?.getBooleanExtra(EXTRA_IS_PLAYING, false) ?: false
+                lastKnownIsPlaying = isPlaying
                 val isLoved = intent?.getBooleanExtra(EXTRA_IS_LOVED, false) ?: false
                 val artUrl = intent?.getStringExtra(EXTRA_ART_URL)
                 val currentTime = intent?.getStringExtra(EXTRA_CURRENT_TIME) ?: null
                 val duration = intent?.getStringExtra(EXTRA_DURATION) ?: null
                 val isShuffled = intent?.getBooleanExtra(EXTRA_IS_SHUFFLED, false) ?: false
                 val repeatMode = intent?.getStringExtra(EXTRA_REPEAT_MODE) ?: "none"
+
+                // keep the shared last known state (see field doc comments) in sync with whatever the js side just reported
+                // so a native side event arriving later 
+                // (position tick, playbackState flip) merges against real values
+                currentTitle = title
+                currentArtist = artist
+                currentAlbum = album
+                currentIsLoved = isLoved
+                currentIsShuffled = isShuffled
+                currentRepeatMode = repeatMode
+                parseTimeToMillis(currentTime)?.let { currentPositionSecs = it / 1000.0 }
+                currentDurationSecs = parseTimeToMillis(duration)?.let { it / 1000.0 }
 
                 Log.d(TAG, "onStartCommand: title=$title artUrl=${artUrl?.let { it.take(80) + if (it.length > 80) "..." else "" }} (len=${artUrl?.length ?: 0}, prefix=${artUrl?.take(16)})")
 
@@ -220,10 +342,12 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
             setCallback(object : MediaSessionCompat.Callback() {
                 override fun onPlay() {
                     evaluateJs("window.__audionMediaAction?.('playPause')")
+                    lastKnownIsPlaying = true
                     AudionLibraryBridge.resume()
                 }
                 override fun onPause() {
                     evaluateJs("window.__audionMediaAction?.('playPause')")
+                    lastKnownIsPlaying = false
                     AudionLibraryBridge.pause()
                 }
                 override fun onSkipToPrevious() {
@@ -268,6 +392,8 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
                         return
                     }
                     evaluateJs("window.__audionPlayTrackId?.('$mediaId')")
+                    // starting a track from auto's browse/search ui also starts playback
+                    lastKnownIsPlaying = true
                     AudionLibraryBridge.playTrack(mediaId)
                 }
             })

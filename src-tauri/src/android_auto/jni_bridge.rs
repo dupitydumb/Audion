@@ -7,9 +7,9 @@
 use std::path::PathBuf;
 use std::sync::{Once, OnceLock};
 
-use jni::objects::{JClass, JString};
+use jni::objects::{GlobalRef, JClass, JObject, JString, JValue};
 use jni::sys::jstring;
-use jni::JNIEnv;
+use jni::{JNIEnv, JavaVM};
 
 use crate::audio::player::{AdvanceDirection, PlayerCommand, PlayerStateSync, RepeatMode};
 use crate::audio::worker::{AudioCommand, PlaybackStateSync};
@@ -45,12 +45,197 @@ pub fn set_playback_and_player(playback: PlaybackStateSync, player: PlayerStateS
 }
 
 /// used by lib.rs's .setup() to check whether android auto already cold
-/// started the audio engine before
+/// started the audio engine before .setup() ran
 pub fn get_playback_and_player() -> Option<(PlaybackStateSync, PlayerStateSync)> {
     match (PLAYBACK.get(), PLAYER.get()) {
         (Some(pb), Some(pl)) => Some((pb.clone(), pl.clone())),
         _ => None,
     }
+}
+
+// ===================================================
+// native -> kotlin notification sync
+//
+// rust pushing "now playing" state straight into
+// MediaNotificationService, so the notification/MediaSession (title, artist,
+// album, cover, duration, position, isPlaying) stay accurate even when
+// there's no webview
+// this is intentionally lightweight
+// it does not replace the js driven path, which still runs
+// whichever fires most recently is what's shown
+// ==================================================
+
+static JVM: OnceLock<JavaVM> = OnceLock::new();
+static NOTIFICATION_CALLBACK: OnceLock<GlobalRef> = OnceLock::new();
+
+/// Java_com_audion_app_AudionLibraryBridge_registerNotificationCallbackNative
+/// called once from MediaNotificationService.onCreate with 'this'
+/// (the service itself implements the callback interface)
+/// see NativeNotificationCallback in AudionLibraryBridge.kt
+#[no_mangle]
+pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_registerNotificationCallbackNative<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    callback: JObject<'local>,
+) {
+    match env.get_java_vm() {
+        Ok(vm) => {
+            if JVM.set(vm).is_err() {
+                // already set from a previous service instance in this process
+                // (e.g. the service was killed and restarted) =>
+                // expected, not an error
+                tracing::info!("[android_auto] JVM already captured, keeping the existing one");
+            }
+        }
+        Err(e) => {
+            tracing::error!("[android_auto] failed to capture JavaVM for notification sync: {e}");
+            return;
+        }
+    }
+    match env.new_global_ref(callback) {
+        Ok(global) => {
+            if NOTIFICATION_CALLBACK.set(global).is_err() {
+                tracing::info!("[android_auto] notification callback already registered, keeping the existing one");
+            } else {
+                tracing::info!("[android_auto] notification callback registered, native->kotlin sync is live");
+            }
+        }
+        Err(e) => {
+            tracing::error!("[android_auto] failed to create global ref for notification callback: {e}");
+        }
+    }
+}
+
+/// attaches to the jvm
+/// (this is called from worker.rs's audio thread and player.rs's actor thread)
+/// and invokes NativeNotificationCallback.onNativeAudioEvent(json) on the kotlin side
+fn notify_kotlin(json: &str) {
+    let (Some(jvm), Some(callback)) = (JVM.get(), NOTIFICATION_CALLBACK.get()) else {
+        // silent by design at debug level
+        tracing::debug!("[android_auto] notify_kotlin: callback not registered yet, dropping: {json}");
+        return;
+    };
+    let mut env = match jvm.attach_current_thread() {
+        Ok(env) => env,
+        Err(e) => {
+            tracing::warn!("[android_auto] failed to attach jvm thread for notification sync: {e}");
+            return;
+        }
+    };
+    let jstr = match env.new_string(json) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("[android_auto] failed to build jstring for notification sync: {e}");
+            return;
+        }
+    };
+    if let Err(e) = env.call_method(
+        callback,
+        "onNativeAudioEvent",
+        "(Ljava/lang/String;)V",
+        &[JValue::Object(&jstr)],
+    ) {
+        // a call_method failure often means there's now a pending java exception on this thread
+        // JNI forbids making any further JNI calls while one is pending 
+        // the next call on this same thread (e.g. the very next notify_position tick, milliseconds later)
+        // triggers a "JNI DETECTED ERROR IN APPLICATION" abort, killing
+        // the whole process
+        // we must clear it here, and we grab the real underlying exception first
+        if env.exception_check().unwrap_or(false) {
+            let detail = match env.exception_occurred() {
+                Ok(throwable) => {
+                    // must clear before making any further JNI calls
+                    // (including the toString() call just below)
+                    let _ = env.exception_clear();
+                    env.call_method(&throwable, "toString", "()Ljava/lang/String;", &[])
+                        .ok()
+                        .and_then(|v| v.l().ok())
+                        .and_then(|obj| {
+                            let jstring: JString = obj.into();
+                            env.get_string(&jstring)
+                                .ok()
+                                .map(|s| s.to_string_lossy().into_owned())
+                        })
+                        .unwrap_or_else(|| "<exception occurred but toString() also failed>".to_string())
+                }
+                Err(_) => {
+                    let _ = env.exception_clear();
+                    "<exception_check true but exception_occurred failed>".to_string()
+                }
+            };
+            tracing::error!("[android_auto] onNativeAudioEvent threw: {detail}");
+        } else {
+            // call_method failed with no pending exception (e.g. method not
+            // found)
+            tracing::warn!("[android_auto] onNativeAudioEvent call failed: {e}");
+        }
+    }
+}
+
+/// full "now playing" push title/artist/album/art/duration
+/// used whenever the track changes (direct play, or a native auto-advance)
+pub fn notify_track_changed(track: &crate::db::models::Track, is_playing: bool) {
+    let payload = serde_json::json!({
+        "type": "trackChanged",
+        "title": track.title.as_deref().unwrap_or("Unknown Title"),
+        "artist": track.artist.as_deref().unwrap_or("Unknown Artist"),
+        "album": track.album.as_deref().unwrap_or(""),
+        "artPath": track.track_cover_path.as_deref().or(track.cover_url.as_deref()),
+        "durationSecs": track.duration,
+        "isPlaying": is_playing,
+    });
+    notify_kotlin(&payload.to_string());
+}
+
+/// same as notify_track_changed but resolves the track by id first
+/// for call sites (player.rs's native auto-advance) that only have a TrackRef, not a full Track
+pub fn notify_track_changed_by_id(track_id: i64, is_playing: bool) {
+    let Some(db) = get_database() else { return };
+    let conn = match db.conn.lock() {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("[android_auto] db mutex poisoned in notify_track_changed_by_id: {e}");
+            return;
+        }
+    };
+    match crate::db::tracks::get_track_by_id(&conn, track_id) {
+        Ok(Some(track)) => {
+            drop(conn);
+            notify_track_changed(&track, is_playing);
+        }
+        Ok(None) => {
+            tracing::warn!("[android_auto] notify_track_changed_by_id: no track for id {track_id}");
+        }
+        Err(e) => {
+            tracing::error!("[android_auto] notify_track_changed_by_id: lookup failed: {e}");
+        }
+    }
+}
+
+/// position only tick,
+/// forwarded from worker.rs's AudioEvent::StateChanged on mostly every playback position update
+/// this is what keeps auto/the notification's seek bar/scrubber moving accurately without webview
+pub fn notify_position(position_secs: f64) {
+    let payload = serde_json::json!({
+        "type": "position",
+        "positionSecs": position_secs,
+    });
+    notify_kotlin(&payload.to_string());
+}
+
+/// isPlaying only flip, with no track/position data 
+/// used by resumeNative/pauseNative/stopNative
+/// so a resume/pause issued from anywhere
+/// (auto's transport controls, the notification buttons, bluetooth avrcp)
+/// reflects back into the notification immediately
+pub fn notify_playing_state(is_playing: bool) {
+    let payload = serde_json::json!({
+        "type": "playbackState",
+        "isPlaying": is_playing,
+    });
+    notify_kotlin(&payload.to_string());
 }
 
 /// json string for an empty/failed result
@@ -77,6 +262,15 @@ static COLD_START_INIT: Once = Once::new();
 /// see the caller in MediaNotificationService.kt for where that's sourced from
 pub fn init_database_cold_start(app_data_dir: &str) {
     COLD_START_INIT.call_once(|| {
+        // the only logger install point that runs on a cold start:
+        // lib.rs's init_logging() is only reached from tauri's own run()
+        // safe to call unconditionally
+        android_logger::init_once(
+            android_logger::Config::default()
+                .with_max_level(log::LevelFilter::Debug)
+                .with_tag("audion"),
+        );
+
         if DATABASE.get().is_some() {
             // lib.rs's setup hook already present
             // (e.g. the process was already  running with the app open before auto connected)
@@ -358,6 +552,10 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_playTrackNative<'
     if let Some(pb) = playback() {
         if let Err(e) = pb.send(AudioCommand::Play(path, None)) {
             tracing::error!("[android_auto] playTrackNative: AudioCommand::Play failed: {e}");
+        } else {
+            // notification/MediaSession sync
+            // see notify_track_changed's doc comment
+            notify_track_changed(&track, true);
         }
     }
 
@@ -394,6 +592,7 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_resumeNative<'loc
 ) {
     if let Some(pb) = playback() {
         let _ = pb.send(AudioCommand::Resume);
+        notify_playing_state(true);
     }
 }
 
@@ -405,6 +604,7 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_pauseNative<'loca
 ) {
     if let Some(pb) = playback() {
         let _ = pb.send(AudioCommand::Pause);
+        notify_playing_state(false);
     }
 }
 
@@ -416,6 +616,7 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_stopNative<'local
 ) {
     if let Some(pb) = playback() {
         let _ = pb.send(AudioCommand::Stop);
+        notify_playing_state(false);
     }
 }
 

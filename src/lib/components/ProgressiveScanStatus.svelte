@@ -105,7 +105,9 @@
         display: flex;
         align-items: center;
         gap: 16px;
-        padding: 12px 20px;
+        /* this banner is position:fixed/top:0, so it sits outside
+           .app-content.mobile's own safe-area-top padding entirely */
+        padding: calc(12px + var(--safe-area-top, 0px)) 20px 12px;
     }
     
     .scan-icon {

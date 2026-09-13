@@ -967,13 +967,13 @@
         flex-direction: column;
         align-items: center;
         text-align: center;
-        padding: calc(var(--safe-area-top) + var(--spacing-md))
+        padding: var(--spacing-md)
             var(--spacing-md) var(--spacing-md);
         gap: var(--spacing-md);
     }
 
     :global(html.layout-mobile) .header-actions {
-        top: calc(var(--safe-area-top) + var(--spacing-sm));
+        top: var(--spacing-sm);
         right: var(--spacing-sm);
     }
 
