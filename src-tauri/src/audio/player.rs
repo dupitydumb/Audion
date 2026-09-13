@@ -14,8 +14,9 @@
 
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use serde::{Deserialize, Serialize};
-use tauri::{State, Emitter, Manager};
+use tauri::{State, Emitter};
 
+use super::event_bridge;
 use super::mod_types::AudioEvent;
 use super::worker::{AudioCommand, PlaybackStateSync};
 
@@ -259,6 +260,7 @@ impl PlayerState {
 // Public handle => what lib.rs / Tauri commands talk to
 // =============================================================================
 
+#[derive(Clone)]
 pub struct PlayerStateSync {
     command_tx: Sender<PlayerCommand>,
 }
@@ -273,13 +275,21 @@ impl PlayerStateSync {
     /// (see worker.rs's 'emit' closure)
     /// every AudioEvent the native engine produces also lands here,
     /// so this actor can react to TrackAdvanced/TrackFinished without touching engine internals directly
-    pub fn new(app_handle: tauri::AppHandle, engine_events: Receiver<AudioEvent>) -> Self {
+    ///
+    /// takes the PlaybackStateSync handle directly
+    /// no longer needs an AppHandle to reach the other actor, 
+    /// only to emit UI events (see event_bridge),
+    /// so android_auto's jni bridge can cold start both actors together with no AppHandle
+    pub fn new(engine_events: Receiver<AudioEvent>, playback: PlaybackStateSync) -> Self {
         let (command_tx, command_rx) = unbounded::<PlayerCommand>();
 
         std::thread::spawn(move || {
             let mut state = PlayerState::new();
 
             let emit_directive = |directive: &PlayerDirective| {
+                // no handle yet (android cold start, webview not up) => 
+                // skip the UI notification
+                let Some(app_handle) = event_bridge::get_app_handle() else { return };
                 if let Err(e) = app_handle.emit("player://event", directive) {
                     tracing::warn!("[PLAYER] Failed to emit directive: {}", e);
                 }
@@ -291,8 +301,7 @@ impl PlayerStateSync {
                         state.generation += 1;
                         state.current_track_id = Some(track.id);
                         if also_play_natively {
-                            if let Err(e) = app_handle
-                                .state::<PlaybackStateSync>()
+                            if let Err(e) = playback
                                 .send(AudioCommand::Play(track.path.clone(), None))
                             {
                                 tracing::error!("[PLAYER] cold advance: failed to send AudioCommand::Play: {e}");

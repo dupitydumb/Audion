@@ -10,7 +10,6 @@ use std::sync::{Once, OnceLock};
 use jni::objects::{JClass, JString};
 use jni::sys::jstring;
 use jni::JNIEnv;
-use tauri::Manager;
 
 use crate::audio::player::{AdvanceDirection, PlayerCommand, PlayerStateSync, RepeatMode};
 use crate::audio::worker::{AudioCommand, PlaybackStateSync};
@@ -22,11 +21,15 @@ use super::{resolve_children, resolve_leaf, resolve_playback_context, search_sco
 /// these are raw native exports with no Tauri command injection available
 static DATABASE: OnceLock<Database> = OnceLock::new();
 
-/// the playback commands below need to reach PlaybackStateSync/PlayerStateSync,
-/// which only exist as tauri-managed state once .setup() has run
-/// storing the handle itself (rather than each state separately)
-/// mirrors how SyncState already does this internally
-static APP_HANDLE: OnceLock<tauri::AppHandle> = OnceLock::new();
+/// the two audio engine actors, settable from either android's own cold start path
+/// (init_database_cold_start, before any AppHandle/Tauri App exists)
+/// or from lib.rs's .setup() hook on the first non cold start boot
+/// setup() checks get_playback_and_player()
+/// and reuses them rather than building a second engine (see lib.rs)
+/// neither actor needs an AppHandle to run =>
+/// see audio::event_bridge for how they reach the webview once one exists
+static PLAYBACK: OnceLock<PlaybackStateSync> = OnceLock::new();
+static PLAYER: OnceLock<PlayerStateSync> = OnceLock::new();
 
 pub fn set_database(db: Database) {
     // ignore the error if already set => setup only runs once in practice,
@@ -34,8 +37,20 @@ pub fn set_database(db: Database) {
     let _ = DATABASE.set(db);
 }
 
-pub fn set_app_handle(handle: tauri::AppHandle) {
-    let _ = APP_HANDLE.set(handle);
+/// sets both together, never independently =>
+/// they're only ever meaningful as a pair
+pub fn set_playback_and_player(playback: PlaybackStateSync, player: PlayerStateSync) {
+    let _ = PLAYBACK.set(playback);
+    let _ = PLAYER.set(player);
+}
+
+/// used by lib.rs's .setup() to check whether android auto already cold
+/// started the audio engine before
+pub fn get_playback_and_player() -> Option<(PlaybackStateSync, PlayerStateSync)> {
+    match (PLAYBACK.get(), PLAYER.get()) {
+        (Some(pb), Some(pl)) => Some((pb.clone(), pl.clone())),
+        _ => None,
+    }
 }
 
 /// json string for an empty/failed result
@@ -104,6 +119,14 @@ pub fn init_database_cold_start(app_data_dir: &str) {
                 tracing::error!("[android_auto] cold start database init failed: {e}");
             }
         }
+
+        // bring up the two audio actor threads too
+        // this is what lets playTrackNative etc. actually play audio on a cold start
+        let (player_event_tx, player_event_rx) = crossbeam::channel::unbounded::<crate::audio::AudioEvent>();
+        let playback = PlaybackStateSync::new(player_event_tx);
+        let player = PlayerStateSync::new(player_event_rx, playback.clone());
+        set_playback_and_player(playback, player);
+        tracing::info!("[android_auto] audio engine cold-started");
     });
 }
 
@@ -260,24 +283,20 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_searchNative<'loc
 // these exports just reach the same channels directly
 // =============================================================================
 
-fn playback() -> Option<tauri::State<'static, PlaybackStateSync>> {
-    match APP_HANDLE.get() {
-        Some(handle) => Some(handle.state::<PlaybackStateSync>()),
-        None => {
-            tracing::warn!("[android_auto] jni playback call before app handle was set");
-            None
-        }
+fn playback() -> Option<&'static PlaybackStateSync> {
+    let pb = PLAYBACK.get();
+    if pb.is_none() {
+        tracing::warn!("[android_auto] jni playback call before the audio engine was cold-started");
     }
+    pb
 }
 
-fn player() -> Option<tauri::State<'static, PlayerStateSync>> {
-    match APP_HANDLE.get() {
-        Some(handle) => Some(handle.state::<PlayerStateSync>()),
-        None => {
-            tracing::warn!("[android_auto] jni playback call before app handle was set");
-            None
-        }
+fn player() -> Option<&'static PlayerStateSync> {
+    let pl = PLAYER.get();
+    if pl.is_none() {
+        tracing::warn!("[android_auto] jni playback call before the audio engine was cold-started");
     }
+    pl
 }
 
 /// deliberately skips resolve_audio_path's server track download branch:

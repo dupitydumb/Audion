@@ -67,6 +67,11 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
     private var currentArtBitmap: Bitmap? = null
     private var currentArtUrl: String? = null
 
+    // onGetRoot is called once per client connection,
+    // before any onLoadChildren/onSearch call from that client, 
+    // so caching it here is safe
+    private var browsingClientPackageName: String? = null
+
     // no manual onBind override => MediaBrowserServiceCompat's own implementation
     // handles the browse binding protocol auto/aaos/bluetooth avrcp clients use
 
@@ -85,6 +90,11 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
     ): BrowserRoot {
         // rootHints/clientPackageName let us vary the tree per caller later
         // (e.g. a slimmer tree for bluetooth avrcp vs full for auto) (not needed yet)
+        //
+        // also cached so 
+        // onLoadChildren/onSearch know who to grant iconUri read access to
+        // (see browsingClientPackageName above)
+        browsingClientPackageName = clientPackageName
         val extras = Bundle().apply {
             putBoolean(MediaConstants.BROWSER_SERVICE_EXTRAS_KEY_SEARCH_SUPPORTED, true)
         }
@@ -96,6 +106,7 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
         result.detach()
         serviceScope.launch {
             val children = AudionLibraryBridge.getChildren(applicationContext, parentId)
+            grantArtUriPermissions(children)
             withContext(Dispatchers.Main) {
                 result.sendResult(children)
             }
@@ -111,8 +122,32 @@ class MediaNotificationService : MediaBrowserServiceCompat() {
             val merged = listOf("tracks", "albums", "artists", "playlists")
                 .flatMap { scope -> AudionLibraryBridge.search(applicationContext, scope, query) }
                 .take(30)
+            grantArtUriPermissions(merged)
             withContext(Dispatchers.Main) {
                 result.sendResult(merged)
+            }
+        }
+    }
+
+    /**
+     * our FileProvider is exported="false",
+     * so every content:// iconUri we hand back
+     * has to be explicitly granted to the browsing client
+     */
+    private fun grantArtUriPermissions(items: List<MediaItem>) {
+        val clientPackageName = browsingClientPackageName ?: return
+        for (item in items) {
+            val iconUri = item.description.iconUri ?: continue
+            if (iconUri.scheme == "content") {
+                try {
+                    grantUriPermission(
+                        clientPackageName,
+                        iconUri,
+                        Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (e: SecurityException) {
+                    Log.w(TAG, "failed to grant art uri permission for $iconUri to $clientPackageName", e)
+                }
             }
         }
     }

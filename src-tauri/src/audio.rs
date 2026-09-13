@@ -12,6 +12,7 @@ pub mod dual_track;
 pub mod gated_worker;
 pub mod decision;
 pub mod directive;
+pub mod event_bridge;
 
 #[cfg(test)]
 mod tests_native_playback;

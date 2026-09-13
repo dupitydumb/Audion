@@ -5,6 +5,7 @@ use crossbeam::channel::{unbounded, Receiver, Sender};
 use tauri::Emitter;
 
 use super::dsp::EqSettings;
+use super::event_bridge;
 use super::mod_types::{AudioEvent, DeviceList};
 use super::engine::{AudioEngine, TrackInfo};
 // gated_open_result_rx (GatedOpenResult) is the only open-result channel selected on in the command loop below
@@ -33,6 +34,7 @@ pub enum AudioCommand {
     TriggerCrossfade,
 }
 
+#[derive(Clone)]
 pub struct PlaybackStateSync {
     command_tx: Sender<AudioCommand>,
     pub device_list: Arc<Mutex<DeviceList>>,
@@ -41,7 +43,11 @@ pub struct PlaybackStateSync {
 impl PlaybackStateSync {
     /// player_event_tx receives a copy of every AudioEvent originally only meant for the fronted
     /// this is how player.rs's actor learns about TrackAdvanced/TrackFinished
-    pub fn new(app_handle: tauri::AppHandle, player_event_tx: Sender<AudioEvent>) -> Self {
+    ///
+    /// the actor reaches event_bridge::get_app_handle each time it emits instead,
+    /// so it starts notifying the webview when .setup() calls event_bridge::set_app_handle,
+    /// with no restart of this thread and no dropped playback state
+    pub fn new(player_event_tx: Sender<AudioEvent>) -> Self {
         let (tx, rx) = unbounded::<AudioCommand>();
         let device_list = Arc::new(Mutex::new(DeviceList {
             devices: Vec::new(),
@@ -66,6 +72,11 @@ impl PlaybackStateSync {
             let emit = |evt: AudioEvent| {
                 use tauri::Emitter;
                 let _ = player_event_tx.send(evt.clone());
+                // skip the ui notification
+                // the command channel above is
+                // what drives playback
+                // this is ui only
+                let Some(app_handle) = event_bridge::get_app_handle() else { return };
                 if let Err(e) = app_handle.emit("audio://event", &evt) {
                     tracing::warn!("[AUDIO] Failed to emit event: {}", e);
                 }
@@ -535,21 +546,25 @@ impl PlaybackStateSync {
                             "[AUDIO] Command thread panicked {} times, giving up",
                             restarts
                         );
-                        if let Err(e) = app_handle.emit("audio://event", &AudioEvent::Error {
-                            message: format!(
-                                "Audio engine crashed repeatedly and could not recover: {}",
-                                msg
-                            ),
-                        }) {
-                            tracing::warn!("[AUDIO] Failed to emit panic error event: {}", e);
+                        if let Some(app_handle) = event_bridge::get_app_handle() {
+                            if let Err(e) = app_handle.emit("audio://event", &AudioEvent::Error {
+                                message: format!(
+                                    "Audio engine crashed repeatedly and could not recover: {}",
+                                    msg
+                                ),
+                            }) {
+                                tracing::warn!("[AUDIO] Failed to emit panic error event: {}", e);
+                            }
                         }
                         break 'restart;
                     }
 
-                    if let Err(e) = app_handle.emit("audio://event", &AudioEvent::Error {
-                        message: format!("Audio engine crashed, recovering: {}", msg),
-                    }) {
-                        tracing::warn!("[AUDIO] Failed to emit panic error event: {}", e);
+                    if let Some(app_handle) = event_bridge::get_app_handle() {
+                        if let Err(e) = app_handle.emit("audio://event", &AudioEvent::Error {
+                            message: format!("Audio engine crashed, recovering: {}", msg),
+                        }) {
+                            tracing::warn!("[AUDIO] Failed to emit panic error event: {}", e);
+                        }
                     }
                     // loop back around and rebuild engine_opt/event_rx from scratch
                 }

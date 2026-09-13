@@ -750,21 +750,39 @@ pub fn run() {
             // =============================================================================
             {
                 tracing::info!("Registering native audio backend state (lazy init)");
-                // player.rs needs to observe the same TrackAdvanced/TrackFinished events the
-                // frontend gets over audio://event
-                // without owning the audio thread itself
-                let (player_event_tx, player_event_rx) = crossbeam::channel::unbounded::<audio::AudioEvent>();
-                app.manage(audio::PlaybackStateSync::new(app.handle().clone(), player_event_tx));
-                app.manage(audio::PlayerStateSync::new(app.handle().clone(), player_event_rx));
+                // on android, auto/aaos may have already cold started both actor threads via jni
+                // before MainActivity/this setup hook ran
+                // (see android_auto::jni_bridge::get_playback_and_player) =>
+                // reuse them so when the phone app
+                // is opened (mid-playback) doesn't get its audio engine torn down and rebuilt
+                #[cfg(target_os = "android")]
+                let existing_engine = android_auto::jni_bridge::get_playback_and_player();
+                #[cfg(not(target_os = "android"))]
+                let existing_engine: Option<(audio::PlaybackStateSync, audio::PlayerStateSync)> = None;
+
+                let (playback_state, player_state) = if let Some((pb, pl)) = existing_engine {
+                    tracing::info!("Reusing audio engine initialized during android cold start");
+                    (pb, pl)
+                } else {
+                    // player.rs needs to observe the same TrackAdvanced/TrackFinished events the
+                    // frontend gets over audio://event
+                    // without owning the audio thread itself
+                    let (player_event_tx, player_event_rx) = crossbeam::channel::unbounded::<audio::AudioEvent>();
+                    let pb = audio::PlaybackStateSync::new(player_event_tx);
+                    let pl = audio::PlayerStateSync::new(player_event_rx, pb.clone());
+                    #[cfg(target_os = "android")]
+                    android_auto::jni_bridge::set_playback_and_player(pb.clone(), pl.clone());
+                    (pb, pl)
+                };
+
+                app.manage(playback_state);
+                app.manage(player_state);
             }
 
-            // android auto's jni bridge needs a way to reach PlaybackStateSync/ PlayerStateSync
-            // from raw native exports with no Tauri command injection =>
-            // stored here, deliberately after both are managed above,
-            // so a jni call racing in can never see a handle that points at not yet managed state
-            // tauri panics on .state::<T>() for an unmanaged type
-            #[cfg(target_os = "android")]
-            android_auto::jni_bridge::set_app_handle(app.handle().clone());
+            // this just lets them start
+            // emitting audio://event / player://event to the webview from
+            // this point on
+            audio::event_bridge::set_app_handle(app.handle().clone());
 
             // SMTC / OS media controls init (desktop only)
             // =============================================================================
