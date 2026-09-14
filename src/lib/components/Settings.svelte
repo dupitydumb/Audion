@@ -18,6 +18,7 @@
   import Icon from "$lib/components/Icon.svelte";
   import "./settings/styles.css";
   import { _ } from "svelte-i18n";
+  import { isLoggedIn } from "$lib/stores/sync";
 
   let showEqEditor = false;
   let activeTab = 'sound';
@@ -104,7 +105,9 @@
     {:else if activeTab === 'account'}
       <div class="settings-pane settings-container" id="panel-account" role="tabpanel">
         <AccountSection   open={isDesktop || (openSections['account']    ?? false)} on:toggle={() => toggle('account')}    />
-        <SyncSection      open={isDesktop || (openSections['sync']       ?? false)} on:toggle={() => toggle('sync')}        />
+        {#if $isLoggedIn}
+          <SyncSection    open={isDesktop || (openSections['sync']       ?? false)} on:toggle={() => toggle('sync')}        />
+        {/if}
         <CommunitySection open={isDesktop || (openSections['community']  ?? false)} on:toggle={() => toggle('community')}   />
       </div>
 
