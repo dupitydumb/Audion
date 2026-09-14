@@ -49,6 +49,7 @@ plugin-examples/
 
 #Skills
 .agents/
+.claude/
 
 #Server
 /audion-server
@@ -69,4 +70,4 @@ src-tauri/target_check
 src-tauri/target_validate
 src-tauri/gen/android/release.keystore
 
-.claude/
+
