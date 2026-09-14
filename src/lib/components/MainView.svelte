@@ -20,7 +20,10 @@
         searchQuery,
         searchResults,
         clearSearch,
+        addQueryToHistory,
+        searchHistory,
     } from "$lib/stores/search";
+    import SearchHistoryDropdown from "./SearchHistoryDropdown.svelte";
     import { isMobile } from "$lib/stores/mobile";
     import MobileHome from "./MobileHome.svelte";
     import DesktopHome from "./DesktopHome.svelte";
@@ -99,6 +102,8 @@
     let mobileSearchInput = "";
     let mobileSearchInputEl: HTMLInputElement;
     let mobileSearchTimer: ReturnType<typeof setTimeout>;
+    let mobileSearchFocused = false;
+    $: showMobileHistory = mobileSearchFocused && mobileSearchInput === "" && $searchHistory.length > 0;
 
     function handleMobileSearchInput() {
         clearTimeout(mobileSearchTimer);
@@ -661,6 +666,15 @@
     <!-- Mobile: Search bar + library sub-tabs (Spotify pill style) -->
     {#if $isMobile && isLibraryView}
         <div class="mobile-library-header">
+            <div
+                style="position:relative;"
+                on:focusin={() => (mobileSearchFocused = true)}
+                on:focusout={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget)) {
+                        mobileSearchFocused = false;
+                    }
+                }}
+            >
             <div class="mobile-search-bar">
                 <Icon name="search" size={18} className="search-icon" />
                 <input
@@ -670,8 +684,10 @@
                     bind:value={mobileSearchInput}
                     bind:this={mobileSearchInputEl}
                     on:input={handleMobileSearchInput}
-                    on:keydown={(e) =>
-                        e.key === "Escape" && closeMobileSearch()}
+                    on:keydown={(e) => {
+                        if (e.key === "Escape") closeMobileSearch();
+                        if (e.key === "Enter" && mobileSearchInput.trim()) addQueryToHistory(mobileSearchInput.trim());
+                    }}
                     spellcheck="false"
                 />
                 {#if mobileSearchInput}
@@ -683,6 +699,17 @@
                         <Icon name="x" size={18} />
                     </button>
                 {/if}
+            </div>
+            {#if showMobileHistory}
+                <SearchHistoryDropdown
+                    onSelectQuery={(q) => {
+                        mobileSearchInput = q;
+                        searchQuery.set(q);
+                        mobileSearchFocused = false;
+                    }}
+                    onClose={() => { mobileSearchFocused = false; }}
+                />
+            {/if}
             </div>
         </div>
 

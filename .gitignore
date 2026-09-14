@@ -68,3 +68,5 @@ tauri-signing.key.pub
 src-tauri/target_check
 src-tauri/target_validate
 src-tauri/gen/android/release.keystore
+
+.claude/

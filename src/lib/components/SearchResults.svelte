@@ -8,6 +8,7 @@
         searchResults,
         searchQuery,
         clearSearch,
+        addItemToHistory,
     } from "$lib/stores/search";
     import {
         goToAlbumDetail,
@@ -137,10 +138,30 @@
     }
 
     function handleTrackClick(index: number) {
+        const track = $searchResults.tracks[index];
+        if (track) {
+            addItemToHistory({
+                type: 'track',
+                id: track.id,
+                title: track.title || '',
+                artist: track.artist || undefined,
+                albumArt: getTrackArt(track) ?? undefined,
+            });
+        }
         playTracks($searchResults.tracks, index);
     }
 
     function handleAlbumClick(albumId: number) {
+        const album = $searchResults.albums.find(a => a.id === albumId);
+        if (album) {
+            addItemToHistory({
+                type: 'album',
+                id: album.id,
+                title: album.name,
+                artist: album.artist || undefined,
+                albumArt: getAlbumCover(album) ?? undefined,
+            });
+        }
         clearSearch();
         goToAlbumDetail(albumId);
     }
@@ -151,6 +172,14 @@
     }
 
     function handlePlaylistClick(playlistId: number, name: string) {
+        const playlist = $searchResults.playlists?.find(p => p.id === playlistId);
+        const cover = playlist ? getPlaylistCover(playlist) : undefined;
+        addItemToHistory({
+            type: 'playlist',
+            id: playlistId,
+            title: name,
+            albumArt: cover,
+        });
         clearSearch();
         goToPlaylistDetail(playlistId, name);
     }
