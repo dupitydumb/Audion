@@ -3,6 +3,11 @@ import { get } from 'svelte/store';
 import { currentTime, duration, isPlaying, activeBackend, pluginEvents } from './stores';
 import { appSettings } from '$lib/stores/settings';
 
+// How often to push position into Svelte stores (ms).
+// RAF runs at ~60fps but the seekbar/time display only need ~4fps.
+// Crossfade threshold checks still run every frame for accuracy.
+const STORE_UPDATE_INTERVAL_MS = 250;
+
 // =============================================================================
 // DEAD-RECKONING STATE (native backend only)
 // position is computed locally between backend events using:
@@ -13,11 +18,12 @@ let _reckoningOffset: number = 0;
 let _reckoningStartedAt: number = 0;
 let _reckoningActive: boolean = false;
 let _reckoningRafId: number | null = null;
+let _reckoningLastStoreUpdate: number = 0;
 
 // Crossfade flags
 // HTML5 backend owns the "already tried a crossfade for this track" guard locally
 // see _html5Tick below
-// native does not needs either flag: 
+// native does not needs either flag:
 // AudioEngine::maybe_auto_crossfade decides timing itself from real decoded sample position, on its own periodic tick
 export let _hasCrossfaded = false;
 export function resetCrossfadeFlags(): void {
@@ -34,6 +40,7 @@ export function _startReckoning(offsetSecs: number): void {
     _reckoningOffset = offsetSecs;
     _reckoningStartedAt = performance.now();
     _reckoningActive = true;
+    _reckoningLastStoreUpdate = 0;
     if (_reckoningRafId === null) {
         _reckoningRafId = requestAnimationFrame(_reckoningTick);
     }
@@ -72,22 +79,21 @@ function _reckoningTick(): void {
         _reckoningRafId = null;
         return;
     }
-    const elapsed = (performance.now() - _reckoningStartedAt) / 1000;
+    const now = performance.now();
+    const elapsed = (now - _reckoningStartedAt) / 1000;
     const position = _reckoningOffset + elapsed;
     const dur = get(duration);
 
-    // clamp to duration
-    currentTime.set(dur > 0 ? Math.min(position, dur) : position);
-
-    pluginEvents.emit('timeUpdate', { currentTime: position, duration: dur });
-
-    if (get(isPlaying)) {
-        _onPositionUpdate?.();
+    // Throttle Svelte store updates — avoids 60fps DOM/CSS rerenders.
+    // Crossfade is handled by AudioEngine on native, so no threshold check needed here.
+    if (now - _reckoningLastStoreUpdate >= STORE_UPDATE_INTERVAL_MS) {
+        _reckoningLastStoreUpdate = now;
+        currentTime.set(dur > 0 ? Math.min(position, dur) : position);
+        pluginEvents.emit('timeUpdate', { currentTime: position, duration: dur });
+        if (get(isPlaying)) {
+            _onPositionUpdate?.();
+        }
     }
-
-    // the decision lives in AudioEngine::maybe_auto_crossfade
-    // driven by real sample position on its own periodic tick
-    // this loop is purely a position display for the native backend
 
     _reckoningRafId = requestAnimationFrame(_reckoningTick);
 }
@@ -100,6 +106,7 @@ import {
 } from '$lib/services/html5-audio';
 
 let _html5RafId: number | null = null;
+let _html5LastStoreUpdate: number = 0;
 let _onHtml5CrossfadeThreshold: (() => void) | null = null;
 export function registerHtml5CrossfadeCallback(cb: () => void): void {
     _onHtml5CrossfadeThreshold = cb;
@@ -113,6 +120,7 @@ export function registerPositionUpdateCallback(cb: () => void): void {
 
 export function _startHtml5Ticker(): void {
     if (_html5RafId !== null) return;
+    _html5LastStoreUpdate = 0;
     _html5RafId = requestAnimationFrame(_html5Tick);
 }
 
@@ -128,13 +136,10 @@ function _html5Tick(): void {
         _html5RafId = null;
         return;
     }
+    const now = performance.now();
     const state = html5GetState();
-    currentTime.set(state.position);
-    if (state.duration > 0 && !isNaN(state.duration)) duration.set(state.duration);
-    pluginEvents.emit('timeUpdate', { currentTime: state.position, duration: state.duration });
-    if (get(isPlaying)) _onPositionUpdate?.();
 
-    // Check for early crossfade trigger
+    // Crossfade threshold check runs every frame for timing accuracy.
     const settings = get(appSettings);
     if (settings.crossfadeSeconds > 0 && state.duration > settings.crossfadeSeconds && !_hasCrossfaded) {
         const threshold = state.duration - settings.crossfadeSeconds;
@@ -142,6 +147,15 @@ function _html5Tick(): void {
             _hasCrossfaded = true;
             _onHtml5CrossfadeThreshold?.();
         }
+    }
+
+    // Throttle Svelte store updates — avoids 60fps DOM/CSS rerenders.
+    if (now - _html5LastStoreUpdate >= STORE_UPDATE_INTERVAL_MS) {
+        _html5LastStoreUpdate = now;
+        currentTime.set(state.position);
+        if (state.duration > 0 && !isNaN(state.duration)) duration.set(state.duration);
+        pluginEvents.emit('timeUpdate', { currentTime: state.position, duration: state.duration });
+        if (get(isPlaying)) _onPositionUpdate?.();
     }
 
     _html5RafId = requestAnimationFrame(_html5Tick);
