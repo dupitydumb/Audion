@@ -78,6 +78,7 @@
     Share2,
     FileText,
     Monitor,
+    Smartphone,
     BarChart2,
     Star,
     ArrowLeft,
@@ -184,6 +185,7 @@
     | 'share'
     | 'file-text'
     | 'monitor'
+    | 'smartphone'
     | string;
 
   export let size: number | string = 16;
@@ -293,6 +295,7 @@
     share: Share2,
     'file-text': FileText,
     monitor: Monitor,
+    smartphone: Smartphone,
     'bar-chart': BarChart2,
     'bar-chart-2': BarChart2,
     star: Star,

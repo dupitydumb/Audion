@@ -65,9 +65,9 @@
       <span class="setting-title">{$_('settings.layoutMode')}</span>
       <span class="setting-description">{$_('settings.layoutModeDesc')}</span>
       <div class="segmented-pill" style="margin-top: 6px;">
-        <button class="segment-btn" class:active={$layoutOverride === 'auto'} on:click={() => handleLayoutOverrideChange('auto')}>{$_('settings.layoutAuto')}</button>
-        <button class="segment-btn" class:active={$layoutOverride === 'desktop'} on:click={() => handleLayoutOverrideChange('desktop')}>{$_('settings.layoutDesktop')}</button>
-        <button class="segment-btn" class:active={$layoutOverride === 'mobile'} on:click={() => handleLayoutOverrideChange('mobile')}>{$_('settings.layoutMobile')}</button>
+        <button class="segment-btn" class:active={$layoutOverride === 'auto'} on:click={() => handleLayoutOverrideChange('auto')}><Icon name="sliders" size={14} />{$_('settings.layoutAuto')}</button>
+        <button class="segment-btn" class:active={$layoutOverride === 'desktop'} on:click={() => handleLayoutOverrideChange('desktop')}><Icon name="monitor" size={14} />{$_('settings.layoutDesktop')}</button>
+        <button class="segment-btn" class:active={$layoutOverride === 'mobile'} on:click={() => handleLayoutOverrideChange('mobile')}><Icon name="smartphone" size={14} />{$_('settings.layoutMobile')}</button>
       </div>
     </div>
 
