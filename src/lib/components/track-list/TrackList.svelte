@@ -499,29 +499,80 @@
     startCleanupInterval();
   }
 
-  // Drag and drop for playlist reordering (only enabled when playlistId is set)
+  // ── Drag and drop for playlist reordering ──
   let draggedIndex: number | null = null;
   let dragOverIndex: number | null = null;
   let isDragging = false;
+  let dragGhost: HTMLElement | null = null;
+  let dragGrabOffsetY = 0;
+  let dragRowHeight = 48;
+
+  /** Per-row translateY in px, keyed by actual track index. */
+  let dragShifts: Record<number, number> = {};
+
+  function computeShifts(dragged: number, over: number | null): Record<number, number> {
+    if (over === null) return {};
+    const shifts: Record<number, number> = {};
+    const dir = over > dragged ? 1 : -1; // dragging down (+1) or up (-1)
+    const lo = Math.min(dragged, over);
+    const hi = Math.max(dragged, over);
+    for (let i = lo; i <= hi; i++) {
+      if (i === dragged) continue;
+      shifts[i] = dir > 0 ? -dragRowHeight : dragRowHeight;
+    }
+    return shifts;
+  }
+
+  function createGhost(sourceRow: HTMLElement, clientY: number): HTMLElement {
+    const rect = sourceRow.getBoundingClientRect();
+    dragRowHeight = rect.height;
+    dragGrabOffsetY = clientY - rect.top;
+
+    const ghost = sourceRow.cloneNode(true) as HTMLElement;
+    ghost.classList.remove("dragging", "drag-over", "playing", "selected");
+    ghost.style.cssText = [
+      `position: fixed`,
+      `top: ${rect.top}px`,
+      `left: ${rect.left}px`,
+      `width: ${rect.width}px`,
+      `height: ${rect.height}px`,
+      `pointer-events: none`,
+      `z-index: 9999`,
+      `opacity: 0.95`,
+      `border-radius: var(--radius-md, 8px)`,
+      `box-shadow: 0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25)`,
+      `transform: rotate(1.5deg) scale(1.02)`,
+      `transform-origin: center center`,
+      `background: var(--bg-highlight)`,
+      `transition: none`,
+      `will-change: top`,
+    ].join('; ');
+    document.body.appendChild(ghost);
+    return ghost;
+  }
 
   function handlePointerDown(e: PointerEvent, actualIndex: number) {
-    if (!playlistId) return; // Only allow dragging in playlists
+    if (!playlistId) return;
 
     e.preventDefault();
     e.stopPropagation();
-    e.stopImmediatePropagation(); // Prevent parent handlers
+    e.stopImmediatePropagation();
+
+    const handle = e.currentTarget as HTMLElement;
+    handle.setPointerCapture(e.pointerId);
+
+    // Find the track-row ancestor to clone
+    const row = handle.closest('.track-row') as HTMLElement | null;
+    if (row) dragGhost = createGhost(row, e.clientY);
+
     isDragging = true;
     draggedIndex = actualIndex;
+    dragOverIndex = null;
+    dragShifts = {};
 
-    // Capture pointer events
-    const target = e.currentTarget as HTMLElement;
-    target.setPointerCapture(e.pointerId);
-
-    // Add global listeners
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp);
 
-    // Store cleanup function for memory leak prevention
     cleanupDragListeners = () => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
@@ -531,31 +582,40 @@
   function handlePointerMove(e: PointerEvent) {
     if (!isDragging || draggedIndex === null || !playlistId) return;
 
-    // Find element under pointer
-    const elementsUnderPointer = document.elementsFromPoint(
-      e.clientX,
-      e.clientY,
-    );
-    const trackRow = elementsUnderPointer.find((el) =>
-      el.classList.contains("track-row"),
-    );
+    // Move ghost
+    if (dragGhost) {
+      dragGhost.style.top = `${e.clientY - dragGrabOffsetY}px`;
+    }
 
-    if (trackRow) {
-      const indexAttr = trackRow.getAttribute("data-track-index");
-      if (indexAttr !== null) {
-        const overIndex = parseInt(indexAttr, 10);
-        if (overIndex !== draggedIndex) {
-          dragOverIndex = overIndex;
-        } else {
-          dragOverIndex = null;
-        }
-      }
-    } else {
-      dragOverIndex = null;
+    // Compute target index from pointer position relative to the scroll container.
+    // This avoids unreliable DOM hit-testing with z-stacked/clipped elements.
+    let newOver: number | null = null;
+    if (containerElement) {
+      const rect = containerElement.getBoundingClientRect();
+      // pointer Y relative to the list content (account for scroll)
+      const relY = e.clientY - rect.top + containerElement.scrollTop;
+      const idx = Math.floor(relY / TRACK_ROW_HEIGHT);
+      const clamped = Math.max(0, Math.min(sortedTracks.length - 1, idx));
+      if (clamped !== draggedIndex) newOver = clamped;
+    }
+
+    if (newOver !== dragOverIndex) {
+      dragOverIndex = newOver;
+      dragShifts = computeShifts(draggedIndex, dragOverIndex);
     }
   }
 
   async function handlePointerUp() {
+    // Fade out ghost
+    if (dragGhost) {
+      dragGhost.style.transition = 'opacity 120ms ease, transform 120ms ease';
+      dragGhost.style.opacity = '0';
+      dragGhost.style.transform = 'scale(0.96)';
+      const g = dragGhost;
+      setTimeout(() => g.remove(), 130);
+      dragGhost = null;
+    }
+
     if (
       isDragging &&
       draggedIndex !== null &&
@@ -564,17 +624,13 @@
       playlistId
     ) {
       try {
-        // Update backend
         await reorderPlaylistTracks(playlistId, draggedIndex, dragOverIndex);
-
-        console.log("Reorder successful, updating local state");
-
-        // Update local state for instant feedback
-        const newTracks = [...tracks];
+        // Reorder on sortedTracks (what the user sees), then update the source prop.
+        // sortedTracks === tracks when no sort is active (common for playlists).
+        const newTracks = [...sortedTracks];
         const [removed] = newTracks.splice(draggedIndex, 1);
         newTracks.splice(dragOverIndex, 0, removed);
         tracks = newTracks;
-
         addToast($_('trackList.tracksReordered'), "success");
       } catch (error) {
         console.error("Failed to reorder tracks:", error);
@@ -582,12 +638,11 @@
       }
     }
 
-    // Cleanup
     isDragging = false;
     draggedIndex = null;
     dragOverIndex = null;
+    dragShifts = {};
 
-    // Clean up and clear the cleanup function
     if (cleanupDragListeners) {
       cleanupDragListeners();
       cleanupDragListeners = null;
@@ -775,6 +830,7 @@
       class:mobile-album={mobileViewMode === "album"}
       class:mobile-playlist={mobileViewMode === "playlist"}
       class:mobile-library={mobileViewMode === "library"}
+      class:is-dragging={isDragging}
       on:scroll={handleScroll}
       on:click={handleBodyClick}
       on:dblclick={handleBodyDoubleClick}
@@ -795,7 +851,7 @@
           {#each visibleTracksWithMetadata as { track, albumArt, unavailable }, index (track.id)}
             {@const actualIndex = virtualScrollState.startIndex + index}
             {@const isSelected = $multiSelect.selectedTrackIds.has(track.id)}
-            <TrackListRow
+<TrackListRow
               {track}
               {albumArt}
               {unavailable}
@@ -810,6 +866,7 @@
               {showAdvancedMetadata}
               isDragging={draggedIndex === actualIndex}
               isDragOver={dragOverIndex === actualIndex}
+              dragShift={isDragging ? (dragShifts[actualIndex] ?? 0) : 0}
               onPointerDown={handlePointerDown}
               onImageError={handleImageError}
             />
@@ -937,8 +994,12 @@
   :global(.track-row:hover) { background-color: rgba(255, 255, 255, 0.1); cursor: pointer; }
   :global(.track-row.playing) { background-color: var(--bg-surface); }
   :global(.track-row.playing .track-name) { color: var(--accent-primary); }
-  :global(.track-row.dragging) { opacity: 0.5; background-color: var(--bg-highlight); }
-  :global(.track-row.drag-over) { border-top: 2px solid var(--accent-primary); margin-top: -2px; }
+  :global(.track-row.dragging) { opacity: 0; background: transparent; pointer-events: none; }
+  :global(.track-row.drag-over) { /* handled by row shift, no border needed */ }
+  /* Smooth shift during drag — only while is-dragging to avoid layout transitions elsewhere */
+  .list-body.is-dragging :global(.track-row:not(.dragging)) {
+    transition: transform 160ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
   :global(.track-row.unavailable) { opacity: 0.5; cursor: not-allowed; }
   :global(.track-row.unavailable:hover) { background-color: transparent; }
 
@@ -984,7 +1045,7 @@
   :global(.track-row:hover .quality-tag) { opacity: 1; }
   :global(.quality-tag.high-quality) { color: var(--accent-primary); border-color: var(--accent-primary); background-color: color-mix(in srgb, var(--accent-primary), transparent 85%); }
 
-  :global(.track-artist) { font-size: var(--font-size-sm); color: var(--text-secondary); background: none; border: none; padding: 0; margin: 0; text-align: left; max-width: fit-content; line-height: var(--line-height-tight); min-height: 0; }
+  :global(.track-artist) { font-size: var(--font-size-sm); color: var(--text-subdued); background: none; border: none; padding: 0; margin: 0; text-align: left; max-width: fit-content; line-height: var(--line-height-tight); min-height: 0; }
   :global(.track-artist:hover:not(:disabled)) { color: var(--text-primary); text-decoration: underline; cursor: pointer; }
   :global(.media-metadata) { font-size: 0.7rem; color: var(--text-subdued); opacity: 0.9; }
 
@@ -1029,7 +1090,7 @@
   :global(html.layout-mobile .eq-bar:nth-child(4)) { height: 80%; animation-delay: 0.6s; }
   @keyframes eq-bounce { 0%, 100% { height: 20%; } 50% { height: 100%; } }
   :global(html.layout-mobile) .list-body.mobile-album :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); }
-  :global(html.layout-mobile) .list-body.mobile-album :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-secondary); }
+  :global(html.layout-mobile) .list-body.mobile-album :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-subdued); }
   :global(html.layout-mobile) .list-body.mobile-album :global(.col-duration) { font-size: var(--font-size-xs); color: var(--text-subdued); }
   :global(html.layout-mobile) .list-body.mobile-album.with-drag :global(.track-row) { grid-template-columns: 28px 32px 1fr 48px; }
   :global(html.layout-mobile) .list-body.mobile-album.multiselect :global(.track-row) { grid-template-columns: 36px 32px 1fr 48px; }
@@ -1041,7 +1102,7 @@
   :global(html.layout-mobile) .list-body.mobile-playlist :global(.col-cover) { justify-content: flex-start; align-items: center; }
   :global(html.layout-mobile) .list-body.mobile-playlist :global(.col-title) { padding-top: 0; justify-content: center; }
   :global(html.layout-mobile) .list-body.mobile-playlist :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); }
-  :global(html.layout-mobile) .list-body.mobile-playlist :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-secondary); margin-top: 0; }
+  :global(html.layout-mobile) .list-body.mobile-playlist :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-subdued); margin-top: 0; }
   :global(html.layout-mobile) .list-body.mobile-playlist :global(.col-duration) { font-size: var(--font-size-xs); color: var(--text-subdued); }
   :global(html.layout-mobile) .list-body.mobile-playlist.with-drag :global(.track-row) { grid-template-columns: 28px 48px 1fr 48px; }
   :global(html.layout-mobile) .list-body.mobile-playlist.multiselect :global(.track-row) { grid-template-columns: 36px 48px 1fr 48px; }
@@ -1053,7 +1114,7 @@
   :global(html.layout-mobile) .list-body.mobile-library :global(.col-cover) { justify-content: flex-start; align-items: center; }
   :global(html.layout-mobile) .list-body.mobile-library :global(.col-title) { padding-top: 0; justify-content: center; }
   :global(html.layout-mobile) .list-body.mobile-library :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); }
-  :global(html.layout-mobile) .list-body.mobile-library :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-secondary); margin-top: 2px; }
+  :global(html.layout-mobile) .list-body.mobile-library :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-subdued); margin-top: 2px; }
   :global(html.layout-mobile) .list-body.mobile-library :global(.col-duration) { font-size: var(--font-size-xs); color: var(--text-subdued); }
   :global(html.layout-mobile) .list-body.mobile-library.with-drag :global(.track-row) { grid-template-columns: 28px 48px 1fr 48px; }
   :global(html.layout-mobile) .list-body.mobile-library.multiselect :global(.track-row),

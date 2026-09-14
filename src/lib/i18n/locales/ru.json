@@ -903,6 +903,10 @@
     "signInToSync": "Войдите, чтобы синхронизировать"
   },
   "search": {
-    "loadMore": "Загрузить ещё ({count} осталось)"
+    "loadMore": "Загрузить ещё ({count} осталось)",
+    "searchHistory": "Недавние поиски",
+    "searchHistoryClear": "Очистить всё",
+    "searchHistoryEmpty": "Нет недавних поисков",
+    "searchHistoryRemove": "Удалить"
   }
 }

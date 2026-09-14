@@ -5,6 +5,8 @@
   import { confirm } from "$lib/stores/dialogs";
   import { slide } from "svelte/transition";
   import { createEventDispatcher, tick } from "svelte";
+  import Icon from "$lib/components/Icon.svelte";
+  import { appSettings } from "$lib/stores/settings";
 
   export let open: boolean = false;
   const dispatch = createEventDispatcher();
@@ -124,22 +126,40 @@
 
 <section class="settings-section" aria-labelledby="lyrics-heading">
   <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <svg class="accordion-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-      <line x1="12" y1="19" x2="12" y2="22" />
-    </svg>
+    <Icon name="lyrics" size="lg" className="accordion-icon" />
     <div class="accordion-header-info">
       <span class="accordion-title">{$_('settings.lyrics', { default: 'Lyrics' })}</span>
       <span class="accordion-subtitle">{$_('settings.lyricsSubtitle', { default: 'Manage automatic source priority and cached lyrics' })}</span>
     </div>
-    <svg class="accordion-chevron" class:rotated={open} viewBox="0 0 24 24" width="16" height="16">
-      <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
-    </svg>
+    <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
   </button>
   {#if open}
     <div class="section-body" transition:slide|local>
       <div class="settings-card">
+
+        <!-- auto-fetch toggle -->
+        <div class="toggle-container">
+          <div class="toggle-info">
+            <span class="setting-title">{$_('settings.lyricsAutoFetchTitle', { default: 'Auto-fetch lyrics' })}</span>
+            <span class="setting-description">
+              {$_('settings.lyricsAutoFetchDesc', {
+                default: 'Automatically search for lyrics when a track starts playing. Turn off to save bandwidth or prevent unwanted lookups.',
+              })}
+            </span>
+          </div>
+          <button
+            class="toggle-btn"
+            class:active={$appSettings.lyricsAutoFetch}
+            on:click={() => appSettings.setLyricsAutoFetch(!$appSettings.lyricsAutoFetch)}
+            role="switch"
+            aria-checked={$appSettings.lyricsAutoFetch}
+            aria-label={$_('settings.lyricsAutoFetchToggleLabel', { default: 'Toggle automatic lyrics fetching' })}
+          >
+            <div class="toggle-handle"></div>
+          </button>
+        </div>
+
+        <div class="divider"></div>
 
         <!-- render mode -->
         <div class="toggle-container">
@@ -228,9 +248,7 @@
               {#if isBulkDeletingLyrics}
                 <div class="lyrics-delete-spinner"></div>
               {:else}
-                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                  <path d="M6 7h12v2H6zm2 3h2v9H8zm6 0h2v9h-2zM9 4h6l1 2H8z"/>
-                </svg>
+                <Icon name="trash" size={16} />
               {/if}
             </button>
           </div>

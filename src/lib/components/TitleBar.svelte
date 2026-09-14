@@ -8,11 +8,15 @@
         searchQuery,
         clearSearch,
         searchResults,
+        addQueryToHistory,
+        searchHistory,
     } from "$lib/stores/search";
+    import SearchHistoryDropdown from "./SearchHistoryDropdown.svelte";
     import { isMobile, toggleMobileSidebar } from "$lib/stores/mobile";
     import { appSettings } from "$lib/stores/settings";
     import MenuBar from "./MenuBar.svelte";
     import Breadcrumbs from "./Breadcrumbs.svelte";
+    import Icon from "$lib/components/Icon.svelte";
 
     const appWindow = getCurrentWindow();
     let isMaximized = false;
@@ -42,6 +46,8 @@
     let searchInput = "";
     let searchDebounceTimer: ReturnType<typeof setTimeout>;
     let searchInputEl: HTMLInputElement;
+    let searchFocused = false;
+    $: showHistory = searchFocused && $searchQuery === "" && $searchHistory.length > 0;
 
     let canGoBack = false;
     let canGoForward = false;
@@ -63,11 +69,17 @@
         searchInputEl?.focus();
     }
 
+    function handleSearchCommit() {
+        const q = searchInput.trim();
+        if (q) addQueryToHistory(q);
+    }
+
     function handleKeydown(e: KeyboardEvent) {
         if (e.key === "Escape") {
             handleClearSearch();
             searchInputEl?.blur();
         }
+        if (e.key === "Enter") handleSearchCommit();
     }
 
     function handleGlobalKeydown(e: KeyboardEvent) {
@@ -152,16 +164,7 @@
                     on:click={toggleMobileSidebar}
                     aria-label="Open menu"
                 >
-                    <svg
-                        width="20"
-                        height="20"
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                    >
-                        <path
-                            d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"
-                        />
-                    </svg>
+                    <Icon name="list" size={20} />
                 </button>
             {:else}
                 <!-- Desktop: Menu Dropdown -->
@@ -178,18 +181,7 @@
                         title={$_('nav.goBack')}
                         aria-label="Go Back"
                     >
-                        <svg
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                        >
-                            <polyline points="15 18 9 12 15 6"></polyline>
-                        </svg>
+                        <Icon name="chevron-left" size={16} />
                     </button>
                     <button
                         class="nav-btn"
@@ -198,18 +190,7 @@
                         title={$_('nav.goForward')}
                         aria-label="Go Forward"
                     >
-                        <svg
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            stroke-width="2"
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                        >
-                            <polyline points="9 18 15 12 9 6"></polyline>
-                        </svg>
+                        <Icon name="chevron-right" size={16} />
                     </button>
                 </div>
 
@@ -221,7 +202,7 @@
         </div>
         <!-- Left Drag Region (desktop only) -->
         {#if !$isMobile}
-            <div class="drag-region" data-tauri-drag-region></div>
+            <div class="drag-region" on:mousedown={() => appWindow.startDragging()}></div>
         {/if}
     </div>
 
@@ -231,17 +212,7 @@
         <div class="titlebar-center mobile-center">
             {#if mobileSearchOpen}
                 <div class="search-input-wrapper mobile-search">
-                    <svg
-                        class="search-icon"
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="18"
-                        height="18"
-                    >
-                        <path
-                            d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
-                        />
-                    </svg>
+                    <Icon name="search" size={18} className="search-icon" />
                     <input
                         type="text"
                         class="search-input"
@@ -261,16 +232,7 @@
                         }}
                         title={$_('nav.closeSearch')}
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="16"
-                            height="16"
-                        >
-                            <path
-                                d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                            />
-                        </svg>
+                        <Icon name="x" size={16} />
                     </button>
                 </div>
             {:else}
@@ -280,33 +242,23 @@
                     on:click={() => (mobileSearchOpen = true)}
                     aria-label="Open search"
                 >
-                    <svg
-                        width="20"
-                        height="20"
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                    >
-                        <path
-                            d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
-                        />
-                    </svg>
+                    <Icon name="search" size={20} />
                 </button>
             {/if}
         </div>
     {:else}
         <div class="titlebar-center">
+            <div
+                class="search-wrapper-outer"
+                on:focusin={() => (searchFocused = true)}
+                on:focusout={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget)) {
+                        searchFocused = false;
+                    }
+                }}
+            >
             <div class="search-input-wrapper">
-                <svg
-                    class="search-icon"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="18"
-                    height="18"
-                >
-                    <path
-                        d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
-                    />
-                </svg>
+                <Icon name="search" size={18} className="search-icon" />
                 <input
                     type="text"
                     class="search-input"
@@ -315,7 +267,6 @@
                     bind:this={searchInputEl}
                     on:input={handleSearchInput}
                     on:keydown={handleKeydown}
-                    on:click={() => searchInputEl?.focus()}
                     spellcheck="false"
                     title={$_('nav.searchShortcutHint')}
                 />
@@ -333,18 +284,20 @@
                         on:click={handleClearSearch}
                         title={$_('nav.clearSearchHint')}
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            fill="currentColor"
-                            width="16"
-                            height="16"
-                        >
-                            <path
-                                d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                            />
-                        </svg>
+                        <Icon name="x" size={16} />
                     </button>
                 {/if}
+            </div>
+            {#if showHistory}
+                <SearchHistoryDropdown
+                    onSelectQuery={(q) => {
+                        searchInput = q;
+                        searchQuery.set(q);
+                        searchFocused = false;
+                    }}
+                    onClose={() => { searchFocused = false; }}
+                />
+            {/if}
             </div>
         </div>
     {/if}
@@ -352,7 +305,7 @@
     <div class="titlebar-right">
         <!-- Right Drag Region (desktop only) -->
         {#if !$isMobile}
-            <div class="drag-region" data-tauri-drag-region></div>
+            <div class="drag-region" on:mousedown={() => appWindow.startDragging()}></div>
             <div class="window-controls">
                 <button
                     class="win-btn"
@@ -460,8 +413,6 @@
         left: 0;
         right: 0;
         z-index: 50;
-        user-select: none;
-        -webkit-user-select: none;
         border-bottom: 1px solid var(--border-color);
     }
 
@@ -521,6 +472,8 @@
         border: none;
         cursor: pointer;
         transition: all 0.2s;
+        user-select: none;
+        -webkit-user-select: none;
     }
 
     .nav-btn:hover:not(:disabled) {
@@ -545,28 +498,26 @@
 
     /* Drag Regions */
     /* Drag Regions */
-    /* Use data-tauri-drag-region attribute and explicit classes so macOS
-       WebKit will treat the area as draggable. Interactive elements inside
-       titlebar must be explicitly marked as no-drag to receive pointer events. */
-    [data-tauri-drag-region],
+    /* Use startDragging() on mousedown so Tauri's global drag interceptor
+       never fires — that interceptor causes WM_NCLBUTTONDOWN which steals
+       focus from child inputs on Windows WebView2. */
     .drag-region {
-        -webkit-app-region: drag;
+        -webkit-app-region: no-drag;
         flex-grow: 1;
         height: 100%;
         min-width: 16px;
-    }
-
-    /* Interactive elements should not be draggable so clicks work on macOS */
-    .titlebar .left-controls,
-    .titlebar .window-controls,
-    .titlebar .nav-group,
-    .titlebar .search-input-wrapper,
-    .titlebar button,
-    .titlebar input {
-        -webkit-app-region: no-drag;
+        cursor: grab;
     }
 
     /* Search Bar */
+    .search-wrapper-outer {
+        position: relative;
+        display: flex;
+        flex: 1;
+        min-width: 0;
+        max-width: 480px;
+    }
+
     .search-input-wrapper {
         display: flex;
         align-items: center;
@@ -659,6 +610,8 @@
         transition:
             background-color 0.2s,
             color 0.2s;
+        user-select: none;
+        -webkit-user-select: none;
     }
 
     .win-btn:hover {
@@ -697,6 +650,8 @@
         color: var(--accent-primary);
         flex: 1;
         text-align: center;
+        user-select: none;
+        -webkit-user-select: none;
     }
 
     .search-toggle-btn {

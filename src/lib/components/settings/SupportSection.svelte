@@ -2,6 +2,7 @@
   import { _ } from "svelte-i18n";
   import { slide } from "svelte/transition";
   import { createEventDispatcher } from "svelte";
+  import Icon from "$lib/components/Icon.svelte";
 
   export let open: boolean = false;
   const dispatch = createEventDispatcher();
@@ -9,16 +10,12 @@
 
 <section class="settings-section" aria-labelledby="support-heading">
   <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <svg class="accordion-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l8.84-8.84 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-    </svg>
+    <Icon name="heart" size="lg" className="accordion-icon" />
     <div class="accordion-header-info">
       <span class="accordion-title">{$_('settings.support')}</span>
       <span class="accordion-subtitle">{$_('settings.supportSubtitle')}</span>
     </div>
-    <svg class="accordion-chevron" class:rotated={open} viewBox="0 0 24 24" width="16" height="16">
-      <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
-    </svg>
+    <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
   </button>
   {#if open}
     <div class="section-body" transition:slide|local>
@@ -30,9 +27,7 @@
             <p class="support-description">{$_('settings.supportDesc')}</p>
           </div>
           <div class="support-icon-large">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l8.84-8.84 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-            </svg>
+            <Icon name="heart" size={32} />
           </div>
         </div>
         <div class="support-grid">

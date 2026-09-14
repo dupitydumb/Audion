@@ -8,6 +8,7 @@
         searchResults,
         searchQuery,
         clearSearch,
+        addItemToHistory,
     } from "$lib/stores/search";
     import {
         goToAlbumDetail,
@@ -37,6 +38,7 @@
     } from "$lib/menus/contextMenus";
 
     import EmptyState from "./EmptyState.svelte";
+    import Icon from "$lib/components/Icon.svelte";
 
     // Props from MainView
     export let sectionOrder: SectionKey[];
@@ -136,10 +138,30 @@
     }
 
     function handleTrackClick(index: number) {
+        const track = $searchResults.tracks[index];
+        if (track) {
+            addItemToHistory({
+                type: 'track',
+                id: track.id,
+                title: track.title || '',
+                artist: track.artist || undefined,
+                albumArt: getTrackArt(track) ?? undefined,
+            });
+        }
         playTracks($searchResults.tracks, index);
     }
 
     function handleAlbumClick(albumId: number) {
+        const album = $searchResults.albums.find(a => a.id === albumId);
+        if (album) {
+            addItemToHistory({
+                type: 'album',
+                id: album.id,
+                title: album.name,
+                artist: album.artist || undefined,
+                albumArt: getAlbumCover(album) ?? undefined,
+            });
+        }
         clearSearch();
         goToAlbumDetail(albumId);
     }
@@ -150,6 +172,14 @@
     }
 
     function handlePlaylistClick(playlistId: number, name: string) {
+        const playlist = $searchResults.playlists?.find(p => p.id === playlistId);
+        const cover = playlist ? getPlaylistCover(playlist) : undefined;
+        addItemToHistory({
+            type: 'playlist',
+            id: playlistId,
+            title: name,
+            albumArt: cover,
+        });
         clearSearch();
         goToPlaylistDetail(playlistId, name);
     }
@@ -257,16 +287,7 @@
                                             />
                                         {:else}
                                             <div class="art-placeholder">
-                                                <svg
-                                                    viewBox="0 0 24 24"
-                                                    fill="currentColor"
-                                                    width="16"
-                                                    height="16"
-                                                >
-                                                    <path
-                                                        d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                                                    />
-                                                </svg>
+                                                <Icon name="music" size={16} />
                                             </div>
                                         {/if}
                                     </div>
@@ -348,16 +369,7 @@
                                             />
                                         {:else}
                                             <div class="art-placeholder">
-                                                <svg
-                                                    viewBox="0 0 24 24"
-                                                    fill="currentColor"
-                                                    width="32"
-                                                    height="32"
-                                                >
-                                                    <path
-                                                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 14.5c-2.49 0-4.5-2.01-4.5-4.5S9.51 7.5 12 7.5s4.5 2.01 4.5 4.5-2.01 4.5-4.5 4.5zm0-5.5c-.55 0-1 .45-1 1s.45 1 1 1 1-.45 1-1-.45-1-1-1z"
-                                                    />
-                                                </svg>
+                                                <Icon name="disc" size={32} />
                                             </div>
                                         {/if}
                                     </div>

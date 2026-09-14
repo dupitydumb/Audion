@@ -9,7 +9,7 @@
   //   plain (non interactive) ellipsis if there are more
   //   use this in tight spaces (mini players, now playing bars, notifications) where a full multi artist chip row won't fit
   //
-  // falls back to rendering the raw artist string (single, still clickable as one chip) 
+  // falls back to rendering the raw artist string (single, still clickable as one chip)
   // if artists is empty or undefined
   //
   // optional marquee support (full mode only): when marquee is set
@@ -126,15 +126,15 @@
       class="artist-chip {chipClass}"
       title={chipTitle}
       on:click={(e) => (useTapMenu ? openTapMenu(e) : handleClick(e, names[0]))}
-      on:keydown={(e) => handleKeydown(e, names[0])}
-    >{names[0]}</button>
+      on:keydown={(e) => handleKeydown(e, names[0])}>{names[0]}</button
+    >
     {#if names.length > 1}
       <span
         class="artist-links-ellipsis"
         class:tappable={useTapMenu}
         title={useTapMenu ? "" : names.slice(1).join(" · ")}
-        on:click={(e) => useTapMenu && openTapMenu(e)}
-      >&nbsp;…</span>
+        on:click={(e) => useTapMenu && openTapMenu(e)}>&nbsp;…</span
+      >
     {/if}
   </span>
   {#if menuOpen}
@@ -149,8 +149,8 @@
           type="button"
           class="artist-tap-menu-item"
           role="menuitem"
-          on:click|stopPropagation={() => selectFromMenu(name)}
-        >{name}</button>
+          on:click|stopPropagation={() => selectFromMenu(name)}>{name}</button
+        >
       {/each}
     </div>
   {/if}
@@ -170,8 +170,8 @@
           class="artist-chip {chipClass}"
           title={chipTitle}
           on:click={(e) => handleClick(e, name)}
-          on:keydown={(e) => handleKeydown(e, name)}
-        >{name}</button>
+          on:keydown={(e) => handleKeydown(e, name)}>{name}</button
+        >
         {#if i < names.length - 1}<span class="artist-links-sep">·</span>{/if}
       {/each}
     </span>
@@ -184,8 +184,8 @@
         class="artist-chip {chipClass}"
         title={chipTitle}
         on:click={(e) => handleClick(e, name)}
-        on:keydown={(e) => handleKeydown(e, name)}
-      >{name}</button>
+        on:keydown={(e) => handleKeydown(e, name)}>{name}</button
+      >
       {#if i < names.length - 1}<span class="artist-links-sep">·</span>{/if}
     {/each}
   </span>
@@ -212,10 +212,12 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--text-secondary);
   }
 
   .artist-chip:hover {
     text-decoration: underline;
+    color: var(--text-subdued);
   }
 
   .artist-links-sep {

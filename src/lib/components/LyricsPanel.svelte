@@ -21,6 +21,7 @@
     import { importLyricsContent } from "$lib/stores/lyrics";
     import { LYRICS_SOURCES, type LyricsSource } from "$lib/lyrics";
     import LyricsView from "./LyricsView.svelte";
+    import Icon from "$lib/components/Icon.svelte";
 
     // -------------------------------------------------------------------------
     // lyrics rendering (word/syllable sync, scroll, alignment) now lives in LyricsView.svelte
@@ -258,9 +259,7 @@
                             title={$_('lyrics.switchSource')}
                         >
                             <span class="source-pill-label">{activeSourceLabel}</span>
-                            <svg class="source-pill-chevron" viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
-                                <path d="M7 10l5 5 5-5z"/>
-                            </svg>
+                            <Icon name="chevron-down" size={12} className="source-pill-chevron" />
                         </button>
 
                         {#if sourceMenuOpen}
@@ -284,9 +283,7 @@
                                             {/if}
                                         </span>
                                         {#if isActive}
-                                            <svg class="source-menu-check" viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-                                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                                            </svg>
+                                            <Icon name="check" size={14} className="source-menu-check" />
                                         {/if}
                                         <button
                                             class="source-menu-delete"
@@ -295,9 +292,7 @@
                                             aria-label="Delete Imported lyrics"
                                             on:click={(e) => handleDeleteSource('user', 'Imported', e)}
                                         >
-                                            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
-                                                <path d="M6 7h12v2H6zm2 3h2v9H8zm6 0h2v9h-2zM9 4h6l1 2H8z"/>
-                                            </svg>
+                                            <Icon name="trash" size={13} />
                                         </button>
                                     </li>
                                 {/if}
@@ -319,9 +314,7 @@
                                             {/if}
                                         </span>
                                         {#if isActive}
-                                            <svg class="source-menu-check" viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-                                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                                            </svg>
+                                            <Icon name="check" size={14} className="source-menu-check" />
                                         {/if}
                                     </li>
                                 {/if}
@@ -340,9 +333,7 @@
                                         <span class="source-menu-label">{source.label}</span>
                                         <span class="source-menu-format">{source.format.toUpperCase()}</span>
                                         {#if isActive}
-                                            <svg class="source-menu-check" viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-                                                <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>
-                                            </svg>
+                                            <Icon name="check" size={14} className="source-menu-check" />
                                         {:else if isCached}
                                             <span class="source-menu-cached" title={$_('lyrics.cached')}>●</span>
                                         {/if}
@@ -353,9 +344,7 @@
                                             aria-label={`Delete ${source.label} lyrics`}
                                             on:click={(e) => handleDeleteSource(source.id, source.label, e)}
                                         >
-                                            <svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor">
-                                                <path d="M6 7h12v2H6zm2 3h2v9H8zm6 0h2v9h-2zM9 4h6l1 2H8z"/>
-                                            </svg>
+                                            <Icon name="trash" size={13} />
                                         </button>
                                     </li>
                                 {/each}
@@ -371,15 +360,7 @@
                     aria-label="Import lyrics file"
                     on:click={handleImportLyrics}
                 >
-                    <svg
-                        viewBox="0 0 24 24"
-                        width="20"
-                        height="20"
-                        fill="currentColor"
-                    >
-                        <path d="M19 9h-4V3H9v6H5l7 7 7-7z" />
-                        <path d="M5 18h14v2H5z" />
-                    </svg>
+                    <Icon name="download" size={20} />
                 </button>
 
                 <!-- Close -->
@@ -389,16 +370,7 @@
                     title={$_('lyrics.closePanel')}
                     aria-label="Close lyrics panel"
                 >
-                    <svg
-                        viewBox="0 0 24 24"
-                        width="20"
-                        height="20"
-                        fill="currentColor"
-                    >
-                        <path
-                            d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
-                        />
-                    </svg>
+                    <Icon name="x" size={20} />
                 </button>
             </div>
         </header>
@@ -415,16 +387,7 @@
         {:else if $lyricsError && !$lyricsData}
             <div class="lyrics-content">
                 <div class="lyrics-status">
-                    <svg
-                        viewBox="0 0 24 24"
-                        width="48"
-                        height="48"
-                        fill="currentColor"
-                    >
-                        <path
-                            d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                        />
-                    </svg>
+                    <Icon name="music" size={48} />
                     <span>{$_('lyrics.notFound')}</span>
                     {#if $currentTrack}
                         <span class="lyrics-track-info">
@@ -450,9 +413,7 @@
                                         title="Retry with this query"
                                         aria-label="Retry with this query"
                                     >
-                                        <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-                                            <path d="M17.65 6.35A7.958 7.958 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08a5.99 5.99 0 01-5.65 4c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L14 11h7V4l-3.35 2.35z"/>
-                                        </svg>
+                                        <Icon name="refresh" size={14} />
                                         Retry
                                     </button>
                                 {/if}
@@ -493,16 +454,7 @@
         {:else if !$currentTrack}
             <div class="lyrics-content">
                 <div class="lyrics-status">
-                    <svg
-                        viewBox="0 0 24 24"
-                        width="48"
-                        height="48"
-                        fill="currentColor"
-                    >
-                        <path
-                            d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"
-                        />
-                    </svg>
+                    <Icon name="music" size={48} />
                     <span>{$_('lyrics.idle')}</span>
                 </div>
             </div>

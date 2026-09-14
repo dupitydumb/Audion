@@ -334,8 +334,17 @@ jobs:
           # Bazzite and other immutable distros may have Wayland-only or broken EGL.
           # ---------------------------------------------------------------------------
 
-          # APPDIR must be set so WebKit can find its helper processes (WebKitNetworkProcess etc.)
-          export APPDIR="$HERE"
+          # Only set APPDIR if WebKit helper processes are actually bundled inside the
+          # AppImage. If they are not present (the common case — Tauri does not bundle
+          # them), setting APPDIR causes webkit2gtk to look for helpers inside the
+          # AppImage and fail with "No such file or directory". Leave APPDIR unset so
+          # webkit falls back to the system-installed helpers in
+          # /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/ (present on Ubuntu 22+, Fedora
+          # 38+, Arch, etc.).
+          WEBKIT_HELPER="$HERE/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess"
+          if [ -f "$WEBKIT_HELPER" ]; then
+            export APPDIR="$HERE"
+          fi
 
           # Always disable dmabuf renderer — it is the most common cause of blank screens on Mesa/NVIDIA
           export WEBKIT_DISABLE_DMABUF_RENDERER=1

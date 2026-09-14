@@ -3,6 +3,7 @@
     import { fade } from "svelte/transition";
     import { onMount } from "svelte";
     import { isMobile } from "$lib/stores/mobile";
+    import Icon from "$lib/components/Icon.svelte";
 
     import { tick } from "svelte";
 
@@ -105,18 +106,13 @@
                     role="menuitem"
                     tabindex="0"
                 >
-                    <span>{item.label}</span>
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="14"
-                        height="14"
-                        aria-hidden="true"
-                    >
-                        <path
-                            d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"
-                        />
-                    </svg>
+                    <span class="menu-item-icon">
+                        {#if item.icon}
+                            <Icon name={item.icon} size={14} />
+                        {/if}
+                    </span>
+                    <span class="menu-item-label">{item.label}</span>
+                    <Icon name="chevron-right" size={14} />
                     {#if activeSubmenu === item.label}
                         <div
                             class="submenu"
@@ -133,7 +129,12 @@
                                             subitem.action &&
                                             handleItemClick(subitem.action)}
                                     >
-                                        {subitem.label}
+                                        <span class="menu-item-icon">
+                                            {#if subitem.icon}
+                                                <Icon name={subitem.icon} size={14} />
+                                            {/if}
+                                        </span>
+                                        <span class="menu-item-label">{subitem.label}</span>
                                     </button>
                                 {/if}
                             {/each}
@@ -151,7 +152,12 @@
                         item.action &&
                         handleItemClick(item.action)}
                 >
-                    {item.label}
+                    <span class="menu-item-icon">
+                        {#if item.icon}
+                            <Icon name={item.icon} size={14} />
+                        {/if}
+                    </span>
+                    <span class="menu-item-label">{item.label}</span>
                 </button>
             {/if}
         {/each}
@@ -179,6 +185,23 @@
         color: var(--text-primary);
         border-radius: var(--radius-sm);
         transition: background-color var(--transition-fast);
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        width: 100%;
+    }
+
+    .menu-item-icon {
+        width: 14px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-subdued);
+    }
+
+    .menu-item-label {
+        flex: 1;
     }
 
     .menu-item:hover {
@@ -219,6 +242,8 @@
         color: var(--text-primary);
         border-radius: var(--radius-sm);
         transition: background-color var(--transition-fast);
+        gap: var(--spacing-sm);
+        width: 100%;
     }
 
     .menu-item.has-submenu:hover,
@@ -288,7 +313,12 @@
         min-height: 48px;
         display: flex;
         align-items: center;
+        gap: var(--spacing-md);
         border-radius: var(--radius-md);
+    }
+
+    :global(html.layout-mobile) .menu-item-icon {
+        width: 18px;
     }
 
     :global(html.layout-mobile) .submenu {

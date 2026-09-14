@@ -93,17 +93,12 @@
 
 <section class="settings-section" aria-labelledby="startup-heading">
   <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <svg class="accordion-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M12 2v10" />
-      <path d="M18.4 6.6a9 9 0 1 1-12.77.04" />
-    </svg>
+    <Icon name="power" size="lg" className="accordion-icon" />
     <div class="accordion-header-info">
       <span class="accordion-title">{$_('settings.startup', { default: 'Startup' })}</span>
       <span class="accordion-subtitle">{$_('settings.startupSubtitle', { default: 'Choose what happens when Audion launches' })}</span>
     </div>
-    <svg class="accordion-chevron" class:rotated={open} viewBox="0 0 24 24" width="16" height="16">
-      <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none"/>
-    </svg>
+    <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
   </button>
   {#if open}
     <div class="section-body" transition:slide|local>

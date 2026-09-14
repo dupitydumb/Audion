@@ -4,6 +4,7 @@
     import { fly, fade } from "svelte/transition";
     import { pluginDrawerOpen } from "$lib/stores/plugin-drawer";
     import { uiSlotManager } from "$lib/plugins/ui-slots";
+    import Icon from "$lib/components/Icon.svelte";
 
     let slotContainer: HTMLDivElement;
     let hasContent = false;
@@ -63,17 +64,7 @@
     >
         <div class="drawer-header">
             <div class="drawer-title-row">
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="18"
-                    height="18"
-                    class="drawer-icon"
-                >
-                    <path
-                        d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"
-                    />
-                </svg>
+                <Icon name="plugin" size={18} className="drawer-icon" />
                 <h2 class="drawer-title">{$_('pluginDrawer.title')}</h2>
             </div>
             <button
@@ -82,16 +73,7 @@
                 title={$_('pluginDrawer.closeTitle')}
                 aria-label="Close"
             >
-                <svg
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    width="20"
-                    height="20"
-                >
-                    <path d="M18 6L6 18M6 6l12 12" stroke-linecap="round" />
-                </svg>
+                <Icon name="x" size={20} />
             </button>
         </div>
 
@@ -106,17 +88,7 @@
             <!-- Empty state -->
             {#if uiSlotManager.getSlotContent("playerbar:menu").length === 0}
                 <div class="empty-state">
-                    <svg
-                        viewBox="0 0 24 24"
-                        fill="currentColor"
-                        width="40"
-                        height="40"
-                        class="empty-icon"
-                    >
-                        <path
-                            d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"
-                        />
-                    </svg>
+                    <Icon name="plugin" size={40} className="empty-icon" />
                     <p class="empty-title">{$_('pluginDrawer.noActions')}</p>
                     <p class="empty-sub">
                         {$_('pluginDrawer.noActionsHint')}
