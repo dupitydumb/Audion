@@ -31,15 +31,10 @@ mod android_audio_context {
 
     static INIT: Once = Once::new();
 
-    /// JNI export for MainActivity
-    // initAudioContext. non static native method
-    /// so the second parameter is the calling Activity instance rather than a jclass
-    /// passed implicitly by the JVM
-    #[no_mangle]
-    pub extern "system" fn Java_com_audion_app_MainActivity_initAudioContext(
-        env: jni::JNIEnv<'_>,
-        activity: jni::objects::JObject<'_>,
-    ) {
+    /// shared by both jni exports below
+    /// any android.content.Context works here 
+    /// (Activity, Application, and Service are all Context subclasses)
+    fn init_once(env: &jni::JNIEnv<'_>, context: jni::objects::JObject<'_>) {
         INIT.call_once(|| {
             let vm = match env.get_java_vm() {
                 Ok(vm) => vm,
@@ -48,27 +43,50 @@ mod android_audio_context {
                     return;
                 }
             };
-            let global_activity = match env.new_global_ref(&activity) {
+            let global_context = match env.new_global_ref(&context) {
                 Ok(g) => g,
                 Err(e) => {
-                    tracing::error!("[Android] Failed to create global ref for activity: {e}");
+                    tracing::error!("[Android] Failed to create global ref for context: {e}");
                     return;
                 }
             };
 
             let vm_ptr = vm.get_java_vm_pointer() as *mut std::ffi::c_void;
-            let activity_ptr = global_activity.as_obj().as_raw() as *mut std::ffi::c_void;
+            let context_ptr = global_context.as_obj().as_raw() as *mut std::ffi::c_void;
 
             // ndk_context needs this pointer to stay valid for the lifetime of the process
-            std::mem::forget(global_activity);
+            std::mem::forget(global_context);
 
             // called exactly once with valid pointers obtained from the current JNI call
             // guarded by 'Once' above
             unsafe {
-                ndk_context::initialize_android_context(vm_ptr, activity_ptr);
+                ndk_context::initialize_android_context(vm_ptr, context_ptr);
             }
             tracing::info!("[Android] ndk_context initialized for native audio (cpal/AAudio)");
         });
+    }
+
+    /// JNI export for MainActivity initAudioContext
+    // non static native method
+    /// so the second parameter is the calling Activity instance
+    #[no_mangle]
+    pub extern "system" fn Java_com_audion_app_MainActivity_initAudioContext(
+        env: jni::JNIEnv<'_>,
+        activity: jni::objects::JObject<'_>,
+    ) {
+        init_once(&env, activity);
+    }
+
+    /// JNI export for AudionApplication.onCreate
+    #[no_mangle]
+    pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_initAudioContextNative<
+        'local,
+    >(
+        env: jni::JNIEnv<'local>,
+        _class: jni::objects::JClass<'local>,
+        context: jni::objects::JObject<'local>,
+    ) {
+        init_once(&env, context);
     }
 }
 
@@ -361,7 +379,7 @@ const LOG_RETAIN_DAYS: u64 = 3;
 /// since dirs::data_local_dir already resolves a real writable path there) 
 /// and by mobile's init_mobile_file_logging below 
 /// (deferred until .setup(), since mobile needs tauri's own path resolver for a writable directory)
-fn init_file_logging(log_dir: &PathBuf) {
+pub(crate) fn init_file_logging(log_dir: &PathBuf) {
     use tracing_appender::rolling;
     use tracing_subscriber::{fmt, EnvFilter};
 

@@ -66,7 +66,9 @@
   }
 
   function handlePrioritySave() {
-    const result = setSourcePriority(priorityInput.trim());
+    const trimmed = priorityInput.trim();
+    const result = setSourcePriority(trimmed);
+    console.log("[LyricsSection] Priority save attempt:", trimmed, "=> result:", result);
     if (result === 'ok') {
       clearTimeout(priorityDebounceTimer);
       priorityChanged = false;
@@ -83,10 +85,12 @@
         default: 'Invalid format — lowercase letters and single "/" separators only, e.g. apple/imported/genius. Unknown tokens are also rejected.',
       });
       addToast($_('settings.lyricsPriorityInvalidToast', { default: 'Invalid lyrics priority format' }), "error");
+      console.warn("[LyricsSection] Priority save rejected, invalid format:", trimmed);
     }
   }
 
   function handlePriorityReset() {
+    console.log("[LyricsSection] Priority reset to default, previous value:", priorityInput);
     clearTimeout(priorityDebounceTimer);
     priorityInput = "";
     priorityChanged = priorityInput.trim() !== $sourcePriorityRaw.trim();
@@ -125,6 +129,7 @@
   async function handleBulkDeleteLyrics() {
     const token = deleteToken.trim().toLowerCase();
     if (!token) {
+      console.warn("[LyricsSection] Bulk delete blocked, empty token");
       addToast($_('settings.lyricsDeleteEmptyToken', { default: 'Type a source token first' }), "error");
       return;
     }
@@ -132,6 +137,7 @@
     // embedded lyrics live in the track's own file tags
     // be explicit that it is not currently deletable
     if (token === "embedded") {
+      console.warn("[LyricsSection] Bulk delete blocked, embedded is not deletable");
       addToast($_('settings.lyricsDeleteEmbeddedUnsupported', {
         default: 'Embedded lyrics live in the file itself and can\'t be deleted from here',
       }), "error");
@@ -151,11 +157,16 @@
       confirmLabel: $_('settings.lyricsDeleteConfirmLabel', { default: 'Delete' }),
       danger: true,
     });
-    if (!ok) return;
+    if (!ok) {
+      console.log("[LyricsSection] Bulk delete cancelled by user, token:", token);
+      return;
+    }
 
+    console.log("[LyricsSection] Bulk delete starting, token:", token);
     isBulkDeletingLyrics = true;
     try {
       const { matched, deleted } = await lyricsStore.deleteLyricsByToken(token);
+      console.log("[LyricsSection] Bulk delete finished, token:", token, "matched:", matched, "deleted:", deleted);
       if (deleted > 0) {
         addToast(
           $_('settings.lyricsDeleteSuccess', { values: { count: deleted, label, plural: deleted === 1 ? '' : 's' }, default: `Deleted ${deleted} ${label} lyrics file${deleted === 1 ? "" : "s"}` }),

@@ -86,6 +86,20 @@ object AudionLibraryBridge {
         }
     }
 
+    @JvmStatic private external fun initAudioContextNative(context: Context)
+
+    /**
+     * cpal's AAudio backend needs ndk_context initialized before certain
+     * operations
+     */
+    fun initAudioContext(context: Context) {
+        try {
+            initAudioContextNative(context)
+        } catch (e: UnsatisfiedLinkError) {
+            android.util.Log.w("AudionLibraryBridge", "failed to init audio context: .so not loaded yet", e)
+        }
+    }
+
     /**
      * playback controls => bypass evaluateJs/webview entirely
      * called alongside (not instead of) the existing evaluateJs calls in MediaNotificationService:

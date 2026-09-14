@@ -19,6 +19,8 @@ class AudionApplication : Application() {
             // cold-starts the database so browsing works even on that same
             // direct-start path, before tauri's own setup hook ever runs
             AudionLibraryBridge.initDatabase(this)
+            // see initAudioContext's doc comment
+            AudionLibraryBridge.initAudioContext(applicationContext)
         } catch (e: Exception) {
             // if this fails the app is broken regardless (audion_lib is the
             // whole rust core, not just the auto bridge) . MainActivity's own

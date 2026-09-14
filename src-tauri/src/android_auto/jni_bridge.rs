@@ -271,6 +271,13 @@ pub fn init_database_cold_start(app_data_dir: &str) {
                 .with_tag("audion"),
         );
 
+        // install the same file based subscriber .setup() would install later,
+        // pointed at the same directory (<app_data_dir>/logs, matching lib.rs's mobile_log_dir convention)
+        // so cold-start's tracing output lands in the same audion.log file
+        let log_dir = PathBuf::from(app_data_dir).join("logs");
+        crate::init_file_logging(&log_dir);
+        tracing::info!(path = %log_dir.display(), "[android_auto] cold-start file logging initialized");
+
         if DATABASE.get().is_some() {
             // lib.rs's setup hook already present
             // (e.g. the process was already  running with the app open before auto connected)
@@ -572,15 +579,19 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_playTrackNative<'
                 is_streaming: t.source_type.as_deref() == Some("server"),
             })
             .collect();
-        let _ = pl.send(PlayerCommand::SyncQueue {
+        if let Err(e) = pl.send(PlayerCommand::SyncQueue {
             tracks: track_refs,
             index,
             repeat: RepeatMode::Off,
             shuffle: false,
             shuffled_indices: Vec::new(),
             shuffled_index: 0,
-        });
-        let _ = pl.send(PlayerCommand::SetCurrent { index });
+        }) {
+            tracing::error!("[android_auto] failed to send PlayerCommand::SyncQueue: {e}");
+        }
+        if let Err(e) = pl.send(PlayerCommand::SetCurrent { index }) {
+            tracing::error!("[android_auto] failed to send PlayerCommand::SetCurrent: {e}");
+        }
     }
 }
 
@@ -591,7 +602,9 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_resumeNative<'loc
     _class: JClass<'local>,
 ) {
     if let Some(pb) = playback() {
-        let _ = pb.send(AudioCommand::Resume);
+        if let Err(e) = pb.send(AudioCommand::Resume) {
+            tracing::error!("[android_auto] failed to send AudioCommand::Resume: {e}");
+        }
         notify_playing_state(true);
     }
 }
@@ -603,7 +616,9 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_pauseNative<'loca
     _class: JClass<'local>,
 ) {
     if let Some(pb) = playback() {
-        let _ = pb.send(AudioCommand::Pause);
+        if let Err(e) = pb.send(AudioCommand::Pause) {
+            tracing::error!("[android_auto] failed to send AudioCommand::Pause: {e}");
+        }
         notify_playing_state(false);
     }
 }
@@ -615,7 +630,9 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_stopNative<'local
     _class: JClass<'local>,
 ) {
     if let Some(pb) = playback() {
-        let _ = pb.send(AudioCommand::Stop);
+        if let Err(e) = pb.send(AudioCommand::Stop) {
+            tracing::error!("[android_auto] failed to send AudioCommand::Stop: {e}");
+        }
         notify_playing_state(false);
     }
 }
@@ -631,7 +648,9 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_seekNative<'local
     position_seconds: jni::sys::jdouble,
 ) {
     if let Some(pb) = playback() {
-        let _ = pb.send(AudioCommand::SeekAbsolute(position_seconds));
+        if let Err(e) = pb.send(AudioCommand::SeekAbsolute(position_seconds)) {
+            tracing::error!("[android_auto] failed to send AudioCommand::SeekAbsolute: {e}");
+        }
     }
 }
 
@@ -642,7 +661,9 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_nextNative<'local
     _class: JClass<'local>,
 ) {
     if let Some(pl) = player() {
-        let _ = pl.send(PlayerCommand::ColdAdvance { direction: AdvanceDirection::Next });
+        if let Err(e) = pl.send(PlayerCommand::ColdAdvance { direction: AdvanceDirection::Next }) {
+            tracing::error!("[android_auto] failed to send PlayerCommand::ColdAdvance(Next): {e}");
+        }
     }
 }
 
@@ -653,7 +674,9 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_previousNative<'l
     _class: JClass<'local>,
 ) {
     if let Some(pl) = player() {
-        let _ = pl.send(PlayerCommand::ColdAdvance { direction: AdvanceDirection::Previous });
+        if let Err(e) = pl.send(PlayerCommand::ColdAdvance { direction: AdvanceDirection::Previous }) {
+            tracing::error!("[android_auto] failed to send PlayerCommand::ColdAdvance(Previous): {e}");
+        }
     }
 }
 
@@ -665,7 +688,9 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_setShuffleNative<
     enabled: jni::sys::jboolean,
 ) {
     if let Some(pl) = player() {
-        let _ = pl.send(PlayerCommand::SetShuffleMode(enabled != 0));
+        if let Err(e) = pl.send(PlayerCommand::SetShuffleMode(enabled != 0)) {
+            tracing::error!("[android_auto] failed to send PlayerCommand::SetShuffleMode: {e}");
+        }
     }
 }
 
@@ -684,6 +709,8 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_setRepeatNative<'
         _ => RepeatMode::Off,
     };
     if let Some(pl) = player() {
-        let _ = pl.send(PlayerCommand::SetRepeatMode(mode));
+        if let Err(e) = pl.send(PlayerCommand::SetRepeatMode(mode)) {
+            tracing::error!("[android_auto] failed to send PlayerCommand::SetRepeatMode: {e}");
+        }
     }
 }
