@@ -99,22 +99,22 @@
       <div class="settings-pane settings-container" id="panel-appearance" role="tabpanel">
         <AppearanceSection open={isDesktop || (openSections['appearance'] ?? false)} on:toggle={() => toggle('appearance')} />
         <StartupSection    open={isDesktop || (openSections['startup']    ?? false)} on:toggle={() => toggle('startup')}    />
-        <ShortcutsSection  open={isDesktop || (openSections['shortcuts']  ?? false)} on:toggle={() => toggle('shortcuts')}  />
       </div>
 
     {:else if activeTab === 'account'}
       <div class="settings-pane settings-container" id="panel-account" role="tabpanel">
-        <AccountSection  open={isDesktop || (openSections['account']  ?? false)} on:toggle={() => toggle('account')}  />
-        <SyncSection     open={isDesktop || (openSections['sync']     ?? false)} on:toggle={() => toggle('sync')}      />
-        <PrivacySection  open={isDesktop || (openSections['privacy']  ?? false)} on:toggle={() => toggle('privacy')}   />
+        <AccountSection   open={isDesktop || (openSections['account']    ?? false)} on:toggle={() => toggle('account')}    />
+        <SyncSection      open={isDesktop || (openSections['sync']       ?? false)} on:toggle={() => toggle('sync')}        />
+        <CommunitySection open={isDesktop || (openSections['community']  ?? false)} on:toggle={() => toggle('community')}   />
       </div>
 
     {:else if activeTab === 'more'}
       <div class="settings-pane settings-container" id="panel-more" role="tabpanel">
-        <CommunitySection open={isDesktop || (openSections['community'] ?? false)} on:toggle={() => toggle('community')} />
-        <UpgradeSection   open={isDesktop || (openSections['upgrade']   ?? false)} on:toggle={() => toggle('upgrade')}   />
-        <SupportSection   open={isDesktop || (openSections['support']   ?? false)} on:toggle={() => toggle('support')}   />
-        <AboutSection     open={isDesktop || (openSections['about']     ?? false)} on:toggle={() => toggle('about')}      />
+        <ShortcutsSection open={isDesktop || (openSections['shortcuts']  ?? false)} on:toggle={() => toggle('shortcuts')}  />
+        <PrivacySection   open={isDesktop || (openSections['privacy']    ?? false)} on:toggle={() => toggle('privacy')}    />
+        <UpgradeSection   open={isDesktop || (openSections['upgrade']    ?? false)} on:toggle={() => toggle('upgrade')}    />
+        <SupportSection   open={isDesktop || (openSections['support']    ?? false)} on:toggle={() => toggle('support')}    />
+        <AboutSection     open={isDesktop || (openSections['about']      ?? false)} on:toggle={() => toggle('about')}      />
       </div>
     {/if}
 

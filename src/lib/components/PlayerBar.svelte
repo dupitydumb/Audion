@@ -946,14 +946,14 @@
         opacity: 1;
     }
     .backend-badge.native {
-        color: #4ade80;
-        background: rgba(74, 222, 128, 0.12);
-        border: 1px solid rgba(74, 222, 128, 0.3);
+        color: var(--text-subdued);
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.1);
     }
     .backend-badge.html5 {
-        color: #60a5fa;
-        background: rgba(96, 165, 250, 0.12);
-        border: 1px solid rgba(96, 165, 250, 0.3);
+        color: var(--text-subdued);
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.1);
     }
 
     /* LIVE badge */
