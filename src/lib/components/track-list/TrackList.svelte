@@ -587,29 +587,16 @@
       dragGhost.style.top = `${e.clientY - dragGrabOffsetY}px`;
     }
 
-    // Detect which row we're over using midpoint logic
-    const elementsUnder = document.elementsFromPoint(e.clientX, e.clientY);
-    const trackRow = elementsUnder.find(el => el.classList.contains('track-row') && !el.isSameNode(dragGhost));
-
+    // Compute target index from pointer position relative to the scroll container.
+    // This avoids unreliable DOM hit-testing with z-stacked/clipped elements.
     let newOver: number | null = null;
-    if (trackRow) {
-      const indexAttr = trackRow.getAttribute('data-track-index');
-      if (indexAttr !== null) {
-        const idx = parseInt(indexAttr, 10);
-        if (idx !== draggedIndex) {
-          // Place before or after based on pointer vs row midpoint
-          const rect = (trackRow as HTMLElement).getBoundingClientRect();
-          const mid = rect.top + rect.height / 2;
-          // If pointer above mid and going to idx, or below mid going to idx+1
-          const draggingDown = idx > draggedIndex;
-          if (draggingDown) {
-            newOver = e.clientY > mid ? idx : idx - 1 === draggedIndex ? null : idx - 1;
-          } else {
-            newOver = e.clientY < mid ? idx : idx + 1 === draggedIndex ? null : idx + 1;
-          }
-          if (newOver === draggedIndex) newOver = null;
-        }
-      }
+    if (containerElement) {
+      const rect = containerElement.getBoundingClientRect();
+      // pointer Y relative to the list content (account for scroll)
+      const relY = e.clientY - rect.top + containerElement.scrollTop;
+      const idx = Math.floor(relY / TRACK_ROW_HEIGHT);
+      const clamped = Math.max(0, Math.min(sortedTracks.length - 1, idx));
+      if (clamped !== draggedIndex) newOver = clamped;
     }
 
     if (newOver !== dragOverIndex) {
@@ -638,7 +625,9 @@
     ) {
       try {
         await reorderPlaylistTracks(playlistId, draggedIndex, dragOverIndex);
-        const newTracks = [...tracks];
+        // Reorder on sortedTracks (what the user sees), then update the source prop.
+        // sortedTracks === tracks when no sort is active (common for playlists).
+        const newTracks = [...sortedTracks];
         const [removed] = newTracks.splice(draggedIndex, 1);
         newTracks.splice(dragOverIndex, 0, removed);
         tracks = newTracks;
