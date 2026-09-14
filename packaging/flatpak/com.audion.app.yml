@@ -16,7 +16,10 @@ finish-args:
   - --device=dri
   - --filesystem=xdg-music:rw
   - --filesystem=xdg-download:rw
+  - --filesystem=home:rw
   - --talk-name=org.freedesktop.Notifications
+  - --talk-name=org.mpris.MediaPlayer2.audion
+  - --own-name=org.mpris.MediaPlayer2.audion
 
 build-options:
   build-args:
@@ -35,8 +38,10 @@ modules:
     buildsystem: simple
     build-commands:
       - npm ci --verbose
-      - npm run build
-      - cargo build --manifest-path src-tauri/Cargo.toml --release --locked
+      # tauri build embeds the frontend dist/ into the binary at compile time.
+      # Plain `cargo build` skips this step — the binary launches with no UI.
+      # Use tauri CLI so the full bundle pipeline runs (vite build + cargo).
+      - npm run tauri build -- --bundles none
       - install -Dm755 src-tauri/target/release/audion /app/bin/audion
       - install -Dm644 packaging/flatpak/com.audion.app.desktop /app/share/applications/com.audion.app.desktop
       - install -Dm644 packaging/flatpak/com.audion.app.metainfo.xml /app/share/metainfo/com.audion.app.metainfo.xml
