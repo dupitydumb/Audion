@@ -3452,7 +3452,7 @@
 }
 
 .settings-pane {
-  width: 50%;
+  width: 100%;
   flex-shrink: 0;
   min-width: 0;
   height: 100%;
