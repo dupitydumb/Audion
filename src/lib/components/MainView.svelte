@@ -674,7 +674,7 @@
                 style="position:relative;"
                 on:focusin={() => (mobileSearchFocused = true)}
                 on:focusout={(e) => {
-                    if (!e.currentTarget.contains(e.relatedTarget)) {
+                    if (!(e.relatedTarget instanceof Node) || !e.currentTarget.contains(e.relatedTarget)) {
                         mobileSearchFocused = false;
                     }
                 }}
