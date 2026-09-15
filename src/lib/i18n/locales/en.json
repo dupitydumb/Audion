@@ -956,6 +956,10 @@
     "pendingCount": "{count} pending"
   },
   "search": {
-    "loadMore": "Load more ({count} left)"
+    "loadMore": "Load more ({count} left)",
+    "searchHistory": "Recent searches",
+    "searchHistoryClear": "Clear all",
+    "searchHistoryEmpty": "No recent searches",
+    "searchHistoryRemove": "Remove"
   }
 }

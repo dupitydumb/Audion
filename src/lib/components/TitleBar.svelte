@@ -8,7 +8,10 @@
         searchQuery,
         clearSearch,
         searchResults,
+        addQueryToHistory,
+        searchHistory,
     } from "$lib/stores/search";
+    import SearchHistoryDropdown from "./SearchHistoryDropdown.svelte";
     import { useDesktopTitleBar, toggleMobileSidebar } from "$lib/stores/mobile";
     import { appSettings } from "$lib/stores/settings";
     import MenuBar from "./MenuBar.svelte";
@@ -43,6 +46,8 @@
     let searchInput = "";
     let searchDebounceTimer: ReturnType<typeof setTimeout>;
     let searchInputEl: HTMLInputElement;
+    let searchFocused = false;
+    $: showHistory = searchFocused && $searchQuery === "" && $searchHistory.length > 0;
 
     let canGoBack = false;
     let canGoForward = false;
@@ -64,11 +69,17 @@
         searchInputEl?.focus();
     }
 
+    function handleSearchCommit() {
+        const q = searchInput.trim();
+        if (q) addQueryToHistory(q);
+    }
+
     function handleKeydown(e: KeyboardEvent) {
         if (e.key === "Escape") {
             handleClearSearch();
             searchInputEl?.blur();
         }
+        if (e.key === "Enter") handleSearchCommit();
     }
 
     function handleGlobalKeydown(e: KeyboardEvent) {
@@ -191,7 +202,7 @@
         </div>
         <!-- Left Drag Region (desktop bar only) -->
         {#if $useDesktopTitleBar}
-            <div class="drag-region" data-tauri-drag-region></div>
+            <div class="drag-region" on:mousedown={() => appWindow.startDragging()}></div>
         {/if}
     </div>
 
@@ -237,6 +248,15 @@
         </div>
     {:else}
         <div class="titlebar-center">
+            <div
+                class="search-wrapper-outer"
+                on:focusin={() => (searchFocused = true)}
+                on:focusout={(e) => {
+                    if (!e.currentTarget.contains(e.relatedTarget)) {
+                        searchFocused = false;
+                    }
+                }}
+            >
             <div class="search-input-wrapper">
                 <Icon name="search" size={18} className="search-icon" />
                 <input
@@ -247,7 +267,6 @@
                     bind:this={searchInputEl}
                     on:input={handleSearchInput}
                     on:keydown={handleKeydown}
-                    on:click={() => searchInputEl?.focus()}
                     spellcheck="false"
                     title={$_('nav.searchShortcutHint')}
                 />
@@ -269,13 +288,24 @@
                     </button>
                 {/if}
             </div>
+            {#if showHistory}
+                <SearchHistoryDropdown
+                    onSelectQuery={(q) => {
+                        searchInput = q;
+                        searchQuery.set(q);
+                        searchFocused = false;
+                    }}
+                    onClose={() => { searchFocused = false; }}
+                />
+            {/if}
+            </div>
         </div>
     {/if}
 
     <div class="titlebar-right">
         <!-- Right Drag Region (desktop bar only) -->
         {#if $useDesktopTitleBar}
-            <div class="drag-region" data-tauri-drag-region></div>
+            <div class="drag-region" on:mousedown={() => appWindow.startDragging()}></div>
             <div class="window-controls">
                 <button
                     class="win-btn"
@@ -383,8 +413,6 @@
         left: 0;
         right: 0;
         z-index: 50;
-        user-select: none;
-        -webkit-user-select: none;
         border-bottom: 1px solid var(--border-color);
     }
 
@@ -444,6 +472,8 @@
         border: none;
         cursor: pointer;
         transition: all 0.2s;
+        user-select: none;
+        -webkit-user-select: none;
     }
 
     .nav-btn:hover:not(:disabled) {
@@ -468,28 +498,26 @@
 
     /* Drag Regions */
     /* Drag Regions */
-    /* Use data-tauri-drag-region attribute and explicit classes so macOS
-       WebKit will treat the area as draggable. Interactive elements inside
-       titlebar must be explicitly marked as no-drag to receive pointer events. */
-    [data-tauri-drag-region],
+    /* Use startDragging() on mousedown so Tauri's global drag interceptor
+       never fires — that interceptor causes WM_NCLBUTTONDOWN which steals
+       focus from child inputs on Windows WebView2. */
     .drag-region {
-        -webkit-app-region: drag;
+        -webkit-app-region: no-drag;
         flex-grow: 1;
         height: 100%;
         min-width: 16px;
-    }
-
-    /* Interactive elements should not be draggable so clicks work on macOS */
-    .titlebar .left-controls,
-    .titlebar .window-controls,
-    .titlebar .nav-group,
-    .titlebar .search-input-wrapper,
-    .titlebar button,
-    .titlebar input {
-        -webkit-app-region: no-drag;
+        cursor: grab;
     }
 
     /* Search Bar */
+    .search-wrapper-outer {
+        position: relative;
+        display: flex;
+        flex: 1;
+        min-width: 0;
+        max-width: 480px;
+    }
+
     .search-input-wrapper {
         display: flex;
         align-items: center;
@@ -582,6 +610,8 @@
         transition:
             background-color 0.2s,
             color 0.2s;
+        user-select: none;
+        -webkit-user-select: none;
     }
 
     .win-btn:hover {
@@ -620,6 +650,8 @@
         color: var(--accent-primary);
         flex: 1;
         text-align: center;
+        user-select: none;
+        -webkit-user-select: none;
     }
 
     .search-toggle-btn {

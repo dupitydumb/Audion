@@ -129,6 +129,15 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Re-enable text selection in all input fields — WebView2 on Windows
+   does not focus inputs correctly when any ancestor has user-select:none */
+input,
+textarea {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 /* Scrollbar styling */

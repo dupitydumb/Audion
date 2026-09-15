@@ -24,7 +24,11 @@
   function closeMenus() {
     openMenu = null;
     // Return focus to body so spacebar works as a global shortcut
-    (document.activeElement as HTMLElement | null)?.blur();
+    // but don't blur inputs — user may have just clicked the search bar
+    const active = document.activeElement as HTMLElement | null;
+    if (active && active.tagName !== 'INPUT' && active.tagName !== 'TEXTAREA') {
+      active.blur();
+    }
   }
 
   async function handleLoadFolder() {

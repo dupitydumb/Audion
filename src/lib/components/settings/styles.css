@@ -710,6 +710,10 @@
 
 .segment-btn {
   flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   padding: 6px 12px;
   font-size: var(--font-size-sm);
   font-weight: var(--font-weight-semibold);
@@ -3466,7 +3470,7 @@ margin-right: 4px;
 }
 
 .settings-pane {
-  width: 50%;
+  width: 100%;
   flex-shrink: 0;
   min-width: 0;
   height: 100%;

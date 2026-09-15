@@ -356,6 +356,10 @@
     "grantAndInstall": "Otorgar e Instalar"
   },
   "search": {
-    "loadMore": "Cargar más ({count} restantes)"
+    "loadMore": "Cargar más ({count} restantes)",
+    "searchHistory": "Recent searches",
+    "searchHistoryClear": "Clear all",
+    "searchHistoryEmpty": "No recent searches",
+    "searchHistoryRemove": "Remove"
   }
 }

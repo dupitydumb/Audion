@@ -23,6 +23,7 @@
 
   export let isDragging = false;
   export let isDragOver = false;
+  export let dragShift = 0;
 
   export let onPointerDown: (e: PointerEvent, index: number) => void;
   export let onImageError: (art: string) => void;
@@ -77,6 +78,7 @@
   data-track-index={actualIndex}
   role="button"
   tabindex="0"
+  style={dragShift !== 0 ? `transform: translateY(${dragShift}px)` : undefined}
   on:mouseenter={() => (rowHovered = true)}
   on:mouseleave={() => (rowHovered = false)}
 >
