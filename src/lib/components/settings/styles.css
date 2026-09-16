@@ -48,7 +48,7 @@
 
 /* on real mobile layout, app-content (routes/+layout.svelte) already
   reserves room for the bottom nav + floating mini player */
-:global(html.layout-mobile) .settings-content .settings-pane.settings-container {
+html.layout-mobile .settings-content .settings-pane.settings-container {
   padding-bottom: var(--spacing-lg);
 }
 
