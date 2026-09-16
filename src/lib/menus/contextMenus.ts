@@ -581,11 +581,13 @@ export function buildTrackContextMenu(opts: TrackMenuOptions): ContextMenuItem[]
         {
             label: withCount(t('contextMenu.addToQueue')),
             icon: 'queue',
-            // availability isn't tracked per-track for the rest of the selection here,
-            // so only gate on the right-clicked track's own state, same as single-track
+            // the right-clicked track's own state still gates the menu item
+            // (same as single-track), but the batch action itself must not
+            // silently queue up other unavailable tracks from the selection
             disabled: isUnavailable,
             action: () => {
-                addToQueue(targetTracks);
+                const queueable = targetTracks.filter((tr) => !isTrackUnavailable(tr));
+                addToQueue(queueable);
                 addToast(t('contextMenu.addedToQueue'), 'success');
             },
         },
