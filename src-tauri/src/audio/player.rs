@@ -441,7 +441,11 @@ impl PlayerStateSync {
                                 do_advance(&mut state, true, AdvanceReason::NativeAutoAdvance, false);
                             }
                             AudioEvent::TrackFinished { .. } => {
-                                do_advance(&mut state, true, AdvanceReason::NativeNaturalEnd, false);
+                                // unlike TrackAdvanced (engine already promoted + scheduled the next source),
+                                // a plain natural end needs player.rs to actually start the next track => 
+                                // emit_directive silently no-ops with no AppHandle (android auto cold start),
+                                // so the native fallback must run here or playback just stops
+                                do_advance(&mut state, true, AdvanceReason::NativeNaturalEnd, true);
                             }
                             _ => {}
                         }

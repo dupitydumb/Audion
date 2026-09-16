@@ -31,6 +31,13 @@ static DATABASE: OnceLock<Database> = OnceLock::new();
 static PLAYBACK: OnceLock<PlaybackStateSync> = OnceLock::new();
 static PLAYER: OnceLock<PlayerStateSync> = OnceLock::new();
 
+/// mirrors the frontend's repeat/shuffle state as last requested
+/// through setRepeatNative/setShuffleNative => 
+/// playTrackNative's SyncQueue has no way to read PlayerStateSync (command channel only, no query),
+/// so it would otherwise reset both modes to off every time a track is tapped from android auto
+static LAST_REPEAT_SHUFFLE: std::sync::Mutex<(RepeatMode, bool)> =
+    std::sync::Mutex::new((RepeatMode::Off, false));
+
 pub fn set_database(db: Database) {
     // ignore the error if already set => setup only runs once in practice,
     // but this keeps a stray second call from panicking
@@ -579,11 +586,14 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_playTrackNative<'
                 is_streaming: t.source_type.as_deref() == Some("server"),
             })
             .collect();
+        let (repeat, shuffle) = *LAST_REPEAT_SHUFFLE.lock().unwrap();
         if let Err(e) = pl.send(PlayerCommand::SyncQueue {
             tracks: track_refs,
             index,
-            repeat: RepeatMode::Off,
-            shuffle: false,
+            repeat,
+            shuffle,
+            // shuffle order isn't tracked here => reset the ordering rather
+            // than emitting a stale one
             shuffled_indices: Vec::new(),
             shuffled_index: 0,
         }) {
@@ -687,6 +697,7 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_setShuffleNative<
     _class: JClass<'local>,
     enabled: jni::sys::jboolean,
 ) {
+    LAST_REPEAT_SHUFFLE.lock().unwrap().1 = enabled != 0;
     if let Some(pl) = player() {
         if let Err(e) = pl.send(PlayerCommand::SetShuffleMode(enabled != 0)) {
             tracing::error!("[android_auto] failed to send PlayerCommand::SetShuffleMode: {e}");
@@ -708,6 +719,7 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_setRepeatNative<'
         "all" => RepeatMode::All,
         _ => RepeatMode::Off,
     };
+    LAST_REPEAT_SHUFFLE.lock().unwrap().0 = mode;
     if let Some(pl) = player() {
         if let Err(e) = pl.send(PlayerCommand::SetRepeatMode(mode)) {
             tracing::error!("[android_auto] failed to send PlayerCommand::SetRepeatMode: {e}");

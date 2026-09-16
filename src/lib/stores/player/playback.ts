@@ -5,7 +5,8 @@
 import { get } from 'svelte/store';
 import type { Track } from '$lib/api/tauri';
 import {
-    getAudioSrc, getTrackCoverSrc, audioResolvePath, audioGetStreamUrl, convertFileSrc
+    getAudioSrc, getTrackCoverSrc, audioResolvePath, audioGetStreamUrl, convertFileSrc,
+    getTracksByAlbum
 } from '$lib/api/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { addToast } from '$lib/stores/toast';
@@ -453,7 +454,26 @@ export async function playTrackById(trackId: number): Promise<void> {
         console.warn('[Player] playTrackById: no track found for id', trackId);
         return;
     }
-    await playTrack(track);
+    // a media-id tap has no queue/context of its own 
+    // (android auto's onPlayFromMediaId only gives us the tapped id, not which list it came from) => 
+    // mirror resolve_playback_context on the rust side and
+    // build the queue from the track's own album, 
+    // falling back to a single-track queue when it has none
+    let queueTracks = [track];
+    let index = 0;
+    if (track.album_id != null) {
+        try {
+            const albumTracks = await getTracksByAlbum(track.album_id);
+            const pos = albumTracks.findIndex((t) => t.id === track.id);
+            if (pos !== -1) {
+                queueTracks = albumTracks;
+                index = pos;
+            }
+        } catch (err) {
+            console.warn('[Player] playTrackById: album lookup failed, falling back to single-track queue', err);
+        }
+    }
+    playTracks(queueTracks, index);
 }
 
 export function playTracks(
