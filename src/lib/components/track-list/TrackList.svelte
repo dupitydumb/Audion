@@ -1082,7 +1082,8 @@
     cursor: pointer;
     transition: opacity var(--transition-fast);
   }
-  :global(.list-header:hover .enter-select-checkbox) {
+  :global(.list-header:hover .enter-select-checkbox),
+  :global(.enter-select-checkbox:focus-visible) {
     opacity: 1;
     pointer-events: auto;
   }

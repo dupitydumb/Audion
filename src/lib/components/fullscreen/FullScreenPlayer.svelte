@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { get } from "svelte/store";
   import { _ } from "svelte-i18n";
   import { fade, fly } from "svelte/transition";
   import { cubicInOut } from "svelte/easing";
@@ -157,6 +158,43 @@
     if (isVolumeSeeking) {
       isVolumeSeeking = false;
       (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    }
+  }
+
+  const SEEK_STEP = 0.05;
+  const VOLUME_STEP = 0.05;
+
+  function handleSeekKeydown(e: KeyboardEvent) {
+    const current = get(progress);
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+      e.preventDefault();
+      seek(Math.min(1, current + SEEK_STEP));
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+      e.preventDefault();
+      seek(Math.max(0, current - SEEK_STEP));
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      seek(0);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      seek(1);
+    }
+  }
+
+  function handleVolumeKeydown(e: KeyboardEvent) {
+    const current = get(volume);
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+      e.preventDefault();
+      volume.set(Math.min(1, current + VOLUME_STEP));
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+      e.preventDefault();
+      volume.set(Math.max(0, current - VOLUME_STEP));
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      volume.set(0);
+    } else if (e.key === "End") {
+      e.preventDefault();
+      volume.set(1);
     }
   }
 
@@ -404,6 +442,7 @@
                 on:pointermove={handleSeekPointerMove}
                 on:pointerup={handleSeekPointerUp}
                 on:pointercancel={handleSeekPointerUp}
+                on:keydown={handleSeekKeydown}
                 role="slider"
                 aria-label="Seek"
                 aria-valuenow={Math.round($progress * 100)}
@@ -518,6 +557,7 @@
                 on:pointermove={handleVolumePointerMove}
                 on:pointerup={handleVolumePointerUp}
                 on:pointercancel={handleVolumePointerUp}
+                on:keydown={handleVolumeKeydown}
                 role="slider"
                 aria-label="Volume"
                 aria-valuenow={Math.round($volume * 100)}

@@ -36,8 +36,11 @@
           $multiSelect.selectedTrackIds.size < sortedTracks.length}
         role="checkbox"
         tabindex="0"
-        aria-checked={$multiSelect.selectedTrackIds.size > 0 &&
-          $multiSelect.selectedTrackIds.size === sortedTracks.length}
+        aria-checked={$multiSelect.selectedTrackIds.size === 0
+          ? false
+          : $multiSelect.selectedTrackIds.size === sortedTracks.length
+            ? true
+            : "mixed"}
         on:click={() => {
           if (
             sortedTracks.length > 0 &&
@@ -46,6 +49,19 @@
             multiSelect.clearSelections();
           } else {
             multiSelect.selectAll(sortedTracks.map((t) => t.id));
+          }
+        }}
+        on:keydown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            if (
+              sortedTracks.length > 0 &&
+              $multiSelect.selectedTrackIds.size === sortedTracks.length
+            ) {
+              multiSelect.clearSelections();
+            } else {
+              multiSelect.selectAll(sortedTracks.map((t) => t.id));
+            }
           }
         }}
       >
@@ -71,6 +87,13 @@
           on:click={() => {
             onEnterMultiSelect?.();
             multiSelect.selectAll(sortedTracks.map((t) => t.id));
+          }}
+          on:keydown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onEnterMultiSelect?.();
+              multiSelect.selectAll(sortedTracks.map((t) => t.id));
+            }
           }}
         ></div>
       {/if}
