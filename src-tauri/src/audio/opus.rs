@@ -165,6 +165,17 @@ impl OpusSource {
 
         let head = OpusHead::parse(extra_data, fallback_channels);
 
+        // OpusDecoder::new only supports mono/stereo =>
+        // mapped multichannel opus (5.1, 7.1) needs a multistream decoder driven by the mapping table in OpusHead,
+        // which this decoder doesn't implement yet,
+        // so fail explicitly here
+        if head.channels > 2 {
+            return Err(format!(
+                "Opus track {} has {} channels; multichannel (mapped) Opus is not supported",
+                path, head.channels
+            ));
+        }
+
         let decoder = OpusDecoder::new(OPUS_DECODE_RATE as i32, head.channels as usize)
             .map_err(|e| format!("Failed to create Opus decoder for {}: {:?}", path, e))?;
 
@@ -236,8 +247,13 @@ impl OpusSource {
         self.sample_pos = 0;
         self.done = false;
         // a seek doesn't land exactly on the pre-skip boundary in general,
-        // and only the very start of the logical stream needs skipping
-        // so don't re-arm pre_skip_remaining here (leave it at 0 post-start)
+        // and only the very start of the logical stream needs skipping =>
+        // logical position zero is the opus stream start though
+        // (repeat-one seeks here),
+        // so re-arm pre_skip there or encoder priming samples leak through
+        if pos == Duration::ZERO {
+            self.pre_skip_remaining = self.pre_skip;
+        }
     }
 
     fn refill(&mut self) -> bool {
