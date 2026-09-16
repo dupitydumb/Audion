@@ -167,12 +167,22 @@
     try {
       const { matched, deleted } = await lyricsStore.deleteLyricsByToken(token);
       console.log("[LyricsSection] Bulk delete finished, token:", token, "matched:", matched, "deleted:", deleted);
-      if (deleted > 0) {
+      if (deleted > 0 && deleted === matched) {
         addToast(
           $_('settings.lyricsDeleteSuccess', { values: { count: deleted, label, plural: deleted === 1 ? '' : 's' }, default: `Deleted ${deleted} ${label} lyrics file${deleted === 1 ? "" : "s"}` }),
           "success",
         );
         deleteToken = "";
+      } else if (deleted > 0) {
+        // some matched files were deleted, some weren't => not full success,
+        // keep the token around so the user can retry
+        addToast(
+          $_('settings.lyricsDeletePartial', {
+            values: { deleted, matched, label },
+            default: `Deleted ${deleted} of ${matched} ${label} lyrics files — some couldn't be removed, check the app's storage permissions`,
+          }),
+          "error",
+        );
       } else if (matched > 0) {
         // files exist and were matched, but every removal attempt failed
         // (most likely a storage permission issue)

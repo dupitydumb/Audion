@@ -188,7 +188,7 @@ export function setSourcePriority(raw: string): SetSourcePriorityResult {
         sourcePriorityRaw.set('');
         localStorage.removeItem('lyrics_source_priority');
         selectedSource.set(null);
-        fetchLyricsForTrack();
+        if (get(appSettings).lyricsAutoFetch) fetchLyricsForTrack();
         return 'ok';
     }
 
@@ -205,7 +205,7 @@ export function setSourcePriority(raw: string): SetSourcePriorityResult {
 
     // a manual pick from before this change shouldn't keep overriding the newly configured order
     selectedSource.set(null);
-    fetchLyricsForTrack();
+    if (get(appSettings).lyricsAutoFetch) fetchLyricsForTrack();
 
     return 'ok';
 }

@@ -453,6 +453,7 @@
     "lyricsDeleteTokenConfirmTitle": "Delete {label} Lyrics",
     "lyricsDeleteConfirmLabel": "Delete",
     "lyricsDeleteSuccess": "Deleted {count} {label} lyrics file{plural}",
+    "lyricsDeletePartial": "Deleted {deleted} of {matched} {label} lyrics files ; some couldn't be removed, check the app's storage permissions",
     "lyricsDeleteNoneFound": "No cached {label} lyrics found to delete",
     "lyricsDeleteFoundButFailed": "Found {count} cached {label} lyrics files but couldn't delete them — check the app's storage permissions",
     "lyricsDeleteFailed": "Failed to delete {label} lyrics",
