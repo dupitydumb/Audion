@@ -2,7 +2,7 @@
 use std::path::Path;
 use walkdir::WalkDir;
 
-const SUPPORTED_EXTENSIONS: &[&str] = &["flac", "mp3", "wav", "ogg", "m4a", "aac", "alac"];
+const SUPPORTED_EXTENSIONS: &[&str] = &["flac", "mp3", "wav", "ogg", "opus", "m4a", "aac", "alac"];
 
 pub struct ScanResult {
     pub audio_files: Vec<String>,

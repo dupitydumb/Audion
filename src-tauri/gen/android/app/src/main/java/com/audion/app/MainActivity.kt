@@ -132,29 +132,27 @@ class MainActivity : TauriActivity() {
         // Convert the URI to a real filesystem path
         val realPath = resolveUriToPath(uri)
 
-        // Request MANAGE_EXTERNAL_STORAGE on Android 11+ if picking from external/removable media
+        // request MANAGE_EXTERNAL_STORAGE on android 11+ whenever it isn't
+        // already granted
         if (Build.VERSION.SDK_INT >= 30 && !android.os.Environment.isExternalStorageManager()) {
-          val isExternal = realPath != null && !realPath.startsWith("/storage/emulated/") && !realPath.startsWith("/sdcard")
-          if (isExternal) {
-            try {
-              val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                setData(Uri.parse("package:${packageName}"))
-              }
-              startActivity(intent)
-
-              android.widget.Toast.makeText(
-                this,
-                "Please grant All Files Access to read music from external USB/SD card",
-                android.widget.Toast.LENGTH_LONG
-              ).show()
-
-              wv.post {
-                wv.evaluateJavascript("window.__onAndroidFolderPicked(null)", null)
-              }
-              return
-            } catch (e: Exception) {
-              e.printStackTrace()
+          try {
+            val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+              setData(Uri.parse("package:${packageName}"))
             }
+            startActivity(intent)
+
+            android.widget.Toast.makeText(
+              this,
+              "Please grant All Files Access so Audion can read and manage lyrics files alongside your music",
+              android.widget.Toast.LENGTH_LONG
+            ).show()
+
+            wv.post {
+              wv.evaluateJavascript("window.__onAndroidFolderPicked(null)", null)
+            }
+            return
+          } catch (e: Exception) {
+            e.printStackTrace()
           }
         }
 
@@ -353,7 +351,9 @@ class MainActivity : TauriActivity() {
       isLoved: Boolean,
       artUrl: String?,
       currentTime: String?,
-      duration: String?
+      duration: String?,
+      isShuffled: Boolean,
+      repeatMode: String?
     ) {
       try {
         val intent = Intent(context, MediaNotificationService::class.java).apply {
@@ -365,6 +365,8 @@ class MainActivity : TauriActivity() {
           putExtra(MediaNotificationService.EXTRA_ART_URL, artUrl)
           putExtra(MediaNotificationService.EXTRA_CURRENT_TIME, currentTime)
           putExtra(MediaNotificationService.EXTRA_DURATION, duration)
+          putExtra(MediaNotificationService.EXTRA_IS_SHUFFLED, isShuffled)
+          putExtra(MediaNotificationService.EXTRA_REPEAT_MODE, repeatMode)
         }
         ContextCompat.startForegroundService(context, intent)
       } catch (e: Exception) {
@@ -382,9 +384,11 @@ class MainActivity : TauriActivity() {
       isLoved: Boolean,
       artUrl: String?,
       currentTime: String?,
-      duration: String?
+      duration: String?,
+      isShuffled: Boolean,
+      repeatMode: String?
     ) {
-      startNotification(title, artist, album, isPlaying, isLoved, artUrl, currentTime, duration)
+      startNotification(title, artist, album, isPlaying, isLoved, artUrl, currentTime, duration, isShuffled, repeatMode)
     }
 
     @JavascriptInterface

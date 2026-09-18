@@ -12,13 +12,94 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crossbeam::channel::Sender;
+use crossbeam::channel::{Receiver, Sender};
 use rodio::Source;
 
 use super::gated::{GatedSource, SharedClock, UNSCHEDULED};
-use super::mod_types::{AudioEvent, ReadySource};
+use super::mod_types::{AudioEvent, DecodedSource, ReadySource};
+use super::opus::OpusSource;
 use super::resampler::RubatoResampler;
 use super::symphonia::SymphoniaSource;
+
+/// picks SymphoniaSource or OpusSource for 'path' based on file extension
+///
+/// extension-sniffing rather than a real codec probe
+/// symphonia's probe only tells us the container,
+/// and for a .ogg file that could be Vorbis or Opus
+/// telling those apart without decoding requires:
+/// reading into the stream far enough to see the first packet's codec identification header, 
+/// which SymphoniaSource's own open() already does internally as part of building its decoder
+///
+/// so: try Symphonia first (handles Vorbis-in-Ogg, and everything else,
+/// and only fall back to OpusSource if 
+/// Symphonia's decoder construction fails specifically because there's no registered decoder for the codec found
+fn open_decoded_source(
+    path: &str,
+    replay_gain_db: Option<f32>,
+    seek_rx: Receiver<Duration>,
+    repeat_one_rx: Receiver<bool>,
+    event_tx: Sender<AudioEvent>,
+    generation: u64,
+    volume: Arc<std::sync::atomic::AtomicU32>,
+    replay_gain_enabled: Arc<AtomicBool>,
+    device_channels: NonZero<u16>,
+) -> Result<DecodedSource, String> {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase());
+
+    // .opus is unambiguous per RFC 7845
+    // for that extension skip straight to OpusSource rather than doing a doomed SymphoniaSource attempt first
+    if ext.as_deref() == Some("opus") {
+        return OpusSource::open(
+            path,
+            replay_gain_db,
+            seek_rx,
+            repeat_one_rx,
+            event_tx,
+            generation,
+            volume,
+            replay_gain_enabled,
+            device_channels,
+        )
+        .map(DecodedSource::Opus);
+    }
+
+    match SymphoniaSource::open(
+        path,
+        replay_gain_db,
+        seek_rx.clone(),
+        repeat_one_rx.clone(),
+        event_tx.clone(),
+        generation,
+        Arc::clone(&volume),
+        Arc::clone(&replay_gain_enabled),
+        device_channels,
+    ) {
+        Ok(src) => Ok(DecodedSource::Symphonia(src)),
+        Err(e) if ext.as_deref() == Some("ogg") => {
+            tracing::info!(
+                "[AUDIO] Symphonia couldn't decode '{}' ({}) — retrying as Opus-in-Ogg",
+                path,
+                e
+            );
+            OpusSource::open(
+                path,
+                replay_gain_db,
+                seek_rx,
+                repeat_one_rx,
+                event_tx,
+                generation,
+                volume,
+                replay_gain_enabled,
+                device_channels,
+            )
+            .map(DecodedSource::Opus)
+        }
+        Err(e) => Err(e),
+    }
+}
 
 /// everything needed to control a track after its GatedSource has been handed to the mixer
 /// the mixer owns the GatedSource itself (via .add(), which consumes it)
@@ -79,7 +160,7 @@ pub fn open_gated_track(
     let (seek_tx, seek_rx) = crossbeam::channel::unbounded::<Duration>();
     let (repeat_one_tx, repeat_one_rx) = crossbeam::channel::unbounded::<bool>();
 
-    let mut src = SymphoniaSource::open(
+    let mut src = open_decoded_source(
         path,
         replay_gain_db,
         seek_rx,
@@ -95,7 +176,7 @@ pub fn open_gated_track(
         src.seek(pos);
     }
 
-    let duration = src.duration;
+    let duration = src.duration();
     let needs_resample = src.sample_rate() != device_sample_rate;
 
     let ready = if needs_resample {

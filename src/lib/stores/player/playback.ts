@@ -5,7 +5,8 @@
 import { get } from 'svelte/store';
 import type { Track } from '$lib/api/tauri';
 import {
-    getAudioSrc, getTrackCoverSrc, audioResolvePath, audioGetStreamUrl, convertFileSrc
+    getAudioSrc, getTrackCoverSrc, audioResolvePath, audioGetStreamUrl, convertFileSrc,
+    getTracksByAlbum
 } from '$lib/api/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { addToast } from '$lib/stores/toast';
@@ -437,6 +438,42 @@ export async function playTrack(
         console.error('[Player] Playback failed JSON:', JSON.stringify(err));
         addToast(`Playback failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
     }
+}
+
+/**
+ * resolves a bare track id to a full track and plays it =>
+ * needed because playTrack() reads track.local_src/path/source_type directly from the object it's given 
+ * (not just from its own internal getFullTrack() call)
+ * so a minimal {id} stub isn't enough to actually resolve audio
+ * used by android auto's onPlayFromMediaId,
+ * where all we're handed is the "track:<id>" media id of whatever the user tapped
+ */
+export async function playTrackById(trackId: number): Promise<void> {
+    const track = await getFullTrack(trackId, true);
+    if (!track) {
+        console.warn('[Player] playTrackById: no track found for id', trackId);
+        return;
+    }
+    // a media-id tap has no queue/context of its own 
+    // (android auto's onPlayFromMediaId only gives us the tapped id, not which list it came from) => 
+    // mirror resolve_playback_context on the rust side and
+    // build the queue from the track's own album, 
+    // falling back to a single-track queue when it has none
+    let queueTracks = [track];
+    let index = 0;
+    if (track.album_id != null) {
+        try {
+            const albumTracks = await getTracksByAlbum(track.album_id);
+            const pos = albumTracks.findIndex((t) => t.id === track.id);
+            if (pos !== -1) {
+                queueTracks = albumTracks;
+                index = pos;
+            }
+        } catch (err) {
+            console.warn('[Player] playTrackById: album lookup failed, falling back to single-track queue', err);
+        }
+    }
+    playTracks(queueTracks, index);
 }
 
 export function playTracks(

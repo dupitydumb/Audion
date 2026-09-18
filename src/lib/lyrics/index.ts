@@ -247,6 +247,48 @@ export const LYRICS_SOURCES: LyricsSource[] = [
     },
 ];
 
+// =====================================
+// priority tokens (for Settings > Lyrics UI)
+// ========================================
+export interface PriorityToken {
+    /** what the user types into the priority / delete-by-token fields */
+    id: string;
+    /** readable label shown next to the token in settings */
+    label: string;
+    /**
+     * whether this token can be used with the bulk "Delete cached lyrics" action
+     * defaults to true
+     * embedded lyrics live inside the track's own file tags (SYLT/USLT)
+     * currently not deletable
+     */
+    deletable?: boolean;
+}
+
+/**
+ * locally-stored lyrics that never go through LYRICS_SOURCES fetch/parse
+ * but still participate in auto-fetch priority ordering and bulk delete
+ */
+const VIRTUAL_PRIORITY_TOKENS: PriorityToken[] = [
+    { id: 'user', label: 'Imported', deletable: true },
+    { id: 'embedded', label: 'Embedded', deletable: false },
+];
+
+/**
+ * every valid lyrics-source-priority token, in default try order
+ * the ui reads this list rather than hardcoding examples
+ * adding a provider to LYRICS_SOURCES (or a virtual source above) is the only change needed
+ * everything downstream picks it up
+ * automatically
+ */
+export const PRIORITY_TOKENS: PriorityToken[] = [
+    ...VIRTUAL_PRIORITY_TOKENS,
+    ...LYRICS_SOURCES.map((s) => ({ id: s.id, label: s.label, deletable: true })),
+];
+
+/** subset of PRIORITY_TOKENS that the bulk delete action can actually act on */
+export const DELETABLE_PRIORITY_TOKENS: PriorityToken[] =
+    PRIORITY_TOKENS.filter((t) => t.deletable !== false);
+
 // ---------------------------------------------------------------------------
 // Manager
 // ---------------------------------------------------------------------------

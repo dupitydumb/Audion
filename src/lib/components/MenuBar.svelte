@@ -220,6 +220,7 @@
   }
 
   function handleClickOutside(event: MouseEvent) {
+    if (openMenu === null) return;
     const target = event.target as HTMLElement;
     if (!target.closest(".menu-bar")) {
       closeMenus();

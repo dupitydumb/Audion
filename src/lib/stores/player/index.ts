@@ -12,7 +12,7 @@ export {
 
 // Playback controls
 export {
-    playTrack, playTracks, playFromQueue,
+    playTrack, playTrackById, playTracks, playFromQueue,
     togglePlay, pause, resume,
     nextTrack, previousTrack,
     seek, setVolume,

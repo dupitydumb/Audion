@@ -90,6 +90,10 @@ pub async fn update_playlist_cover(
 #[tauri::command]
 pub async fn export_playlist_zip(
     playlist_id: i64,
+    // present only when
+    // the caller wants to export a selection rather than the whole playlist
+    // (e.g. PlaylistDetail's multi-select mode)
+    track_ids: Option<Vec<i64>>,
     dest_path: String,
     db: tauri::State<'_, crate::db::Database>,
 ) -> Result<serde_json::Value, String> {
@@ -100,7 +104,7 @@ pub async fn export_playlist_zip(
 
     let summary = tokio::task::spawn_blocking(move || {
         let conn = conn_arc.lock().map_err(|e| e.to_string())?;
-        crate::commands::export::build_playlist_zip(&conn, playlist_id, &dest)
+        crate::commands::export::build_playlist_zip(&conn, playlist_id, track_ids.as_deref(), &dest)
     })
     .await
     .map_err(|e| format!("Export task panicked: {e}"))??;

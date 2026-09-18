@@ -1,0 +1,26 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFF">
+    <!--
+        Android's notification "small icon" (setSmallIcon) is rendered as a
+        mask: only the alpha channel is used, RGB is discarded and replaced
+        with a flat system color (usually white). It must be a silhouette on
+        a transparent background - a full-color launcher icon (like
+        R.mipmap.ic_launcher, previously used here) renders as an
+        unrecognizable blob because Android only sees its opaque region, not
+        its colors.
+
+        Simple original glyph: a filled notehead circle plus a stem/flag,
+        fully opaque where drawn, fully transparent elsewhere, sized to
+        Android's 24x24dp notification icon guideline.
+    -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M9,16 m-3,0 a3,3 0 1,0 6,0 a3,3 0 1,0 -6,0"/>
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M11,16 L11,4 L17,6.5 L17,9 L12.6,7.3 L12.6,16 Z"/>
+</vector>

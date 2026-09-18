@@ -16,7 +16,9 @@ use crossbeam::channel::{unbounded, Receiver, Sender};
 use serde::{Deserialize, Serialize};
 use tauri::{State, Emitter};
 
+use super::event_bridge;
 use super::mod_types::AudioEvent;
+use super::worker::{AudioCommand, PlaybackStateSync};
 
 // =============================================================================
 // Wire types
@@ -94,9 +96,15 @@ pub enum PlayerCommand {
     /// player.ts owns the "restart current track vs go back" position check for Previous
     /// by the time this arrives, that decision has already been made and this really does mean "move the queue index"
     Advance { direction: AdvanceDirection },
+    /// directly sends AudioCommand::Play for the resolved track =>
+    /// used only by the android_auto jni cold start path
+    ColdAdvance { direction: AdvanceDirection },
     /// user picked a specific track directly
     /// this just tells player.rs which queue slot is now current so future engine events resolve against the right generation/track
     SetCurrent { index: usize },
+    /// in memory only, current session => this is the fallback for when js isn't there to ask
+    SetRepeatMode(RepeatMode),
+    SetShuffleMode(bool),
     /// player.ts reports that native playback of track_id has actually started
     /// (after nativeAudioPlay resolved) for the given directive generation,
     /// so player.rs can correlate future engine events with the right track
@@ -146,6 +154,40 @@ impl PlayerState {
             generation: 0,
             current_track_id: None,
         }
+    }
+
+    /// self contained prng
+    fn xorshift_next(seed: &mut u64) -> u64 {
+        *seed ^= *seed << 13;
+        *seed ^= *seed >> 7;
+        *seed ^= *seed << 17;
+        *seed
+    }
+
+    /// fisher yates shuffle of every track index,
+    /// then repoints shuffled_index at wherever the currently playing track landed =>
+    /// continues playing what's already playing, shuffle order only applies going forward
+    /// used when shuffle is turned on with no client supplied order to mirror
+    /// (the android_auto jni cold-start path has no persisted shuffle order to sync)
+    fn regenerate_shuffle(&mut self) {
+        let mut indices: Vec<usize> = (0..self.tracks.len()).collect();
+        let mut seed = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos() as u64)
+            .unwrap_or(0x9E3779B97F4A7C15)
+            | 1; // xorshift needs a non-zero seed
+
+        for i in (1..indices.len()).rev() {
+            let j = (Self::xorshift_next(&mut seed) as usize) % (i + 1);
+            indices.swap(i, j);
+        }
+
+        self.shuffled_indices = indices;
+        self.shuffled_index = self
+            .shuffled_indices
+            .iter()
+            .position(|&i| i == self.index)
+            .unwrap_or(0);
     }
 
     fn compute_next_index(&self, forward: bool) -> Option<usize> {
@@ -218,6 +260,7 @@ impl PlayerState {
 // Public handle => what lib.rs / Tauri commands talk to
 // =============================================================================
 
+#[derive(Clone)]
 pub struct PlayerStateSync {
     command_tx: Sender<PlayerCommand>,
 }
@@ -232,23 +275,43 @@ impl PlayerStateSync {
     /// (see worker.rs's 'emit' closure)
     /// every AudioEvent the native engine produces also lands here,
     /// so this actor can react to TrackAdvanced/TrackFinished without touching engine internals directly
-    pub fn new(app_handle: tauri::AppHandle, engine_events: Receiver<AudioEvent>) -> Self {
+    ///
+    /// takes the PlaybackStateSync handle directly
+    /// no longer needs an AppHandle to reach the other actor, 
+    /// only to emit UI events (see event_bridge),
+    /// so android_auto's jni bridge can cold start both actors together with no AppHandle
+    pub fn new(engine_events: Receiver<AudioEvent>, playback: PlaybackStateSync) -> Self {
         let (command_tx, command_rx) = unbounded::<PlayerCommand>();
 
         std::thread::spawn(move || {
             let mut state = PlayerState::new();
 
             let emit_directive = |directive: &PlayerDirective| {
+                // no handle yet (android cold start, webview not up) => 
+                // skip the UI notification
+                let Some(app_handle) = event_bridge::get_app_handle() else { return };
                 if let Err(e) = app_handle.emit("player://event", directive) {
                     tracing::warn!("[PLAYER] Failed to emit directive: {}", e);
                 }
             };
 
-            let do_advance = |state: &mut PlayerState, forward: bool, reason: AdvanceReason| {
+            let do_advance = |state: &mut PlayerState, forward: bool, reason: AdvanceReason, also_play_natively: bool| {
                 match state.advance(forward) {
                     Some((idx, track)) => {
                         state.generation += 1;
                         state.current_track_id = Some(track.id);
+                        if also_play_natively {
+                            if let Err(e) = playback
+                                .send(AudioCommand::Play(track.path.clone(), None))
+                            {
+                                tracing::error!("[PLAYER] cold advance: failed to send AudioCommand::Play: {e}");
+                            } else {
+                                // native auto advance (queue moved on its own,no js around to update the notification) =>
+                                // push the new track's metadata to MediaNotificationService
+                                #[cfg(target_os = "android")]
+                                crate::android_auto::jni_bridge::notify_track_changed_by_id(track.id, true);
+                            }
+                        }
                         emit_directive(&PlayerDirective::Advance {
                             generation: state.generation,
                             reason,
@@ -289,7 +352,26 @@ impl PlayerStateSync {
                                     AdvanceDirection::Next => (true, AdvanceReason::UserNext),
                                     AdvanceDirection::Previous => (false, AdvanceReason::UserPrevious),
                                 };
-                                do_advance(&mut state, forward, reason);
+                                do_advance(&mut state, forward, reason, false);
+                            }
+
+                            PlayerCommand::ColdAdvance { direction } => {
+                                let (forward, reason) = match direction {
+                                    AdvanceDirection::Next => (true, AdvanceReason::UserNext),
+                                    AdvanceDirection::Previous => (false, AdvanceReason::UserPrevious),
+                                };
+                                do_advance(&mut state, forward, reason, true);
+                            }
+
+                            PlayerCommand::SetRepeatMode(mode) => {
+                                state.repeat = mode;
+                            }
+
+                            PlayerCommand::SetShuffleMode(enabled) => {
+                                state.shuffle = enabled;
+                                if enabled {
+                                    state.regenerate_shuffle();
+                                }
                             }
 
                             PlayerCommand::SetCurrent { index } => {
@@ -323,22 +405,22 @@ impl PlayerStateSync {
                             }
 
                             PlayerCommand::NativeAdvanced => {
-                                do_advance(&mut state, true, AdvanceReason::NativeAutoAdvance);
+                                do_advance(&mut state, true, AdvanceReason::NativeAutoAdvance, false);
                             }
 
                             PlayerCommand::NativeFinished => {
                                 // engine already loops repeat-one internally (see set_repeat_one)
                                 // a natural-end report should only reach us here for repeat-off/repeat-all "advance forward" is the correct response
                                 // repeat-one looping back to the same track is handled entirely inside the engine and never surfaces a TrackFinished at all
-                                do_advance(&mut state, true, AdvanceReason::NativeNaturalEnd);
+                                do_advance(&mut state, true, AdvanceReason::NativeNaturalEnd, false);
                             }
 
                             PlayerCommand::Html5CrossfadeCommitted => {
-                                do_advance(&mut state, true, AdvanceReason::Html5AutoAdvance);
+                                do_advance(&mut state, true, AdvanceReason::Html5AutoAdvance, false);
                             }
 
                             PlayerCommand::Html5Ended => {
-                                do_advance(&mut state, true, AdvanceReason::Html5NaturalEnd);
+                                do_advance(&mut state, true, AdvanceReason::Html5NaturalEnd, false);
                             }
                         }
                     }
@@ -356,10 +438,14 @@ impl PlayerStateSync {
                                 // the engine already decided "when" 
                                 // (sample-accurate, via maybe_auto_crossfade)
                                 // player.rs only decides "what's next"
-                                do_advance(&mut state, true, AdvanceReason::NativeAutoAdvance);
+                                do_advance(&mut state, true, AdvanceReason::NativeAutoAdvance, false);
                             }
                             AudioEvent::TrackFinished { .. } => {
-                                do_advance(&mut state, true, AdvanceReason::NativeNaturalEnd);
+                                // unlike TrackAdvanced (engine already promoted + scheduled the next source),
+                                // a plain natural end needs player.rs to actually start the next track => 
+                                // emit_directive silently no-ops with no AppHandle (android auto cold start),
+                                // so the native fallback must run here or playback just stops
+                                do_advance(&mut state, true, AdvanceReason::NativeNaturalEnd, true);
                             }
                             _ => {}
                         }

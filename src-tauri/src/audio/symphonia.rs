@@ -20,7 +20,7 @@ use super::mod_types::AudioEvent;
 // REPLAY GAIN
 // =============================================================================
 
-fn resolve_replay_gain(
+pub(super) fn resolve_replay_gain(
     pre_scanned_db: Option<f32>,
     format: &mut Box<dyn FormatReader>,
 ) -> Option<f32> {

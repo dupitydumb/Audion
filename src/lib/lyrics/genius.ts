@@ -64,7 +64,8 @@ export class Genius {
             );
             if (!data || data.ok === false || !data.lyrics) return null;
             return data;
-        } catch {
+        } catch (e) {
+            console.warn(`[Genius] search failed for "${query}":`, e);
             return null;
         }
     }
@@ -117,7 +118,8 @@ export class Genius {
                 hasSyllableSync:  false,
                 raw,
             };
-        } catch {
+        } catch (e) {
+            console.error('[Genius] parse_genius_lyrics_json_cmd threw:', e);
             return null;
         }
     }

@@ -46,6 +46,7 @@ export class LRCLib {
             return data;
 
         } catch (error) {
+            console.warn(`[LRCLib] search failed for "${query}":`, error);
             return [];
         }
     }
@@ -64,6 +65,7 @@ export class LRCLib {
             return data;
 
         } catch (error) {
+            console.warn(`[LRCLib] get failed for artist="${artist}" title="${title}":`, error);
             return null;
         }
     }

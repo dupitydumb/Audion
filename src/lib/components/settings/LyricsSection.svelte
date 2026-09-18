@@ -1,15 +1,19 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
-  import { sourcePriorityRaw, setSourcePriority, lyricsStore, lyricsRenderMode, type LyricsRenderMode } from "$lib/stores/lyrics";
+  import { sourcePriorityRaw, setSourcePriority, lyricsStore, lyricsRenderMode, PRIORITY_TOKENS, DELETABLE_PRIORITY_TOKENS, type LyricsRenderMode } from "$lib/stores/lyrics";
   import { addToast } from "$lib/stores/toast";
   import { confirm } from "$lib/stores/dialogs";
   import { slide } from "svelte/transition";
-  import { createEventDispatcher, tick } from "svelte";
+  import { createEventDispatcher, tick, onDestroy } from "svelte";
   import Icon from "$lib/components/Icon.svelte";
   import { appSettings } from "$lib/stores/settings";
 
   export let open: boolean = false;
   const dispatch = createEventDispatcher();
+
+  // full default priority order, e.g. "user/embedded/applejson/musixmatch/lrclib/genius"
+  const defaultPriorityExample = PRIORITY_TOKENS.map((t) => t.id).join('/');
+  const deleteExampleTokens = [DELETABLE_PRIORITY_TOKENS[0]?.id, DELETABLE_PRIORITY_TOKENS[1]?.id].filter(Boolean);
 
   // =================================================
   // lyrics: render mode (legacy / dynamic alignment)
@@ -33,41 +37,67 @@
   // lyrics: source priority
   // ---------------------------------------------------------------------
 
+  const PRIORITY_INPUT_DEBOUNCE_MS = 500;
+
   let priorityInput = $sourcePriorityRaw;
-  let priorityChanged = false;
+  let lastSyncedPriority = $sourcePriorityRaw;
   let priorityError = "";
+  let priorityChanged = false;
+  let priorityDebounceTimer: ReturnType<typeof setTimeout> | undefined;
 
   // Keep the local field in sync with the store when it changes elsewhere
   // (e.g. reset from another tab), but never clobber an in-progress edit
-  $: if (!priorityChanged && priorityInput !== $sourcePriorityRaw) {
+  // this only depends on the store value, not priorityInput
+  // => it won't re-fire on every keystroke
+  $: if ($sourcePriorityRaw !== lastSyncedPriority) {
     priorityInput = $sourcePriorityRaw;
+    lastSyncedPriority = $sourcePriorityRaw;
+    priorityChanged = false;
   }
 
+  // only check for a real change once the user stops typing
+  // => the save button doesn't flicker in on every keystroke
   function handlePriorityInput() {
-    priorityChanged = priorityInput.trim() !== $sourcePriorityRaw.trim();
     priorityError = "";
+    clearTimeout(priorityDebounceTimer);
+    priorityDebounceTimer = setTimeout(() => {
+      priorityChanged = priorityInput.trim() !== $sourcePriorityRaw.trim();
+    }, PRIORITY_INPUT_DEBOUNCE_MS);
   }
 
   function handlePrioritySave() {
-    const ok = setSourcePriority(priorityInput.trim());
-    if (ok) {
+    const trimmed = priorityInput.trim();
+    const result = setSourcePriority(trimmed);
+    console.log("[LyricsSection] Priority save attempt:", trimmed, "=> result:", result);
+    if (result === 'ok') {
+      clearTimeout(priorityDebounceTimer);
       priorityChanged = false;
       priorityError = "";
       addToast($_('settings.lyricsPrioritySaved', { default: 'Lyrics source priority saved' }), "success");
+    } else if (result === 'missing_api_key') {
+      priorityError = $_('settings.lyricsPriorityMissingApiKey', {
+        default: 'Apple Music (applejson) needs a Paxsenix API key configured in the Qobuz plugin settings before it can be used in the priority order.',
+      });
+      addToast($_('settings.lyricsPriorityMissingApiKeyToast', { default: 'Add a Paxsenix API key before using Apple Music in the priority order' }), "error");
     } else {
       priorityError = $_('settings.lyricsPriorityInvalidFormat', {
         values: { example: 'apple/imported/genius' },
         default: 'Invalid format — lowercase letters and single "/" separators only, e.g. apple/imported/genius. Unknown tokens are also rejected.',
       });
       addToast($_('settings.lyricsPriorityInvalidToast', { default: 'Invalid lyrics priority format' }), "error");
+      console.warn("[LyricsSection] Priority save rejected, invalid format:", trimmed);
     }
   }
 
   function handlePriorityReset() {
+    console.log("[LyricsSection] Priority reset to default, previous value:", priorityInput);
+    clearTimeout(priorityDebounceTimer);
     priorityInput = "";
     priorityChanged = priorityInput.trim() !== $sourcePriorityRaw.trim();
     priorityError = "";
   }
+
+  onDestroy(() => clearTimeout(priorityDebounceTimer));
 
   // ---------------------------------------------------------------------
   // lyrics: bulk delete by token
@@ -80,13 +110,37 @@
     const t = token.trim().toLowerCase();
     if (!t) return "";
     if (t === "all") return $_('settings.lyricsTokenAll', { default: 'All' });
+    const known = PRIORITY_TOKENS.find((p) => p.id === t);
+    if (known) return known.label;
+    // unrecognized token (e.g. a source that's since been removed)
     return t.charAt(0).toUpperCase() + t.slice(1);
   }
+
+  // ==============================
+  // lyrics: available-source text lines
+  // ==============================
+
+  $: prioritySourcesList = PRIORITY_TOKENS.map((t) => `${t.id} (${t.label})`).join(' · ');
+  $: deleteSourcesList = [
+    ...DELETABLE_PRIORITY_TOKENS.map((t) => `${t.id} (${t.label})`),
+    `all (${$_('settings.lyricsTokenAll', { default: 'All' })})`,
+  ].join(' · ');
 
   async function handleBulkDeleteLyrics() {
     const token = deleteToken.trim().toLowerCase();
     if (!token) {
+      console.warn("[LyricsSection] Bulk delete blocked, empty token");
       addToast($_('settings.lyricsDeleteEmptyToken', { default: 'Type a source token first' }), "error");
+      return;
+    }
+
+    // embedded lyrics live in the track's own file tags
+    // be explicit that it is not currently deletable
+    if (token === "embedded") {
+      console.warn("[LyricsSection] Bulk delete blocked, embedded is not deletable");
+      addToast($_('settings.lyricsDeleteEmbeddedUnsupported', {
+        default: 'Embedded lyrics live in the file itself and can\'t be deleted from here',
+      }), "error");
       return;
     }
 
@@ -103,18 +157,48 @@
       confirmLabel: $_('settings.lyricsDeleteConfirmLabel', { default: 'Delete' }),
       danger: true,
     });
-    if (!ok) return;
+    if (!ok) {
+      console.log("[LyricsSection] Bulk delete cancelled by user, token:", token);
+      return;
+    }
 
+    console.log("[LyricsSection] Bulk delete starting, token:", token);
     isBulkDeletingLyrics = true;
     try {
-      const count = await lyricsStore.deleteLyricsByToken(token);
-      addToast(
-        count > 0
-          ? $_('settings.lyricsDeleteSuccess', { values: { count, label, plural: count === 1 ? '' : 's' }, default: `Deleted ${count} ${label} lyrics file${count === 1 ? "" : "s"}` })
-          : $_('settings.lyricsDeleteNoneFound', { values: { label }, default: `No cached ${label} lyrics found to delete` }),
-        count > 0 ? "success" : "error",
-      );
-      if (count > 0) deleteToken = "";
+      const { matched, deleted } = await lyricsStore.deleteLyricsByToken(token);
+      console.log("[LyricsSection] Bulk delete finished, token:", token, "matched:", matched, "deleted:", deleted);
+      if (deleted > 0 && deleted === matched) {
+        addToast(
+          $_('settings.lyricsDeleteSuccess', { values: { count: deleted, label, plural: deleted === 1 ? '' : 's' }, default: `Deleted ${deleted} ${label} lyrics file${deleted === 1 ? "" : "s"}` }),
+          "success",
+        );
+        deleteToken = "";
+      } else if (deleted > 0) {
+        // some matched files were deleted, some weren't => not full success,
+        // keep the token around so the user can retry
+        addToast(
+          $_('settings.lyricsDeletePartial', {
+            values: { deleted, matched, label },
+            default: `Deleted ${deleted} of ${matched} ${label} lyrics files — some couldn't be removed, check the app's storage permissions`,
+          }),
+          "error",
+        );
+      } else if (matched > 0) {
+        // files exist and were matched, but every removal attempt failed
+        // (most likely a storage permission issue)
+        addToast(
+          $_('settings.lyricsDeleteFoundButFailed', {
+            values: { count: matched, label },
+            default: `Found ${matched} cached ${label} lyrics file${matched === 1 ? "" : "s"} but couldn't delete ${matched === 1 ? "it" : "them"} — check the app's storage permissions`,
+          }),
+          "error",
+        );
+      } else {
+        addToast(
+          $_('settings.lyricsDeleteNoneFound', { values: { label }, default: `No cached ${label} lyrics found to delete` }),
+          "error",
+        );
+      }
     } catch (err) {
       console.error("[Settings] Bulk lyrics delete failed:", err);
       addToast($_('settings.lyricsDeleteFailed', { values: { label }, default: `Failed to delete ${label} lyrics` }), "error");
@@ -190,10 +274,14 @@
           <span class="setting-title">{$_('settings.lyricsPriorityTitle', { default: 'Auto-fetch source priority' })}</span>
           <span class="setting-description">
             {$_('settings.lyricsPriorityDesc', {
-              values: { example: 'apple/imported/genius' },
-              default: 'Controls the order sources are tried automatically, e.g. apple/imported/genius. Lowercase letters and single "/" separators only. Leave blank to use the default order. Manual source selection in the lyrics panel is unaffected.',
+              values: { example: defaultPriorityExample },
+              default: `Controls the order sources are tried automatically, e.g. ${defaultPriorityExample}. Lowercase letters and single "/" separators only. Leave blank to use the default order shown below. Manual source selection in the lyrics panel is unaffected.`,
             })}
           </span>
+          <p class="lyrics-source-list">
+            <span class="lyrics-source-list-label">{$_('settings.lyricsAvailableSourcesLabel', { default: 'Available sources' })}:</span>
+            {prioritySourcesList}
+          </p>
           <div class="lyrics-priority-row">
             <input
               type="text"
@@ -201,7 +289,7 @@
               bind:value={priorityInput}
               on:input={handlePriorityInput}
               on:keydown={(e) => e.key === 'Enter' && priorityChanged && handlePrioritySave()}
-              placeholder={$_('settings.lyricsPriorityPlaceholder', { default: 'apple/imported/genius' })}
+              placeholder={$_('settings.lyricsPriorityPlaceholder', { default: defaultPriorityExample })}
               aria-label={$_('settings.lyricsPriorityInputLabel', { default: 'Lyrics source priority' })}
             />
             {#if priorityChanged}
@@ -223,10 +311,14 @@
           <span class="setting-title">{$_('settings.lyricsDeleteTitle', { default: 'Delete cached lyrics' })}</span>
           <span class="setting-description">
             {$_('settings.lyricsDeleteDesc', {
-              values: { apple: 'apple', imported: 'imported', all: 'all' },
-              default: 'Permanently delete every cached lyrics file for a given source, across your whole library. Type a source token (e.g. apple, imported, or all for everything).',
+              values: { tokenA: deleteExampleTokens[0], tokenB: deleteExampleTokens[1] },
+              default: `Permanently delete every cached lyrics file for a given source, across your whole library. Type a source token (e.g. ${deleteExampleTokens.join(', ')}, or all for everything).`,
             })}
           </span>
+          <p class="lyrics-source-list">
+            <span class="lyrics-source-list-label">{$_('settings.lyricsAvailableSourcesLabel', { default: 'Available sources' })}:</span>
+            {deleteSourcesList}
+          </p>
           <div class="lyrics-delete-row">
             <span class="lyrics-delete-label">{$_('settings.lyricsDeleteAllLabel', { default: 'Delete all' })}</span>
             <input

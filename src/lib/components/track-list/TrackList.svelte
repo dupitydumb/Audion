@@ -48,6 +48,8 @@
   export let playbackContext: PlaybackContext | undefined = undefined;
   export let playlistId: number | null = null;
   export let multiSelectMode: boolean = false;
+  export let allowMultiSelectEntry: boolean = false;
+  export let onEnterMultiSelect: (() => void) | undefined = undefined;
   export let queueTracks: Track[] | null = null; // New prop for unified queue context
 
   // Virtual scrolling configuration
@@ -462,6 +464,14 @@
     const track = sortedTracks[trackIndex];
     if (!track) return;
 
+    // bulk mode only triggers when the right-clicked row is itself part of an active multi-selection of more than one track
+    // right-clicking a row outside the selection always acts on just that row
+    const selectedIds = $multiSelect.selectedTrackIds;
+    const selectedTracks =
+      multiSelectMode && selectedIds.has(trackId) && selectedIds.size > 1
+        ? sortedTracks.filter((t) => selectedIds.has(t.id))
+        : undefined;
+
     contextMenu.set({
       visible: true,
       x: e.clientX,
@@ -476,6 +486,7 @@
         queueTracks,
         playbackContext,
         isTidalAvailable,
+        selectedTracks,
         t: $_,
         onMetadataOpen: (t) => { metadataModalTrack = t; },
         onArtworkCacheInvalidate: (id) => { trackAlbumArtCache.delete(id); },
@@ -817,6 +828,8 @@
     {sortField}
     {sortDirection}
     {toggleSort}
+    {allowMultiSelectEntry}
+    {onEnterMultiSelect}
   />
 
   <!-- Virtualized scrolling container -->
@@ -1062,10 +1075,24 @@
   :global(.truncate) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   :global(.col-checkbox) { display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  :global(.col-drag.selectable) { display: flex; align-items: center; justify-content: center; }
+  :global(.enter-select-checkbox) {
+    opacity: 0;
+    pointer-events: none;
+    cursor: pointer;
+    transition: opacity var(--transition-fast);
+  }
+  :global(.list-header:hover .enter-select-checkbox),
+  :global(.enter-select-checkbox:focus-visible) {
+    opacity: 1;
+    pointer-events: auto;
+  }
   :global(.custom-checkbox) { width: 20px; height: 20px; border: 2px solid var(--border-color); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; transition: all var(--transition-fast); background-color: transparent; position: relative; }
   :global(.custom-checkbox:hover) { border-color: var(--accent-primary); background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.1); }
   :global(.custom-checkbox.checked) { background-color: var(--accent-primary); border-color: var(--accent-primary); }
+  :global(.custom-checkbox.indeterminate) { background-color: var(--accent-primary); border-color: var(--accent-primary); }
   :global(.custom-checkbox svg) { color: var(--bg-base); }
+  :global(.custom-checkbox .indeterminate-dash) { width: 10px; height: 2px; border-radius: 1px; background-color: var(--bg-base); }
 
   :global(.equalizer-bars) { display: none; }
 

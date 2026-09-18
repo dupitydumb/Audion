@@ -15,8 +15,8 @@
         "title": "Audion",
         "width": 1600,
         "height": 900,
-        "minWidth": 1040,
-        "minHeight": 720,
+        "minWidth": 360,
+        "minHeight": 400,
         "backgroundColor": "#121212",
         "visible": true,
         "decorations": false,
@@ -91,6 +91,13 @@
         "name": "OGG Audio",
         "description": "OGG Vorbis Audio File",
         "mimeType": "audio/ogg",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["opus"],
+        "name": "Opus Audio",
+        "description": "Opus Audio File",
+        "mimeType": "audio/opus",
         "role": "Viewer"
       },
       {

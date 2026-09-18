@@ -449,6 +449,19 @@
         gap: var(--spacing-sm);
     }
 
+    /* Mobile: hide the big heading => the pill tabs above already show
+       which library view is active
+       push the remaining
+       actions (import/create) to the right since h1 no longer anchors the
+       space between layout */
+    :global(html.layout-mobile) .view-header h1 {
+        display: none;
+    }
+
+    :global(html.layout-mobile) .view-header {
+        justify-content: flex-end;
+    }
+
     .create-form {
         display: flex;
         align-items: center;

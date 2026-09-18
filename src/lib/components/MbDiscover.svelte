@@ -1018,7 +1018,7 @@
 
     .discover-header {
         flex-shrink: 0;
-        padding: calc(var(--safe-area-top) + var(--spacing-lg))
+        padding: var(--spacing-lg)
             var(--spacing-xl) 0;
     }
 
@@ -1296,7 +1296,7 @@
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: calc(var(--safe-area-top) + var(--spacing-md))
+        padding: var(--spacing-md)
             var(--spacing-lg) var(--spacing-md);
         border-bottom: 1px solid var(--border-color);
         flex-shrink: 0;

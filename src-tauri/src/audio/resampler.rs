@@ -4,10 +4,10 @@ use rodio::Source;
 use rubato::{Fft, FixedSync, Indexing, Resampler};
 use rubato::audioadapter_buffers::direct::SequentialSliceOfVecs;
 
-use super::symphonia::SymphoniaSource;
+use super::mod_types::DecodedSource;
 
 pub struct RubatoResampler {
-    pub source:             SymphoniaSource,
+    pub source:             DecodedSource,
     pub resampler:          Fft<f32>,
     pub input_buf:          Vec<Vec<f32>>,
     pub output_buf:         Vec<Vec<f32>>,
@@ -20,7 +20,7 @@ pub struct RubatoResampler {
 }
 
 impl RubatoResampler {
-    pub fn new(source: SymphoniaSource, dst_rate: NonZero<u32>) -> Result<Self, String> {
+    pub fn new(source: DecodedSource, dst_rate: NonZero<u32>) -> Result<Self, String> {
         let src_rate = source.sample_rate();
         let channels = source.channels().get() as usize;
 
