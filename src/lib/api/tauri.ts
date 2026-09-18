@@ -169,6 +169,7 @@ export interface Track {
     external_id?: string | null;  // Source-specific ID
     local_src?: string | null; // Local file path for offline playback
     disc_number?: number | null;
+    genre?: string | null;
     metadata_json?: string | null;
     date_added?: string | null;
 }
@@ -182,7 +183,7 @@ export interface Album {
      * may be an empty array for data paths the backend hasn't wired up yet
      */
     artists?: string[];
-    art_data: string | null; // old - base64 album art
+    art_data?: string | null; // old - base64 album art
     art_path?: string | null; // File path to album art
 }
 
@@ -190,6 +191,13 @@ export interface Artist {
     name: string;
     track_count: number;
     album_count: number;
+}
+
+export interface UserInfo {
+    id: string;
+    username: string;
+    role: string;
+    listenbrainz_token?: string | null;
 }
 
 export interface Playlist {
@@ -335,7 +343,7 @@ export interface SearchResults {
     tracks: Track[];
     albums: Album[];
     artists: Artist[];
-    playlists: Playlist[];
+    playlists?: Playlist[]; // optional: local Tauri search returns it; custom-server search does not
 }
 
 export async function searchLibrary(query: string, limit: number, offset: number): Promise<SearchResults> {
