@@ -103,7 +103,8 @@ pub struct UserProfileInner {
 
 #[derive(Debug, Deserialize)]
 struct RefreshResponse {
-    access_token: String,
+    // Server (audion-server-docker) returns "token", not "access_token"
+    token: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -337,9 +338,10 @@ pub async fn refresh_access_token(db: &Database, server_url: &str) -> Result<Str
         get_refresh_token(db)?.ok_or_else(|| "No refresh token available".to_string())?;
 
     let client = http_client()?;
+    // Server reads the token from the Bearer header, not from a JSON body
     let resp = client
         .post(format!("{}/auth/refresh", server_url))
-        .json(&serde_json::json!({ "refresh_token": refresh_token }))
+        .header("Authorization", format!("Bearer {}", refresh_token))
         .send()
         .await
         .map_err(|e| format!("Failed to refresh token: {}", e))?;
@@ -362,11 +364,11 @@ pub async fn refresh_access_token(db: &Database, server_url: &str) -> Result<Str
     // Store the new access token
     {
         let conn = db.conn.lock().map_err(|e| e.to_string())?;
-        crate::db::queries::set_sync_meta(&conn, META_ACCESS_TOKEN, &data.access_token)
+        crate::db::queries::set_sync_meta(&conn, META_ACCESS_TOKEN, &data.token)
             .map_err(|e| e.to_string())?;
     }
 
-    Ok(data.access_token)
+    Ok(data.token)
 }
 
 /// Fetch the user profile from the server and store it locally.
