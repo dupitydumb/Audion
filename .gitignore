@@ -50,6 +50,7 @@ plugin-examples/
 #Skills
 .agents/
 .claude/
+.superpowers/
 
 #Server
 /audion-server
