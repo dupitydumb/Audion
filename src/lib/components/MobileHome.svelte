@@ -677,7 +677,7 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: calc(var(--safe-area-top) + var(--spacing-lg))
+        padding: var(--spacing-lg)
             var(--spacing-md) var(--spacing-md);
     }
 

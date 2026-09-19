@@ -432,6 +432,7 @@ dependencies = [
  "mp4ameta",
  "ndk-context",
  "notify-rust",
+ "opus-rs",
  "ratio-metadata",
  "raw-window-handle",
  "rayon",
@@ -3807,6 +3808,11 @@ name = "option-ext"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
+
+[[package]]
+name = "opus-rs"
+version = "0.1.32"
+source = "git+https://github.com/SmileofHaven/opus-rs?rev=89b786291948980fda1203a8839ecbfb036e01c7#89b786291948980fda1203a8839ecbfb036e01c7"
 
 [[package]]
 name = "ordered-multimap"

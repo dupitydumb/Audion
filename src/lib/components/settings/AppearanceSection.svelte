@@ -68,6 +68,7 @@
         <button class="segment-btn" class:active={$layoutOverride === 'auto'} on:click={() => handleLayoutOverrideChange('auto')}><Icon name="sliders" size={14} />{$_('settings.layoutAuto')}</button>
         <button class="segment-btn" class:active={$layoutOverride === 'desktop'} on:click={() => handleLayoutOverrideChange('desktop')}><Icon name="monitor" size={14} />{$_('settings.layoutDesktop')}</button>
         <button class="segment-btn" class:active={$layoutOverride === 'mobile'} on:click={() => handleLayoutOverrideChange('mobile')}><Icon name="smartphone" size={14} />{$_('settings.layoutMobile')}</button>
+        <button class="segment-btn" class:active={$layoutOverride === 'hybrid'} on:click={() => handleLayoutOverrideChange('hybrid')}>{$_('settings.layoutHybrid')}</button>
       </div>
     </div>
 

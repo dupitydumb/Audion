@@ -142,7 +142,7 @@
 <style>
   .mobile-mini-player {
     position: fixed;
-    bottom: calc(var(--mobile-nav-height, 60px) + var(--spacing-sm) + var(--safe-area-inset-bottom, 0px));
+    bottom: calc(var(--mobile-nav-height, 60px) + var(--spacing-sm) + var(--safe-area-bottom, 0px));
     left: var(--spacing-sm);
     right: var(--spacing-sm);
     height: 64px;

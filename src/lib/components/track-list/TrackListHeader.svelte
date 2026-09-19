@@ -12,6 +12,11 @@
   export let sortDirection: "asc" | "desc" = "asc";
 
   export let toggleSort: (field: any) => void;
+
+  // lets a parent (e.g. PlaylistDetail) offer a way into multiSelectMode
+  // via a hover reveal checkbox in the leading corner
+  export let allowMultiSelectEntry = false;
+  export let onEnterMultiSelect: (() => void) | undefined = undefined;
 </script>
 
 <header
@@ -23,24 +28,76 @@
 >
   {#if multiSelectMode}
     <div class="col-header col-checkbox">
-      <input
-        type="checkbox"
-        on:change={(e) => {
-          if (e.currentTarget.checked) {
-            multiSelect.selectAll(sortedTracks.map((t) => t.id));
-          } else {
+      <div
+        class="custom-checkbox"
+        class:checked={$multiSelect.selectedTrackIds.size > 0 &&
+          $multiSelect.selectedTrackIds.size === sortedTracks.length}
+        class:indeterminate={$multiSelect.selectedTrackIds.size > 0 &&
+          $multiSelect.selectedTrackIds.size < sortedTracks.length}
+        role="checkbox"
+        tabindex="0"
+        aria-checked={$multiSelect.selectedTrackIds.size === 0
+          ? false
+          : $multiSelect.selectedTrackIds.size === sortedTracks.length
+            ? true
+            : "mixed"}
+        on:click={() => {
+          if (
+            sortedTracks.length > 0 &&
+            $multiSelect.selectedTrackIds.size === sortedTracks.length
+          ) {
             multiSelect.clearSelections();
+          } else {
+            multiSelect.selectAll(sortedTracks.map((t) => t.id));
           }
         }}
-        checked={$multiSelect.selectedTrackIds.size > 0 &&
-          $multiSelect.selectedTrackIds.size === sortedTracks.length}
-        indeterminate={$multiSelect.selectedTrackIds.size > 0 &&
-          $multiSelect.selectedTrackIds.size < sortedTracks.length}
-      />
+        on:keydown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            if (
+              sortedTracks.length > 0 &&
+              $multiSelect.selectedTrackIds.size === sortedTracks.length
+            ) {
+              multiSelect.clearSelections();
+            } else {
+              multiSelect.selectAll(sortedTracks.map((t) => t.id));
+            }
+          }
+        }}
+      >
+        {#if $multiSelect.selectedTrackIds.size > 0 && $multiSelect.selectedTrackIds.size === sortedTracks.length}
+          <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+          </svg>
+        {:else if $multiSelect.selectedTrackIds.size > 0}
+          <span class="indeterminate-dash"></span>
+        {/if}
+      </div>
     </div>
   {/if}
   {#if playlistId !== null && !multiSelectMode}
-    <span class="col-header col-drag"></span>
+    <span class="col-header col-drag" class:selectable={allowMultiSelectEntry}>
+      {#if allowMultiSelectEntry}
+        <div
+          class="custom-checkbox enter-select-checkbox"
+          role="checkbox"
+          tabindex="0"
+          aria-checked="false"
+          aria-label={$_('trackList.selectTracks', { default: 'Select tracks' })}
+          on:click={() => {
+            onEnterMultiSelect?.();
+            multiSelect.selectAll(sortedTracks.map((t) => t.id));
+          }}
+          on:keydown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onEnterMultiSelect?.();
+              multiSelect.selectAll(sortedTracks.map((t) => t.id));
+            }
+          }}
+        ></div>
+      {/if}
+    </span>
   {/if}
   <button class="col-header col-num sortable" on:click={() => toggleSort("track_number")}>
     #

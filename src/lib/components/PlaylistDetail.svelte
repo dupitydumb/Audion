@@ -16,6 +16,7 @@
     import { playTracks, addToQueue } from "$lib/stores/player";
     import { goToPlaylists, goToTracksMultiSelect } from "$lib/stores/view";
     import { loadPlaylists, playlists, playlistPendingTracks, drainPendingTracks } from "$lib/stores/library";
+    import { multiSelect } from "$lib/stores/multiselect";
     import TrackList from "./track-list/TrackList.svelte";
     import {
         playlistCovers,
@@ -42,6 +43,27 @@
     let editName = "";
     let coverInput: HTMLInputElement;
     let coverHovered = false;
+
+    // in-place selection of this playlist's own tracks
+    // (separate from MultiSelectTrackView's "add to playlist" flow)
+    // batch operations are handled via the context menu, not here
+    let selectModeActive = false;
+
+    function enterSelectMode() {
+        multiSelect.clearSelections();
+        selectModeActive = true;
+    }
+
+    function exitSelectMode() {
+        selectModeActive = false;
+        multiSelect.clearSelections();
+    }
+
+    function handleWindowKeydown(e: KeyboardEvent) {
+        if (e.key === "Escape" && selectModeActive) {
+            exitSelectMode();
+        }
+    }
 
     function initialsFromName(name: string) {
         if (!name) return "PL";
@@ -283,9 +305,18 @@
         }
     }
 
+    // in select mode, Add to Queue / Export to Zip in the header menu 
+    // scope to the current selection; everything else (Play, rename, delete...)
+    // always stays scoped to the whole playlist
+    function getSelectedTracks(): Track[] | undefined {
+        if (!selectModeActive) return undefined;
+        return tracks.filter((t) => $multiSelect.selectedTrackIds.has(t.id));
+    }
+
     function handleHeaderContextMenu(e: MouseEvent) {
         e.preventDefault();
         if (!playlist) return;
+        const selectedTracks = getSelectedTracks();
         contextMenu.set({
             visible: true,
             x: e.clientX,
@@ -293,12 +324,16 @@
             items: buildPlaylistContextMenu({
                 playlist,
                 tracks,
+                selectedTracks,
                 variant: "detail",
                 onPlay: handlePlayAll,
-                onAddToQueue: () => { if (tracks.length > 0) addToQueue(tracks); },
+                onAddToQueue: () => {
+                    const targets = selectedTracks ?? tracks;
+                    if (targets.length > 0) addToQueue(targets);
+                },
                 onRename: startEditing,
                 onDelete: handleDelete,
-                onExportZip: handleExportZip,
+                onExportZip: () => handleExportZip(selectedTracks),
                 coverInput,
                 t: $_,
             }),
@@ -334,14 +369,17 @@
         }
     }
 
-    async function handleExportZip() {
+    async function handleExportZip(selected?: Track[]) {
         closeMenu();
         if (!playlist) return;
+        // select mode active with nothing selected => nothing to export
+        if (selected && selected.length === 0) return;
+        const trackIds = selected?.map((t) => t.id);
 
         try {
             addToast($_("playlist.exporting"), "info");
 
-            const result = await exportPlaylistZip(playlistId, playlist.name);
+            const result = await exportPlaylistZip(playlistId, playlist.name, trackIds);
             if (!result) return; // user cancelled
 
             const skipped_count = result.skipped_count;
@@ -358,6 +396,8 @@
         }
     }
 </script>
+
+<svelte:window on:keydown={handleWindowKeydown} />
 
 <div class="playlist-detail">
     {#if loading}
@@ -394,7 +434,7 @@
                                 <Icon name="edit" size={16} />
                                 {$_('contextMenu.rename')}
                             </button>
-                            <button class="dropdown-item" role="menuitem" on:click={handleExportZip}>
+                            <button class="dropdown-item" role="menuitem" on:click={() => handleExportZip(getSelectedTracks())}>
                                 <Icon name="folder" size={16} />
                                 {$_('contextMenu.exportToZip')}
                             </button>
@@ -537,6 +577,9 @@
                     {tracks}
                     showAlbum={false}
                     {playlistId}
+                    multiSelectMode={selectModeActive}
+                    allowMultiSelectEntry={!selectModeActive}
+                    onEnterMultiSelect={enterSelectMode}
                     playbackContext={{
                         type: "playlist",
                         playlistId,
@@ -924,13 +967,13 @@
         flex-direction: column;
         align-items: center;
         text-align: center;
-        padding: calc(var(--safe-area-top) + var(--spacing-md))
+        padding: var(--spacing-md)
             var(--spacing-md) var(--spacing-md);
         gap: var(--spacing-md);
     }
 
     :global(html.layout-mobile) .header-actions {
-        top: calc(var(--safe-area-top) + var(--spacing-sm));
+        top: var(--spacing-sm);
         right: var(--spacing-sm);
     }
 

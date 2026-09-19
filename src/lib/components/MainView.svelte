@@ -24,7 +24,7 @@
         searchHistory,
     } from "$lib/stores/search";
     import SearchHistoryDropdown from "./SearchHistoryDropdown.svelte";
-    import { isMobile } from "$lib/stores/mobile";
+    import { isMobile, useDesktopTitleBar } from "$lib/stores/mobile";
     import MobileHome from "./MobileHome.svelte";
     import DesktopHome from "./DesktopHome.svelte";
     import LikedSongs from "./LikedSongs.svelte";
@@ -127,6 +127,7 @@
         "flac",
         "wav",
         "ogg",
+        "opus",
         "m4a",
         "aac",
         "alac",
@@ -665,12 +666,15 @@
 
     <!-- Mobile: Search bar + library sub-tabs (Spotify pill style) -->
     {#if $isMobile && isLibraryView}
+        <!-- search bar hidden in hybrid mode => the desktop title bar already
+             has its own search -->
+        {#if !$useDesktopTitleBar}
         <div class="mobile-library-header">
             <div
                 style="position:relative;"
                 on:focusin={() => (mobileSearchFocused = true)}
                 on:focusout={(e) => {
-                    if (!e.currentTarget.contains(e.relatedTarget)) {
+                    if (!(e.relatedTarget instanceof Node) || !e.currentTarget.contains(e.relatedTarget)) {
                         mobileSearchFocused = false;
                     }
                 }}
@@ -712,6 +716,7 @@
             {/if}
             </div>
         </div>
+        {/if}
 
         {#if !isSearching}
             <div class="mobile-library-tabs-wrapper">
@@ -1199,7 +1204,7 @@
     /* ===== Mobile Library Header (search + tabs) ===== */
     .mobile-library-header {
         flex-shrink: 0;
-        padding: calc(var(--safe-area-top) + var(--spacing-md))
+        padding: var(--spacing-md)
             var(--spacing-md) 0;
         background-color: var(--bg-base);
     }
@@ -1296,13 +1301,22 @@
         background-color: rgba(255, 255, 255, 0.12);
     }
 
-    /* Mobile view header adjustments */
+    /* Mobile: hide the big heading => the pill tabs above already show
+       which library view is active, so it's redundant.
+       the search-results header keeps its padding: it still has visible
+       content (the result-count pills) besides its heading */
     :global(html.layout-mobile) .view-header h1 {
-        font-size: 1.25rem;
+        display: none;
     }
 
-    :global(html.layout-mobile) .view-header {
-        padding: calc(var(--safe-area-top) + var(--spacing-md))
-            var(--spacing-md) var(--spacing-md);
+    :global(html.layout-mobile) .view-header:not(.search-view-header) {
+        padding: 0;
+        min-height: 0;
+    }
+
+    /* tracks view: the scan-status line can still appear in the now-empty
+       header */
+    :global(html.layout-mobile) .view-header:not(.search-view-header) .scan-status {
+        padding: var(--spacing-sm) var(--spacing-md) 0;
     }
 </style>

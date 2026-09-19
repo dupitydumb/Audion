@@ -14,9 +14,10 @@
     initPlatformDetection,
     listen,
   } from "$lib/api/tauri";
-  import { initMobileDetection, isMobile } from "$lib/stores/mobile";
+  import { initMobileDetection, isMobile, useDesktopTitleBar } from "$lib/stores/mobile";
   import { mobileSearchOpen } from "$lib/stores/mobile";
   import { initAndroidNotification } from "$lib/services/android-notification";
+  import { initConsoleCapture } from "$lib/services/console-capture";
   import { loadLikedTracks } from "$lib/stores/liked";
   import {
     goBack,
@@ -180,6 +181,10 @@
     // Initialize sync state (auth check, event listeners)
     initSync();
 
+    // forward console output into the backend's unified log file
+    // (no-ops outside Tauri)
+    initConsoleCapture();
+
     // Initialize Android-specific features
     if (isAndroid() && isTauri()) {
       setupAndroidBackHandler();
@@ -340,7 +345,7 @@
 </script>
 
 {#if !$isLoading && $locale}
-{#if !$isMobile && !$isMiniPlayer}
+{#if $useDesktopTitleBar && !$isMiniPlayer}
   <TitleBar />
   <LinuxResizeHandles />
 {/if}
@@ -387,7 +392,7 @@
 
 <a href="#main-content" class="skip-link">{$_("app.skipToMainContent")}</a>
 
-<div class="app-content" class:mobile={$isMobile} class:pip={$isMiniPlayer} class:has-mini-player={$isMobile && $currentTrack && !$isFullScreen} id="main-content">
+<div class="app-content" class:mobile={$isMobile} class:has-titlebar={$useDesktopTitleBar} class:pip={$isMiniPlayer} class:has-mini-player={$isMobile && $currentTrack && !$isFullScreen} id="main-content">
   <slot />
 </div>
 
@@ -469,7 +474,16 @@
 
   .app-content.mobile {
     padding-top: var(--safe-area-top);
-    padding-bottom: var(--safe-area-bottom);
+    /* bottom nav is always present on mobile => reserve its height as the
+       baseline, regardless of whether a track is currently playing */
+    padding-bottom: calc(var(--mobile-nav-height, 60px) + var(--safe-area-bottom, 0px));
+  }
+
+  /* hybrid: mobile page layout, but the desktop title bar is still mounted
+     above it => keep its 48px height instead of the plain mobile safe-area
+     padding */
+  .app-content.mobile.has-titlebar {
+    padding-top: calc(48px + var(--safe-area-top, 0px));
   }
 
   .app-content.mobile.has-mini-player {

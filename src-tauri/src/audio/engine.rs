@@ -435,6 +435,24 @@ impl AudioEngine {
         Ok(())
     }
 
+    /// same as seek(),
+    /// but takes an absolute position in seconds rather than a 0.0-1.0 fraction =>
+    /// added for android_auto's jni bridge
+    pub fn seek_absolute(&mut self, position_secs: f64) -> Result<(), String> {
+        let duration = self
+            .current_info
+            .as_ref()
+            .and_then(|info| info.duration)
+            .ok_or("No track loaded or duration unknown")?;
+
+        let duration_secs = duration.as_secs_f64();
+        if duration_secs <= 0.0 {
+            return Err("Track duration is zero".to_string());
+        }
+
+        self.seek((position_secs / duration_secs).clamp(0.0, 1.0))
+    }
+
     /// pauses both gated slots, not just current
     /// mid-crossfade there can be two live sources summed by the mixer simultaneously
     /// (outgoing fading out, incoming fading in), and both must freeze together or the pause

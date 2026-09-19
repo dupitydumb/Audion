@@ -19,6 +19,7 @@
   import "./settings/styles.css";
   import { _ } from "svelte-i18n";
   import { isLoggedIn } from "$lib/stores/sync";
+  import { isMobile } from "$lib/stores/mobile";
 
   let showEqEditor = false;
   let activeTab = 'sound';
@@ -113,7 +114,9 @@
 
     {:else if activeTab === 'more'}
       <div class="settings-pane settings-container" id="panel-more" role="tabpanel">
-        <ShortcutsSection open={isDesktop || (openSections['shortcuts']  ?? false)} on:toggle={() => toggle('shortcuts')}  />
+        {#if !$isMobile}
+          <ShortcutsSection open={isDesktop || (openSections['shortcuts']  ?? false)} on:toggle={() => toggle('shortcuts')}  />
+        {/if}
         <PrivacySection   open={isDesktop || (openSections['privacy']    ?? false)} on:toggle={() => toggle('privacy')}    />
         <UpgradeSection   open={isDesktop || (openSections['upgrade']    ?? false)} on:toggle={() => toggle('upgrade')}    />
         <SupportSection   open={isDesktop || (openSections['support']    ?? false)} on:toggle={() => toggle('support')}    />

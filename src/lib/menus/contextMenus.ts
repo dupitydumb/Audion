@@ -37,6 +37,7 @@ import { confirm, prompt } from '$lib/stores/dialogs';
 import { canDownload, downloadTrack, needsDownloadLocation } from '$lib/services/downloadService';
 import { pluginStore } from '$lib/stores/plugin-store';
 import { likedTrackIds, isLiked, toggleLike, unlikeAll } from '$lib/stores/liked';
+import { multiSelect } from '$lib/stores/multiselect';
 
 // shared availability helper ===========================================================================
 
@@ -222,6 +223,8 @@ function buildChangeCoverItem(
 function buildAddToPlaylistItem(
     t: Tfn,
     onSelect: (playlistId: number) => void,
+    // bulk callers pass a "(N)"-suffixed label. single-track callers omit it
+    label: string = t('contextMenu.addToPlaylist'),
 ): ContextMenuItem {
     const items = get(playlists).map((p) => ({
         label: p.name,
@@ -229,7 +232,7 @@ function buildAddToPlaylistItem(
     }));
 
     return {
-        label: t('contextMenu.addToPlaylist'),
+        label,
         icon: 'list-music',
         submenu: items.length > 0
             ? items
@@ -245,6 +248,8 @@ function buildMoveToPlaylistItem(
     t: Tfn,
     sourcePlaylistId: number,
     onSelect: (targetPlaylistId: number) => void,
+    // bulk callers pass a "(N)"-suffixed label;.single-track callers omit it
+    label: string = t('contextMenu.moveToPlaylist'),
 ): ContextMenuItem {
     const items = get(playlists)
         .filter((p) => p.id !== sourcePlaylistId)
@@ -254,7 +259,7 @@ function buildMoveToPlaylistItem(
         }));
 
     return {
-        label: t('contextMenu.moveToPlaylist'),
+        label,
         icon: 'arrow-right',
         submenu: items.length > 0
             ? items
@@ -282,6 +287,15 @@ export interface TrackMenuOptions {
     queueTracks?: Track[] | null;
     playbackContext?: PlaybackContext;
     isTidalAvailable?: boolean;
+    /**
+     * when set (full variant only, length > 1),
+     * the caller has an active multi-selection that includes the right-clicked track
+     * Add to Queue, Like/Unlike, Add to Playlist, Move to Playlist, Remove from Playlist, and Delete from Library
+     * act on this whole list instead of just 'track'
+     * Play/Download/artwork/navigation/metadata always stay single-track
+     * omit (or pass a 1-item/undefined array) for normal single-track behavior
+     */
+    selectedTracks?: Track[];
     /**
      * controls which items are included:
      *
@@ -376,6 +390,15 @@ export interface PlaylistMenuOptions {
      */
     tracks?: Track[];
     /**
+     * when set (detail variant, select mode active),
+     * scopes Add to Queue and Export to Zip to these tracks instead of the whole playlist,
+     * and shows a "(N)" count on their labels
+     * pass an empty array to disable both while the selection is empty
+     * play and everything else always stays scoped to the full
+     * playlist regardless of this field
+     */
+    selectedTracks?: Track[];
+    /**
      * detail  => full header menu, coverInput supported (PlaylistDetail)
      * grid    => grid card menu (PlaylistView)
      * sidebar => compact sidebar entry (Sidebar). rename falls back to
@@ -424,20 +447,58 @@ export function buildTrackContextMenu(opts: TrackMenuOptions): ContextMenuItem[]
         playTracks(sortedTracks, trackIndex, playbackContext);
     }
 
-    const addToPlaylistItem = buildAddToPlaylistItem(t, async (pid) => {
-        try {
-            await addTrackToPlaylist(pid, track.id);
-            adjustPlaylistTrackCount(pid, 1);
-        } catch (err) {
-            console.error('[contextMenus] addTrackToPlaylist failed:', err);
-        }
-    });
+    // bulk mode: caller passed a multi-selection that includes this track
+    // targetTracks drives every selection-aware item below
+    // single-track callsites (bulkTracks === null) fall through with targetTracks = [track]
+    const bulkTracks = opts.selectedTracks && opts.selectedTracks.length > 1 ? opts.selectedTracks : null;
+    const targetTracks = bulkTracks ?? [track];
+    const bulkCount = bulkTracks?.length;
+    const withCount = (label: string) => bulkCount ? `${label} (${bulkCount})` : label;
 
-    // like/unlike => same item everywhere, label/action flip on current state
+    const addToPlaylistItem = buildAddToPlaylistItem(
+        t,
+        async (pid) => {
+            try {
+                const results = await Promise.allSettled(
+                    targetTracks.map((tr) => addTrackToPlaylist(pid, tr.id)),
+                );
+                const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+                if (succeeded > 0) adjustPlaylistTrackCount(pid, succeeded);
+                const failed = results.length - succeeded;
+                if (failed > 0) {
+                    console.error(
+                        `[contextMenus] addTrackToPlaylist: ${failed} of ${results.length} tracks failed to add`,
+                        results.filter((r) => r.status === 'rejected'),
+                    );
+                }
+            } catch (err) {
+                console.error('[contextMenus] addTrackToPlaylist failed:', err);
+            }
+        },
+        withCount(t('contextMenu.addToPlaylist')),
+    );
+
+    // like/unlike: single-track flips that track's own state as before
+    // bulk: if every selected track is already liked, unlike them all;
+    // otherwise like whichever aren't liked yet (never partially toggles)
     // read fresh at build time (isLiked wraps get() internally), not subscribed
-    const likeItem: ContextMenuItem = isLiked(track.id)
-        ? { label: t('contextMenu.unlike'), icon: 'heart-filled', action: () => toggleLike(track.id) }
-        : { label: t('contextMenu.like'), icon: 'heart', action: () => toggleLike(track.id) };
+    const likeItem: ContextMenuItem = bulkTracks
+        ? (() => {
+            const allLiked = bulkTracks.every((tr) => isLiked(tr.id));
+            return {
+                label: withCount(allLiked ? t('contextMenu.unlike') : t('contextMenu.like')),
+                icon: allLiked ? 'heart-filled' : 'heart',
+                action: () => {
+                    bulkTracks.forEach((tr) => {
+                        const liked = isLiked(tr.id);
+                        if (allLiked === liked) toggleLike(tr.id);
+                    });
+                },
+            };
+        })()
+        : isLiked(track.id)
+            ? { label: t('contextMenu.unlike'), icon: 'heart-filled', action: () => toggleLike(track.id) }
+            : { label: t('contextMenu.like'), icon: 'heart', action: () => toggleLike(track.id) };
 
     // playlist-only (FullscreenPlayer mobile long-press) ===============================
     if (variant === 'playlist-only') {
@@ -518,11 +579,15 @@ export function buildTrackContextMenu(opts: TrackMenuOptions): ContextMenuItem[]
         { label: t('contextMenu.play'), icon: 'play', action: doPlay, disabled: isUnavailable },
         SEP,
         {
-            label: t('contextMenu.addToQueue'),
+            label: withCount(t('contextMenu.addToQueue')),
             icon: 'queue',
+            // the right-clicked track's own state still gates the menu item
+            // (same as single-track), but the batch action itself must not
+            // silently queue up other unavailable tracks from the selection
             disabled: isUnavailable,
             action: () => {
-                addToQueue([track]);
+                const queueable = targetTracks.filter((tr) => !isTrackUnavailable(tr));
+                addToQueue(queueable);
                 addToast(t('contextMenu.addedToQueue'), 'success');
             },
         },
@@ -571,59 +636,109 @@ export function buildTrackContextMenu(opts: TrackMenuOptions): ContextMenuItem[]
 
     if (playlistId) {
         items.push(
-            buildMoveToPlaylistItem(t, playlistId, async (targetPlaylistId) => {
-                try {
-                    // add first so a failed remove doesn't lose the track entirely
-                    await addTrackToPlaylist(targetPlaylistId, track.id);
-                    await removeTrackFromPlaylist(playlistId, track.id);
-                    opts.onTracksUpdated?.(sortedTracks.filter((t) => t.id !== track.id));
-                    // in memory only:
-                    // every subscriber (sidebar etc) reading the shared playlistTrackCounts
-                    adjustPlaylistTrackCount(targetPlaylistId, 1);
-                    adjustPlaylistTrackCount(playlistId, -1);
-                    addToast(t('contextMenu.trackMoved'), 'success');
-                } catch (err) {
-                    console.error('[contextMenus] moveTrackToPlaylist failed:', err);
-                    addToast(t('contextMenu.trackMoveFailed'), 'error');
-                }
-            }),
+            // add-then-remove per track
+            // a failed remove never loses a track entirely
+            buildMoveToPlaylistItem(
+                t,
+                playlistId,
+                async (targetPlaylistId) => {
+                    const results = await Promise.allSettled(
+                        targetTracks.map(async (tr) => {
+                            await addTrackToPlaylist(targetPlaylistId, tr.id);
+                            await removeTrackFromPlaylist(playlistId, tr.id);
+                        }),
+                    );
+                    const movedIds = new Set(
+                        targetTracks.filter((_, i) => results[i].status === 'fulfilled').map((tr) => tr.id),
+                    );
+                    if (movedIds.size > 0) {
+                        adjustPlaylistTrackCount(targetPlaylistId, movedIds.size);
+                        adjustPlaylistTrackCount(playlistId, -movedIds.size);
+                        opts.onTracksUpdated?.(sortedTracks.filter((t) => !movedIds.has(t.id)));
+                        if (bulkTracks) multiSelect.clearSelections();
+                        addToast(t('contextMenu.trackMoved'), 'success');
+                    }
+                    const failed = results.length - movedIds.size;
+                    if (failed > 0) {
+                        console.error(
+                            `[contextMenus] moveTrackToPlaylist: ${failed} of ${results.length} tracks failed to move`,
+                            results.filter((r) => r.status === 'rejected'),
+                        );
+                        addToast(t('contextMenu.trackMoveFailed'), 'error');
+                    }
+                },
+                withCount(t('contextMenu.moveToPlaylist')),
+            ),
             {
-                label: t('contextMenu.removeFromPlaylist'),
+                label: withCount(t('contextMenu.removeFromPlaylist')),
                 icon: 'minus',
                 action: async () => {
-                    try {
-                        await removeTrackFromPlaylist(playlistId, track.id);
-                        opts.onTracksUpdated?.(sortedTracks.filter((t) => t.id !== track.id));
-                        adjustPlaylistTrackCount(playlistId, -1);
-                    } catch (err) {
-                        console.error('[contextMenus] removeTrackFromPlaylist failed:', err);
+                    const results = await Promise.allSettled(
+                        targetTracks.map((tr) => removeTrackFromPlaylist(playlistId, tr.id)),
+                    );
+                    const removedIds = new Set(
+                        targetTracks.filter((_, i) => results[i].status === 'fulfilled').map((tr) => tr.id),
+                    );
+                    if (removedIds.size > 0) {
+                        adjustPlaylistTrackCount(playlistId, -removedIds.size);
+                        opts.onTracksUpdated?.(sortedTracks.filter((t) => !removedIds.has(t.id)));
+                        if (bulkTracks) multiSelect.clearSelections();
+                    }
+                    const failed = results.length - removedIds.size;
+                    if (failed > 0) {
+                        console.error(
+                            `[contextMenus] removeTrackFromPlaylist: ${failed} of ${results.length} tracks failed to remove`,
+                            results.filter((r) => r.status === 'rejected'),
+                        );
                     }
                 },
             },
         );
     }
 
+    // per-track deletable check
+    // (matters for bulk: a mixed selection may have some local and some streaming-only tracks)
+    const isTrackDeletable = (tr: Track) =>
+        !tr.source_type || tr.source_type === 'local' || tr.source_type === 'server';
+
     items.push(
         SEP,
         {
-            label: t('contextMenu.deleteFromLibrary'),
+            label: withCount(t('contextMenu.deleteFromLibrary')),
             icon: 'trash',
             danger: true,
-            disabled: !isDeletable,
+            disabled: bulkTracks ? !bulkTracks.some(isTrackDeletable) : !isDeletable,
             action: async () => {
+                const deletableTracks = targetTracks.filter(isTrackDeletable);
+                if (deletableTracks.length === 0) return;
+
                 const ok = await confirm(
-                    `Are you sure you want to delete "${track.title}" from your library? This will also remove the file from your computer.`,
+                    deletableTracks.length > 1
+                        ? `Are you sure you want to delete ${deletableTracks.length} tracks from your library? This will also remove the files from your computer.`
+                        : `Are you sure you want to delete "${deletableTracks[0].title}" from your library? This will also remove the file from your computer.`,
                     { title: 'Delete Track', confirmLabel: 'Delete', danger: true },
                 );
                 if (!ok) return;
-                try {
-                    await deleteTrack(track.id);
-                    opts.onArtworkCacheInvalidate?.(track.id);
-                    opts.onAvailabilityCacheInvalidate?.(track.id);
+
+                const results = await Promise.allSettled(deletableTracks.map((tr) => deleteTrack(tr.id)));
+                const deletedIds = new Set(
+                    deletableTracks.filter((_, i) => results[i].status === 'fulfilled').map((tr) => tr.id),
+                );
+                deletedIds.forEach((id) => {
+                    opts.onArtworkCacheInvalidate?.(id);
+                    opts.onAvailabilityCacheInvalidate?.(id);
+                });
+                if (deletedIds.size > 0) {
                     await loadLibrary();
-                    opts.onTracksUpdated?.(sortedTracks.filter((t) => t.id !== track.id));
-                } catch (err) {
-                    console.error('[contextMenus] deleteTrack failed:', err);
+                    opts.onTracksUpdated?.(sortedTracks.filter((t) => !deletedIds.has(t.id)));
+                    if (bulkTracks) multiSelect.clearSelections();
+                }
+                const failed = results.length - deletedIds.size;
+                if (failed > 0) {
+                    console.error(
+                        `[contextMenus] deleteTrack: ${failed} of ${results.length} tracks failed to delete`,
+                        results.filter((r) => r.status === 'rejected'),
+                    );
                 }
             },
         },
@@ -749,6 +864,7 @@ export function buildPlaylistContextMenu(opts: PlaylistMenuOptions): ContextMenu
     const {
         playlist,
         tracks,
+        selectedTracks,
         onPlay,
         onAddToQueue,
         onRename,
@@ -763,6 +879,13 @@ export function buildPlaylistContextMenu(opts: PlaylistMenuOptions): ContextMenu
     // stay enabled; their onPlay/onAddToQueue handlers already no-op safely on
     // an empty playlist after fetching tracks themselves
     const isEmpty = tracks !== undefined && tracks.length === 0;
+
+    // select mode active => Add to Queue / Export to Zip scope to the selection instead of the full playlist
+    const inSelection = selectedTracks !== undefined;
+    const selectionCount = selectedTracks?.length;
+    const queueAndExportLabel = (label: string) =>
+        inSelection ? `${label} (${selectionCount})` : label;
+    const queueAndExportDisabled = inSelection ? selectionCount === 0 : isEmpty;
 
     // rename: delegate to component flow when provided, fall back to inline
     // prompt for Sidebar which has no rename modal state
@@ -788,13 +911,18 @@ export function buildPlaylistContextMenu(opts: PlaylistMenuOptions): ContextMenu
 
     return [
         { label: t('contextMenu.play'), icon: 'play', action: onPlay, disabled: isEmpty },
-        { label: t('contextMenu.addToQueue'), icon: 'queue', action: onAddToQueue, disabled: isEmpty },
+        {
+            label: queueAndExportLabel(t('contextMenu.addToQueue')),
+            icon: 'queue',
+            action: onAddToQueue,
+            disabled: queueAndExportDisabled,
+        },
         SEP,
         ...(onExportZip ? [
             {
-                label: t('contextMenu.exportToZip'),
+                label: queueAndExportLabel(t('contextMenu.exportToZip')),
                 icon: 'download',
-                disabled: isEmpty,
+                disabled: queueAndExportDisabled,
                 action: onExportZip,
             },
             SEP,

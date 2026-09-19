@@ -2,6 +2,7 @@ pub mod dsp;
 pub mod mod_types;
 pub mod sources;
 pub mod symphonia;
+pub mod opus;
 pub mod resampler;
 pub mod engine;
 pub mod worker;
@@ -11,6 +12,7 @@ pub mod dual_track;
 pub mod gated_worker;
 pub mod decision;
 pub mod directive;
+pub mod event_bridge;
 
 #[cfg(test)]
 mod tests_native_playback;

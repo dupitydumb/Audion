@@ -46,6 +46,12 @@
   }
 }
 
+/* on real mobile layout, app-content (routes/+layout.svelte) already
+  reserves room for the bottom nav + floating mini player */
+html.layout-mobile .settings-content .settings-pane.settings-container {
+  padding-bottom: var(--spacing-lg);
+}
+
 .settings-container {
   max-width: 800px;
   margin: 0 auto;
@@ -2760,11 +2766,6 @@
     min-height: 52px;
   }
 
-  /* Adjust bottom padding for content */
-  .settings-content {
-    padding-bottom: calc(var(--mobile-bottom-inset, 130px) + var(--spacing-xl));
-  }
-
   /* Account Section Mobile Fixes */
   .account-card {
     padding: var(--spacing-md);
@@ -3267,6 +3268,19 @@
   border-top-color: currentColor;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+}
+
+.lyrics-source-list {
+margin-top: var(--spacing-sm);
+font-size: 0.8rem;
+line-height: 1.6;
+color: var(--text-secondary);
+}
+
+.lyrics-source-list-label {
+font-weight: 600;
+color: var(--text-primary);
+margin-right: 4px;
 }
 
 /* startup page has more options than output devices typically do; scroll instead of overflowing the card */

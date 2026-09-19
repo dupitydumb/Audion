@@ -19,15 +19,35 @@ use crate::db::{queries, Database};
 /// the app cache dir for stream URLs).  Never overwritten by auto-fetchers.
 fn resolve_user_lyrics_path(app: &AppHandle, music_path: &str, format: &str) -> PathBuf {
     let ext = sanitise_format(format);
-    if let Ok(metadata) = fs::metadata(music_path) {
-        if metadata.is_file() {
+    match fs::metadata(music_path) {
+        Ok(metadata) if metadata.is_file() => {
             return PathBuf::from(music_path).with_extension(ext);
+        }
+        Ok(metadata) => {
+            tracing::warn!(
+                "[LYRICS] resolve_user_lyrics_path: music_path exists but is not a file (is_dir={} is_symlink={:?}), falling back to hash cache: {}",
+                metadata.is_dir(), fs::symlink_metadata(music_path).map(|m| m.is_symlink()), music_path
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                "[LYRICS] resolve_user_lyrics_path: music_path invalid/unreachable ({}), falling back to hash cache: {}",
+                e, music_path
+            );
         }
     }
     let hash = hash_path(music_path);
     let dir = app_lyrics_dir(app);
-    let _ = fs::create_dir_all(&dir);
-    dir.join(format!("{}.{}", hash, ext))
+    tracing::info!(
+        "[LYRICS] resolve_user_lyrics_path: hash={} format={} cache_dir={}",
+        hash, ext, dir.display()
+    );
+    if let Err(e) = fs::create_dir_all(&dir) {
+        tracing::warn!("[LYRICS] resolve_user_lyrics_path: failed to create cache dir {}: {}", dir.display(), e);
+    }
+    let path = dir.join(format!("{}.{}", hash, ext));
+    tracing::info!("[LYRICS] resolve_user_lyrics_path: resolved fallback path={}", path.display());
+    path
 }
 
 /// Path for a source-fetched lyrics file: song.<source_id>.<format>.
@@ -43,30 +63,57 @@ fn resolve_source_lyrics_path(
     format: &str,
 ) -> PathBuf {
     let ext = sanitise_format(format);
-    if let Ok(metadata) = fs::metadata(music_path) {
-        if metadata.is_file() {
+    match fs::metadata(music_path) {
+        Ok(metadata) if metadata.is_file() => {
             let path = PathBuf::from(music_path);
             let stem = path.file_stem().unwrap_or_default().to_string_lossy();
             let parent = path.parent().unwrap_or_else(|| Path::new("."));
             return parent.join(format!("{}.{}.{}", stem, source_id, ext));
         }
+        Ok(metadata) => {
+            tracing::warn!(
+                "[LYRICS] resolve_source_lyrics_path: music_path exists but is not a file (is_dir={} is_symlink={:?}), source_id={} falling back to hash cache: {}",
+                metadata.is_dir(), fs::symlink_metadata(music_path).map(|m| m.is_symlink()), source_id, music_path
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                "[LYRICS] resolve_source_lyrics_path: music_path invalid/unreachable ({}), source_id={} falling back to hash cache: {}",
+                e, source_id, music_path
+            );
+        }
     }
     let hash = hash_path(music_path);
     let dir  = app_lyrics_dir(app);
-    let _ = fs::create_dir_all(&dir);
-    dir.join(format!("{}.{}.{}", hash, source_id, ext))
+    tracing::info!(
+        "[LYRICS] resolve_source_lyrics_path: hash={} source_id={} format={} cache_dir={}",
+        hash, source_id, ext, dir.display()
+    );
+    if let Err(e) = fs::create_dir_all(&dir) {
+        tracing::warn!("[LYRICS] resolve_source_lyrics_path: failed to create cache dir {}: {}", dir.display(), e);
+    }
+    let path = dir.join(format!("{}.{}.{}", hash, source_id, ext));
+    tracing::info!("[LYRICS] resolve_source_lyrics_path: resolved fallback path={}", path.display());
+    path
 }
 
 /// Restrict format strings to known, safe extensions. Falls back to "lrc".
 fn sanitise_format(format: &str) -> &str {
     match format {
         "lrc" | "ttml" | "xml" | "srt" | "json" => format,
-        _ => "lrc",
+        _ => {
+            tracing::warn!("[LYRICS] sanitise_format: unrecognised format '{}', coercing to 'lrc'", format);
+            "lrc"
+        }
     }
 }
 
 /// All formats we probe when searching for an existing file.
-const KNOWN_FORMATS: &[&str] = &["lrc", "ttml", "xml", "json"];
+/// must stay in sync with sanitise_format's allow-list
+/// and the frontend's LyricsFormat type
+/// load_user_lyrics_file, delete_user_lyrics_file, delete_lyrics_by_token
+/// (bulk), and get_cached_sources all probe/match against this exact list
+const KNOWN_FORMATS: &[&str] = &["lrc", "ttml", "xml", "srt", "json"];
 
 fn hash_path(music_path: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
@@ -75,10 +122,13 @@ fn hash_path(music_path: &str) -> u64 {
 }
 
 fn app_lyrics_dir(app: &AppHandle) -> PathBuf {
-    app.path()
-        .app_data_dir()
-        .unwrap_or_else(|_| PathBuf::from("."))
-        .join("lyrics")
+    match app.path().app_data_dir() {
+        Ok(dir) => dir.join("lyrics"),
+        Err(e) => {
+            tracing::warn!("[LYRICS] app_lyrics_dir: app_data_dir() unavailable ({}), falling back to cwd-relative './lyrics'", e);
+            PathBuf::from(".").join("lyrics")
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -151,15 +201,27 @@ pub fn load_user_lyrics_file(
 /// Delete all user-imported lyrics files (any format) for a music file.
 #[tauri::command]
 pub fn delete_user_lyrics_file(app: AppHandle, music_path: String) -> Result<bool, String> {
+    tracing::info!("[LYRICS] delete_user_lyrics_file: music_path={}", music_path);
     let mut deleted = false;
     for fmt in KNOWN_FORMATS {
         let path = resolve_user_lyrics_path(&app, &music_path, fmt);
-        if path.exists() {
-            fs::remove_file(&path)
-                .map_err(|e| format!("Failed to delete user lyrics file: {}", e))?;
-            deleted = true;
+        let exists = path.exists();
+        tracing::info!("[LYRICS] delete_user_lyrics_file: fmt={} path={} exists={}", fmt, path.display(), exists);
+        if exists {
+            match fs::remove_file(&path) {
+                Ok(()) => {
+                    tracing::info!("[LYRICS] delete_user_lyrics_file: removed {}", path.display());
+                    deleted = true;
+                }
+                Err(e) => {
+                    let msg = format!("Failed to delete user lyrics file: {}", e);
+                    tracing::warn!("[LYRICS] delete_user_lyrics_file: remove_file failed for {}: {}; returning error to frontend: \"{}\"", path.display(), e, msg);
+                    return Err(msg);
+                }
+            }
         }
     }
+    tracing::info!("[LYRICS] delete_user_lyrics_file: done music_path={} deleted={}", music_path, deleted);
     Ok(deleted)
 }
 
@@ -208,15 +270,27 @@ pub fn delete_source_lyrics_file(
     music_path: String,
     source_id: String,
 ) -> Result<bool, String> {
+    tracing::info!("[LYRICS] delete_source_lyrics_file: music_path={} source_id={}", music_path, source_id);
     let mut deleted = false;
     for fmt in KNOWN_FORMATS {
         let path = resolve_source_lyrics_path(&app, &music_path, &source_id, fmt);
-        if path.exists() {
-            fs::remove_file(&path)
-                .map_err(|e| format!("Failed to delete source lyrics file: {}", e))?;
-            deleted = true;
+        let exists = path.exists();
+        tracing::info!("[LYRICS] delete_source_lyrics_file: fmt={} path={} exists={}", fmt, path.display(), exists);
+        if exists {
+            match fs::remove_file(&path) {
+                Ok(()) => {
+                    tracing::info!("[LYRICS] delete_source_lyrics_file: removed {}", path.display());
+                    deleted = true;
+                }
+                Err(e) => {
+                    let msg = format!("Failed to delete source lyrics file: {}", e);
+                    tracing::warn!("[LYRICS] delete_source_lyrics_file: remove_file failed for {}: {}; returning error to frontend: \"{}\"", path.display(), e, msg);
+                    return Err(msg);
+                }
+            }
         }
     }
+    tracing::info!("[LYRICS] delete_source_lyrics_file: done music_path={} source_id={} deleted={}", music_path, source_id, deleted);
     Ok(deleted)
 }
 
@@ -293,6 +367,14 @@ fn filename_matches_token(filename: &str, token: &str) -> bool {
     }
 }
 
+/// result of a bulk delete by token
+/// 'matched' (found) can be > 'deleted' when some files couldn't actually be removed
+#[derive(serde::Serialize)]
+pub struct BulkDeleteResult {
+    pub matched: u32,
+    pub deleted: u32,
+}
+
 /// delete every cached lyrics file matching token, across the entire library 
 /// sidecar files beside each local music file, fetched directly from the db
 /// and the shared hashed cache dir (used for stream/URL tracks, which have no folder of their own to keep a sidecar file in)
@@ -300,35 +382,75 @@ fn filename_matches_token(filename: &str, token: &str) -> bool {
 /// user matches imported files (no source segment)
 /// all matches every lyrics file regardless of source
 /// matching is filename pattern based only
-/// returns the number of files deleted
 #[tauri::command]
 pub fn delete_lyrics_by_token(
     app: AppHandle,
     db: State<'_, Database>,
     token: String,
-) -> Result<u32, String> {
+) -> Result<BulkDeleteResult, String> {
     let token = token.trim().to_lowercase();
     if token.is_empty() {
+        tracing::warn!("[LYRICS] delete_lyrics_by_token: rejected, empty token; returning error to frontend: \"Empty token\"");
         return Err("Empty token".to_string());
     }
 
     let music_paths: Vec<String> = {
-        let conn = db.conn.lock().map_err(|e| e.to_string())?;
-        queries::get_all_track_paths(&conn).map_err(|e| e.to_string())?
+        let conn = match db.conn.lock() {
+            Ok(c) => c,
+            Err(e) => {
+                let msg = e.to_string();
+                tracing::warn!("[LYRICS] delete_lyrics_by_token: db connection lock poisoned/unavailable; returning error to frontend: \"{}\"", msg);
+                return Err(msg);
+            }
+        };
+        match queries::get_all_track_paths(&conn) {
+            Ok(paths) => paths,
+            Err(e) => {
+                let msg = e.to_string();
+                tracing::warn!("[LYRICS] delete_lyrics_by_token: get_all_track_paths query failed; returning error to frontend: \"{}\"", msg);
+                return Err(msg);
+            }
+        }
     };
 
+    let mut matched: u32 = 0;
     let mut deleted: u32 = 0;
+    // caps how many raw entries/paths get dumped below
+    const DUMP_LIMIT: usize = 500;
+    let mut cache_dump = 0usize;
+    let mut meta_fail_dump = 0usize;
+    let mut sidecar_dump = 0usize;
+
+    tracing::info!(
+        "[LYRICS] delete_lyrics_by_token: token={} tracks_in_db={}",
+        token,
+        music_paths.len()
+    );
 
     // shared hashed cache dir (stream/URL tracks) ==========================================
     let cache_dir = app_lyrics_dir(&app);
-    if let Ok(entries) = fs::read_dir(&cache_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() { continue; }
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            if filename_matches_token(name, &token) {
-                if fs::remove_file(&path).is_ok() { deleted += 1; }
+    match fs::read_dir(&cache_dir) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_file() { continue; }
+                let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+                let is_match = filename_matches_token(name, &token);
+                if cache_dump < DUMP_LIMIT {
+                    tracing::info!("[LYRICS] cache_dir entry: {} matched={}", path.display(), is_match);
+                    cache_dump += 1;
+                }
+                if is_match {
+                    matched += 1;
+                    match fs::remove_file(&path) {
+                        Ok(()) => deleted += 1,
+                        Err(e) => tracing::warn!("[LYRICS] failed to delete {}: {}", path.display(), e),
+                    }
+                }
             }
+        }
+        Err(e) => {
+            tracing::warn!("[LYRICS] cache_dir unreadable at {}: {}", cache_dir.display(), e);
         }
     }
 
@@ -337,24 +459,58 @@ pub fn delete_lyrics_by_token(
         let path = Path::new(music_path);
         match fs::metadata(path) {
             Ok(m) if m.is_file() => {}
-            _ => continue, // not a local file (stream URL) => already covered above
+            other => {
+                // not a local file (stream URL), or the path is unreachable e.g.
+                // an android content:// / SAF path that fs::metadata can't stat
+                if meta_fail_dump < DUMP_LIMIT {
+                    tracing::info!("[LYRICS] skipping music_path (metadata={:?}): {}", other, music_path);
+                    meta_fail_dump += 1;
+                }
+                continue;
+            }
         }
         let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else { continue };
         let Some(parent) = path.parent() else { continue };
-        let Ok(entries) = fs::read_dir(parent) else { continue };
+        let entries = match fs::read_dir(parent) {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!("[LYRICS] sidecar dir unreadable at {}: {}", parent.display(), e);
+                continue;
+            }
+        };
         let prefix = format!("{}.", stem);
         for entry in entries.flatten() {
             let epath = entry.path();
             if !epath.is_file() { continue; }
             let Some(name) = epath.file_name().and_then(|n| n.to_str()) else { continue };
-            if !name.starts_with(&prefix) { continue; }
-            if filename_matches_token(name, &token) {
-                if fs::remove_file(&epath).is_ok() { deleted += 1; }
+            if !name.starts_with(&prefix) {
+                if sidecar_dump < DUMP_LIMIT {
+                    tracing::info!("[LYRICS] sidecar entry (prefix mismatch, prefix={}): {}", prefix, epath.display());
+                    sidecar_dump += 1;
+                }
+                continue;
+            }
+            let is_match = filename_matches_token(name, &token);
+            if sidecar_dump < DUMP_LIMIT {
+                tracing::info!("[LYRICS] sidecar entry: {} matched={}", epath.display(), is_match);
+                sidecar_dump += 1;
+            }
+            if is_match {
+                matched += 1;
+                match fs::remove_file(&epath) {
+                    Ok(()) => deleted += 1,
+                    Err(e) => tracing::warn!("[LYRICS] failed to delete {}: {}", epath.display(), e),
+                }
             }
         }
     }
 
-    Ok(deleted)
+    tracing::info!(
+        "[LYRICS] delete_lyrics_by_token done: token={} matched={} deleted={}",
+        token, matched, deleted
+    );
+
+    Ok(BulkDeleteResult { matched, deleted })
 }
 
 // ---------------------------------------------------------------------------
@@ -873,7 +1029,7 @@ fn get_embedded_lyrics_fallback(path: &Path) -> Result<Option<EmbeddedLyricsResu
                     Ok(None)
                 }
                 Err(e) => {
-                    eprintln!("[Lyrics] metaflac fallback failed for {}: {}", path.display(), e);
+                    tracing::warn!("[LYRICS] metaflac fallback failed for {}: {}", path.display(), e);
                     Ok(None)
                 }
             }
@@ -893,7 +1049,7 @@ fn get_embedded_lyrics_fallback(path: &Path) -> Result<Option<EmbeddedLyricsResu
                     Ok(None)
                 }
                 Err(e) => {
-                    eprintln!("[Lyrics] mp4ameta fallback failed for {}: {}", path.display(), e);
+                    tracing::warn!("[LYRICS] mp4ameta fallback failed for {}: {}", path.display(), e);
                     Ok(None)
                 }
             }

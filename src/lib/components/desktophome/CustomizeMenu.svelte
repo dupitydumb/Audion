@@ -145,11 +145,11 @@
         transform: translate(-50%, -50%);
         width: 420px;
         max-width: 90vw;
-        background: #181818;
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-color);
         border-radius: 16px;
         padding: 24px;
-        box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.5);
+        box-shadow: var(--shadow-lg);
         z-index: 1000;
         display: flex;
         flex-direction: column;
@@ -160,7 +160,7 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        border-bottom: 1px solid var(--border-color);
         padding-bottom: 12px;
     }
 
@@ -205,8 +205,8 @@
         display: flex;
         align-items: center;
         gap: 12px;
-        background: rgba(255, 255, 255, 0.03);
-        border: 1px solid rgba(255, 255, 255, 0.05);
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
         border-radius: 8px;
         padding: 12px 16px;
         cursor: grab;
@@ -215,13 +215,13 @@
 
     .section-item:active {
         cursor: grabbing;
-        background: rgba(255, 255, 255, 0.06);
-        border-color: rgba(255, 255, 255, 0.1);
+        background: var(--bg-highlight);
+        border-color: var(--border-color);
     }
 
     .section-item.dragging {
         opacity: 0.4;
-        background: rgba(255, 255, 255, 0.1);
+        background: var(--bg-highlight);
         border-color: var(--accent-primary, #1db954);
         transform: scale(0.97);
     }
@@ -269,10 +269,10 @@
         left: 0;
         right: 0;
         bottom: 0;
-        background-color: rgba(255, 255, 255, 0.1);
+        background-color: var(--bg-highlight);
         transition: .3s;
         border-radius: 24px;
-        border: 1px solid rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--border-color);
     }
 
     .slider:before {
@@ -282,7 +282,7 @@
         width: 18px;
         left: 2px;
         bottom: 2px;
-        background-color: white;
+        background-color: var(--text-primary);
         transition: .3s;
         border-radius: 50%;
     }

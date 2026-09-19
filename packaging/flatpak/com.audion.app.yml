@@ -41,7 +41,7 @@ modules:
       # tauri build embeds the frontend dist/ into the binary at compile time.
       # Plain `cargo build` skips this step — the binary launches with no UI.
       # Use tauri CLI so the full bundle pipeline runs (vite build + cargo).
-      - npm run tauri build -- --bundles none
+      - npm run tauri build -- --no-bundle
       - install -Dm755 src-tauri/target/release/audion /app/bin/audion
       - install -Dm644 packaging/flatpak/com.audion.app.desktop /app/share/applications/com.audion.app.desktop
       - install -Dm644 packaging/flatpak/com.audion.app.metainfo.xml /app/share/metainfo/com.audion.app.metainfo.xml

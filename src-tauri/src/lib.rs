@@ -3,6 +3,7 @@
 
 mod commands;
 mod db;
+mod android_auto;
 #[cfg(desktop)]
 mod integrations;
 mod scanner;
@@ -30,15 +31,10 @@ mod android_audio_context {
 
     static INIT: Once = Once::new();
 
-    /// JNI export for MainActivity
-    // initAudioContext. non static native method
-    /// so the second parameter is the calling Activity instance rather than a jclass
-    /// passed implicitly by the JVM
-    #[no_mangle]
-    pub extern "system" fn Java_com_audion_app_MainActivity_initAudioContext(
-        env: jni::JNIEnv<'_>,
-        activity: jni::objects::JObject<'_>,
-    ) {
+    /// shared by both jni exports below
+    /// any android.content.Context works here 
+    /// (Activity, Application, and Service are all Context subclasses)
+    fn init_once(env: &jni::JNIEnv<'_>, context: jni::objects::JObject<'_>) {
         INIT.call_once(|| {
             let vm = match env.get_java_vm() {
                 Ok(vm) => vm,
@@ -47,27 +43,50 @@ mod android_audio_context {
                     return;
                 }
             };
-            let global_activity = match env.new_global_ref(&activity) {
+            let global_context = match env.new_global_ref(&context) {
                 Ok(g) => g,
                 Err(e) => {
-                    tracing::error!("[Android] Failed to create global ref for activity: {e}");
+                    tracing::error!("[Android] Failed to create global ref for context: {e}");
                     return;
                 }
             };
 
             let vm_ptr = vm.get_java_vm_pointer() as *mut std::ffi::c_void;
-            let activity_ptr = global_activity.as_obj().as_raw() as *mut std::ffi::c_void;
+            let context_ptr = global_context.as_obj().as_raw() as *mut std::ffi::c_void;
 
             // ndk_context needs this pointer to stay valid for the lifetime of the process
-            std::mem::forget(global_activity);
+            std::mem::forget(global_context);
 
             // called exactly once with valid pointers obtained from the current JNI call
             // guarded by 'Once' above
             unsafe {
-                ndk_context::initialize_android_context(vm_ptr, activity_ptr);
+                ndk_context::initialize_android_context(vm_ptr, context_ptr);
             }
             tracing::info!("[Android] ndk_context initialized for native audio (cpal/AAudio)");
         });
+    }
+
+    /// JNI export for MainActivity initAudioContext
+    // non static native method
+    /// so the second parameter is the calling Activity instance
+    #[no_mangle]
+    pub extern "system" fn Java_com_audion_app_MainActivity_initAudioContext(
+        env: jni::JNIEnv<'_>,
+        activity: jni::objects::JObject<'_>,
+    ) {
+        init_once(&env, activity);
+    }
+
+    /// JNI export for AudionApplication.onCreate
+    #[no_mangle]
+    pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_initAudioContextNative<
+        'local,
+    >(
+        env: jni::JNIEnv<'local>,
+        _class: jni::objects::JClass<'local>,
+        context: jni::objects::JObject<'local>,
+    ) {
+        init_once(&env, context);
     }
 }
 
@@ -175,7 +194,7 @@ fn get_pending_open_file(state: tauri::State<'_, PendingOpenFile>) -> Option<Str
 }
 
 const ASSOCIATED_AUDIO_EXTENSIONS: &[&str] =
-    &["flac", "mp3", "wav", "ogg", "m4a", "aac", "alac"];
+    &["flac", "mp3", "wav", "ogg", "opus", "m4a", "aac", "alac"];
 
 fn is_associated_audio_file(path: &str) -> bool {
     std::path::Path::new(path)
@@ -355,8 +374,12 @@ fn handle_deep_link_url(app_handle: &tauri::AppHandle, url_str: &str) {
 
 const LOG_RETAIN_DAYS: u64 = 3;
 
-#[cfg(not(mobile))]
-fn init_logging(log_dir: &PathBuf) {
+/// installs the shared file-backed tracing subscriber
+/// used directly by desktop (early, before .setup(),
+/// since dirs::data_local_dir already resolves a real writable path there) 
+/// and by mobile's init_mobile_file_logging below 
+/// (deferred until .setup(), since mobile needs tauri's own path resolver for a writable directory)
+pub(crate) fn init_file_logging(log_dir: &PathBuf) {
     use tracing_appender::rolling;
     use tracing_subscriber::{fmt, EnvFilter};
 
@@ -374,19 +397,34 @@ fn init_logging(log_dir: &PathBuf) {
     Box::leak(Box::new(worker_guard));
 
     let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn,audion=info"));
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn,audion=info,webview=info"));
 
-    fmt::Subscriber::builder()
+    // try_init (not init/expect)
+    // logging setup must never be able to crash the app
+    let subscriber = fmt::Subscriber::builder()
         .with_writer(non_blocking)
         .with_env_filter(filter)
         .with_ansi(false) // No ANSI color codes in log files
         .with_target(true) // Show module path (e.g. audion::audio)
         .with_thread_ids(false) // Keep lines short; enable if debugging races
-        .init();
+        .finish();
+
+    if let Err(e) = tracing::subscriber::set_global_default(subscriber) {
+        eprintln!("[audion] Failed to install file logging subscriber (another one is already active): {e}");
+        return;
+    }
+
+    let _ = commands::logs::LOG_DIR.set(log_dir.clone());
+}
+
+#[cfg(not(mobile))]
+fn init_logging(log_dir: &PathBuf) {
+    init_file_logging(log_dir);
 }
 
 #[cfg(target_os = "android")]
 fn init_logging(_log_dir: &PathBuf) {
+    // a writable app-data dir isn't known yet
     android_logger::init_once(
         android_logger::Config::default()
             .with_max_level(log::LevelFilter::Debug)
@@ -394,8 +432,17 @@ fn init_logging(_log_dir: &PathBuf) {
     );
 }
 
+/// second stage of Android logging:
+/// called from .setup() once the real app-data directory is known
+/// log:: calls from dependencies keep going to logcat via 'android_logger'
+/// (installed separately above)
+/// this only adds our own tracing:: calls (and forwarded webview console output, see log_from_frontend) to a file
+#[cfg(target_os = "android")]
+fn init_mobile_file_logging(log_dir: &PathBuf) {
+    init_file_logging(log_dir);
+}
+
 /// Remove log files in `log_dir` that are older than `keep_days` days.
-#[cfg(not(mobile))]
 fn prune_old_logs(log_dir: &PathBuf, keep_days: u64) {
     let cutoff = std::time::SystemTime::now()
         .checked_sub(std::time::Duration::from_secs(keep_days * 86_400))
@@ -641,6 +688,15 @@ pub fn run() {
             scanner::cover_storage::init_app_data_dir(app_dir.clone());
             tracing::info!("Cover storage initialized");
 
+            // now that a real, writable app-data dir is known, give android its own log file too 
+            // (see init_mobile_file_logging)
+            #[cfg(target_os = "android")]
+            {
+                let mobile_log_dir = app_dir.join("logs");
+                init_mobile_file_logging(&mobile_log_dir);
+                tracing::info!(path = %mobile_log_dir.display(), "Mobile file logging initialized");
+            }
+
             // into the process wide caches used by scanner::artist_parser and
             // load persisted artist split delimiter rules and album artist mode
             // db::artists before opening the database - init_schema
@@ -657,11 +713,27 @@ pub fn run() {
                 );
             }
 
-            // Initialize database
-            let database = Database::new(&app_dir).map_err(|e| {
-                tracing::error!(error = %e, "Failed to initialize database");
-                e
-            })?;
+            // Initialize database =>
+            // on android, auto/aaos may have already cold started this via jni before MainActivity/this setup hook ever ran
+            // (see android_auto::jni_bridge::init_database_cold_start)
+            // so reuse that connection
+            #[cfg(target_os = "android")]
+            let existing_database = android_auto::jni_bridge::get_database();
+            #[cfg(not(target_os = "android"))]
+            let existing_database: Option<Database> = None;
+
+            let database = if let Some(db) = existing_database {
+                tracing::info!("Reusing database initialized during android cold start");
+                db
+            } else {
+                let db = Database::new(&app_dir).map_err(|e| {
+                    tracing::error!(error = %e, "Failed to initialize database");
+                    e
+                })?;
+                #[cfg(target_os = "android")]
+                android_auto::jni_bridge::set_database(db.clone());
+                db
+            };
             tracing::info!("Database initialized");
 
             app.manage(database.clone());
@@ -696,13 +768,39 @@ pub fn run() {
             // =============================================================================
             {
                 tracing::info!("Registering native audio backend state (lazy init)");
-                // player.rs needs to observe the same TrackAdvanced/TrackFinished events the
-                // frontend gets over audio://event
-                // without owning the audio thread itself
-                let (player_event_tx, player_event_rx) = crossbeam::channel::unbounded::<audio::AudioEvent>();
-                app.manage(audio::PlaybackStateSync::new(app.handle().clone(), player_event_tx));
-                app.manage(audio::PlayerStateSync::new(app.handle().clone(), player_event_rx));
+                // on android, auto/aaos may have already cold started both actor threads via jni
+                // before MainActivity/this setup hook ran
+                // (see android_auto::jni_bridge::get_playback_and_player) =>
+                // reuse them so when the phone app
+                // is opened (mid-playback) doesn't get its audio engine torn down and rebuilt
+                #[cfg(target_os = "android")]
+                let existing_engine = android_auto::jni_bridge::get_playback_and_player();
+                #[cfg(not(target_os = "android"))]
+                let existing_engine: Option<(audio::PlaybackStateSync, audio::PlayerStateSync)> = None;
+
+                let (playback_state, player_state) = if let Some((pb, pl)) = existing_engine {
+                    tracing::info!("Reusing audio engine initialized during android cold start");
+                    (pb, pl)
+                } else {
+                    // player.rs needs to observe the same TrackAdvanced/TrackFinished events the
+                    // frontend gets over audio://event
+                    // without owning the audio thread itself
+                    let (player_event_tx, player_event_rx) = crossbeam::channel::unbounded::<audio::AudioEvent>();
+                    let pb = audio::PlaybackStateSync::new(player_event_tx);
+                    let pl = audio::PlayerStateSync::new(player_event_rx, pb.clone());
+                    #[cfg(target_os = "android")]
+                    android_auto::jni_bridge::set_playback_and_player(pb.clone(), pl.clone());
+                    (pb, pl)
+                };
+
+                app.manage(playback_state);
+                app.manage(player_state);
             }
+
+            // this just lets them start
+            // emitting audio://event / player://event to the webview from
+            // this point on
+            audio::event_bridge::set_app_handle(app.handle().clone());
 
             // SMTC / OS media controls init (desktop only)
             // =============================================================================
@@ -1084,6 +1182,9 @@ pub fn run() {
                     commands::reorder_playlist_tracks,
                     commands::export_playlist_zip,
                     commands::get_export_temp_path,
+                    commands::get_log_file_path,
+                    commands::export_log_file,
+                    commands::log_from_frontend,
                     // Activity commands (liked tracks + play history)
                     commands::like_track,
                     commands::unlike_track,
@@ -1309,6 +1410,9 @@ pub fn run() {
                     commands::reorder_playlist_tracks,
                     commands::export_playlist_zip,
                     commands::get_export_temp_path,
+                    commands::get_log_file_path,
+                    commands::export_log_file,
+                    commands::log_from_frontend,
                     // Activity commands (liked tracks + play history)
                     commands::like_track,
                     commands::unlike_track,
@@ -1330,6 +1434,7 @@ pub fn run() {
                     commands::load_user_lyrics_file,
                     commands::load_source_lyrics_file,
                     commands::delete_user_lyrics_file,
+                    commands::delete_lyrics_by_token,
                     commands::delete_source_lyrics_file,
                     commands::musixmatch_request,
                     commands::get_lyrics,
