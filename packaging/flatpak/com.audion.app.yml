@@ -1,6 +1,6 @@
 app-id: com.audion.app
 runtime: org.gnome.Platform
-runtime-version: '49'
+runtime-version: '48'
 sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.node22
@@ -10,9 +10,11 @@ command: audion
 
 finish-args:
   - --share=network
+  - --share=ipc
   - --socket=fallback-x11
   - --socket=wayland
   - --socket=pulseaudio
+  - --socket=pipewire
   - --device=dri
   - --filesystem=xdg-music:rw
   - --filesystem=xdg-download:rw
@@ -20,6 +22,13 @@ finish-args:
   - --talk-name=org.freedesktop.Notifications
   - --talk-name=org.mpris.MediaPlayer2.audion
   - --own-name=org.mpris.MediaPlayer2.audion
+  # WebKit env fixes — same as AppImage wrapper, required inside Flatpak sandbox too
+  # Without WEBKIT_FORCE_SANDBOX=0, WebKit tries to fork WebKitNetworkProcess inside
+  # the Flatpak sandbox which fails ("No such file or directory") on all distros
+  - --env=WEBKIT_FORCE_SANDBOX=0
+  - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
+  - --env=WEBKIT_DISABLE_COMPOSITING_MODE=1
+  - --env=GIO_USE_VFS=local
 
 build-options:
   build-args:
