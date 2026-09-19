@@ -50,27 +50,29 @@ impl Database {
 
     fn check_integrity_async(&self) {
         let conn = self.conn.clone();
-        std::thread::spawn(move || {
-            // Delay integrity check to allow initial library load to complete
-            std::thread::sleep(std::time::Duration::from_secs(30));
+        tauri::async_runtime::spawn(async move {
+            // Delay integrity check well past startup so initial library load is never blocked.
+            // 60 s gives the frontend time to load the library and settle before we
+            // compete for the DB mutex with a potentially slow PRAGMA.
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
 
-            let guard = match conn.lock() {
-                Ok(g) => g,
-                Err(_) => {
-                    return;
+            tauri::async_runtime::spawn_blocking(move || {
+                let guard = match conn.lock() {
+                    Ok(g) => g,
+                    Err(_) => return,
+                };
+                match guard.query_row("PRAGMA integrity_check;", [], |row| row.get::<_, String>(0)) {
+                    Ok(status) if status != "ok" => {
+                        log::warn!("[DB] Integrity check failed: {}", status);
+                    }
+                    Err(e) => {
+                        log::warn!("[DB] Could not run integrity check: {}", e);
+                    }
+                    _ => {
+                        log::info!("[DB] Integrity check passed");
+                    }
                 }
-            };
-            match guard.query_row("PRAGMA integrity_check;", [], |row| row.get::<_, String>(0)) {
-                Ok(status) if status != "ok" => {
-                    log::warn!("[DB] Integrity check failed: {}", status);
-                }
-                Err(e) => {
-                    log::warn!("[DB] Could not run integrity check: {}", e);
-                }
-                _ => {
-                    log::info!("[DB] Integrity check passed");
-                }
-            }
+            });
         });
     }
 }

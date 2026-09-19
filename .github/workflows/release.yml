@@ -341,13 +341,21 @@ jobs:
           # webkit falls back to the system-installed helpers in
           # /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/ (present on Ubuntu 22+, Fedora
           # 38+, Arch, etc.).
-          WEBKIT_HELPER="$HERE/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess"
-          if [ -f "$WEBKIT_HELPER" ]; then
+          WEBKIT_HELPER=$(find "$HERE/usr/lib" -name "WebKitNetworkProcess" 2>/dev/null | head -1)
+          if [ -n "$WEBKIT_HELPER" ] && [ -f "$WEBKIT_HELPER" ]; then
             export APPDIR="$HERE"
           fi
 
           # Always disable dmabuf renderer — it is the most common cause of blank screens on Mesa/NVIDIA
           export WEBKIT_DISABLE_DMABUF_RENDERER=1
+
+          # Disable compositing mode — fixes NixOS SIGTRAP in webkit_website_data_manager_get_cookie_manager
+          export WEBKIT_DISABLE_COMPOSITING_MODE=1
+
+          # Disable WebKit sandbox — fixes Fedora/Bazzite SELinux sandboxing issues
+          export WEBKIT_FORCE_SANDBOX=0
+          # Disable DRI3 to prevent EGL_BAD_PARAMETER abort on Mesa/Wayland (e.g. Bazzite/KDE Plasma 6, AMD RX 6600)
+          export LIBGL_DRI3_DISABLE=1
 
           # Disable GVfs modules that have broken symbols on some distros (e.g. Mint 22 / Ubuntu 24)
           # This prevents "undefined symbol: g_task_set_static_name" from libgvfscommon.so
@@ -355,9 +363,13 @@ jobs:
           export GIO_MODULE_DIR="$HERE/usr/lib/gio/modules"
 
           # Wayland detection — prefer X11 fallback for WebKitGTK 4.x stability
+          # Only force x11 if XWayland is available ($DISPLAY set); pure Wayland sessions have no $DISPLAY
           if [ -n "$WAYLAND_DISPLAY" ] && [ -z "$FORCE_WAYLAND" ]; then
-            export GDK_BACKEND=x11
-            export QT_QPA_PLATFORM=xcb
+            if [ -n "$DISPLAY" ]; then
+              export GDK_BACKEND=x11
+              export QT_QPA_PLATFORM=xcb
+            fi
+            # else: no XWayland, let GTK negotiate wayland directly
           fi
 
           # ALSA/audio safety
