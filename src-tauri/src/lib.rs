@@ -557,10 +557,50 @@ fn tray_update_toggles(
 pub fn run() {
     #[cfg(target_os = "linux")]
     {
-        // Unset GTK_MODULES on Linux to prevent GTK warnings/errors when host desktop
-        // modules (e.g. xapp-gtk3-module on Linux Mint) are missing in Flatpak / AppImage.
-        if std::env::var_os("GTK_MODULES").is_some() {
-            std::env::remove_var("GTK_MODULES");
+        // Unset GTK_MODULES so WebKit child processes don't try to load host-only
+        // GTK modules (e.g. xapp-gtk3-module on Linux Mint) that are absent here.
+        // Note: GTK in the main process already read this before main() — the unset
+        // only suppresses the warning in child processes spawned by Tauri/WebKit.
+        std::env::remove_var("GTK_MODULES");
+
+        // WEBKIT_FORCE_SANDBOX is deprecated — remove old var and set replacement.
+        // Disabling the sandbox avoids seccomp/SELinux failures in VMs and containers.
+        std::env::remove_var("WEBKIT_FORCE_SANDBOX");
+        if std::env::var_os("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS").is_none() {
+            std::env::set_var("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1");
+        }
+
+        // Disable GPU/EGL paths that segfault on VirtualBox/VMware and other
+        // environments with no 3D acceleration (DRI3 absent or EGL init fails).
+        // WEBKIT_DISABLE_DMABUF_RENDERER: skip the dmabuf/DRI3 fast path.
+        // WEBKIT_DISABLE_COMPOSITING_MODE: fall back to pure software compositing;
+        //   prevents the GPU compositor from crashing when EGL context creation fails.
+        // LIBGL_ALWAYS_SOFTWARE: force Mesa softpipe so any remaining GL calls
+        //   don't hit a missing hardware driver and segfault.
+        // All three are no-ops on machines that have real GPU support.
+        for (var, val) in &[
+            ("WEBKIT_DISABLE_DMABUF_RENDERER", "1"),
+            ("LIBGL_ALWAYS_SOFTWARE", "1"),
+        ] {
+            if std::env::var_os(var).is_none() {
+                std::env::set_var(var, val);
+            }
+        }
+
+        // If individual LC_* vars use locales the C library doesn't support,
+        // GTK and WebKit subprocesses will warn "Locale not supported by C library".
+        // Normalize them to the base LANG so child processes stay quiet.
+        // We only touch the child-process environment — the user's shell is unaffected.
+        if let Ok(lang) = std::env::var("LANG") {
+            for var in &["LC_NUMERIC", "LC_MONETARY", "LC_PAPER", "LC_NAME",
+                         "LC_ADDRESS", "LC_TELEPHONE", "LC_MEASUREMENT",
+                         "LC_IDENTIFICATION"] {
+                if let Ok(val) = std::env::var(var) {
+                    if val != lang {
+                        std::env::set_var(var, &lang);
+                    }
+                }
+            }
         }
     }
 
@@ -930,6 +970,53 @@ pub fn run() {
             {
                 let window_config = integrations::window::load_window_config(app.handle());
                 if let Some(window) = app.get_webview_window("main") {
+                    // On Linux, force software rendering so the page paints on
+                    // VirtualBox / VMware / headless environments with no GPU.
+                    // webkit_settings_set_hardware_acceleration_policy(NEVER) disables
+                    // the GPU compositor entirely and falls back to Cairo (CPU) painting.
+                    // This is a no-op on machines that have working GPU acceleration.
+                    #[cfg(target_os = "linux")]
+                    {
+                        {
+                            use webkit2gtk::SettingsExt;
+                            match window.with_webview(|wv| {
+                                if let Some(settings) = webkit2gtk::WebViewExt::settings(&wv.inner()) {
+                                    settings.set_hardware_acceleration_policy(
+                                        webkit2gtk::HardwareAccelerationPolicy::Never,
+                                    );
+                                    tracing::info!("WebKit hardware acceleration disabled (software rendering forced)");
+                                } else {
+                                    tracing::warn!("WebKit settings unavailable — hardware acceleration NOT disabled");
+                                }
+                            }) {
+                                Ok(()) => {}
+                                Err(e) => tracing::warn!("with_webview failed: {:?}", e),
+                            }
+                        }
+
+                        // On X11, frameless windows (decorations=false) sometimes get an
+                        // RGBA visual from the compositor, causing WebKit Cairo to render
+                        // with alpha=0 → blank screen. Fix: force depth-24 system visual.
+                        // wry calls show_all() before setup(), so the window is always
+                        // realized here. We must hide→unrealize→set_visual→realize→show.
+                        // The WebView widget survives because wry re-connects it after realize.
+                        // ponytail: wayland only — no X11 visuals on Wayland.
+                        {
+                            use gtk::prelude::WidgetExt;
+                            if let Ok(gtk_win) = window.gtk_window() {
+                                if let Some(screen) = gtk::prelude::WidgetExt::screen(&gtk_win) {
+                                    if let Some(visual) = screen.system_visual() {
+                                        gtk_win.hide();
+                                        gtk_win.unrealize();
+                                        gtk_win.set_visual(Some(&visual));
+                                        gtk_win.realize();
+                                        gtk_win.show_all();
+                                        tracing::info!("GTK window: unrealize→system visual→realize (fixes frameless RGBA blank screen)");
+                                    }
+                                }
+                            }
+                        }
+                    }
                     match window_config.start_mode {
                         integrations::window::WindowStartMode::Maximized => {
                             tracing::info!("Window start mode: Maximized");

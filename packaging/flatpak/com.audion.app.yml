@@ -19,16 +19,24 @@ finish-args:
   - --filesystem=xdg-download:rw
   - --filesystem=home:rw
   - --talk-name=org.freedesktop.Notifications
-  - --talk-name=org.mpris.MediaPlayer2.audion
   - --own-name=org.mpris.MediaPlayer2.audion
-  # WebKit env fixes — same as AppImage wrapper, required inside Flatpak sandbox too
-  # Without WEBKIT_FORCE_SANDBOX=0, WebKit tries to fork WebKitNetworkProcess inside
-  # the Flatpak sandbox which fails ("No such file or directory") on all distros
-  - --env=WEBKIT_FORCE_SANDBOX=0
+  # Deep-link / OAuth callback — tauri-plugin-deep-link needs XDG portal for URI open.
+  - --talk-name=org.freedesktop.portal.Desktop
+  - --talk-name=org.freedesktop.portal.OpenURI
+  # WebKit sandbox: disable inner sandbox — Flatpak/bwrap is the outer sandbox.
+  - --env=WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
+  # Skip dmabuf/DRI3 fast path — prevents blank screens on machines with broken EGL.
+  # --device=dri above provides real GPU access when available; this var only skips
+  # the dmabuf compositor, not hardware rendering entirely.
   - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
-  - --env=WEBKIT_DISABLE_COMPOSITING_MODE=1
   - --env=GIO_USE_VFS=local
   - --unset-env=GTK_MODULES
+
+add-extensions:
+  org.freedesktop.Platform.ffmpeg-full:
+    directory: lib/ffmpeg
+    version: '23.08'
+    add-ld-path: .
 
 build-options:
   build-args:
@@ -55,6 +63,7 @@ modules:
       - install -Dm644 packaging/flatpak/com.audion.app.desktop /app/share/applications/com.audion.app.desktop
       - install -Dm644 packaging/flatpak/com.audion.app.metainfo.xml /app/share/metainfo/com.audion.app.metainfo.xml
       - install -Dm644 src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/com.audion.app.png
+      - mkdir -p /app/lib/ffmpeg
     sources:
       - type: dir
         path: ../../

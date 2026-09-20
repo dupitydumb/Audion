@@ -52,7 +52,10 @@ runs:
           libgl1-mesa-dri \
           libgbm-dev \
           mesa-utils \
-          xvfb
+          xvfb \
+          libsoup-3.0-dev \
+          libdbus-1-dev \
+          libfuse2
 
         # Ubuntu 24.04+ prefers Ayatana appindicator package name.
         if apt-cache show libayatana-appindicator3-dev >/dev/null 2>&1; then

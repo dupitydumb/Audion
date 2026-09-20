@@ -1,6 +1,6 @@
 [package]
 name = "audion"
-version = "1.3.9"
+version = "1.4.1"
 description = "A local Spotify-style music player"
 authors = ["AvKov"]
 edition = "2021"
@@ -171,6 +171,14 @@ souvlaki = "0.8"
 # native os notifications(bypasses tauri-plugin-notification)
 # preview-macos-un: opts into the modern backend on mac. default backend is deprecated
 notify-rust = { version = "4", features = ["preview-macos-un"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# WebKitGTK bindings — used to force hardware-acceleration-policy=Never so the
+# page renders on VirtualBox / VMware / headless systems with no GPU.
+webkit2gtk = { version = "2.0", features = ["v2_28"] }
+# GTK bindings — used to set opaque system visual on the frameless window so
+# WebKit doesn't render with alpha=0 (transparent) on X11.
+gtk = { version = "0.18", features = ["v3_24"] }
 
 # notify_rust's windows backend does not support hero image. calling winrt for that
 [target.'cfg(target_os = "windows")'.dependencies]

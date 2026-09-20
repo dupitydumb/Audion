@@ -412,7 +412,7 @@ dependencies = [
 
 [[package]]
 name = "audion"
-version = "1.3.9"
+version = "1.4.1"
 dependencies = [
  "android_logger",
  "base64 0.22.1",
@@ -424,6 +424,7 @@ dependencies = [
  "discord-rich-presence",
  "env_logger",
  "futures",
+ "gtk",
  "image",
  "jni 0.21.1",
  "lofty",
@@ -468,6 +469,7 @@ dependencies = [
  "url",
  "uuid 1.23.2",
  "walkdir",
+ "webkit2gtk",
  "windows 0.61.3",
  "zip 8.6.0",
 ]
