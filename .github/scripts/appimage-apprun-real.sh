@@ -8,9 +8,9 @@ HERE="$(dirname "$(readlink -f "${0}")")"
 # ---------------------------------------------------------------------------
 
 # Host WebKit helpers (not bundled in AppImage — rely on system install).
-# WEBKIT_EXEC_PATH bypasses the $APPDIR/././lib relative lookup entirely.
+# WebKit resolves subprocess path as "././lib/..." (CWD-relative).
+# We cd to APPDIR just before exec so the relative path resolves correctly.
 export APPDIR="$HERE"
-export WEBKIT_EXEC_PATH="/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1"
 
 # Disable dmabuf — most common blank-screen cause on Mesa/NVIDIA with no DRI3.
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
@@ -58,5 +58,10 @@ if [ -f "$HERE/usr/bin/audion" ]; then
 else
   BIN=$(find "$HERE/usr/bin" -type f -executable | head -1)
 fi
+
+# WebKit computes its subprocess path as a CWD-relative "././lib/..." string.
+# Change to APPDIR so that relative path resolves correctly regardless of
+# where the user launched the AppImage from.
+cd "$HERE"
 
 exec "$BIN" "$@"

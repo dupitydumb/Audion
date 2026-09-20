@@ -1003,17 +1003,22 @@ pub fn run() {
                         // ponytail: wayland only — no X11 visuals on Wayland.
                         {
                             use gtk::prelude::WidgetExt;
-                            if let Ok(gtk_win) = window.gtk_window() {
-                                if let Some(screen) = gtk::prelude::WidgetExt::screen(&gtk_win) {
-                                    if let Some(visual) = screen.system_visual() {
-                                        gtk_win.hide();
-                                        gtk_win.unrealize();
-                                        gtk_win.set_visual(Some(&visual));
-                                        gtk_win.realize();
-                                        gtk_win.show_all();
-                                        tracing::info!("GTK window: unrealize→system visual→realize (fixes frameless RGBA blank screen)");
-                                    }
-                                }
+                            match window.gtk_window() {
+                                Err(e) => tracing::warn!("GTK visual fix: gtk_window() failed: {:?}", e),
+                                Ok(gtk_win) => match gtk::prelude::WidgetExt::screen(&gtk_win) {
+                                    None => tracing::warn!("GTK visual fix: no GdkScreen — skipping"),
+                                    Some(screen) => match screen.system_visual() {
+                                        None => tracing::warn!("GTK visual fix: no system visual — skipping"),
+                                        Some(visual) => {
+                                            gtk_win.hide();
+                                            gtk_win.unrealize();
+                                            gtk_win.set_visual(Some(&visual));
+                                            gtk_win.realize();
+                                            gtk_win.show_all();
+                                            tracing::info!("GTK window: unrealize→system visual→realize (fixes frameless RGBA blank screen)");
+                                        }
+                                    },
+                                },
                             }
                         }
                     }

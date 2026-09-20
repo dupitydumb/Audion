@@ -341,6 +341,12 @@ jobs:
           cp .github/scripts/appimage-apprun.sh squashfs-root/AppRun
           chmod +x squashfs-root/AppRun-real squashfs-root/AppRun
 
+          # WebKit computes subprocess path as: dirname(binary)/../../lib/...
+          # (binary is usr/bin/audion, so two levels up = root, then lib/).
+          # The Tauri AppImage bundler does not create a root-level lib symlink,
+          # so WebKitNetworkProcess fails with ENOENT. Add the symlink.
+          ln -sf usr/lib squashfs-root/lib
+
           # Repack the AppImage
           # NOTE: appimagetool is itself an AppImage. GitHub Actions runners do not
           # have libfuse.so.2 (FUSE 2). Setting APPIMAGE_EXTRACT_AND_RUN=1 makes the
