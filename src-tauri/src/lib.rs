@@ -555,6 +555,15 @@ fn tray_update_toggles(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    {
+        // Unset GTK_MODULES on Linux to prevent GTK warnings/errors when host desktop
+        // modules (e.g. xapp-gtk3-module on Linux Mint) are missing in Flatpak / AppImage.
+        if std::env::var_os("GTK_MODULES").is_some() {
+            std::env::remove_var("GTK_MODULES");
+        }
+    }
+
     // ------------------------------------------------------------------
     // Resolve the log directory before Tauri starts so we can log early
     // failures. Use the platform app-data dir when available, otherwise

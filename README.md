@@ -1,4 +1,4 @@
-<p align="center">
+﻿<p align="center">
   <img width="850" height="230" alt="AudionBanner" src="https://github.com/user-attachments/assets/8649842c-118a-4b24-a987-6bb4be6a9036" />
 </p>
 
@@ -7,10 +7,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dupitydumb/Audion/releases"><img src="https://img.shields.io/badge/version-1.2.4-blue.svg" alt="Version"></a>
+  <a href="https://github.com/dupitydumb/Audion/releases"><img src="https://img.shields.io/badge/version-1.4.1-blue.svg" alt="Version"></a>
   <img src="https://img.shields.io/badge/platform-Windows-brightgreen.svg" alt="Windows">
   <img src="https://img.shields.io/badge/platform-macOS-brightgreen.svg" alt="macOS">
   <img src="https://img.shields.io/badge/platform-Linux-brightgreen.svg" alt="Linux">
+  <img src="https://img.shields.io/badge/platform-Android-brightgreen.svg" alt="Android">
   <a href="https://discord.gg/27XRVQsBd9"><img src="https://img.shields.io/discord/1234567890?color=5865F2&label=Discord&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
@@ -77,6 +78,7 @@ Get the latest builds from [Releases](https://github.com/dupitydumb/Audion/relea
 - **macOS (dmg):** Audion.dmg
 - **Linux (AppImage):** Audion-x86_64.AppImage
 - **Linux (Flatpak):** audion_<version>_linux.flatpak
+- **Android (APK):** Audion.apk
 - **Arch Linux (AUR):** `yay -S audion-bin` (Community maintained, auto-updating binary)
 
 ### Installation Notes
@@ -152,11 +154,16 @@ To connect your Audion desktop or mobile application to your self-hosted server:
 - Auto-scan local music folders with metadata extraction
 - Smart playlists and queue management
 - Support for all major audio formats (FLAC, MP3, AAC, ALAC etc.)
+- Opus codec support (native decoder)
 
 ### Lyrics
 - Real-time synced lyrics from LRCLIB and Musixmatch
 - Word-by-word karaoke highlighting
 - Cached locally for offline use
+
+### Android Auto
+- Browse library, control playback, and queue tracks from your car display
+- Full shuffle, repeat, and cold-start support
 
 ### Customization
 - Dark/light themes with custom accent colors

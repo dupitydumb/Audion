@@ -28,6 +28,7 @@ finish-args:
   - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
   - --env=WEBKIT_DISABLE_COMPOSITING_MODE=1
   - --env=GIO_USE_VFS=local
+  - --unset-env=GTK_MODULES
 
 build-options:
   build-args:

@@ -362,6 +362,9 @@ jobs:
           export GIO_USE_VFS=local
           export GIO_MODULE_DIR="$HERE/usr/lib/gio/modules"
 
+          # Unset host GTK_MODULES (e.g. xapp-gtk3-module on Linux Mint) which fail to load in portable AppImage
+          unset GTK_MODULES
+
           # Wayland detection — prefer X11 fallback for WebKitGTK 4.x stability
           # Only force x11 if XWayland is available ($DISPLAY set); pure Wayland sessions have no $DISPLAY
           if [ -n "$WAYLAND_DISPLAY" ] && [ -z "$FORCE_WAYLAND" ]; then
