@@ -203,7 +203,7 @@ raw-window-handle = "0.6"
 lofty = { git = "https://github.com/SmileofHaven/lofty-rs", branch = "main" }
 
 [patch."https://github.com/restsend/opus-rs"]
-opus-rs = { git = "https://github.com/SmileofHaven/opus-rs", rev = "89b786291948980fda1203a8839ecbfb036e01c7" }
+opus-rs = { git = "https://github.com/SmileofHaven/opus-rs", rev = "ad468463ad967bd838ce1e8b59f4f714214ed73d" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.14"
