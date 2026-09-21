@@ -1,7 +1,7 @@
 [Desktop Entry]
 Categories={{categories}}
 {{#if comment}}Comment={{comment}}
-{{/if}}Exec={{exec}}
+{{/if}}Exec=env GTK_MODULES= WEBKIT_FORCE_SANDBOX= WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 {{exec}}
 Icon={{icon}}
 Name={{name}}
 Terminal=false
@@ -10,16 +10,16 @@ Actions=Play;Pause;Next;Previous;
 
 [Desktop Action Play]
 Name=Play
-Exec={{exec}} --play
+Exec=env GTK_MODULES= WEBKIT_FORCE_SANDBOX= WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 {{exec}} --play
 
 [Desktop Action Pause]
 Name=Pause
-Exec={{exec}} --pause
+Exec=env GTK_MODULES= WEBKIT_FORCE_SANDBOX= WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 {{exec}} --pause
 
 [Desktop Action Next]
 Name=Next
-Exec={{exec}} --next
+Exec=env GTK_MODULES= WEBKIT_FORCE_SANDBOX= WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 {{exec}} --next
 
 [Desktop Action Previous]
 Name=Previous
-Exec={{exec}} --previous
+Exec=env GTK_MODULES= WEBKIT_FORCE_SANDBOX= WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 LIBGL_ALWAYS_SOFTWARE=1 {{exec}} --previous

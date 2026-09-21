@@ -17,7 +17,7 @@
 
   import { loadLibrary, loadPlaylists, getTrackByIdSync } from "$lib/stores/library";
   import ToastContainer from "$lib/components/ToastContainer.svelte";
-  import { isTauri } from "$lib/api/tauri";
+  import { isTauri, getIsLinux } from "$lib/api/tauri";
   import { invoke } from "@tauri-apps/api/core";
   import {
     initializeFromPersistedState,
@@ -160,7 +160,7 @@
       // see app-logo-icon/app-logo-text view-transition-name below
       // and the group rules in +layout.svelte
       // sidebar (the morph target) doesn't render on mobile so disabled here
-      if (get(isMobile)) {
+      if (get(isMobile) || getIsLinux()) {
         isLoading = false;
       } else {
         withViewTransition(() => {

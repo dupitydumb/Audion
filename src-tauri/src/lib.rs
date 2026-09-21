@@ -1000,25 +1000,23 @@ pub fn run() {
                         // wry calls show_all() before setup(), so the window is always
                         // realized here. We must hide→unrealize→set_visual→realize→show.
                         // The WebView widget survives because wry re-connects it after realize.
-                        // ponytail: wayland only — no X11 visuals on Wayland.
+                        // ponytail: set_visual must only run before GTK window is realized.
+                        // Calling unrealize() on an already-realized window with an active WebKitWebView
+                        // breaks WebKit's GdkWindow/IPC surface and causes WebProcess crash.
                         {
                             use gtk::prelude::WidgetExt;
                             match window.gtk_window() {
                                 Err(e) => tracing::warn!("GTK visual fix: gtk_window() failed: {:?}", e),
-                                Ok(gtk_win) => match gtk::prelude::WidgetExt::screen(&gtk_win) {
-                                    None => tracing::warn!("GTK visual fix: no GdkScreen — skipping"),
-                                    Some(screen) => match screen.system_visual() {
-                                        None => tracing::warn!("GTK visual fix: no system visual — skipping"),
-                                        Some(visual) => {
-                                            gtk_win.hide();
-                                            gtk_win.unrealize();
-                                            gtk_win.set_visual(Some(&visual));
-                                            gtk_win.realize();
-                                            gtk_win.show_all();
-                                            tracing::info!("GTK window: unrealize→system visual→realize (fixes frameless RGBA blank screen)");
+                                Ok(gtk_win) => {
+                                    if !gtk_win.is_realized() {
+                                        if let Some(screen) = gtk::prelude::WidgetExt::screen(&gtk_win) {
+                                            if let Some(visual) = screen.system_visual() {
+                                                gtk_win.set_visual(Some(&visual));
+                                                tracing::info!("GTK window: system visual set");
+                                            }
                                         }
-                                    },
-                                },
+                                    }
+                                }
                             }
                         }
                     }
