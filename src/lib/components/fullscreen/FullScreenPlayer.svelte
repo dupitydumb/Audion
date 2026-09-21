@@ -43,6 +43,7 @@
   import {
     getTrackCoverSrc,
     formatDuration,
+    getIsLinux,
   } from "$lib/api/tauri";
   import { onMount, tick } from "svelte";
   import { likedTrackIds, toggleLike } from "$lib/stores/liked";
@@ -67,10 +68,11 @@
   let albumArt: string | null = null;
   let isSeeking = false;
   let isAndroid = false;
+  let isLinux = false;
   $: hideAndroidLyricsControls = isAndroid && $isMobile && $lyricsVisible;
   let desktopArtWrapperEl: HTMLDivElement | null = null;
   $: if (desktopArtWrapperEl) {
-    desktopArtWrapperEl.style.viewTransitionName = $isFullScreen ? 'player-album-art' : 'none';
+    desktopArtWrapperEl.style.viewTransitionName = ($isFullScreen && !isLinux) ? 'player-album-art' : 'none';
   }
 
   /*
@@ -260,6 +262,7 @@
   }
 
   onMount(() => {
+    isLinux = getIsLinux();
     isAndroid =
       typeof navigator !== "undefined" && /android/i.test(navigator.userAgent);
 
@@ -274,7 +277,7 @@
   <div
     class="fullscreen-player"
     class:android-lite={isAndroid && $isMobile}
-    transition:fade={{ duration: $nativeTransitionActive ? 0 : (isAndroid ? 180 : 300) }}
+    transition:fade={{ duration: ($nativeTransitionActive || isLinux) ? 0 : (isAndroid ? 180 : 300) }}
   >
     <!-- Animated blurred background -->
     <MeshGradientBg lite={isAndroid && $isMobile} />

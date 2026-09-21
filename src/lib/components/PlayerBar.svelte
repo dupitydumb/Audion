@@ -35,6 +35,7 @@
         getAlbum,
         getTrackCoverSrc,
         getAlbumCoverSrc,
+        getIsLinux,
     } from "$lib/api/tauri";
     import { uiSlotManager } from "$lib/plugins/ui-slots";
     import { pluginDrawerOpen } from "$lib/stores/plugin-drawer";
@@ -285,7 +286,7 @@
             {#if $currentTrack}
                 <div
                     class="album-art"
-                    style="view-transition-name: {$isFullScreen ? 'none' : 'player-album-art'};"
+                    style="view-transition-name: {($isFullScreen || getIsLinux()) ? 'none' : 'player-album-art'};"
                 >
                     {#if albumArt && !imageLoadFailed}
                         <img
