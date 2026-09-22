@@ -80,38 +80,35 @@ jobs:
               export DEBIAN_FRONTEND=noninteractive
               apt-get update
 
-              # Core deps — required, job fails if these are missing
               apt-get install -y --no-install-recommends \
-                curl wget file xvfb ca-certificates \
+                curl wget file xvfb xauth ca-certificates \
                 libwebkit2gtk-4.1-0 libgtk-3-0 \
                 libayatana-appindicator3-1 \
                 libgl1 libegl1
 
-              # Optional/renamed deps — package names vary by release, don't fail the job
               for pkg in libgl1-mesa-dri libasound2 libasound2t64; do
                 apt-get install -y --no-install-recommends "$pkg" 2>/dev/null || true
               done
               ;;
             dnf)
               dnf install -y \
-                curl wget file xorg-x11-server-Xvfb \
+                curl wget file xorg-x11-server-Xvfb xorg-x11-xauth \
                 webkit2gtk4.1 gtk3 libappindicator-gtk3 \
                 alsa-lib mesa-dri-drivers mesa-libEGL
               ;;
             pacman)
               pacman -Sy --noconfirm \
-                curl wget file xorg-server-xvfb \
+                curl wget file xorg-server-xvfb xorg-xauth \
                 webkit2gtk-4.1 gtk3 libayatana-appindicator \
                 alsa-lib mesa
               ;;
             zypper)
               zypper --non-interactive install \
-                curl wget file xvfb-run \
+                curl wget file xvfb-run xauth \
                 webkit2gtk3-soup2 gtk3 libayatana-appindicator3-1 \
                 alsa mesa-dri-devel
               ;;
           esac
-
       - name: Download AppImage from release
         env:
           VER: ${{ needs.resolve-version.outputs.version }}
