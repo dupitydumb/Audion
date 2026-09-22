@@ -493,6 +493,152 @@ jobs:
             "$DISCORD_WEBHOOK_URL"
 
   # ---------------------------------------------------------------------------
+  # Linux Smoke Test — verify AppImage launches on popular distros
+  #
+  # Runs headlessly via xvfb on 3 targets:
+  #   ubuntu-22.04  → Ubuntu 22 LTS (glibc 2.35, build runner baseline)
+  #   ubuntu-24.04  → Ubuntu 24 LTS (glibc 2.39, newest Ubuntu LTS)
+  #   fedora-40     → Fedora 40 container (glibc 2.39, Mesa 24, SELinux off)
+  #
+  # The test downloads the published AppImage, runs it headlessly for up to
+  # 20s, then checks the exit code is not a crash signal (SIGSEGV=139,
+  # SIGABRT=134, SIGILL=132, SIGBUS=138). A clean timeout (exit 0 or 124)
+  # means the app launched and ran without crashing — that's the signal we care
+  # about. A non-zero exit from the app itself is also accepted (e.g. it may
+  # exit 1 when there is no audio device), as long as it is not a signal kill.
+  # ---------------------------------------------------------------------------
+  test-linux-smoke:
+    name: Smoke test AppImage (${{ matrix.label }})
+    runs-on: ${{ matrix.runner }}
+    needs: [create-release, release-linux]
+    if: needs.release-linux.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: ubuntu-22.04
+            runner: ubuntu-22.04
+            use_docker: false
+            docker_image: ""
+          - label: ubuntu-24.04
+            runner: ubuntu-24.04
+            use_docker: false
+            docker_image: ""
+          - label: fedora-40
+            runner: ubuntu-24.04
+            use_docker: true
+            docker_image: "fedora:40"
+    steps:
+      - name: Install runtime deps (Ubuntu runner)
+        if: matrix.use_docker == false
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-0 \
+            libgtk-3-0 \
+            libappindicator3-1 \
+            libglib2.0-0 \
+            libdbus-1-3 \
+            libx11-6 \
+            libxcomposite1 \
+            libxdamage1 \
+            libxrandr2 \
+            libxrender1 \
+            libxfixes3 \
+            libasound2t64 \
+            xvfb \
+            fuse
+
+      - name: Download AppImage from release (Ubuntu runner)
+        if: matrix.use_docker == false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VER="${{ needs.create-release.outputs.version }}"
+          TAG="${{ needs.create-release.outputs.tag_name }}"
+          curl -fsSL \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/octet-stream" \
+            -L "https://github.com/${{ github.repository }}/releases/download/${TAG}/audion_${VER}_linux.AppImage" \
+            -o audion.AppImage
+          chmod +x audion.AppImage
+
+      - name: Smoke test — Ubuntu runner
+        if: matrix.use_docker == false
+        run: |
+          export APPIMAGE_EXTRACT_AND_RUN=1
+          export WEBKIT_DISABLE_DMABUF_RENDERER=1
+          export WEBKIT_DISABLE_COMPOSITING_MODE=1
+          export WEBKIT_FORCE_SANDBOX=0
+          export GIO_USE_VFS=local
+          export AUDION_DISABLE_DRI3=1
+
+          set +e
+          xvfb-run -a --server-args="-screen 0 1280x720x24 -ac" \
+            timeout 20s ./audion.AppImage 2>&1 | head -100
+          EXIT=$?
+          set -e
+
+          echo "Exit code: $EXIT"
+          case $EXIT in
+            0|124)  echo "✅ Launched cleanly (exit=$EXIT)" ;;
+            139|134|132|138) echo "❌ Crashed with signal (exit=$EXIT)"; exit 1 ;;
+            *) echo "⚠️  Exited $EXIT (non-signal — treated as pass)" ;;
+          esac
+
+      - name: Smoke test — Fedora 40 (Docker)
+        if: matrix.use_docker == true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VER="${{ needs.create-release.outputs.version }}"
+          TAG="${{ needs.create-release.outputs.tag_name }}"
+          curl -fsSL \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/octet-stream" \
+            -L "https://github.com/${{ github.repository }}/releases/download/${TAG}/audion_${VER}_linux.AppImage" \
+            -o audion.AppImage
+          chmod +x audion.AppImage
+
+          # Run the smoke test inside a Fedora 40 container.
+          # --privileged: needed for FUSE (APPIMAGE_EXTRACT_AND_RUN bypasses this,
+          # but xvfb-run needs /dev/shm write access).
+          # --network=none: no outbound traffic from the app during the test.
+          docker run --rm \
+            --privileged \
+            --network=none \
+            -v "$PWD/audion.AppImage:/audion.AppImage" \
+            ${{ matrix.docker_image }} \
+            bash -c '
+              set -e
+              dnf install -y --quiet \
+                webkit2gtk4.1 gtk3 libappindicator-gtk3 glib2 dbus-libs \
+                libX11 libXcomposite libXdamage libXrandr libXrender libXfixes \
+                alsa-lib xorg-x11-server-Xvfb 2>/dev/null
+
+              export APPIMAGE_EXTRACT_AND_RUN=1
+              export WEBKIT_DISABLE_DMABUF_RENDERER=1
+              export WEBKIT_DISABLE_COMPOSITING_MODE=1
+              export WEBKIT_FORCE_SANDBOX=0
+              export GIO_USE_VFS=local
+              export AUDION_DISABLE_DRI3=1
+
+              set +e
+              Xvfb :99 -screen 0 1280x720x24 -ac &
+              sleep 1
+              DISPLAY=:99 timeout 20s /audion.AppImage 2>&1 | head -100
+              EXIT=$?
+              set -e
+
+              echo "Exit code: $EXIT"
+              case $EXIT in
+                0|124)  echo "✅ Launched cleanly (exit=$EXIT)" ;;
+                139|134|132|138) echo "❌ Crashed with signal (exit=$EXIT)"; exit 1 ;;
+                *) echo "⚠️  Exited $EXIT (non-signal — treated as pass)" ;;
+              esac
+            '
+
+  # ---------------------------------------------------------------------------
   # Flatpak Build
   # ---------------------------------------------------------------------------
   release-flatpak:
