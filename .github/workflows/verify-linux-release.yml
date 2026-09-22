@@ -1,0 +1,165 @@
+name: Verify Linux Release
+on:
+  workflow_call:
+    inputs:
+      tag_name:
+        description: 'Release tag to verify (e.g. v1.2.3)'
+        required: true
+        type: string
+      version:
+        description: 'Version string used in the asset filename (e.g. 1.2.3)'
+        required: true
+        type: string
+    outputs:
+      result:
+        description: 'success or failure'
+        value: ${{ jobs.smoke-test-linux.result }}
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag to verify (e.g. v1.2.3)'
+        required: true
+        type: string
+      version:
+        description: 'Version string used in the asset filename (e.g. 1.2.3). Leave blank to strip the leading v from tag_name.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - name: Resolve version from input or tag
+        id: resolve
+        run: |
+          VER="${{ inputs.version }}"
+          if [ -z "$VER" ]; then
+            VER=$(echo "${{ inputs.tag_name }}" | sed 's/^v//')
+          fi
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+  smoke-test-linux:
+    runs-on: ubuntu-22.04
+    needs: resolve-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu-24.04
+            image: ubuntu:24.04
+            pkg_manager: apt
+          - name: debian-12
+            image: debian:12
+            pkg_manager: apt
+          - name: kali-rolling
+            image: kalilinux/kali-rolling
+            pkg_manager: apt
+          - name: fedora-latest
+            image: fedora:latest
+            pkg_manager: dnf
+          - name: archlinux
+            image: archlinux:latest
+            pkg_manager: pacman
+          - name: opensuse-tumbleweed
+            image: opensuse/tumbleweed
+            pkg_manager: zypper
+    container:
+      image: ${{ matrix.image }}
+      options: --privileged
+    steps:
+      - name: Install runtime deps + Xvfb + curl
+        run: |
+          set -e
+          case "${{ matrix.pkg_manager }}" in
+            apt)
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install -y --no-install-recommends \
+                curl wget file xvfb ca-certificates \
+                libwebkit2gtk-4.1-0 libgtk-3-0 \
+                libayatana-appindicator3-1 \
+                libgl1-mesa-dri libegl1-mesa
+              apt-get install -y --no-install-recommends libasound2 || \
+              apt-get install -y --no-install-recommends libasound2t64 || true
+              ;;
+            dnf)
+              dnf install -y \
+                curl wget file xorg-x11-server-Xvfb \
+                webkit2gtk4.1 gtk3 libappindicator-gtk3 \
+                alsa-lib mesa-dri-drivers mesa-libEGL
+              ;;
+            pacman)
+              pacman -Sy --noconfirm \
+                curl wget file xorg-server-xvfb \
+                webkit2gtk-4.1 gtk3 libayatana-appindicator \
+                alsa-lib mesa
+              ;;
+            zypper)
+              zypper --non-interactive install \
+                curl wget file xvfb-run \
+                webkit2gtk3-soup2 gtk3 libayatana-appindicator3-1 \
+                alsa mesa-dri-devel
+              ;;
+          esac
+
+      - name: Download AppImage from release
+        env:
+          VER: ${{ needs.resolve-version.outputs.version }}
+          TAG: ${{ inputs.tag_name }}
+        run: |
+          set -e
+          curl -sL -o audion.AppImage \
+            "https://github.com/${{ github.repository }}/releases/download/${TAG}/audion_${VER}_linux.AppImage"
+          chmod +x audion.AppImage
+          file audion.AppImage
+
+      - name: Launch headless and check it survives
+        run: |
+          set -e
+          xvfb-run -a --server-args="-screen 0 1920x1080x24" \
+            ./audion.AppImage --appimage-extract-and-run > launch.log 2>&1 &
+          APP_PID=$!
+          sleep 6
+
+          if ! kill -0 "$APP_PID" 2>/dev/null; then
+            echo "::error::App exited within 6s on ${{ matrix.name }} (tag ${{ inputs.tag_name }})"
+            cat launch.log
+            exit 1
+          fi
+
+          echo "✅ App still running after 6s on ${{ matrix.name }}"
+          cat launch.log
+          kill "$APP_PID" 2>/dev/null || true
+
+      - name: Upload launch log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-${{ inputs.tag_name }}-${{ matrix.name }}
+          path: launch.log
+          retention-days: 7
+
+  summary:
+    runs-on: ubuntu-latest
+    needs: smoke-test-linux
+    if: always()
+    steps:
+      - name: Discord notification
+        run: |
+          if [ -z "${{ secrets.DISCORD_WEBHOOK_URL }}" ]; then exit 0; fi
+          STATUS="${{ needs.smoke-test-linux.result }}"
+          if [ "$STATUS" = "success" ]; then
+            TITLE="✅ Verified ${{ inputs.tag_name }} — all distros passed"
+            COLOR=3066993
+          else
+            TITLE="🚨 Verify failed for ${{ inputs.tag_name }}"
+            COLOR=15158332
+          fi
+          curl -H "Content-Type: application/json" -X POST \
+            -d "{\"embeds\": [{\"title\": \"$TITLE\", \"url\": \"https://github.com/${{ github.repository }}/releases/tag/${{ inputs.tag_name }}\", \"color\": $COLOR}]}" \
+            "${{ secrets.DISCORD_WEBHOOK_URL }}"
