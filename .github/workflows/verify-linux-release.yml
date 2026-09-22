@@ -73,6 +73,7 @@ jobs:
       options: --privileged
     steps:
       - name: Install runtime deps + Xvfb + curl
+        id: deps
         run: |
           set -e
           case "${{ matrix.pkg_manager }}" in
@@ -109,7 +110,9 @@ jobs:
                 alsa mesa-dri-devel
               ;;
           esac
+
       - name: Download AppImage from release
+        id: download
         env:
           VER: ${{ needs.resolve-version.outputs.version }}
           TAG: ${{ inputs.tag_name }}
@@ -120,30 +123,52 @@ jobs:
           chmod +x audion.AppImage
           file audion.AppImage
 
-      - name: Launch headless and check it survives
+      - name: Launch headless, capture 6s of output
+        id: launch
         run: |
-          set -e
+          set +e
+          mkdir -p result
           xvfb-run -a --server-args="-screen 0 1920x1080x24" \
-            ./audion.AppImage --appimage-extract-and-run > launch.log 2>&1 &
+            ./audion.AppImage --appimage-extract-and-run > result/launch.log 2>&1 &
           APP_PID=$!
           sleep 6
 
-          if ! kill -0 "$APP_PID" 2>/dev/null; then
+          echo "----- launch.log (${{ matrix.name }}) -----"
+          cat result/launch.log
+          echo "---------------------------------------"
+
+          if kill -0 "$APP_PID" 2>/dev/null; then
+            echo "status=pass" >> "$GITHUB_OUTPUT"
+            echo "✅ App still running after 6s on ${{ matrix.name }}"
+            kill "$APP_PID" 2>/dev/null || true
+            exit 0
+          else
+            echo "status=fail" >> "$GITHUB_OUTPUT"
             echo "::error::App exited within 6s on ${{ matrix.name }} (tag ${{ inputs.tag_name }})"
-            cat launch.log
             exit 1
           fi
 
-          echo "✅ App still running after 6s on ${{ matrix.name }}"
-          cat launch.log
-          kill "$APP_PID" 2>/dev/null || true
+      - name: Write result metadata (always runs, even on failure)
+        if: always()
+        run: |
+          mkdir -p result
+          STATUS="${{ steps.launch.outputs.status }}"
+          if [ -z "$STATUS" ]; then STATUS="fail"; fi
+          {
+            echo "distro=${{ matrix.name }}"
+            echo "image=${{ matrix.image }}"
+            echo "status=$STATUS"
+          } > result/meta.txt
+          if [ ! -f result/launch.log ]; then
+            echo "No launch.log produced — failed during dependency install or download, before the app ever launched." > result/launch.log
+          fi
 
-      - name: Upload launch log on failure
-        if: failure()
+      - name: Upload result artifact (log always attached, pass or fail)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: verify-${{ inputs.tag_name }}-${{ matrix.name }}
-          path: launch.log
+          name: result-${{ matrix.name }}
+          path: result/
           retention-days: 7
 
   summary:
@@ -151,17 +176,103 @@ jobs:
     needs: smoke-test-linux
     if: always()
     steps:
-      - name: Discord notification
+      - name: Download all result artifacts
+        uses: actions/download-artifact@v6
+        with:
+          pattern: result-*
+          path: results
+          merge-multiple: false
+
+      - name: Build summary table with full logs
+        id: build
         run: |
-          if [ -z "${{ secrets.DISCORD_WEBHOOK_URL }}" ]; then exit 0; fi
-          STATUS="${{ needs.smoke-test-linux.result }}"
-          if [ "$STATUS" = "success" ]; then
+          {
+            echo "## Linux smoke test — ${{ inputs.tag_name }}"
+            echo ""
+            echo "| Distro | Image | Result |"
+            echo "|---|---|---|"
+          } > table.md
+
+          OVERALL="success"
+
+          for dir in results/*/; do
+            META="${dir}meta.txt"
+            if [ ! -f "$META" ]; then continue; fi
+            DISTRO=$(grep '^distro=' "$META" | cut -d= -f2-)
+            IMAGE=$(grep '^image=' "$META" | cut -d= -f2-)
+            STATUS=$(grep '^status=' "$META" | cut -d= -f2-)
+
+            if [ "$STATUS" = "pass" ]; then
+              echo "| $DISTRO | \`$IMAGE\` | ✅ Pass |" >> table.md
+            else
+              echo "| $DISTRO | \`$IMAGE\` | ❌ Fail |" >> table.md
+              OVERALL="failure"
+            fi
+          done
+
+          echo "" >> table.md
+          echo "### 6-second launch logs per distro" >> table.md
+          echo "" >> table.md
+
+          # Every distro gets its log attached — pass or fail
+          for dir in results/*/; do
+            META="${dir}meta.txt"
+            LOG="${dir}launch.log"
+            if [ ! -f "$META" ]; then continue; fi
+            DISTRO=$(grep '^distro=' "$META" | cut -d= -f2-)
+            STATUS=$(grep '^status=' "$META" | cut -d= -f2-)
+            ICON="✅"
+            if [ "$STATUS" != "pass" ]; then ICON="❌"; fi
+
+            {
+              echo "<details><summary>$ICON $DISTRO</summary>"
+              echo ""
+              echo '```'
+              if [ -f "$LOG" ]; then tail -c 6000 "$LOG"; else echo "(no log captured)"; fi
+              echo '```'
+              echo "</details>"
+              echo ""
+            } >> table.md
+          done
+
+          cat table.md >> "$GITHUB_STEP_SUMMARY"
+          echo "overall=$OVERALL" >> "$GITHUB_OUTPUT"
+
+      - name: Discord notification
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
+
+          OVERALL="${{ steps.build.outputs.overall }}"
+          if [ "$OVERALL" = "success" ]; then
             TITLE="✅ Verified ${{ inputs.tag_name }} — all distros passed"
             COLOR=3066993
           else
-            TITLE="🚨 Verify failed for ${{ inputs.tag_name }}"
+            TITLE="🚨 Verify failed for ${{ inputs.tag_name }} — see job summary for logs"
             COLOR=15158332
           fi
+
+          DESC=""
+          for dir in results/*/; do
+            META="${dir}meta.txt"
+            if [ ! -f "$META" ]; then continue; fi
+            DISTRO=$(grep '^distro=' "$META" | cut -d= -f2-)
+            STATUS=$(grep '^status=' "$META" | cut -d= -f2-)
+            if [ "$STATUS" = "pass" ]; then
+              DESC="${DESC}✅ ${DISTRO}\\n"
+            else
+              DESC="${DESC}❌ ${DISTRO}\\n"
+            fi
+          done
+
           curl -H "Content-Type: application/json" -X POST \
-            -d "{\"embeds\": [{\"title\": \"$TITLE\", \"url\": \"https://github.com/${{ github.repository }}/releases/tag/${{ inputs.tag_name }}\", \"color\": $COLOR}]}" \
-            "${{ secrets.DISCORD_WEBHOOK_URL }}"
+            -d "{\"embeds\": [{\"title\": \"$TITLE\", \"description\": \"$DESC\", \"url\": \"https://github.com/${{ github.repository }}/releases/tag/${{ inputs.tag_name }}\", \"color\": $COLOR}]}" \
+            "$DISCORD_WEBHOOK_URL"
+
+      - name: Fail the workflow if any distro failed
+        run: |
+          if [ "${{ steps.build.outputs.overall }}" != "success" ]; then
+            echo "::error::One or more distros failed the smoke test — see summary above."
+            exit 1
+          fi
