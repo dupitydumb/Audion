@@ -155,6 +155,8 @@ symphonia = { version = "0.6", default-features = false, features = [
 cpal = "0.17"
 rubato = "3.0.0"
 tauri-plugin-autostart = "2.5.1"
+md5 = "0.7"
+urlencoding = "2"
 
 [target.'cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))'.dependencies]
 # Discord RPC (desktop only - uses local IPC sockets)
