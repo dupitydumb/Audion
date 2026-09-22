@@ -72,3 +72,6 @@ src-tauri/target_validate
 src-tauri/gen/android/release.keystore
 
 
+
+# Local planning docs
+docs/
