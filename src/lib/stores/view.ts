@@ -16,7 +16,8 @@ export type ViewType =
     | 'plugins'
     | 'settings'
     | 'listenbrainz'
-    | 'discover';
+    | 'discover'
+    | 'subsonic';
 
 export interface ViewState {
     type: ViewType;
@@ -50,6 +51,7 @@ const KNOWN_VIEW_TYPES: ReadonlySet<ViewType> = new Set<ViewType>([
     'settings',
     'listenbrainz',
     'discover',
+    'subsonic',
 ]);
 
 function isValidViewState(value: unknown): value is ViewState {
@@ -227,4 +229,8 @@ export function goToListenBrainz(): void {
 
 export function goToDiscover(query?: string): void {
     currentView.set({ type: 'discover', query });
+}
+
+export function goToSubsonic(): void {
+    currentView.set({ type: 'subsonic' });
 }

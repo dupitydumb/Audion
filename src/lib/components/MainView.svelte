@@ -43,6 +43,7 @@
     import Settings from "./Settings.svelte";
     import Recommendations from "./Recommendations.svelte";
     import MbDiscover from "./MbDiscover.svelte";
+    import SubsonicBrowser from "./SubsonicBrowser.svelte";
     import Icon from "$lib/components/Icon.svelte";
 
     import { tick, onMount } from "svelte";
@@ -917,6 +918,10 @@
                 {:else if $currentView.type === "discover"}
                     <div class="view-container no-padding">
                         <MbDiscover />
+                    </div>
+                {:else if $currentView.type === "subsonic"}
+                    <div class="view-container no-padding">
+                        <SubsonicBrowser />
                     </div>
                 {:else}
                     <div class="view-container">

@@ -25,7 +25,9 @@
         goToLikedSongs,
         goToListenBrainz,
         goToDiscover,
+        goToSubsonic,
     } from "$lib/stores/view";
+    import { subsonicConnected } from "$lib/stores/subsonic";
     import {
         isSettingsOpen as isSettingsOpenUI,
         toggleSettings as toggleSettingsUI,
@@ -506,6 +508,18 @@
                         >
                             <Icon name="sparkles" size={24} />
                             <span>{$_('sidebar.recommendations')}</span>
+                        </button>
+                    </li>
+                {/if}
+                {#if $subsonicConnected}
+                    <li>
+                        <button
+                            class="nav-item"
+                            class:active={isActive("subsonic")}
+                            on:click={() => navigateAndClose(goToSubsonic)}
+                        >
+                            <Icon name="server" size={24} />
+                            <span>Subsonic</span>
                         </button>
                     </li>
                 {/if}
