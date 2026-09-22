@@ -84,6 +84,11 @@ jobs:
                 libwebkit2gtk-4.1-0 libgtk-3-0 \
                 libayatana-appindicator3-1 \
                 libgl1-mesa-dri libegl1-mesa
+              # Optional/renamed packages — try each, don't fail the job if one is missing
+              for pkg in libgl1-mesa-dri libasound2 libasound2t64; do
+                apt-get install -y --no-install-recommends "$pkg" || true
+              done
+              ;;
               apt-get install -y --no-install-recommends libasound2 || \
               apt-get install -y --no-install-recommends libasound2t64 || true
               ;;
