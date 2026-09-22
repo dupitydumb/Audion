@@ -56,6 +56,31 @@ export interface SubsonicSearchResult {
     songs: SubsonicSong[];
 }
 
+export interface SubsonicAlbumSummary {
+    id: string;
+    name: string;
+    artist: string | null;
+    artist_id: string | null;
+    song_count: number | null;
+    duration: number | null;
+    cover_art: string | null;
+    year: number | null;
+}
+
+export interface SubsonicArtistDetail {
+    id: string;
+    name: string;
+    cover_art: string | null;
+    album_count: number | null;
+    albums: SubsonicAlbumSummary[];
+}
+
+export interface SubsonicStarred {
+    songs: SubsonicSong[];
+    albums: SubsonicAlbumSummary[];
+    artists: SubsonicArtist[];
+}
+
 // ── Stores ────────────────────────────────────────────────────────────────────
 
 const defaultConfig: SubsonicConfig = {
@@ -151,4 +176,100 @@ export async function subsonicScrobble(id: string, submission: boolean): Promise
     } catch (err) {
         console.warn('[Subsonic] Scrobble failed (non-fatal):', err);
     }
+}
+
+// ── Additional browsing ───────────────────────────────────────────────────────
+
+export async function subsonicGetArtist(id: string): Promise<SubsonicArtistDetail> {
+    return invoke<SubsonicArtistDetail>('subsonic_get_artist', { id });
+}
+
+/** listType: newest | frequent | recent | starred | random | alphabeticalByName | alphabeticalByArtist | byGenre | byYear */
+export async function subsonicGetAlbumList(
+    listType: string,
+    size?: number,
+    offset?: number,
+    genre?: string,
+    fromYear?: number,
+    toYear?: number,
+): Promise<SubsonicAlbumSummary[]> {
+    return invoke<SubsonicAlbumSummary[]>('subsonic_get_album_list', {
+        listType,
+        size: size ?? null,
+        offset: offset ?? null,
+        genre: genre ?? null,
+        fromYear: fromYear ?? null,
+        toYear: toYear ?? null,
+    });
+}
+
+export async function subsonicGetRandomSongs(
+    size?: number,
+    genre?: string,
+    fromYear?: number,
+    toYear?: number,
+): Promise<SubsonicSong[]> {
+    return invoke<SubsonicSong[]>('subsonic_get_random_songs', {
+        size: size ?? null,
+        genre: genre ?? null,
+        fromYear: fromYear ?? null,
+        toYear: toYear ?? null,
+    });
+}
+
+/** Pass one of songId, albumId, or artistId. */
+export async function subsonicStar(
+    songId?: string,
+    albumId?: string,
+    artistId?: string,
+): Promise<void> {
+    return invoke('subsonic_star', {
+        songId: songId ?? null,
+        albumId: albumId ?? null,
+        artistId: artistId ?? null,
+    });
+}
+
+export async function subsonicUnstar(
+    songId?: string,
+    albumId?: string,
+    artistId?: string,
+): Promise<void> {
+    return invoke('subsonic_unstar', {
+        songId: songId ?? null,
+        albumId: albumId ?? null,
+        artistId: artistId ?? null,
+    });
+}
+
+export async function subsonicGetStarred(): Promise<SubsonicStarred> {
+    return invoke<SubsonicStarred>('subsonic_get_starred');
+}
+
+export async function subsonicCreatePlaylist(
+    name: string,
+    songIds?: string[],
+): Promise<SubsonicPlaylist> {
+    return invoke<SubsonicPlaylist>('subsonic_create_playlist', {
+        name,
+        songIds: songIds ?? [],
+    });
+}
+
+export async function subsonicUpdatePlaylist(
+    playlistId: string,
+    name?: string,
+    songIdsToAdd?: string[],
+    songIndexesToRemove?: number[],
+): Promise<void> {
+    return invoke('subsonic_update_playlist', {
+        playlistId,
+        name: name ?? null,
+        songIdsToAdd: songIdsToAdd ?? [],
+        songIndexesToRemove: songIndexesToRemove ?? [],
+    });
+}
+
+export async function subsonicDeletePlaylist(id: string): Promise<void> {
+    return invoke('subsonic_delete_playlist', { id });
 }

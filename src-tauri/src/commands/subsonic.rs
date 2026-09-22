@@ -186,6 +186,34 @@ pub struct SubsonicSearchResult {
     pub songs: Vec<SubsonicSong>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SubsonicAlbumSummary {
+    pub id: String,
+    pub name: String,
+    pub artist: Option<String>,
+    pub artist_id: Option<String>,
+    pub song_count: Option<u32>,
+    pub duration: Option<u32>,
+    pub cover_art: Option<String>,
+    pub year: Option<u32>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SubsonicArtistDetail {
+    pub id: String,
+    pub name: String,
+    pub cover_art: Option<String>,
+    pub album_count: Option<u32>,
+    pub albums: Vec<SubsonicAlbumSummary>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+pub struct SubsonicStarred {
+    pub songs: Vec<SubsonicSong>,
+    pub albums: Vec<SubsonicAlbumSummary>,
+    pub artists: Vec<SubsonicArtist>,
+}
+
 fn parse_song(s: &serde_json::Value) -> SubsonicSong {
     SubsonicSong {
         id: s["id"].as_str().unwrap_or("").to_string(),
@@ -478,6 +506,287 @@ pub async fn subsonic_scrobble(
         .send()
         .await
         .map_err(|e| format!("Network error: {}", e))?;
+    let body: SubsonicResponse = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
+    check_ok(&body.inner)
+}
+
+// ── Additional browsing ───────────────────────────────────────────────────────
+
+/// Get details + album list for a single artist (ID3 tag mode).
+#[tauri::command]
+pub async fn subsonic_get_artist(
+    id: String,
+    state: tauri::State<'_, SubsonicState>,
+) -> Result<SubsonicArtistDetail, String> {
+    let cfg = state.config.lock().unwrap().clone();
+    let url = build_subsonic_url(
+        &cfg.url,
+        "getArtist",
+        &cfg.username,
+        &cfg.password,
+        &[("id", id.as_str())],
+    );
+    let resp = client().get(&url).send().await.map_err(|e| format!("Network error: {}", e))?;
+    let body: SubsonicResponse = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
+    check_ok(&body.inner)?;
+
+    let a = &body.inner.data["artist"];
+    let albums = a["album"].as_array().map(|arr| arr.iter().map(|alb| SubsonicAlbumSummary {
+        id: alb["id"].as_str().unwrap_or("").to_string(),
+        name: alb["name"].as_str().unwrap_or("").to_string(),
+        artist: alb["artist"].as_str().map(str::to_string),
+        artist_id: alb["artistId"].as_str().map(str::to_string),
+        song_count: alb["songCount"].as_u64().map(|n| n as u32),
+        duration: alb["duration"].as_u64().map(|n| n as u32),
+        cover_art: alb["coverArt"].as_str().map(str::to_string),
+        year: alb["year"].as_u64().map(|n| n as u32),
+    }).collect()).unwrap_or_default();
+
+    Ok(SubsonicArtistDetail {
+        id: a["id"].as_str().unwrap_or("").to_string(),
+        name: a["name"].as_str().unwrap_or("").to_string(),
+        cover_art: a["coverArt"].as_str().map(str::to_string),
+        album_count: a["albumCount"].as_u64().map(|n| n as u32),
+        albums,
+    })
+}
+
+/// Get a filtered list of albums (type = newest | frequent | recent | starred | random | alphabeticalByName | alphabeticalByArtist | byGenre | byYear).
+#[tauri::command]
+pub async fn subsonic_get_album_list(
+    list_type: String,
+    size: Option<u32>,
+    offset: Option<u32>,
+    genre: Option<String>,
+    from_year: Option<u32>,
+    to_year: Option<u32>,
+    state: tauri::State<'_, SubsonicState>,
+) -> Result<Vec<SubsonicAlbumSummary>, String> {
+    let cfg = state.config.lock().unwrap().clone();
+    let size_str = size.unwrap_or(20).to_string();
+    let offset_str = offset.unwrap_or(0).to_string();
+    let from_year_str = from_year.map(|y| y.to_string());
+    let to_year_str = to_year.map(|y| y.to_string());
+
+    let mut extra: Vec<(&str, &str)> = vec![
+        ("type", list_type.as_str()),
+        ("size", size_str.as_str()),
+        ("offset", offset_str.as_str()),
+    ];
+    if let Some(ref g) = genre {
+        extra.push(("genre", g.as_str()));
+    }
+    if let Some(ref fy) = from_year_str {
+        extra.push(("fromYear", fy.as_str()));
+    }
+    if let Some(ref ty) = to_year_str {
+        extra.push(("toYear", ty.as_str()));
+    }
+
+    let url = build_subsonic_url(&cfg.url, "getAlbumList2", &cfg.username, &cfg.password, &extra);
+    let resp = client().get(&url).send().await.map_err(|e| format!("Network error: {}", e))?;
+    let body: SubsonicResponse = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
+    check_ok(&body.inner)?;
+
+    let albums = body.inner.data["albumList2"]["album"]
+        .as_array()
+        .map(|arr| arr.iter().map(|alb| SubsonicAlbumSummary {
+            id: alb["id"].as_str().unwrap_or("").to_string(),
+            name: alb["name"].as_str().unwrap_or("").to_string(),
+            artist: alb["artist"].as_str().map(str::to_string),
+            artist_id: alb["artistId"].as_str().map(str::to_string),
+            song_count: alb["songCount"].as_u64().map(|n| n as u32),
+            duration: alb["duration"].as_u64().map(|n| n as u32),
+            cover_art: alb["coverArt"].as_str().map(str::to_string),
+            year: alb["year"].as_u64().map(|n| n as u32),
+        }).collect())
+        .unwrap_or_default();
+    Ok(albums)
+}
+
+/// Get random tracks. Optionally filter by genre, decade, or folder.
+#[tauri::command]
+pub async fn subsonic_get_random_songs(
+    size: Option<u32>,
+    genre: Option<String>,
+    from_year: Option<u32>,
+    to_year: Option<u32>,
+    state: tauri::State<'_, SubsonicState>,
+) -> Result<Vec<SubsonicSong>, String> {
+    let cfg = state.config.lock().unwrap().clone();
+    let size_str = size.unwrap_or(50).to_string();
+    let from_year_str = from_year.map(|y| y.to_string());
+    let to_year_str = to_year.map(|y| y.to_string());
+
+    let mut extra: Vec<(&str, &str)> = vec![("size", size_str.as_str())];
+    if let Some(ref g) = genre {
+        extra.push(("genre", g.as_str()));
+    }
+    if let Some(ref fy) = from_year_str {
+        extra.push(("fromYear", fy.as_str()));
+    }
+    if let Some(ref ty) = to_year_str {
+        extra.push(("toYear", ty.as_str()));
+    }
+
+    let url = build_subsonic_url(&cfg.url, "getRandomSongs", &cfg.username, &cfg.password, &extra);
+    let resp = client().get(&url).send().await.map_err(|e| format!("Network error: {}", e))?;
+    let body: SubsonicResponse = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
+    check_ok(&body.inner)?;
+
+    let songs = body.inner.data["randomSongs"]["song"]
+        .as_array()
+        .map(|arr| arr.iter().map(parse_song).collect())
+        .unwrap_or_default();
+    Ok(songs)
+}
+
+/// Star an item (song, album, or artist). Pass one of song_id, album_id, or artist_id.
+#[tauri::command]
+pub async fn subsonic_star(
+    song_id: Option<String>,
+    album_id: Option<String>,
+    artist_id: Option<String>,
+    state: tauri::State<'_, SubsonicState>,
+) -> Result<(), String> {
+    let cfg = state.config.lock().unwrap().clone();
+    let mut extra: Vec<(&str, &str)> = vec![];
+    // borrow temporaries
+    let sid = song_id.unwrap_or_default();
+    let aid = album_id.unwrap_or_default();
+    let arid = artist_id.unwrap_or_default();
+    if !sid.is_empty() { extra.push(("id", sid.as_str())); }
+    if !aid.is_empty() { extra.push(("albumId", aid.as_str())); }
+    if !arid.is_empty() { extra.push(("artistId", arid.as_str())); }
+    if extra.is_empty() {
+        return Err("Must provide song_id, album_id, or artist_id".into());
+    }
+    let url = build_subsonic_url(&cfg.url, "star", &cfg.username, &cfg.password, &extra);
+    let resp = client().get(&url).send().await.map_err(|e| format!("Network error: {}", e))?;
+    let body: SubsonicResponse = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
+    check_ok(&body.inner)
+}
+
+/// Remove star from an item.
+#[tauri::command]
+pub async fn subsonic_unstar(
+    song_id: Option<String>,
+    album_id: Option<String>,
+    artist_id: Option<String>,
+    state: tauri::State<'_, SubsonicState>,
+) -> Result<(), String> {
+    let cfg = state.config.lock().unwrap().clone();
+    let mut extra: Vec<(&str, &str)> = vec![];
+    let sid = song_id.unwrap_or_default();
+    let aid = album_id.unwrap_or_default();
+    let arid = artist_id.unwrap_or_default();
+    if !sid.is_empty() { extra.push(("id", sid.as_str())); }
+    if !aid.is_empty() { extra.push(("albumId", aid.as_str())); }
+    if !arid.is_empty() { extra.push(("artistId", arid.as_str())); }
+    if extra.is_empty() {
+        return Err("Must provide song_id, album_id, or artist_id".into());
+    }
+    let url = build_subsonic_url(&cfg.url, "unstar", &cfg.username, &cfg.password, &extra);
+    let resp = client().get(&url).send().await.map_err(|e| format!("Network error: {}", e))?;
+    let body: SubsonicResponse = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
+    check_ok(&body.inner)
+}
+
+/// Get all starred songs, albums, and artists.
+#[tauri::command]
+pub async fn subsonic_get_starred(
+    state: tauri::State<'_, SubsonicState>,
+) -> Result<SubsonicStarred, String> {
+    let cfg = state.config.lock().unwrap().clone();
+    let url = build_subsonic_url(&cfg.url, "getStarred2", &cfg.username, &cfg.password, &[]);
+    let resp = client().get(&url).send().await.map_err(|e| format!("Network error: {}", e))?;
+    let body: SubsonicResponse = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
+    check_ok(&body.inner)?;
+
+    let starred = &body.inner.data["starred2"];
+    Ok(SubsonicStarred {
+        songs: starred["song"].as_array().map(|arr| arr.iter().map(parse_song).collect()).unwrap_or_default(),
+        albums: starred["album"].as_array().map(|arr| arr.iter().map(|alb| SubsonicAlbumSummary {
+            id: alb["id"].as_str().unwrap_or("").to_string(),
+            name: alb["name"].as_str().unwrap_or("").to_string(),
+            artist: alb["artist"].as_str().map(str::to_string),
+            artist_id: alb["artistId"].as_str().map(str::to_string),
+            song_count: alb["songCount"].as_u64().map(|n| n as u32),
+            duration: alb["duration"].as_u64().map(|n| n as u32),
+            cover_art: alb["coverArt"].as_str().map(str::to_string),
+            year: alb["year"].as_u64().map(|n| n as u32),
+        }).collect()).unwrap_or_default(),
+        artists: starred["artist"].as_array().map(|arr| arr.iter().map(|a| SubsonicArtist {
+            id: a["id"].as_str().unwrap_or("").to_string(),
+            name: a["name"].as_str().unwrap_or("").to_string(),
+            album_count: a["albumCount"].as_u64().map(|n| n as u32),
+            cover_art: a["coverArt"].as_str().map(str::to_string),
+        }).collect()).unwrap_or_default(),
+    })
+}
+
+/// Create a new playlist. Pass song_ids to pre-populate it.
+#[tauri::command]
+pub async fn subsonic_create_playlist(
+    name: String,
+    song_ids: Vec<String>,
+    state: tauri::State<'_, SubsonicState>,
+) -> Result<SubsonicPlaylist, String> {
+    let cfg = state.config.lock().unwrap().clone();
+    let mut extra: Vec<(&str, &str)> = vec![("name", name.as_str())];
+    // Each song_id is a separate "songId" param — collect into a vec of owned strings first
+    let owned: Vec<String> = song_ids.clone();
+    for sid in &owned {
+        extra.push(("songId", sid.as_str()));
+    }
+    let url = build_subsonic_url(&cfg.url, "createPlaylist", &cfg.username, &cfg.password, &extra);
+    let resp = client().get(&url).send().await.map_err(|e| format!("Network error: {}", e))?;
+    let body: SubsonicResponse = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
+    check_ok(&body.inner)?;
+
+    let p = &body.inner.data["playlist"];
+    Ok(SubsonicPlaylist {
+        id: p["id"].as_str().unwrap_or("").to_string(),
+        name: p["name"].as_str().unwrap_or(&name).to_string(),
+        song_count: p["songCount"].as_u64().map(|n| n as u32),
+        cover_art: p["coverArt"].as_str().map(str::to_string),
+    })
+}
+
+/// Update playlist metadata or track list. All params optional except playlist_id.
+#[tauri::command]
+pub async fn subsonic_update_playlist(
+    playlist_id: String,
+    name: Option<String>,
+    song_ids_to_add: Vec<String>,
+    song_indexes_to_remove: Vec<u32>,
+    state: tauri::State<'_, SubsonicState>,
+) -> Result<(), String> {
+    let cfg = state.config.lock().unwrap().clone();
+    let mut extra: Vec<(&str, &str)> = vec![("playlistId", playlist_id.as_str())];
+    let name_str = name.unwrap_or_default();
+    if !name_str.is_empty() { extra.push(("name", name_str.as_str())); }
+    for sid in &song_ids_to_add { extra.push(("songIdToAdd", sid.as_str())); }
+    let index_strs: Vec<String> = song_indexes_to_remove.iter().map(|i| i.to_string()).collect();
+    for idx in &index_strs { extra.push(("songIndexToRemove", idx.as_str())); }
+
+    let url = build_subsonic_url(&cfg.url, "updatePlaylist", &cfg.username, &cfg.password, &extra);
+    let resp = client().get(&url).send().await.map_err(|e| format!("Network error: {}", e))?;
+    let body: SubsonicResponse = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
+    check_ok(&body.inner)
+}
+
+/// Delete a playlist.
+#[tauri::command]
+pub async fn subsonic_delete_playlist(
+    id: String,
+    state: tauri::State<'_, SubsonicState>,
+) -> Result<(), String> {
+    let cfg = state.config.lock().unwrap().clone();
+    let url = build_subsonic_url(
+        &cfg.url, "deletePlaylist", &cfg.username, &cfg.password, &[("id", id.as_str())],
+    );
+    let resp = client().get(&url).send().await.map_err(|e| format!("Network error: {}", e))?;
     let body: SubsonicResponse = resp.json().await.map_err(|e| format!("Parse error: {}", e))?;
     check_ok(&body.inner)
 }
