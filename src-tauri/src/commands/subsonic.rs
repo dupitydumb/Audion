@@ -59,13 +59,9 @@ fn build_subsonic_url(
 ) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    let salt = format!(
-        "{:x}",
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .subsec_nanos()
-    );
+    // salt = full unix millis + subsec_nanos for uniqueness even under concurrent calls
+    let dur = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let salt = format!("{:x}{:x}", dur.as_millis(), dur.subsec_nanos());
     let token_input = format!("{}{}", password, salt);
     let token = format!("{:x}", md5::compute(token_input.as_bytes()));
 
