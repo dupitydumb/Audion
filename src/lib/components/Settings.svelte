@@ -6,6 +6,7 @@
   import PlaybackSection from "./settings/PlaybackSection.svelte";
   import SyncSection from "./settings/SyncSection.svelte";
   import AccountSection from "./settings/AccountSection.svelte";
+  import SubsonicSection from "./settings/SubsonicSection.svelte";
   import StorageSection from "./settings/StorageSection.svelte";
   import ArtistsSection from "./settings/ArtistsSection.svelte";
   import LyricsSection from "./settings/LyricsSection.svelte";
@@ -106,6 +107,7 @@
     {:else if activeTab === 'account'}
       <div class="settings-pane settings-container" id="panel-account" role="tabpanel">
         <AccountSection   open={isDesktop || (openSections['account']    ?? false)} on:toggle={() => toggle('account')}    />
+        <SubsonicSection  open={isDesktop || (openSections['subsonic']   ?? false)} on:toggle={() => toggle('subsonic')}   />
         {#if $isLoggedIn}
           <SyncSection    open={isDesktop || (openSections['sync']       ?? false)} on:toggle={() => toggle('sync')}        />
         {/if}

@@ -42,6 +42,7 @@
   import SyncProgressOverlay from "$lib/components/SyncProgressOverlay.svelte";
   import LoginModal from "$lib/components/LoginModal.svelte";
   import { initSync, destroySync } from "$lib/stores/sync";
+  import { initSubsonic } from "$lib/stores/subsonic";
   import { browser } from "$app/environment";
   import { setupI18n } from "$lib/i18n";
   import { _, isLoading, locale } from "svelte-i18n";
@@ -180,6 +181,9 @@
 
     // Initialize sync state (auth check, event listeners)
     initSync();
+
+    // Load Subsonic config from app-data disk into store
+    await initSubsonic();
 
     // forward console output into the backend's unified log file
     // (no-ops outside Tauri)
