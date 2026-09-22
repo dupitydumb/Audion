@@ -470,7 +470,18 @@ jobs:
           curl -H "Content-Type: application/json" -X POST \
             -d "{\"embeds\": [{\"title\": \"🐧 Linux build v$VERSION\", \"description\": \"Linux release updated\", \"color\": 1947988, \"url\": \"https://github.com/${{ github.repository }}/releases/tag/v$VERSION\"}]}" \
             "$DISCORD_WEBHOOK_URL"
-
+  
+  # ---------------------------------------------------------------------------
+  # Test Build Linux
+  # ---------------------------------------------------------------------------
+  smoke-test-linux:
+    needs: [create-release, release-linux]
+    if: needs.release-linux.result == 'success'
+    uses: ./.github/workflows/verify-linux-release.yml
+    with:
+      tag_name: ${{ needs.create-release.outputs.tag_name }}
+      version: ${{ needs.create-release.outputs.version }}
+    secrets: inherit
   # ---------------------------------------------------------------------------
   # Flatpak Build
   # ---------------------------------------------------------------------------
