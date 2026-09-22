@@ -787,6 +787,15 @@ pub fn run() {
 
             app.manage(database.clone());
             app.manage(commands::listenbrainz::ListenBrainzState::new());
+            {
+                let subsonic_state = commands::subsonic::SubsonicState::new();
+                let app_handle = app.handle().clone();
+                let config = tauri::async_runtime::block_on(
+                    commands::subsonic::load_config_from_disk(&app_handle)
+                );
+                *subsonic_state.config.lock().unwrap() = config;
+                app.manage(subsonic_state);
+            }
             #[cfg(desktop)]
             app.manage(integrations::window::CloseConfirmed::default());
 
@@ -1350,6 +1359,19 @@ pub fn run() {
                     commands::verify_listenbrainz_token,
                     commands::submit_listenbrainz_listen,
                     commands::fetch_listenbrainz_recommendations,
+                    // Subsonic commands
+                    commands::subsonic_save_config,
+                    commands::subsonic_get_config,
+                    commands::subsonic_test_connection,
+                    commands::subsonic_ping,
+                    commands::subsonic_get_indexes,
+                    commands::subsonic_search,
+                    commands::subsonic_get_album,
+                    commands::subsonic_get_playlists,
+                    commands::subsonic_get_playlist,
+                    commands::subsonic_get_stream_url,
+                    commands::subsonic_get_cover_url,
+                    commands::subsonic_scrobble,
                     // MusicBrainz commands
                     commands::get_artist_musicbrainz_info,
                     commands::get_top_genres_from_mb,
@@ -1577,6 +1599,19 @@ pub fn run() {
                     commands::verify_listenbrainz_token,
                     commands::submit_listenbrainz_listen,
                     commands::fetch_listenbrainz_recommendations,
+                    // Subsonic commands
+                    commands::subsonic_save_config,
+                    commands::subsonic_get_config,
+                    commands::subsonic_test_connection,
+                    commands::subsonic_ping,
+                    commands::subsonic_get_indexes,
+                    commands::subsonic_search,
+                    commands::subsonic_get_album,
+                    commands::subsonic_get_playlists,
+                    commands::subsonic_get_playlist,
+                    commands::subsonic_get_stream_url,
+                    commands::subsonic_get_cover_url,
+                    commands::subsonic_scrobble,
                     // MusicBrainz commands
                     commands::get_artist_musicbrainz_info,
                     commands::get_top_genres_from_mb,
