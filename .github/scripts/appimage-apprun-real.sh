@@ -24,8 +24,8 @@ export LIBGL_DRI3_DISABLE=1
 
 # Software Mesa — fallback for any remaining GL call when /dev/dri absent or broken.
 # User can override by setting these vars before launch.
-export LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-1}"
-export GALLIUM_DRIVER="${GALLIUM_DRIVER:-llvmpipe}"
+export LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-0}"
+export GALLIUM_DRIVER="${GALLIUM_DRIVER:-}"
 
 # GVfs — prevent "undefined symbol: g_task_set_static_name" crash on Mint 22 / Ubuntu 24.
 export GIO_USE_VFS=local
