@@ -39,7 +39,7 @@ export async function html5Play(path: string, volume: number, startTime = 0, rep
 
     const finalKind = classifyAudioPath(path);
 
-    if (finalKind === 'blob') {
+    if (finalKind === 'blob' && !rawAudioBlobUrls.has(path)) {
         audio = await prepareHtml5AudioForPath(audio, path);
         audio.volume = volume;
 
@@ -491,6 +491,14 @@ let preloadReplayGainDb: number | null = null;
 
 // dash.js player instance for Hi-Res DASH/MPD streaming
 let dashPlayer: any | null = null;
+
+// Raw-audio blob URLs that must NOT go through dash.js (e.g. subsonic proxy blobs)
+const rawAudioBlobUrls = new Set<string>();
+
+/** Register a blob URL as raw audio (not a DASH manifest) so html5Play skips dash.js. */
+export function html5RegisterRawBlobUrl(url: string): void {
+    rawAudioBlobUrls.add(url);
+}
 
 // Preload state for gapless streaming
 let preloadAudio: HTMLAudioElement | null = null;

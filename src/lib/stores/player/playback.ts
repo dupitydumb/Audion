@@ -329,6 +329,9 @@ export async function playTrack(
                     const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
                     const blob = new Blob([bytes], { type: fmt });
                     audioPath = URL.createObjectURL(blob);
+                    // Tell html5-audio this is raw audio, not a DASH manifest
+                    const { html5RegisterRawBlobUrl } = await import('$lib/services/html5-audio');
+                    html5RegisterRawBlobUrl(audioPath);
                     lastErr = null;
                     break;
                 } catch (err) {
