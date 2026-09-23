@@ -331,68 +331,6 @@ jobs:
           # Bazzite and other immutable distros may have Wayland-only or broken EGL.
           # ---------------------------------------------------------------------------
 
-          # Only set APPDIR if WebKit helper processes are actually bundled inside the
-          # AppImage. If they are not present (the common case — Tauri does not bundle
-          # them), setting APPDIR causes webkit2gtk to look for helpers inside the
-          # AppImage and fail with "No such file or directory". Leave APPDIR unset so
-          # webkit falls back to the system-installed helpers in
-          # /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/ (present on Ubuntu 22+, Fedora
-          # 38+, Arch, etc.).
-          WEBKIT_HELPER=$(find "$HERE/usr/lib" -name "WebKitNetworkProcess" 2>/dev/null | head -1)
-          if [ -n "$WEBKIT_HELPER" ] && [ -f "$WEBKIT_HELPER" ]; then
-            export APPDIR="$HERE"
-          fi
-
-          # Always disable dmabuf renderer — it is the most common cause of blank screens on Mesa/NVIDIA
-          export WEBKIT_DISABLE_DMABUF_RENDERER=1
-
-          # Disable compositing mode — fixes NixOS SIGTRAP in webkit_website_data_manager_get_cookie_manager
-          export WEBKIT_DISABLE_COMPOSITING_MODE=1
-
-          # Disable WebKit sandbox — fixes Fedora/Bazzite SELinux sandboxing issues
-          export WEBKIT_FORCE_SANDBOX=0
-          # DRI3 opt-out: set AUDION_DISABLE_DRI3=1 at runtime if you hit EGL_BAD_PARAMETER crashes
-          # (AMD RX 6600 + KDE Plasma 6 / Bazzite with Mesa 23). Unconditional disable forces
-          # llvmpipe software rasterisation on Mesa 23+ where DRI2 hw drivers were removed.
-          export LIBGL_DRI3_DISABLE="${AUDION_DISABLE_DRI3:-0}"
-
-          # Disable GVfs modules that have broken symbols on some distros (e.g. Mint 22 / Ubuntu 24)
-          # This prevents "undefined symbol: g_task_set_static_name" from libgvfscommon.so
-          export GIO_USE_VFS=local
-          export GIO_MODULE_DIR="$HERE/usr/lib/gio/modules"
-
-          # Unset host GTK_MODULES (e.g. xapp-gtk3-module on Linux Mint) which fail to load in portable AppImage
-          unset GTK_MODULES
-
-          # Wayland detection — prefer X11 fallback for WebKitGTK 4.x stability
-          # Only force x11 if XWayland is available ($DISPLAY set); pure Wayland sessions have no $DISPLAY
-          if [ -n "$WAYLAND_DISPLAY" ] && [ -z "$FORCE_WAYLAND" ]; then
-            if [ -n "$DISPLAY" ]; then
-              export GDK_BACKEND=x11
-              export QT_QPA_PLATFORM=xcb
-            fi
-            # else: no XWayland, let GTK negotiate wayland directly
-          fi
-
-          # ALSA/audio safety
-          if [ -z "$ALSA_CONFIG_PATH" ] && [ -f /usr/share/alsa/alsa.conf ]; then
-            export ALSA_CONFIG_PATH=/usr/share/alsa/alsa.conf
-          fi
-
-          # Robust binary detection
-          if [ -f "$HERE/usr/bin/Audion" ]; then
-            BIN="$HERE/usr/bin/Audion"
-          elif [ -f "$HERE/usr/bin/audion" ]; then
-            BIN="$HERE/usr/bin/audion"
-          else
-            BIN=$(find "$HERE/usr/bin" -type f -executable | head -1)
-          fi
-
-          exec "$BIN" "$@"
-          WRAPPER_EOF
-
-          chmod +x squashfs-root/AppRun-real
-
           # Back up original AppRun and replace
           if [ -L squashfs-root/AppRun ]; then
             rm squashfs-root/AppRun          # symlink — just remove, binary is elsewhere
