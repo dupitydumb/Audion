@@ -257,6 +257,13 @@ export async function playTrack(
         ).catch(e => console.warn('[ListenBrainz] Now-playing failed:', e));
     }
 
+    // Scrobble to Subsonic on play start
+    if (track.source_type === 'subsonic' && track.external_id) {
+        import('$lib/stores/subsonic').then(({ subsonicScrobble }) => {
+            subsonicScrobble(track.external_id!, true).catch(() => {});
+        });
+    }
+
     const fullTrack = await getFullTrack(track.id, true);
 
     if (sessionId !== _currentSessionId) return;
@@ -300,6 +307,25 @@ export async function playTrack(
 
     try {
         let audioPath = track.local_src || track.path;
+
+        // Subsonic streams need CORS bypass — fetch bytes via Rust, play as blob URL
+        if (track.source_type === 'subsonic' && audioPath && (audioPath.startsWith('http://') || audioPath.startsWith('https://'))) {
+            try {
+                const { invoke: inv } = await import('@tauri-apps/api/core');
+                const b64: string = await inv('proxy_fetch_bytes', { url: audioPath });
+                // Detect format from URL or default to mpeg
+                const fmt = audioPath.includes('format=opus') ? 'audio/ogg; codecs=opus'
+                          : audioPath.includes('format=ogg')  ? 'audio/ogg'
+                          : audioPath.includes('format=flac') ? 'audio/flac'
+                          : 'audio/mpeg';
+                const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+                const blob = new Blob([bytes], { type: fmt });
+                audioPath = URL.createObjectURL(blob);
+            } catch (err) {
+                console.error('[Player] Failed to proxy subsonic audio:', err);
+                throw new Error(`Subsonic proxy failed: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
 
         // Resolve server tracks before checking/preparing backends
         if (track.source_type === 'server' && !track.local_src) {
