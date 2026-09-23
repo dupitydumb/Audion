@@ -17,13 +17,17 @@ export type ViewType =
     | 'settings'
     | 'listenbrainz'
     | 'discover'
-    | 'subsonic';
+    | 'subsonic'
+    | 'subsonic-album'
+    | 'subsonic-artist';
 
 export interface ViewState {
     type: ViewType;
-    id?: number;    // For album/playlist detail views
-    name?: string;  // For artist detail views
-    query?: string; // For discovery search
+    id?: number;       // For local album/playlist detail views
+    name?: string;     // For artist detail views
+    query?: string;    // For discovery search
+    subsonicId?: string;   // For subsonic album/artist detail views
+    subsonicName?: string; // Display name for subsonic detail views
 }
 
 const MAX_HISTORY = 50;
@@ -52,6 +56,8 @@ const KNOWN_VIEW_TYPES: ReadonlySet<ViewType> = new Set<ViewType>([
     'listenbrainz',
     'discover',
     'subsonic',
+    'subsonic-album',
+    'subsonic-artist',
 ]);
 
 function isValidViewState(value: unknown): value is ViewState {
@@ -137,7 +143,8 @@ currentView.subscribe(view => {
     if (current &&
         current.type === view.type &&
         current.id === view.id &&
-        current.name === view.name) {
+        current.name === view.name &&
+        current.subsonicId === view.subsonicId) {
         return;
     }
 
@@ -233,4 +240,12 @@ export function goToDiscover(query?: string): void {
 
 export function goToSubsonic(): void {
     currentView.set({ type: 'subsonic' });
+}
+
+export function goToSubsonicAlbum(id: string, name?: string): void {
+    currentView.set({ type: 'subsonic-album', subsonicId: id, subsonicName: name });
+}
+
+export function goToSubsonicArtist(id: string, name?: string): void {
+    currentView.set({ type: 'subsonic-artist', subsonicId: id, subsonicName: name });
 }

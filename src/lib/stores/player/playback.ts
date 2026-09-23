@@ -850,6 +850,14 @@ function _scrobblePrev(track: Track, durationPlayed: number): void {
             ).catch(e => console.warn('[ListenBrainz] Scrobble failed:', e));
         }
     }
+    // Subsonic scrobble — fire-and-forget on listen completion
+    if (track.source_type === 'subsonic' && track.external_id) {
+        import('$lib/stores/subsonic').then(({ subsonicScrobble }) => {
+            subsonicScrobble(track.external_id!, true).catch(
+                e => console.warn('[Subsonic] Scrobble failed:', e)
+            );
+        });
+    }
 }
 
 export function handleTrackEnd(): void {

@@ -43,7 +43,9 @@
     import Settings from "./Settings.svelte";
     import Recommendations from "./Recommendations.svelte";
     import MbDiscover from "./MbDiscover.svelte";
-    import SubsonicBrowser from "./SubsonicBrowser.svelte";
+    import SubsonicHome from "./SubsonicHome.svelte";
+    import SubsonicAlbumDetail from "./SubsonicAlbumDetail.svelte";
+    import SubsonicArtistDetail from "./SubsonicArtistDetail.svelte";
     import Icon from "$lib/components/Icon.svelte";
 
     import { tick, onMount } from "svelte";
@@ -921,7 +923,15 @@
                     </div>
                 {:else if $currentView.type === "subsonic"}
                     <div class="view-container no-padding">
-                        <SubsonicBrowser />
+                        <SubsonicHome />
+                    </div>
+                {:else if $currentView.type === "subsonic-album"}
+                    <div class="view-container no-padding">
+                        <SubsonicAlbumDetail id={$currentView.subsonicId} name={$currentView.subsonicName} />
+                    </div>
+                {:else if $currentView.type === "subsonic-artist"}
+                    <div class="view-container no-padding">
+                        <SubsonicArtistDetail id={$currentView.subsonicId} name={$currentView.subsonicName} />
                     </div>
                 {:else}
                     <div class="view-container">
