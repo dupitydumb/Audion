@@ -317,7 +317,8 @@ jobs:
 
       - name: Patch AppImage with GPU-safe wrapper script
         run: |
-          APPIMAGE=$(find src-tauri/target/release/bundle/appimage -name "*.AppImage" | head -1)
+          set -euo pipefail
+          APPIMAGE=$(find src-tauri/target/release/bundle/appimage -name "*.AppImage" ! -name "*-patched*" | head -1)
           if [ -z "$APPIMAGE" ]; then echo "No AppImage found"; exit 1; fi
           echo "Patching: $APPIMAGE"
 
@@ -366,6 +367,12 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 /tmp/appimagetool --no-appstream squashfs-root \
             "src-tauri/target/release/bundle/appimage/audion-patched.AppImage"
 
+          if [ ! -f "src-tauri/target/release/bundle/appimage/audion-patched.AppImage" ]; then
+            echo "::error::appimagetool did not produce audion-patched.AppImage"
+            exit 1
+          fi
+          echo "Repacked AppImage size: $(du -sh src-tauri/target/release/bundle/appimage/audion-patched.AppImage)"
+
           # Clean up extracted dir
           rm -rf squashfs-root
 
@@ -381,6 +388,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
+          set -euo pipefail
           VER="${{ steps.info.outputs.version }}"
           BUNDLE="src-tauri/target/release/bundle"
 
