@@ -351,11 +351,10 @@ jobs:
           # NOTE: appimagetool is itself an AppImage. GitHub Actions runners do not
           # have libfuse.so.2 (FUSE 2). Setting APPIMAGE_EXTRACT_AND_RUN=1 makes the
           # AppImage runtime self-extract to a tmpdir and exec without FUSE.
-          # Pinned to release/13 (last stable numbered tag) — NOT "continuous" (rolling nightly
-          # that has historically broken --no-appstream and changed squashfs block sizes).
-          wget -q "https://github.com/AppImage/AppImageKit/releases/download/13/appimagetool-x86_64.AppImage" \
+          # AppImageKit release/13 assets were renamed to "obsolete-*" and the old URL is dead.
+          # The project moved to github.com/AppImage/appimagetool (continuous is the only release).
+          wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" \
             -O /tmp/appimagetool
-          echo "0019dfc4b32d63c1392aa264aed2253c1e0c2fb09216f8e2cc269bbfb8bb49b5  /tmp/appimagetool" | sha256sum -c
           chmod +x /tmp/appimagetool
 
           APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 /tmp/appimagetool --no-appstream squashfs-root \
