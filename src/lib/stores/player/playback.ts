@@ -310,20 +310,35 @@ export async function playTrack(
 
         // Subsonic streams need CORS bypass — fetch bytes via Rust, play as blob URL
         if (track.source_type === 'subsonic' && audioPath && (audioPath.startsWith('http://') || audioPath.startsWith('https://'))) {
-            try {
-                const { invoke: inv } = await import('@tauri-apps/api/core');
-                const b64: string = await inv('proxy_fetch_bytes', { url: audioPath });
-                // Detect format from URL or default to mpeg
-                const fmt = audioPath.includes('format=opus') ? 'audio/ogg; codecs=opus'
-                          : audioPath.includes('format=ogg')  ? 'audio/ogg'
-                          : audioPath.includes('format=flac') ? 'audio/flac'
-                          : 'audio/mpeg';
-                const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-                const blob = new Blob([bytes], { type: fmt });
-                audioPath = URL.createObjectURL(blob);
-            } catch (err) {
-                console.error('[Player] Failed to proxy subsonic audio:', err);
-                throw new Error(`Subsonic proxy failed: ${err instanceof Error ? err.message : String(err)}`);
+            const { invoke: inv } = await import('@tauri-apps/api/core');
+            let lastErr: unknown;
+            for (let attempt = 0; attempt < 2; attempt++) {
+                try {
+                    // Re-fetch a fresh stream URL on retry (new token/salt) in case server rejected the old one
+                    if (attempt > 0 && track.external_id) {
+                        await new Promise(r => setTimeout(r, 1000));
+                        try {
+                            audioPath = await inv('subsonic_get_stream_url', { id: track.external_id });
+                        } catch (_) { /* keep existing audioPath if re-fetch fails */ }
+                    }
+                    const b64: string = await inv('proxy_fetch_bytes', { url: audioPath });
+                    const fmt = audioPath.includes('format=opus') ? 'audio/ogg; codecs=opus'
+                              : audioPath.includes('format=ogg')  ? 'audio/ogg'
+                              : audioPath.includes('format=flac') ? 'audio/flac'
+                              : 'audio/mpeg';
+                    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+                    const blob = new Blob([bytes], { type: fmt });
+                    audioPath = URL.createObjectURL(blob);
+                    lastErr = null;
+                    break;
+                } catch (err) {
+                    lastErr = err;
+                    console.warn(`[Player] Subsonic proxy attempt ${attempt + 1} failed:`, err);
+                }
+            }
+            if (lastErr) {
+                console.error('[Player] Failed to proxy subsonic audio:', lastErr);
+                throw new Error(`Subsonic proxy failed: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`);
             }
         }
 
@@ -999,22 +1014,9 @@ async function _scheduleHtml5Preload(): Promise<void> {
         }
     }
 
-    // Subsonic: proxy bytes via Rust to avoid WebView2 CORS, same as playTrack
-    if (nextTrackObj.source_type === 'subsonic' && audioPath && (audioPath.startsWith('http://') || audioPath.startsWith('https://'))) {
-        try {
-            const { invoke: inv } = await import('@tauri-apps/api/core');
-            const b64: string = await inv('proxy_fetch_bytes', { url: audioPath });
-            const fmt = audioPath.includes('format=opus') ? 'audio/ogg; codecs=opus'
-                      : audioPath.includes('format=ogg')  ? 'audio/ogg'
-                      : audioPath.includes('format=flac') ? 'audio/flac'
-                      : 'audio/mpeg';
-            const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-            const blob = new Blob([bytes], { type: fmt });
-            audioPath = URL.createObjectURL(blob);
-        } catch (err) {
-            console.warn('[Player] Subsonic preload proxy failed (non-fatal):', err);
-            return; // skip preload, play will re-proxy on demand
-        }
+    // Subsonic: skip preload entirely — play will proxy on demand via proxy_fetch_bytes
+    if (nextTrackObj.source_type === 'subsonic') {
+        return;
     }
 
     if (!audioPath && (nextTrackObj as any).stream_url) {
