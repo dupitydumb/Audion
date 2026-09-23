@@ -136,7 +136,7 @@ class MainActivity : TauriActivity() {
         // volumes (SD card, USB). Internal storage ("primary:" docId prefix) does NOT
         // need this permission — requesting it unconditionally breaks the normal
         // internal-storage folder-pick flow by discarding the user's valid selection.
-        val docId = androidx.documentfile.provider.DocumentFile.fromTreeUri(this, uri)?.uri?.lastPathSegment ?: ""
+        val docId = uri.lastPathSegment ?: ""
         val isExternal = !docId.startsWith("primary:")
         if (isExternal && Build.VERSION.SDK_INT >= 30 && !android.os.Environment.isExternalStorageManager()) {
           try {

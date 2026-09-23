@@ -342,14 +342,20 @@ class MediaNotificationService : MediaBrowserServiceCompat(), AudionLibraryBridg
 
             setCallback(object : MediaSessionCompat.Callback() {
                 override fun onPlay() {
-                    evaluateJs("window.__audionMediaAction?.('play')")
+                    if (webViewRef != null) {
+                        evaluateJs("window.__audionMediaAction?.('play')")
+                    } else {
+                        AudionLibraryBridge.resume()
+                    }
                     lastKnownIsPlaying = true
-                    AudionLibraryBridge.resume()
                 }
                 override fun onPause() {
-                    evaluateJs("window.__audionMediaAction?.('pause')")
+                    if (webViewRef != null) {
+                        evaluateJs("window.__audionMediaAction?.('pause')")
+                    } else {
+                        AudionLibraryBridge.pause()
+                    }
                     lastKnownIsPlaying = false
-                    AudionLibraryBridge.pause()
                 }
                 override fun onSkipToPrevious() {
                     evaluateJs("window.__audionMediaAction?.('previous')")
