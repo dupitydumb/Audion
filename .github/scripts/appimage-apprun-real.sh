@@ -7,23 +7,29 @@ HERE="$(dirname "$(readlink -f "${0}")")"
 #         Mint/Ubuntu 24 (broken gvfs symbols), Wayland+XWayland sessions.
 # ---------------------------------------------------------------------------
 
-# Host WebKit helpers (not bundled in AppImage — rely on system install).
-# WebKit resolves subprocess path as "././lib/..." (CWD-relative).
-# We cd to APPDIR just before exec so the relative path resolves correctly.
-export APPDIR="$HERE"
+# DO NOT set APPDIR unconditionally — Tauri does not bundle WebKit subprocess
+# helpers (WebKitNetworkProcess, WebKitWebProcess) inside the AppImage.
+# Setting APPDIR would make WebKitGTK look for them under $HERE/usr/lib/...,
+# where they do not exist, causing subprocess launch failures.
+# Only set APPDIR if the helpers are actually present in the bundle.
+if [ -f "$HERE/usr/lib/webkit2gtk-4.1/WebKitNetworkProcess" ]; then
+  export APPDIR="$HERE"
+fi
 
 # Disable dmabuf — most common blank-screen cause on Mesa/NVIDIA with no DRI3.
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
 
 # Disable WebKit sandbox — required inside AppImage (seccomp conflicts with AppImage runtime).
 export WEBKIT_FORCE_SANDBOX=0
-export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
 
-# Disable DRI3 — prevents EGL_BAD_PARAMETER abort on AMD/Intel with broken DRI3.
-export LIBGL_DRI3_DISABLE=1
+# DRI3 — opt-in disable. Set LIBGL_DRI3_DISABLE=1 at runtime if you hit
+# EGL_BAD_PARAMETER crashes (AMD RX 6600 + Bazzite / Mesa 23).
+# Unconditional disable would force llvmpipe on Mesa 23+ where DRI2 hw drivers
+# were removed.
+export LIBGL_DRI3_DISABLE="${LIBGL_DRI3_DISABLE:-0}"
 
-# Software Mesa — fallback for any remaining GL call when /dev/dri absent or broken.
-# User can override by setting these vars before launch.
+# Software Mesa — opt-in fallback for VMs or broken GPU drivers.
+# User can set LIBGL_ALWAYS_SOFTWARE=1 before launch to force llvmpipe.
 export LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-0}"
 export GALLIUM_DRIVER="${GALLIUM_DRIVER:-}"
 
