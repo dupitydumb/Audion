@@ -152,14 +152,6 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-      - name: Set version and prerelease flags
-        id: info
-        shell: pwsh
-        run: |
-          echo "version=${{ needs.create-release.outputs.version }}" >> $env:GITHUB_OUTPUT
-          echo "prerelease=${{ needs.create-release.outputs.prerelease }}" >> $env:GITHUB_OUTPUT
-          echo "tag_name=${{ needs.create-release.outputs.tag_name }}" >> $env:GITHUB_OUTPUT
-
       - name: Upload compiled exe for MSIX packaging job
         uses: actions/upload-artifact@v4
         with:
@@ -170,7 +162,7 @@ jobs:
       - name: Rename artifacts
         shell: pwsh
         run: |
-          $ver = "${{ steps.info.outputs.version }}"
+          $ver = "${{ needs.create-release.outputs.version }}"
           Get-ChildItem src-tauri/target/release/bundle/msi/*.msi | Rename-Item -NewName "audion_${ver}_windows.msi"
           Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe | Rename-Item -NewName "audion_${ver}_windows.exe"
           Get-ChildItem src-tauri/target/release/bundle/nsis/*.exe.sig | Rename-Item -NewName "audion_${ver}_windows.exe.sig"
@@ -178,7 +170,7 @@ jobs:
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v3.0.1
         with:
-          tag_name: ${{ steps.info.outputs.tag_name }}
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
           overwrite_files: ${{ inputs.overwrite }}
           files: |
             src-tauri/target/release/bundle/msi/audion_*_windows.msi
@@ -192,8 +184,8 @@ jobs:
         shell: pwsh
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          VERSION: ${{ steps.info.outputs.version }}
-          TAG_NAME: ${{ steps.info.outputs.tag_name }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+          TAG_NAME: ${{ needs.create-release.outputs.tag_name }}
         run: |
           if (-not $env:DISCORD_WEBHOOK_URL) { return }
           $payload = @{
@@ -378,20 +370,13 @@ jobs:
           # Clean up extracted dir
           rm -rf squashfs-root
 
-      - name: Set version and prerelease flags
-        id: info
-        run: |
-          echo "version=${{ needs.create-release.outputs.version }}" >> $GITHUB_OUTPUT
-          echo "prerelease=${{ needs.create-release.outputs.prerelease }}" >> $GITHUB_OUTPUT
-          echo "tag_name=${{ needs.create-release.outputs.tag_name }}" >> $GITHUB_OUTPUT
-
       - name: Rename and repackage artifacts
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          VER="${{ steps.info.outputs.version }}"
+          VER="${{ needs.create-release.outputs.version }}"
           BUNDLE="src-tauri/target/release/bundle"
 
           # Rename DEB
@@ -419,7 +404,7 @@ jobs:
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v3.0.1
         with:
-          tag_name: ${{ steps.info.outputs.tag_name }}
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
           overwrite_files: ${{ inputs.overwrite }}
           files: |
             src-tauri/target/release/bundle/deb/audion_*_linux.deb
@@ -433,7 +418,7 @@ jobs:
         if: success()
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          VERSION: ${{ steps.info.outputs.version }}
+          VERSION: ${{ needs.create-release.outputs.version }}
         run: |
           if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
           curl -H "Content-Type: application/json" -X POST \
@@ -605,13 +590,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set version and prerelease flags
-        id: info
-        run: |
-          echo "version=${{ needs.create-release.outputs.version }}" >> $GITHUB_OUTPUT
-          echo "prerelease=${{ needs.create-release.outputs.prerelease }}" >> $GITHUB_OUTPUT
-          echo "tag_name=${{ needs.create-release.outputs.tag_name }}" >> $GITHUB_OUTPUT
-
       - name: Configure Flathub remote (system scope)
         run: |
           flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
@@ -623,7 +601,7 @@ jobs:
           manifest-path: packaging/flatpak/com.audion.app.yml
           repository-name: flathub
           repository-url: https://flathub.org/repo/flathub.flatpakrepo
-          bundle: audion_${{ steps.info.outputs.version }}_flatpak.flatpak
+          bundle: audion_${{ needs.create-release.outputs.version }}_flatpak.flatpak
           cache-key: flatpak-builder-${{ runner.os }}-${{ hashFiles('packaging/flatpak/*.yml') }}-v1
           upload-artifact: false
           verbose: true
@@ -632,14 +610,14 @@ jobs:
         run: |
           ls -la
           ls -la *.flatpak || true
-          test -f "audion_${{ steps.info.outputs.version }}_flatpak.flatpak"
+          test -f "audion_${{ needs.create-release.outputs.version }}_flatpak.flatpak"
 
       - name: Upload Flatpak to GitHub Release
         uses: softprops/action-gh-release@v3.0.1
         with:
-          tag_name: ${{ steps.info.outputs.tag_name }}
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
           overwrite_files: ${{ inputs.overwrite }}
-          files: audion_${{ steps.info.outputs.version }}_flatpak.flatpak
+          files: audion_${{ needs.create-release.outputs.version }}_flatpak.flatpak
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -647,7 +625,7 @@ jobs:
         if: success()
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          VERSION: ${{ steps.info.outputs.version }}
+          VERSION: ${{ needs.create-release.outputs.version }}
         run: |
           if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
           curl -H "Content-Type: application/json" -X POST -d "{\"embeds\": [{\"title\": \"📦 Flatpak build v$VERSION\", \"description\": \"Flatpak release has been ${{ github.event_name == 'push' && 'created' || 'updated' }}\", \"color\": 1947988, \"url\": \"https://github.com/${{ github.repository }}/releases/tag/v$VERSION\"}]}" "$DISCORD_WEBHOOK_URL"
@@ -678,16 +656,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
-      - name: Set version and prerelease flags
-        id: info
-        run: |
-          echo "version=${{ needs.create-release.outputs.version }}" >> $GITHUB_OUTPUT
-          echo "prerelease=${{ needs.create-release.outputs.prerelease }}" >> $GITHUB_OUTPUT
-          echo "tag_name=${{ needs.create-release.outputs.tag_name }}" >> $GITHUB_OUTPUT
-
       - name: Rename artifacts
         run: |
-          VER="${{ steps.info.outputs.version }}"
+          VER="${{ needs.create-release.outputs.version }}"
           echo "--- dmg dir ---"
           ls -la src-tauri/target/universal-apple-darwin/release/bundle/dmg/ || true
           echo "--- macos dir ---"
@@ -699,7 +670,7 @@ jobs:
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v3.0.1
         with:
-          tag_name: ${{ steps.info.outputs.tag_name }}
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
           overwrite_files: ${{ inputs.overwrite }}
           files: |
             src-tauri/target/universal-apple-darwin/release/bundle/dmg/audion_*_macos.dmg
@@ -712,7 +683,7 @@ jobs:
         if: success()
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          VERSION: ${{ steps.info.outputs.version }}
+          VERSION: ${{ needs.create-release.outputs.version }}
         run: |
           if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
           curl -H "Content-Type: application/json" -X POST -d "{\"embeds\": [{\"title\": \"🍎 macOS build v$VERSION\", \"description\": \"macOS release has been ${{ github.event_name == 'push' && 'created' || 'updated' }}\", \"color\": 1947988, \"url\": \"https://github.com/${{ github.repository }}/releases/tag/v$VERSION\"}]}" "$DISCORD_WEBHOOK_URL"
@@ -935,16 +906,9 @@ jobs:
             exit 1
           fi
 
-      - name: Set version and prerelease flags
-        id: info
-        run: |
-          echo "version=${{ needs.create-release.outputs.version }}" >> $GITHUB_OUTPUT
-          echo "prerelease=${{ needs.create-release.outputs.prerelease }}" >> $GITHUB_OUTPUT
-          echo "tag_name=${{ needs.create-release.outputs.tag_name }}" >> $GITHUB_OUTPUT
-
       - name: Rename Android artifacts
         run: |
-          VER="${{ steps.info.outputs.version }}"
+          VER="${{ needs.create-release.outputs.version }}"
           # Universal APK path (most common)
           UNIVERSAL_APK="src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk"
           if [ -f "$UNIVERSAL_APK" ]; then
@@ -967,7 +931,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           APK=$(find src-tauri/gen/android/app/build/outputs/apk -name "audion_*_android.apk")
-          TAG="${{ steps.info.outputs.tag_name }}"
+          TAG="${{ needs.create-release.outputs.tag_name }}"
           CLOBBER=""
           if [ "${{ inputs.overwrite }}" = "true" ]; then CLOBBER="--clobber"; fi
           maxAttempts=3
@@ -988,7 +952,7 @@ jobs:
         if: success()
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          VERSION: ${{ steps.info.outputs.version }}
+          VERSION: ${{ needs.create-release.outputs.version }}
         run: |
           if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
           curl -H "Content-Type: application/json" -X POST -d "{\"embeds\": [{\"title\": \"🤖 Android build v$VERSION\", \"description\": \"Android release has been ${{ github.event_name == 'push' && 'created' || 'updated' }}\", \"color\": 1947988, \"url\": \"https://github.com/${{ github.repository }}/releases/tag/v$VERSION\"}]}" "$DISCORD_WEBHOOK_URL"
