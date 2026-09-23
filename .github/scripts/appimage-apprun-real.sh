@@ -31,7 +31,9 @@ export LIBGL_DRI3_DISABLE="${LIBGL_DRI3_DISABLE:-0}"
 # Software Mesa — opt-in fallback for VMs or broken GPU drivers.
 # User can set LIBGL_ALWAYS_SOFTWARE=1 before launch to force llvmpipe.
 export LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-0}"
-export GALLIUM_DRIVER="${GALLIUM_DRIVER:-}"
+# GALLIUM_DRIVER: leave unset unless the user explicitly set it.
+# Exporting an empty string breaks Mesa's implicit llvmpipe selection on some versions.
+if [ -z "${GALLIUM_DRIVER+x}" ]; then unset GALLIUM_DRIVER; fi
 
 # GVfs — prevent "undefined symbol: g_task_set_static_name" crash on Mint 22 / Ubuntu 24.
 export GIO_USE_VFS=local
