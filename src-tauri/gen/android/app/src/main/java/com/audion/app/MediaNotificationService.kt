@@ -256,18 +256,19 @@ class MediaNotificationService : MediaBrowserServiceCompat(), AudionLibraryBridg
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_PLAY_PAUSE -> {
-                evaluateJs("window.__audionMediaAction?.('playPause')")
-                // fallback for when the notification's own buttons are tapped
-                // flip based on the last state the frontend reported
-                if (lastKnownIsPlaying) AudionLibraryBridge.pause() else AudionLibraryBridge.resume()
+                if (webViewRef != null) {
+                    evaluateJs("window.__audionMediaAction?.('playPause')")
+                } else {
+                    if (lastKnownIsPlaying) AudionLibraryBridge.pause() else AudionLibraryBridge.resume()
+                }
             }
             ACTION_PREVIOUS -> {
                 evaluateJs("window.__audionMediaAction?.('previous')")
-                AudionLibraryBridge.previous()
+                if (webViewRef == null) AudionLibraryBridge.previous()
             }
             ACTION_NEXT -> {
                 evaluateJs("window.__audionMediaAction?.('next')")
-                AudionLibraryBridge.next()
+                if (webViewRef == null) AudionLibraryBridge.next()
             }
             ACTION_LOVE -> {
                 evaluateJs("window.__audionMediaAction?.('love')")
@@ -341,12 +342,12 @@ class MediaNotificationService : MediaBrowserServiceCompat(), AudionLibraryBridg
 
             setCallback(object : MediaSessionCompat.Callback() {
                 override fun onPlay() {
-                    evaluateJs("window.__audionMediaAction?.('playPause')")
+                    evaluateJs("window.__audionMediaAction?.('play')")
                     lastKnownIsPlaying = true
                     AudionLibraryBridge.resume()
                 }
                 override fun onPause() {
-                    evaluateJs("window.__audionMediaAction?.('playPause')")
+                    evaluateJs("window.__audionMediaAction?.('pause')")
                     lastKnownIsPlaying = false
                     AudionLibraryBridge.pause()
                 }
