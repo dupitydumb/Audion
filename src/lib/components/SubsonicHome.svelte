@@ -50,23 +50,26 @@
   async function loadSongs() {
     songsLoading = true;
     songsError = '';
-    try {
-      songs = await subsonicGetRandomSongs(500);
-      // Resolve stream URLs in parallel (500 songs — Subsonic generates signed URLs fast)
-      const resolved = await Promise.allSettled(
-        songs.map(s => subsonicGetStreamUrl(s.id))
-      );
-      songTracks = songs.map((s, i) => {
-        const url = resolved[i].status === 'fulfilled' ? resolved[i].value : '';
-        return subsonicSongToTrack(s, url, null);
-      });
-      // Load cover art in background without blocking playback
-      loadSongCovers();
-    } catch (e) {
-      songsError = String(e);
-    } finally {
-      songsLoading = false;
+    // Retry once on transient network error
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        songs = await subsonicGetRandomSongs(200);
+        const resolved = await Promise.allSettled(
+          songs.map(s => subsonicGetStreamUrl(s.id))
+        );
+        songTracks = songs.map((s, i) => {
+          const url = resolved[i].status === 'fulfilled' ? resolved[i].value : '';
+          return subsonicSongToTrack(s, url, null);
+        });
+        loadSongCovers();
+        songsError = '';
+        break;
+      } catch (e) {
+        if (attempt === 1) songsError = String(e);
+        else await new Promise(r => setTimeout(r, 1500));
+      }
     }
+    songsLoading = false;
   }
 
   async function loadSongCovers() {
@@ -94,14 +97,18 @@
   async function loadAlbums() {
     albumsLoading = true;
     albumsError = '';
-    try {
-      albums = await subsonicGetAlbumList('alphabeticalByName', 500);
-      loadAlbumCovers();
-    } catch (e) {
-      albumsError = String(e);
-    } finally {
-      albumsLoading = false;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        albums = await subsonicGetAlbumList('alphabeticalByName', 500);
+        loadAlbumCovers();
+        albumsError = '';
+        break;
+      } catch (e) {
+        if (attempt === 1) albumsError = String(e);
+        else await new Promise(r => setTimeout(r, 1500));
+      }
     }
+    albumsLoading = false;
   }
 
   async function loadAlbumCovers() {
@@ -124,13 +131,17 @@
   async function loadArtists() {
     artistsLoading = true;
     artistsError = '';
-    try {
-      artists = await subsonicGetIndexes();
-    } catch (e) {
-      artistsError = String(e);
-    } finally {
-      artistsLoading = false;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        artists = await subsonicGetIndexes();
+        artistsError = '';
+        break;
+      } catch (e) {
+        if (attempt === 1) artistsError = String(e);
+        else await new Promise(r => setTimeout(r, 1500));
+      }
     }
+    artistsLoading = false;
   }
 
   function refresh() {
