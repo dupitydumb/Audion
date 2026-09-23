@@ -38,7 +38,7 @@ interface AndroidInterface {
 declare global {
     interface Window {
         AndroidMediaNotification?: AndroidInterface;
-        __audionMediaAction?: (action: 'playPause' | 'next' | 'previous' | 'love' | 'stop' | 'toggleShuffle' | 'cycleRepeat') => void;
+        __audionMediaAction?: (action: 'playPause' | 'play' | 'pause' | 'next' | 'previous' | 'love' | 'stop' | 'toggleShuffle' | 'cycleRepeat') => void;
         // called from MediaSessionCompat.onPlayFromMediaId when a track is
         // tapped in android auto's browse/search UI => mediaId is one of our
         // own "track:<id>" node ids from the android_auto rust interpreter
@@ -65,6 +65,12 @@ export async function initAndroidNotification() {
         switch (action) {
             case 'playPause':
                 togglePlay();
+                break;
+            case 'play':
+                if (!get(isPlaying)) togglePlay();
+                break;
+            case 'pause':
+                if (get(isPlaying)) togglePlay();
                 break;
             case 'next':
                 nextTrack();
