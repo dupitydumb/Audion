@@ -132,9 +132,13 @@ class MainActivity : TauriActivity() {
         // Convert the URI to a real filesystem path
         val realPath = resolveUriToPath(uri)
 
-        // request MANAGE_EXTERNAL_STORAGE on android 11+ whenever it isn't
-        // already granted
-        if (Build.VERSION.SDK_INT >= 30 && !android.os.Environment.isExternalStorageManager()) {
+        // request MANAGE_EXTERNAL_STORAGE on android 11+ only for external/removable
+        // volumes (SD card, USB). Internal storage ("primary:" docId prefix) does NOT
+        // need this permission — requesting it unconditionally breaks the normal
+        // internal-storage folder-pick flow by discarding the user's valid selection.
+        val docId = androidx.documentfile.provider.DocumentFile.fromTreeUri(this, uri)?.uri?.lastPathSegment ?: ""
+        val isExternal = !docId.startsWith("primary:")
+        if (isExternal && Build.VERSION.SDK_INT >= 30 && !android.os.Environment.isExternalStorageManager()) {
           try {
             val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
               setData(Uri.parse("package:${packageName}"))
