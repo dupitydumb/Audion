@@ -93,6 +93,50 @@ fn build_subsonic_url(
     format!("{}/{}.view?{}", rest_base, endpoint, query)
 }
 
+/// Like build_subsonic_url but omits `f=json` — for binary endpoints (stream, getCoverArt)
+/// that must return raw bytes, not a JSON envelope.
+fn build_subsonic_binary_url(
+    base: &str,
+    endpoint: &str,
+    username: &str,
+    password: &str,
+    extra: &[(&str, &str)],
+) -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let dur = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
+    let salt = format!("{:x}{:x}", dur.as_millis(), dur.subsec_nanos());
+    let token_input = format!("{}{}", password, salt);
+    let token = format!("{:x}", md5::compute(token_input.as_bytes()));
+
+    let base = base.trim_end_matches('/');
+    let rest_base = if base.ends_with("/rest") {
+        base.to_string()
+    } else {
+        format!("{}/rest", base)
+    };
+
+    let mut pairs = vec![
+        ("u", username.to_string()),
+        ("t", token),
+        ("s", salt),
+        ("v", SUBSONIC_API_VERSION.to_string()),
+        ("c", SUBSONIC_CLIENT.to_string()),
+        // no "f=json" — binary endpoint must return raw bytes
+    ];
+    for (k, v) in extra {
+        pairs.push((k, v.to_string()));
+    }
+
+    let query = pairs
+        .iter()
+        .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
+        .collect::<Vec<_>>()
+        .join("&");
+
+    format!("{}/{}.view?{}", rest_base, endpoint, query)
+}
+
 // ── Response plumbing ─────────────────────────────────────────────────────────
 
 #[derive(Deserialize, Debug)]
@@ -444,7 +488,7 @@ pub fn subsonic_get_stream_url(
     if !cfg.enabled || cfg.url.is_empty() {
         return Err("Subsonic not configured or disabled".into());
     }
-    Ok(build_subsonic_url(
+    Ok(build_subsonic_binary_url(
         &cfg.url,
         "stream",
         &cfg.username,
@@ -469,7 +513,7 @@ pub fn subsonic_get_cover_url(
     if let Some(ref s) = size_str {
         extra.push(("size", s.as_str()));
     }
-    Ok(build_subsonic_url(
+    Ok(build_subsonic_binary_url(
         &cfg.url,
         "getCoverArt",
         &cfg.username,
