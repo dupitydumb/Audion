@@ -586,7 +586,7 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_playTrackNative<'
                 is_streaming: t.source_type.as_deref() == Some("server"),
             })
             .collect();
-        let (repeat, shuffle) = *LAST_REPEAT_SHUFFLE.lock().unwrap();
+        let (repeat, shuffle) = *LAST_REPEAT_SHUFFLE.lock().unwrap_or_else(|e| e.into_inner());
         if let Err(e) = pl.send(PlayerCommand::SyncQueue {
             tracks: track_refs,
             index,
@@ -697,7 +697,7 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_setShuffleNative<
     _class: JClass<'local>,
     enabled: jni::sys::jboolean,
 ) {
-    LAST_REPEAT_SHUFFLE.lock().unwrap().1 = enabled != 0;
+    LAST_REPEAT_SHUFFLE.lock().unwrap_or_else(|e| e.into_inner()).1 = enabled != 0;
     if let Some(pl) = player() {
         if let Err(e) = pl.send(PlayerCommand::SetShuffleMode(enabled != 0)) {
             tracing::error!("[android_auto] failed to send PlayerCommand::SetShuffleMode: {e}");
@@ -719,7 +719,7 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_setRepeatNative<'
         "all" => RepeatMode::All,
         _ => RepeatMode::Off,
     };
-    LAST_REPEAT_SHUFFLE.lock().unwrap().0 = mode;
+    LAST_REPEAT_SHUFFLE.lock().unwrap_or_else(|e| e.into_inner()).0 = mode;
     if let Some(pl) = player() {
         if let Err(e) = pl.send(PlayerCommand::SetRepeatMode(mode)) {
             tracing::error!("[android_auto] failed to send PlayerCommand::SetRepeatMode: {e}");

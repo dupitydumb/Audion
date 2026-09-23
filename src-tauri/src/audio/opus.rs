@@ -169,7 +169,7 @@ impl OpusSource {
         // mapped multichannel opus (5.1, 7.1) needs a multistream decoder driven by the mapping table in OpusHead,
         // which this decoder doesn't implement yet,
         // so fail explicitly here
-        if head.channels > 2 {
+        if head.channels == 0 || head.channels > 2 {
             return Err(format!(
                 "Opus track {} has {} channels; multichannel (mapped) Opus is not supported",
                 path, head.channels
