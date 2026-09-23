@@ -999,6 +999,24 @@ async function _scheduleHtml5Preload(): Promise<void> {
         }
     }
 
+    // Subsonic: proxy bytes via Rust to avoid WebView2 CORS, same as playTrack
+    if (nextTrackObj.source_type === 'subsonic' && audioPath && (audioPath.startsWith('http://') || audioPath.startsWith('https://'))) {
+        try {
+            const { invoke: inv } = await import('@tauri-apps/api/core');
+            const b64: string = await inv('proxy_fetch_bytes', { url: audioPath });
+            const fmt = audioPath.includes('format=opus') ? 'audio/ogg; codecs=opus'
+                      : audioPath.includes('format=ogg')  ? 'audio/ogg'
+                      : audioPath.includes('format=flac') ? 'audio/flac'
+                      : 'audio/mpeg';
+            const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+            const blob = new Blob([bytes], { type: fmt });
+            audioPath = URL.createObjectURL(blob);
+        } catch (err) {
+            console.warn('[Player] Subsonic preload proxy failed (non-fatal):', err);
+            return; // skip preload, play will re-proxy on demand
+        }
+    }
+
     if (!audioPath && (nextTrackObj as any).stream_url) {
         audioPath = (nextTrackObj as any).stream_url;
     }
