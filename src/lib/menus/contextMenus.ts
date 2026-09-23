@@ -55,6 +55,10 @@ export function isTrackUnavailable(track: Track): boolean {
     if (!track.source_type || track.source_type === 'local' || track.source_type === 'server') {
         return false;
     }
+    // subsonic tracks carry a pre-resolved stream URL in path — always playable
+    if (track.source_type === 'subsonic') {
+        return !track.path;
+    }
     // downloaded copy: always playable regardless of plugin state
     if (track.local_src) {
         return false;

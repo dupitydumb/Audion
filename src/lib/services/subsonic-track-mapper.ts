@@ -1,23 +1,24 @@
 import type { Track } from '$lib/api/tauri';
-import type { SubsonicSong } from '$lib/stores/subsonic';
+import type { SubsonicSong, SubsonicAlbumSummary } from '$lib/stores/subsonic';
 
-// Subsonic IDs are strings; map to unique positive ints via a high offset
-// so they never collide with local SQLite rowids (which start at 1 and are small).
-// 2_000_000_000 is well above any realistic local library size.
+// Subsonic IDs are arbitrary strings (numeric or UUID).
+// Hash to a unique positive int in [2_000_000_000, 2_999_999_999] — well above
+// any realistic local SQLite rowid. djb2 hash, always positive via >>> 0.
 const SUBSONIC_ID_OFFSET = 2_000_000_000;
+const SUBSONIC_ID_RANGE  =   999_999_999; // bucket size
 
 export function subsonicSongId(songId: string): number {
-    const n = parseInt(songId, 10);
-    return isNaN(n) ? SUBSONIC_ID_OFFSET : SUBSONIC_ID_OFFSET + n;
+    let h = 5381;
+    for (let i = 0; i < songId.length; i++) {
+        h = ((h << 5) + h + songId.charCodeAt(i)) >>> 0; // keep unsigned 32-bit
+    }
+    return SUBSONIC_ID_OFFSET + (h % SUBSONIC_ID_RANGE);
 }
 
-/** Convert a SubsonicSong to a Track the native player can play.
- *  Pass streamUrl pre-resolved — callers resolve before building the queue. */
-export function subsonicSongToTrack(
-    song: SubsonicSong,
-    streamUrl: string,
-    coverUrl?: string | null,
-): Track {
+/** Convert a SubsonicSong to a Track that the native player can play.
+ *  streamUrl must be pre-resolved and passed in — do not call subsonicGetStreamUrl here
+ *  (that is async; callers resolve it before building the queue). */
+export function subsonicSongToTrack(song: SubsonicSong, streamUrl: string, coverUrl?: string | null): Track {
     return {
         id: subsonicSongId(song.id),
         path: streamUrl,
