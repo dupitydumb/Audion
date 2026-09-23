@@ -734,7 +734,12 @@ function ensureHtml5EqGraph(audio: HTMLAudioElement): void {
         const ctx = html5AudioContext;
         if (!ctx) return;
 
-        if (!html5AudioSourceNode) {
+        if (!html5AudioSourceNode || html5AudioSourceElement !== audio) {
+            // Disconnect old node if it was for a different element
+            if (html5AudioSourceNode && html5AudioSourceElement !== audio) {
+                try { html5AudioSourceNode.disconnect(); } catch (_) {}
+                html5AudioSourceNode = null;
+            }
             html5AudioSourceNode = ctx.createMediaElementSource(audio);
             html5AudioSourceElement = audio;
         }
