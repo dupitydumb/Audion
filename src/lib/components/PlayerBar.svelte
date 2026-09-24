@@ -803,8 +803,8 @@
         height: 44px;
         position: relative;
         border-radius: var(--radius-full);
-        background-color: var(--text-primary);
-        color: var(--bg-base);
+        background-color: var(--accent-primary);
+        color: var(--text-on-accent, #fff);
         display: flex;
         align-items: center;
         justify-content: center;
