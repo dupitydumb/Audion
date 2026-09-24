@@ -87,27 +87,28 @@
   let slotAlpha: Record<string, number> = {};
   let slotHexText: Record<string, string> = {};
 
-  // Initialise from current store value (runs once; reactive block below keeps in sync)
-  colorSlots.forEach(({ key }) => {
-    const val = $theme.customColors[key] ?? '#000000';
-    slotHex[key] = toHex6(val);
-    slotAlpha[key] = toAlpha(val);
-    slotHexText[key] = val;
-  });
-
-  // Keep local state in sync when store changes externally (e.g. reset all)
-  $: colorSlots.forEach(({ key }) => {
-    const val = $theme.customColors[key];
-    if (val === null) {
-      slotHex[key] = '#000000';
-      slotAlpha[key] = 1;
-      slotHexText[key] = '#000000';
-    } else {
-      slotHex[key] = toHex6(val);
-      slotAlpha[key] = toAlpha(val);
-      slotHexText[key] = val;
-    }
-  });
+  // Keep local state in sync when store changes externally (e.g. reset all, import theme).
+  // Must reassign the objects (not just mutate) so Svelte propagates changes to the UI.
+  $: {
+    const h: Record<string, string> = {};
+    const a: Record<string, number> = {};
+    const t: Record<string, string> = {};
+    colorSlots.forEach(({ key }) => {
+      const val = $theme.customColors[key];
+      if (val === null) {
+        h[key] = '#000000';
+        a[key] = 1;
+        t[key] = '#000000';
+      } else {
+        h[key] = toHex6(val);
+        a[key] = toAlpha(val);
+        t[key] = val;
+      }
+    });
+    slotHex = h;
+    slotAlpha = a;
+    slotHexText = t;
+  }
 
   function onSlotColorPick(key: keyof CustomColors, hex6: string) {
     slotHex[key] = hex6;
