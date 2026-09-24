@@ -1059,7 +1059,7 @@
   .btn-primary {
     padding: var(--spacing-sm) var(--spacing-md);
     background-color: var(--accent-primary);
-    color: var(--bg-base);
+    color: var(--text-on-accent, #fff);
     border-radius: var(--radius-sm);
     font-weight: var(--font-weight-medium);
     font-size: var(--font-size-base);
@@ -1099,7 +1099,7 @@
   .btn-install {
     padding: var(--spacing-sm) var(--spacing-md);
     background-color: var(--accent-primary);
-    color: var(--bg-base);
+    color: var(--text-on-accent, #fff);
     border-radius: var(--radius-sm);
     font-weight: var(--font-weight-medium);
     font-size: var(--font-size-base);

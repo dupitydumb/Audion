@@ -417,6 +417,17 @@ function darkenColor(hex: string, percent: number): string {
     return `#${(1 << 24 | R << 16 | G << 8 | B).toString(16).slice(1)}`;
 }
 
+// Pick white or black text based on accent luminance (WCAG relative luminance)
+function accentTextColor(hex: string): string {
+    const num = parseInt(hex6(hex).replace('#', ''), 16);
+    const r = (num >> 16) / 255;
+    const g = ((num >> 8) & 0xff) / 255;
+    const b = (num & 0xff) / 255;
+    const toLinear = (c: number) => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    const L = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+    return L > 0.179 ? '#000000' : '#ffffff';
+}
+
 // Convert hex to RGB string (r, g, b)
 function hexToRgb(hex: string): string {
     const num = parseInt(hex6(hex).replace('#', ''), 16);
@@ -490,6 +501,7 @@ export function applyTheme(state: ThemeState): void {
     root.style.setProperty('--accent-primary-rgb', hexToRgb(state.accentColor));
     root.style.setProperty('--accent-hover', lightenColor(state.accentColor, 15));
     root.style.setProperty('--accent-subtle', state.accentColor + '20');
+    root.style.setProperty('--text-on-accent', accentTextColor(state.accentColor));
 
     // Theme attribute for CSS selectors
     root.setAttribute('data-theme', isDark ? 'dark' : 'light');
