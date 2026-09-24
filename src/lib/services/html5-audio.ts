@@ -120,7 +120,7 @@ export async function html5Preload(path: string, trackId: string | number | null
         try {
             const mpdText = await fetch(path).then(r => r.text());
             const bytes = new TextEncoder().encode(mpdText);
-            const binary = Array.from(bytes).reduce((acc, byte) => acc + String.fromCharCode(byte), '');
+            const binary = Array.from(bytes, b => String.fromCharCode(b)).join('');
             const dataUrl = 'data:application/dash+xml;base64,' + btoa(binary);
 
             const dashjs = await getDashPlayer();
@@ -562,7 +562,7 @@ async function playWithDash(blobUrl: string, audioElement: HTMLAudioElement, sta
     URL.revokeObjectURL(blobUrl);
 
     const bytes = new TextEncoder().encode(mpdText);
-    const binary = Array.from(bytes).reduce((acc, byte) => acc + String.fromCharCode(byte), '');
+    const binary = Array.from(bytes, b => String.fromCharCode(b)).join('');
     const dataUrl = 'data:application/dash+xml;base64,' + btoa(binary);
 
     const dashjs = await getDashPlayer();
@@ -956,9 +956,13 @@ async function resumeHtml5AudioContext(): Promise<void> {
 // The native half stays in player.ts. These were combined for convenience,
 // not because they are logically coupled.
 
+let _html5EqTimer: ReturnType<typeof setTimeout> | null = null;
 equalizer.subscribe((state) => {
-    // Apply immediately to the WebAudio graph when available — matches original behavior
-    applyHtml5EqState(state);
+    if (_html5EqTimer) clearTimeout(_html5EqTimer);
+    _html5EqTimer = setTimeout(() => {
+        _html5EqTimer = null;
+        applyHtml5EqState(state);
+    }, 50);
 });
 
 // =============================================================================

@@ -65,8 +65,8 @@ pub(super) fn resolve_replay_gain(
 fn parse_gain_str(s: &str) -> Option<f32> {
     let cleaned = s
         .trim()
-        .trim_end_matches(|c: char| c == 'B' || c == 'b')
-        .trim_end_matches(|c: char| c == 'd' || c == 'D')
+        .trim_end_matches(['B', 'b'])
+        .trim_end_matches(['d', 'D'])
         .trim();
     cleaned.parse::<f32>().ok()
 }
@@ -83,7 +83,7 @@ fn db_to_linear(db: f32) -> f32 {
 fn channel_map(buf: &mut Vec<f32>, src_ch: u16, dst_ch: u16) {
     if src_ch == dst_ch { return; }
 
-    const C3:  f32 = 0.7071; // −3 dB
+    const C3:  f32 = std::f32::consts::FRAC_1_SQRT_2; // −3 dB
     const C10: f32 = 0.3162; // −10 dB
 
     let src    = src_ch as usize;
@@ -99,7 +99,7 @@ fn channel_map(buf: &mut Vec<f32>, src_ch: u16, dst_ch: u16) {
         return;
     }
 
-    let old: Vec<f32> = buf.drain(..).collect();
+    let old = std::mem::take(buf);
     buf.reserve(frames * dst);
 
     #[inline(always)]
@@ -418,8 +418,8 @@ fn channel_map(buf: &mut Vec<f32>, src_ch: u16, dst_ch: u16) {
                     "[AUDIO] channel_map: unhandled {}ch→{}ch, using truncation/zero-pad",
                     src, dst
                 );
-                for ch in 0..dst {
-                    buf.push(if ch < src { f[ch] } else { 0.0 });
+                for val in f.iter().copied().chain(std::iter::repeat(0.0_f32)).take(dst) {
+                    buf.push(val);
                 }
             }
         }

@@ -14,6 +14,8 @@
 
   // Cached accent color from CSS var
   let accentColor = '#1DB954';
+  let freqBuf: Uint8Array | null = null;
+  let timeBuf: Uint8Array | null = null;
 
   function getAccent(): string {
     if (typeof document === 'undefined') return accentColor;
@@ -21,21 +23,27 @@
       .getPropertyValue('--accent-primary').trim() || accentColor;
   }
 
+  $: if ($theme) {
+    accentColor = getAccent();
+  }
+
   // ── Draw modes ─────────────────────────────────────────────────────────────
 
   function drawBars(analyser: AnalyserNode, ctx: CanvasRenderingContext2D, w: number, h: number, color: string) {
-    const buf = new Uint8Array(analyser.frequencyBinCount);
-    analyser.getByteFrequencyData(buf);
+    if (!freqBuf || freqBuf.length !== analyser.frequencyBinCount) {
+      freqBuf = new Uint8Array(analyser.frequencyBinCount);
+    }
+    analyser.getByteFrequencyData(freqBuf);
 
     ctx.clearRect(0, 0, w, h);
 
     const barCount = 24;
-    const step = Math.floor(buf.length / barCount);
+    const step = Math.floor(freqBuf.length / barCount);
     const barW = (w / barCount) * 0.7;
     const gap = (w / barCount) * 0.3;
 
     for (let i = 0; i < barCount; i++) {
-      const val = buf[i * step] / 255;
+      const val = freqBuf[i * step] / 255;
       const barH = Math.max(2, val * h);
       const x = i * (barW + gap);
       const y = h - barH;
@@ -50,8 +58,10 @@
   }
 
   function drawWave(analyser: AnalyserNode, ctx: CanvasRenderingContext2D, w: number, h: number, color: string) {
-    const buf = new Uint8Array(analyser.fftSize);
-    analyser.getByteTimeDomainData(buf);
+    if (!timeBuf || timeBuf.length !== analyser.fftSize) {
+      timeBuf = new Uint8Array(analyser.fftSize);
+    }
+    analyser.getByteTimeDomainData(timeBuf);
 
     ctx.clearRect(0, 0, w, h);
     ctx.lineWidth = 1.5;
@@ -59,10 +69,10 @@
     ctx.globalAlpha = 0.85;
     ctx.beginPath();
 
-    const sliceW = w / buf.length;
+    const sliceW = w / timeBuf.length;
     let x = 0;
-    for (let i = 0; i < buf.length; i++) {
-      const v = buf[i] / 128.0;
+    for (let i = 0; i < timeBuf.length; i++) {
+      const v = timeBuf[i] / 128.0;
       const y = (v * h) / 2;
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
@@ -74,13 +84,15 @@
   }
 
   function drawBlurPulse(analyser: AnalyserNode, ctx: CanvasRenderingContext2D, w: number, h: number, color: string) {
-    const buf = new Uint8Array(analyser.frequencyBinCount);
-    analyser.getByteFrequencyData(buf);
+    if (!freqBuf || freqBuf.length !== analyser.frequencyBinCount) {
+      freqBuf = new Uint8Array(analyser.frequencyBinCount);
+    }
+    analyser.getByteFrequencyData(freqBuf);
 
     // Average energy of bass/mid range
-    const sliceEnd = Math.floor(buf.length / 4);
+    const sliceEnd = Math.floor(freqBuf.length / 4);
     let sum = 0;
-    for (let i = 0; i < sliceEnd; i++) sum += buf[i];
+    for (let i = 0; i < sliceEnd; i++) sum += freqBuf[i];
     const energy = sum / sliceEnd / 255; // 0–1
 
     ctx.clearRect(0, 0, w, h);
@@ -111,23 +123,22 @@
       return;
     }
 
-    rafId = requestAnimationFrame(draw);
-
     const analyser = getHtml5Analyser();
     const w = canvas.width;
     const h = canvas.height;
-    const color = getAccent();
 
     if (!analyser || !playing) {
-      // Fade out to empty
       ctx2d.clearRect(0, 0, w, h);
+      rafId = null;
       return;
     }
 
+    rafId = requestAnimationFrame(draw);
+
     switch (mode) {
-      case 'bars':       drawBars(analyser, ctx2d, w, h, color); break;
-      case 'wave':       drawWave(analyser, ctx2d, w, h, color); break;
-      case 'blur-pulse': drawBlurPulse(analyser, ctx2d, w, h, color); break;
+      case 'bars':       drawBars(analyser, ctx2d, w, h, accentColor); break;
+      case 'wave':       drawWave(analyser, ctx2d, w, h, accentColor); break;
+      case 'blur-pulse': drawBlurPulse(analyser, ctx2d, w, h, accentColor); break;
     }
   }
 

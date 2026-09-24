@@ -244,38 +244,83 @@
 
   // Infinite scroll: when virtual scroll nears the bottom of loaded tracks,
   // fetch the next paginated batch from the backend.
+  let loadMorePending = false;
+
   $: {
     if (
       virtualScrollState.endIndex >= sortedTracks.length - 10 &&
-      sortedTracks.length > 0
+      sortedTracks.length > 0 &&
+      !loadMorePending
     ) {
-      loadMoreTracks();
+      loadMorePending = true;
+      loadMoreTracks().finally(() => {
+        loadMorePending = false;
+      });
     }
   }
 
-  // 5: Pre-compute album art and availability for visible tracks
+  // 5: Pre-compute album art, availability, and date for visible tracks
   type TrackWithMetadata = {
     track: Track;
     albumArt: string | null;
     unavailable: boolean;
+    formattedDate: string;
   };
 
-  $: visibleTracksWithMetadata = virtualScrollState.visibleTracks.map(
-    (track) => {
-      // Re-evaluate when runtime changes
-      const _ = runtime;
-      return {
-        track,
-        albumArt: getTrackAlbumArt(track),
-        unavailable: getCachedUnavailable(track),
-      };
-    },
-  ) as TrackWithMetadata[];
+  // Date format cache — keyed by raw date_added string, invalidated on locale change
+  const dateFormatCache = new Map<string, string>();
+  $: {
+    // Bust cache when locale changes so re-renders pick up new format
+    const _loc = $locale;
+    dateFormatCache.clear();
+  }
+
+  function getCachedFormattedDate(dateAdded?: string | null): string {
+    if (!dateAdded) return $_('common.unknown');
+    if (dateFormatCache.has(dateAdded)) return dateFormatCache.get(dateAdded)!;
+    const result = formatDateAdded(dateAdded);
+    dateFormatCache.set(dateAdded, result);
+    return result;
+  }
+
+  // Row identity cache: reuse objects when track+albumArt+unavailable unchanged
+  // Prevents downstream diffing churn in Svelte's keyed each block
+  let _prevVisibleMap = new Map<number, TrackWithMetadata>();
+
+  $: visibleTracksWithMetadata = (() => {
+    const nextMap = new Map<number, TrackWithMetadata>();
+    const result: TrackWithMetadata[] = [];
+    // Re-evaluate when runtime changes
+    const _rt = runtime;
+
+    for (const track of virtualScrollState.visibleTracks) {
+      const albumArt = getTrackAlbumArt(track);
+      const unavailable = getCachedUnavailable(track);
+      const formattedDate = getCachedFormattedDate(track.date_added);
+
+      const prev = _prevVisibleMap.get(track.id);
+      if (
+        prev &&
+        prev.track === track &&
+        prev.albumArt === albumArt &&
+        prev.unavailable === unavailable &&
+        prev.formattedDate === formattedDate
+      ) {
+        nextMap.set(track.id, prev);
+        result.push(prev);
+      } else {
+        const entry: TrackWithMetadata = { track, albumArt, unavailable, formattedDate };
+        nextMap.set(track.id, entry);
+        result.push(entry);
+      }
+    }
+    _prevVisibleMap = nextMap;
+    return result;
+  })();
 
   function handleScroll(e: Event) {
     const target = e.target as HTMLElement;
     scrollTop = target.scrollTop;
-    scrollbarWidth = Math.max(0, target.offsetWidth - target.clientWidth);
   }
 
   // Measure container height on mount
@@ -322,6 +367,8 @@
     trackAlbumArtCache.clear();
     albumMap.clear();
     availabilityCache.clear();
+    dateFormatCache.clear();
+    _prevVisibleMap.clear();
 
     resizeObserver?.disconnect();
     resizeObserver = undefined;
@@ -861,13 +908,14 @@
           class="virtual-content"
           style="transform: translateY({virtualScrollState.offsetY}px);"
         >
-          {#each visibleTracksWithMetadata as { track, albumArt, unavailable }, index (track.id)}
+          {#each visibleTracksWithMetadata as { track, albumArt, unavailable, formattedDate }, index (track.id)}
             {@const actualIndex = virtualScrollState.startIndex + index}
             {@const isSelected = $multiSelect.selectedTrackIds.has(track.id)}
 <TrackListRow
               {track}
               {albumArt}
               {unavailable}
+              {formattedDate}
               {actualIndex}
               {isSelected}
               {showAlbum}

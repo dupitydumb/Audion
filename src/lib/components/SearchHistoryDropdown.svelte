@@ -85,7 +85,7 @@
             </div>
             <div class="item-info">
               <span class="item-label">{formatLabel(entry)}</span>
-              {#if entry.type !== 'query' && entry.artist}
+              {#if (entry.type === 'track' || entry.type === 'album') && entry.artist}
                 <span class="item-sub">{entry.artist}</span>
               {/if}
               {#if entry.type !== 'query'}

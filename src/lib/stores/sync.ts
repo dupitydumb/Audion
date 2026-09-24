@@ -101,6 +101,11 @@ let unlistenAuth: UnlistenFn | null = null;
 let unlistenSync: UnlistenFn | null = null;
 let unlistenDeepLink: UnlistenFn | null = null;
 let unlistenProgress: UnlistenFn | null = null;
+let unsubSyncStatus: (() => void) | null = null;
+let unsubIsOnline: (() => void) | null = null;
+let visibilityHandler: (() => void) | null = null;
+let activePollInterval: ReturnType<typeof setInterval> | null = null;
+let activeSyncTimeout: ReturnType<typeof setTimeout> | null = null;
 
 /**
  * Initialize sync stores — call on app startup.
@@ -289,17 +294,20 @@ export async function initSync(): Promise<void> {
     // Watch for pending changes and online status. Trigger sync after a short delay.
     // Enforces a 12-hour cooldown between auto-syncs to reduce server load.
     // Also pauses sync when the app is in the background for > 5 minutes.
-    let syncTimeout: ReturnType<typeof setTimeout> | null = null;
     let lastVisibleAt = Date.now();
     let isAppVisible = true;
 
     if (typeof document !== 'undefined') {
-        document.addEventListener('visibilitychange', () => {
+        if (visibilityHandler) {
+            document.removeEventListener('visibilitychange', visibilityHandler);
+        }
+        visibilityHandler = () => {
             isAppVisible = document.visibilityState === 'visible';
             if (isAppVisible) {
                 lastVisibleAt = Date.now();
             }
-        });
+        };
+        document.addEventListener('visibilitychange', visibilityHandler);
     }
 
     const isBackgroundPaused = () => {
@@ -307,7 +315,7 @@ export async function initSync(): Promise<void> {
         const backgroundDuration = Date.now() - lastVisibleAt;
         return backgroundDuration > 5 * 60 * 1000; // 5 minutes
     };
-    
+
     // Automatic Sync Trigger constants
     const LAST_SYNC_KEY = 'audion_last_auto_sync_at';
     const AUTO_SYNC_COOLDOWN_MS = 12 * 60 * 60 * 1000; // 12 hours
@@ -315,7 +323,8 @@ export async function initSync(): Promise<void> {
     // Prevent initial sync on app open
     let isInitialCheck = true;
 
-    syncStatus.subscribe(($status) => {
+    if (unsubSyncStatus) unsubSyncStatus();
+    unsubSyncStatus = syncStatus.subscribe(($status) => {
         // Skip the very first check to prevent sync on app open
         if (isInitialCheck) {
             isInitialCheck = false;
@@ -327,7 +336,7 @@ export async function initSync(): Promise<void> {
         // Read current cooldown timestamp from storage (don't use stale closure variable)
         const currentLastSync = parseInt(localStorage.getItem(LAST_SYNC_KEY) || '0', 10);
         const cooldownRemaining = currentLastSync + AUTO_SYNC_COOLDOWN_MS - now;
-        
+
         const canSync =
             $status.pending_changes > 0 &&
             !$status.is_syncing &&
@@ -337,24 +346,26 @@ export async function initSync(): Promise<void> {
             !isBackgroundPaused();
 
         if (canSync) {
-            if (syncTimeout) clearTimeout(syncTimeout);
-            syncTimeout = setTimeout(() => {
+            if (activeSyncTimeout) clearTimeout(activeSyncTimeout);
+            activeSyncTimeout = setTimeout(() => {
+                activeSyncTimeout = null;
                 triggerSync(false);
             }, 5000); // 5 second debounce for auto-sync
-        } else if (syncTimeout && ($status.is_syncing || $status.pending_changes === 0)) {
-            clearTimeout(syncTimeout);
-            syncTimeout = null;
+        } else if (activeSyncTimeout && ($status.is_syncing || $status.pending_changes === 0)) {
+            clearTimeout(activeSyncTimeout);
+            activeSyncTimeout = null;
         }
     });
 
     // Also trigger when coming back online, but still respect cooldown
-    isOnline.subscribe(($online) => {
+    if (unsubIsOnline) unsubIsOnline();
+    unsubIsOnline = isOnline.subscribe(($online) => {
         if ($online && !isInitialCheck) {
             const $status = get(syncStatus);
             const now = Date.now();
             const currentLastSync = parseInt(localStorage.getItem(LAST_SYNC_KEY) || '0', 10);
-            if ($status.pending_changes > 0 && 
-                get(isLoggedIn) && 
+            if ($status.pending_changes > 0 &&
+                get(isLoggedIn) &&
                 (now - currentLastSync >= AUTO_SYNC_COOLDOWN_MS) &&
                 !isBackgroundPaused()) {
                 triggerSync(false);
@@ -411,15 +422,22 @@ async function handleDeepLinkCallback(url: string): Promise<void> {
  * Updates the store on each poll so the UI reflects progress.
  */
 function pollSyncStatus(intervalMs = 2000, maxAttempts = 60): void {
+    if (activePollInterval) {
+        clearInterval(activePollInterval);
+        activePollInterval = null;
+    }
     let attempts = 0;
-    const poll = setInterval(async () => {
+    activePollInterval = setInterval(async () => {
         attempts++;
         try {
             const status = await invoke<SyncStatus>('sync_get_status');
             syncStatus.set(status);
 
             if (!status.is_syncing || attempts >= maxAttempts) {
-                clearInterval(poll);
+                if (activePollInterval) {
+                    clearInterval(activePollInterval);
+                    activePollInterval = null;
+                }
                 if (attempts >= maxAttempts) {
                     console.warn('[Sync] Polling timed out after', maxAttempts, 'attempts');
                 } else {
@@ -429,7 +447,10 @@ function pollSyncStatus(intervalMs = 2000, maxAttempts = 60): void {
             }
         } catch (e) {
             console.error('[Sync] Failed to poll status:', e);
-            clearInterval(poll);
+            if (activePollInterval) {
+                clearInterval(activePollInterval);
+                activePollInterval = null;
+            }
         }
     }, intervalMs);
 }
@@ -467,6 +488,26 @@ export function destroySync(): void {
     if (unlistenProgress) {
         unlistenProgress();
         unlistenProgress = null;
+    }
+    if (unsubSyncStatus) {
+        unsubSyncStatus();
+        unsubSyncStatus = null;
+    }
+    if (unsubIsOnline) {
+        unsubIsOnline();
+        unsubIsOnline = null;
+    }
+    if (visibilityHandler && typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', visibilityHandler);
+        visibilityHandler = null;
+    }
+    if (activePollInterval) {
+        clearInterval(activePollInterval);
+        activePollInterval = null;
+    }
+    if (activeSyncTimeout) {
+        clearTimeout(activeSyncTimeout);
+        activeSyncTimeout = null;
     }
 }
 

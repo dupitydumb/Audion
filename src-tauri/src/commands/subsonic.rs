@@ -4,6 +4,7 @@
 //! Auth: token = md5(password + salt), salt is random per request, per Subsonic spec.
 
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 use tauri::Manager;
 
 const SUBSONIC_API_VERSION: &str = "1.16.1";
@@ -50,91 +51,66 @@ pub async fn load_config_from_disk(app: &tauri::AppHandle) -> SubsonicConfig {
 
 /// Build a fully-qualified Subsonic REST URL with token auth baked into the query string.
 /// token = md5(password + salt); salt = nanosecond hex timestamp (unique per call).
-fn build_subsonic_url(
+/// Pass `json = true` for JSON endpoints, `false` for binary endpoints (stream, getCoverArt).
+fn build_subsonic_url_inner(
     base: &str,
     endpoint: &str,
     username: &str,
     password: &str,
     extra: &[(&str, &str)],
+    json: bool,
 ) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    // salt = full unix millis + subsec_nanos for uniqueness even under concurrent calls
     let dur = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
     let salt = format!("{:x}{:x}", dur.as_millis(), dur.subsec_nanos());
-    let token_input = format!("{}{}", password, salt);
-    let token = format!("{:x}", md5::compute(token_input.as_bytes()));
+    let token = format!("{:x}", md5::compute(format!("{}{}", password, salt).as_bytes()));
 
     let base = base.trim_end_matches('/');
     let rest_base = if base.ends_with("/rest") {
-        base.to_string()
+        base
     } else {
-        format!("{}/rest", base)
+        // ponytail: small alloc only on non-"/rest" base URLs (rare in practice)
+        &format!("{}/rest", base)
     };
 
-    let mut pairs = vec![
-        ("u", username.to_string()),
-        ("t", token),
-        ("s", salt),
-        ("v", SUBSONIC_API_VERSION.to_string()),
-        ("c", SUBSONIC_CLIENT.to_string()),
-        ("f", "json".to_string()),
-    ];
-    for (k, v) in extra {
-        pairs.push((k, v.to_string()));
+    // Pre-size: fixed params + optional f=json + extras, ~40 chars per param avg
+    let fixed = 6 + usize::from(json); // u + t + s + v + c + (f)
+    let mut query = String::with_capacity((fixed + extra.len()) * 40);
+
+    macro_rules! push_pair {
+        ($k:expr, $v:expr) => {{
+            if !query.is_empty() { query.push('&'); }
+            query.push_str($k);
+            query.push('=');
+            query.push_str(&urlencoding::encode($v));
+        }};
     }
 
-    let query = pairs
-        .iter()
-        .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
-        .collect::<Vec<_>>()
-        .join("&");
+    push_pair!("u", username);
+    push_pair!("t", &token);
+    push_pair!("s", &salt);
+    push_pair!("v", SUBSONIC_API_VERSION);
+    push_pair!("c", SUBSONIC_CLIENT);
+    if json { push_pair!("f", "json"); }
+    for (k, v) in extra { push_pair!(k, v); }
 
     format!("{}/{}.view?{}", rest_base, endpoint, query)
 }
 
-/// Like build_subsonic_url but omits `f=json` — for binary endpoints (stream, getCoverArt)
-/// that must return raw bytes, not a JSON envelope.
-fn build_subsonic_binary_url(
-    base: &str,
-    endpoint: &str,
-    username: &str,
-    password: &str,
-    extra: &[(&str, &str)],
+#[inline]
+fn build_subsonic_url(
+    base: &str, endpoint: &str, username: &str, password: &str, extra: &[(&str, &str)],
 ) -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
+    build_subsonic_url_inner(base, endpoint, username, password, extra, true)
+}
 
-    let dur = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default();
-    let salt = format!("{:x}{:x}", dur.as_millis(), dur.subsec_nanos());
-    let token_input = format!("{}{}", password, salt);
-    let token = format!("{:x}", md5::compute(token_input.as_bytes()));
-
-    let base = base.trim_end_matches('/');
-    let rest_base = if base.ends_with("/rest") {
-        base.to_string()
-    } else {
-        format!("{}/rest", base)
-    };
-
-    let mut pairs = vec![
-        ("u", username.to_string()),
-        ("t", token),
-        ("s", salt),
-        ("v", SUBSONIC_API_VERSION.to_string()),
-        ("c", SUBSONIC_CLIENT.to_string()),
-        // no "f=json" — binary endpoint must return raw bytes
-    ];
-    for (k, v) in extra {
-        pairs.push((k, v.to_string()));
-    }
-
-    let query = pairs
-        .iter()
-        .map(|(k, v)| format!("{}={}", k, urlencoding::encode(v)))
-        .collect::<Vec<_>>()
-        .join("&");
-
-    format!("{}/{}.view?{}", rest_base, endpoint, query)
+/// Omits `f=json` — for binary endpoints (stream, getCoverArt) that return raw bytes.
+#[inline]
+fn build_subsonic_binary_url(
+    base: &str, endpoint: &str, username: &str, password: &str, extra: &[(&str, &str)],
+) -> String {
+    build_subsonic_url_inner(base, endpoint, username, password, extra, false)
 }
 
 // ── Response plumbing ─────────────────────────────────────────────────────────
@@ -169,11 +145,15 @@ fn check_ok(inner: &SubsonicInner) -> Result<(), String> {
     Ok(())
 }
 
-fn client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .unwrap_or_default()
+static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+fn client() -> &'static reqwest::Client {
+    HTTP_CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+            .expect("failed to build subsonic HTTP client")
+    })
 }
 
 // ── Public return types ───────────────────────────────────────────────────────
