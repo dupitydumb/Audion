@@ -57,7 +57,7 @@
                 );
                 if (ok) disconnectCustomServer();
               }}
-              aria-label="Disconnect Server"
+              aria-label={$_('settings.disconnectServerTitle')}
             >{$_('settings.disconnect')}</button>
           </div>
 
@@ -77,7 +77,7 @@
               on:click={() => appSettings.setStreamServerTracks(!$appSettings.streamServerTracks)}
               role="switch"
               aria-checked={$appSettings.streamServerTracks}
-              aria-label="Toggle Stream Server Tracks"
+              aria-label={$_('settings.toggleStreamServerTracks', { default: 'Toggle Stream Server Tracks' })}
             >
               <div class="toggle-handle"></div>
             </button>
@@ -115,7 +115,7 @@
               class="btn-outline-compact"
               on:click={async () => {
                 const ok = await confirm(
-                  "Are you sure you want to log out? Unsynced changes will be lost.",
+                  $_('settings.logoutConfirm', { default: 'Are you sure you want to log out? Unsynced changes will be lost.' }),
                   { title: $_('settings.logout') },
                 );
                 if (ok) logout();

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
   import { slide } from "svelte/transition";
+  import { _ } from "svelte-i18n";
   import Icon from "$lib/components/Icon.svelte";
   import {
     subsonicConfig,
@@ -37,7 +38,10 @@
       const user = await testSubsonicConnection(url, username, password);
       result = {
         ok: true,
-        message: `Connected as ${user.username}${user.server_version ? ` · server v${user.server_version}` : ""}`,
+        message: $_('settings.connectedAsUser', {
+          values: { user: user.username, version: user.server_version ? ` · server v${user.server_version}` : "" },
+          default: `Connected as ${user.username}${user.server_version ? ` · server v${user.server_version}` : ""}`
+        }),
       };
     } catch (err: unknown) {
       result = { ok: false, message: String(err) };
@@ -51,7 +55,7 @@
     result = null;
     try {
       await saveSubsonicConfig(url, username, password, enabled);
-      result = { ok: true, message: "Configuration saved" };
+      result = { ok: true, message: $_('settings.configSaved', { default: "Configuration saved" }) };
     } catch (err: unknown) {
       result = { ok: false, message: String(err) };
     } finally {
@@ -78,12 +82,12 @@
   >
     <Icon name="globe" size="lg" className="accordion-icon" />
     <div class="accordion-header-info">
-      <span class="accordion-title">Subsonic Server</span>
+      <span class="accordion-title">{$_('settings.subsonicServer', { default: 'Subsonic Server' })}</span>
       <span class="accordion-subtitle">
         {#if $subsonicConnected}
-          Connected · {$subsonicConfig.url}
+          {$_('settings.synced', { default: 'Connected' })} · {$subsonicConfig.url}
         {:else}
-          Stream from Navidrome, Airsonic, Jellyfin, and more
+          {$_('settings.subsonicSubtitle', { default: 'Stream from Navidrome, Airsonic, Jellyfin, and more' })}
         {/if}
       </span>
     </div>
@@ -101,10 +105,9 @@
         <!-- Enable toggle -->
         <div class="toggle-container">
           <div class="toggle-info">
-            <span class="setting-title">Enable Subsonic Integration</span>
+            <span class="setting-title">{$_('settings.enableSubsonic', { default: 'Enable Subsonic Integration' })}</span>
             <span class="setting-description">
-              Connect to any Subsonic-compatible server and browse or stream
-              your music library directly in Audion.
+              {$_('settings.enableSubsonicDesc', { default: 'Connect to any Subsonic-compatible server and browse or stream your music library directly in Audion.' })}
             </span>
           </div>
           <button
@@ -113,7 +116,7 @@
             on:click={handleToggleEnabled}
             role="switch"
             aria-checked={enabled}
-            aria-label="Toggle Subsonic integration"
+            aria-label={$_('settings.toggleSubsonic', { default: 'Toggle Subsonic integration' })}
           >
             <div class="toggle-handle"></div>
           </button>
@@ -124,10 +127,9 @@
 
           <!-- Server URL -->
           <div class="subsonic-field">
-            <label class="setting-title" for="subsonic-url">Server URL</label>
+            <label class="setting-title" for="subsonic-url">{$_('settings.serverUrl', { default: 'Server URL' })}</label>
             <span class="setting-description">
-              Include port if needed, e.g. https://music.example.com or
-              http://192.168.1.10:4533
+              {$_('settings.serverUrlDesc', { default: 'Include port if needed, e.g. https://music.example.com or http://192.168.1.10:4533' })}
             </span>
             <input
               id="subsonic-url"
@@ -142,7 +144,7 @@
 
           <!-- Username -->
           <div class="subsonic-field">
-            <label class="setting-title" for="subsonic-username">Username</label>
+            <label class="setting-title" for="subsonic-username">{$_('settings.username', { default: 'Username' })}</label>
             <input
               id="subsonic-username"
               class="subsonic-input"
@@ -155,7 +157,7 @@
 
           <!-- Password -->
           <div class="subsonic-field">
-            <label class="setting-title" for="subsonic-password">Password</label>
+            <label class="setting-title" for="subsonic-password">{$_('settings.password', { default: 'Password' })}</label>
             <input
               id="subsonic-password"
               class="subsonic-input"
@@ -186,17 +188,17 @@
               class="btn-outline-compact"
               on:click={handleTest}
               disabled={testing || !url || !username || !password}
-              aria-label="Test server connection"
+              aria-label={$_('settings.testConnectionAria', { default: 'Test server connection' })}
             >
-              {testing ? "Testing…" : "Test Connection"}
+              {testing ? $_('settings.testing', { default: 'Testing…' }) : $_('settings.testConnection', { default: 'Test Connection' })}
             </button>
             <button
               class="btn-outline-compact"
               on:click={handleSave}
               disabled={saving || !url || !username || !password}
-              aria-label="Save Subsonic configuration"
+              aria-label={$_('settings.saveSubsonicAria', { default: 'Save Subsonic configuration' })}
             >
-              {saving ? "Saving…" : "Save"}
+              {saving ? $_('settings.saving', { default: 'Saving…' }) : $_('settings.save', { default: 'Save' })}
             </button>
           </div>
         {/if}

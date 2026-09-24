@@ -193,7 +193,7 @@
         <div class="inner-section">
           <span class="setting-title">{$_('settings.outputDevice')}</span>
           <span class="setting-description">{$_('settings.outputDeviceDesc')}</span>
-          <div class="device-dropdown-wrapper" role="listbox" aria-label="Output device" aria-disabled={outputDeviceDisabled}>
+          <div class="device-dropdown-wrapper" role="listbox" aria-label={$_('settings.outputDevice')} aria-disabled={outputDeviceDisabled}>
             <div class="custom-dropdown" class:disabled={outputDeviceDisabled} bind:this={deviceDropdownRef}>
               <button
                 class="dropdown-selected"
@@ -242,7 +242,7 @@
                             class:active={infoPopoverDevice?.id === device.id}
                             on:click={(e) => handleInfoClick(e, device)}
                             role="button"
-                            aria-label="Device info"
+                            aria-label={$_('settings.deviceInfo', { default: 'Device info' })}
                             tabindex="0"
                             on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleInfoClick(e, device); }}
                           >i</span>
@@ -307,7 +307,7 @@
                 on:click={handleToggleLimiter}
                 role="switch"
                 aria-checked={$appSettings.limiterEnabled}
-                aria-label="Toggle Safety Limiter"
+                aria-label={$_('settings.toggleLimiter', { default: 'Toggle Safety Limiter' })}
               >
                 <div class="toggle-handle"></div>
               </button>
@@ -333,7 +333,7 @@
                 const val = parseInt(e.currentTarget.value, 10);
                 appSettings.setCrossfadeSeconds(val);
               }}
-              aria-label="Crossfade duration"
+              aria-label={$_('settings.crossfadeDuration', { default: 'Crossfade duration' })}
             />
             <span style="font-size: 0.85rem; color: var(--text-secondary); width: 32px; text-align: right; font-weight: 500;">
               {$appSettings.crossfadeSeconds === 0 ? $_('settings.off') : `${$appSettings.crossfadeSeconds}s`}
@@ -354,7 +354,7 @@
               on:click={() => equalizer.setEnabled(!$equalizer.enabled)}
               role="switch"
               aria-checked={$equalizer.enabled}
-              aria-label="Toggle Equalizer"
+              aria-label={$_('settings.toggleEqualizer', { default: 'Toggle Equalizer' })}
             >
               <div class="toggle-handle"></div>
             </button>

@@ -148,13 +148,13 @@
                 <span class="delimiter-priority">{i + 1}</span>
                 <code class="delimiter-value">{delim}</code>
                 <div class="delimiter-actions">
-                  <button class="icon-btn" on:click={() => moveDelimiter(i, -1)} disabled={i === 0} aria-label="Move up">
+                  <button class="icon-btn" on:click={() => moveDelimiter(i, -1)} disabled={i === 0} aria-label={$_('common.moveUp', { default: 'Move up' })}>
                     <Icon name="chevron-up" size="xs" />
                   </button>
-                  <button class="icon-btn" on:click={() => moveDelimiter(i, 1)} disabled={i === delimiters.length - 1} aria-label="Move down">
+                  <button class="icon-btn" on:click={() => moveDelimiter(i, 1)} disabled={i === delimiters.length - 1} aria-label={$_('common.moveDown', { default: 'Move down' })}>
                     <Icon name="chevron-down" size="xs" />
                   </button>
-                  <button class="icon-btn" on:click={() => removeDelimiter(i)} aria-label="Remove">
+                  <button class="icon-btn" on:click={() => removeDelimiter(i)} aria-label={$_('settings.remove', { default: 'Remove' })}>
                     <Icon name="x" size="xs" />
                   </button>
                 </div>

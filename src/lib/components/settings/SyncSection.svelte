@@ -102,7 +102,7 @@
     >{$isSyncing ? $_('settings.syncing') : $_('settings.syncNow')}</button>
 
     <div class="divider"></div>
-    <div class="tier-limits" role="group" aria-label="Usage Limits">
+    <div class="tier-limits" role="group" aria-label={$_('settings.usageLimits', { default: 'Usage Limits' })}>
       <div class="tier-limit-item">
         <div class="limit-header">
           <span id="limit-label-music" class="setting-title" style="font-size: 11px; opacity: 0.8">{$_('common.tracks')}</span>
