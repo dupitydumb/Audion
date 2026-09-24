@@ -186,6 +186,30 @@ export async function initSync(): Promise<void> {
                     } catch (err) {
                         console.error('[Sync] Failed to handle plugin install deep link:', err);
                     }
+                } else if (url.includes('install-theme')) {
+                    try {
+                        const parsed = new URL(url);
+                        const themeUrl = parsed.searchParams.get('url') || parsed.searchParams.get('theme');
+                        if (themeUrl) {
+                            console.log('[Sync] Deep link theme install request:', themeUrl);
+                            const res = await fetch(themeUrl);
+                            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                            const text = await res.text();
+                            const raw = JSON.parse(text);
+                            const { parseThemePackage, theme } = await import('./theme');
+                            const pkg = parseThemePackage(raw);
+                            const { confirm } = await import('./dialogs');
+                            const confirmed = await confirm(
+                                `Do you want to install and apply theme "${pkg.name ?? 'Custom Theme'}"?`,
+                                { title: 'Install Theme', confirmLabel: 'Install & Apply', cancelLabel: 'Cancel' }
+                            );
+                            if (confirmed) {
+                                theme.applyPackage(pkg);
+                            }
+                        }
+                    } catch (err) {
+                        console.error('[Sync] Failed to handle theme install deep link:', err);
+                    }
                 }
             }
         });
@@ -228,6 +252,30 @@ export async function initSync(): Promise<void> {
                         }
                     } catch (err) {
                         console.error('[Sync] Failed to handle cold-start plugin install deep link:', err);
+                    }
+                } else if (url.includes('install-theme')) {
+                    try {
+                        const parsed = new URL(url);
+                        const themeUrl = parsed.searchParams.get('url') || parsed.searchParams.get('theme');
+                        if (themeUrl) {
+                            console.log('[Sync] Cold-start theme install request:', themeUrl);
+                            const res = await fetch(themeUrl);
+                            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                            const text = await res.text();
+                            const raw = JSON.parse(text);
+                            const { parseThemePackage, theme } = await import('./theme');
+                            const pkg = parseThemePackage(raw);
+                            const { confirm } = await import('./dialogs');
+                            const confirmed = await confirm(
+                                `Do you want to install and apply theme "${pkg.name ?? 'Custom Theme'}"?`,
+                                { title: 'Install Theme', confirmLabel: 'Install & Apply', cancelLabel: 'Cancel' }
+                            );
+                            if (confirmed) {
+                                theme.applyPackage(pkg);
+                            }
+                        }
+                    } catch (err) {
+                        console.error('[Sync] Failed to handle cold-start theme install deep link:', err);
                     }
                 }
             }

@@ -1,7 +1,9 @@
 ## [v1.4.1-beta] - 2026-09-20
 
-### Highlights: Android Auto, Opus Codec, Hybrid Layout & Linux Stability
+### Highlights: Theming Engine, Android Auto, Opus Codec, Hybrid Layout & Linux Stability
 
+* **Theming Engine & Community Themes**: Complete theming system with `.audiotheme` export/import, in-app Theme Browser, custom backgrounds (solid, gradient, image, video), customizable color tokens, animation presets, audio visualizers, and sandboxed custom JavaScript visual effect overlays (`customJs`).
+* **Theme Deep Linking**: One-click theme installation from web or links via `audion://install-theme?url=...` with confirmation prompt.
 * **Android Auto**: Full Android Auto integration — browse library, play tracks, control playback, and navigate playlists from your car display.
 * **Opus Codec**: Native Opus audio support with multichannel decoding and x86-32 build fix. Plays `.opus` files directly via the native audio engine.
 * **Hybrid Layout**: New hybrid layout mode combines desktop and mobile UI elements. Volume control added to mobile fullscreen player. Layout detection refined.
@@ -10,6 +12,13 @@
 
 ### New Features
 
+* **Custom Themes & Community Browser**:
+  * Export and import portable `.audiotheme` packages.
+  * In-app Theme Browser with realistic mini app UI previews showing sidebar, content cards, and player bar.
+  * Deep link support (`audion://install-theme?url=...`) to preview and apply community themes directly.
+  * Custom background layer supporting solid colors, CSS gradients, images, and videos with adjustable opacity and blur.
+  * Optional custom JavaScript visual effect overlay runner (`customJs`) rendering canvas animations (e.g. rain, snow, matrix code, ambient glowing orbs) with user safety toggle.
+  * WCAG luminance tokens (`--text-on-accent`, `--text-on-player`) ensuring legibility across dynamic theme palettes.
 * **Android Auto**: Browse and play your full library, control playback (shuffle, repeat), and queue tracks from any Android Auto-compatible head unit. Cold start support — app launches directly into the correct playback context from the car.
 * **Full Opus Support**: Native Opus codec via `opus.rs`. Multichannel Opus decoding. Patched `opus-rs` for x86-32 build stability.
 * **Hybrid Layout Mode**: New layout option blending desktop and mobile views. Volume slider in mobile fullscreen player.

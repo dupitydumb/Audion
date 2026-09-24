@@ -20,7 +20,8 @@
     author?: string;
     description?: string;
     accentColor: string;
-    previewColors: string[];
+    previewColors?: string[];
+    hasEffect?: boolean;
   };
 
   let state: 'idle' | 'loading' | 'loaded' | 'error' = 'idle';
@@ -85,7 +86,7 @@
     const url = 'https://dupitydumb.github.io/audion-theme/submit.html';
     if (isTauri()) {
       try {
-        const { open: openUrl } = await import('@tauri-apps/plugin-opener');
+        const { openUrl } = await import('@tauri-apps/plugin-opener');
         await openUrl(url);
         return;
       } catch {}
@@ -146,17 +147,59 @@
               {#each themes as card (card.id)}
                 {@const status = installing[card.id] ?? 'idle'}
                 {@const isLast = card.id === lastInstalledId}
+                {@const colors = card.previewColors ?? [card.accentColor, '#181818', card.accentColor, '#f0f0f0']}
+                {@const bgBase = colors[0] ?? '#121212'}
+                {@const sidebarBg = colors[1] ?? '#0c0c0c'}
+                {@const accent = card.accentColor}
+                {@const textPrimary = colors[3] ?? '#f0f0f0'}
+
                 <div class="tb-theme-card">
-                  <!-- color swatch -->
-                  <div class="tb-swatch">
-                    {#each (card.previewColors?.slice(0,3) ?? [card.accentColor,'#222','#eee']) as c}
-                      <div class="tb-swatch-seg" style="background:{c}"></div>
-                    {/each}
+                  <!-- Mini App UI Preview Mockup -->
+                  <div class="tb-mockup" style="background: {bgBase};">
+                    <!-- Mini Sidebar -->
+                    <div class="tb-mock-sidebar" style="background: {sidebarBg}; border-right: 1px solid rgba(255,255,255,0.07);">
+                      <div class="tb-mock-dot" style="background: {accent};"></div>
+                      <div class="tb-mock-line-sm" style="background: {textPrimary}; opacity: 0.35;"></div>
+                      <div class="tb-mock-line-sm" style="background: {textPrimary}; opacity: 0.2;"></div>
+                    </div>
+
+                    <!-- Mini Main Content -->
+                    <div class="tb-mock-main">
+                      <div class="tb-mock-topbar">
+                        <div class="tb-mock-line-md" style="background: {textPrimary}; opacity: 0.7;"></div>
+                        {#if card.hasEffect}
+                          <span class="tb-mock-fx-badge" style="color: {accent}; border-color: {accent};">FX</span>
+                        {/if}
+                      </div>
+                      <div class="tb-mock-content">
+                        <div class="tb-mock-card" style="background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.08);">
+                          <div class="tb-mock-card-accent" style="background: {accent};"></div>
+                        </div>
+                        <div class="tb-mock-card" style="background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.06);"></div>
+                      </div>
+                    </div>
+
+                    <!-- Mini Player Bar -->
+                    <div class="tb-mock-player" style="background: {sidebarBg}; border-top: 1px solid rgba(255,255,255,0.08);">
+                      <div class="tb-mock-track">
+                        <div class="tb-mock-thumb" style="background: {accent};"></div>
+                        <div class="tb-mock-title" style="background: {textPrimary}; opacity: 0.5;"></div>
+                      </div>
+                      <div class="tb-mock-playbtn" style="background: {accent};"></div>
+                      <div class="tb-mock-progress" style="background: rgba(255,255,255,0.15);">
+                        <div class="tb-mock-progress-bar" style="background: {accent}; width: 45%;"></div>
+                      </div>
+                    </div>
                   </div>
+
+                  <!-- Theme Info -->
                   <div class="tb-info">
                     <div class="tb-name">
                       <span class="tb-dot" style="background:{card.accentColor}"></span>
                       {card.name}
+                      {#if card.hasEffect}
+                        <span class="tb-fx-pill">Effect</span>
+                      {/if}
                       {#if isLast}<span class="tb-badge">Active</span>{/if}
                     </div>
                     {#if card.author}<div class="tb-author">by {card.author}</div>{/if}
@@ -165,6 +208,8 @@
                       <div class="tb-err-msg">{installError[card.id]}</div>
                     {/if}
                   </div>
+
+                  <!-- Install Action -->
                   <button
                     class="btn-install"
                     class:done={status === 'done'}
@@ -271,7 +316,7 @@
   .tb-theme-card {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: 14px;
     padding: 12px 14px;
     border-bottom: 1px solid var(--border-color);
     transition: background var(--transition-fast);
@@ -279,15 +324,130 @@
   .tb-theme-card:last-child { border-bottom: none; }
   .tb-theme-card:hover { background: var(--bg-elevated); }
 
-  .tb-swatch {
-    display: flex;
-    flex-shrink: 0;
-    width: 48px; height: 32px;
-    border-radius: 6px;
+  /* Realistic Mini App Mockup */
+  .tb-mockup {
+    position: relative;
+    width: 90px;
+    height: 58px;
+    border-radius: 7px;
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
     overflow: hidden;
-    border: 1px solid var(--border-color);
+    flex-shrink: 0;
+    display: grid;
+    grid-template-columns: 24px 1fr;
+    grid-template-rows: 1fr 14px;
   }
-  .tb-swatch-seg { flex: 1; }
+
+  .tb-mock-sidebar {
+    grid-row: 1;
+    grid-column: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding-top: 5px;
+  }
+  .tb-mock-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+  .tb-mock-line-sm {
+    width: 12px;
+    height: 2px;
+    border-radius: 1px;
+  }
+
+  .tb-mock-main {
+    grid-row: 1;
+    grid-column: 2;
+    display: flex;
+    flex-direction: column;
+    padding: 4px 5px;
+    gap: 4px;
+    overflow: hidden;
+  }
+  .tb-mock-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .tb-mock-line-md {
+    width: 24px;
+    height: 3px;
+    border-radius: 1px;
+  }
+  .tb-mock-fx-badge {
+    font-size: 7px;
+    line-height: 1;
+    padding: 1px 2px;
+    border-radius: 2px;
+    border: 1px solid;
+    font-weight: 700;
+  }
+
+  .tb-mock-content {
+    display: flex;
+    gap: 3px;
+    flex: 1;
+  }
+  .tb-mock-card {
+    flex: 1;
+    border-radius: 3px;
+    border: 1px solid;
+    position: relative;
+    overflow: hidden;
+  }
+  .tb-mock-card-accent {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 5px;
+    height: 5px;
+    border-radius: 1px;
+  }
+
+  .tb-mock-player {
+    grid-row: 2;
+    grid-column: 1 / span 2;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 4px;
+  }
+  .tb-mock-track {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+  .tb-mock-thumb {
+    width: 7px;
+    height: 7px;
+    border-radius: 1px;
+  }
+  .tb-mock-title {
+    width: 12px;
+    height: 2px;
+    border-radius: 1px;
+  }
+  .tb-mock-playbtn {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .tb-mock-progress {
+    flex: 1;
+    height: 2px;
+    border-radius: 1px;
+    overflow: hidden;
+  }
+  .tb-mock-progress-bar {
+    height: 100%;
+    border-radius: 1px;
+  }
 
   .tb-info { flex: 1; min-width: 0; }
   .tb-name {
@@ -297,6 +457,16 @@
   }
   .tb-dot {
     width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+  .tb-fx-pill {
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 0 5px;
+    border-radius: 4px;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: var(--text-secondary);
+    letter-spacing: 0.3px;
   }
   .tb-badge {
     font-size: 0.68rem;
