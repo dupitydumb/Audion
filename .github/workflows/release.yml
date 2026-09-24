@@ -188,16 +188,32 @@ jobs:
           TAG_NAME: ${{ needs.create-release.outputs.tag_name }}
         run: |
           if (-not $env:DISCORD_WEBHOOK_URL) { return }
+          $releaseUrl = "https://github.com/${{ github.repository }}/releases/tag/$env:TAG_NAME"
           $payload = @{
             embeds = @(
               @{
-                title = "🪟 Windows build $env:TAG_NAME"
-                description = "Windows release has been ${{ github.event_name == 'push' && 'created' || 'updated' }}"
-                color = 1947988
-                url = "https://github.com/${{ github.repository }}/releases/tag/v$env:VERSION"
+                title = "🪟 Windows Build Ready ($env:TAG_NAME)"
+                description = "Windows installer (.exe) and MSI package build completed."
+                color = 0x0078D4
+                url = $releaseUrl
+                footer = @{ text = "Audion Build System" }
               }
             )
-          } | ConvertTo-Json
+            components = @(
+              @{
+                type = 1
+                components = @(
+                  @{
+                    type = 2
+                    style = 5
+                    label = "View Release"
+                    url = $releaseUrl
+                    emoji = @{ name = "📦" }
+                  }
+                )
+              }
+            )
+          } | ConvertTo-Json -Depth 5
           Invoke-RestMethod -Uri $env:DISCORD_WEBHOOK_URL -Method Post -Body $payload -ContentType "application/json"
 
   # ---------------------------------------------------------------------------
@@ -265,16 +281,32 @@ jobs:
           TAG_NAME: ${{ needs.create-release.outputs.tag_name }}
         run: |
           if (-not $env:DISCORD_WEBHOOK_URL) { return }
+          $releaseUrl = "https://github.com/${{ github.repository }}/releases/tag/$env:TAG_NAME"
           $payload = @{
             embeds = @(
               @{
-                title = "📦 Windows MSIX build $env:TAG_NAME"
-                description = "Windows MSIX package has been ${{ github.event_name == 'push' && 'created' || 'updated' }}"
-                color = 1947988
-                url = "https://github.com/${{ github.repository }}/releases/tag/v$env:VERSION"
+                title = "📦 Windows MSIX Package Ready ($env:TAG_NAME)"
+                description = "Windows MSIX package build completed."
+                color = 0x0078D4
+                url = $releaseUrl
+                footer = @{ text = "Audion Build System" }
               }
             )
-          } | ConvertTo-Json
+            components = @(
+              @{
+                type = 1
+                components = @(
+                  @{
+                    type = 2
+                    style = 5
+                    label = "View Release"
+                    url = $releaseUrl
+                    emoji = @{ name = "📦" }
+                  }
+                )
+              }
+            )
+          } | ConvertTo-Json -Depth 5
           Invoke-RestMethod -Uri $env:DISCORD_WEBHOOK_URL -Method Post -Body $payload -ContentType "application/json"
 
 
@@ -418,11 +450,34 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           VERSION: ${{ needs.create-release.outputs.version }}
+          TAG_NAME: ${{ needs.create-release.outputs.tag_name }}
         run: |
           if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
-          curl -H "Content-Type: application/json" -X POST \
-            -d "{\"embeds\": [{\"title\": \"🐧 Linux build v$VERSION\", \"description\": \"Linux release updated\", \"color\": 1947988, \"url\": \"https://github.com/${{ github.repository }}/releases/tag/v$VERSION\"}]}" \
-            "$DISCORD_WEBHOOK_URL"
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG_NAME}"
+          PAYLOAD=$(jq -n \
+            --arg title "🐧 Linux Build Ready (${TAG_NAME})" \
+            --arg desc "Universal AppImage & DEB packages uploaded to GitHub Releases." \
+            --arg url "$RELEASE_URL" \
+            '{
+              embeds: [{
+                title: $title,
+                description: $desc,
+                color: 16565796,
+                url: $url,
+                footer: { text: "Audion Build System" }
+              }],
+              components: [{
+                type: 1,
+                components: [{
+                  type: 2,
+                  style: 5,
+                  label: "View Release",
+                  url: $url,
+                  emoji: { name: "📦" }
+                }]
+              }]
+            }')
+          curl -H "Content-Type: application/json" -X POST -d "$PAYLOAD" "$DISCORD_WEBHOOK_URL"
 
   # ---------------------------------------------------------------------------
   # Linux Smoke Test — verify AppImage launches on popular distros
@@ -629,9 +684,34 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           VERSION: ${{ needs.create-release.outputs.version }}
+          TAG_NAME: ${{ needs.create-release.outputs.tag_name }}
         run: |
           if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
-          curl -H "Content-Type: application/json" -X POST -d "{\"embeds\": [{\"title\": \"📦 Flatpak build v$VERSION\", \"description\": \"Flatpak release has been ${{ github.event_name == 'push' && 'created' || 'updated' }}\", \"color\": 1947988, \"url\": \"https://github.com/${{ github.repository }}/releases/tag/v$VERSION\"}]}" "$DISCORD_WEBHOOK_URL"
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG_NAME}"
+          PAYLOAD=$(jq -n \
+            --arg title "📦 Flatpak Package Ready (${TAG_NAME})" \
+            --arg desc "Flatpak bundle build completed." \
+            --arg url "$RELEASE_URL" \
+            '{
+              embeds: [{
+                title: $title,
+                description: $desc,
+                color: 4886754,
+                url: $url,
+                footer: { text: "Audion Build System" }
+              }],
+              components: [{
+                type: 1,
+                components: [{
+                  type: 2,
+                  style: 5,
+                  label: "View Release",
+                  url: $url,
+                  emoji: { name: "📦" }
+                }]
+              }]
+            }')
+          curl -H "Content-Type: application/json" -X POST -d "$PAYLOAD" "$DISCORD_WEBHOOK_URL"
 
   # ---------------------------------------------------------------------------
   # macOS Build
@@ -687,9 +767,34 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           VERSION: ${{ needs.create-release.outputs.version }}
+          TAG_NAME: ${{ needs.create-release.outputs.tag_name }}
         run: |
           if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
-          curl -H "Content-Type: application/json" -X POST -d "{\"embeds\": [{\"title\": \"🍎 macOS build v$VERSION\", \"description\": \"macOS release has been ${{ github.event_name == 'push' && 'created' || 'updated' }}\", \"color\": 1947988, \"url\": \"https://github.com/${{ github.repository }}/releases/tag/v$VERSION\"}]}" "$DISCORD_WEBHOOK_URL"
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG_NAME}"
+          PAYLOAD=$(jq -n \
+            --arg title "🍎 macOS Universal Build Ready (${TAG_NAME})" \
+            --arg desc "macOS Universal DMG & App bundle uploaded to GitHub Releases." \
+            --arg url "$RELEASE_URL" \
+            '{
+              embeds: [{
+                title: $title,
+                description: $desc,
+                color: 0,
+                url: $url,
+                footer: { text: "Audion Build System" }
+              }],
+              components: [{
+                type: 1,
+                components: [{
+                  type: 2,
+                  style: 5,
+                  label: "View Release",
+                  url: $url,
+                  emoji: { name: "📦" }
+                }]
+              }]
+            }')
+          curl -H "Content-Type: application/json" -X POST -d "$PAYLOAD" "$DISCORD_WEBHOOK_URL"
 
   # ---------------------------------------------------------------------------
   # Updater Manifest (latest.json) — one job per platform, each merges its own
@@ -956,6 +1061,109 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           VERSION: ${{ needs.create-release.outputs.version }}
+          TAG_NAME: ${{ needs.create-release.outputs.tag_name }}
         run: |
           if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
-          curl -H "Content-Type: application/json" -X POST -d "{\"embeds\": [{\"title\": \"🤖 Android build v$VERSION\", \"description\": \"Android release has been ${{ github.event_name == 'push' && 'created' || 'updated' }}\", \"color\": 1947988, \"url\": \"https://github.com/${{ github.repository }}/releases/tag/v$VERSION\"}]}" "$DISCORD_WEBHOOK_URL"
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG_NAME}"
+          PAYLOAD=$(jq -n \
+            --arg title "🤖 Android APK Ready (${TAG_NAME})" \
+            --arg desc "Signed Android APK uploaded to GitHub Releases." \
+            --arg url "$RELEASE_URL" \
+            '{
+              embeds: [{
+                title: $title,
+                description: $desc,
+                color: 4054148,
+                url: $url,
+                footer: { text: "Audion Build System" }
+              }],
+              components: [{
+                type: 1,
+                components: [{
+                  type: 2,
+                  style: 5,
+                  label: "View Release",
+                  url: $url,
+                  emoji: { name: "📦" }
+                }]
+              }]
+            }')
+          curl -H "Content-Type: application/json" -X POST -d "$PAYLOAD" "$DISCORD_WEBHOOK_URL"
+
+  # ---------------------------------------------------------------------------
+  # Final Discord Release Announcement with Release Notes & Link Buttons
+  # ---------------------------------------------------------------------------
+  release-summary-discord:
+    name: Discord Release Announcement
+    runs-on: ubuntu-latest
+    needs: [create-release, release-windows, release-linux, release-macos, release-android, release-flatpak]
+    if: always() && needs.create-release.result == 'success'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Send Discord Release Announcement
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          VERSION: ${{ needs.create-release.outputs.version }}
+          TAG_NAME: ${{ needs.create-release.outputs.tag_name }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
+
+          # Extract release notes highlights from releasenote.md
+          NOTES=""
+          if [ -f releasenote.md ]; then
+            NOTES=$(head -n 45 releasenote.md | grep -v '^## \[' | head -c 1800)
+          fi
+          if [ -z "$NOTES" ]; then
+            NOTES="Audion $TAG_NAME release artifacts are now available for download across all platforms."
+          fi
+
+          RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG_NAME}"
+          CHANGELOG_URL="https://github.com/${{ github.repository }}/blob/master/releasenote.md"
+
+          PAYLOAD=$(jq -n \
+            --arg title "🚀 Audion ${TAG_NAME} Released!" \
+            --arg desc "$NOTES" \
+            --arg rel_url "$RELEASE_URL" \
+            --arg change_url "$CHANGELOG_URL" \
+            '{
+              embeds: [{
+                title: $title,
+                description: $desc,
+                color: 1947988,
+                url: $rel_url,
+                fields: [
+                  {
+                    name: "📱 Platforms & Packages",
+                    value: "🪟 Windows (.exe, .msi, .msix)\n🐧 Linux (.AppImage, .deb)\n📦 Flatpak (.flatpak)\n🍎 macOS (.dmg, .app.tar.gz)\n🤖 Android (.apk)",
+                    inline: false
+                  }
+                ],
+                footer: {
+                  text: "Audion Release Pipeline"
+                }
+              }],
+              components: [{
+                type: 1,
+                components: [
+                  {
+                    type: 2,
+                    style: 5,
+                    label: "Download Release",
+                    url: $rel_url,
+                    emoji: { name: "📦" }
+                  },
+                  {
+                    type: 2,
+                    style: 5,
+                    label: "Full Release Notes",
+                    url: $change_url,
+                    emoji: { name: "📜" }
+                  }
+                ]
+              }]
+            }')
+          curl -H "Content-Type: application/json" -X POST -d "$PAYLOAD" "$DISCORD_WEBHOOK_URL"
