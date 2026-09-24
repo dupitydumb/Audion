@@ -44,31 +44,51 @@
   ];
 
   type SettingIndexItem = {
-    id: string;
+    sectionId: string;
+    targetElementId?: string;
     tab: string;
     tabLabel: string;
     title: string;
+    subtitle?: string;
     keywords: string[];
   };
 
   const SETTINGS_INDEX: SettingIndexItem[] = [
-    { id: 'audio', tab: 'sound', tabLabel: 'Sound', title: 'Audio Output & Driver', keywords: ['output', 'device', 'driver', 'native', 'html5', 'sound', 'limiter', 'replaygain', 'equalizer', 'volume'] },
-    { id: 'playback', tab: 'sound', tabLabel: 'Sound', title: 'Playback & Autoplay', keywords: ['playback', 'autoplay', 'queue', 'play'] },
-    { id: 'lyrics', tab: 'sound', tabLabel: 'Sound', title: 'Lyrics & Providers', keywords: ['lyrics', 'synced', 'karaoke', 'lrc', 'lrclib', 'genius', 'provider', 'text'] },
-    { id: 'storage', tab: 'library', tabLabel: 'Library', title: 'Storage & Music Folders', keywords: ['storage', 'music', 'folder', 'download', 'location', 'covers', 'cache', 'directory', 'scan'] },
-    { id: 'artists', tab: 'library', tabLabel: 'Library', title: 'Artists & Separation', keywords: ['artist', 'separator', 'featuring', 'ft', 'delimiters', 'split'] },
-    { id: 'appearance', tab: 'appearance', tabLabel: 'Appearance', title: 'Appearance, Theme & Mode', keywords: ['theme', 'dark', 'light', 'accent', 'color', 'background', 'custom colors', 'blur', 'animation', 'visualizer', 'layout', 'mode'] },
-    { id: 'themes', tab: 'appearance', tabLabel: 'Appearance', title: 'Community Theme Browser', keywords: ['theme browser', 'community', 'nord', 'catppuccin', 'gruvbox', 'matrix', 'frost', 'customjs', 'install theme'] },
-    { id: 'startup', tab: 'appearance', tabLabel: 'Appearance', title: 'Startup & Autostart', keywords: ['startup', 'autostart', 'boot', 'launch', 'default page', 'home'] },
-    { id: 'account', tab: 'account', tabLabel: 'Account', title: 'Account & Profile', keywords: ['account', 'login', 'logout', 'user', 'profile', 'supporter', 'subscription'] },
-    { id: 'subsonic', tab: 'account', tabLabel: 'Account', title: 'Subsonic & Navidrome Server', keywords: ['subsonic', 'navidrome', 'server', 'stream', 'remote library', 'url', 'credentials'] },
-    { id: 'sync', tab: 'account', tabLabel: 'Account', title: 'Cloud & Server Sync', keywords: ['sync', 'cloud', 'backup', 'devices', 'pending changes', 'library status'] },
-    { id: 'community', tab: 'account', tabLabel: 'Account', title: 'ListenBrainz & Scrobbler', keywords: ['listenbrainz', 'scrobble', 'token', 'tracking', 'history'] },
-    { id: 'shortcuts', tab: 'more', tabLabel: 'More', title: 'Keyboard Shortcuts', keywords: ['shortcuts', 'hotkeys', 'keyboard', 'keybindings', 'space', 'play pause'] },
-    { id: 'privacy', tab: 'more', tabLabel: 'More', title: 'Privacy & Remote Control', keywords: ['privacy', 'remote control', 'developer mode', 'reset database', 'cache', 'logs'] },
-    { id: 'upgrade', tab: 'more', tabLabel: 'More', title: 'Support & Supporter Access', keywords: ['upgrade', 'support', 'donate', 'patreon', 'pro', 'tier'] },
-    { id: 'support', tab: 'more', tabLabel: 'More', title: 'Help & Discord Community', keywords: ['help', 'discord', 'support', 'issues', 'bugs', 'github'] },
-    { id: 'about', tab: 'more', tabLabel: 'More', title: 'About Audion & Updates', keywords: ['about', 'version', 'update', 'changelog', 'release', 'credits', 'license'] },
+    // Sound Tab
+    { sectionId: 'audio', targetElementId: 'setting-equalizer', tab: 'sound', tabLabel: 'Sound', title: 'Equalizer & EQ Presets', subtitle: 'Audio frequency bands, presets, customizable EQ', keywords: ['equalizer', 'eq', 'bass', 'treble', 'bands', 'preset', 'frequency', 'gain', 'preamp'] },
+    { sectionId: 'audio', targetElementId: 'setting-output-driver', tab: 'sound', tabLabel: 'Sound', title: 'Output Driver & Device', subtitle: 'Select native, rodio, or HTML5 playback engine', keywords: ['output', 'device', 'driver', 'native', 'html5', 'sound', 'speaker', 'headphone'] },
+    { sectionId: 'audio', targetElementId: 'setting-replay-gain', tab: 'sound', tabLabel: 'Sound', title: 'ReplayGain & Audio Limiter', subtitle: 'Volume normalization and clipping protection', keywords: ['replaygain', 'replay gain', 'limiter', 'clipping', 'loudness', 'normalize', 'volume'] },
+    { sectionId: 'audio', targetElementId: 'setting-crossfade', tab: 'sound', tabLabel: 'Sound', title: 'Crossfade', subtitle: 'Fade between consecutive tracks', keywords: ['crossfade', 'fade', 'transition', 'gapless'] },
+    { sectionId: 'playback', tab: 'sound', tabLabel: 'Sound', title: 'Autoplay & Queue', subtitle: 'Keep playing when queue finishes', keywords: ['playback', 'autoplay', 'queue', 'play', 'infinite'] },
+    { sectionId: 'lyrics', tab: 'sound', tabLabel: 'Sound', title: 'Lyrics Providers & Sync', subtitle: 'Synced karaoke lyrics, LRCLIB & Genius sources', keywords: ['lyrics', 'synced', 'karaoke', 'lrc', 'lrclib', 'genius', 'provider', 'text', 'words'] },
+
+    // Library Tab
+    { sectionId: 'storage', targetElementId: 'setting-download-location', tab: 'library', tabLabel: 'Library', title: 'Download Location', subtitle: 'Directory where downloaded tracks and files are saved', keywords: ['download location', 'download folder', 'downloads', 'path', 'save directory', 'location'] },
+    { sectionId: 'storage', targetElementId: 'setting-music-folders', tab: 'library', tabLabel: 'Library', title: 'Music Library Folders', subtitle: 'Folders scanned for audio files and tags', keywords: ['music folder', 'scan folder', 'add folder', 'directory', 'rescan', 'library folder', 'storage'] },
+    { sectionId: 'storage', targetElementId: 'setting-cover-management', tab: 'library', tabLabel: 'Library', title: 'Cover Management & Cache', subtitle: 'Sync album covers or merge duplicates to free disk space', keywords: ['cover', 'cache', 'covers', 'merge duplicates', 'album art', 'disk space', 'artwork'] },
+    { sectionId: 'artists', tab: 'library', tabLabel: 'Library', title: 'Artist Separation Delimiters', subtitle: 'Split collaboration tracks by delimiters', keywords: ['artist', 'separator', 'featuring', 'ft', 'delimiters', 'split', 'collab'] },
+
+    // Appearance Tab
+    { sectionId: 'appearance', targetElementId: 'setting-theme-mode', tab: 'appearance', tabLabel: 'Appearance', title: 'Theme Mode (Dark / Light / System)', subtitle: 'Switch between dark, light, or auto theme mode', keywords: ['theme mode', 'dark mode', 'light mode', 'system mode', 'theme', 'color scheme'] },
+    { sectionId: 'appearance', targetElementId: 'setting-accent-color', tab: 'appearance', tabLabel: 'Appearance', title: 'Accent Colors & Palette Tokens', subtitle: 'Pick preset accents or configure custom token colors', keywords: ['accent', 'color', 'custom colors', 'palette', 'green', 'blue', 'tokens', 'background'] },
+    { sectionId: 'appearance', targetElementId: 'setting-background', tab: 'appearance', tabLabel: 'Appearance', title: 'Background Effects & Custom JS', subtitle: 'Gradients, canvas visual effects, custom scripts', keywords: ['background', 'customjs', 'custom js', 'canvas', 'effect', 'overlay', 'gradient', 'blur', 'animation'] },
+    { sectionId: 'appearance', targetElementId: 'setting-theme-package', tab: 'appearance', tabLabel: 'Appearance', title: 'Theme Package Export & Import', subtitle: 'Save and load .audiotheme files', keywords: ['audiotheme', 'export theme', 'import theme', 'package', 'share theme'] },
+    { sectionId: 'themes', tab: 'appearance', tabLabel: 'Appearance', title: 'Community Theme Browser', subtitle: 'Explore community themes: Nord, Catppuccin, Gruvbox, etc.', keywords: ['theme browser', 'community themes', 'nord', 'catppuccin', 'mocha', 'gruvbox', 'matrix', 'frost', 'install theme'] },
+    { sectionId: 'startup', tab: 'appearance', tabLabel: 'Appearance', title: 'Startup Page & Autostart', subtitle: 'Choose initial landing view and system boot start', keywords: ['startup', 'autostart', 'boot', 'launch', 'default page', 'home page'] },
+
+    // Account Tab
+    { sectionId: 'account', tab: 'account', tabLabel: 'Account', title: 'Account Profile & Supporter', subtitle: 'Cloud sign-in, avatar, and supporter status', keywords: ['account', 'login', 'logout', 'user', 'profile', 'supporter', 'subscription', 'avatar'] },
+    { sectionId: 'subsonic', tab: 'account', tabLabel: 'Account', title: 'Subsonic & Navidrome Server', subtitle: 'Connect your personal self-hosted music server', keywords: ['subsonic', 'navidrome', 'server', 'stream', 'remote library', 'url', 'credentials', 'self hosted'] },
+    { sectionId: 'sync', tab: 'account', tabLabel: 'Account', title: 'Cloud & Database Sync', subtitle: 'Real-time synchronization across devices', keywords: ['sync', 'cloud sync', 'backup', 'devices', 'pending changes', 'library status'] },
+    { sectionId: 'community', tab: 'account', tabLabel: 'Account', title: 'ListenBrainz Scrobbling', subtitle: 'Track listening statistics and user token', keywords: ['listenbrainz', 'scrobble', 'token', 'tracking', 'history', 'stats'] },
+
+    // More Tab
+    { sectionId: 'shortcuts', tab: 'more', tabLabel: 'More', title: 'Keyboard Shortcuts', subtitle: 'View and customize player hotkeys', keywords: ['shortcuts', 'hotkeys', 'keyboard', 'keybindings', 'space', 'play pause', 'skip'] },
+    { sectionId: 'privacy', targetElementId: 'setting-cache-database', tab: 'more', tabLabel: 'More', title: 'Cache & Reset Database', subtitle: 'Wipe database metadata, clear track index, or manage logs', keywords: ['cache', 'reset database', 'clear cache', 'database', 'wipe', 'danger zone', 'delete'] },
+    { sectionId: 'privacy', tab: 'more', tabLabel: 'More', title: 'Remote Control & Privacy', subtitle: 'Allow external remote control and telemetry options', keywords: ['privacy', 'remote control', 'developer mode', 'telemetry', 'logs'] },
+    { sectionId: 'upgrade', tab: 'more', tabLabel: 'More', title: 'Support & Supporter Access', subtitle: 'Support the project development', keywords: ['upgrade', 'support', 'donate', 'patreon', 'pro', 'tier'] },
+    { sectionId: 'support', tab: 'more', tabLabel: 'More', title: 'Discord Community & Feedback', subtitle: 'Chat with developers and get assistance', keywords: ['help', 'discord', 'support', 'issues', 'bugs', 'github', 'community'] },
+    { sectionId: 'about', tab: 'more', tabLabel: 'More', title: 'About Audion & Release Notes', subtitle: 'Version info, credits, and updates', keywords: ['about', 'version', 'update', 'changelog', 'release', 'credits', 'license', 'github'] },
   ];
 
   $: searchResults = (() => {
@@ -76,6 +96,7 @@
     if (!q) return [];
     return SETTINGS_INDEX.filter(item => {
       if (item.title.toLowerCase().includes(q)) return true;
+      if (item.subtitle?.toLowerCase().includes(q)) return true;
       if (item.tabLabel.toLowerCase().includes(q)) return true;
       return item.keywords.some(k => k.toLowerCase().includes(q));
     });
@@ -83,13 +104,42 @@
 
   function navigateToSetting(item: SettingIndexItem) {
     activeTab = item.tab;
-    openSections = { [item.id]: true };
+    openSections = { [item.sectionId]: true };
     searchQuery = '';
-    // Scroll element into view smoothly
+
+    // Scroll directly to target item element or to section container
     setTimeout(() => {
-      const el = document.querySelector(`[aria-labelledby="${item.id}-heading"]`);
-      el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 50);
+      let targetEl: HTMLElement | null = null;
+      if (item.targetElementId) {
+        targetEl = document.getElementById(item.targetElementId);
+      }
+      if (!targetEl) {
+        targetEl = document.querySelector(`[aria-labelledby="${item.sectionId}-heading"]`);
+      }
+      if (targetEl) {
+        const pane = targetEl.closest('.settings-pane') as HTMLElement | null;
+        if (pane) {
+          const paneRect = pane.getBoundingClientRect();
+          const targetRect = targetEl.getBoundingClientRect();
+          const targetTopRelativeToPane = targetRect.top - paneRect.top + pane.scrollTop;
+          const centeredScrollTop = targetTopRelativeToPane - (pane.clientHeight / 2) + (targetRect.height / 2);
+          pane.scrollTo({
+            top: Math.max(0, centeredScrollTop),
+            behavior: 'smooth'
+          });
+        } else {
+          targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        targetEl.classList.remove('setting-highlight-flash');
+        // Force reflow for animation restart
+        void targetEl.offsetWidth;
+        targetEl.classList.add('setting-highlight-flash');
+        setTimeout(() => {
+          targetEl?.classList.remove('setting-highlight-flash');
+        }, 2200);
+      }
+    }, 120);
   }
 
   // On desktop (≥641px) all sections expand; CSS hides accordion triggers.
@@ -117,7 +167,7 @@
       <input
         type="search"
         class="settings-search-input"
-        placeholder="Search settings (audio, theme, shortcuts, sync...)"
+        placeholder="Search settings (equalizer, download location, cache, themes...)"
         bind:value={searchQuery}
       />
       {#if searchQuery}
@@ -137,7 +187,12 @@
         {:else}
           {#each searchResults as res}
             <button class="search-result-item" on:click={() => navigateToSetting(res)}>
-              <span class="search-res-title">{res.title}</span>
+              <div class="search-res-text">
+                <span class="search-res-title">{res.title}</span>
+                {#if res.subtitle}
+                  <span class="search-res-subtitle">{res.subtitle}</span>
+                {/if}
+              </div>
               <span class="search-res-tab">{res.tabLabel}</span>
             </button>
           {/each}
@@ -305,7 +360,7 @@
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md, 8px);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-    max-height: 280px;
+    max-height: 320px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -323,6 +378,7 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 12px;
     padding: 10px 14px;
     border: none;
     background: transparent;
@@ -340,10 +396,25 @@
     background: var(--bg-highlight);
   }
 
+  .search-res-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
   .search-res-title {
     font-size: 0.875rem;
     font-weight: 500;
     color: var(--text-primary);
+  }
+
+  .search-res-subtitle {
+    font-size: 0.75rem;
+    color: var(--text-subdued);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .search-res-tab {
@@ -353,6 +424,7 @@
     padding: 2px 8px;
     border-radius: 4px;
     border: 1px solid var(--border-color);
+    flex-shrink: 0;
   }
 
   /* ── Tab bar ── */
@@ -419,6 +491,30 @@
     max-width: 100%;
     margin: 0 auto;
     padding-bottom: calc(var(--player-height, 80px) + 40px);
+  }
+
+  /* Glow highlight animation when navigating directly to setting item */
+  :global(.setting-highlight-flash) {
+    animation: setting-flash 2.2s ease-out forwards;
+    border-radius: var(--radius-md, 8px);
+  }
+
+  @keyframes setting-flash {
+    0% {
+      outline: 2px solid var(--accent-primary);
+      box-shadow: 0 0 16px var(--accent-primary);
+      background-color: var(--bg-highlight);
+    }
+    50% {
+      outline: 2px solid var(--accent-primary);
+      box-shadow: 0 0 12px var(--accent-primary);
+      background-color: var(--bg-highlight);
+    }
+    100% {
+      outline: 2px solid transparent;
+      box-shadow: none;
+      background-color: transparent;
+    }
   }
 
   @media (max-width: 768px) {

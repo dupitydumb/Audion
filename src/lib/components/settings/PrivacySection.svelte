@@ -62,7 +62,7 @@
 
     <div class="divider"></div>
 
-    <div class="card-title-group compact">
+    <div class="card-title-group compact" id="setting-cache-database">
       <h3 class="setting-title" style="color: var(--error-color)">{$_('settings.dangerZone')}</h3>
       <span class="setting-description">{$_('settings.dangerZoneDesc')}</span>
     </div>

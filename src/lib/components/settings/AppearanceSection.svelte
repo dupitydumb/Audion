@@ -396,7 +396,7 @@
         <div class="divider"></div>
 
         <!-- Theme mode -->
-        <div class="inner-section">
+        <div class="inner-section" id="setting-theme-mode">
           <span class="setting-title">{$_('settings.themeMode')}</span>
           <div class="segmented-pill" style="margin-top: 6px;">
             <button class="segment-btn" class:active={$theme.mode === 'dark'} on:click={() => handleModeChange('dark')}>{$_('settings.dark')}</button>
@@ -408,7 +408,7 @@
         <div class="divider"></div>
 
         <!-- Accent color -->
-        <div class="inner-section">
+        <div class="inner-section" id="setting-accent-color">
           <span class="setting-title">{$_('settings.accentColor')}</span>
           <div class="color-grid-compact" style="margin-top: 6px;">
             {#each presetAccents as preset}
@@ -496,7 +496,7 @@
         <div class="divider"></div>
 
         <!-- ── Background ── -->
-        <div class="inner-section">
+        <div class="inner-section" id="setting-background">
           <div class="section-header-row">
             <span class="setting-title">Background</span>
             {#if $theme.background.type !== 'none'}
@@ -683,7 +683,7 @@
         <div class="divider"></div>
 
         <!-- ── Theme Package ── -->
-        <div class="inner-section">
+        <div class="inner-section" id="setting-theme-package">
           <span class="setting-title">Theme Package</span>
           <span class="setting-description">Export your theme as a shareable <code>.audiotheme</code> file, or import one.</span>
 

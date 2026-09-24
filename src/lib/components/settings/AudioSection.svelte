@@ -168,7 +168,7 @@
     <div class="section-body" transition:slide|local>
       <div class="settings-card">
         <!-- Output Driver -->
-        <div class="inner-section">
+        <div class="inner-section" id="setting-output-driver">
           <span class="setting-title">{$_('settings.outputDriver')}</span>
           <span class="setting-description">{$_('settings.outputDriverDesc')}</span>
           <div class="segmented-pill" style="margin-top: 6px;">
@@ -272,7 +272,7 @@
         </div>
 
         <!-- Replay Gain -->
-        <div class="inner-section">
+        <div class="inner-section" id="setting-replay-gain">
           <div class="toggle-container">
             <div class="toggle-info">
               <span class="setting-title">{$_('settings.replayGain')}</span>
@@ -318,7 +318,7 @@
         <div class="divider"></div>
 
         <!-- Crossfade -->
-        <div class="inner-section">
+        <div class="inner-section" id="setting-crossfade">
           <span class="setting-title">{$_('settings.crossfade')}</span>
           <span class="setting-description">{$_('settings.crossfadeDesc')}</span>
           <div class="crossfade-slider">
@@ -342,7 +342,7 @@
         </div>
 
         <!-- Equalizer -->
-        <div class="inner-section">
+        <div class="inner-section" id="setting-equalizer">
           <div class="toggle-container">
             <div class="toggle-info">
               <span class="setting-title">{$_('settings.equalizer')}</span>

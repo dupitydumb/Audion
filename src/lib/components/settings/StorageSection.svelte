@@ -386,7 +386,7 @@
   {#if open}
     <div class="section-body" transition:slide|local>
       <div class="settings-card">
-        <div class="inner-section">
+        <div class="inner-section" id="setting-download-location">
           <span class="setting-title">{$_('settings.downloadLocation')}</span>
           <div class="path-selector">
             <div class="setting-description path-display" style="margin-top: 0;" title={$appSettings.downloadLocation || $_('settings.noDownloadLocation')}>
@@ -398,7 +398,7 @@
 
         <div class="divider"></div>
 
-        <div class="inner-section">
+        <div class="inner-section" id="setting-music-folders">
           <div class="folder-section-header">
             <span class="setting-title">{$_('settings.musicFolders', { default: 'Music folders' })}</span>
             <button
@@ -455,7 +455,7 @@
 
         <div class="divider"></div>
 
-        <div class="card-title-group compact">
+        <div class="card-title-group compact" id="setting-cover-management">
           <h3 class="setting-title">{$_('settings.coverManagement')}</h3>
           <span class="setting-description">{$_('settings.coverManagementDesc')}</span>
         </div>
