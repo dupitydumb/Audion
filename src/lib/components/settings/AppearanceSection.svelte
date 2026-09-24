@@ -1,6 +1,7 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
-  import { theme, presetAccents, type ThemeMode, type CustomColors, type BackgroundType, type PageTransition, type VisualizationMode, type TransitionSpeed } from "$lib/stores/theme";
+  import { theme, presetAccents, type ThemeMode, type CustomColors, type BackgroundType, type PageTransition, type VisualizationMode, type TransitionSpeed, exportThemePackage, parseThemePackage } from "$lib/stores/theme";
+  import { get } from "svelte/store";
   import { locale } from "svelte-i18n";
   import { slide } from "svelte/transition";
   import { createEventDispatcher } from "svelte";
@@ -246,6 +247,96 @@
     { value: 'normal', label: 'Normal' },
     { value: 'fast',   label: 'Fast' },
   ];
+
+  // ── Theme package export / import ────────────────────────────────────────────
+
+  let pkgName = '';
+  let pkgAuthor = '';
+  let pkgDescription = '';
+  let pkgImportError = '';
+  let pkgImportSuccess = '';
+
+  async function handleExport() {
+    const state = get(theme);
+    const name = pkgName.trim() || 'My Theme';
+    const pkg = exportThemePackage(state, name, pkgAuthor, pkgDescription);
+    const json = JSON.stringify(pkg, null, 2);
+    const fileName = name.replace(/[^a-z0-9_-]/gi, '_').toLowerCase() + '.audiotheme';
+
+    if (isTauri()) {
+      try {
+        const { save } = await import('@tauri-apps/plugin-dialog');
+        const { writeTextFile } = await import('@tauri-apps/plugin-fs');
+        const path = await save({ defaultPath: fileName, filters: [{ name: 'Audion Theme', extensions: ['audiotheme'] }] });
+        if (!path) return;
+        await writeTextFile(path, json);
+        pkgImportSuccess = 'Theme exported!';
+        setTimeout(() => { pkgImportSuccess = ''; }, 3000);
+      } catch (e) {
+        pkgImportError = String(e);
+        setTimeout(() => { pkgImportError = ''; }, 5000);
+      }
+    } else {
+      // Web fallback: Blob download
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = fileName; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      pkgImportSuccess = 'Theme exported!';
+      setTimeout(() => { pkgImportSuccess = ''; }, 3000);
+    }
+  }
+
+  async function handleImport() {
+    pkgImportError = '';
+    pkgImportSuccess = '';
+
+    if (isTauri()) {
+      try {
+        const { open } = await import('@tauri-apps/plugin-dialog');
+        const { readTextFile } = await import('@tauri-apps/plugin-fs');
+        const selected = await open({ filters: [{ name: 'Audion Theme', extensions: ['audiotheme'] }], multiple: false });
+        if (!selected) return;
+        const filePath = typeof selected === 'string' ? selected : selected[0];
+        const text = await readTextFile(filePath);
+        applyImported(text);
+      } catch (e) {
+        pkgImportError = String(e);
+        setTimeout(() => { pkgImportError = ''; }, 5000);
+      }
+    } else {
+      // Web fallback: file input
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.audiotheme,application/json';
+      input.onchange = async () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        applyImported(await file.text());
+      };
+      input.click();
+    }
+  }
+
+  function applyImported(text: string) {
+    try {
+      const raw = JSON.parse(text);
+      const pkg = parseThemePackage(raw);
+      theme.applyPackage({
+        accentColor: pkg.accentColor,
+        mode: pkg.mode,
+        customColors: pkg.customColors,
+        background: pkg.background,
+        animation: pkg.animation,
+      });
+      pkgImportSuccess = `Applied "${pkg.name}"${pkg.author ? ` by ${pkg.author}` : ''}`;
+      setTimeout(() => { pkgImportSuccess = ''; }, 4000);
+    } catch (e) {
+      pkgImportError = `Invalid theme file: ${e}`;
+      setTimeout(() => { pkgImportError = ''; }, 5000);
+    }
+  }
 </script>
 
 <section class="settings-section" aria-labelledby="appearance-heading">
@@ -559,6 +650,41 @@
           </div>
         </div>
 
+        <div class="divider"></div>
+
+        <!-- ── Theme Package ── -->
+        <div class="inner-section">
+          <span class="setting-title">Theme Package</span>
+          <span class="setting-description">Export your theme as a shareable <code>.audiotheme</code> file, or import one.</span>
+
+          <!-- Export fields -->
+          <div class="pkg-fields">
+            <input class="pkg-input" type="text" bind:value={pkgName} placeholder="Theme name" maxlength="64" />
+            <input class="pkg-input" type="text" bind:value={pkgAuthor} placeholder="Author (optional)" maxlength="64" />
+            <input class="pkg-input" type="text" bind:value={pkgDescription} placeholder="Description (optional)" maxlength="120" />
+          </div>
+
+          <div class="pkg-actions">
+            <button class="btn-pkg btn-pkg-export" on:click={handleExport}>
+              <Icon name="download" size={14} /> Export
+            </button>
+            <button class="btn-pkg btn-pkg-import" on:click={handleImport}>
+              <Icon name="upload" size={14} /> Import
+            </button>
+          </div>
+
+          {#if pkgImportSuccess}
+            <span class="pkg-msg pkg-msg-ok">{pkgImportSuccess}</span>
+          {/if}
+          {#if pkgImportError}
+            <span class="pkg-msg pkg-msg-err">{pkgImportError}</span>
+          {/if}
+
+          <span class="setting-description" style="margin-top: 8px;">
+            Note: image and video backgrounds are not included (paths are device-specific).
+          </span>
+        </div>
+
       </div>
     </div>
   {/if}
@@ -833,5 +959,77 @@
     color: var(--text-subdued);
     margin-top: 2px;
     display: block;
+  }
+
+  /* ── Theme package ── */
+
+  .pkg-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  .pkg-input {
+    padding: 7px 10px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    width: 100%;
+    box-sizing: border-box;
+    transition: border-color var(--transition-fast);
+  }
+  .pkg-input:focus { outline: none; border-color: var(--accent-primary); }
+  .pkg-input::placeholder { color: var(--text-subdued); }
+
+  .pkg-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .btn-pkg {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: var(--radius-sm);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background var(--transition-fast), opacity var(--transition-fast);
+  }
+
+  .btn-pkg-export {
+    background: var(--accent-primary);
+    color: #fff;
+  }
+  .btn-pkg-export:hover { background: var(--accent-hover); }
+
+  .btn-pkg-import {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+  }
+  .btn-pkg-import:hover { background: var(--bg-highlight); }
+
+  .pkg-msg {
+    display: block;
+    margin-top: 8px;
+    font-size: var(--font-size-xs);
+    border-radius: var(--radius-sm);
+    padding: 5px 8px;
+  }
+  .pkg-msg-ok  { background: color-mix(in srgb, var(--accent-primary) 15%, transparent); color: var(--accent-primary); }
+  .pkg-msg-err { background: color-mix(in srgb, var(--error-color, #e74c3c) 12%, transparent); color: var(--error-color, #e74c3c); }
+
+  code {
+    font-family: monospace;
+    font-size: 0.9em;
+    background: var(--bg-surface);
+    padding: 1px 4px;
+    border-radius: 3px;
   }
 </style>

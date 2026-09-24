@@ -277,6 +277,119 @@ function createThemeStore() {
 
 export const theme = createThemeStore();
 
+// ── Theme package format ──────────────────────────────────────────────────────
+
+export const AUDIOTHEME_VERSION = 1;
+
+export interface AudioThemePackage {
+    /** Format version — bump when fields change incompatibly */
+    version: number;
+    name: string;
+    author?: string;
+    description?: string;
+    accentColor: string;
+    mode?: ThemeMode;
+    customColors: CustomColors;
+    /** background.value is always '' for image/video (paths are machine-local) */
+    background: BackgroundConfig;
+    animation: AnimationConfig;
+}
+
+/** Allowed values for enum fields — used during validation */
+const VALID_BG_TYPES: BackgroundType[] = ['none', 'color', 'gradient', 'image', 'video'];
+const VALID_MODES: ThemeMode[] = ['dark', 'light', 'system'];
+const VALID_TRANSITIONS: PageTransition[] = ['none', 'fade', 'slide', 'scale'];
+const VALID_VIZ: VisualizationMode[] = ['none', 'bars', 'wave', 'blur-pulse'];
+const VALID_SPEEDS: TransitionSpeed[] = ['slow', 'normal', 'fast'];
+
+function isHex(s: unknown): s is string {
+    return typeof s === 'string' && /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(s);
+}
+
+/** Parse and validate a raw JSON object as AudioThemePackage.
+ *  Returns the package or throws a descriptive error string. */
+export function parseThemePackage(raw: unknown): AudioThemePackage {
+    if (typeof raw !== 'object' || raw === null) throw 'Not a JSON object';
+    const r = raw as Record<string, unknown>;
+
+    if (r.version !== AUDIOTHEME_VERSION) throw `Unsupported version: ${r.version}`;
+    if (typeof r.name !== 'string' || !r.name.trim()) throw 'Missing name';
+    if (!isHex(r.accentColor)) throw 'Invalid accentColor';
+    if (r.mode !== undefined && !VALID_MODES.includes(r.mode as ThemeMode)) throw 'Invalid mode';
+
+    // customColors — all keys optional null or hex
+    const cc: CustomColors = { ...defaultCustomColors };
+    if (typeof r.customColors === 'object' && r.customColors !== null) {
+        const src = r.customColors as Record<string, unknown>;
+        for (const k of Object.keys(defaultCustomColors) as (keyof CustomColors)[]) {
+            const v = src[k];
+            if (v === null || v === undefined) { cc[k] = null; }
+            else if (isHex(v)) { cc[k] = v; }
+            else throw `Invalid customColors.${k}`;
+        }
+    }
+
+    // background
+    const bg: BackgroundConfig = { ...defaultBackground };
+    if (typeof r.background === 'object' && r.background !== null) {
+        const b = r.background as Record<string, unknown>;
+        if (!VALID_BG_TYPES.includes(b.type as BackgroundType)) throw 'Invalid background.type';
+        bg.type = b.type as BackgroundType;
+        // strip paths — image/video value cannot travel cross-machine
+        bg.value = (bg.type === 'image' || bg.type === 'video') ? '' : (typeof b.value === 'string' ? b.value : '');
+        // if value is empty for image/video, downgrade to none
+        if ((bg.type === 'image' || bg.type === 'video') && !bg.value) bg.type = 'none';
+        bg.opacity = typeof b.opacity === 'number' ? Math.min(1, Math.max(0, b.opacity)) : 1;
+        bg.blur = typeof b.blur === 'number' ? Math.min(40, Math.max(0, b.blur)) : 0;
+        bg.fixed = typeof b.fixed === 'boolean' ? b.fixed : false;
+    }
+
+    // animation
+    const anim: AnimationConfig = { ...defaultAnimation };
+    if (typeof r.animation === 'object' && r.animation !== null) {
+        const a = r.animation as Record<string, unknown>;
+        anim.reducedMotion = typeof a.reducedMotion === 'boolean' ? a.reducedMotion : false;
+        if (VALID_TRANSITIONS.includes(a.pageTransition as PageTransition)) anim.pageTransition = a.pageTransition as PageTransition;
+        if (VALID_VIZ.includes(a.playerVisualization as VisualizationMode)) anim.playerVisualization = a.playerVisualization as VisualizationMode;
+        anim.hoverScale = typeof a.hoverScale === 'boolean' ? a.hoverScale : true;
+        anim.accentPulse = typeof a.accentPulse === 'boolean' ? a.accentPulse : true;
+        if (VALID_SPEEDS.includes(a.transitionSpeed as TransitionSpeed)) anim.transitionSpeed = a.transitionSpeed as TransitionSpeed;
+    }
+
+    return {
+        version: AUDIOTHEME_VERSION,
+        name: (r.name as string).trim(),
+        author: typeof r.author === 'string' ? r.author.trim() : undefined,
+        description: typeof r.description === 'string' ? r.description.trim() : undefined,
+        accentColor: r.accentColor as string,
+        mode: r.mode as ThemeMode | undefined,
+        customColors: cc,
+        background: bg,
+        animation: anim,
+    };
+}
+
+/** Serialize current theme state to an AudioThemePackage object */
+export function exportThemePackage(state: ThemeState, name: string, author?: string, description?: string): AudioThemePackage {
+    const bg = { ...state.background };
+    // strip machine-local paths
+    if (bg.type === 'image' || bg.type === 'video') {
+        bg.type = 'none';
+        bg.value = '';
+    }
+    return {
+        version: AUDIOTHEME_VERSION,
+        name: name.trim() || 'My Theme',
+        author: author?.trim() || undefined,
+        description: description?.trim() || undefined,
+        accentColor: state.accentColor,
+        mode: state.mode,
+        customColors: { ...state.customColors },
+        background: bg,
+        animation: { ...state.animation },
+    };
+}
+
 // Lighten a color for hover state
 function lightenColor(hex: string, percent: number): string {
     const num = parseInt(hex.replace('#', ''), 16);
