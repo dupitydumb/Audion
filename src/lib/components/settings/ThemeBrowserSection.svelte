@@ -509,4 +509,26 @@
     border-radius: 50%;
     animation: spin 0.6s linear infinite;
   }
+
+  @media (max-width: 640px) {
+    .tb-theme-card {
+      gap: 10px;
+      padding: 10px 12px;
+    }
+    .tb-mockup {
+      width: 58px;
+      height: 38px;
+    }
+    .tb-name {
+      font-size: 0.82rem;
+    }
+    .tb-author, .tb-desc {
+      font-size: 0.72rem;
+    }
+    .btn-install {
+      min-width: 58px;
+      padding: 5px 8px;
+      font-size: 0.75rem;
+    }
+  }
 </style>

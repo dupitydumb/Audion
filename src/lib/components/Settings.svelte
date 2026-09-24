@@ -518,6 +518,39 @@
   }
 
   @media (max-width: 768px) {
+    .settings-header-bar {
+      padding: 8px 12px;
+    }
+
+    .settings-search-input {
+      height: 34px;
+      font-size: 0.8125rem;
+    }
+
+    .settings-search-results {
+      left: 10px;
+      right: 10px;
+      max-height: 260px;
+    }
+
+    .search-result-item {
+      padding: 8px 10px;
+      gap: 8px;
+    }
+
+    .search-res-title {
+      font-size: 0.8125rem;
+    }
+
+    .search-res-subtitle {
+      font-size: 0.7rem;
+    }
+
+    .search-res-tab {
+      font-size: 0.7rem;
+      padding: 2px 6px;
+    }
+
     .settings-container {
       padding-bottom: calc(var(--mobile-bottom-inset, 130px) + 40px);
     }
