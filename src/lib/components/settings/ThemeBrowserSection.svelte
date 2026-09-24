@@ -84,7 +84,7 @@
 
 <section class="settings-section" aria-labelledby="theme-browser-heading">
   <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <Icon name="palette" size="lg" className="accordion-icon" />
+    <Icon name="monitor" size="lg" className="accordion-icon" />
     <div class="accordion-header-info">
       <span class="accordion-title">Theme Browser</span>
       <span class="accordion-subtitle">Browse and install community themes</span>
@@ -99,7 +99,7 @@
         <!-- toolbar -->
         <div class="tb-toolbar">
           <button class="btn-refresh" on:click={loadThemes} disabled={state === 'loading'} title="Refresh">
-            <Icon name="refresh-cw" size={14} />
+            <Icon name="refresh" size={14} />
           </button>
           <span class="tb-count">
             {#if state === 'loaded'}{themes.length} theme{themes.length === 1 ? '' : 's'}{/if}
@@ -118,7 +118,7 @@
 
         {:else if state === 'error'}
           <div class="tb-error">
-            <Icon name="wifi-off" size={20} />
+            <Icon name="alert-circle" size={20} />
             <span>{error}</span>
             <button class="btn-retry" on:click={loadThemes}>Retry</button>
           </div>
