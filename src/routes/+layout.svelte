@@ -71,8 +71,11 @@
   let showPermissionBanner = false;
   let permissionDenied = false;
 
-  // Re-apply background whenever config changes (e.g. opacity slider)
-  $: if (browser) applyBackground($theme.background);
+  // Re-apply background whenever config changes (e.g. opacity slider).
+  // Also re-runs when $isLoading flips to false — that's when #audion-bg-layer
+  // enters the DOM (it lives inside {#if !$isLoading && $locale}), so the
+  // first applyBackground call from theme.initialize() would have found null.
+  $: if (browser && !$isLoading) applyBackground($theme.background);
 
   // Page transitions via View Transitions API
   // data-page-transition attr on <html> is set by applyAnimationVars
