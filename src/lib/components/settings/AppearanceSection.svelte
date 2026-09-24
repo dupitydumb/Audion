@@ -503,9 +503,9 @@
             {/each}
           </div>
           <div class="custom-color-row" style="margin-top: 8px;">
-            <input type="color" bind:value={customColorInput} class="color-picker-input" title="Pick custom accent" />
+            <input type="color" bind:value={customColorInput} class="color-picker-input" title={$_('settings.pickCustomAccent')} />
             <input type="text" bind:value={customColorInput} class="color-hex-input" placeholder="#1DB954" maxlength="7" />
-            <button class="btn-add-color" on:click={handleCustomColorAdd}>Add</button>
+            <button class="btn-add-color" on:click={handleCustomColorAdd}>{$_('settings.add')}</button>
           </div>
         </div>
 
@@ -514,10 +514,10 @@
         <!-- ── Custom color tokens ── -->
         <div class="inner-section">
           <div class="section-header-row">
-            <span class="setting-title">Custom Colors</span>
-            <button class="btn-reset-small" on:click={resetAllColors} title="Reset all to defaults">Reset all</button>
+            <span class="setting-title">{$_('settings.customColors')}</span>
+            <button class="btn-reset-small" on:click={resetAllColors} title={$_('settings.resetAllToDefaults')}>{$_('settings.resetAll')}</button>
           </div>
-          <span class="setting-description">Override individual color tokens. Leave unset to use theme defaults.</span>
+          <span class="setting-description">{$_('settings.customColorsDesc')}</span>
           <div class="color-token-grid">
             {#each colorSlots as slot}
               {@const current = $theme.customColors[slot.key]}
@@ -539,11 +539,11 @@
                     class="color-hex-input token-hex"
                     maxlength="9"
                     spellcheck="false"
-                    placeholder="#000000"
+                    placeholder={$_('settings.hexPlaceholder')}
                     on:input={e => onSlotHexText(slot.key, (e.target as HTMLInputElement).value)}
                   />
                   <!-- alpha slider -->
-                  <div class="alpha-slider-wrap" title="Opacity">
+                  <div class="alpha-slider-wrap" title={$_('settings.opacity')}>
                     <div class="alpha-track" style="--color6: {slotHex[slot.key]}">
                       <input
                         type="range" min="0" max="1" step="0.01"
@@ -555,9 +555,9 @@
                     <span class="slider-val">{Math.round(slotAlpha[slot.key] * 100)}%</span>
                   </div>
                   {#if current !== null}
-                    <button class="btn-reset-token" on:click={() => resetColorToken(slot.key)} title="Reset to default">✕</button>
+                    <button class="btn-reset-token" on:click={() => resetColorToken(slot.key)} title={$_('settings.resetToDefault')}>✕</button>
                   {:else}
-                    <span class="token-default-badge">default</span>
+                    <span class="token-default-badge">{$_('settings.defaultBadge')}</span>
                   {/if}
                 </div>
               </div>
@@ -570,34 +570,34 @@
         <!-- ── Background ── -->
         <div class="inner-section" id="setting-background">
           <div class="section-header-row">
-            <span class="setting-title">Background</span>
+            <span class="setting-title">{$_('settings.background')}</span>
             {#if $theme.background.type !== 'none'}
-              <button class="btn-reset-small" on:click={resetBackground}>Remove</button>
+              <button class="btn-reset-small" on:click={resetBackground}>{$_('settings.remove')}</button>
             {/if}
           </div>
-          <span class="setting-description">Custom background behind the app. Adjust opacity to keep UI readable.</span>
+          <span class="setting-description">{$_('settings.backgroundDesc')}</span>
 
           <!-- Type selector -->
           <div class="segmented-pill" style="margin-top: 8px;">
-            <button class="segment-btn" class:active={bgType === 'none'}    on:click={() => setBgType('none')}>None</button>
-            <button class="segment-btn" class:active={bgType === 'color'}   on:click={() => setBgType('color')}>Color</button>
-            <button class="segment-btn" class:active={bgType === 'gradient'} on:click={() => setBgType('gradient')}>Gradient</button>
-            <button class="segment-btn" class:active={bgType === 'image'}   on:click={() => setBgType('image')}>Image</button>
+            <button class="segment-btn" class:active={bgType === 'none'}    on:click={() => setBgType('none')}>{$_('settings.bgNone')}</button>
+            <button class="segment-btn" class:active={bgType === 'color'}   on:click={() => setBgType('color')}>{$_('settings.bgColor')}</button>
+            <button class="segment-btn" class:active={bgType === 'gradient'} on:click={() => setBgType('gradient')}>{$_('settings.bgGradient')}</button>
+            <button class="segment-btn" class:active={bgType === 'image'}   on:click={() => setBgType('image')}>{$_('settings.bgImage')}</button>
             {#if isTauri()}
-              <button class="segment-btn" class:active={bgType === 'video'} on:click={() => setBgType('video')}>Video</button>
+              <button class="segment-btn" class:active={bgType === 'video'} on:click={() => setBgType('video')}>{$_('settings.bgVideo')}</button>
             {/if}
           </div>
 
           {#if bgType === 'color'}
             <div class="bg-control-row" style="margin-top: 10px;">
-              <label class="token-label">Color</label>
+              <label class="token-label">{$_('settings.colorLabel')}</label>
               <input type="color" value={bgColorValue} class="color-picker-input" on:input={e => setBgColor((e.target as HTMLInputElement).value)} />
             </div>
           {/if}
 
           {#if bgType === 'gradient'}
             <div style="margin-top: 10px;">
-              <label class="token-label">Gradient CSS</label>
+              <label class="token-label">{$_('settings.gradientCss')}</label>
               <textarea
                 class="gradient-input"
                 rows="2"
@@ -627,7 +627,7 @@
                   {bgFileName || "Choose image…"}
                 </button>
               {:else}
-                <span class="setting-description">Image backgrounds require the desktop app.</span>
+                <span class="setting-description">{$_('settings.imageBgDesktopOnly')}</span>
               {/if}
             </div>
           {/if}
@@ -645,13 +645,13 @@
           {#if bgType !== 'none'}
             <div class="bg-sliders">
               <div class="slider-row">
-                <span class="token-label">Opacity</span>
+                <span class="token-label">{$_('settings.opacity')}</span>
                 <input type="range" min="0" max="1" step="0.01" value={bgOpacity}
                   on:input={e => setBgOpacity(parseFloat((e.target as HTMLInputElement).value))} />
                 <span class="slider-val">{Math.round(bgOpacity * 100)}%</span>
               </div>
               <div class="slider-row">
-                <span class="token-label">Blur</span>
+                <span class="token-label">{$_('settings.blur')}</span>
                 <input type="range" min="0" max="40" step="1" value={bgBlur}
                   on:input={e => setBgBlur(parseInt((e.target as HTMLInputElement).value))} />
                 <span class="slider-val">{bgBlur}px</span>
@@ -659,7 +659,7 @@
               {#if !$isMobile}
                 <label class="checkbox-row">
                   <input type="checkbox" checked={bgFixed} on:change={toggleBgFixed} />
-                  <span class="token-label">Fixed (parallax)</span>
+                  <span class="token-label">{$_('settings.fixedParallax')}</span>
                 </label>
               {/if}
             </div>
@@ -670,8 +670,8 @@
 
         <!-- ── Animations ── -->
         <div class="inner-section">
-          <span class="setting-title">Animations</span>
-          <span class="setting-description">Control transitions, visualizer, and motion effects.</span>
+          <span class="setting-title">{$_('settings.animations')}</span>
+          <span class="setting-description">{$_('settings.animationsDesc')}</span>
 
           <!-- Reduced motion override -->
           <label class="checkbox-row" style="margin-top: 10px;">
@@ -679,7 +679,7 @@
               checked={$theme.animation.reducedMotion}
               on:change={e => theme.setAnimation({ reducedMotion: (e.target as HTMLInputElement).checked })}
             />
-            <span class="token-label">Reduce motion (overrides all below)</span>
+            <span class="token-label">{$_('settings.reduceMotion')}</span>
           </label>
           {#if osReducedMotion && !$theme.animation.reducedMotion}
             <span class="setting-description" style="margin-top: 4px; color: var(--text-subdued);">
@@ -689,7 +689,7 @@
 
           <!-- Page transition -->
           <div style="margin-top: 12px;">
-            <span class="token-label">Page transition</span>
+            <span class="token-label">{$_('settings.pageTransition')}</span>
             <div class="segmented-pill" style="margin-top: 6px;">
               {#each pageTransitions as pt}
                 <button class="segment-btn"
@@ -702,7 +702,7 @@
 
           <!-- Transition speed -->
           <div style="margin-top: 12px;">
-            <span class="token-label">Transition speed</span>
+            <span class="token-label">{$_('settings.transitionSpeed')}</span>
             <div class="segmented-pill" style="margin-top: 6px;">
               {#each speedOptions as sp}
                 <button class="segment-btn"
@@ -715,7 +715,7 @@
 
           <!-- Visualizer -->
           <div style="margin-top: 12px;">
-            <span class="token-label">Player visualizer</span>
+            <span class="token-label">{$_('settings.playerVisualizer')}</span>
             <div class="segmented-pill" style="margin-top: 6px;">
               {#each vizModes as vm}
                 <button class="segment-btn"
@@ -733,21 +733,21 @@
                 checked={$theme.animation.hoverScale}
                 on:change={e => theme.setAnimation({ hoverScale: (e.target as HTMLInputElement).checked })}
               />
-              <span class="token-label">Card hover lift &amp; scale</span>
+              <span class="token-label">{$_('settings.cardHoverScale')}</span>
             </label>
             <label class="checkbox-row">
               <input type="checkbox"
                 checked={$theme.animation.accentPulse}
                 on:change={e => theme.setAnimation({ accentPulse: (e.target as HTMLInputElement).checked })}
               />
-              <span class="token-label">Accent pulse on playing indicator</span>
+              <span class="token-label">{$_('settings.accentPulse')}</span>
             </label>
             <label class="checkbox-row">
               <input type="checkbox"
                 checked={$theme.allowCustomJs}
                 on:change={e => theme.setAllowCustomJs((e.target as HTMLInputElement).checked)}
               />
-              <span class="token-label">Enable theme custom effects (custom JavaScript)</span>
+              <span class="token-label">{$_('settings.enableCustomJs')}</span>
             </label>
           </div>
         </div>
@@ -756,22 +756,22 @@
 
         <!-- ── Theme Package ── -->
         <div class="inner-section" id="setting-theme-package">
-          <span class="setting-title">Theme Package</span>
-          <span class="setting-description">Export your theme as a shareable <code>.audiotheme</code> file, or import one.</span>
+          <span class="setting-title">{$_('settings.themePackage')}</span>
+          <span class="setting-description">{$_('settings.themePackageDesc')}</span>
 
           <!-- Export fields -->
           <div class="pkg-fields">
-            <input class="pkg-input" type="text" bind:value={pkgName} placeholder="Theme name" maxlength="64" />
-            <input class="pkg-input" type="text" bind:value={pkgAuthor} placeholder="Author (optional)" maxlength="64" />
-            <input class="pkg-input" type="text" bind:value={pkgDescription} placeholder="Description (optional)" maxlength="120" />
+            <input class="pkg-input" type="text" bind:value={pkgName} placeholder={$_('settings.themeNamePlaceholder')} maxlength="64" />
+            <input class="pkg-input" type="text" bind:value={pkgAuthor} placeholder={$_('settings.authorPlaceholder')} maxlength="64" />
+            <input class="pkg-input" type="text" bind:value={pkgDescription} placeholder={$_('settings.descriptionPlaceholder')} maxlength="120" />
           </div>
 
           <div class="pkg-actions">
             <button class="btn-pkg btn-pkg-export" on:click={handleExport}>
-              <Icon name="download" size={14} /> Export
+              <Icon name="download" size={14} /> {$_('settings.export')}
             </button>
             <button class="btn-pkg btn-pkg-import" on:click={handleImport}>
-              <Icon name="upload" size={14} /> Import
+              <Icon name="upload" size={14} /> {$_('settings.import')}
             </button>
           </div>
 

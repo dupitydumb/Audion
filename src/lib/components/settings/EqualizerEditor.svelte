@@ -1,5 +1,6 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { _ } from 'svelte-i18n';
   import {
     equalizer,
     customEqPresets,
@@ -25,19 +26,20 @@
   let savePresetOpen = false;
   let savePresetName = '';
 
-  const FILTER_TYPE_LABELS: Record<FilterType, string> = {
-    peaking: 'Peak',
-    lowShelf: 'Low Shelf',
-    highShelf: 'High Shelf',
-    lowPass: 'Low Pass',
-    highPass: 'High Pass',
-    bandPass: 'Band Pass',
-    notch: 'Notch',
-    allPass: 'All Pass',
-  };
-  const FILTER_TYPE_GROUPS: { label: string; types: FilterType[] }[] = [
-    { label: 'Gain', types: ['peaking', 'lowShelf', 'highShelf'] },
-    { label: 'Filter', types: ['lowPass', 'highPass', 'bandPass', 'notch', 'allPass'] },
+  $: FILTER_TYPE_LABELS = {
+    peaking: $_('settings.eqFilterPeak'),
+    lowShelf: $_('settings.eqFilterLowShelf'),
+    highShelf: $_('settings.eqFilterHighShelf'),
+    lowPass: $_('settings.eqFilterLowPass'),
+    highPass: $_('settings.eqFilterHighPass'),
+    bandPass: $_('settings.eqFilterBandPass'),
+    notch: $_('settings.eqFilterNotch'),
+    allPass: $_('settings.eqFilterAllPass'),
+  } as Record<FilterType, string>;
+
+  $: FILTER_TYPE_GROUPS = [
+    { label: $_('settings.eqGroupGain'), types: ['peaking', 'lowShelf', 'highShelf'] as FilterType[] },
+    { label: $_('settings.eqGroupFilter'), types: ['lowPass', 'highPass', 'bandPass', 'notch', 'allPass'] as FilterType[] },
   ];
   const GAINLESS_FILTERS = new Set<FilterType>(['lowPass', 'highPass', 'bandPass', 'notch', 'allPass']);
 
@@ -75,21 +77,21 @@
 
 <div class="eq-editor">
   <div class="eq-editor-topbar">
-    <button class="eq-back-btn" on:click={() => dispatch('back')} aria-label="Back to Audio settings">
+    <button class="eq-back-btn" on:click={() => dispatch('back')} aria-label={$_('settings.backToAudio')}>
       <Icon name="chevron-left" size={16} />
     </button>
   </div>
 
   <div class="eq-editor-body">
     <div class="eq-graph-header">
-      <span class="eq-graph-title">Equalizer</span>
+      <span class="eq-graph-title">{$_('settings.equalizer')}</span>
       <button
         class="toggle-btn"
         class:active={$equalizer.enabled}
         on:click={() => equalizer.setEnabled(!$equalizer.enabled)}
         role="switch"
         aria-checked={$equalizer.enabled}
-        aria-label="Toggle Equalizer"
+        aria-label={$_('settings.equalizer')}
       >
         <div class="toggle-handle"></div>
       </button>
@@ -99,9 +101,9 @@
 
     <div class="eq-editor-toolbar">
       <button class="btn-secondary-small" on:click={addBand} disabled={$equalizer.bands.length >= MAX_BANDS}>
-        + Add band
+        {$_('settings.eqAddBand')}
       </button>
-      <span class="eq-band-count">{$equalizer.bands.length} / {MAX_BANDS} bands</span>
+      <span class="eq-band-count">{$_('settings.eqBandSlash', { values: { count: $equalizer.bands.length, max: MAX_BANDS } })}</span>
     </div>
 
     {#if selectedBandIndex !== null && $equalizer.bands[selectedBandIndex]}
@@ -117,24 +119,24 @@
             </span>
           </div>
           <div class="eq-detail-header-actions">
-            <button class="btn-text-small" on:click={removeSelectedBand} title="Remove band">Remove</button>
+            <button class="btn-text-small" on:click={removeSelectedBand} title={$_('settings.remove')}>{$_('settings.remove')}</button>
             <button
               class="toggle-btn toggle-btn-sm"
               class:active={selBand.enabled}
               on:click={() => equalizer.setBandEnabled(selectedBandIndex!, !selBand.enabled)}
               role="switch"
               aria-checked={selBand.enabled}
-              title="{selBand.enabled ? 'Bypass' : 'Enable'} band"
+              title={selBand.enabled ? $_('settings.eqBypassBand') : $_('settings.eqEnableBand')}
             >
               <div class="toggle-handle"></div>
             </button>
-            <button class="btn-text-small" on:click={() => selectedBandIndex = null} aria-label="Close">✕</button>
+            <button class="btn-text-small" on:click={() => selectedBandIndex = null} aria-label={$_('settings.close')}>✕</button>
           </div>
         </div>
 
         <div class="eq-band-detail-row">
           <label class="eq-detail-label" for="eq-freq-{selectedBandIndex}">
-            Frequency
+            {$_('settings.eqFrequency')}
             <span class="eq-q-value">{formatFreqLabel(selBand.frequency)} Hz</span>
           </label>
           <input
@@ -146,14 +148,14 @@
             step="0.001"
             value={Math.log10(selBand.frequency)}
             on:input={(e) => equalizer.setBandFrequency(selectedBandIndex!, Math.pow(10, parseFloat(e.currentTarget.value)))}
-            aria-label="Frequency"
+            aria-label={$_('settings.eqFrequency')}
           />
         </div>
 
         {#if !gainless}
           <div class="eq-band-detail-row">
             <label class="eq-detail-label" for="eq-gain-{selectedBandIndex}">
-              Gain
+              {$_('settings.eqGain')}
               <span class="eq-q-value">{formatGain(selBand.gain)}</span>
             </label>
             <input
@@ -165,14 +167,14 @@
               step="0.1"
               value={selBand.gain}
               on:input={(e) => equalizer.setBandGain(selectedBandIndex!, parseFloat(e.currentTarget.value))}
-              aria-label="Gain"
+              aria-label={$_('settings.eqGain')}
             />
           </div>
         {/if}
 
         <div class="eq-band-detail-row">
-          <span class="eq-detail-label">Filter type</span>
-          <div class="eq-filter-type-grid" role="group" aria-label="Filter type">
+          <span class="eq-detail-label">{$_('settings.eqFilterType')}</span>
+          <div class="eq-filter-type-grid" role="group" aria-label={$_('settings.eqFilterType')}>
             {#each FILTER_TYPE_GROUPS as group}
               <div class="eq-filter-group">
                 <span class="eq-filter-group-label">{group.label}</span>
@@ -195,7 +197,7 @@
 
         <div class="eq-band-detail-row">
           <label class="eq-detail-label" for="eq-q-{selectedBandIndex}">
-            Q factor
+            {$_('settings.eqQFactor')}
             <span class="eq-q-value">{selBand.q.toFixed(2)}</span>
           </label>
           <input
@@ -207,7 +209,7 @@
             step="0.01"
             value={selBand.q}
             on:input={(e) => equalizer.setBandQ(selectedBandIndex!, parseFloat(e.currentTarget.value))}
-            aria-label="Q factor"
+            aria-label={$_('settings.eqQFactor')}
           />
         </div>
       </div>
@@ -215,7 +217,7 @@
 
     <div class="eq-band-detail-row eq-preamp-row">
       <label class="eq-detail-label" for="eq-preamp">
-        Preamp
+        {$_('settings.eqPreamp')}
         <span class="eq-q-value">{$equalizer.preampDb > 0 ? '+' : ''}{$equalizer.preampDb.toFixed(1)} dB</span>
       </label>
       <input
@@ -227,15 +229,15 @@
         step="0.5"
         value={$equalizer.preampDb}
         on:input={(e) => equalizer.setPreampDb(parseFloat(e.currentTarget.value))}
-        aria-label="Preamp gain"
+        aria-label={$_('settings.eqPreamp')}
       />
-      <p class="eq-preamp-hint">Trims overall output after all bands — use it to avoid clipping from boosted bands, not to raise volume.</p>
+      <p class="eq-preamp-hint">{$_('settings.eqPreampHint')}</p>
     </div>
 
     <div class="eq-presets">
       <div class="eq-presets-header">
-        <span class="eq-presets-label">Presets</span>
-        <button class="btn-text-small" on:click={openSavePreset}>Save current as preset</button>
+        <span class="eq-presets-label">{$_('settings.presets')}</span>
+        <button class="btn-text-small" on:click={openSavePreset}>{$_('settings.eqSavePreset')}</button>
       </div>
       <div class="eq-preset-pills">
         {#each allPresets as preset (preset.name)}
@@ -252,8 +254,8 @@
               <button
                 class="preset-delete-btn"
                 on:click={() => equalizer.deleteCustomPreset(preset.name)}
-                title="Delete preset"
-                aria-label="Delete preset {preset.name}"
+                title={$_('settings.eqDeletePreset')}
+                aria-label="{$_('settings.eqDeletePreset')} {preset.name}"
               >✕</button>
             {/if}
           </div>
@@ -268,7 +270,7 @@
     class="eq-modal-backdrop"
     role="button"
     tabindex="0"
-    aria-label="Close dialog"
+    aria-label={$_('settings.close')}
     on:click={() => savePresetOpen = false}
     on:keydown={(e) => e.key === 'Escape' && (savePresetOpen = false)}
   >
@@ -276,21 +278,21 @@
       class="eq-modal"
       role="dialog"
       aria-modal="true"
-      aria-label="Save preset"
+      aria-label={$_('settings.eqSavePresetTitle')}
       on:click|stopPropagation
       on:keydown|stopPropagation={(e) => e.key === 'Escape' && (savePresetOpen = false)}
     >
-      <span class="setting-title">Save preset</span>
+      <span class="setting-title">{$_('settings.eqSavePresetTitle')}</span>
       <input
         type="text"
         class="eq-preset-name-input"
-        placeholder="Preset name"
+        placeholder={$_('settings.eqPresetNamePlaceholder')}
         bind:value={savePresetName}
         on:keydown={(e) => e.key === 'Enter' && confirmSavePreset()}
       />
       <div class="eq-modal-actions">
-        <button class="btn-text-small" on:click={() => savePresetOpen = false}>Cancel</button>
-        <button class="btn-secondary-small" on:click={confirmSavePreset} disabled={!savePresetName.trim()}>Save</button>
+        <button class="btn-text-small" on:click={() => savePresetOpen = false}>{$_('settings.cancel')}</button>
+        <button class="btn-secondary-small" on:click={confirmSavePreset} disabled={!savePresetName.trim()}>{$_('settings.save')}</button>
       </div>
     </div>
   </div>
