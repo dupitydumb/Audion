@@ -7,12 +7,19 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dupitydumb/Audion/releases"><img src="https://img.shields.io/badge/version-1.4.1-blue.svg" alt="Version"></a>
+  <a href="https://github.com/dupitydumb/Audion/releases"><img src="https://img.shields.io/github/v/release/dupitydumb/Audion?color=blue&label=version" alt="Version"></a>
+  <a href="https://github.com/dupitydumb/Audion/releases"><img src="https://img.shields.io/github/downloads/dupitydumb/Audion/total?color=success&logo=github&label=downloads" alt="Total Downloads"></a>
+  <a href="https://github.com/dupitydumb/Audion/stargazers"><img src="https://img.shields.io/github/stars/dupitydumb/Audion?style=flat&logo=github" alt="GitHub Stars"></a>
+  <a href="https://aur.archlinux.org/packages/audion-bin"><img src="https://img.shields.io/aur/version/audion-bin?logo=arch-linux&label=AUR" alt="AUR version"></a>
+  <a href="https://github.com/dupitydumb/Audion/blob/master/LICENSE"><img src="https://img.shields.io/github/license/dupitydumb/Audion" alt="License"></a>
+  <a href="https://discord.gg/27XRVQsBd9"><img src="https://img.shields.io/discord/1234567890?color=5865F2&label=Discord&logo=discord&logoColor=white" alt="Discord"></a>
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/platform-Windows-brightgreen.svg" alt="Windows">
   <img src="https://img.shields.io/badge/platform-macOS-brightgreen.svg" alt="macOS">
   <img src="https://img.shields.io/badge/platform-Linux-brightgreen.svg" alt="Linux">
   <img src="https://img.shields.io/badge/platform-Android-brightgreen.svg" alt="Android">
-  <a href="https://discord.gg/27XRVQsBd9"><img src="https://img.shields.io/discord/1234567890?color=5865F2&label=Discord&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
 ---
