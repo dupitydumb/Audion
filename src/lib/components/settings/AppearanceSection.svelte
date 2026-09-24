@@ -14,6 +14,35 @@
   export let open: boolean = false;
   const dispatch = createEventDispatcher();
 
+  const availableLanguages = [
+    { code: "en", label: "English" },
+    { code: "es", label: "Español" },
+    { code: "fr", label: "Français" },
+    { code: "ru", label: "Русский" },
+  ];
+
+  let languageDropdownOpen = false;
+  let languageDropdownRef: HTMLDivElement | null = null;
+
+  function toggleLanguageDropdown() {
+    languageDropdownOpen = !languageDropdownOpen;
+  }
+
+  function handleLanguageDropdownKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      languageDropdownOpen = false;
+    }
+  }
+
+  function handleLanguageDropdownOutside(e: MouseEvent) {
+    if (languageDropdownRef && !languageDropdownRef.contains(e.target as Node)) {
+      languageDropdownOpen = false;
+    }
+  }
+
+  $: currentLanguageLabel =
+    availableLanguages.find((l) => l.code === $locale)?.label ?? "English";
+
   function handleModeChange(mode: ThemeMode) {
     theme.setMode(mode);
   }
@@ -355,6 +384,8 @@
   }
 </script>
 
+<svelte:window on:mousedown={handleLanguageDropdownOutside} />
+
 <section class="settings-section" aria-labelledby="appearance-heading">
   <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
     <Icon name="globe" size="lg" className="accordion-icon" />
@@ -369,13 +400,54 @@
       <div class="settings-card">
 
         <!-- Language -->
-        <div class="inner-section">
+        <div class="inner-section" id="setting-language">
           <span class="setting-title">{$_('settings.selectLanguage')}</span>
-          <div class="segmented-pill" style="margin-top: 6px;">
-            <button class="segment-btn" class:active={$locale === 'en'} on:click={() => changeLanguage('en')}>English</button>
-            <button class="segment-btn" class:active={$locale === 'es'} on:click={() => changeLanguage('es')}>Español</button>
-            <button class="segment-btn" class:active={$locale === 'fr'} on:click={() => changeLanguage('fr')}>Français</button>
-            <button class="segment-btn" class:active={$locale === 'ru'} on:click={() => changeLanguage('ru')}>Русский</button>
+          <div class="device-dropdown-wrap" style="margin-top: 6px;" bind:this={languageDropdownRef}>
+            <button
+              class="device-dropdown-trigger"
+              class:open={languageDropdownOpen}
+              on:click={toggleLanguageDropdown}
+              on:keydown={handleLanguageDropdownKeydown}
+              aria-haspopup="listbox"
+              aria-expanded={languageDropdownOpen}
+              aria-label={$_('settings.selectLanguage')}
+            >
+              <span class="device-dropdown-label">{currentLanguageLabel}</span>
+              <span class="device-dropdown-chevron" class:rotated={languageDropdownOpen}>
+                <Icon name="chevron-down" size={12} />
+              </span>
+            </button>
+
+            {#if languageDropdownOpen}
+              <div class="device-dropdown-menu language-dropdown-menu" role="listbox" aria-label={$_('settings.selectLanguage')}>
+                {#each availableLanguages as lang}
+                  {@const selected = lang.code === $locale}
+                  <div
+                    class="device-dropdown-item"
+                    class:selected
+                    role="option"
+                    aria-selected={selected}
+                    tabindex="0"
+                    on:click={() => {
+                      changeLanguage(lang.code);
+                      languageDropdownOpen = false;
+                    }}
+                    on:keydown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        changeLanguage(lang.code);
+                        languageDropdownOpen = false;
+                      }
+                    }}
+                  >
+                    <span class="device-item-name">{lang.label}</span>
+                    {#if selected}
+                      <span class="device-item-badge">✓</span>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            {/if}
           </div>
         </div>
 
