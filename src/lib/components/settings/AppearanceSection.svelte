@@ -1,11 +1,13 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
-  import { theme, presetAccents, type ThemeMode, type CustomColors, type BackgroundType, type PageTransition, type VisualizationMode, type TransitionSpeed, exportThemePackage, parseThemePackage } from "$lib/stores/theme";
+  import { theme, presetAccents, type ThemeMode, type CustomColors, type BackgroundType, type PageTransition, type VisualizationMode, type TransitionSpeed, exportThemePackage, parseThemePackage, type AnimationConfig } from "$lib/stores/theme";
+  import { darkDefaults, lightDefaults } from "$lib/stores/theme";
   import { get } from "svelte/store";
   import { locale } from "svelte-i18n";
   import { slide } from "svelte/transition";
-  import { createEventDispatcher } from "svelte";
+  import { createEventDispatcher, onMount } from "svelte";
   import { layoutOverride, type LayoutOverride } from "$lib/stores/mobile";
+  import { isMobile } from "$lib/stores/mobile";
   import Icon from "$lib/components/Icon.svelte";
   import { isTauri, convertFileSrc } from "$lib/api/tauri";
 
@@ -87,6 +89,9 @@
   let slotAlpha: Record<string, number> = {};
   let slotHexText: Record<string, string> = {};
 
+  // Resolved default color per slot (what null actually renders as)
+  $: resolvedDefaults = ($theme.mode === 'light' ? lightDefaults : darkDefaults);
+
   // Keep local state in sync when store changes externally (e.g. reset all, import theme).
   // Must reassign the objects (not just mutate) so Svelte propagates changes to the UI.
   $: {
@@ -94,16 +99,11 @@
     const a: Record<string, number> = {};
     const t: Record<string, string> = {};
     colorSlots.forEach(({ key }) => {
-      const val = $theme.customColors[key];
-      if (val === null) {
-        h[key] = '#000000';
-        a[key] = 1;
-        t[key] = '#000000';
-      } else {
-        h[key] = toHex6(val);
-        a[key] = toAlpha(val);
-        t[key] = val;
-      }
+      // When null, show the resolved default color so the swatch is meaningful
+      const val = $theme.customColors[key] ?? resolvedDefaults[key];
+      h[key] = toHex6(val);
+      a[key] = toAlpha(val);
+      t[key] = val;
     });
     slotHex = h;
     slotAlpha = a;
@@ -155,10 +155,14 @@
   let bgFileName = "";
 
   $: {
-    bgType = $theme.background.type;
+    bgType    = $theme.background.type;
     bgOpacity = $theme.background.opacity;
-    bgBlur = $theme.background.blur;
-    bgFixed = $theme.background.fixed;
+    bgBlur    = $theme.background.blur;
+    bgFixed   = $theme.background.fixed;
+    // sync value fields on external change (e.g. theme import, reset)
+    if ($theme.background.type === 'color')    bgColorValue    = $theme.background.value || '#000000';
+    if ($theme.background.type === 'gradient') bgGradientValue = $theme.background.value || 'linear-gradient(135deg, #1a1a2e, #16213e)';
+    if ($theme.background.type === 'none')     bgFileName      = '';
   }
 
   function setBgType(type: BackgroundType) {
@@ -176,7 +180,10 @@
 
   function setBgGradient(value: string) {
     bgGradientValue = value;
-    theme.setBackground({ type: "gradient", value });
+    // sanitize: only allow CSS gradient functions, no url() or other injection
+    const trimmed = value.trim();
+    if (trimmed && !/^(linear|radial|conic)-gradient\s*\(/i.test(trimmed)) return;
+    theme.setBackground({ type: "gradient", value: trimmed });
   }
 
   function setBgOpacity(v: number) {
@@ -248,6 +255,14 @@
     { value: 'normal', label: 'Normal' },
     { value: 'fast',   label: 'Fast' },
   ];
+
+  // Detect OS reduced-motion preference
+  let osReducedMotion = false;
+  onMount(() => {
+    const mq = window.matchMedia('(prefers-reduced-motion: reduce)');
+    osReducedMotion = mq.matches;
+    mq.addEventListener('change', e => { osReducedMotion = e.matches; });
+  });
 
   // ── Theme package export / import ────────────────────────────────────────────
 
@@ -569,10 +584,12 @@
                   on:input={e => setBgBlur(parseInt((e.target as HTMLInputElement).value))} />
                 <span class="slider-val">{bgBlur}px</span>
               </div>
-              <label class="checkbox-row">
-                <input type="checkbox" checked={bgFixed} on:change={toggleBgFixed} />
-                <span class="token-label">Fixed (parallax)</span>
-              </label>
+              {#if !$isMobile}
+                <label class="checkbox-row">
+                  <input type="checkbox" checked={bgFixed} on:change={toggleBgFixed} />
+                  <span class="token-label">Fixed (parallax)</span>
+                </label>
+              {/if}
             </div>
           {/if}
         </div>
@@ -592,6 +609,11 @@
             />
             <span class="token-label">Reduce motion (overrides all below)</span>
           </label>
+          {#if osReducedMotion && !$theme.animation.reducedMotion}
+            <span class="setting-description" style="margin-top: 4px; color: var(--text-subdued);">
+              ℹ Your OS has reduced motion enabled — animations are already suppressed.
+            </span>
+          {/if}
 
           <!-- Page transition -->
           <div style="margin-top: 12px;">
@@ -1023,8 +1045,13 @@
     border-radius: var(--radius-sm);
     padding: 5px 8px;
   }
-  .pkg-msg-ok  { background: color-mix(in srgb, var(--accent-primary) 15%, transparent); color: var(--accent-primary); }
-  .pkg-msg-err { background: color-mix(in srgb, var(--error-color, #e74c3c) 12%, transparent); color: var(--error-color, #e74c3c); }
+  /* fallback first for older Android WebView that doesn't support color-mix() */
+  .pkg-msg-ok  { background: rgba(29, 185, 84, 0.15); color: var(--accent-primary); }
+  .pkg-msg-err { background: rgba(231, 76, 60, 0.12); color: var(--error-color, #e74c3c); }
+  @supports (color: color-mix(in srgb, red, blue)) {
+    .pkg-msg-ok  { background: color-mix(in srgb, var(--accent-primary) 15%, transparent); }
+    .pkg-msg-err { background: color-mix(in srgb, var(--error-color, #e74c3c) 12%, transparent); }
+  }
 
   code {
     font-family: monospace;

@@ -255,6 +255,8 @@ function createThemeStore() {
                 const newState: ThemeState = {
                     ...state,
                     ...pkg,
+                    // don't overwrite current mode if package has no mode
+                    mode: pkg.mode ?? state.mode,
                     customColors: { ...defaultCustomColors, ...(pkg.customColors ?? {}) },
                     background: { ...defaultBackground, ...(pkg.background ?? {}) },
                     animation: { ...defaultAnimation, ...(pkg.animation ?? {}) },
@@ -390,9 +392,14 @@ export function exportThemePackage(state: ThemeState, name: string, author?: str
     };
 }
 
+// Normalize any hex to 6-char #RRGGBB (strips alpha if 8-char)
+function hex6(hex: string): string {
+    return '#' + hex.replace('#', '').slice(0, 6);
+}
+
 // Lighten a color for hover state
 function lightenColor(hex: string, percent: number): string {
-    const num = parseInt(hex.replace('#', ''), 16);
+    const num = parseInt(hex6(hex).replace('#', ''), 16);
     const amt = Math.round(2.55 * percent);
     const R = Math.min(255, (num >> 16) + amt);
     const G = Math.min(255, ((num >> 8) & 0x00FF) + amt);
@@ -402,7 +409,7 @@ function lightenColor(hex: string, percent: number): string {
 
 // Darken a color
 function darkenColor(hex: string, percent: number): string {
-    const num = parseInt(hex.replace('#', ''), 16);
+    const num = parseInt(hex6(hex).replace('#', ''), 16);
     const amt = Math.round(2.55 * percent);
     const R = Math.max(0, (num >> 16) - amt);
     const G = Math.max(0, ((num >> 8) & 0x00FF) - amt);
@@ -412,7 +419,7 @@ function darkenColor(hex: string, percent: number): string {
 
 // Convert hex to RGB string (r, g, b)
 function hexToRgb(hex: string): string {
-    const num = parseInt(hex.replace('#', ''), 16);
+    const num = parseInt(hex6(hex).replace('#', ''), 16);
     const R = (num >> 16);
     const G = ((num >> 8) & 0x00FF);
     const B = (num & 0x0000FF);
@@ -420,7 +427,7 @@ function hexToRgb(hex: string): string {
 }
 
 /** Dark-mode defaults for each custom color slot */
-const darkDefaults: Record<keyof CustomColors, string> = {
+export const darkDefaults: Record<keyof CustomColors, string> = {
     bgBase: '#121212',
     bgElevated: '#181818',
     bgSurface: '#282828',
@@ -434,7 +441,7 @@ const darkDefaults: Record<keyof CustomColors, string> = {
 };
 
 /** Light-mode defaults for each custom color slot */
-const lightDefaults: Record<keyof CustomColors, string> = {
+export const lightDefaults: Record<keyof CustomColors, string> = {
     bgBase: '#f5f5f5',
     bgElevated: '#ffffff',
     bgSurface: '#e8e8e8',
@@ -539,9 +546,14 @@ export function applyBackground(bg: BackgroundConfig): void {
         _bgBlobUrl = null;
     }
 
+    // background-attachment:fixed is broken on iOS WebKit — always use scroll there
+    const isIos = typeof navigator !== 'undefined' &&
+        /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+    const useFixed = bg.fixed && !isIos;
+
     layer.style.opacity = String(bg.opacity);
     layer.style.backdropFilter = bg.blur > 0 ? `blur(${bg.blur}px)` : '';
-    layer.style.backgroundAttachment = bg.fixed ? 'fixed' : 'scroll';
+    layer.style.backgroundAttachment = useFixed ? 'fixed' : 'scroll';
 
     // Clear video if switching away
     const video = layer.querySelector('video');
@@ -590,7 +602,12 @@ export function applyBackground(bg: BackgroundConfig): void {
                 layer.appendChild(vid);
             }
             vid.style.display = 'block';
-            if (vid.src !== bg.value) vid.src = bg.value;
+            if (vid.src !== bg.value) {
+                vid.src = bg.value;
+                // iOS blocks autoplay attr — call play() explicitly after src set
+                vid.load();
+                vid.play().catch(() => {/* blocked by browser policy, ok */});
+            }
             break;
         }
     }

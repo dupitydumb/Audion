@@ -1,10 +1,11 @@
 <script lang="ts">
   import { slide } from "svelte/transition";
-  import { createEventDispatcher, onMount } from "svelte";
+  import { createEventDispatcher } from "svelte";
   import Icon from "$lib/components/Icon.svelte";
   import { theme } from "$lib/stores/theme";
   import { parseThemePackage } from "$lib/stores/theme";
   import { browser } from "$app/environment";
+  import { isTauri } from "$lib/api/tauri";
 
   export let open: boolean = false;
   const dispatch = createEventDispatcher();
@@ -28,6 +29,10 @@
   let installing: Record<string, 'idle' | 'loading' | 'done' | 'error'> = {};
   let installError: Record<string, string> = {};
 
+  // Persist last installed theme id so we can show a badge
+  let lastInstalledId: string = '';
+  try { lastInstalledId = localStorage.getItem('tb_last_installed') ?? ''; } catch {}
+
   async function fetchWithTimeout(url: string, ms = 8000): Promise<Response> {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), ms);
@@ -41,7 +46,7 @@
   async function loadThemes() {
     state = 'loading';
     error = '';
-    themes = [];
+    // Don't clear themes[] until we have new data — avoids flash of empty grid
     try {
       const res = await fetchWithTimeout(INDEX_URL);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -64,6 +69,8 @@
       const raw = JSON.parse(text);
       const pkg = parseThemePackage(raw);
       theme.applyPackage(pkg);
+      lastInstalledId = card.id;
+      try { localStorage.setItem('tb_last_installed', card.id); } catch {}
       installing = { ...installing, [card.id]: 'done' };
       setTimeout(() => { installing = { ...installing, [card.id]: 'idle' }; }, 2500);
     } catch (e: any) {
@@ -73,9 +80,17 @@
     }
   }
 
-  function openSubmit() {
+  async function openSubmit() {
     if (!browser) return;
-    window.open('https://dupitydumb.github.io/audion-theme/submit.html', '_blank');
+    const url = 'https://dupitydumb.github.io/audion-theme/submit.html';
+    if (isTauri()) {
+      try {
+        const { open: openUrl } = await import('@tauri-apps/plugin-opener');
+        await openUrl(url);
+        return;
+      } catch {}
+    }
+    window.open(url, '_blank');
   }
 
   // Auto-load when section opens
@@ -130,6 +145,7 @@
             <div class="tb-grid">
               {#each themes as card (card.id)}
                 {@const status = installing[card.id] ?? 'idle'}
+                {@const isLast = card.id === lastInstalledId}
                 <div class="tb-theme-card">
                   <!-- color swatch -->
                   <div class="tb-swatch">
@@ -141,6 +157,7 @@
                     <div class="tb-name">
                       <span class="tb-dot" style="background:{card.accentColor}"></span>
                       {card.name}
+                      {#if isLast}<span class="tb-badge">Active</span>{/if}
                     </div>
                     {#if card.author}<div class="tb-author">by {card.author}</div>{/if}
                     {#if card.description}<div class="tb-desc">{card.description}</div>{/if}
@@ -280,6 +297,15 @@
   }
   .tb-dot {
     width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+  .tb-badge {
+    font-size: 0.68rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 99px;
+    background: var(--accent-primary);
+    color: #fff;
+    flex-shrink: 0;
   }
   .tb-author { font-size: 0.78rem; color: var(--text-subdued); }
   .tb-desc {
