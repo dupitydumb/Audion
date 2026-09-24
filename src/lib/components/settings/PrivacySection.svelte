@@ -2,6 +2,7 @@
   import { _ } from "svelte-i18n";
   import { appSettings } from "$lib/stores/settings";
   import { authState, isLoggedIn, deleteAccount } from "$lib/stores/sync";
+  import { resetDatabase } from "$lib/api/tauri";
   import { confirm } from "$lib/stores/dialogs";
   import { slide } from "svelte/transition";
   import { createEventDispatcher } from "svelte";
@@ -73,7 +74,8 @@
             { title: "Reset Database", confirmLabel: "Proceed", danger: true },
           );
           if (!confirmed) return;
-          // Reset modal flow handled by parent
+          await resetDatabase();
+          location.reload();
         }}>{$_('settings.resetDatabase')}</button>
       {#if $isLoggedIn}
         <button class="btn-outline-compact danger" on:click={async () => {
