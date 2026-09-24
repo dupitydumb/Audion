@@ -927,11 +927,11 @@
                     </div>
                 {:else if $currentView.type === "subsonic-album"}
                     <div class="view-container no-padding">
-                        <SubsonicAlbumDetail id={$currentView.subsonicId} name={$currentView.subsonicName} />
+                        <SubsonicAlbumDetail albumId={$currentView.subsonicId ?? ''} albumName={$currentView.subsonicName ?? ''} />
                     </div>
                 {:else if $currentView.type === "subsonic-artist"}
                     <div class="view-container no-padding">
-                        <SubsonicArtistDetail id={$currentView.subsonicId} name={$currentView.subsonicName} />
+                        <SubsonicArtistDetail artistId={$currentView.subsonicId ?? ''} artistName={$currentView.subsonicName ?? ''} />
                     </div>
                 {:else}
                     <div class="view-container">

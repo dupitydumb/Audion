@@ -186,7 +186,7 @@ textarea {
 }
 
 .card:hover {
-  transform: translateY(-2px);
+  transform: translateY(calc(-2px * var(--hover-scale-enabled, 1)));
   box-shadow: var(--shadow-lg);
 }
 
@@ -389,12 +389,12 @@ a:hover {
 
 .card:hover {
   background-color: var(--bg-surface);
-  transform: translateY(-2px) scale(1.015);
+  transform: translateY(calc(-2px * var(--hover-scale-enabled, 1))) scale(calc(1 + 0.015 * var(--hover-scale-enabled, 1)));
   box-shadow: var(--shadow-md);
 }
 
 .card:active {
-  transform: translateY(0) scale(0.985);
+  transform: translateY(0) scale(calc(1 - 0.015 * var(--hover-scale-enabled, 1)));
 }
 
 /* Skeleton loading shimmer */
@@ -486,7 +486,27 @@ a:hover {
 
 .animate-pulse {
   animation: pulse 1.5s ease-in-out infinite;
+  /* paused when --accent-pulse-enabled is 0 */
+  animation-duration: calc(1.5s + (1 - var(--accent-pulse-enabled, 1)) * 9998.5s);
 }
+
+/* Page transition keyframes — consumed by onNavigate in +layout.svelte */
+@keyframes pt-fade-in  { from { opacity: 0; } }
+@keyframes pt-fade-out { to   { opacity: 0; } }
+@keyframes pt-slide-in  { from { transform: translateX(24px); opacity: 0; } }
+@keyframes pt-slide-out { to   { transform: translateX(-24px); opacity: 0; } }
+@keyframes pt-scale-in  { from { transform: scale(0.97); opacity: 0; } }
+@keyframes pt-scale-out { to   { transform: scale(1.02); opacity: 0; } }
+
+/* Applied on <html> by onNavigate for the duration of the transition */
+[data-page-transition="fade"]  ::view-transition-new(root) { animation: pt-fade-in  var(--transition-normal) both; }
+[data-page-transition="fade"]  ::view-transition-old(root) { animation: pt-fade-out var(--transition-normal) both; }
+[data-page-transition="slide"] ::view-transition-new(root) { animation: pt-slide-in  var(--transition-normal) both; }
+[data-page-transition="slide"] ::view-transition-old(root) { animation: pt-slide-out var(--transition-normal) both; }
+[data-page-transition="scale"] ::view-transition-new(root) { animation: pt-scale-in  var(--transition-normal) both; }
+[data-page-transition="scale"] ::view-transition-old(root) { animation: pt-scale-out var(--transition-normal) both; }
+[data-page-transition="none"]  ::view-transition-new(root),
+[data-page-transition="none"]  ::view-transition-old(root) { animation: none; }
 
 /* Ultrawide constraint — max readable line length */
 @media (min-width: 1920px) {

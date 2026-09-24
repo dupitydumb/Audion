@@ -482,6 +482,7 @@ let html5AudioSourceElement: HTMLAudioElement | null = null; // which element th
 let html5EqFilters: BiquadFilterNode[] = [];
 let html5EqGainNode: GainNode | null = null;
 let html5ReplayGainNode: GainNode | null = null;
+let html5AnalyserNode: AnalyserNode | null = null;
 let lastEqBypassWarningHost: string | null = null;
 
 // replay gain state
@@ -498,6 +499,15 @@ const rawAudioBlobUrls = new Set<string>();
 /** Register a blob URL as raw audio (not a DASH manifest) so html5Play skips dash.js. */
 export function html5RegisterRawBlobUrl(url: string): void {
     rawAudioBlobUrls.add(url);
+}
+
+/**
+ * Returns the AnalyserNode tapped from the EQ graph output.
+ * null when the graph hasn't been built yet (e.g. native backend, or no track loaded).
+ * The visualizer checks isPlaying and polls this on each animation frame.
+ */
+export function getHtml5Analyser(): AnalyserNode | null {
+    return html5AnalyserNode;
 }
 
 // Preload state for gapless streaming
@@ -598,6 +608,10 @@ function cleanupHtml5EqGraph(): void {
     if (html5EqGainNode) {
         try { html5EqGainNode.disconnect(); } catch (_) { }
         html5EqGainNode = null;
+    }
+    if (html5AnalyserNode) {
+        try { html5AnalyserNode.disconnect(); } catch (_) { }
+        html5AnalyserNode = null;
     }
     if (html5AudioContext) {
         html5AudioContext.close().catch(() => { });
@@ -782,7 +796,15 @@ function ensureHtml5EqGraph(audio: HTMLAudioElement): void {
             html5AudioSourceNode.connect(html5ReplayGainNode);
         }
         html5ReplayGainNode.connect(html5EqGainNode);
-        html5EqGainNode.connect(ctx.destination);
+
+        // Analyser sits after EQ gain, before destination — tap full-chain signal
+        if (!html5AnalyserNode || html5AnalyserNode.context !== ctx) {
+            html5AnalyserNode = ctx.createAnalyser();
+            html5AnalyserNode.fftSize = 256;
+            html5AnalyserNode.smoothingTimeConstant = 0.8;
+        }
+        html5EqGainNode.connect(html5AnalyserNode);
+        html5AnalyserNode.connect(ctx.destination);
 
         applyHtml5EqState(get(equalizer));
         applyHtml5ReplayGain();

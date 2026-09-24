@@ -1318,7 +1318,7 @@
     }
 
     .back-btn:hover {
-        background: var(--bg-hover);
+        background: var(--bg-highlight);
         color: var(--text-primary);
     }
 
@@ -1364,7 +1364,7 @@
     }
 
     .track-row:hover {
-        background: var(--bg-hover);
+        background: var(--bg-highlight);
     }
 
     .track-info {
@@ -1468,7 +1468,7 @@
     }
 
     .disco-item:hover {
-        background: var(--bg-hover);
+        background: var(--bg-highlight);
         transform: translateY(-2px);
     }
 

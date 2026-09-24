@@ -761,7 +761,7 @@
     .sidebar {
         width: var(--sidebar-width);
         height: 100%;
-        background-color: var(--bg-base);
+        background-color: var(--sidebar-bg, var(--bg-base));
         display: flex;
         flex-direction: column;
         border-right: 1px solid var(--border-color);

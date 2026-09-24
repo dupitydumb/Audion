@@ -3,7 +3,7 @@
   import { onMount, onDestroy } from "svelte";
   import { get } from "svelte/store";
   import { appSettings } from "$lib/stores/settings";
-  import { theme } from "$lib/stores/theme";
+  import { theme, applyBackground } from "$lib/stores/theme";
   import { cleanupPlayer, initAudioBackend, currentTrack } from "$lib/stores/player";
   import {
     migrateCoversToFiles,
@@ -44,6 +44,7 @@
   import { initSync, destroySync } from "$lib/stores/sync";
   import { initSubsonic } from "$lib/stores/subsonic";
   import { browser } from "$app/environment";
+  import { onNavigate } from "$app/navigation";
   import { setupI18n } from "$lib/i18n";
   import { _, isLoading, locale } from "svelte-i18n";
   import "../app.css";
@@ -69,6 +70,24 @@
   let showMigrationBanner = false;
   let showPermissionBanner = false;
   let permissionDenied = false;
+
+  // Re-apply background whenever config changes (e.g. opacity slider)
+  $: if (browser) applyBackground($theme.background);
+
+  // Page transitions via View Transitions API
+  // data-page-transition attr on <html> is set by applyAnimationVars
+  // CSS keyframes in app.css respond to that attribute
+  onNavigate((navigation) => {
+    if (!browser || !('startViewTransition' in document)) return;
+    const mode = document.documentElement.getAttribute('data-page-transition') ?? 'fade';
+    if (mode === 'none') return;
+    return new Promise((resolve) => {
+      (document as any).startViewTransition(async () => {
+        resolve();
+        await navigation.complete;
+      });
+    });
+  });
 
   $: {
     if ($locale) {
@@ -396,6 +415,12 @@
 
 <a href="#main-content" class="skip-link">{$_("app.skipToMainContent")}</a>
 
+<div
+  id="audion-bg-layer"
+  aria-hidden="true"
+  style="display:none"
+></div>
+
 <div class="app-content" class:mobile={$isMobile} class:has-titlebar={$useDesktopTitleBar} class:pip={$isMiniPlayer} class:has-mini-player={$isMobile && $currentTrack && !$isFullScreen} id="main-content">
   <slot />
 </div>
@@ -406,6 +431,15 @@
 {/if}
 
 <style>
+  #audion-bg-layer {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    transition: opacity 400ms ease;
+    overflow: hidden;
+  }
+
   .app-content {
     padding-top: 48px; /* Height of TitleBar */
     height: 100vh;

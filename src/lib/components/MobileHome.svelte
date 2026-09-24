@@ -1286,7 +1286,7 @@
         height: 180px;
         border-radius: var(--radius-lg);
         overflow: hidden;
-        background-color: #282828;
+        background-color: var(--bg-elevated);
         display: flex;
         flex-direction: column;
         justify-content: flex-end;
@@ -1546,7 +1546,7 @@
         height: 48px;
         border-radius: 4px;
         overflow: hidden;
-        background: #282828;
+        background: var(--bg-elevated);
         flex-shrink: 0;
     }
 

@@ -54,6 +54,8 @@
     } from "$lib/stores/sleepTimer";
     import ConnectPanel from "./ConnectPanel.svelte";
     import Icon from "$lib/components/Icon.svelte";
+    import AudioVisualizer from "$lib/components/AudioVisualizer.svelte";
+    import { theme } from "$lib/stores/theme";
     import { wsStore } from "$lib/stores/websocket";
 
     $: isCurrentLiked = $currentTrack
@@ -427,6 +429,13 @@
                     <span class="time">{formatDuration($duration)}</span>
                 {/if}
             </div>
+
+            <!-- Audio visualizer — shown when visualization mode is active -->
+            {#if $theme.animation.playerVisualization !== 'none' && !$theme.animation.reducedMotion}
+                <div class="visualizer-container">
+                    <AudioVisualizer width={200} height={20} />
+                </div>
+            {/if}
         </div>
 
         <!-- Volume controls -->
@@ -590,7 +599,7 @@
 <style>
     .player-bar {
         height: var(--player-height);
-        background-color: var(--bg-elevated);
+        background-color: var(--player-bg, var(--bg-elevated));
         border-top: 1px solid var(--border-color);
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
@@ -762,6 +771,13 @@
         min-width: 0;
         overflow: visible;
         padding-top: 6px;
+    }
+
+    .visualizer-container {
+        width: 200px;
+        height: 20px;
+        opacity: 0.7;
+        pointer-events: none;
     }
 
     .controls-buttons {
@@ -1176,7 +1192,7 @@
         padding: 0;
         gap: 0;
         z-index: 900;
-        background-color: #282828;
+        background-color: var(--player-bg, var(--bg-elevated));
         border: none;
         border-radius: 8px;
         box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.5);
