@@ -2,6 +2,7 @@
   import AudioSection from "./settings/AudioSection.svelte";
   import EqualizerEditor from "./settings/EqualizerEditor.svelte";
   import AppearanceSection from "./settings/AppearanceSection.svelte";
+  import ThemeBrowserSection from "./settings/ThemeBrowserSection.svelte";
   import StartupSection from "./settings/StartupSection.svelte";
   import PlaybackSection from "./settings/PlaybackSection.svelte";
   import SyncSection from "./settings/SyncSection.svelte";
@@ -100,8 +101,9 @@
 
     {:else if activeTab === 'appearance'}
       <div class="settings-pane settings-container" id="panel-appearance" role="tabpanel">
-        <AppearanceSection open={isDesktop || (openSections['appearance'] ?? false)} on:toggle={() => toggle('appearance')} />
-        <StartupSection    open={isDesktop || (openSections['startup']    ?? false)} on:toggle={() => toggle('startup')}    />
+        <AppearanceSection    open={isDesktop || (openSections['appearance'] ?? false)} on:toggle={() => toggle('appearance')} />
+        <ThemeBrowserSection  open={isDesktop || (openSections['themes']     ?? false)} on:toggle={() => toggle('themes')}     />
+        <StartupSection       open={isDesktop || (openSections['startup']    ?? false)} on:toggle={() => toggle('startup')}    />
       </div>
 
     {:else if activeTab === 'account'}
