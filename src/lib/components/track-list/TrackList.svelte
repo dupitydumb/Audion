@@ -244,18 +244,12 @@
 
   // Infinite scroll: when virtual scroll nears the bottom of loaded tracks,
   // fetch the next paginated batch from the backend.
-  let loadMorePending = false;
-
   $: {
     if (
       virtualScrollState.endIndex >= sortedTracks.length - 10 &&
-      sortedTracks.length > 0 &&
-      !loadMorePending
+      sortedTracks.length > 0
     ) {
-      loadMorePending = true;
-      loadMoreTracks().finally(() => {
-        loadMorePending = false;
-      });
+      loadMoreTracks();
     }
   }
 
@@ -283,40 +277,18 @@
     return result;
   }
 
-  // Row identity cache: reuse objects when track+albumArt+unavailable unchanged
-  // Prevents downstream diffing churn in Svelte's keyed each block
-  let _prevVisibleMap = new Map<number, TrackWithMetadata>();
-
-  $: visibleTracksWithMetadata = (() => {
-    const nextMap = new Map<number, TrackWithMetadata>();
-    const result: TrackWithMetadata[] = [];
-    // Re-evaluate when runtime changes
-    const _rt = runtime;
-
-    for (const track of virtualScrollState.visibleTracks) {
-      const albumArt = getTrackAlbumArt(track);
-      const unavailable = getCachedUnavailable(track);
-      const formattedDate = getCachedFormattedDate(track.date_added);
-
-      const prev = _prevVisibleMap.get(track.id);
-      if (
-        prev &&
-        prev.track === track &&
-        prev.albumArt === albumArt &&
-        prev.unavailable === unavailable &&
-        prev.formattedDate === formattedDate
-      ) {
-        nextMap.set(track.id, prev);
-        result.push(prev);
-      } else {
-        const entry: TrackWithMetadata = { track, albumArt, unavailable, formattedDate };
-        nextMap.set(track.id, entry);
-        result.push(entry);
-      }
-    }
-    _prevVisibleMap = nextMap;
-    return result;
-  })();
+  $: visibleTracksWithMetadata = virtualScrollState.visibleTracks.map(
+    (track) => {
+      // Re-evaluate when runtime changes
+      const _ = runtime;
+      return {
+        track,
+        albumArt: getTrackAlbumArt(track),
+        unavailable: getCachedUnavailable(track),
+        formattedDate: getCachedFormattedDate(track.date_added),
+      };
+    },
+  ) as TrackWithMetadata[];
 
   function handleScroll(e: Event) {
     const target = e.target as HTMLElement;
@@ -368,7 +340,6 @@
     albumMap.clear();
     availabilityCache.clear();
     dateFormatCache.clear();
-    _prevVisibleMap.clear();
 
     resizeObserver?.disconnect();
     resizeObserver = undefined;
