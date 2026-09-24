@@ -516,7 +516,21 @@
     "startupSettings": "Settings",
     "startupLastVisited": "Last visited page",
     "launchOnStartup": "Launch on startup",
-    "launchOnStartupDesc": "Automatically start Audion when you log in"
+    "launchOnStartupDesc": "Automatically start Audion when you log in",
+    "themeBrowser": "Theme Browser",
+    "themeBrowserSubtitle": "Browse and install community themes",
+    "searchSettingsPlaceholder": "Search settings (equalizer, download location, cache, themes...)",
+    "noSettingsFound": "No settings found matching \"{query}\"",
+    "searchThemes": "theme",
+    "searchThemesPlural": "themes",
+    "submitTheme": "Submit a theme",
+    "loadingThemes": "Loading themes…",
+    "noThemesFound": "No themes found.",
+    "retry": "Retry",
+    "install": "Install",
+    "applied": "Applied",
+    "activeTheme": "Active",
+    "effectBadge": "Effect"
   },
   "updatePopup": {
     "restartToUpdate": "Restart to update",

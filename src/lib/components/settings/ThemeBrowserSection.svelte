@@ -6,6 +6,7 @@
   import { parseThemePackage } from "$lib/stores/theme";
   import { browser } from "$app/environment";
   import { isTauri } from "$lib/api/tauri";
+  import { _ } from "svelte-i18n";
 
   export let open: boolean = false;
   const dispatch = createEventDispatcher();
@@ -102,8 +103,8 @@
   <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
     <Icon name="monitor" size="lg" className="accordion-icon" />
     <div class="accordion-header-info">
-      <span class="accordion-title">Theme Browser</span>
-      <span class="accordion-subtitle">Browse and install community themes</span>
+      <span class="accordion-title">{$_('settings.themeBrowser', { default: 'Theme Browser' })}</span>
+      <span class="accordion-subtitle">{$_('settings.themeBrowserSubtitle', { default: 'Browse and install community themes' })}</span>
     </div>
     <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
   </button>
@@ -114,14 +115,16 @@
 
         <!-- toolbar -->
         <div class="tb-toolbar">
-          <button class="btn-refresh" on:click={loadThemes} disabled={state === 'loading'} title="Refresh">
+          <button class="btn-refresh" on:click={loadThemes} disabled={state === 'loading'} title={$_('settings.refresh', { default: 'Refresh' })}>
             <Icon name="refresh" size={14} />
           </button>
           <span class="tb-count">
-            {#if state === 'loaded'}{themes.length} theme{themes.length === 1 ? '' : 's'}{/if}
+            {#if state === 'loaded'}
+              {themes.length} {themes.length === 1 ? $_('settings.searchThemes', { default: 'theme' }) : $_('settings.searchThemesPlural', { default: 'themes' })}
+            {/if}
           </span>
           <button class="btn-submit" on:click={openSubmit}>
-            Submit a theme
+            {$_('settings.submitTheme', { default: 'Submit a theme' })}
           </button>
         </div>
 
@@ -129,19 +132,19 @@
         {#if state === 'loading'}
           <div class="tb-loading">
             <div class="spinner"></div>
-            Loading themes…
+            {$_('settings.loadingThemes', { default: 'Loading themes…' })}
           </div>
 
         {:else if state === 'error'}
           <div class="tb-error">
             <Icon name="alert-circle" size={20} />
             <span>{error}</span>
-            <button class="btn-retry" on:click={loadThemes}>Retry</button>
+            <button class="btn-retry" on:click={loadThemes}>{$_('settings.retry', { default: 'Retry' })}</button>
           </div>
 
         {:else if state === 'loaded'}
           {#if themes.length === 0}
-            <div class="tb-empty">No themes found.</div>
+            <div class="tb-empty">{$_('settings.noThemesFound', { default: 'No themes found.' })}</div>
           {:else}
             <div class="tb-grid">
               {#each themes as card (card.id)}
@@ -198,9 +201,9 @@
                       <span class="tb-dot" style="background:{card.accentColor}"></span>
                       {card.name}
                       {#if card.hasEffect}
-                        <span class="tb-fx-pill">Effect</span>
+                        <span class="tb-fx-pill">{$_('settings.effectBadge', { default: 'Effect' })}</span>
                       {/if}
-                      {#if isLast}<span class="tb-badge">Active</span>{/if}
+                      {#if isLast}<span class="tb-badge">{$_('settings.activeTheme', { default: 'Active' })}</span>{/if}
                     </div>
                     {#if card.author}<div class="tb-author">by {card.author}</div>{/if}
                     {#if card.description}<div class="tb-desc">{card.description}</div>{/if}
@@ -220,9 +223,9 @@
                     {#if status === 'loading'}
                       <span class="spin-sm"></span>
                     {:else if status === 'done'}
-                      <Icon name="check" size={13} /> Applied
+                      <Icon name="check" size={13} /> {$_('settings.applied', { default: 'Applied' })}
                     {:else}
-                      Install
+                      {$_('settings.install', { default: 'Install' })}
                     {/if}
                   </button>
                 </div>

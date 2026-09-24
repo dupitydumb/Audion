@@ -167,11 +167,11 @@
       <input
         type="search"
         class="settings-search-input"
-        placeholder="Search settings (equalizer, download location, cache, themes...)"
+        placeholder={$_('settings.searchSettingsPlaceholder', { default: 'Search settings (equalizer, download location, cache, themes...)' })}
         bind:value={searchQuery}
       />
       {#if searchQuery}
-        <button class="search-clear-btn" on:click={() => searchQuery = ''} aria-label="Clear search">
+        <button class="search-clear-btn" on:click={() => searchQuery = ''} aria-label={$_('search.searchHistoryClear', { default: 'Clear search' })}>
           <Icon name="x" size={13} />
         </button>
       {/if}
@@ -182,7 +182,7 @@
       <div class="settings-search-results">
         {#if searchResults.length === 0}
           <div class="search-no-results">
-            No settings found matching "{searchQuery}"
+            {$_('settings.noSettingsFound', { values: { query: searchQuery }, default: `No settings found matching "${searchQuery}"` })}
           </div>
         {:else}
           {#each searchResults as res}

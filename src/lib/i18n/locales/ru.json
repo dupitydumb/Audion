@@ -471,7 +471,21 @@
     "selectOutputDevice": "Выберите устройство вывода",
     "systemDefaultNamed": "По умолчанию в системе ({name})",
     "defaultBadge": "По умолчанию",
-    "outputDevices": "Устройства вывода"
+    "outputDevices": "Устройства вывода",
+    "themeBrowser": "Каталог тем",
+    "themeBrowserSubtitle": "Просмотр и установка тем сообщества",
+    "searchSettingsPlaceholder": "Поиск настроек (эквалайзер, загрузки, кэш, темы...)",
+    "noSettingsFound": "Настройки по запросу «{query}» не найдены",
+    "searchThemes": "тема",
+    "searchThemesPlural": "тем",
+    "submitTheme": "Предложить тему",
+    "loadingThemes": "Загрузка тем…",
+    "noThemesFound": "Темы не найдены.",
+    "retry": "Повторить",
+    "install": "Установить",
+    "applied": "Применено",
+    "activeTheme": "Активна",
+    "effectBadge": "Эффект"
   },
   "updatePopup": {
     "restartToUpdate": "Перезапустить для обновления",

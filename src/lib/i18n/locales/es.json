@@ -303,7 +303,21 @@
     "rescanLibrary": "Volver a escanear biblioteca",
     "rescanning": "Reescaneando...",
     "artistRescanDone": "Biblioteca reescaneada",
-    "artistRescanFailed": "Error al reescanear"
+    "artistRescanFailed": "Error al reescanear",
+    "themeBrowser": "Explorador de Temas",
+    "themeBrowserSubtitle": "Explora e instala temas de la comunidad",
+    "searchSettingsPlaceholder": "Buscar ajustes (ecualizador, descargas, caché, temas...)",
+    "noSettingsFound": "No se encontraron ajustes que coincidan con \"{query}\"",
+    "searchThemes": "tema",
+    "searchThemesPlural": "temas",
+    "submitTheme": "Enviar un tema",
+    "loadingThemes": "Cargando temas…",
+    "noThemesFound": "No se encontraron temas.",
+    "retry": "Reintentar",
+    "install": "Instalar",
+    "applied": "Aplicado",
+    "activeTheme": "Activo",
+    "effectBadge": "Efecto"
   },
   "updatePopup": {
     "restartToUpdate": "Reiniciar para actualizar",

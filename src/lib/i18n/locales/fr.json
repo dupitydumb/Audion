@@ -303,7 +303,21 @@
     "rescanLibrary": "Réanalyser la bibliothèque",
     "rescanning": "Réanalyse en cours...",
     "artistRescanDone": "Bibliothèque réanalysée",
-    "artistRescanFailed": "Échec de la réanalyse"
+    "artistRescanFailed": "Échec de la réanalyse",
+    "themeBrowser": "Navigateur de thèmes",
+    "themeBrowserSubtitle": "Parcourir et installer des thèmes de la communauté",
+    "searchSettingsPlaceholder": "Rechercher des paramètres (égaliseur, téléchargements, cache, thèmes...)",
+    "noSettingsFound": "Aucun paramètre trouvé correspondant à « {query} »",
+    "searchThemes": "thème",
+    "searchThemesPlural": "thèmes",
+    "submitTheme": "Proposer un thème",
+    "loadingThemes": "Chargement des thèmes…",
+    "noThemesFound": "Aucun thème trouvé.",
+    "retry": "Réessayer",
+    "install": "Installer",
+    "applied": "Appliqué",
+    "activeTheme": "Actif",
+    "effectBadge": "Effet"
   },
   "updatePopup": {
     "restartToUpdate": "Redémarrer pour mettre à jour",
