@@ -37,7 +37,9 @@
     "global-shortcut:allow-is-registered",
     "deep-link:default",
     "fs:allow-read",
+    "fs:allow-read-text-file",
     "fs:allow-write-file",
+    "fs:allow-write-text-file",
     "fs:allow-create",
     "fs:allow-exists",
     "updater:default",
@@ -48,53 +50,33 @@
     {
       "identifier": "fs:allow-read-file",
       "allow": [
-        {
-          "path": "$AUDIO/**"
-        },
-        {
-          "path": "$APPDATA/audion/**"
-        },
-        {
-          "path": "$APPDATA/com.audion.app/**"
-        },
-        {
-          "path": "$MUSIC/**"
-        },
-        {
-          "path": "$HOME/Music/**"
-        },
-        {
-          "path": "$HOME/.config/audion/**"
-        },
-        {
-          "path": "$HOME/.config/com.audion.app/**"
-        }
+        { "path": "$AUDIO/**" },
+        { "path": "$APPDATA/audion/**" },
+        { "path": "$APPDATA/com.audion.app/**" },
+        { "path": "$MUSIC/**" },
+        { "path": "$HOME/Music/**" },
+        { "path": "$HOME/.config/audion/**" },
+        { "path": "$HOME/.config/com.audion.app/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$HOME/**" }
       ]
     },
     {
       "identifier": "fs:scope",
       "allow": [
-        {
-          "path": "$AUDIO/**"
-        },
-        {
-          "path": "$APPDATA/audion/**"
-        },
-        {
-          "path": "$APPDATA/com.audion.app/**"
-        },
-        {
-          "path": "$MUSIC/**"
-        },
-        {
-          "path": "$HOME/Music/**"
-        },
-        {
-          "path": "$HOME/.config/audion/**"
-        },
-        {
-          "path": "$HOME/.config/com.audion.app/**"
-        }
+        { "path": "$AUDIO/**" },
+        { "path": "$APPDATA/audion/**" },
+        { "path": "$APPDATA/com.audion.app/**" },
+        { "path": "$MUSIC/**" },
+        { "path": "$HOME/Music/**" },
+        { "path": "$HOME/.config/audion/**" },
+        { "path": "$HOME/.config/com.audion.app/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$HOME/**" }
       ]
     }
   ]
