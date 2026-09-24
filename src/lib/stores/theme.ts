@@ -486,7 +486,9 @@ export function applyTheme(state: ThemeState): void {
 
     // Sidebar / player slots (fall back to bg-elevated if not set)
     root.style.setProperty('--sidebar-bg', c.sidebarBg ?? (hasBgLayer ? 'transparent' : modeDefaults.sidebarBg));
-    root.style.setProperty('--player-bg', c.playerBg ?? modeDefaults.playerBg);
+    const resolvedPlayerBg = c.playerBg ?? modeDefaults.playerBg;
+    root.style.setProperty('--player-bg', resolvedPlayerBg);
+    root.style.setProperty('--text-on-player', accentTextColor(resolvedPlayerBg));
 
     // Text tokens
     root.style.setProperty('--text-primary', c.textPrimary ?? modeDefaults.textPrimary);

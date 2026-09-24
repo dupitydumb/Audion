@@ -78,7 +78,7 @@
         padding: var(--spacing-sm) var(--spacing-lg);
         border-radius: var(--radius-full);
         background: var(--accent-primary);
-        color: var(--bg-base);
+        color: var(--text-on-accent, #fff);
         font-weight: var(--font-weight-semibold);
         font-size: var(--font-size-base);
         border: none;

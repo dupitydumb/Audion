@@ -1309,7 +1309,7 @@
 
     .lib-tab.active {
         background-color: var(--accent-primary);
-        color: var(--bg-base);
+        color: var(--text-on-accent, #fff);
     }
 
     .lib-tab:active:not(.active) {

@@ -282,7 +282,7 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
 .add-btn {
   padding: var(--spacing-sm) var(--spacing-md);
   background-color: var(--accent-primary);
-  color: var(--bg-base);
+  color: var(--text-on-accent, #fff);
   font-weight: var(--font-weight-semibold);
   border-radius: var(--radius-sm);
   transition: all var(--transition-fast);
@@ -1174,7 +1174,7 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
   top: 12px;
   right: 12px;
   background: var(--accent-primary);
-  color: var(--bg-base);
+  color: var(--text-on-accent, #fff);
   font-size: 0.6875rem;
   font-weight: var(--font-weight-bold);
   text-transform: uppercase;

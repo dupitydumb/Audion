@@ -809,7 +809,7 @@
 
     .update-badge:hover {
         background-color: var(--accent-primary);
-        color: var(--bg-base);
+        color: var(--text-on-accent, #fff);
         transform: translateY(-1px);
         box-shadow: 0 2px 8px var(--accent-subtle);
     }
@@ -822,7 +822,7 @@
 
     .restart-badge:hover {
         background-color: var(--accent-primary);
-        color: var(--bg-base);
+        color: var(--text-on-accent, #fff);
     }
 
     @keyframes glow {

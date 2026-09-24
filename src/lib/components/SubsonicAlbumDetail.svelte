@@ -238,7 +238,7 @@
     gap: 6px;
     padding: 8px 20px;
     background: var(--accent-primary, #1db954);
-    color: #000;
+    color: var(--text-on-accent, #fff);
     border: none;
     border-radius: 24px;
     font-size: 0.875rem;

@@ -1091,8 +1091,8 @@
   :global(.custom-checkbox:hover) { border-color: var(--accent-primary); background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.1); }
   :global(.custom-checkbox.checked) { background-color: var(--accent-primary); border-color: var(--accent-primary); }
   :global(.custom-checkbox.indeterminate) { background-color: var(--accent-primary); border-color: var(--accent-primary); }
-  :global(.custom-checkbox svg) { color: var(--bg-base); }
-  :global(.custom-checkbox .indeterminate-dash) { width: 10px; height: 2px; border-radius: 1px; background-color: var(--bg-base); }
+  :global(.custom-checkbox svg) { color: var(--text-on-accent, #fff); }
+  :global(.custom-checkbox .indeterminate-dash) { width: 10px; height: 2px; border-radius: 1px; background-color: var(--text-on-accent, #fff); }
 
   :global(.equalizer-bars) { display: none; }
 

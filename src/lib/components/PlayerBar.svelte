@@ -606,6 +606,7 @@
         align-items: center;
         padding: 0 calc(var(--spacing-md) + 2px);
         gap: clamp(20px, 2.2vw, 36px);
+        color: var(--text-on-player, var(--text-primary));
         /* overflow: hidden; - Removed to allow menus to popup */
     }
 

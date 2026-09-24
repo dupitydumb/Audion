@@ -853,7 +853,7 @@
 
   .category-chip.active {
     background-color: var(--accent-primary);
-    color: var(--bg-base);
+    color: var(--text-on-accent, #fff);
   }
 
   .create-form input {

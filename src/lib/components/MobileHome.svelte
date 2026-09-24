@@ -948,7 +948,7 @@
         height: 40px;
         border-radius: 50%;
         background-color: var(--accent-primary);
-        color: var(--bg-base);
+        color: var(--text-on-accent, #fff);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1108,7 +1108,7 @@
         margin-top: var(--spacing-md);
         padding: 14px 28px;
         background-color: var(--accent-primary);
-        color: var(--bg-base);
+        color: var(--text-on-accent, #fff);
         font-size: var(--font-size-md);
         font-weight: var(--font-weight-bold);
         border: none;

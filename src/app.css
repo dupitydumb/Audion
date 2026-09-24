@@ -240,7 +240,7 @@ textarea {
   z-index: 9999;
   padding: var(--spacing-sm) var(--spacing-md);
   background: var(--accent-primary);
-  color: var(--bg-base);
+  color: var(--text-on-accent, #fff);
   font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-sm);
   border-radius: 0 0 var(--radius-md) 0;
@@ -347,7 +347,7 @@ a:hover {
   gap: var(--spacing-sm);
   padding: var(--spacing-sm) var(--spacing-lg);
   background-color: var(--accent-primary);
-  color: var(--bg-base);
+  color: var(--text-on-accent, #fff);
   font-weight: 600;
   border-radius: var(--radius-full);
   transition: all var(--transition-fast);
