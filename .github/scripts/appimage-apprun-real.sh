@@ -35,12 +35,18 @@ export LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-0}"
 # Exporting an empty string breaks Mesa's implicit llvmpipe selection on some versions.
 if [ -z "${GALLIUM_DRIVER+x}" ]; then unset GALLIUM_DRIVER; fi
 
-# GVfs — prevent "undefined symbol: g_task_set_static_name" crash on Mint 22 / Ubuntu 24.
+# GVfs / GIO — prevent "undefined symbol: g_task_set_static_name" crash on Mint 22 / Ubuntu 24 / Debian testing.
+# Avoid loading host GIO modules (like libgvfsdbus.so) compiled against newer GLib symbol versions.
 export GIO_USE_VFS=local
 if [ -d "$HERE/usr/lib/gio/modules" ]; then
   export GIO_MODULE_DIR="$HERE/usr/lib/gio/modules"
 else
-  unset GIO_MODULE_DIR
+  export GIO_MODULE_DIR=/dev/null
+fi
+
+# GTK IM module — fallback to built-in 'simple' input method to avoid host ibus symbol mismatch.
+if [ -z "$GTK_IM_MODULE" ] || [ "$GTK_IM_MODULE" = "ibus" ]; then
+  export GTK_IM_MODULE=simple
 fi
 
 # Drop host GTK modules (e.g. xapp-gtk3-module) absent inside AppImage.

@@ -503,6 +503,8 @@ jobs:
           export WEBKIT_DISABLE_COMPOSITING_MODE=1
           export WEBKIT_FORCE_SANDBOX=0
           export GIO_USE_VFS=local
+          export GIO_MODULE_DIR=/dev/null
+          export GTK_IM_MODULE=simple
           export AUDION_DISABLE_DRI3=1
 
           set +e
@@ -553,6 +555,8 @@ jobs:
               export WEBKIT_DISABLE_COMPOSITING_MODE=1
               export WEBKIT_FORCE_SANDBOX=0
               export GIO_USE_VFS=local
+              export GIO_MODULE_DIR=/dev/null
+              export GTK_IM_MODULE=simple
               export AUDION_DISABLE_DRI3=1
 
               set +e
