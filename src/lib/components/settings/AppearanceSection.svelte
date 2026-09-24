@@ -670,6 +670,13 @@
               />
               <span class="token-label">Accent pulse on playing indicator</span>
             </label>
+            <label class="checkbox-row">
+              <input type="checkbox"
+                checked={$theme.allowCustomJs}
+                on:change={e => theme.setAllowCustomJs((e.target as HTMLInputElement).checked)}
+              />
+              <span class="token-label">Enable theme custom effects (custom JavaScript)</span>
+            </label>
           </div>
         </div>
 

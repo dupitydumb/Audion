@@ -4,6 +4,7 @@
   import { get } from "svelte/store";
   import { appSettings } from "$lib/stores/settings";
   import { theme, applyBackground } from "$lib/stores/theme";
+  import { applyEffect } from "$lib/services/effect-overlay";
   import { cleanupPlayer, initAudioBackend, currentTrack } from "$lib/stores/player";
   import {
     migrateCoversToFiles,
@@ -75,7 +76,10 @@
   // Also re-runs when $isLoading flips to false — that's when #audion-bg-layer
   // enters the DOM (it lives inside {#if !$isLoading && $locale}), so the
   // first applyBackground call from theme.initialize() would have found null.
-  $: if (browser && !$isLoading) applyBackground($theme.background);
+  $: if (browser && !$isLoading) {
+    applyBackground($theme.background);
+    applyEffect($theme.customJs, $theme.accentColor, $theme.allowCustomJs);
+  }
 
   // Page transitions via View Transitions API
   // data-page-transition attr on <html> is set by applyAnimationVars
@@ -424,6 +428,12 @@
   style="display:none"
 ></div>
 
+<canvas
+  id="audion-effect-layer"
+  aria-hidden="true"
+  style="display:none"
+></canvas>
+
 <div class="app-content" class:mobile={$isMobile} class:has-titlebar={$useDesktopTitleBar} class:pip={$isMiniPlayer} class:has-mini-player={$isMobile && $currentTrack && !$isFullScreen} id="main-content">
   <slot />
 </div>
@@ -441,6 +451,15 @@
     pointer-events: none;
     transition: opacity 400ms ease;
     overflow: hidden;
+  }
+
+  #audion-effect-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    width: 100vw;
+    height: 100vh;
   }
 
   .app-content {

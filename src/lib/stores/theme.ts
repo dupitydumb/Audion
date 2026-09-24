@@ -1,5 +1,6 @@
 // Theme store - manages app theming and customization
 import { writable, derived, get } from 'svelte/store';
+import { applyEffect } from '$lib/services/effect-overlay';
 
 export type ThemeMode = 'dark' | 'light' | 'system';
 
@@ -64,6 +65,8 @@ export interface ThemeState {
     animation: AnimationConfig;
     /** Allow custom JS in theme packages — only for locally loaded themes */
     allowCustomJs: boolean;
+    /** Custom JS script from current theme */
+    customJs?: string;
 }
 
 const defaultAnimation: AnimationConfig = {
@@ -227,6 +230,7 @@ function createThemeStore() {
             update(state => {
                 const newState = { ...state, allowCustomJs: allow };
                 saveTheme(newState);
+                applyEffect(newState.customJs, newState.accentColor, newState.allowCustomJs);
                 return newState;
             });
         },
@@ -262,6 +266,7 @@ function createThemeStore() {
                     animation: { ...defaultAnimation, ...(pkg.animation ?? {}) },
                     // never let a package override allowCustomJs — user controls that
                     allowCustomJs: state.allowCustomJs,
+                    customJs: pkg.customJs,
                 };
                 saveTheme(newState);
                 applyTheme(newState);
@@ -295,6 +300,12 @@ export interface AudioThemePackage {
     /** background.value is always '' for image/video (paths are machine-local) */
     background: BackgroundConfig;
     animation: AnimationConfig;
+    /**
+     * Optional JS effect script.  Receives (canvas, ctx, accent) and must
+     * return a cleanup function.  Only runs when ThemeState.allowCustomJs === true.
+     * Example effects: rain, snow, fireflies, floating orbs, etc.
+     */
+    customJs?: string;
 }
 
 /** Allowed values for enum fields — used during validation */
@@ -358,6 +369,8 @@ export function parseThemePackage(raw: unknown): AudioThemePackage {
         if (VALID_SPEEDS.includes(a.transitionSpeed as TransitionSpeed)) anim.transitionSpeed = a.transitionSpeed as TransitionSpeed;
     }
 
+    const customJs = typeof r.customJs === 'string' && r.customJs.trim() ? r.customJs : undefined;
+
     return {
         version: AUDIOTHEME_VERSION,
         name: (r.name as string).trim(),
@@ -368,6 +381,7 @@ export function parseThemePackage(raw: unknown): AudioThemePackage {
         customColors: cc,
         background: bg,
         animation: anim,
+        customJs,
     };
 }
 
@@ -389,6 +403,7 @@ export function exportThemePackage(state: ThemeState, name: string, author?: str
         customColors: { ...state.customColors },
         background: bg,
         animation: { ...state.animation },
+        customJs: state.customJs,
     };
 }
 
@@ -513,6 +528,9 @@ export function applyTheme(state: ThemeState): void {
 
     // Apply animation CSS vars
     applyAnimationVars(state.animation);
+
+    // Apply custom JS overlay effect if allowed
+    applyEffect(state.customJs, state.accentColor, state.allowCustomJs);
 }
 
 /** Speed multipliers for transition tokens */
