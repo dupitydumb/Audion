@@ -4,7 +4,7 @@
 // so browsing/playback-resolution keeps working even if the webview is suspended or the activity was torn down
 //
 // only compiled on android
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Once, OnceLock};
 
 use jni::objects::{GlobalRef, JClass, JObject, JString, JValue};
@@ -177,6 +177,99 @@ fn notify_kotlin(json: &str) {
             // call_method failed with no pending exception (e.g. method not
             // found)
             tracing::warn!("[android_auto] onNativeAudioEvent call failed: {e}");
+        }
+    }
+}
+
+// ===================================================
+// native -> kotlin SAF-scoped file delete
+//
+// delete_lyrics_by_token (see commands/lyrics.rs) 
+// used to call fs::remove_file directly on resolved real paths,
+// which needs MANAGE_EXTERNAL_STORAGE on android 11+
+// this callback lets lyrics deletion go through the DocumentFile
+// the tree permission actually covers instead, so it works without that permission
+// see MainActivity.SafDeleteInterface.deleteViaSaf for the kotlin side
+// ===================================================
+
+static SAF_DELETE_CALLBACK: OnceLock<GlobalRef> = OnceLock::new();
+
+/// Java_com_audion_app_AudionLibraryBridge_registerSafDeleteCallbackNative
+/// called once from MainActivity.onCreate with 'this'
+#[no_mangle]
+pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_registerSafDeleteCallbackNative<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    callback: JObject<'local>,
+) {
+    match env.get_java_vm() {
+        Ok(vm) => {
+            // may already be set by registerNotificationCallbackNative => fine, same JVM
+            let _ = JVM.set(vm);
+        }
+        Err(e) => {
+            tracing::error!("[android_auto] failed to capture JavaVM for SAF delete: {e}");
+            return;
+        }
+    }
+    match env.new_global_ref(callback) {
+        Ok(global) => {
+            if SAF_DELETE_CALLBACK.set(global).is_err() {
+                tracing::info!("[android_auto] SAF delete callback already registered, keeping the existing one");
+            } else {
+                tracing::info!("[android_auto] SAF delete callback registered");
+            }
+        }
+        Err(e) => {
+            tracing::error!("[android_auto] failed to create global ref for SAF delete callback: {e}");
+        }
+    }
+}
+
+/// attempts to delete 'path' through the persisted SAF tree permission that covers it
+///
+/// returns:
+/// - Some(true)  => deleted
+/// - Some(false) => callback ran but couldn't delete (path not under any granted tree,
+///                  DocumentFile.delete() returned false, etc); caller should NOT fall
+///                  back to fs::remove_file for this path, since that will just fail the
+///                  same way it did before this existed
+/// - None        => callback not registered (desktop build, or android but not wired up
+///                  yet) so the caller is free to fall back to fs::remove_file
+pub fn delete_via_saf(path: &Path) -> Option<bool> {
+    let (jvm, callback) = (JVM.get()?, SAF_DELETE_CALLBACK.get()?);
+    let mut env = match jvm.attach_current_thread() {
+        Ok(env) => env,
+        Err(e) => {
+            tracing::warn!("[android_auto] failed to attach jvm thread for SAF delete: {e}");
+            return Some(false);
+        }
+    };
+    let path_str = path.to_string_lossy();
+    let jstr = match env.new_string(path_str.as_ref()) {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::warn!("[android_auto] failed to build jstring for SAF delete ({path_str}): {e}");
+            return Some(false);
+        }
+    };
+    let result = env.call_method(
+        callback,
+        "deleteViaSaf",
+        "(Ljava/lang/String;)Z",
+        &[JValue::Object(&jstr)],
+    );
+    match result {
+        Ok(v) => Some(v.z().unwrap_or(false)),
+        Err(e) => {
+            // pending-exception hazard same as notify_kotlin => clear before any further JNI calls
+            if env.exception_check().unwrap_or(false) {
+                let _ = env.exception_clear();
+            }
+            tracing::warn!("[android_auto] deleteViaSaf call failed for {path_str}: {e}");
+            Some(false)
         }
     }
 }
