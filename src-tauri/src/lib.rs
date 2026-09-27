@@ -1292,6 +1292,7 @@ pub fn run() {
                     commands::covers::clear_base64_covers,
                     commands::covers::merge_duplicate_covers,
                     commands::covers::extract_palette,
+                    commands::covers::extract_palette_from_path,
                     // Playlist commands
                     commands::create_playlist,
                     commands::get_playlists,
@@ -1542,6 +1543,7 @@ pub fn run() {
                     commands::covers::clear_base64_covers,
                     commands::covers::merge_duplicate_covers,
                     commands::covers::extract_palette,
+                    commands::covers::extract_palette_from_path,
                     // Playlist commands
                     commands::create_playlist,
                     commands::get_playlists,

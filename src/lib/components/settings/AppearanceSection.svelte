@@ -521,7 +521,8 @@
           <div class="color-token-grid">
             {#each colorSlots as slot}
               {@const current = $theme.customColors[slot.key]}
-              <div class="color-token-row">
+              {@const overridden = slot.key === 'playerBg' && $theme.matchPlayerToArt}
+              <div class="color-token-row" class:disabled={overridden}>
                 <span class="token-label">{slot.label}</span>
                 <div class="token-controls">
                   <!-- native color swatch (6-char only, drives hex6) -->
@@ -529,8 +530,9 @@
                     type="color"
                     value={slotHex[slot.key]}
                     class="color-picker-input"
+                    disabled={overridden}
                     on:input={e => onSlotColorPick(slot.key, (e.target as HTMLInputElement).value)}
-                    title={slot.label}
+                    title={overridden ? $_('settings.matchPlayerToArt') : slot.label}
                   />
                   <!-- hex + alpha text input -->
                   <input
@@ -540,6 +542,7 @@
                     maxlength="9"
                     spellcheck="false"
                     placeholder={$_('settings.hexPlaceholder')}
+                    disabled={overridden}
                     on:input={e => onSlotHexText(slot.key, (e.target as HTMLInputElement).value)}
                   />
                   <!-- alpha slider -->
@@ -549,13 +552,14 @@
                         type="range" min="0" max="1" step="0.01"
                         value={slotAlpha[slot.key]}
                         class="alpha-range"
+                        disabled={overridden}
                         on:input={e => onSlotAlpha(slot.key, parseFloat((e.target as HTMLInputElement).value))}
                       />
                     </div>
                     <span class="slider-val">{Math.round(slotAlpha[slot.key] * 100)}%</span>
                   </div>
                   {#if current !== null}
-                    <button class="btn-reset-token" on:click={() => resetColorToken(slot.key)} title={$_('settings.resetToDefault')}>✕</button>
+                    <button class="btn-reset-token" disabled={overridden} on:click={() => resetColorToken(slot.key)} title={$_('settings.resetToDefault')}>✕</button>
                   {:else}
                     <span class="token-default-badge">{$_('settings.defaultBadge')}</span>
                   {/if}
@@ -563,6 +567,15 @@
               </div>
             {/each}
           </div>
+          <label class="checkbox-row" style="margin-top: 10px;">
+            <input
+              type="checkbox"
+              checked={$theme.matchPlayerToArt}
+              on:change={e => theme.setMatchPlayerToArt((e.target as HTMLInputElement).checked)}
+            />
+            <span class="token-label">{$_('settings.matchPlayerToArt')}</span>
+          </label>
+          <span class="setting-description">{$_('settings.matchPlayerToArtDesc')}</span>
         </div>
 
         <div class="divider"></div>
@@ -868,6 +881,12 @@
     justify-content: space-between;
     gap: 8px;
     flex-wrap: wrap;
+    opacity: 1;
+    transition: opacity 0.15s ease;
+  }
+
+  .color-token-row.disabled {
+    opacity: 0.45;
   }
 
   .token-label {

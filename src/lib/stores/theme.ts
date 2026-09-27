@@ -1,6 +1,7 @@
 // Theme store - manages app theming and customization
 import { writable, derived, get } from 'svelte/store';
 import { applyEffect } from '$lib/services/effect-overlay';
+import { albumPalette, type PaletteColor } from '$lib/stores/palette';
 
 export type ThemeMode = 'dark' | 'light' | 'system';
 
@@ -67,6 +68,8 @@ export interface ThemeState {
     allowCustomJs: boolean;
     /** Custom JS script from current theme */
     customJs?: string;
+    /** drive the player bar background from the current track's cover art */
+    matchPlayerToArt: boolean;
 }
 
 const defaultAnimation: AnimationConfig = {
@@ -122,6 +125,7 @@ const defaultTheme: ThemeState = {
     background: defaultBackground,
     animation: defaultAnimation,
     allowCustomJs: false,
+    matchPlayerToArt: false,
 };
 
 // Load theme from localStorage
@@ -235,6 +239,15 @@ function createThemeStore() {
             });
         },
 
+        setMatchPlayerToArt(enabled: boolean) {
+            update(state => {
+                const newState = { ...state, matchPlayerToArt: enabled };
+                saveTheme(newState);
+                applyTheme(newState);
+                return newState;
+            });
+        },
+
         resetColors() {
             update(state => {
                 const newState = { ...state, customColors: defaultCustomColors };
@@ -266,6 +279,9 @@ function createThemeStore() {
                     animation: { ...defaultAnimation, ...(pkg.animation ?? {}) },
                     // never let a package override allowCustomJs — user controls that
                     allowCustomJs: state.allowCustomJs,
+                    // likewise: matching the player bar to cover art is a local
+                    // preference
+                    matchPlayerToArt: state.matchPlayerToArt,
                     customJs: pkg.customJs,
                 };
                 saveTheme(newState);
@@ -283,6 +299,13 @@ function createThemeStore() {
 }
 
 export const theme = createThemeStore();
+
+// keep the art-driven player bar in sync as tracks (and their extracted
+// palettes) change
+albumPalette.subscribe(() => {
+    const state = get(theme);
+    if (state.matchPlayerToArt) applyTheme(state);
+});
 
 // ── Theme package format ──────────────────────────────────────────────────────
 
@@ -452,6 +475,45 @@ function hexToRgb(hex: string): string {
     return `${R}, ${G}, ${B}`;
 }
 
+// HSL saturation (0-1) of a hex color
+// used to prefer vibrant swatches over plain near-black/near-white/gray backdrops
+function hexSaturation(hex: string): number {
+    const num = parseInt(hex6(hex).replace('#', ''), 16);
+    const r = (num >> 16) / 255;
+    const g = ((num >> 8) & 0xff) / 255;
+    const b = (num & 0xff) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    if (max === min) return 0;
+    const d = max - min;
+    return l > 0.5 ? d / (2 - max - min) : d / (max + min);
+}
+
+/**
+ * picks the best candidate from a dominance-ranked cover-art palette to use
+ * this walks the palette (already sorted by dominance) and
+ * picks the highest-ranked color that both (a) isn't too dark/too light to read text on comfortably, and 
+ * (b) has enough saturation to feel like an intentional accent rather than a neutral
+ */
+export function pickVibrantColor(palette: PaletteColor[]): string | null {
+    if (palette.length === 0) return null;
+
+    const inLumRange = (c: PaletteColor) => c.luminance > 0.08 && c.luminance < 0.92;
+
+    // 1. best case: not too dark/light and reasonably saturated
+    const vibrant = palette.filter(c => inLumRange(c) && hexSaturation(c.hex) > 0.25);
+    if (vibrant.length > 0) return vibrant[0].hex;
+
+    // 2. relax saturation requirement, keep the luminance guard
+    const readable = palette.filter(inLumRange);
+    if (readable.length > 0) return readable[0].hex;
+
+    // 3. nothing clears the bar (e.g. a monochrome cover)
+    // ust use the most dominant color rather than showing nothing
+    return palette[0].hex;
+}
+
 /** Dark-mode defaults for each custom color slot */
 export const darkDefaults: Record<keyof CustomColors, string> = {
     bgBase: '#121212',
@@ -504,6 +566,17 @@ export function applyTheme(state: ThemeState): void {
     const resolvedPlayerBg = c.playerBg ?? modeDefaults.playerBg;
     root.style.setProperty('--player-bg', resolvedPlayerBg);
     root.style.setProperty('--text-on-player', accentTextColor(resolvedPlayerBg));
+
+    // art-driven player bar: overrides the resolved color above
+    // (but never the user's saved customColors.playerBg preference)
+    // with a vibrant pick from the current track's cover art palette
+    if (state.matchPlayerToArt) {
+        const artColor = pickVibrantColor(get(albumPalette));
+        if (artColor) {
+            root.style.setProperty('--player-bg', artColor);
+            root.style.setProperty('--text-on-player', accentTextColor(artColor));
+        }
+    }
 
     // Text tokens
     root.style.setProperty('--text-primary', c.textPrimary ?? modeDefaults.textPrimary);

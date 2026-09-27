@@ -600,6 +600,7 @@
     .player-bar {
         height: var(--player-height);
         background-color: var(--player-bg, var(--bg-elevated));
+        transition: background-color var(--transition-slow, 400ms ease), color var(--transition-slow, 400ms ease);
         border-top: 1px solid var(--border-color);
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
@@ -1194,6 +1195,7 @@
         gap: 0;
         z-index: 900;
         background-color: var(--player-bg, var(--bg-elevated));
+        transition: background-color var(--transition-slow, 400ms ease), color var(--transition-slow, 400ms ease);
         border: none;
         border-radius: 8px;
         box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.5);

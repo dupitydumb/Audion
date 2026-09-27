@@ -537,6 +537,8 @@
     "resetAll": "Reset all",
     "resetAllToDefaults": "Reset all to defaults",
     "customColorsDesc": "Override individual color tokens. Leave unset to use theme defaults.",
+    "matchPlayerToArt": "Match player bar to cover art",
+    "matchPlayerToArtDesc": "Use a color from the current track's cover art instead of the fixed player bar color above.",
     "hexPlaceholder": "#000000",
     "opacity": "Opacity",
     "resetToDefault": "Reset to default",
