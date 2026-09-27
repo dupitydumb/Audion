@@ -100,8 +100,6 @@
                   <ArtistLinks
                     artist={entry.subLabel}
                     artists={entry.subLabelArtists}
-                    compact
-                    tapMenu
                     chipClass="item-sub-chip"
                     on:select={(e) => handleArtistClick(e.detail)}
                   />
@@ -258,7 +256,7 @@
     overflow: hidden;
   }
 
-  .item-sub :global(.artist-links-compact) {
+  .item-sub :global(.artist-links-full) {
     max-width: 100%;
   }
 
