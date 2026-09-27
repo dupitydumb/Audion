@@ -209,6 +209,8 @@ export interface ResolvedHistoryEntry {
     query?: string; // only for type 'query'
     label: string;
     subLabel?: string;
+    /** individual artist names for subLabel(see ArtistLinks.svelte) */
+    subLabelArtists?: string[];
     art?: string | null;
 }
 
@@ -262,6 +264,7 @@ export const resolvedSearchHistory = derived(
                     index, type: 'track', timestamp: entry.timestamp, id: entry.id,
                     label: track?.title || '',
                     subLabel: track?.artist || undefined,
+                    subLabelArtists: track?.artists,
                     art: track ? getTrackAlbumCover(entry.id) : null,
                 };
             }
@@ -272,6 +275,7 @@ export const resolvedSearchHistory = derived(
                     index, type: 'album', timestamp: entry.timestamp, id: entry.id,
                     label: album?.name || '',
                     subLabel: album?.artist || undefined,
+                    subLabelArtists: album?.artists,
                     art: album ? getAlbumCoverFromTracks(entry.id) : null,
                 };
             }

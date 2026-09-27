@@ -7,8 +7,9 @@
     clearSearch,
     type ResolvedHistoryEntry,
   } from '$lib/stores/search';
-  import { goToAlbumDetail, goToPlaylistDetail } from '$lib/stores/view';
+  import { goToAlbumDetail, goToArtistDetail, goToPlaylistDetail } from '$lib/stores/view';
   import Icon from '$lib/components/Icon.svelte';
+  import ArtistLinks from '$lib/components/ArtistLinks.svelte';
 
   export let onSelectQuery: (query: string) => void;
   export let onClose: () => void;
@@ -29,6 +30,12 @@
       // Re-search by track title
       onSelectQuery(entry.label);
     }
+  }
+
+  function handleArtistClick(artistName: string) {
+    onClose();
+    clearSearch();
+    goToArtistDetail(artistName);
   }
 
   function handleRemove(e: MouseEvent, index: number) {
@@ -60,9 +67,17 @@
     <ul class="history-list">
       {#each $resolvedSearchHistory as entry (entry.index)}
         <li class="history-item" role="option" aria-selected="false">
-          <button
+          <div
             class="history-item-btn"
+            role="button"
+            tabindex="0"
             on:click={() => handleSelect(entry)}
+            on:keydown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleSelect(entry);
+              }
+            }}
           >
             <div class="item-art">
               {#if entry.type !== 'query' && entry.art}
@@ -81,13 +96,22 @@
             <div class="item-info">
               <span class="item-label">{entry.label}</span>
               {#if (entry.type === 'track' || entry.type === 'album') && entry.subLabel}
-                <span class="item-sub">{entry.subLabel}</span>
+                <span class="item-sub">
+                  <ArtistLinks
+                    artist={entry.subLabel}
+                    artists={entry.subLabelArtists}
+                    compact
+                    tapMenu
+                    chipClass="item-sub-chip"
+                    on:select={(e) => handleArtistClick(e.detail)}
+                  />
+                </span>
               {/if}
               {#if entry.type !== 'query'}
                 <span class="item-type">{entry.type}</span>
               {/if}
             </div>
-          </button>
+          </div>
           <button
             class="remove-btn"
             title={$_('search.searchHistoryRemove')}
@@ -227,11 +251,19 @@
   }
 
   .item-sub {
+    display: block;
     font-size: var(--font-size-xs);
     color: var(--text-subdued);
+    min-width: 0;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  }
+
+  .item-sub :global(.artist-links-compact) {
+    max-width: 100%;
+  }
+
+  .item-sub :global(.item-sub-chip) {
+    color: inherit;
   }
 
   .item-type {
