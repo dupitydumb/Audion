@@ -4,15 +4,13 @@
 //! a directory walk is readdir/stat only (no tag parsing) for every file
 //! tags are only re-parsed for files whose mtime/size actually differ from what's stored
 //!
-//! DB usage is split into three short phases:
-//!   1. two brief locks up front (read music_folders, then read every
-//!      track's identity projection)
+//! runs entirely on its own DB connection (Database::open_secondary_connection)
+//!   1. read music_folders, then read every track's identity projection
 //!   2. the disk walk, per-file 'stat', classification against the DB
 //!      snapshot from (1), and
 //!      any tag re-parsing (extract_metadata) all run with no DB lock held
 //!   3. DB writes happen in short-lived, per-batch transactions
-//!      one conn.lock per batch
-//!      rows that don't need a re-parse (pure moves, identity backfills, deletes) 
+//!      rows that don't need a re-parse (pure moves, identity backfills, deletes)
 //!      are batched the same way, just without the extraction channel in front of them
 //!
 //! call [run] once at startup, before or after [super::watcher::start]
@@ -76,23 +74,22 @@ enum PendingOp {
 /// run the startup reconciliation pass and emit a watch-batch-ready event
 /// errors along the way are logged and skipped per-item
 pub fn run(app: &AppHandle, db: &Database) {
-    // phase 1a: brief lock, read the folder list only ===================================
-    let folders = {
-        let conn = match db.conn.lock() {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("[Reconcile] Failed to lock db: {e}");
-                return;
-            }
-        };
-        match queries::get_music_folders(&conn) {
-            Ok(f) => f,
-            Err(e) => {
-                eprintln!("[Reconcile] Failed to read music folders: {e}");
-                return;
-            }
+    let mut conn = match db.open_secondary_connection() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("[Reconcile] Failed to open secondary connection: {e}");
+            return;
         }
-    }; // lock released here
+    };
+
+    // phase 1a: read the folder list only ===================================
+    let folders = match queries::get_music_folders(&conn) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("[Reconcile] Failed to read music folders: {e}");
+            return;
+        }
+    };
     if folders.is_empty() {
         return;
     }
@@ -111,23 +108,14 @@ pub fn run(app: &AppHandle, db: &Database) {
         }
     }
 
-    // phase 1b: brief lock, snapshot every track's identity projection =============================
-    let all_identities = {
-        let conn = match db.conn.lock() {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("[Reconcile] Failed to lock db: {e}");
-                return;
-            }
-        };
-        match queries::get_all_track_identities(&conn) {
-            Ok(v) => v,
-            Err(e) => {
-                eprintln!("[Reconcile] Failed to read track identities: {e}");
-                return;
-            }
+    // phase 1b: snapshot every track's identity projection =============================
+    let all_identities = match queries::get_all_track_identities(&conn) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("[Reconcile] Failed to read track identities: {e}");
+            return;
         }
-    }; // lock released here
+    };
 
     // DB-side, scoped to rows whose path actually falls under a watched folder
     // excludes sync/external placeholder rows
@@ -293,13 +281,6 @@ pub fn run(app: &AppHandle, db: &Database) {
 
             let batch_len = pending_batch.len();
             {
-                let mut conn = match db.conn.lock() {
-                    Ok(c) => c,
-                    Err(e) => {
-                        eprintln!("[Reconcile] Failed to lock db for batch: {e}");
-                        break;
-                    }
-                };
                 let tx_db = match conn.transaction() {
                     Ok(t) => t,
                     Err(e) => {
@@ -344,7 +325,7 @@ pub fn run(app: &AppHandle, db: &Database) {
                 if let Err(e) = tx_db.commit() {
                     eprintln!("[Reconcile] Failed to commit batch transaction: {e}");
                 }
-            } // lock released here, before the next batch is collected
+            } // batch transaction committed, scope ends before the next batch is collected
 
             processed += batch_len;
             if processed >= total_reparse {
@@ -357,13 +338,6 @@ pub fn run(app: &AppHandle, db: &Database) {
     // never depended on extraction, so batch and commit them the same way, in fixed-size chunks
     const CHEAP_BATCH_SIZE: usize = 200;
     for chunk in other_ops.chunks(CHEAP_BATCH_SIZE) {
-        let mut conn = match db.conn.lock() {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("[Reconcile] Failed to lock db for batch: {e}");
-                break;
-            }
-        };
         let tx_db = match conn.transaction() {
             Ok(t) => t,
             Err(e) => {
@@ -412,17 +386,10 @@ pub fn run(app: &AppHandle, db: &Database) {
         if let Err(e) = tx_db.commit() {
             eprintln!("[Reconcile] Failed to commit batch transaction: {e}");
         }
-    } // lock released here after each chunk
+    } // batch transaction committed, scope ends after each chunk
 
-    // phase 4: final brief lock for cleanup, then emit =====================
+    // phase 4: final cleanup, then emit =====================
     {
-        let conn = match db.conn.lock() {
-            Ok(c) => c,
-            Err(e) => {
-                eprintln!("[Reconcile] Failed to lock db for cleanup: {e}");
-                return;
-            }
-        };
         if let Err(e) = queries::cleanup_empty_albums(&conn) {
             eprintln!("[Reconcile] Failed to clean up empty albums: {e}");
         }
