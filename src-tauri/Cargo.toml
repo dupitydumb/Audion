@@ -48,6 +48,12 @@ dirs = "5"
 # File scanning
 walkdir = "2"
 
+# filesystem change notifications for the live library watcher
+# file-id gives a stable per-file identity
+notify = "8"
+notify-debouncer-full = "0.6"
+file-id = "0.2"
+
 # Audio metadata extraction
 lofty = "0.24.0"
 ratio-metadata = "0.1"  # Add version as needed

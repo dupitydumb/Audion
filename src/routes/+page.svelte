@@ -16,6 +16,7 @@
   import StatsWrapped from "$lib/components/StatsWrapped.svelte";
 
   import { loadLibrary, loadPlaylists, getTrackByIdSync } from "$lib/stores/library";
+  import { startLibraryWatcherSync } from "$lib/stores/libraryWatcher";
   import ToastContainer from "$lib/components/ToastContainer.svelte";
   import { isTauri, getIsLinux } from "$lib/api/tauri";
   import { invoke } from "@tauri-apps/api/core";
@@ -118,6 +119,9 @@
     try {
       const dataLoadStart = performance.now();
       await Promise.all([loadLibrary(), loadPlaylists()]);
+
+      // start listening for the backend's live filesystem watcher
+      void startLibraryWatcherSync();
 
       if (pendingJumpListTrackId !== null) {
         const track = getTrackByIdSync(pendingJumpListTrackId);

@@ -239,6 +239,7 @@
     "resonate": "Resonate Playlists",
     "addMusicFolder": "Add Music Folder",
     "restart": "Restart",
+    "libraryWatcherActive": "Updating library…",
     "downloadingUpdateTooltip": "Downloading update · click for details",
     "enterNewName": "Enter new name:",
     "renamePlaylistTitle": "Rename Playlist",

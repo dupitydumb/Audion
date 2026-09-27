@@ -1,11 +1,11 @@
 <script lang="ts">
   import { _ } from 'svelte-i18n';
   import {
-    searchHistory,
+    resolvedSearchHistory,
     removeHistoryItem,
     clearHistory,
     clearSearch,
-    type HistoryEntry,
+    type ResolvedHistoryEntry,
   } from '$lib/stores/search';
   import { goToAlbumDetail, goToPlaylistDetail } from '$lib/stores/view';
   import Icon from '$lib/components/Icon.svelte';
@@ -13,21 +13,21 @@
   export let onSelectQuery: (query: string) => void;
   export let onClose: () => void;
 
-  function handleSelect(entry: HistoryEntry) {
+  function handleSelect(entry: ResolvedHistoryEntry) {
     if (entry.type === 'query') {
-      onSelectQuery(entry.query);
+      onSelectQuery(entry.query ?? '');
       return;
     }
     onClose();
-    if (entry.type === 'album') {
+    if (entry.type === 'album' && entry.id !== undefined) {
       clearSearch();
       goToAlbumDetail(entry.id);
-    } else if (entry.type === 'playlist') {
+    } else if (entry.type === 'playlist' && entry.id !== undefined) {
       clearSearch();
-      goToPlaylistDetail(entry.id, entry.title);
+      goToPlaylistDetail(entry.id, entry.label);
     } else if (entry.type === 'track') {
       // Re-search by track title
-      onSelectQuery(entry.title);
+      onSelectQuery(entry.label);
     }
   }
 
@@ -40,12 +40,7 @@
     clearHistory();
   }
 
-  function formatLabel(entry: HistoryEntry): string {
-    if (entry.type === 'query') return entry.query;
-    return entry.title;
-  }
-
-  function iconForType(type: HistoryEntry['type']): string {
+  function iconForType(type: ResolvedHistoryEntry['type']): string {
     if (type === 'query') return 'search';
     if (type === 'track') return 'music';
     if (type === 'album') return 'disc-3';
@@ -53,7 +48,7 @@
   }
 </script>
 
-{#if $searchHistory.length > 0}
+{#if $resolvedSearchHistory.length > 0}
   <!-- preventDefault on mousedown keeps input focused when clicking dropdown items -->
   <div class="search-history-dropdown" role="listbox" on:mousedown|preventDefault>
     <div class="history-header">
@@ -63,16 +58,16 @@
       </button>
     </div>
     <ul class="history-list">
-      {#each $searchHistory as entry, index (index)}
+      {#each $resolvedSearchHistory as entry (entry.index)}
         <li class="history-item" role="option" aria-selected="false">
           <button
             class="history-item-btn"
             on:click={() => handleSelect(entry)}
           >
             <div class="item-art">
-              {#if entry.type !== 'query' && entry.albumArt}
+              {#if entry.type !== 'query' && entry.art}
                 <img
-                  src={entry.albumArt}
+                  src={entry.art}
                   alt=""
                   class="art-img"
                   class:round={entry.type === 'playlist'}
@@ -84,9 +79,9 @@
               {/if}
             </div>
             <div class="item-info">
-              <span class="item-label">{formatLabel(entry)}</span>
-              {#if (entry.type === 'track' || entry.type === 'album') && entry.artist}
-                <span class="item-sub">{entry.artist}</span>
+              <span class="item-label">{entry.label}</span>
+              {#if (entry.type === 'track' || entry.type === 'album') && entry.subLabel}
+                <span class="item-sub">{entry.subLabel}</span>
               {/if}
               {#if entry.type !== 'query'}
                 <span class="item-type">{entry.type}</span>
@@ -96,7 +91,7 @@
           <button
             class="remove-btn"
             title={$_('search.searchHistoryRemove')}
-            on:click={(e) => handleRemove(e, index)}
+            on:click={(e) => handleRemove(e, entry.index)}
             aria-label={$_('search.searchHistoryRemove')}
           >
             <Icon name="x" size={14} />

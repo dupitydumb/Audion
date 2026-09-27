@@ -73,6 +73,7 @@
     } from "$lib/stores/otaUpdate";
     import UpdatePopup from "./UpdatePopup.svelte";
     import SyncStatus from "./SyncStatus.svelte";
+    import LibraryWatcherStatus from "./LibraryWatcherStatus.svelte";
 
     import { currentPlaylistId } from "$lib/stores/player";
     import {
@@ -412,6 +413,7 @@
             <img src="/logo.png" alt="Audion Logo" width="32" height="32" style="view-transition-name: {getIsLinux() ? 'none' : 'app-logo-icon'};" />
             <span class="logo-text" style="view-transition-name: {getIsLinux() ? 'none' : 'app-logo-text'};">Audion</span>
             <SyncStatus />
+            <LibraryWatcherStatus />
             {#if $otaState.phase === "ready"}
                 <div
                     class="update-badge restart-badge"

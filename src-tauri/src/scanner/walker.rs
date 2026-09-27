@@ -41,7 +41,7 @@ pub fn scan_directory(path: &str) -> ScanResult {
     }
 }
 
-fn is_supported_audio_file(path: &Path) -> bool {
+pub fn is_supported_audio_file(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
         .map(|ext| SUPPORTED_EXTENSIONS.contains(&ext.to_lowercase().as_str()))
