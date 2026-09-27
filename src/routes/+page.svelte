@@ -26,7 +26,7 @@
   } from "$lib/stores/persist";
   import { playTrack, playFromQueue, queue, openAssociatedFile, dispatchSmtcEvent } from "$lib/stores/player";
   import { theme } from "$lib/stores/theme";
-  import { isMiniPlayer, withViewTransition, isStatsWrappedOpen } from "$lib/stores/ui";
+  import { isMiniPlayer, withViewTransition, isStatsWrappedOpen, appBootTransitionActive } from "$lib/stores/ui";
   import { pluginStore } from "$lib/stores/plugin-store";
   import { appSettings } from "$lib/stores/settings";
   import { isMobile, mobileSearchOpen } from "$lib/stores/mobile";
@@ -166,10 +166,20 @@
       // sidebar (the morph target) doesn't render on mobile so disabled here
       if (get(isMobile) || getIsLinux()) {
         isLoading = false;
+        appBootTransitionActive.set(false);
       } else {
-        withViewTransition(() => {
+        const bootTransition = withViewTransition(() => {
           isLoading = false;
         }, 'app-boot-logo');
+        // once this one time morph has actually played out, drop the view-transition-name
+        // so it isn't swept into later, unrelated transitions
+        if (bootTransition) {
+          bootTransition.finished
+            .catch(() => {})
+            .finally(() => appBootTransitionActive.set(false));
+        } else {
+          appBootTransitionActive.set(false);
+        }
       }
 
       // Lazy load plugins- reduce startup time
