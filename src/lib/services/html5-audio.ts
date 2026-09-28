@@ -694,10 +694,12 @@ async function prepareHtml5AudioForPath(audio: HTMLAudioElement, path: string): 
     const canUseEq = canUseHtml5EqForPath(path);
     const useGraph = (eqEnabled && canUseEq) || replayGainNeedsGraph(path);
 
+    // Always set crossOrigin for stream URLs so Range requests work without CORS errors
+    if (classifyAudioPath(path) === 'stream') {
+        audio.crossOrigin = 'anonymous';
+    }
+
     if (useGraph) {
-        if (eqEnabled && classifyAudioPath(path) === 'stream') {
-            audio.crossOrigin = 'anonymous';
-        }
         ensureHtml5EqGraph(audio);
         await resumeHtml5AudioContext();
         return audio;

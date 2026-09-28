@@ -473,7 +473,7 @@ pub fn subsonic_get_stream_url(
         "stream",
         &cfg.username,
         &cfg.password,
-        &[("id", id.as_str()), ("format", "mp3")],
+        &[("id", id.as_str()), ("format", "raw")],
     ))
 }
 

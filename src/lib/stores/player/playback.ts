@@ -321,42 +321,7 @@ export async function playTrack(
     try {
         let audioPath = track.local_src || track.path;
 
-        // Subsonic streams need CORS bypass — fetch bytes via Rust, play as blob URL
-        if (track.source_type === 'subsonic' && audioPath && (audioPath.startsWith('http://') || audioPath.startsWith('https://'))) {
-            const { invoke: inv } = await import('@tauri-apps/api/core');
-            let lastErr: unknown;
-            for (let attempt = 0; attempt < 2; attempt++) {
-                try {
-                    // Re-fetch a fresh stream URL on retry (new token/salt) in case server rejected the old one
-                    if (attempt > 0 && track.external_id) {
-                        await new Promise(r => setTimeout(r, 1000));
-                        try {
-                            audioPath = await inv('subsonic_get_stream_url', { id: track.external_id });
-                        } catch (_) { /* keep existing audioPath if re-fetch fails */ }
-                    }
-                    const b64: string = await inv('proxy_fetch_bytes', { url: audioPath });
-                    const fmt = audioPath.includes('format=opus') ? 'audio/ogg; codecs=opus'
-                              : audioPath.includes('format=ogg')  ? 'audio/ogg'
-                              : audioPath.includes('format=flac') ? 'audio/flac'
-                              : 'audio/mpeg';
-                    const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-                    const blob = new Blob([bytes], { type: fmt });
-                    audioPath = URL.createObjectURL(blob);
-                    // Tell html5-audio this is raw audio, not a DASH manifest
-                    const { html5RegisterRawBlobUrl } = await import('$lib/services/html5-audio');
-                    html5RegisterRawBlobUrl(audioPath);
-                    lastErr = null;
-                    break;
-                } catch (err) {
-                    lastErr = err;
-                    console.warn(`[Player] Subsonic proxy attempt ${attempt + 1} failed:`, err);
-                }
-            }
-            if (lastErr) {
-                console.error('[Player] Failed to proxy subsonic audio:', lastErr);
-                throw new Error(`Subsonic proxy failed: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`);
-            }
-        }
+        // Subsonic streams: direct URL — html5-audio sets crossOrigin='anonymous' for all stream URLs
 
         // Resolve server tracks before checking/preparing backends
         if (track.source_type === 'server' && !track.local_src) {
