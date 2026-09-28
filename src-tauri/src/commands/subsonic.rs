@@ -477,6 +477,28 @@ pub fn subsonic_get_stream_url(
     ))
 }
 
+/// Batch variant — resolves N stream URLs in a single IPC call.
+/// Each URL gets its own salt/token so they are all independently valid.
+#[tauri::command]
+pub fn subsonic_get_stream_urls(
+    ids: Vec<String>,
+    state: tauri::State<'_, SubsonicState>,
+) -> Result<Vec<String>, String> {
+    let cfg = state.config.lock().unwrap().clone();
+    if !cfg.enabled || cfg.url.is_empty() {
+        return Err("Subsonic not configured or disabled".into());
+    }
+    Ok(ids.iter().map(|id| {
+        build_subsonic_binary_url(
+            &cfg.url,
+            "stream",
+            &cfg.username,
+            &cfg.password,
+            &[("id", id.as_str()), ("format", "raw")],
+        )
+    }).collect())
+}
+
 /// Returns a cover art URL with auth baked in.
 #[tauri::command]
 pub fn subsonic_get_cover_url(

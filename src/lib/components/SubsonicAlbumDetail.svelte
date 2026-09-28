@@ -5,7 +5,7 @@
   import TrackList from '$lib/components/track-list/TrackList.svelte';
   import {
     subsonicGetAlbum,
-    subsonicGetStreamUrl,
+    subsonicGetStreamUrls,
     subsonicGetCoverUrl,
   } from '$lib/stores/subsonic';
   import { subsonicSongToTrack } from '$lib/services/subsonic-track-mapper';
@@ -49,13 +49,10 @@
         try { coverUrl = await subsonicGetCoverUrl(album.cover_art, 300); } catch {}
       }
 
-      // Resolve stream URLs in parallel
+      // Resolve stream URLs in one IPC call
       const songs = album.songs ?? [];
-      const urls = await Promise.allSettled(songs.map(s => subsonicGetStreamUrl(s.id)));
-      tracks = songs.map((s, i) => {
-        const url = urls[i].status === 'fulfilled' ? urls[i].value : '';
-        return subsonicSongToTrack(s, url, coverUrl);
-      });
+      const urls = await subsonicGetStreamUrls(songs.map(s => s.id));
+      tracks = songs.map((s, i) => subsonicSongToTrack(s, urls[i] ?? '', coverUrl));
     } catch (e) {
       error = String(e);
     } finally {

@@ -165,6 +165,10 @@ export async function subsonicGetStreamUrl(id: string): Promise<string> {
     return invoke<string>('subsonic_get_stream_url', { id });
 }
 
+export async function subsonicGetStreamUrls(ids: string[]): Promise<string[]> {
+    return invoke<string[]>('subsonic_get_stream_urls', { ids });
+}
+
 export async function subsonicGetCoverUrl(id: string, size?: number): Promise<string> {
     return invoke<string>('subsonic_get_cover_url', { id, size: size ?? null });
 }

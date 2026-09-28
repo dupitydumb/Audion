@@ -7,7 +7,7 @@
     subsonicGetRandomSongs,
     subsonicGetAlbumList,
     subsonicGetIndexes,
-    subsonicGetStreamUrl,
+    subsonicGetStreamUrls,
     subsonicGetCoverUrl,
     type SubsonicSong,
     type SubsonicAlbumSummary,
@@ -55,13 +55,8 @@
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         songs = await subsonicGetRandomSongs(200);
-        const resolved = await Promise.allSettled(
-          songs.map(s => subsonicGetStreamUrl(s.id))
-        );
-        songTracks = songs.map((s, i) => {
-          const url = resolved[i].status === 'fulfilled' ? resolved[i].value : '';
-          return subsonicSongToTrack(s, url, null);
-        });
+        const urls = await subsonicGetStreamUrls(songs.map(s => s.id));
+        songTracks = songs.map((s, i) => subsonicSongToTrack(s, urls[i] ?? '', null));
         loadSongCovers();
         songsError = '';
         break;

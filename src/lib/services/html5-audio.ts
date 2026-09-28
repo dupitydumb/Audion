@@ -108,8 +108,9 @@ export async function html5Preload(path: string, trackId: string | number | null
         }
     });
 
-    preloadAudio.addEventListener('error', () => {
-        console.error('[Html5Audio] Preload error for:', path, preloadAudio?.error);
+    preloadAudio.addEventListener('error', (e) => {
+        const err = (e.target as HTMLAudioElement)?.error;
+        console.error('[Html5Audio] Preload error for:', path, 'code:', err?.code, 'message:', err?.message);
         html5ClearPreload();
     });
 
@@ -133,7 +134,10 @@ export async function html5Preload(path: string, trackId: string | number | null
     } else {
         isPreloadDash = false;
         const resolvedPath = await resolvePlaylistUrl(path);
-        if (get(equalizer).enabled && canUseHtml5EqForPath(resolvedPath)) {
+        // Mirror prepareHtml5AudioForPath: crossOrigin needed for all http streams (EQ on or off)
+        if (classifyAudioPath(resolvedPath) === 'stream') {
+            preloadAudio.crossOrigin = 'anonymous';
+        } else if (get(equalizer).enabled && canUseHtml5EqForPath(resolvedPath)) {
             preloadAudio.crossOrigin = 'anonymous';
         }
         preloadAudio.src = resolvedPath;
