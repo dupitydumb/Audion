@@ -393,7 +393,7 @@
     .btn-primary {
         background-color: var(--accent-primary);
         border: none;
-        color: var(--bg-base);
+        color: var(--text-on-accent, #fff);
     }
 
     .btn-primary:hover:not(:disabled) {
@@ -562,7 +562,7 @@
         height: 52px;
         border-radius: var(--radius-full);
         background-color: var(--accent-primary);
-        color: var(--bg-base);
+        color: var(--text-on-accent, #fff);
         font-size: var(--font-size-md);
         font-weight: var(--font-weight-bold);
         border: none;

@@ -1,5 +1,6 @@
 // Backend initialization, cleanup, and ticker orchestration
 import { get } from 'svelte/store';
+import type { UnlistenFn } from '@tauri-apps/api/event';
 import {
     activeBackend, isPlaying, currentTrack, currentTime, duration, volume,
     shuffle, repeat, queue, queueIndex,
@@ -45,8 +46,19 @@ import { playTrack, playFromQueue } from './playback';
 import { updateMediaSessionPosition } from './media-session';
 import { getTrackByIdSync } from '$lib/stores/library';
 import { isFullScreen, toggleFullScreen } from '$lib/stores/ui';
-import { invoke } from '@tauri-apps/api/core'
+import { invoke } from '@tauri-apps/api/core';
 
+let audioBackendUnsubscribers: Array<() => void> = [];
+let audioBackendUnlistens: Array<UnlistenFn> = [];
+
+export function destroyAudioBackend(): void {
+    audioBackendUnsubscribers.forEach(unsub => unsub());
+    audioBackendUnsubscribers = [];
+    audioBackendUnlistens.forEach(unlisten => unlisten());
+    audioBackendUnlistens = [];
+    html5Cleanup();
+    cleanupSmtcIntegration();
+}
 
 // Wire up media-session action delegates
 registerMediaSessionActions(
@@ -83,6 +95,7 @@ registerPositionUpdateCallback(() => updateMediaSessionPosition());
 
 export async function initAudioBackend(): Promise<void> {
     console.log('[Player] Initializing audio backend');
+    destroyAudioBackend();
 
     // bring up the player.rs directive listener before anything else can fire a track change
     // otherwise an early Advance directive could arrive with nothing registered to handle it
@@ -114,20 +127,13 @@ export async function initAudioBackend(): Promise<void> {
     if (nativeUsed) {
         listen<AudioEventType>('audio://event', ({ payload: event }) => {
             if (event.type === 'TrackFinished') {
-                // player.rs's actor also observes this event (worker.rs fans it out) and
-                // will independently decide + emit the next Advance/QueueExhausted
-                // directive over player://event
-                // see registerPlayerDirectiveHandler in playback.ts
-                // this listener only does local reckoning bookkeeping
                 _stopReckoning(get(currentTime));
             } else if (event.type === 'TrackAdvanced') {
                 _startReckoning(0);
-                // correct duration from the engine's real decoded value
                 if (event.data.duration != null) {
                     const secs = event.data.duration.secs + (event.data.duration.nanos ?? 0) / 1e9;
                     if (secs > 0 && !isNaN(secs)) duration.set(secs);
                 }
-                // advance/track-metadata update itself comes from player.rs's directive
             } else if (event.type === 'StateChanged') {
                 _correctReckoning(event.data.position);
                 if (event.data.position === 0) {
@@ -161,6 +167,8 @@ export async function initAudioBackend(): Promise<void> {
                     }
                 }
             }
+        }).then(unlisten => {
+            audioBackendUnlistens.push(unlisten);
         }).catch(err => {
             console.error('[Player] Failed to register audio event listener:', err);
         });
@@ -183,17 +191,17 @@ export async function initAudioBackend(): Promise<void> {
         }
     }
 
-    isPlaying.subscribe((playing) => {
+    audioBackendUnsubscribers.push(isPlaying.subscribe((playing) => {
         _syncTickers(playing, get(activeBackend));
         pluginEvents.emit('playStateChange', { isPlaying: playing });
-    });
+    }));
 
-    activeBackend.subscribe((backend) => {
+    audioBackendUnsubscribers.push(activeBackend.subscribe((backend) => {
         _syncTickers(get(isPlaying), backend);
-    });
+    }));
 
     // Subscribe to volume changes to keep backends in sync
-    volume.subscribe((val) => {
+    audioBackendUnsubscribers.push(volume.subscribe((val) => {
         const audioVol = sliderToAudioVolume(val);
 
         html5SetVolume(audioVol);
@@ -203,7 +211,7 @@ export async function initAudioBackend(): Promise<void> {
                 console.warn('[Player] Failed to set native volume:', err);
             });
         }
-    });
+    }));
 
     // Force sync initial volume to native backend
     if (nativeUsed) {
@@ -241,35 +249,29 @@ export async function initAudioBackend(): Promise<void> {
     // TRAY TOGGLE SYNC
     // keep the tray shuffle/repeat checkmarks in sync with the store values
     // =============================================================================
-    shuffle.subscribe((val) => {
+    audioBackendUnsubscribers.push(shuffle.subscribe((val) => {
         invoke('tray_update_toggles', { shuffle: val, repeat: get(repeat) }).catch(() => { });
-    });
-    repeat.subscribe((val) => {
+    }));
+    audioBackendUnsubscribers.push(repeat.subscribe((val) => {
         invoke('tray_update_toggles', { shuffle: get(shuffle), repeat: val }).catch(() => { });
-    });
+    }));
 
-    // tray://toggle-shuffle / tray://toggle-repeat are emitted by the tray
-    // on_menu_event when the user clicks the checkboxes. route them through
-    // the same functions the keyboard shortcuts and remote commands already use,
-    // so all state transitions happen in one place.
     listen<void>('tray://toggle-shuffle', () => {
         toggleShuffle();
-    }).catch(() => { });
+    }).then(unlisten => audioBackendUnlistens.push(unlisten)).catch(() => { });
 
     listen<void>('tray://toggle-repeat', () => {
         cycleRepeat();
-    }).catch(() => { });
+    }).then(unlisten => audioBackendUnlistens.push(unlisten)).catch(() => { });
 
-    // emitted when the user clicks the track title in the tray menu
-    // (lib.rs already focuses the window before emitting this)
     listen<void>('tray://open-fullscreen', () => {
         if (!get(isFullScreen)) {
             toggleFullScreen();
         }
-    }).catch(() => { });
+    }).then(unlisten => audioBackendUnlistens.push(unlisten)).catch(() => { });
 
     // Subscribe to WebSocket messages
-    wsStore.onMessage((type, payload) => {
+    const unsubWs = wsStore.onMessage((type, payload) => {
         switch (type) {
             case 'transfer_playback':
                 transferPlayback(payload);
@@ -282,20 +284,16 @@ export async function initAudioBackend(): Promise<void> {
                 break;
         }
     });
+    audioBackendUnsubscribers.push(unsubWs);
 
     await initWindowsThumbarIntegration();
     await initSmtcIntegration();
 
-    // queue and queueIndex stores are subscribed so the jump list updates when
-    // the track changes or when tracks are added/removed from the queue
     let jumpListDisabledToastShown = false;
     const JUMP_LIST_DISABLED_MARKER = 'JUMPLIST_DISABLED_BY_SETTINGS';
 
     const handleJumpListError = (action: 'update' | 'clear', e: unknown) => {
         if (e === JUMP_LIST_DISABLED_MARKER) {
-            // windows blocks jump list writes when the user
-            // has "Show recently opened items in Jump Lists" turned off
-            // surface it once per session
             if (!jumpListDisabledToastShown) {
                 jumpListDisabledToastShown = true;
                 addToast(
@@ -330,11 +328,10 @@ export async function initAudioBackend(): Promise<void> {
                 .catch((e) => handleJumpListError('clear', e));
         }
     };
-    queue.subscribe(syncJumpList);
-    queueIndex.subscribe(syncJumpList);
+    audioBackendUnsubscribers.push(queue.subscribe(syncJumpList));
+    audioBackendUnsubscribers.push(queueIndex.subscribe(syncJumpList));
 
-    // listen for audion://play/<id> deep links routed from lib.rs (already running case)
-    await listen<string>('app://play-track', ({ payload }) => {
+    listen<string>('app://play-track', ({ payload }) => {
         const trackId = Number(payload);
         if (!trackId || isNaN(trackId)) return;
         const track = getTrackByIdSync(trackId);
@@ -342,9 +339,6 @@ export async function initAudioBackend(): Promise<void> {
             console.warn('[Player] jump list play-track: id not found in library:', trackId);
             return;
         }
-        // jump list entries are sourced from the current queue (see syncJumpList
-        // below)
-        // playFromQueue handles the index update, userQueueCount, and shuffle pointer sync
         const idxInQueue = get(queue).findIndex((t) => t.id === trackId);
         if (idxInQueue !== -1) {
             playFromQueue(idxInQueue);
@@ -353,13 +347,13 @@ export async function initAudioBackend(): Promise<void> {
             // fall back to just playing the track on its own
             void playTrack(track);
         }
-    });
+    }).then(unlisten => audioBackendUnlistens.push(unlisten)).catch(console.error);
 
     // file opened via os file association
     // while the app is already running - lib.rs's handle_open_file emits this
     await listen<string>('app://open-file', ({ payload }) => {
         void openAssociatedFile(payload);
-    });
+    }).then(unlisten => audioBackendUnlistens.push(unlisten));
     // cold-start case (app launched via jump list click) is handled in +page.svelte, coordinated with initializeFromPersistedState
 }
 

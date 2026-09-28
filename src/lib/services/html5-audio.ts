@@ -39,7 +39,7 @@ export async function html5Play(path: string, volume: number, startTime = 0, rep
 
     const finalKind = classifyAudioPath(path);
 
-    if (finalKind === 'blob') {
+    if (finalKind === 'blob' && !rawAudioBlobUrls.has(path)) {
         audio = await prepareHtml5AudioForPath(audio, path);
         audio.volume = volume;
 
@@ -108,8 +108,9 @@ export async function html5Preload(path: string, trackId: string | number | null
         }
     });
 
-    preloadAudio.addEventListener('error', () => {
-        console.error('[Html5Audio] Preload error for:', path, preloadAudio?.error);
+    preloadAudio.addEventListener('error', (e) => {
+        const err = (e.target as HTMLAudioElement)?.error;
+        console.error('[Html5Audio] Preload error for:', path, 'code:', err?.code, 'message:', err?.message);
         html5ClearPreload();
     });
 
@@ -120,7 +121,7 @@ export async function html5Preload(path: string, trackId: string | number | null
         try {
             const mpdText = await fetch(path).then(r => r.text());
             const bytes = new TextEncoder().encode(mpdText);
-            const binary = Array.from(bytes).reduce((acc, byte) => acc + String.fromCharCode(byte), '');
+            const binary = Array.from(bytes, b => String.fromCharCode(b)).join('');
             const dataUrl = 'data:application/dash+xml;base64,' + btoa(binary);
 
             const dashjs = await getDashPlayer();
@@ -133,7 +134,10 @@ export async function html5Preload(path: string, trackId: string | number | null
     } else {
         isPreloadDash = false;
         const resolvedPath = await resolvePlaylistUrl(path);
-        if (get(equalizer).enabled && canUseHtml5EqForPath(resolvedPath)) {
+        // Mirror prepareHtml5AudioForPath: crossOrigin needed for all http streams (EQ on or off)
+        if (classifyAudioPath(resolvedPath) === 'stream') {
+            preloadAudio.crossOrigin = 'anonymous';
+        } else if (get(equalizer).enabled && canUseHtml5EqForPath(resolvedPath)) {
             preloadAudio.crossOrigin = 'anonymous';
         }
         preloadAudio.src = resolvedPath;
@@ -482,6 +486,7 @@ let html5AudioSourceElement: HTMLAudioElement | null = null; // which element th
 let html5EqFilters: BiquadFilterNode[] = [];
 let html5EqGainNode: GainNode | null = null;
 let html5ReplayGainNode: GainNode | null = null;
+let html5AnalyserNode: AnalyserNode | null = null;
 let lastEqBypassWarningHost: string | null = null;
 
 // replay gain state
@@ -491,6 +496,23 @@ let preloadReplayGainDb: number | null = null;
 
 // dash.js player instance for Hi-Res DASH/MPD streaming
 let dashPlayer: any | null = null;
+
+// Raw-audio blob URLs that must NOT go through dash.js (e.g. subsonic proxy blobs)
+const rawAudioBlobUrls = new Set<string>();
+
+/** Register a blob URL as raw audio (not a DASH manifest) so html5Play skips dash.js. */
+export function html5RegisterRawBlobUrl(url: string): void {
+    rawAudioBlobUrls.add(url);
+}
+
+/**
+ * Returns the AnalyserNode tapped from the EQ graph output.
+ * null when the graph hasn't been built yet (e.g. native backend, or no track loaded).
+ * The visualizer checks isPlaying and polls this on each animation frame.
+ */
+export function getHtml5Analyser(): AnalyserNode | null {
+    return html5AnalyserNode;
+}
 
 // Preload state for gapless streaming
 let preloadAudio: HTMLAudioElement | null = null;
@@ -544,7 +566,7 @@ async function playWithDash(blobUrl: string, audioElement: HTMLAudioElement, sta
     URL.revokeObjectURL(blobUrl);
 
     const bytes = new TextEncoder().encode(mpdText);
-    const binary = Array.from(bytes).reduce((acc, byte) => acc + String.fromCharCode(byte), '');
+    const binary = Array.from(bytes, b => String.fromCharCode(b)).join('');
     const dataUrl = 'data:application/dash+xml;base64,' + btoa(binary);
 
     const dashjs = await getDashPlayer();
@@ -590,6 +612,10 @@ function cleanupHtml5EqGraph(): void {
     if (html5EqGainNode) {
         try { html5EqGainNode.disconnect(); } catch (_) { }
         html5EqGainNode = null;
+    }
+    if (html5AnalyserNode) {
+        try { html5AnalyserNode.disconnect(); } catch (_) { }
+        html5AnalyserNode = null;
     }
     if (html5AudioContext) {
         html5AudioContext.close().catch(() => { });
@@ -672,10 +698,12 @@ async function prepareHtml5AudioForPath(audio: HTMLAudioElement, path: string): 
     const canUseEq = canUseHtml5EqForPath(path);
     const useGraph = (eqEnabled && canUseEq) || replayGainNeedsGraph(path);
 
+    // Always set crossOrigin for stream URLs so Range requests work without CORS errors
+    if (classifyAudioPath(path) === 'stream') {
+        audio.crossOrigin = 'anonymous';
+    }
+
     if (useGraph) {
-        if (eqEnabled && classifyAudioPath(path) === 'stream') {
-            audio.crossOrigin = 'anonymous';
-        }
         ensureHtml5EqGraph(audio);
         await resumeHtml5AudioContext();
         return audio;
@@ -734,7 +762,12 @@ function ensureHtml5EqGraph(audio: HTMLAudioElement): void {
         const ctx = html5AudioContext;
         if (!ctx) return;
 
-        if (!html5AudioSourceNode) {
+        if (!html5AudioSourceNode || html5AudioSourceElement !== audio) {
+            // Disconnect old node if it was for a different element
+            if (html5AudioSourceNode && html5AudioSourceElement !== audio) {
+                try { html5AudioSourceNode.disconnect(); } catch (_) {}
+                html5AudioSourceNode = null;
+            }
             html5AudioSourceNode = ctx.createMediaElementSource(audio);
             html5AudioSourceElement = audio;
         }
@@ -769,7 +802,15 @@ function ensureHtml5EqGraph(audio: HTMLAudioElement): void {
             html5AudioSourceNode.connect(html5ReplayGainNode);
         }
         html5ReplayGainNode.connect(html5EqGainNode);
-        html5EqGainNode.connect(ctx.destination);
+
+        // Analyser sits after EQ gain, before destination — tap full-chain signal
+        if (!html5AnalyserNode || html5AnalyserNode.context !== ctx) {
+            html5AnalyserNode = ctx.createAnalyser();
+            html5AnalyserNode.fftSize = 256;
+            html5AnalyserNode.smoothingTimeConstant = 0.8;
+        }
+        html5EqGainNode.connect(html5AnalyserNode);
+        html5AnalyserNode.connect(ctx.destination);
 
         applyHtml5EqState(get(equalizer));
         applyHtml5ReplayGain();
@@ -921,9 +962,13 @@ async function resumeHtml5AudioContext(): Promise<void> {
 // The native half stays in player.ts. These were combined for convenience,
 // not because they are logically coupled.
 
+let _html5EqTimer: ReturnType<typeof setTimeout> | null = null;
 equalizer.subscribe((state) => {
-    // Apply immediately to the WebAudio graph when available — matches original behavior
-    applyHtml5EqState(state);
+    if (_html5EqTimer) clearTimeout(_html5EqTimer);
+    _html5EqTimer = setTimeout(() => {
+        _html5EqTimer = null;
+        applyHtml5EqState(state);
+    }, 50);
 });
 
 // =============================================================================

@@ -1,6 +1,6 @@
 import { writable, get } from 'svelte/store';
 import { tick } from 'svelte';
-import { isTauri, isAndroid } from '$lib/api/tauri';
+import { isTauri, isAndroid, getIsLinux } from '$lib/api/tauri';
 
 export const isFullScreen = writable(false);
 export const isMiniPlayer = writable(false);
@@ -48,7 +48,7 @@ const VIEW_TRANSITION_WATCHDOG_MS = 1000;
 export function withViewTransition(mutate: () => void, label: string = 'unlabeled'): any {
     const doc = typeof document !== 'undefined' ? (document as any) : null;
 
-    if (doc?.startViewTransition && !prefersReducedMotion()) {
+    if (doc?.startViewTransition && !prefersReducedMotion() && !getIsLinux()) {
         const startedAt = performance.now();
         console.log(`[viewTransition:${label}] starting`);
 

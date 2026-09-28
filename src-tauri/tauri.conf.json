@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Audion",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "identifier": "com.audion.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -15,8 +15,8 @@
         "title": "Audion",
         "width": 1600,
         "height": 900,
-        "minWidth": 1040,
-        "minHeight": 720,
+        "minWidth": 360,
+        "minHeight": 400,
         "backgroundColor": "#121212",
         "visible": true,
         "decorations": false,
@@ -26,7 +26,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' blob: asset: http://asset.localhost https://asset.localhost; connect-src * asset: ipc: ipc://localhost http://asset.localhost https://asset.localhost; img-src 'self' data: blob: asset: http://asset.localhost https://asset.localhost http: https:; media-src 'self' asset: http://asset.localhost https://asset.localhost file: blob: http: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com",
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: asset: http://asset.localhost https://asset.localhost; connect-src * asset: ipc: ipc://localhost http://asset.localhost https://asset.localhost; img-src 'self' data: blob: asset: http://asset.localhost https://asset.localhost http: https:; media-src 'self' asset: http://asset.localhost https://asset.localhost file: blob: http: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com",
       "assetProtocol": {
         "enable": true,
         "scope": [
@@ -91,6 +91,13 @@
         "name": "OGG Audio",
         "description": "OGG Vorbis Audio File",
         "mimeType": "audio/ogg",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["opus"],
+        "name": "Opus Audio",
+        "description": "Opus Audio File",
+        "mimeType": "audio/opus",
         "role": "Viewer"
       },
       {

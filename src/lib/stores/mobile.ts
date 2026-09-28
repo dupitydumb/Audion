@@ -12,7 +12,7 @@ import { isMiniPlayer } from '$lib/stores/ui';
 const MOBILE_BREAKPOINT = 768;
 const LAYOUT_OVERRIDE_STORAGE_KEY = 'audion:layout-override';
 
-export type LayoutOverride = 'auto' | 'mobile' | 'desktop';
+export type LayoutOverride = 'auto' | 'mobile' | 'desktop' | 'hybrid';
 
 // Core state: is the viewport mobile-sized? Kept for informational/responsive
 // use elsewhere in the UI but doesn't drive mobile/desktop layout
@@ -28,7 +28,7 @@ function loadLayoutOverride(): LayoutOverride {
     if (typeof window === 'undefined') return 'auto';
     try {
         const raw = localStorage.getItem(LAYOUT_OVERRIDE_STORAGE_KEY);
-        if (raw === 'auto' || raw === 'mobile' || raw === 'desktop') return raw;
+        if (raw === 'auto' || raw === 'mobile' || raw === 'desktop' || raw === 'hybrid') return raw;
     } catch {
         // ignore read failures
     }
@@ -56,21 +56,39 @@ function createLayoutOverrideStore() {
     };
 }
 
-// user-configurable override: 'auto' (OS-detected), 'mobile', or 'desktop'
+// user-configurable override: 'auto' (OS-detected), 'mobile', 'desktop', or
+// 'hybrid' (mobile page layout + the desktop title bar)
 // Settings > Appearance > Layout
 export const layoutOverride = createLayoutOverrideStore();
 
 // combined: layout is decided by the override when set, otherwise by real
 // platform detection (never by window size)
+// hybrid counts as mobile for page layout purposes => only the title bar
+// (see useDesktopTitleBar below) diverges from a plain mobile override
 // Exception: never switch to mobile layout while PIP mini player is active
 // (Tauri resizes the window to ~360px for PIP, which is unrelated to layout mode).
 export const isMobile = derived(
     [layoutOverride, isMobilePlatform, isMiniPlayer],
     ([$override, $platform, $pip]) => {
         if ($pip) return false;
-        if ($override === 'mobile') return true;
+        if ($override === 'mobile' || $override === 'hybrid') return true;
         if ($override === 'desktop') return false;
         return $platform;
+    }
+);
+
+// title-bar-only decision: whether TitleBar.svelte should render its desktop chrome
+// instead of the mobile bar (hamburger + collapsible search)
+// desktop and hybrid both want the desktop bar; mobile wants the mobile bar
+// auto follows real platform detection, same as isMobile
+// pip forces the desktop bar too
+export const useDesktopTitleBar = derived(
+    [layoutOverride, isMobilePlatform, isMiniPlayer],
+    ([$override, $platform, $pip]) => {
+        if ($pip) return true;
+        if ($override === 'desktop' || $override === 'hybrid') return true;
+        if ($override === 'mobile') return false;
+        return !$platform;
     }
 );
 

@@ -35,6 +35,7 @@
         getAlbum,
         getTrackCoverSrc,
         getAlbumCoverSrc,
+        getIsLinux,
     } from "$lib/api/tauri";
     import { uiSlotManager } from "$lib/plugins/ui-slots";
     import { pluginDrawerOpen } from "$lib/stores/plugin-drawer";
@@ -53,6 +54,8 @@
     } from "$lib/stores/sleepTimer";
     import ConnectPanel from "./ConnectPanel.svelte";
     import Icon from "$lib/components/Icon.svelte";
+    import AudioVisualizer from "$lib/components/AudioVisualizer.svelte";
+    import { theme } from "$lib/stores/theme";
     import { wsStore } from "$lib/stores/websocket";
 
     $: isCurrentLiked = $currentTrack
@@ -285,7 +288,7 @@
             {#if $currentTrack}
                 <div
                     class="album-art"
-                    style="view-transition-name: {$isFullScreen ? 'none' : 'player-album-art'};"
+                    style="view-transition-name: {($isFullScreen || getIsLinux()) ? 'none' : 'player-album-art'};"
                 >
                     {#if albumArt && !imageLoadFailed}
                         <img
@@ -426,6 +429,13 @@
                     <span class="time">{formatDuration($duration)}</span>
                 {/if}
             </div>
+
+            <!-- Audio visualizer — shown when visualization mode is active -->
+            {#if $theme.animation.playerVisualization !== 'none' && !$theme.animation.reducedMotion}
+                <div class="visualizer-container">
+                    <AudioVisualizer width={200} height={20} />
+                </div>
+            {/if}
         </div>
 
         <!-- Volume controls -->
@@ -589,13 +599,14 @@
 <style>
     .player-bar {
         height: var(--player-height);
-        background-color: var(--bg-elevated);
+        background-color: var(--player-bg, var(--bg-elevated));
         border-top: 1px solid var(--border-color);
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
         align-items: center;
         padding: 0 calc(var(--spacing-md) + 2px);
         gap: clamp(20px, 2.2vw, 36px);
+        color: var(--text-on-player, var(--text-primary));
         /* overflow: hidden; - Removed to allow menus to popup */
     }
 
@@ -763,6 +774,13 @@
         padding-top: 6px;
     }
 
+    .visualizer-container {
+        width: 200px;
+        height: 20px;
+        opacity: 0.7;
+        pointer-events: none;
+    }
+
     .controls-buttons {
         display: flex;
         align-items: center;
@@ -785,8 +803,8 @@
         height: 44px;
         position: relative;
         border-radius: var(--radius-full);
-        background-color: var(--text-primary);
-        color: var(--bg-base);
+        background-color: var(--accent-primary);
+        color: var(--text-on-accent, #fff);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -1175,7 +1193,7 @@
         padding: 0;
         gap: 0;
         z-index: 900;
-        background-color: #282828;
+        background-color: var(--player-bg, var(--bg-elevated));
         border: none;
         border-radius: 8px;
         box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.5);

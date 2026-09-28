@@ -27,6 +27,7 @@
 
   export let onPointerDown: (e: PointerEvent, index: number) => void;
   export let onImageError: (art: string) => void;
+  export let formattedDate: string = '';
 
   /** row's own hover state, used to drive marquee start/stop for the
    *  artist chips in this row (see ArtistLinks marqueeTrigger=external */
@@ -43,27 +44,6 @@
     if (track && track.album_id) {
       goToAlbumDetail(track.album_id);
     }
-  }
-
-  function formatDateAdded(dateAdded?: string | null): string {
-    if (!dateAdded) return $_('common.unknown');
-
-    const raw = dateAdded.trim();
-    const isoLike = raw.replace(" ", "T").replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
-    const parsed = new Date(isoLike);
-    if (!isNaN(parsed.getTime())) return parsed.toLocaleDateString();
-
-    // Fallback for YYYY-MM-DD HH:MM:SS
-    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
-    if (match) {
-      const [, y, m, d] = match;
-      const fallback = new Date(Number(y), Number(m) - 1, Number(d));
-      return isNaN(fallback.getTime())
-        ? `${y}-${m}-${d}`
-        : fallback.toLocaleDateString();
-    }
-
-    return raw;
   }
 </script>
 
@@ -241,6 +221,6 @@
   {/if}
   <span class="col-duration">{formatDuration(track.duration)}</span>
   {#if !$isMobile}
-    <span class="col-date-added">{formatDateAdded(track.date_added)}</span>
+    <span class="col-date-added">{formattedDate}</span>
   {/if}
 </div>

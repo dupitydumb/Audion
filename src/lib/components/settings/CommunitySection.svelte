@@ -63,7 +63,7 @@
         on:click={() => appSettings.toggleListenBrainz()}
         role="switch"
         aria-checked={$appSettings.listenBrainzEnabled}
-        aria-label="Toggle ListenBrainz"
+        aria-label={$_('settings.toggleListenBrainz', { default: 'Toggle ListenBrainz' })}
       >
         <div class="toggle-handle"></div>
       </button>
@@ -107,7 +107,7 @@
         on:click={() => appSettings.setShowDiscord(!$appSettings.showDiscord)}
         role="switch"
         aria-checked={$appSettings.showDiscord}
-        aria-label="Toggle Discord Button"
+        aria-label={$_('settings.toggleDiscordButton', { default: 'Toggle Discord Button' })}
       >
         <div class="toggle-handle"></div>
       </button>
@@ -125,7 +125,7 @@
         on:click={() => appSettings.setShowResonate(!$appSettings.showResonate)}
         role="switch"
         aria-checked={$appSettings.showResonate}
-        aria-label="Toggle Resonate Button"
+        aria-label={$_('settings.toggleResonateButton', { default: 'Toggle Resonate Button' })}
       >
         <div class="toggle-handle"></div>
       </button>

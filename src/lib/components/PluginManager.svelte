@@ -748,7 +748,7 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    padding: calc(var(--safe-area-top) + var(--spacing-md)) var(--spacing-md)
+    padding: var(--spacing-md) var(--spacing-md)
       var(--spacing-md);
     overflow-x: hidden; /* Prevent horizontal overflow */
     box-sizing: border-box;
@@ -853,7 +853,7 @@
 
   .category-chip.active {
     background-color: var(--accent-primary);
-    color: var(--bg-base);
+    color: var(--text-on-accent, #fff);
   }
 
   .create-form input {
@@ -1059,7 +1059,7 @@
   .btn-primary {
     padding: var(--spacing-sm) var(--spacing-md);
     background-color: var(--accent-primary);
-    color: var(--bg-base);
+    color: var(--text-on-accent, #fff);
     border-radius: var(--radius-sm);
     font-weight: var(--font-weight-medium);
     font-size: var(--font-size-base);
@@ -1099,7 +1099,7 @@
   .btn-install {
     padding: var(--spacing-sm) var(--spacing-md);
     background-color: var(--accent-primary);
-    color: var(--bg-base);
+    color: var(--text-on-accent, #fff);
     border-radius: var(--radius-sm);
     font-weight: var(--font-weight-medium);
     font-size: var(--font-size-base);

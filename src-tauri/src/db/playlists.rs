@@ -32,6 +32,29 @@ pub fn get_all_playlists(conn: &Connection) -> Result<Vec<Playlist>> {
     Ok(playlists)
 }
 
+/// name-scoped playlist search, same use case as albums::search_albums_by_name
+pub fn search_playlists_by_name(conn: &Connection, query: &str, limit: i32) -> Result<Vec<Playlist>> {
+    let pattern = format!("%{}%", query);
+    let mut stmt = conn.prepare(
+        "SELECT id, name, cover_url, created_at, folder_path
+         FROM playlists WHERE name LIKE ?1 COLLATE NOCASE
+         ORDER BY name COLLATE NOCASE
+         LIMIT ?2",
+    )?;
+    let playlists = stmt
+        .query_map(params![pattern, limit], |row| {
+            Ok(Playlist {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                cover_url: row.get(2)?,
+                created_at: row.get(3)?,
+                folder_path: row.get(4)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+    Ok(playlists)
+}
+
 pub fn get_playlist_tracks(conn: &Connection, playlist_id: i64) -> Result<Vec<Track>> {
     let mut stmt = conn.prepare(
         "SELECT t.id, t.path, t.title, t.artist, t.album, t.track_number, t.duration, t.album_id, t.format, t.bitrate, t.source_type, t.cover_url, t.external_id, t.local_src, t.track_cover, t.track_cover_path, t.disc_number, t.metadata_json, t.date_added 

@@ -38,7 +38,7 @@
           <h3 class="setting-title">{$_('settings.unlimitedSync')}</h3>
           <span class="setting-description">{$_('settings.unlimitedSyncDesc')}</span>
         </div>
-        <div class="pill-badge accent">Support</div>
+        <div class="pill-badge accent">{$_('settings.support')}</div>
       </div>
       <a href="https://ko-fi.com/N4N5UMNR1" target="_blank" rel="noreferrer" class="btn-primary-compact" style="margin-top: var(--spacing-sm); text-align: center;">{$_('settings.supportOnKofi')}</a>
     {:else}

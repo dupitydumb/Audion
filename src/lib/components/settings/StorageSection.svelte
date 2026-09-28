@@ -101,8 +101,7 @@
 
       if (path.startsWith("content://")) {
         folderListSuccess = false;
-        folderListMessage =
-          "Folder URI is not supported yet. Please pick a local Music folder path.";
+        folderListMessage = $_('settings.folderUriNotSupported', { default: "Folder URI is not supported yet. Please pick a local Music folder path." });
         return;
       }
 
@@ -120,12 +119,12 @@
       folderListSuccess = true;
       folderListMessage = formatScanResultMessage(
         result,
-        "Folder added",
-        "Folder added. No tracks found.",
+        $_('settings.folderAdded', { default: "Folder added" }),
+        $_('settings.folderAddedNoTracks', { default: "Folder added. No tracks found." }),
       );
     } catch (error) {
       folderListSuccess = false;
-      folderListMessage = `Failed to add folder: ${error}`;
+      folderListMessage = $_('settings.folderAddFailed', { values: { error: String(error) }, default: `Failed to add folder: ${error}` });
       console.error("Failed to add music folder:", error);
     } finally {
       isAddingFolder = false;
@@ -149,12 +148,12 @@
       folderListSuccess = true;
       folderListMessage = formatScanResultMessage(
         result,
-        "Folder rescanned",
-        "Folder rescanned. No changes detected.",
+        $_('settings.folderRescanned', { default: "Folder rescanned" }),
+        $_('settings.folderRescannedNoChanges', { default: "Folder rescanned. No changes detected." }),
       );
     } catch (error) {
       folderListSuccess = false;
-      folderListMessage = `Failed to rescan folder: ${error}`;
+      folderListMessage = $_('settings.folderRescanFailed', { values: { error: String(error) }, default: `Failed to rescan folder: ${error}` });
       console.error("Failed to rescan folder:", path, error);
     } finally {
       const { [path]: _removed, ...rest } = busyFolders;
@@ -169,8 +168,8 @@
     if (anyFolderActionBusy) return;
 
     const ok = await confirm(
-      `Remove "${path}" from your library? Tracks from this folder will be deleted from the database (the files on disk are not affected).`,
-      { title: "Remove Folder", danger: true },
+      $_('settings.removeFolderConfirm', { values: { path }, default: `Remove "${path}" from your library? Tracks from this folder will be deleted from the database (the files on disk are not affected).` }),
+      { title: $_('settings.removeFolder', { default: "Remove Folder" }), danger: true },
     );
     if (!ok) return;
 
@@ -185,11 +184,11 @@
       folderListSuccess = true;
       folderListMessage =
         tracksRemoved > 0
-          ? `Folder removed, ${tracksRemoved} track(s) deleted from library.`
-          : "Folder removed.";
+          ? $_('settings.folderRemovedWithCount', { values: { count: tracksRemoved }, default: `Folder removed, ${tracksRemoved} track(s) deleted from library.` })
+          : $_('settings.folderRemoved', { default: "Folder removed." });
     } catch (error) {
       folderListSuccess = false;
-      folderListMessage = `Failed to remove folder: ${error}`;
+      folderListMessage = $_('settings.folderRemoveFailed', { values: { error: String(error) }, default: `Failed to remove folder: ${error}` });
       console.error("Failed to remove folder:", path, error);
     } finally {
       const { [path]: _removed, ...rest } = busyFolders;
@@ -386,7 +385,7 @@
   {#if open}
     <div class="section-body" transition:slide|local>
       <div class="settings-card">
-        <div class="inner-section">
+        <div class="inner-section" id="setting-download-location">
           <span class="setting-title">{$_('settings.downloadLocation')}</span>
           <div class="path-selector">
             <div class="setting-description path-display" style="margin-top: 0;" title={$appSettings.downloadLocation || $_('settings.noDownloadLocation')}>
@@ -398,7 +397,7 @@
 
         <div class="divider"></div>
 
-        <div class="inner-section">
+        <div class="inner-section" id="setting-music-folders">
           <div class="folder-section-header">
             <span class="setting-title">{$_('settings.musicFolders', { default: 'Music folders' })}</span>
             <button
@@ -455,7 +454,7 @@
 
         <div class="divider"></div>
 
-        <div class="card-title-group compact">
+        <div class="card-title-group compact" id="setting-cover-management">
           <h3 class="setting-title">{$_('settings.coverManagement')}</h3>
           <span class="setting-description">{$_('settings.coverManagementDesc')}</span>
         </div>

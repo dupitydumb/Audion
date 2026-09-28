@@ -276,7 +276,7 @@
   .mobile-menu-sheet {
     width: 100%;
     max-width: 480px;
-    background: #282828;
+    background: var(--bg-elevated);
     border-radius: 16px 16px 0 0;
     padding: 8px 0 calc(20px + env(safe-area-inset-bottom));
     max-height: 75vh;

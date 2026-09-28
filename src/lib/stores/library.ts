@@ -90,6 +90,9 @@ class LRUCache<K, V> {
         const entry = this.cache.get(key);
         if (!entry) return undefined;
         entry.timestamp = Date.now();
+        // Re-insert to move to end of insertion order (MRU)
+        this.cache.delete(key);
+        this.cache.set(key, entry);
         return entry.value;
     }
 
@@ -131,17 +134,8 @@ class LRUCache<K, V> {
     }
 
     private evictOldest(): void {
-        let oldestKey: K | null = null;
-        let oldestTime = Date.now();
-
-        this.cache.forEach((entry, key) => {
-            if (entry.timestamp < oldestTime) {
-                oldestTime = entry.timestamp;
-                oldestKey = key;
-            }
-        });
-
-        if (oldestKey !== null) {
+        const oldestKey = this.cache.keys().next().value;
+        if (oldestKey !== undefined) {
             const entry = this.cache.get(oldestKey);
             if (entry && this.onEvict) {
                 this.onEvict(oldestKey, entry.value);
@@ -370,12 +364,6 @@ function ingestTracks(incoming: Track[]): Track[] {
         const metadata = stripTrackHeavyData(track);
         trackMetadataCache.set(track.id, metadata);
 
-        // Revoke old blob URL before caching new one
-        const existingUrl = trackCoverCache.get(track.id);
-        if (existingUrl && existingUrl.startsWith('blob:')) {
-            revokeBlobUrl(existingUrl);
-        }
-
         // Priority 1: Use filesystem path (fastest, no JS overhead)
         if (track.track_cover_path) {
             const url = convertFileSrc(track.track_cover_path);
@@ -476,12 +464,6 @@ function ingestAlbums(incoming: Album[]): Album[] {
     incoming.forEach(album => {
         const metadata = stripAlbumHeavyData(album);
         albumMetadataCache.set(album.id, metadata);
-
-        // Revoke old blob URL before caching new one
-        const existingUrl = albumArtCache.get(album.id);
-        if (existingUrl && existingUrl.startsWith('blob:')) {
-            revokeBlobUrl(existingUrl);
-        }
 
         if (album.art_path) {
             const url = convertFileSrc(album.art_path);
@@ -895,39 +877,10 @@ export async function clearLibrary(): Promise<void> {
     artistCount.set(0);
 }
 
-// Add periodic blob URL cleanup
-let cleanupInterval: number | undefined;
-
-/**
- * Start periodic cleanup of unused blob URLs (runs every 5 minutes)
- */
-export function startBlobUrlCleanup(): void {
-    if (typeof window === 'undefined') return;
-
-    if (cleanupInterval) {
-        clearInterval(cleanupInterval);
-    }
-
-    cleanupInterval = window.setInterval(() => {
-        const before = createdBlobUrls.size;
-
-        // Clean up any orphaned blob URLs (not in either cache)
-        const activeBlobUrls = new Set<string>();
-
-        // Collect active blob URLs from caches
-        console.log(`[Library] Blob URL cleanup check: ${before} tracked URLs`);
-    }, 5 * 60 * 1000); // Every 5 minutes
-}
-
-/**
- * Stop periodic cleanup
- */
-export function stopBlobUrlCleanup(): void {
-    if (cleanupInterval) {
-        clearInterval(cleanupInterval);
-        cleanupInterval = undefined;
-    }
-}
+// Blob URL lifecycle is managed by LRU onEvict callbacks and clearLibrary().
+// No periodic cleanup interval needed — eviction is O(1) at set() time.
+export function startBlobUrlCleanup(): void { /* ponytail: stub kept for API compat */ }
+export function stopBlobUrlCleanup(): void { /* ponytail: stub kept for API compat */ }
 
 // CACHE STATS
 export function getCacheStats() {

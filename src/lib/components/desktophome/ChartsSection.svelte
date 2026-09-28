@@ -97,10 +97,10 @@
     }
 
     .chart-section {
-        background: rgba(255, 255, 255, 0.03);
+        background: var(--bg-elevated);
         padding: 20px;
         border-radius: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--border-color);
     }
 
     .home-section {
@@ -172,7 +172,7 @@
         height: 40px;
         border-radius: 4px;
         overflow: hidden;
-        background: #282828;
+        background: var(--bg-elevated);
     }
 
     .chart-art img {

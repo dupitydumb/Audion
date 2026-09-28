@@ -11,7 +11,7 @@
         getAlbumCoverFromTracks,
         playlistTrackCounts,
     } from "$lib/stores/library";
-    import { getAlbum } from "$lib/api/tauri";
+    import { getAlbum, getIsLinux } from "$lib/api/tauri";
     import {
         currentView,
         goToHome,
@@ -25,7 +25,9 @@
         goToLikedSongs,
         goToListenBrainz,
         goToDiscover,
+        goToSubsonic,
     } from "$lib/stores/view";
+    import { subsonicConnected } from "$lib/stores/subsonic";
     import {
         isSettingsOpen as isSettingsOpenUI,
         toggleSettings as toggleSettingsUI,
@@ -407,8 +409,8 @@
 <aside class="sidebar">
     <div class="sidebar-header">
         <div class="logo">
-            <img src="/logo.png" alt="Audion Logo" width="32" height="32" style="view-transition-name: app-logo-icon;" />
-            <span class="logo-text" style="view-transition-name: app-logo-text;">Audion</span>
+            <img src="/logo.png" alt="Audion Logo" width="32" height="32" style="view-transition-name: {getIsLinux() ? 'none' : 'app-logo-icon'};" />
+            <span class="logo-text" style="view-transition-name: {getIsLinux() ? 'none' : 'app-logo-text'};">Audion</span>
             <SyncStatus />
             {#if $otaState.phase === "ready"}
                 <div
@@ -506,6 +508,18 @@
                         >
                             <Icon name="sparkles" size={24} />
                             <span>{$_('sidebar.recommendations')}</span>
+                        </button>
+                    </li>
+                {/if}
+                {#if $subsonicConnected}
+                    <li>
+                        <button
+                            class="nav-item"
+                            class:active={isActive("subsonic")}
+                            on:click={() => navigateAndClose(goToSubsonic)}
+                        >
+                            <Icon name="radio" size={24} />
+                            <span>{$_('sidebar.subsonic', { default: 'Subsonic' })}</span>
                         </button>
                     </li>
                 {/if}
@@ -747,7 +761,7 @@
     .sidebar {
         width: var(--sidebar-width);
         height: 100%;
-        background-color: var(--bg-base);
+        background-color: var(--sidebar-bg, var(--bg-base));
         display: flex;
         flex-direction: column;
         border-right: 1px solid var(--border-color);
@@ -795,7 +809,7 @@
 
     .update-badge:hover {
         background-color: var(--accent-primary);
-        color: var(--bg-base);
+        color: var(--text-on-accent, #fff);
         transform: translateY(-1px);
         box-shadow: 0 2px 8px var(--accent-subtle);
     }
@@ -808,7 +822,7 @@
 
     .restart-badge:hover {
         background-color: var(--accent-primary);
-        color: var(--bg-base);
+        color: var(--text-on-accent, #fff);
     }
 
     @keyframes glow {

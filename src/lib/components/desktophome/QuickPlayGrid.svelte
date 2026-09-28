@@ -120,13 +120,13 @@
 <style>
     .quick-play-section { margin-bottom: 32px; }
     .quick-play-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .quick-play-card { display: flex; align-items: center; gap: 12px; background: var(--surface-hover, rgba(255,255,255,0.07)); border: none; border-radius: 6px; padding: 0; cursor: pointer; overflow: hidden; transition: background 0.2s ease; text-align: left; }
-    .quick-play-card:hover { background: var(--surface-active, rgba(255,255,255,0.12)); }
+    .quick-play-card { display: flex; align-items: center; gap: 12px; background: var(--bg-elevated); border: none; border-radius: 6px; padding: 0; cursor: pointer; overflow: hidden; transition: background var(--transition-fast); text-align: left; }
+    .quick-play-card:hover { background: var(--bg-surface); }
     .quick-play-card.now-playing, .quick-play-card.paused { background: var(--accent-subtle); }
     .quick-play-card.now-playing:hover, .quick-play-card.paused:hover { background: var(--accent-subtle); opacity: 0.95; }
     .quick-play-art { width: 56px; height: 56px; flex-shrink: 0; position: relative; cursor: pointer; border-radius: var(--radius-sm); overflow: hidden; }
     .quick-play-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
-    .quick-play-placeholder { width: 100%; height: 100%; background: var(--surface-elevated, rgba(255,255,255,0.05)); display: flex; align-items: center; justify-content: center; color: var(--text-subdued); }
+    .quick-play-placeholder { width: 100%; height: 100%; background: var(--bg-surface); display: flex; align-items: center; justify-content: center; color: var(--text-subdued); }
     .quick-play-hover-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity var(--transition-fast); background: rgba(0,0,0,0.35); color: white; pointer-events: none; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6)); }
     .quick-play-art:hover .quick-play-hover-overlay { opacity: 1; }
     .quick-play-text { display: flex; flex-direction: column; flex: 1; min-width: 0; gap: 2px; overflow: hidden; }

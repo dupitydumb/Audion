@@ -43,16 +43,17 @@ searchQuery.subscribe(query => {
     debounceTimer = setTimeout(async () => {
         try {
             const results = await searchLibrary(q, 100, 0);
+            const playlists = results.playlists ?? [];
             searchResults.set({
                 tracks: results.tracks,
                 albums: results.albums,
                 artists: results.artists,
-                playlists: results.playlists,
+                playlists: playlists,
                 hasResults:
                     results.tracks.length > 0 ||
                     results.albums.length > 0 ||
                     results.artists.length > 0 ||
-                    results.playlists.length > 0,
+                    playlists.length > 0,
                 query: q,
             });
         } catch (err) {

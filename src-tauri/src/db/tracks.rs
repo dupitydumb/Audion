@@ -300,9 +300,6 @@ pub fn init_fts(conn: &Connection) -> Result<()> {
         END;"
     )?;
 
-    // Always rebuild FTS to guarantee fresh search index on startup
-    let _ = conn.execute("INSERT INTO tracks_fts(tracks_fts) VALUES('rebuild');", []);
-
     Ok(())
 }
 

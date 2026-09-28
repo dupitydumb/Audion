@@ -48,6 +48,8 @@
   export let playbackContext: PlaybackContext | undefined = undefined;
   export let playlistId: number | null = null;
   export let multiSelectMode: boolean = false;
+  export let allowMultiSelectEntry: boolean = false;
+  export let onEnterMultiSelect: (() => void) | undefined = undefined;
   export let queueTracks: Track[] | null = null; // New prop for unified queue context
 
   // Virtual scrolling configuration
@@ -111,6 +113,20 @@
   }
 
   $: filteredTracks = tracks;
+
+  // When tracks prop changes, evict cache entries whose cover_url changed
+  // (Subsonic loads covers async — track objects are replaced with updated cover_url)
+  let lastTracksRef = tracks;
+  $: {
+    if (tracks !== lastTracksRef) {
+      for (const t of tracks) {
+        if (t.cover_url && trackAlbumArtCache.get(t.id) !== t.cover_url) {
+          trackAlbumArtCache.delete(t.id);
+        }
+      }
+      lastTracksRef = tracks;
+    }
+  }
 
   // Sorting state
   type SortField =
@@ -251,12 +267,29 @@
     }
   }
 
-  // 5: Pre-compute album art and availability for visible tracks
+  // 5: Pre-compute album art, availability, and date for visible tracks
   type TrackWithMetadata = {
     track: Track;
     albumArt: string | null;
     unavailable: boolean;
+    formattedDate: string;
   };
+
+  // Date format cache — keyed by raw date_added string, invalidated on locale change
+  const dateFormatCache = new Map<string, string>();
+  $: {
+    // Bust cache when locale changes so re-renders pick up new format
+    const _loc = $locale;
+    dateFormatCache.clear();
+  }
+
+  function getCachedFormattedDate(dateAdded?: string | null): string {
+    if (!dateAdded) return $_('common.unknown');
+    if (dateFormatCache.has(dateAdded)) return dateFormatCache.get(dateAdded)!;
+    const result = formatDateAdded(dateAdded);
+    dateFormatCache.set(dateAdded, result);
+    return result;
+  }
 
   $: visibleTracksWithMetadata = virtualScrollState.visibleTracks.map(
     (track) => {
@@ -266,6 +299,7 @@
         track,
         albumArt: getTrackAlbumArt(track),
         unavailable: getCachedUnavailable(track),
+        formattedDate: getCachedFormattedDate(track.date_added),
       };
     },
   ) as TrackWithMetadata[];
@@ -273,7 +307,6 @@
   function handleScroll(e: Event) {
     const target = e.target as HTMLElement;
     scrollTop = target.scrollTop;
-    scrollbarWidth = Math.max(0, target.offsetWidth - target.clientWidth);
   }
 
   // Measure container height on mount
@@ -320,6 +353,7 @@
     trackAlbumArtCache.clear();
     albumMap.clear();
     availabilityCache.clear();
+    dateFormatCache.clear();
 
     resizeObserver?.disconnect();
     resizeObserver = undefined;
@@ -462,6 +496,14 @@
     const track = sortedTracks[trackIndex];
     if (!track) return;
 
+    // bulk mode only triggers when the right-clicked row is itself part of an active multi-selection of more than one track
+    // right-clicking a row outside the selection always acts on just that row
+    const selectedIds = $multiSelect.selectedTrackIds;
+    const selectedTracks =
+      multiSelectMode && selectedIds.has(trackId) && selectedIds.size > 1
+        ? sortedTracks.filter((t) => selectedIds.has(t.id))
+        : undefined;
+
     contextMenu.set({
       visible: true,
       x: e.clientX,
@@ -476,6 +518,7 @@
         queueTracks,
         playbackContext,
         isTidalAvailable,
+        selectedTracks,
         t: $_,
         onMetadataOpen: (t) => { metadataModalTrack = t; },
         onArtworkCacheInvalidate: (id) => { trackAlbumArtCache.delete(id); },
@@ -817,6 +860,8 @@
     {sortField}
     {sortDirection}
     {toggleSort}
+    {allowMultiSelectEntry}
+    {onEnterMultiSelect}
   />
 
   <!-- Virtualized scrolling container -->
@@ -848,13 +893,14 @@
           class="virtual-content"
           style="transform: translateY({virtualScrollState.offsetY}px);"
         >
-          {#each visibleTracksWithMetadata as { track, albumArt, unavailable }, index (track.id)}
+          {#each visibleTracksWithMetadata as { track, albumArt, unavailable, formattedDate }, index (track.id)}
             {@const actualIndex = virtualScrollState.startIndex + index}
             {@const isSelected = $multiSelect.selectedTrackIds.has(track.id)}
 <TrackListRow
               {track}
               {albumArt}
               {unavailable}
+              {formattedDate}
               {actualIndex}
               {isSelected}
               {showAlbum}
@@ -1062,10 +1108,24 @@
   :global(.truncate) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   :global(.col-checkbox) { display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  :global(.col-drag.selectable) { display: flex; align-items: center; justify-content: center; }
+  :global(.enter-select-checkbox) {
+    opacity: 0;
+    pointer-events: none;
+    cursor: pointer;
+    transition: opacity var(--transition-fast);
+  }
+  :global(.list-header:hover .enter-select-checkbox),
+  :global(.enter-select-checkbox:focus-visible) {
+    opacity: 1;
+    pointer-events: auto;
+  }
   :global(.custom-checkbox) { width: 20px; height: 20px; border: 2px solid var(--border-color); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; transition: all var(--transition-fast); background-color: transparent; position: relative; }
   :global(.custom-checkbox:hover) { border-color: var(--accent-primary); background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.1); }
   :global(.custom-checkbox.checked) { background-color: var(--accent-primary); border-color: var(--accent-primary); }
-  :global(.custom-checkbox svg) { color: var(--bg-base); }
+  :global(.custom-checkbox.indeterminate) { background-color: var(--accent-primary); border-color: var(--accent-primary); }
+  :global(.custom-checkbox svg) { color: var(--text-on-accent, #fff); }
+  :global(.custom-checkbox .indeterminate-dash) { width: 10px; height: 2px; border-radius: 1px; background-color: var(--text-on-accent, #fff); }
 
   :global(.equalizer-bars) { display: none; }
 

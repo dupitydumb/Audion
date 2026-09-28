@@ -185,6 +185,56 @@ pub fn get_all_artists(conn: &Connection) -> Result<Vec<Artist>> {
     Ok(artists)
 }
 
+/// name-scoped album search, for chip-scoped browsing (e.g. android auto library search)
+/// plain LIKE match on the album name, not a fts5 index like search_tracks
+pub fn search_albums_by_name(conn: &Connection, query: &str, limit: i32) -> Result<Vec<Album>> {
+    let pattern = format!("%{}%", query);
+    let mut stmt = conn.prepare(
+        "SELECT id, name, artist, art_path
+         FROM albums WHERE name LIKE ?1 COLLATE NOCASE
+         ORDER BY name COLLATE NOCASE
+         LIMIT ?2",
+    )?;
+    let albums = stmt
+        .query_map(params![pattern, limit], |row| {
+            Ok(Album {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                artist: row.get(2)?,
+                art_data: None,
+                art_path: row.get(3)?,
+                artists: Vec::new(),
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+    Ok(albums)
+}
+
+/// name-scoped artist search, same use case as search_albums_by_name
+pub fn search_artists_by_name(conn: &Connection, query: &str, limit: i32) -> Result<Vec<Artist>> {
+    let pattern = format!("%{}%", query);
+    let mut stmt = conn.prepare(
+        "SELECT a.name, COUNT(DISTINCT ta.track_id) as track_count, COUNT(DISTINCT t.album_id) as album_count
+         FROM artists a
+         JOIN track_artists ta ON ta.artist_id = a.id
+         JOIN tracks t ON t.id = ta.track_id
+         WHERE a.name LIKE ?1 COLLATE NOCASE
+         GROUP BY a.id
+         ORDER BY a.name COLLATE NOCASE
+         LIMIT ?2",
+    )?;
+    let artists = stmt
+        .query_map(params![pattern, limit], |row| {
+            Ok(Artist {
+                name: row.get(0)?,
+                track_count: row.get(1)?,
+                album_count: row.get(2)?,
+            })
+        })?
+        .collect::<Result<Vec<_>>>()?;
+    Ok(artists)
+}
+
 pub fn get_tracks_by_album(conn: &Connection, album_id: i64) -> Result<Vec<Track>> {
     let mut stmt = conn.prepare(
         "SELECT id, path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, local_src, track_cover, track_cover_path, disc_number, metadata_json, date_added 

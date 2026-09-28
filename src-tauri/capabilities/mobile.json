@@ -18,58 +18,51 @@
     "deep-link:default",
     "fs:allow-read",
     "fs:allow-write",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
     {
       "identifier": "fs:allow-write-file",
       "allow": [
-        {
-          "path": "$APPDATA/audion/**"
-        },
-        {
-          "path": "$AUDIO/**"
-        },
-        {
-          "path": "$MUSIC/**"
-        }
+        { "path": "$APPDATA/audion/**" },
+        { "path": "$AUDIO/**" },
+        { "path": "$MUSIC/**" },
+        { "path": "$DOWNLOAD/**" }
       ]
     },
     {
       "identifier": "fs:allow-read-file",
       "allow": [
-        {
-          "path": "$AUDIO/**"
-        },
-        {
-          "path": "$APPDATA/audion/**"
-        },
-        {
-          "path": "$MUSIC/**"
-        },
-        {
-          "path": "$HOME/Music/**"
-        }
+        { "path": "$AUDIO/**" },
+        { "path": "$APPDATA/audion/**" },
+        { "path": "$MUSIC/**" },
+        { "path": "$HOME/Music/**" },
+        { "path": "$DOWNLOAD/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$APPDATA/audion/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$APPDATA/audion/**" }
       ]
     },
     {
       "identifier": "fs:scope",
       "allow": [
-        {
-          "path": "$AUDIO/**"
-        },
-        {
-          "path": "$APPDATA/audion/**"
-        },
-        {
-          "path": "$MUSIC/**"
-        },
-        {
-          "path": "$HOME/Music/**"
-        },
-        {
-          "path": "/storage/emulated/0/**"
-        },
-        {
-          "path": "/sdcard/**"
-        }
+        { "path": "$AUDIO/**" },
+        { "path": "$APPDATA/audion/**" },
+        { "path": "$MUSIC/**" },
+        { "path": "$HOME/Music/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "/storage/emulated/0/**" },
+        { "path": "/sdcard/**" }
       ]
     }
   ]

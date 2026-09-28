@@ -19,3 +19,14 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+
+# --- native (rust) -> kotlin JNI callback ---
+
+-keepclassmembers class com.audion.app.MediaNotificationService {
+    public void onNativeAudioEvent(java.lang.String);
+}
+-keepclassmembers interface com.audion.app.AudionLibraryBridge$NativeNotificationCallback {
+    *;
+}
+
+-keep class com.audion.app.MediaNotificationService implements com.audion.app.AudionLibraryBridge$NativeNotificationCallback

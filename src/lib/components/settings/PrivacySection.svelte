@@ -2,6 +2,7 @@
   import { _ } from "svelte-i18n";
   import { appSettings } from "$lib/stores/settings";
   import { authState, isLoggedIn, deleteAccount } from "$lib/stores/sync";
+  import { resetDatabase } from "$lib/api/tauri";
   import { confirm } from "$lib/stores/dialogs";
   import { slide } from "svelte/transition";
   import { createEventDispatcher } from "svelte";
@@ -34,7 +35,7 @@
         on:click={() => appSettings.setRemoteControlEnabled(!$appSettings.remoteControlEnabled)}
         role="switch"
         aria-checked={$appSettings.remoteControlEnabled}
-        aria-label="Toggle Remote Control"
+        aria-label={$_('settings.toggleRemoteControl', { default: 'Toggle Remote Control' })}
       >
         <div class="toggle-handle"></div>
       </button>
@@ -53,7 +54,7 @@
         on:click={() => appSettings.setDeveloperMode(!$appSettings.developerMode)}
         role="switch"
         aria-checked={$appSettings.developerMode}
-        aria-label="Toggle Developer Mode"
+        aria-label={$_('settings.toggleDeveloperMode', { default: 'Toggle Developer Mode' })}
       >
         <div class="toggle-handle"></div>
       </button>
@@ -61,7 +62,7 @@
 
     <div class="divider"></div>
 
-    <div class="card-title-group compact">
+    <div class="card-title-group compact" id="setting-cache-database">
       <h3 class="setting-title" style="color: var(--error-color)">{$_('settings.dangerZone')}</h3>
       <span class="setting-description">{$_('settings.dangerZoneDesc')}</span>
     </div>
@@ -69,11 +70,16 @@
     <div class="button-group-row">
       <button class="btn-outline-compact danger" on:click={async () => {
           const confirmed = await confirm(
-            "Are you sure you want to reset the database? This will clear all tracks and metadata, but your music files will remain on your computer.",
-            { title: "Reset Database", confirmLabel: "Proceed", danger: true },
+            $_('settings.resetDatabaseConfirm', { default: 'Are you sure you want to reset the database? This will clear all tracks and metadata, but your music files will remain on your computer.' }),
+            { title: $_('settings.resetDatabase'), confirmLabel: $_('common.proceed', { default: 'Proceed' }), danger: true },
           );
           if (!confirmed) return;
-          // Reset modal flow handled by parent
+          try {
+            await resetDatabase();
+            location.reload();
+          } catch (err) {
+            alert(String(err));
+          }
         }}>{$_('settings.resetDatabase')}</button>
       {#if $isLoggedIn}
         <button class="btn-outline-compact danger" on:click={async () => {

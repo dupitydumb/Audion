@@ -265,7 +265,7 @@
     top: var(--spacing-sm);
     left: var(--spacing-sm);
     background-color: var(--accent-primary);
-    color: var(--bg-base);
+    color: var(--text-on-accent, #fff);
     padding: 4px 8px;
     border-radius: var(--radius-sm);
     font-size: var(--font-size-xs);
@@ -284,7 +284,7 @@
     top: var(--spacing-sm);
     right: var(--spacing-sm);
     background-color: var(--accent-primary);
-    color: var(--bg-base);
+    color: var(--text-on-accent, #fff);
     width: 24px;
     height: 24px;
     border-radius: var(--radius-full);
@@ -327,7 +327,7 @@
     height: 48px;
     border-radius: var(--radius-full);
     background-color: var(--accent-primary);
-    color: var(--bg-base);
+    color: var(--text-on-accent, #fff);
     border: none;
     padding: 0;
     display: flex;
@@ -402,7 +402,7 @@
   .playing-indicator .bar {
     width: 4px;
     height: 16px;
-    background-color: var(--bg-base);
+    background-color: var(--text-on-accent, #fff);
     border-radius: 2px;
     animation: equalizer 0.8s ease-in-out infinite;
   }
@@ -435,7 +435,7 @@
     border-radius: var(--radius-full);
     opacity: 0;
     transition: opacity var(--transition-fast);
-    color: var(--bg-base);
+    color: var(--text-on-accent, #fff);
     border: none;
     padding: 0;
     cursor: pointer;

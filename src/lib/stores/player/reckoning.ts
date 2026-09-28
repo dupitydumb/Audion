@@ -4,9 +4,8 @@ import { currentTime, duration, isPlaying, activeBackend, pluginEvents } from '.
 import { appSettings } from '$lib/stores/settings';
 
 // How often to push position into Svelte stores (ms).
-// RAF runs at ~60fps but the seekbar/time display only need ~4fps.
-// Crossfade threshold checks still run every frame for accuracy.
-const STORE_UPDATE_INTERVAL_MS = 250;
+// 50ms (20fps update rate) ensures smooth word-by-word lyrics sync without UI jitter.
+const STORE_UPDATE_INTERVAL_MS = 50;
 
 // =============================================================================
 // DEAD-RECKONING STATE (native backend only)

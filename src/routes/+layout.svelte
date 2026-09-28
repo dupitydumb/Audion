@@ -3,7 +3,8 @@
   import { onMount, onDestroy } from "svelte";
   import { get } from "svelte/store";
   import { appSettings } from "$lib/stores/settings";
-  import { theme } from "$lib/stores/theme";
+  import { theme, applyBackground } from "$lib/stores/theme";
+  import { applyEffect } from "$lib/services/effect-overlay";
   import { cleanupPlayer, initAudioBackend, currentTrack } from "$lib/stores/player";
   import {
     migrateCoversToFiles,
@@ -12,11 +13,13 @@
     ensureAudioPermission,
     openAppSettings,
     initPlatformDetection,
+    getIsLinux,
     listen,
   } from "$lib/api/tauri";
-  import { initMobileDetection, isMobile } from "$lib/stores/mobile";
+  import { initMobileDetection, isMobile, useDesktopTitleBar } from "$lib/stores/mobile";
   import { mobileSearchOpen } from "$lib/stores/mobile";
   import { initAndroidNotification } from "$lib/services/android-notification";
+  import { initConsoleCapture } from "$lib/services/console-capture";
   import { loadLikedTracks } from "$lib/stores/liked";
   import {
     goBack,
@@ -41,7 +44,9 @@
   import SyncProgressOverlay from "$lib/components/SyncProgressOverlay.svelte";
   import LoginModal from "$lib/components/LoginModal.svelte";
   import { initSync, destroySync } from "$lib/stores/sync";
+  import { initSubsonic } from "$lib/stores/subsonic";
   import { browser } from "$app/environment";
+  import { onNavigate } from "$app/navigation";
   import { setupI18n } from "$lib/i18n";
   import { _, isLoading, locale } from "svelte-i18n";
   import "../app.css";
@@ -67,6 +72,31 @@
   let showMigrationBanner = false;
   let showPermissionBanner = false;
   let permissionDenied = false;
+
+  // Re-apply background whenever config changes (e.g. opacity slider).
+  // Also re-runs when $isLoading flips to false — that's when #audion-bg-layer
+  // enters the DOM (it lives inside {#if !$isLoading && $locale}), so the
+  // first applyBackground call from theme.initialize() would have found null.
+  $: if (browser && !$isLoading) {
+    applyBackground($theme.background);
+    applyEffect($theme.customJs, $theme.accentColor, $theme.allowCustomJs);
+  }
+
+  // Page transitions via View Transitions API
+  // data-page-transition attr on <html> is set by applyAnimationVars
+  // CSS keyframes in app.css respond to that attribute
+  onNavigate((navigation) => {
+    if (!browser || !('startViewTransition' in document)) return;
+    if (getIsLinux()) return; // startViewTransition crashes Linux WebKit
+    const mode = document.documentElement.getAttribute('data-page-transition') ?? 'fade';
+    if (mode === 'none') return;
+    return new Promise((resolve) => {
+      (document as any).startViewTransition(async () => {
+        resolve();
+        await navigation.complete;
+      });
+    });
+  });
 
   $: {
     if ($locale) {
@@ -179,6 +209,13 @@
 
     // Initialize sync state (auth check, event listeners)
     initSync();
+
+    // Load Subsonic config from app-data disk into store
+    await initSubsonic();
+
+    // forward console output into the backend's unified log file
+    // (no-ops outside Tauri)
+    initConsoleCapture();
 
     // Initialize Android-specific features
     if (isAndroid() && isTauri()) {
@@ -340,7 +377,7 @@
 </script>
 
 {#if !$isLoading && $locale}
-{#if !$isMobile && !$isMiniPlayer}
+{#if $useDesktopTitleBar && !$isMiniPlayer}
   <TitleBar />
   <LinuxResizeHandles />
 {/if}
@@ -387,7 +424,19 @@
 
 <a href="#main-content" class="skip-link">{$_("app.skipToMainContent")}</a>
 
-<div class="app-content" class:mobile={$isMobile} class:pip={$isMiniPlayer} class:has-mini-player={$isMobile && $currentTrack && !$isFullScreen} id="main-content">
+<div
+  id="audion-bg-layer"
+  aria-hidden="true"
+  style="display:none"
+></div>
+
+<canvas
+  id="audion-effect-layer"
+  aria-hidden="true"
+  style="display:none"
+></canvas>
+
+<div class="app-content" class:mobile={$isMobile} class:has-titlebar={$useDesktopTitleBar} class:pip={$isMiniPlayer} class:has-mini-player={$isMobile && $currentTrack && !$isFullScreen} id="main-content">
   <slot />
 </div>
 
@@ -397,6 +446,24 @@
 {/if}
 
 <style>
+  #audion-bg-layer {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    transition: opacity 400ms ease;
+    overflow: hidden;
+  }
+
+  #audion-effect-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    width: 100vw;
+    height: 100vh;
+  }
+
   .app-content {
     padding-top: 48px; /* Height of TitleBar */
     height: 100vh;
@@ -469,7 +536,16 @@
 
   .app-content.mobile {
     padding-top: var(--safe-area-top);
-    padding-bottom: var(--safe-area-bottom);
+    /* bottom nav is always present on mobile => reserve its height as the
+       baseline, regardless of whether a track is currently playing */
+    padding-bottom: calc(var(--mobile-nav-height, 60px) + var(--safe-area-bottom, 0px));
+  }
+
+  /* hybrid: mobile page layout, but the desktop title bar is still mounted
+     above it => keep its 48px height instead of the plain mobile safe-area
+     padding */
+  .app-content.mobile.has-titlebar {
+    padding-top: calc(48px + var(--safe-area-top, 0px));
   }
 
   .app-content.mobile.has-mini-player {

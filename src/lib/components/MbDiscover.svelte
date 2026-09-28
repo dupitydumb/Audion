@@ -1018,7 +1018,7 @@
 
     .discover-header {
         flex-shrink: 0;
-        padding: calc(var(--safe-area-top) + var(--spacing-lg))
+        padding: var(--spacing-lg)
             var(--spacing-xl) 0;
     }
 
@@ -1296,7 +1296,7 @@
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: calc(var(--safe-area-top) + var(--spacing-md))
+        padding: var(--spacing-md)
             var(--spacing-lg) var(--spacing-md);
         border-bottom: 1px solid var(--border-color);
         flex-shrink: 0;
@@ -1318,7 +1318,7 @@
     }
 
     .back-btn:hover {
-        background: var(--bg-hover);
+        background: var(--bg-highlight);
         color: var(--text-primary);
     }
 
@@ -1364,7 +1364,7 @@
     }
 
     .track-row:hover {
-        background: var(--bg-hover);
+        background: var(--bg-highlight);
     }
 
     .track-info {
@@ -1468,7 +1468,7 @@
     }
 
     .disco-item:hover {
-        background: var(--bg-hover);
+        background: var(--bg-highlight);
         transform: translateY(-2px);
     }
 

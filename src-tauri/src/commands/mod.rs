@@ -14,6 +14,8 @@ pub mod playlist;
 pub mod plugin;
 pub mod sync;
 pub mod export;
+pub mod logs;
+pub mod subsonic;
 
 pub use activity::*;
 pub use app_settings::*;
@@ -30,3 +32,5 @@ pub use plugin::*;
 pub use covers::*;
 pub use sync::*;
 pub use export::*;
+pub use logs::*;
+pub use subsonic::*;

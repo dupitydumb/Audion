@@ -169,6 +169,7 @@ export interface Track {
     external_id?: string | null;  // Source-specific ID
     local_src?: string | null; // Local file path for offline playback
     disc_number?: number | null;
+    genre?: string | null;
     metadata_json?: string | null;
     date_added?: string | null;
 }
@@ -182,7 +183,7 @@ export interface Album {
      * may be an empty array for data paths the backend hasn't wired up yet
      */
     artists?: string[];
-    art_data: string | null; // old - base64 album art
+    art_data?: string | null; // old - base64 album art
     art_path?: string | null; // File path to album art
 }
 
@@ -190,6 +191,13 @@ export interface Artist {
     name: string;
     track_count: number;
     album_count: number;
+}
+
+export interface UserInfo {
+    id: string;
+    username: string;
+    role: string;
+    listenbrainz_token?: string | null;
 }
 
 export interface Playlist {
@@ -335,7 +343,7 @@ export interface SearchResults {
     tracks: Track[];
     albums: Album[];
     artists: Artist[];
-    playlists: Playlist[];
+    playlists?: Playlist[]; // optional: local Tauri search returns it; custom-server search does not
 }
 
 export async function searchLibrary(query: string, limit: number, offset: number): Promise<SearchResults> {
@@ -623,15 +631,59 @@ async function exportZip(
     return await invoke(cmd, { ...cmdArgs, destPath });
 }
 
+/**
+ * export the currently active log file
+ * (backend + forwarded console output,
+ * see console-capture.ts)
+ * to a user-picked location
+ *
+ * returns false if the user cancelled, throws on a real failure.
+ */
+export async function exportLogFile(): Promise<boolean> {
+    const defaultName = `audion-log-${new Date().toISOString().slice(0, 10)}.txt`;
+
+    if (isAndroid()) {
+        const uri = await saveFile({
+            platform: 'android',
+            defaultPath: defaultName,
+            mimeType: 'text/plain',
+        });
+        if (!uri) return false;
+
+        const tempPath = await invoke<string>('get_export_temp_path', { name: defaultName });
+        await invoke('export_log_file', { destPath: tempPath });
+
+        const ok = await commitAndroidSave(tempPath, uri);
+        if (!ok) {
+            throw new Error('Failed to copy log file to the selected location');
+        }
+        return true;
+    }
+
+    const destPath = await saveFile({
+        platform: 'desktop',
+        title: 'Export log file',
+        defaultPath: defaultName,
+        filters: [{ name: 'Text File', extensions: ['txt', 'log'] }],
+    });
+    if (!destPath) return false;
+
+    await invoke('export_log_file', { destPath });
+    return true;
+}
+
 export async function exportPlaylistZip(
     playlistId: number,
     playlistName = 'playlist',
+    trackIds?: number[],
 ): Promise<ExportPlaylistResult | null> {
     return exportZip(
         `${playlistName}.zip`,
         'Export playlist as ZIP',
         'export_playlist_zip',
-        { playlistId },
+        // omit trackIds entirely for a full export
+        // so the backend takes its normal whole playlist path
+        trackIds && trackIds.length > 0 ? { playlistId, trackIds } : { playlistId },
     );
 }
 

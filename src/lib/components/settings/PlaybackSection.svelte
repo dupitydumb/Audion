@@ -32,7 +32,7 @@
             on:click={() => appSettings.setAutoplay(!$appSettings.autoplay)}
             role="switch"
             aria-checked={$appSettings.autoplay}
-            aria-label="Toggle Autoplay"
+            aria-label={$_('settings.toggleAutoplay', { default: 'Toggle Autoplay' })}
           >
             <div class="toggle-handle"></div>
           </button>

@@ -54,7 +54,7 @@
     .toast.success {
         background-color: var(--accent-primary);
         border-color: var(--accent-primary);
-        color: var(--bg-base);
+        color: var(--text-on-accent, #fff);
     }
 
     .toast.error {

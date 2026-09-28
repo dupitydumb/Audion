@@ -171,7 +171,7 @@
               on:click={() => appSettings.setCloseToTray(!$appSettings.closeToTray)}
               role="switch"
               aria-checked={$appSettings.closeToTray}
-              aria-label="Toggle Close to Tray"
+              aria-label={$_('settings.toggleCloseToTray', { default: 'Toggle Close to Tray' })}
             >
               <div class="toggle-handle"></div>
             </button>
@@ -190,7 +190,7 @@
               disabled={autostartPending}
               role="switch"
               aria-checked={autostartEnabled}
-              aria-label="Toggle Launch on Startup"
+              aria-label={$_('settings.toggleLaunchOnStartup', { default: 'Toggle Launch on Startup' })}
             >
               <div class="toggle-handle"></div>
             </button>
