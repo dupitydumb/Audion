@@ -1,4 +1,4 @@
-## [v1.4.1-beta] - 2026-09-20
+## [v1.4.1] - 2026-09-28
 
 ### Highlights: Theming Engine, Android Auto, Opus Codec, Hybrid Layout & Linux Stability
 
