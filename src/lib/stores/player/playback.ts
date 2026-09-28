@@ -995,10 +995,7 @@ async function _scheduleHtml5Preload(): Promise<void> {
         }
     }
 
-    // Subsonic: skip preload entirely — play will proxy on demand via proxy_fetch_bytes
-    if (nextTrackObj.source_type === 'subsonic') {
-        return;
-    }
+    // Subsonic tracks have an http stream URL in path — fall through to normal streaming preload
 
     if (!audioPath && (nextTrackObj as any).stream_url) {
         audioPath = (nextTrackObj as any).stream_url;
