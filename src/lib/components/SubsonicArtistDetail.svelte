@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { _ } from 'svelte-i18n';
   import Icon from '$lib/components/Icon.svelte';
   import { subsonicGetArtist, subsonicGetCoverUrl } from '$lib/stores/subsonic';
   import { goBack, goToSubsonicAlbum } from '$lib/stores/view';
@@ -56,10 +57,10 @@
       <Icon name="arrow-left" size={18} />
     </button>
     <div class="header-meta">
-      <p class="meta-type">Artist</p>
+      <p class="meta-type">{$_('subsonic.artist', { default: 'Artist' })}</p>
       <h1 class="meta-title">{artistName}</h1>
       {#if !loading}
-        <p class="meta-info">{albums.length} albums</p>
+        <p class="meta-info">{$_('subsonic.albumsCount', { values: { count: albums.length }, default: '{count} albums' })}</p>
       {/if}
     </div>
   </div>
@@ -67,16 +68,16 @@
   <!-- Albums -->
   <div class="content">
     {#if loading}
-      <div class="loading-msg">Loading albums…</div>
+      <div class="loading-msg">{$_('subsonic.loadingAlbums', { default: 'Loading albums…' })}</div>
     {:else if error}
       <div class="error-msg">
         <Icon name="alert-circle" size={15} />
         {error}
       </div>
     {:else if albums.length === 0}
-      <div class="empty-msg">No albums found.</div>
+      <div class="empty-msg">{$_('subsonic.noAlbumsFound', { default: 'No albums found.' })}</div>
     {:else}
-      <h2 class="section-heading">Albums</h2>
+      <h2 class="section-heading">{$_('subsonic.albums', { default: 'Albums' })}</h2>
       <div class="album-grid">
         {#each albums as album (album.id)}
           <button
@@ -106,7 +107,7 @@
                 <span class="card-year">{album.year}</span>
               {/if}
               {#if album.song_count}
-                <span class="card-sub">{album.song_count} tracks</span>
+                <span class="card-sub">{$_('subsonic.tracksCount', { values: { count: album.song_count }, default: '{count} tracks' })}</span>
               {/if}
             </div>
           </button>

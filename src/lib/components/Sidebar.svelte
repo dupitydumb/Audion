@@ -519,7 +519,7 @@
                             on:click={() => navigateAndClose(goToSubsonic)}
                         >
                             <Icon name="server" size={24} />
-                            <span>Subsonic</span>
+                            <span>{$_('sidebar.subsonic', { default: 'Subsonic' })}</span>
                         </button>
                     </li>
                 {/if}

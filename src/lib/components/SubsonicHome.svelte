@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { _ } from 'svelte-i18n';
   import Icon from '$lib/components/Icon.svelte';
   import TrackList from '$lib/components/track-list/TrackList.svelte';
   import {
@@ -160,7 +161,7 @@
       on:click={() => (activeTab = 'songs')}
     >
       <Icon name="music" size={15} />
-      Songs
+      {$_('subsonic.songs', { default: 'Songs' })}
     </button>
     <button
       class="tab-btn"
@@ -168,7 +169,7 @@
       on:click={() => (activeTab = 'albums')}
     >
       <Icon name="disc" size={15} />
-      Albums
+      {$_('subsonic.albums', { default: 'Albums' })}
     </button>
     <button
       class="tab-btn"
@@ -176,10 +177,10 @@
       on:click={() => (activeTab = 'artists')}
     >
       <Icon name="user" size={15} />
-      Artists
+      {$_('subsonic.artists', { default: 'Artists' })}
     </button>
     <div class="tab-spacer" />
-    <button class="icon-btn" on:click={refresh} title="Refresh">
+    <button class="icon-btn" on:click={refresh} title={$_('subsonic.refresh', { default: 'Refresh' })}>
       <Icon name="refresh-cw" size={15} />
     </button>
   </div>
@@ -190,14 +191,14 @@
     <!-- Songs tab -->
     {#if activeTab === 'songs'}
       {#if songsLoading}
-        <div class="loading-msg">Loading songs…</div>
+        <div class="loading-msg">{$_('subsonic.loadingSongs', { default: 'Loading songs…' })}</div>
       {:else if songsError}
         <div class="error-msg">
           <Icon name="alert-circle" size={15} />
           {songsError}
         </div>
       {:else if songTracks.length === 0}
-        <div class="empty-msg">No songs found.</div>
+        <div class="empty-msg">{$_('subsonic.noSongsFound', { default: 'No songs found.' })}</div>
       {:else}
         <TrackList
           tracks={songTracks}
@@ -209,14 +210,14 @@
     <!-- Albums tab -->
     {:else if activeTab === 'albums'}
       {#if albumsLoading}
-        <div class="loading-msg">Loading albums…</div>
+        <div class="loading-msg">{$_('subsonic.loadingAlbums', { default: 'Loading albums…' })}</div>
       {:else if albumsError}
         <div class="error-msg">
           <Icon name="alert-circle" size={15} />
           {albumsError}
         </div>
       {:else if albums.length === 0}
-        <div class="empty-msg">No albums found.</div>
+        <div class="empty-msg">{$_('subsonic.noAlbumsFound', { default: 'No albums found.' })}</div>
       {:else}
         <div class="album-grid">
           {#each albums as album (album.id)}
@@ -258,14 +259,14 @@
     <!-- Artists tab -->
     {:else if activeTab === 'artists'}
       {#if artistsLoading}
-        <div class="loading-msg">Loading artists…</div>
+        <div class="loading-msg">{$_('subsonic.loadingArtists', { default: 'Loading artists…' })}</div>
       {:else if artistsError}
         <div class="error-msg">
           <Icon name="alert-circle" size={15} />
           {artistsError}
         </div>
       {:else if artists.length === 0}
-        <div class="empty-msg">No artists found.</div>
+        <div class="empty-msg">{$_('subsonic.noArtistsFound', { default: 'No artists found.' })}</div>
       {:else}
         <ul class="artist-list">
           {#each artists as artist (artist.id)}
@@ -279,7 +280,7 @@
                 </div>
                 <span class="artist-name">{artist.name}</span>
                 {#if artist.album_count}
-                  <span class="artist-meta">{artist.album_count} albums</span>
+                  <span class="artist-meta">{$_('subsonic.albumsCount', { values: { count: artist.album_count }, default: '{count} albums' })}</span>
                 {/if}
                 <Icon name="chevron-right" size={14} />
               </button>
