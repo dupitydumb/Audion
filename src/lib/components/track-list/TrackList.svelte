@@ -114,6 +114,20 @@
 
   $: filteredTracks = tracks;
 
+  // When tracks prop changes, evict cache entries whose cover_url changed
+  // (Subsonic loads covers async — track objects are replaced with updated cover_url)
+  let lastTracksRef = tracks;
+  $: {
+    if (tracks !== lastTracksRef) {
+      for (const t of tracks) {
+        if (t.cover_url && trackAlbumArtCache.get(t.id) !== t.cover_url) {
+          trackAlbumArtCache.delete(t.id);
+        }
+      }
+      lastTracksRef = tracks;
+    }
+  }
+
   // Sorting state
   type SortField =
     | "title"
