@@ -273,7 +273,7 @@ export async function playTrack(
     // Scrobble to Subsonic on play start
     if (track.source_type === 'subsonic' && track.external_id) {
         import('$lib/stores/subsonic').then(({ subsonicScrobble }) => {
-            subsonicScrobble(track.external_id!, true).catch(() => {});
+            subsonicScrobble(track.external_id!, false).catch(() => {});
         });
     }
 

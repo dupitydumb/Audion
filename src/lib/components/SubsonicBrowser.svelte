@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { _ } from 'svelte-i18n';
   import Icon from '$lib/components/Icon.svelte';
   import {
@@ -29,6 +29,7 @@
   let playingId = '';
 
   onMount(fetchArtists);
+  onDestroy(() => { currentAudio?.pause(); currentAudio = null; });
 
   async function fetchArtists() {
     loading = true;

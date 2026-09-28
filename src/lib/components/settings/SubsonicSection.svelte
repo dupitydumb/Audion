@@ -16,16 +16,11 @@
   // Local form state — synced from store on mount / store update
   let url = $subsonicConfig.url;
   let username = $subsonicConfig.username;
-  let password = $subsonicConfig.password;
+  let password = ''; // never returned from backend; user must re-enter to change
   let enabled = $subsonicConfig.enabled;
 
   // Re-sync if store changes externally (e.g. initSubsonic on startup)
-  $: {
-    url = $subsonicConfig.url;
-    username = $subsonicConfig.username;
-    password = $subsonicConfig.password;
-    enabled = $subsonicConfig.enabled;
-  }
+  // Removed: reactive block was overwriting unsaved user input mid-type
 
   let testing = false;
   let saving = false;
@@ -64,11 +59,17 @@
   }
 
   async function handleToggleEnabled() {
+    const prev = enabled;
     enabled = !enabled;
     result = null;
-    if (!enabled) {
-      // Persist the disabled state immediately
-      await saveSubsonicConfig(url, username, password, false);
+    try {
+      if (!enabled) {
+        // Persist the disabled state immediately
+        await saveSubsonicConfig(url, username, password, false);
+      }
+    } catch (err: unknown) {
+      enabled = prev; // revert on error
+      result = { ok: false, message: String(err) };
     }
   }
 </script>
@@ -162,7 +163,7 @@
               id="subsonic-password"
               class="subsonic-input"
               type="password"
-              placeholder="••••••••"
+              placeholder={$subsonicConfig.password_set ? $_('settings.passwordSaved', { default: 'Leave blank to keep saved password' }) : '••••••••'}
               bind:value={password}
               autocomplete="current-password"
             />

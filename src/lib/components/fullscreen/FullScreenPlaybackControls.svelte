@@ -14,6 +14,7 @@
     nextTrack,
     cycleRepeat,
     seek,
+    setVolume,
   } from "$lib/stores/player";
   import Icon from "$lib/components/Icon.svelte";
   import { formatDuration } from "$lib/api/tauri";
@@ -56,7 +57,7 @@
     const bar = e.currentTarget as HTMLDivElement;
     const rect = bar.getBoundingClientRect();
     const pos = (e.clientX - rect.left) / rect.width;
-    volume.set(Math.max(0, Math.min(1, pos)));
+    setVolume(Math.max(0, Math.min(1, pos)));
   }
 
   function handleVolumePointerUp(e: PointerEvent) {
@@ -90,16 +91,16 @@
     const current = get(volume);
     if (e.key === "ArrowRight" || e.key === "ArrowUp") {
       e.preventDefault();
-      volume.set(Math.min(1, current + VOLUME_STEP));
+      setVolume(Math.min(1, current + VOLUME_STEP));
     } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
       e.preventDefault();
-      volume.set(Math.max(0, current - VOLUME_STEP));
+      setVolume(Math.max(0, current - VOLUME_STEP));
     } else if (e.key === "Home") {
       e.preventDefault();
-      volume.set(0);
+      setVolume(0);
     } else if (e.key === "End") {
       e.preventDefault();
-      volume.set(1);
+      setVolume(1);
     }
   }
 </script>
@@ -180,7 +181,7 @@
   <div class="desktop-volume-row">
     <button
       class="volume-mute-btn"
-      on:click={() => volume.set($volume > 0 ? 0 : 1)}
+      on:click={() => setVolume($volume > 0 ? 0 : 1)}
       aria-label={$volume > 0 ? "Mute" : "Unmute"}
     >
       {#if $volume === 0}
