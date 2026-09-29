@@ -74,8 +74,12 @@
             { title: $_('settings.resetDatabase'), confirmLabel: $_('common.proceed', { default: 'Proceed' }), danger: true },
           );
           if (!confirmed) return;
-          await resetDatabase();
-          location.reload();
+          try {
+            await resetDatabase();
+            location.reload();
+          } catch (err) {
+            alert(String(err));
+          }
         }}>{$_('settings.resetDatabase')}</button>
       {#if $isLoggedIn}
         <button class="btn-outline-compact danger" on:click={async () => {

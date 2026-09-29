@@ -197,6 +197,7 @@ export async function initSync(): Promise<void> {
                         const themeUrl = parsed.searchParams.get('url') || parsed.searchParams.get('theme');
                         if (themeUrl) {
                             console.log('[Sync] Deep link theme install request:', themeUrl);
+                            if (!themeUrl.startsWith('https://')) throw new Error('Theme URL must use https://');
                             const res = await fetch(themeUrl);
                             if (!res.ok) throw new Error(`HTTP ${res.status}`);
                             const text = await res.text();
@@ -264,6 +265,7 @@ export async function initSync(): Promise<void> {
                         const themeUrl = parsed.searchParams.get('url') || parsed.searchParams.get('theme');
                         if (themeUrl) {
                             console.log('[Sync] Cold-start theme install request:', themeUrl);
+                            if (!themeUrl.startsWith('https://')) throw new Error('Theme URL must use https://');
                             const res = await fetch(themeUrl);
                             if (!res.ok) throw new Error(`HTTP ${res.status}`);
                             const text = await res.text();

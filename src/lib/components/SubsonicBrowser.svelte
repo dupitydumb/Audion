@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
+  import { _ } from 'svelte-i18n';
   import Icon from '$lib/components/Icon.svelte';
   import {
     subsonicGetIndexes,
@@ -28,6 +29,7 @@
   let playingId = '';
 
   onMount(fetchArtists);
+  onDestroy(() => { currentAudio?.pause(); currentAudio = null; });
 
   async function fetchArtists() {
     loading = true;
@@ -110,13 +112,13 @@
       </button>
     {/if}
     <span class="sb-title">
-      {#if panel === 'artists'}Subsonic Library
+      {#if panel === 'artists'}{$_('subsonic.library', { default: 'Subsonic Library' })}
       {:else if panel === 'albums'}{selectedArtist?.name ?? ''}
       {:else}{selectedAlbumName}
       {/if}
     </span>
     {#if panel === 'artists'}
-      <button class="icon-btn" on:click={fetchArtists} aria-label="Refresh" title="Refresh">
+      <button class="icon-btn" on:click={fetchArtists} aria-label="Refresh" title={$_('subsonic.refresh', { default: 'Refresh' })}>
         <Icon name="refresh-cw" size={15} />
       </button>
     {/if}
@@ -130,13 +132,12 @@
   {/if}
 
   {#if loading}
-    <div class="sb-msg">Loading…</div>
+    <div class="sb-msg">{$_('subsonic.loading', { default: 'Loading…' })}</div>
   {:else if panel === 'artists'}
     {#if artists.length === 0}
       <div class="sb-empty">
         <Icon name="server" size={36} />
-        <p>No artists found. Check your server URL and credentials in<br/>
-          <strong>Settings → Subsonic Server</strong>.</p>
+        <p>{$_('subsonic.emptyServerHint', { default: 'No artists found. Check your server URL and credentials in Settings → Subsonic Server.' })}</p>
       </div>
     {:else}
       <ul class="sb-list">
@@ -145,7 +146,7 @@
             <button class="sb-row" on:click={() => openArtist(artist)}>
               <span class="sb-name">{artist.name}</span>
               {#if artist.album_count}
-                <span class="sb-meta">{artist.album_count} albums</span>
+                <span class="sb-meta">{$_('subsonic.albumsCount', { values: { count: artist.album_count }, default: '{count} albums' })}</span>
               {/if}
               <Icon name="chevron-right" size={14} />
             </button>
@@ -155,7 +156,7 @@
     {/if}
   {:else if panel === 'albums' && selectedArtist}
     {#if selectedArtist.albums.length === 0}
-      <div class="sb-msg">No albums found.</div>
+      <div class="sb-msg">{$_('subsonic.noAlbumsFound', { default: 'No albums found.' })}</div>
     {:else}
       <ul class="sb-list">
         {#each selectedArtist.albums as album}
@@ -164,7 +165,7 @@
               <span class="sb-name">{album.name}</span>
               <span class="sb-meta">
                 {#if album.year}{album.year} · {/if}
-                {#if album.song_count}{album.song_count} tracks{/if}
+                {#if album.song_count}{$_('subsonic.tracksCount', { values: { count: album.song_count }, default: '{count} tracks' })}{/if}
               </span>
               <Icon name="chevron-right" size={14} />
             </button>
@@ -174,7 +175,7 @@
     {/if}
   {:else if panel === 'songs'}
     {#if selectedAlbumSongs.length === 0}
-      <div class="sb-msg">No tracks found.</div>
+      <div class="sb-msg">{$_('subsonic.noTracksFound', { default: 'No tracks found.' })}</div>
     {:else}
       <ul class="sb-list">
         {#each selectedAlbumSongs as song, i}

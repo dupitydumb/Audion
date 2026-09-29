@@ -1,10 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { _ } from 'svelte-i18n';
   import Icon from '$lib/components/Icon.svelte';
   import TrackList from '$lib/components/track-list/TrackList.svelte';
   import {
     subsonicGetAlbum,
-    subsonicGetStreamUrl,
+    subsonicGetStreamUrls,
     subsonicGetCoverUrl,
   } from '$lib/stores/subsonic';
   import { subsonicSongToTrack } from '$lib/services/subsonic-track-mapper';
@@ -48,13 +49,10 @@
         try { coverUrl = await subsonicGetCoverUrl(album.cover_art, 300); } catch {}
       }
 
-      // Resolve stream URLs in parallel
+      // Resolve stream URLs in one IPC call
       const songs = album.songs ?? [];
-      const urls = await Promise.allSettled(songs.map(s => subsonicGetStreamUrl(s.id)));
-      tracks = songs.map((s, i) => {
-        const url = urls[i].status === 'fulfilled' ? urls[i].value : '';
-        return subsonicSongToTrack(s, url, coverUrl);
-      });
+      const urls = await subsonicGetStreamUrls(songs.map(s => s.id));
+      tracks = songs.map((s, i) => subsonicSongToTrack(s, urls[i] ?? '', coverUrl));
     } catch (e) {
       error = String(e);
     } finally {
@@ -85,19 +83,19 @@
     </div>
 
     <div class="header-meta">
-      <p class="meta-type">Album</p>
+      <p class="meta-type">{$_('subsonic.album', { default: 'Album' })}</p>
       <h1 class="meta-title">{albumName}</h1>
       {#if albumArtist}
         <p class="meta-artist">{albumArtist}</p>
       {/if}
       <p class="meta-info">
-        {tracks.length} tracks
+        {$_('subsonic.tracksCount', { values: { count: tracks.length }, default: '{count} tracks' })}
         {#if totalDuration} · {formatTotal(totalDuration)}{/if}
       </p>
       <div class="header-actions">
         <button class="play-all-btn" on:click={playAll} disabled={loading || tracks.length === 0}>
           <Icon name="play" size={16} />
-          Play All
+          {$_('subsonic.playAll', { default: 'Play All' })}
         </button>
       </div>
     </div>
@@ -106,14 +104,14 @@
   <!-- Track list -->
   <div class="track-section">
     {#if loading}
-      <div class="loading-msg">Loading tracks…</div>
+      <div class="loading-msg">{$_('subsonic.loadingTracks', { default: 'Loading tracks…' })}</div>
     {:else if error}
       <div class="error-msg">
         <Icon name="alert-circle" size={15} />
         {error}
       </div>
     {:else if tracks.length === 0}
-      <div class="empty-msg">No tracks in this album.</div>
+      <div class="empty-msg">{$_('subsonic.noTracksInAlbum', { default: 'No tracks in this album.' })}</div>
     {:else}
       <TrackList
         {tracks}

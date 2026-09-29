@@ -10,7 +10,8 @@ import { isTauri } from '$lib/api/tauri';
 export interface SubsonicConfig {
     url: string;
     username: string;
-    password: string;
+    /** password is never returned from the backend; use password_set to show indicator */
+    password_set: boolean;
     enabled: boolean;
 }
 
@@ -86,7 +87,7 @@ export interface SubsonicStarred {
 const defaultConfig: SubsonicConfig = {
     url: '',
     username: '',
-    password: '',
+    password_set: false,
     enabled: false,
 };
 
@@ -120,7 +121,7 @@ export async function saveSubsonicConfig(
 ): Promise<void> {
     if (!isTauri()) return;
     await invoke('subsonic_save_config', { url, username, password, enabled });
-    subsonicConfig.set({ url, username, password, enabled });
+    subsonicConfig.set({ url, username, password_set: password.length > 0, enabled });
 }
 
 export async function testSubsonicConnection(
@@ -163,6 +164,10 @@ export async function subsonicGetPlaylist(id: string): Promise<SubsonicSong[]> {
 
 export async function subsonicGetStreamUrl(id: string): Promise<string> {
     return invoke<string>('subsonic_get_stream_url', { id });
+}
+
+export async function subsonicGetStreamUrls(ids: string[]): Promise<string[]> {
+    return invoke<string[]>('subsonic_get_stream_urls', { ids });
 }
 
 export async function subsonicGetCoverUrl(id: string, size?: number): Promise<string> {

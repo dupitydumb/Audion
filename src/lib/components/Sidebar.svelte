@@ -521,8 +521,8 @@
                             class:active={isActive("subsonic")}
                             on:click={() => navigateAndClose(goToSubsonic)}
                         >
-                            <Icon name="server" size={24} />
-                            <span>Subsonic</span>
+                            <Icon name="radio" size={24} />
+                            <span>{$_('sidebar.subsonic', { default: 'Subsonic' })}</span>
                         </button>
                     </li>
                 {/if}

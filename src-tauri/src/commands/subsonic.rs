@@ -21,6 +21,15 @@ pub struct SubsonicConfig {
     pub enabled: bool,
 }
 
+/// Public view of SubsonicConfig — never exposes the plaintext password.
+#[derive(Serialize)]
+pub struct SubsonicConfigPublic {
+    pub url: String,
+    pub username: String,
+    pub password_set: bool,
+    pub enabled: bool,
+}
+
 pub struct SubsonicState {
     pub config: std::sync::Mutex<SubsonicConfig>,
 }
@@ -257,7 +266,13 @@ pub async fn subsonic_save_config(
     app: tauri::AppHandle,
     state: tauri::State<'_, SubsonicState>,
 ) -> Result<(), String> {
-    let config = SubsonicConfig { url, username, password, enabled };
+    // If password is blank, keep the existing stored password
+    let resolved_password = if password.is_empty() {
+        state.config.lock().unwrap().password.clone()
+    } else {
+        password
+    };
+    let config = SubsonicConfig { url, username, password: resolved_password, enabled };
     let path = config_path(&app).ok_or("Cannot resolve app data dir")?;
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent).await.map_err(|e| e.to_string())?;
@@ -271,8 +286,14 @@ pub async fn subsonic_save_config(
 #[tauri::command]
 pub async fn subsonic_get_config(
     state: tauri::State<'_, SubsonicState>,
-) -> Result<SubsonicConfig, String> {
-    Ok(state.config.lock().unwrap().clone())
+) -> Result<SubsonicConfigPublic, String> {
+    let cfg = state.config.lock().unwrap().clone();
+    Ok(SubsonicConfigPublic {
+        url: cfg.url,
+        username: cfg.username,
+        password_set: !cfg.password.is_empty(),
+        enabled: cfg.enabled,
+    })
 }
 
 #[tauri::command]
@@ -473,8 +494,30 @@ pub fn subsonic_get_stream_url(
         "stream",
         &cfg.username,
         &cfg.password,
-        &[("id", id.as_str()), ("format", "mp3")],
+        &[("id", id.as_str()), ("format", "raw")],
     ))
+}
+
+/// Batch variant — resolves N stream URLs in a single IPC call.
+/// Each URL gets its own salt/token so they are all independently valid.
+#[tauri::command]
+pub fn subsonic_get_stream_urls(
+    ids: Vec<String>,
+    state: tauri::State<'_, SubsonicState>,
+) -> Result<Vec<String>, String> {
+    let cfg = state.config.lock().unwrap().clone();
+    if !cfg.enabled || cfg.url.is_empty() {
+        return Err("Subsonic not configured or disabled".into());
+    }
+    Ok(ids.iter().map(|id| {
+        build_subsonic_binary_url(
+            &cfg.url,
+            "stream",
+            &cfg.username,
+            &cfg.password,
+            &[("id", id.as_str()), ("format", "raw")],
+        )
+    }).collect())
 }
 
 /// Returns a cover art URL with auth baked in.

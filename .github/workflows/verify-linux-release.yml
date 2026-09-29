@@ -1,0 +1,278 @@
+name: Verify Linux Release
+on:
+  workflow_call:
+    inputs:
+      tag_name:
+        description: 'Release tag to verify (e.g. v1.2.3)'
+        required: true
+        type: string
+      version:
+        description: 'Version string used in the asset filename (e.g. 1.2.3)'
+        required: true
+        type: string
+    outputs:
+      result:
+        description: 'success or failure'
+        value: ${{ jobs.smoke-test-linux.result }}
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: 'Release tag to verify (e.g. v1.2.3)'
+        required: true
+        type: string
+      version:
+        description: 'Version string used in the asset filename (e.g. 1.2.3). Leave blank to strip the leading v from tag_name.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  resolve-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+    steps:
+      - name: Resolve version from input or tag
+        id: resolve
+        run: |
+          VER="${{ inputs.version }}"
+          if [ -z "$VER" ]; then
+            VER=$(echo "${{ inputs.tag_name }}" | sed 's/^v//')
+          fi
+          echo "version=$VER" >> "$GITHUB_OUTPUT"
+
+  smoke-test-linux:
+    runs-on: ubuntu-22.04
+    needs: resolve-version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu-24.04
+            image: ubuntu:24.04
+            pkg_manager: apt
+          - name: debian-12
+            image: debian:12
+            pkg_manager: apt
+          - name: kali-rolling
+            image: kalilinux/kali-rolling
+            pkg_manager: apt
+          - name: fedora-latest
+            image: fedora:latest
+            pkg_manager: dnf
+          - name: archlinux
+            image: archlinux:latest
+            pkg_manager: pacman
+          - name: opensuse-tumbleweed
+            image: opensuse/tumbleweed
+            pkg_manager: zypper
+    container:
+      image: ${{ matrix.image }}
+      options: --privileged
+    steps:
+      - name: Install runtime deps + Xvfb + curl
+        id: deps
+        run: |
+          set -e
+          case "${{ matrix.pkg_manager }}" in
+            apt)
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+
+              apt-get install -y --no-install-recommends \
+                curl wget file xvfb xauth ca-certificates \
+                libwebkit2gtk-4.1-0 libgtk-3-0 \
+                libayatana-appindicator3-1 \
+                libgl1 libegl1
+
+              for pkg in libgl1-mesa-dri libasound2 libasound2t64; do
+                apt-get install -y --no-install-recommends "$pkg" 2>/dev/null || true
+              done
+              ;;
+            dnf)
+              dnf install -y \
+                curl wget file xorg-x11-server-Xvfb xorg-x11-xauth \
+                webkit2gtk4.1 gtk3 libappindicator-gtk3 \
+                alsa-lib mesa-dri-drivers mesa-libEGL
+              ;;
+            pacman)
+              pacman -Sy --noconfirm \
+                curl wget file xorg-server-xvfb xorg-xauth \
+                webkit2gtk-4.1 gtk3 libayatana-appindicator \
+                alsa-lib mesa
+              ;;
+            zypper)
+              zypper --non-interactive install \
+                curl wget file xvfb-run xauth \
+                webkit2gtk3-soup2 gtk3 libayatana-appindicator3-1 \
+                alsa mesa-dri-devel
+              ;;
+          esac
+
+      - name: Download AppImage from release
+        id: download
+        env:
+          VER: ${{ needs.resolve-version.outputs.version }}
+          TAG: ${{ inputs.tag_name }}
+        run: |
+          set -e
+          curl -sL -o audion.AppImage \
+            "https://github.com/${{ github.repository }}/releases/download/${TAG}/audion_${VER}_linux.AppImage"
+          chmod +x audion.AppImage
+          file audion.AppImage
+
+      - name: Launch headless, capture 6s of output
+        id: launch
+        run: |
+          set +e
+          mkdir -p result
+          xvfb-run -a --server-args="-screen 0 1920x1080x24" \
+            ./audion.AppImage --appimage-extract-and-run > result/launch.log 2>&1 &
+          APP_PID=$!
+          sleep 6
+
+          echo "----- launch.log (${{ matrix.name }}) -----"
+          cat result/launch.log
+          echo "---------------------------------------"
+
+          if kill -0 "$APP_PID" 2>/dev/null; then
+            echo "status=pass" >> "$GITHUB_OUTPUT"
+            echo "✅ App still running after 6s on ${{ matrix.name }}"
+            kill "$APP_PID" 2>/dev/null || true
+            exit 0
+          else
+            echo "status=fail" >> "$GITHUB_OUTPUT"
+            echo "::error::App exited within 6s on ${{ matrix.name }} (tag ${{ inputs.tag_name }})"
+            exit 1
+          fi
+
+      - name: Write result metadata (always runs, even on failure)
+        if: always()
+        run: |
+          mkdir -p result
+          STATUS="${{ steps.launch.outputs.status }}"
+          if [ -z "$STATUS" ]; then STATUS="fail"; fi
+          {
+            echo "distro=${{ matrix.name }}"
+            echo "image=${{ matrix.image }}"
+            echo "status=$STATUS"
+          } > result/meta.txt
+          if [ ! -f result/launch.log ]; then
+            echo "No launch.log produced — failed during dependency install or download, before the app ever launched." > result/launch.log
+          fi
+
+      - name: Upload result artifact (log always attached, pass or fail)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: result-${{ matrix.name }}
+          path: result/
+          retention-days: 7
+
+  summary:
+    runs-on: ubuntu-latest
+    needs: smoke-test-linux
+    if: always()
+    steps:
+      - name: Download all result artifacts
+        uses: actions/download-artifact@v6
+        with:
+          pattern: result-*
+          path: results
+          merge-multiple: false
+
+      - name: Build summary table with full logs
+        id: build
+        run: |
+          {
+            echo "## Linux smoke test — ${{ inputs.tag_name }}"
+            echo ""
+            echo "| Distro | Image | Result |"
+            echo "|---|---|---|"
+          } > table.md
+
+          OVERALL="success"
+
+          for dir in results/*/; do
+            META="${dir}meta.txt"
+            if [ ! -f "$META" ]; then continue; fi
+            DISTRO=$(grep '^distro=' "$META" | cut -d= -f2-)
+            IMAGE=$(grep '^image=' "$META" | cut -d= -f2-)
+            STATUS=$(grep '^status=' "$META" | cut -d= -f2-)
+
+            if [ "$STATUS" = "pass" ]; then
+              echo "| $DISTRO | \`$IMAGE\` | ✅ Pass |" >> table.md
+            else
+              echo "| $DISTRO | \`$IMAGE\` | ❌ Fail |" >> table.md
+              OVERALL="failure"
+            fi
+          done
+
+          echo "" >> table.md
+          echo "### 6-second launch logs per distro" >> table.md
+          echo "" >> table.md
+
+          # Every distro gets its log attached — pass or fail
+          for dir in results/*/; do
+            META="${dir}meta.txt"
+            LOG="${dir}launch.log"
+            if [ ! -f "$META" ]; then continue; fi
+            DISTRO=$(grep '^distro=' "$META" | cut -d= -f2-)
+            STATUS=$(grep '^status=' "$META" | cut -d= -f2-)
+            ICON="✅"
+            if [ "$STATUS" != "pass" ]; then ICON="❌"; fi
+
+            {
+              echo "<details><summary>$ICON $DISTRO</summary>"
+              echo ""
+              echo '```'
+              if [ -f "$LOG" ]; then tail -c 6000 "$LOG"; else echo "(no log captured)"; fi
+              echo '```'
+              echo "</details>"
+              echo ""
+            } >> table.md
+          done
+
+          cat table.md >> "$GITHUB_STEP_SUMMARY"
+          echo "overall=$OVERALL" >> "$GITHUB_OUTPUT"
+
+      - name: Discord notification
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
+
+          OVERALL="${{ steps.build.outputs.overall }}"
+          if [ "$OVERALL" = "success" ]; then
+            TITLE="✅ Verified ${{ inputs.tag_name }} — all distros passed"
+            COLOR=3066993
+          else
+            TITLE="🚨 Verify failed for ${{ inputs.tag_name }} — see job summary for logs"
+            COLOR=15158332
+          fi
+
+          DESC=""
+          for dir in results/*/; do
+            META="${dir}meta.txt"
+            if [ ! -f "$META" ]; then continue; fi
+            DISTRO=$(grep '^distro=' "$META" | cut -d= -f2-)
+            STATUS=$(grep '^status=' "$META" | cut -d= -f2-)
+            if [ "$STATUS" = "pass" ]; then
+              DESC="${DESC}✅ ${DISTRO}\\n"
+            else
+              DESC="${DESC}❌ ${DISTRO}\\n"
+            fi
+          done
+
+          curl -H "Content-Type: application/json" -X POST \
+            -d "{\"embeds\": [{\"title\": \"$TITLE\", \"description\": \"$DESC\", \"url\": \"https://github.com/${{ github.repository }}/releases/tag/${{ inputs.tag_name }}\", \"color\": $COLOR}]}" \
+            "$DISCORD_WEBHOOK_URL"
+
+      - name: Fail the workflow if any distro failed
+        run: |
+          if [ "${{ steps.build.outputs.overall }}" != "success" ]; then
+            echo "::error::One or more distros failed the smoke test — see summary above."
+            exit 1
+          fi

@@ -13,6 +13,7 @@
     ensureAudioPermission,
     openAppSettings,
     initPlatformDetection,
+    getIsLinux,
     listen,
   } from "$lib/api/tauri";
   import { initMobileDetection, isMobile, useDesktopTitleBar } from "$lib/stores/mobile";
@@ -86,6 +87,7 @@
   // CSS keyframes in app.css respond to that attribute
   onNavigate((navigation) => {
     if (!browser || !('startViewTransition' in document)) return;
+    if (getIsLinux()) return; // startViewTransition crashes Linux WebKit
     const mode = document.documentElement.getAttribute('data-page-transition') ?? 'fade';
     if (mode === 'none') return;
     return new Promise((resolve) => {
