@@ -466,6 +466,37 @@ function accentTextColor(hex: string): string {
     return L > 0.179 ? '#000000' : '#ffffff';
 }
 
+// max relative luminance for the art driven player bar color (0 to 1)
+const PLAYER_ART_MAX_LUMINANCE = 0.22;
+
+// scales a color toward black in linear space until luminance <= max
+// keeps hue, only dims
+function capLuminance(hex: string, max: number): string {
+    const num = parseInt(hex6(hex).replace('#', ''), 16);
+    const toLinear = (c: number) => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    const toSrgb = (c: number) => c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+    const r = toLinear((num >> 16) / 255);
+    const g = toLinear(((num >> 8) & 0xff) / 255);
+    const b = toLinear((num & 0xff) / 255);
+    const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    if (L <= max) return hex;
+    const k = max / L;
+    const out = [r, g, b]
+        .map(c => Math.round(Math.min(1, toSrgb(c * k)) * 255).toString(16).padStart(2, '0'))
+        .join('');
+    return '#' + out;
+}
+
+// player bar text + button tint
+// dark text (light bg) => grey button fill so contrast shifts gradually
+function applyPlayerText(root: HTMLElement, bg: string): void {
+    const text = accentTextColor(bg);
+    const dark = text === '#000000';
+    root.style.setProperty('--text-on-player', text);
+    root.style.setProperty('--player-btn-bg', dark ? 'rgba(0, 0, 0, 0.12)' : 'transparent');
+    root.style.setProperty('--player-btn-bg-hover', dark ? 'rgba(0, 0, 0, 0.22)' : 'rgba(255, 255, 255, 0.1)');
+}
+
 // Convert hex to RGB string (r, g, b)
 function hexToRgb(hex: string): string {
     const num = parseInt(hex6(hex).replace('#', ''), 16);
@@ -565,16 +596,17 @@ export function applyTheme(state: ThemeState): void {
     root.style.setProperty('--sidebar-bg', c.sidebarBg ?? (hasBgLayer ? 'transparent' : modeDefaults.sidebarBg));
     const resolvedPlayerBg = c.playerBg ?? modeDefaults.playerBg;
     root.style.setProperty('--player-bg', resolvedPlayerBg);
-    root.style.setProperty('--text-on-player', accentTextColor(resolvedPlayerBg));
+    applyPlayerText(root, resolvedPlayerBg);
 
     // art-driven player bar: overrides the resolved color above
     // (but never the user's saved customColors.playerBg preference)
     // with a vibrant pick from the current track's cover art palette
     if (state.matchPlayerToArt) {
-        const artColor = pickVibrantColor(get(albumPalette));
+        const picked = pickVibrantColor(get(albumPalette));
+        const artColor = picked ? capLuminance(picked, PLAYER_ART_MAX_LUMINANCE) : null;
         if (artColor) {
             root.style.setProperty('--player-bg', artColor);
-            root.style.setProperty('--text-on-player', accentTextColor(artColor));
+            applyPlayerText(root, artColor);
         }
     }
 
