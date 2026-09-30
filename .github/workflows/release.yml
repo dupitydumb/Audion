@@ -379,6 +379,13 @@ jobs:
           # so WebKitNetworkProcess fails with ENOENT. Add the symlink.
           ln -sf usr/lib squashfs-root/lib
 
+          # make it a relative link to the bundled top-level icon.
+          ICON_FILE=$(find squashfs-root -maxdepth 1 -type f \( -iname "*.png" -o -iname "*.svg" \) | head -1)
+          if [ -z "$ICON_FILE" ]; then echo "::error::No top-level icon found in AppDir"; exit 1; fi
+          rm -f squashfs-root/.DirIcon
+          ln -s "$(basename "$ICON_FILE")" squashfs-root/.DirIcon
+          test -e squashfs-root/.DirIcon || { echo "::error::.DirIcon still dangling"; exit 1; }
+
           # Repack the AppImage
           # NOTE: appimagetool is itself an AppImage. GitHub Actions runners do not
           # have libfuse.so.2 (FUSE 2). Setting APPIMAGE_EXTRACT_AND_RUN=1 makes the
@@ -418,17 +425,17 @@ jobs:
 
           # Rename patched AppImage
           mv "${BUNDLE}/appimage/audion-patched.AppImage" \
-             "${BUNDLE}/appimage/audion_${VER}_linux.AppImage"
+             "${BUNDLE}/appimage/audion_${VER}_x86_64.AppImage"
 
           # Re-tar and re-sign from the patched AppImage.
           # createUpdaterArtifacts produced a .tar.gz during build but wrapped
           # the unpatched binary — discard it and regenerate from the patched one.
           rm -f "${BUNDLE}"/appimage/*.AppImage.tar.gz \
                 "${BUNDLE}"/appimage/*.AppImage.tar.gz.sig
-          tar -czf "${BUNDLE}/appimage/audion_${VER}_linux.AppImage.tar.gz" \
-            -C "${BUNDLE}/appimage" "audion_${VER}_linux.AppImage"
+          tar -czf "${BUNDLE}/appimage/audion_${VER}_x86_64.AppImage.tar.gz" \
+            -C "${BUNDLE}/appimage" "audion_${VER}_x86_64.AppImage"
           npm run tauri -- signer sign \
-            "${BUNDLE}/appimage/audion_${VER}_linux.AppImage.tar.gz" \
+            "${BUNDLE}/appimage/audion_${VER}_x86_64.AppImage.tar.gz" \
             --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
             --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
 
@@ -439,9 +446,9 @@ jobs:
           overwrite_files: ${{ inputs.overwrite }}
           files: |
             src-tauri/target/release/bundle/deb/audion_*_linux.deb
-            src-tauri/target/release/bundle/appimage/audion_*_linux.AppImage
-            src-tauri/target/release/bundle/appimage/audion_*_linux.AppImage.tar.gz
-            src-tauri/target/release/bundle/appimage/audion_*_linux.AppImage.tar.gz.sig
+            src-tauri/target/release/bundle/appimage/audion_*_x86_64.AppImage
+            src-tauri/target/release/bundle/appimage/audion_*_x86_64.AppImage.tar.gz
+            src-tauri/target/release/bundle/appimage/audion_*_x86_64.AppImage.tar.gz.sig
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -549,7 +556,7 @@ jobs:
           curl -fsSL \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/octet-stream" \
-            -L "https://github.com/${{ github.repository }}/releases/download/${TAG}/audion_${VER}_linux.AppImage" \
+            -L "https://github.com/${{ github.repository }}/releases/download/${TAG}/audion_${VER}_x86_64.AppImage" \
             -o audion.AppImage
           chmod +x audion.AppImage
 
@@ -592,7 +599,7 @@ jobs:
           curl -fsSL \
             -H "Authorization: token $GITHUB_TOKEN" \
             -H "Accept: application/octet-stream" \
-            -L "https://github.com/${{ github.repository }}/releases/download/${TAG}/audion_${VER}_linux.AppImage" \
+            -L "https://github.com/${{ github.repository }}/releases/download/${TAG}/audion_${VER}_x86_64.AppImage" \
             -o audion.AppImage
           chmod +x audion.AppImage
 
@@ -920,7 +927,7 @@ jobs:
           VER="${{ needs.create-release.outputs.version }}"
           TAG="${{ needs.create-release.outputs.tag_name }}"
           gh release download "$TAG" --repo "${{ github.repository }}" \
-            --pattern "audion_${VER}_linux.AppImage.tar.gz.sig" --dir sigs --clobber
+            --pattern "audion_${VER}_x86_64.AppImage.tar.gz.sig" --dir sigs --clobber
 
       - name: Merge into latest.json
         uses: ./.github/actions/update-manifest
@@ -928,8 +935,8 @@ jobs:
           version: ${{ needs.create-release.outputs.version }}
           tag_name: ${{ needs.create-release.outputs.tag_name }}
           platform_key: linux-x86_64
-          sig_path: sigs/audion_${{ needs.create-release.outputs.version }}_linux.AppImage.tar.gz.sig
-          artifact_url: https://github.com/${{ github.repository }}/releases/download/${{ needs.create-release.outputs.tag_name }}/audion_${{ needs.create-release.outputs.version }}_linux.AppImage.tar.gz
+          sig_path: sigs/audion_${{ needs.create-release.outputs.version }}_x86_64.AppImage.tar.gz.sig
+          artifact_url: https://github.com/${{ github.repository }}/releases/download/${{ needs.create-release.outputs.tag_name }}/audion_${{ needs.create-release.outputs.version }}_x86_64.AppImage.tar.gz
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
   # ---------------------------------------------------------------------------
