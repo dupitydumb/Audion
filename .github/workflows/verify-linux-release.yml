@@ -119,7 +119,7 @@ jobs:
         run: |
           set -e
           curl -sL -o audion.AppImage \
-            "https://github.com/${{ github.repository }}/releases/download/${TAG}/audion_${VER}_linux.AppImage"
+            "https://github.com/${{ github.repository }}/releases/download/${TAG}/audion_${VER}_x86_64.AppImage"
           chmod +x audion.AppImage
           file audion.AppImage
 
