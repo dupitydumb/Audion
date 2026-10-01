@@ -786,6 +786,21 @@ pub fn run() {
             tracing::info!("Database initialized");
 
             app.manage(database.clone());
+            {
+                // startup reconciliation (potentially slow I/O)
+                // is handed to a blocking-safe background task instead
+                // so that .setup closure returns immediately and window launches.
+                let app_handle = app.handle().clone();
+                let db_for_init = database.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    scanner::reconcile::run(&app_handle, &db_for_init);
+                    tracing::info!("Startup library reconciliation complete");
+
+                    let watcher_state = scanner::watcher::start(&app_handle, &db_for_init);
+                    app_handle.manage(watcher_state);
+                    tracing::info!("Library watcher started");
+                });
+            }
             app.manage(commands::listenbrainz::ListenBrainzState::new());
             {
                 let subsonic_state = commands::subsonic::SubsonicState::new();
@@ -1277,6 +1292,7 @@ pub fn run() {
                     commands::covers::clear_base64_covers,
                     commands::covers::merge_duplicate_covers,
                     commands::covers::extract_palette,
+                    commands::covers::extract_palette_from_path,
                     // Playlist commands
                     commands::create_playlist,
                     commands::get_playlists,
@@ -1528,6 +1544,7 @@ pub fn run() {
                     commands::covers::clear_base64_covers,
                     commands::covers::merge_duplicate_covers,
                     commands::covers::extract_palette,
+                    commands::covers::extract_palette_from_path,
                     // Playlist commands
                     commands::create_playlist,
                     commands::get_playlists,

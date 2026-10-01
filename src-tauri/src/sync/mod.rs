@@ -945,6 +945,9 @@ fn find_or_create_synced_track(
         local_src: None,
         musicbrainz_recording_id: None,
         metadata_json: None,
+        file_id: None, // sync placeholder track(no filesystem identity)
+        mtime: None,
+        size: None,
     };
 
     match queries::insert_or_update_track(conn, &track) {
@@ -1071,6 +1074,9 @@ fn apply_full_sync_library_tracks(
             local_src: None,
             musicbrainz_recording_id: None,
             metadata_json: None,
+            file_id: None, // sync placeholder track(no filesystem identity)
+            mtime: None,
+            size: None,
         };
 
         match queries::insert_or_update_track(&conn, &track) {

@@ -107,6 +107,26 @@
     />
   </div>
 
+  <div class="row" class:disabled={!$meshSettings.enabled}>
+    <span>Colors</span>
+    <div class="segmented">
+      <button
+        class:active={$meshSettings.colorMode === "true"}
+        disabled={!$meshSettings.enabled}
+        on:click={() => ($meshSettings.colorMode = "true")}
+      >
+        True top
+      </button>
+      <button
+        class:active={$meshSettings.colorMode === "dark"}
+        disabled={!$meshSettings.enabled}
+        on:click={() => ($meshSettings.colorMode = "dark")}
+      >
+        Dark only
+      </button>
+    </div>
+  </div>
+
   <button class="reset-btn" on:click={() => meshSettings.reset()}>
     Reset to defaults
   </button>
@@ -265,6 +285,39 @@
   .switch input:focus-visible ~ .switch-track {
     outline: 2px solid rgba(255, 255, 255, 0.6);
     outline-offset: 2px;
+  }
+
+  .segmented {
+    display: flex;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 2px;
+    gap: 2px;
+  }
+
+  .segmented button {
+    background: none;
+    border: none;
+    color: rgba(255, 255, 255, 0.65);
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .segmented button:disabled {
+    cursor: default;
+  }
+
+  .segmented button.active {
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+  }
+
+  .segmented button:not(.active):not(:disabled):hover {
+    color: #fff;
   }
 
   .reset-btn {
