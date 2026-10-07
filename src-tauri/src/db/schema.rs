@@ -156,6 +156,21 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         ("date_added", "TEXT DEFAULT CURRENT_TIMESTAMP"),
         ("genre", "TEXT"),
         ("metadata_json", "TEXT"),
+        // filesystem watcher / reconciliation support:
+        // 1. file_id: opaque stable file identity 
+        // from the file-id crate, serialized as a single string
+        // lets us recognize a move/rename as an identity match rather than
+        // a delete+add
+        // NULL for rows not yet touched by the watcher/reconciliation pass, and
+        // for non-local tracks that have no filesystem identity
+
+        // 2. mtime / size: last-known modification time (unix ms) and
+        // file size in bytes at the point we last read this file's tags
+        // used to decide whether a file's content actually changed
+        // (cheap stat compare) before paying for a tag re-parse
+        ("file_id", "TEXT"),
+        ("mtime", "INTEGER"),
+        ("size", "INTEGER"),
     ];
 
     for (col_name, col_def) in tracks_columns {
@@ -206,6 +221,16 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
     // Create index for MusicBrainz ID
     let _ = conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_tracks_mbid ON tracks(musicbrainz_recording_id)",
+        [],
+    );
+
+    // unique index for file_id:
+    // lets the watcher/reconciliation pass do a single indexed equality lookup
+    // partial (WHERE file_id IS NOT NULL) so multiple NULL rows
+    // (tracks never touched by the watcher yet, or non-local tracks)
+    // don't collide under SQLite's UNIQUE
+    let _ = conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_tracks_file_id ON tracks(file_id) WHERE file_id IS NOT NULL",
         [],
     );
 

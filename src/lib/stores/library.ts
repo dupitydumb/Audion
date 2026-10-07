@@ -799,6 +799,41 @@ export function ingestScanBatch(event: ScanBatchEvent): void {
 }
 
 /**
+ * merge tracks touched by the live watcher / startup reconciliation pass into the library store
+ * a watcher batch's progress.total is only that batch's own size, not the library's total
+ * so trackCount is recomputed from the merged store instead of taken from the event
+ * also dedupes: a watcher batch can update a track that's already in the store
+ */
+export function ingestWatcherBatch(event: ScanBatchEvent): void {
+    if (event.tracks.length === 0) return;
+
+    const lightTracks = ingestTracks(event.tracks);
+    const incomingIds = new Set(lightTracks.map(t => t.id));
+
+    tracks.update(existing => {
+        const deduped = existing.filter(t => !incomingIds.has(t.id));
+        const merged = [...deduped, ...lightTracks];
+        trackCount.set(merged.length);
+        return merged;
+    });
+}
+
+/**
+ * remove tracks (by id)
+ * that the live watcher / startup reconciliation pass determined are gone from disk
+ */
+export function removeTracksByIds(ids: number[]): void {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+
+    tracks.update(existing => {
+        const filtered = existing.filter(t => !idSet.has(t.id));
+        trackCount.set(filtered.length);
+        return filtered;
+    });
+}
+
+/**
  * Load only albums and artists (tracks already populated).
  */
 export async function loadAlbumsAndArtists(): Promise<void> {

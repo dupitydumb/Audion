@@ -1,12 +1,29 @@
 // Liked tracks store - manages liked songs state
 import { writable, derived, get } from 'svelte/store';
 import { likeTrack, unlikeTrack, getLikedTrackIds } from '$lib/api/tauri';
+import { currentTrack } from '$lib/stores/player';
 
 // Set of liked track IDs for O(1) lookups
 export const likedTrackIds = writable<Set<number>>(new Set());
 
 // Derived count
 export const likedCount = derived(likedTrackIds, ($ids) => $ids.size);
+
+// whether the currently playing track is liked
+// derived so every consumer (player bar, mobile sheet, android notification)
+// reads the same value instead of tracking it separately
+export const currentTrackLiked = derived(
+    [currentTrack, likedTrackIds],
+    ([$currentTrack, $likedTrackIds]) => ($currentTrack ? $likedTrackIds.has($currentTrack.id) : false)
+);
+
+// toggle like state of whichever track is currently playing
+// no-ops if nothing is playing
+export async function toggleCurrentTrackLike(): Promise<void> {
+    const track = get(currentTrack);
+    if (!track) return;
+    await toggleLike(track.id);
+}
 
 // Load all liked track IDs from backend (call on app init)
 export async function loadLikedTracks(): Promise<void> {

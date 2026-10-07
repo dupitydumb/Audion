@@ -38,6 +38,7 @@ object AudionLibraryBridge {
     @JvmStatic private external fun setShuffleNative(enabled: Boolean)
     @JvmStatic private external fun setRepeatNative(mode: String)
     @JvmStatic private external fun registerNotificationCallbackNative(callback: NativeNotificationCallback)
+    @JvmStatic private external fun registerSafDeleteCallbackNative(callback: SafDeleteCallback)
 
     /**
      * receives "now playing" pushes from rust
@@ -58,6 +59,28 @@ object AudionLibraryBridge {
             android.util.Log.w("AudionLibraryBridge", "failed to register notification callback: .so not loaded yet", e)
         } catch (e: Exception) {
             android.util.Log.e("AudionLibraryBridge", "failed to register notification callback", e)
+        }
+    }
+
+    /**
+     * lets rust delete a file through the SAF tree permission that covers it
+     * instead of a raw fs::remove_file, which needs MANAGE_EXTERNAL_STORAGE on
+     * android 11+ even for a folder the user already granted through the picker
+     * see MainActivity.findDocumentForPath
+     * called from jni_bridge.rs's delete_via_saf
+     */
+    interface SafDeleteCallback {
+        fun deleteViaSaf(realPath: String): Boolean
+    }
+
+    /** call once, from MainActivity.onCreate */
+    fun registerSafDeleteCallback(callback: SafDeleteCallback) {
+        try {
+            registerSafDeleteCallbackNative(callback)
+        } catch (e: UnsatisfiedLinkError) {
+            android.util.Log.w("AudionLibraryBridge", "failed to register SAF delete callback: .so not loaded yet", e)
+        } catch (e: Exception) {
+            android.util.Log.e("AudionLibraryBridge", "failed to register SAF delete callback", e)
         }
     }
 

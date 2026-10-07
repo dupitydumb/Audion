@@ -4,7 +4,7 @@ import { nativeAudioStop } from '$lib/services/native-audio';
 import { getTrackCoverSrc } from '$lib/api/tauri';
 import { formatDuration } from '$lib/api/tauri';
 import { isAndroid, isTauri } from '$lib/api/tauri';
-import { isLoved, toggleLove } from '$lib/stores/loved';
+import { currentTrackLiked, toggleCurrentTrackLike } from '$lib/stores/liked';
 
 interface AndroidInterface {
     startNotification(
@@ -79,7 +79,7 @@ export async function initAndroidNotification() {
                 previousTrack();
                 break;
             case 'love':
-                toggleLove();
+                toggleCurrentTrackLike();
                 break;
             case 'stop':
                 nativeAudioStop();
@@ -115,7 +115,7 @@ export async function initAndroidNotification() {
         }
 
         const playing = get(isPlaying);
-        const loved = get(isLoved);
+        const loved = get(currentTrackLiked);
         const artUrl = getTrackCoverSrc(track);
         const pos = get(currentTime);
         const dur = get(duration);
@@ -200,7 +200,7 @@ export async function initAndroidNotification() {
     isPlaying.subscribe(async (playing) => {
         const track = get(currentTrack);
         if (track) {
-            const loved = get(isLoved);
+            const loved = get(currentTrackLiked);
             const pos = get(currentTime);
             const dur = get(duration);
             window.AndroidMediaNotification?.updateNotification(
@@ -238,7 +238,7 @@ export async function initAndroidNotification() {
             track.artist || 'Unknown Artist',
             track.album || '',
             get(isPlaying),
-            get(isLoved),
+            get(currentTrackLiked),
             lastArtBase64,
             formatDuration(pos),
             formatDuration(dur),
@@ -267,7 +267,7 @@ export async function initAndroidNotification() {
             track.artist || 'Unknown Artist',
             track.album || '',
             get(isPlaying),
-            get(isLoved),
+            get(currentTrackLiked),
             lastArtBase64,
             formatDuration(pos),
             formatDuration(dur),
@@ -281,6 +281,10 @@ export async function initAndroidNotification() {
     shuffle.subscribe(() => pushSessionUpdate());
     repeat.subscribe(() => pushSessionUpdate());
 
+    // pushes like/unlike made from any surface (desktop, mobile, this
+    // notification itself) so the notification's heart stays in sync
+    currentTrackLiked.subscribe(() => pushSessionUpdate());
+
     function pushSessionUpdate() {
         const track = get(currentTrack);
         if (!track) return;
@@ -290,7 +294,7 @@ export async function initAndroidNotification() {
             track.artist || 'Unknown Artist',
             track.album || '',
             get(isPlaying),
-            get(isLoved),
+            get(currentTrackLiked),
             lastArtBase64,
             formatDuration(get(currentTime)),
             formatDuration(get(duration)),

@@ -13,6 +13,25 @@ use crate::db::{queries, Database};
 // Path helpers
 // ---------------------------------------------------------------------------
 
+/// delete a lyrics file
+/// going through the SAF-scoped delete on android first
+fn remove_lyrics_file(path: &Path) -> std::io::Result<()> {
+    #[cfg(target_os = "android")]
+    {
+        match crate::android_auto::jni_bridge::delete_via_saf(path) {
+            Some(true) => return Ok(()),
+            Some(false) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "SAF delete failed (not under a granted tree, or DocumentFile.delete() returned false)",
+                ));
+            }
+            None => {} // fall through to fs::remove_file below
+        }
+    }
+    fs::remove_file(path)
+}
+
 /// Path for user-imported lyrics.
 /// `format` determines the extension: "lrc" → song.lrc, "ttml" → song.ttml.
 /// The user-import slot always lives beside the music file (or hash.<fmt> in
@@ -208,7 +227,7 @@ pub fn delete_user_lyrics_file(app: AppHandle, music_path: String) -> Result<boo
         let exists = path.exists();
         tracing::info!("[LYRICS] delete_user_lyrics_file: fmt={} path={} exists={}", fmt, path.display(), exists);
         if exists {
-            match fs::remove_file(&path) {
+            match remove_lyrics_file(&path) {
                 Ok(()) => {
                     tracing::info!("[LYRICS] delete_user_lyrics_file: removed {}", path.display());
                     deleted = true;
@@ -277,7 +296,7 @@ pub fn delete_source_lyrics_file(
         let exists = path.exists();
         tracing::info!("[LYRICS] delete_source_lyrics_file: fmt={} path={} exists={}", fmt, path.display(), exists);
         if exists {
-            match fs::remove_file(&path) {
+            match remove_lyrics_file(&path) {
                 Ok(()) => {
                     tracing::info!("[LYRICS] delete_source_lyrics_file: removed {}", path.display());
                     deleted = true;
@@ -497,7 +516,7 @@ pub fn delete_lyrics_by_token(
             }
             if is_match {
                 matched += 1;
-                match fs::remove_file(&epath) {
+                match remove_lyrics_file(&epath) {
                     Ok(()) => deleted += 1,
                     Err(e) => tracing::warn!("[LYRICS] failed to delete {}: {}", epath.display(), e),
                 }
