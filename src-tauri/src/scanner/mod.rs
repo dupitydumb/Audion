@@ -3,6 +3,8 @@ pub mod walker;
 pub mod metadata;
 pub mod cover_storage;
 pub mod artist_parser;
+pub mod watcher;
+pub mod reconcile;
 
 pub use walker::scan_directory;
 pub use metadata::extract_metadata;

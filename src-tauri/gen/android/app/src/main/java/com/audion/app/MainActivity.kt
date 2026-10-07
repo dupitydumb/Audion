@@ -41,6 +41,12 @@ class MainActivity : TauriActivity() {
     // initAudioContext guards against re initializing on the rust side
     initAudioContext()
 
+    // so rust's delete_lyrics_by_token can delete sidecar files through the
+    // SAF tree permission instead of needing MANAGE_EXTERNAL_STORAGE
+    AudionLibraryBridge.registerSafDeleteCallback(object : AudionLibraryBridge.SafDeleteCallback {
+      override fun deleteViaSaf(realPath: String): Boolean = deletePathViaSaf(realPath)
+    })
+
     // Request permissions for music scanning
     if (Build.VERSION.SDK_INT >= 33) {
       if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -133,9 +139,7 @@ class MainActivity : TauriActivity() {
         val realPath = resolveUriToPath(uri)
 
         // request MANAGE_EXTERNAL_STORAGE on android 11+ only for external/removable
-        // volumes (SD card, USB). Internal storage ("primary:" docId prefix) does NOT
-        // need this permission — requesting it unconditionally breaks the normal
-        // internal-storage folder-pick flow by discarding the user's valid selection.
+        // volumes (SD card, USB)
         val docId = uri.lastPathSegment ?: ""
         val isExternal = !docId.startsWith("primary:")
         if (isExternal && Build.VERSION.SDK_INT >= 30 && !android.os.Environment.isExternalStorageManager()) {
@@ -147,7 +151,7 @@ class MainActivity : TauriActivity() {
 
             android.widget.Toast.makeText(
               this,
-              "Please grant All Files Access so Audion can read and manage lyrics files alongside your music",
+              "Please grant All Files Access to read music from external USB/SD card",
               android.widget.Toast.LENGTH_LONG
             ).show()
 
@@ -253,6 +257,80 @@ class MainActivity : TauriActivity() {
         else "$baseDir/$subPath"
       }
       else -> null
+    }
+  }
+
+  /**
+   * real /storage/... root path for a persisted tree URI, e.g.
+   * content://.../tree/primary:Music -> /storage/emulated/0/Music
+   * inverse of the docId branches in resolveUriToPath,
+   * without needing a live DocumentFile (persistedUriPermissions only gives back the tree URI)
+   */
+  private fun treeRootPath(treeUri: Uri): String? {
+    val docId = DocumentFile.fromTreeUri(this, treeUri)?.uri?.lastPathSegment ?: return null
+    return when {
+      docId.startsWith("primary:") -> {
+        val subPath = docId.removePrefix("primary:")
+        if (subPath.isEmpty()) "/storage/emulated/0" else "/storage/emulated/0/$subPath"
+      }
+      docId.contains(":") -> {
+        val (volumeId, subPath) = docId.split(":", limit = 2).let { it[0] to it[1] }
+        val storageManager = getSystemService(Context.STORAGE_SERVICE) as android.os.storage.StorageManager
+        val volumePath = storageManager.storageVolumes
+          .firstOrNull { it.uuid?.equals(volumeId, ignoreCase = true) == true }
+          ?.let { volume ->
+            if (Build.VERSION.SDK_INT >= 30) volume.directory?.absolutePath
+            else try { volume.javaClass.getMethod("getPath").invoke(volume) as? String } catch (e: Exception) { null }
+          }
+        val baseDir = volumePath ?: "/storage/$volumeId"
+        if (subPath.isEmpty()) baseDir else "$baseDir/$subPath"
+      }
+      else -> null
+    }
+  }
+
+  /**
+   * resolves a real filesystem path back to the DocumentFile it corresponds to,
+   * by finding which persisted SAF tree permission contains it
+   * and walking down one path segment (one DocumentFile.findFile() call, i.e.
+   * one directory listing at a time from that tree's root
+   * returns null if no granted tree covers this path, or a segment along the way
+   * is missing (already deleted, race with a rescan, etc)
+   */
+  private fun findDocumentForPath(realPath: String): DocumentFile? {
+    val grant = contentResolver.persistedUriPermissions
+      .filter { it.isReadPermission && it.isWritePermission }
+      .mapNotNull { perm -> treeRootPath(perm.uri)?.let { root -> perm.uri to root } }
+      .firstOrNull { (_, root) -> realPath == root || realPath.startsWith("$root/") }
+      ?: return null
+    val (treeUri, root) = grant
+
+    var doc = DocumentFile.fromTreeUri(this, treeUri) ?: return null
+    val relative = realPath.removePrefix(root).trim('/')
+    if (relative.isEmpty()) return doc
+    for (segment in relative.split("/")) {
+      doc = doc.findFile(segment) ?: return null
+    }
+    return doc
+  }
+
+  /**
+   * called from AudionLibraryBridge.SafDeleteCallback,
+   * off the jvm-attached thread rust called in on => 
+   * contentResolver/DocumentFile calls are fine
+   * from any thread
+   */
+  fun deletePathViaSaf(realPath: String): Boolean {
+    val doc = findDocumentForPath(realPath)
+    if (doc == null) {
+      android.util.Log.w("MainActivity", "deletePathViaSaf: no granted tree covers $realPath")
+      return false
+    }
+    return try {
+      doc.delete()
+    } catch (e: Exception) {
+      android.util.Log.e("MainActivity", "deletePathViaSaf: delete() threw for $realPath", e)
+      false
     }
   }
 

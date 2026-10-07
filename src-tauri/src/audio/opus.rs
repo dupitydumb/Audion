@@ -21,6 +21,7 @@ use symphonia::core::formats::probe::Hint;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 
+use opus_rs::multistream::{ChannelMappingTable, MultistreamDecoder};
 use opus_rs::OpusDecoder;
 
 use super::mod_types::AudioEvent;
@@ -39,15 +40,21 @@ struct OpusHead {
     // output_gain is a Q7.8 fixed-point dB value
     // stored as-is and applied as a linear multiplier at decode time
     output_gain_db: f32,
+    // Some(table) for mapping_family != 0 (multistream/surround) tracks,
+    // parsed straight out of the bytes that follow the fixed 19-byte prefix
+    // None means single-stream mono/stereo
+    channel_mapping: Option<ChannelMappingTable>,
 }
 
 impl OpusHead {
-    /// parses RFC 7845 5.1's fixed 19-byte header prefix
-    /// returns a fallback (stereo, no pre-skip/gain) if the bytes are missing or too short to be a real OpusHead,
-    /// so a malformed/absent header fails gracefully
+    /// parses RFC 7845 5.1's fixed 19-byte header prefix, plus (when present)
+    /// the 5.1.1 channel mapping table that follows it for multistream/surround tracks
+    /// returns a fallback (stereo, no pre-skip/gain, no mapping table) if the bytes are
+    /// missing or too short to be a real OpusHead, so a malformed/absent header fails gracefully
     fn parse(extra_data: &[u8], fallback_channels: u8) -> Self {
         // layout: "OpusHead"(8) | version(1) | channels(1) | pre_skip(2 LE)
-        //       | input_sample_rate(4 LE) | output_gain(2 LE, Q7.8) | mapping_family(1) | ...
+        //       | input_sample_rate(4 LE) | output_gain(2 LE, Q7.8) | mapping_family(1)
+        //       | [stream_count(1) | coupled_count(1) | channel_mapping[channels] ] (mapping_family != 0 only)
         if extra_data.len() < 19 || &extra_data[0..8] != b"OpusHead" {
             tracing::warn!(
                 "[AUDIO] OpusHead missing/malformed (got {} bytes) — using defaults",
@@ -57,6 +64,7 @@ impl OpusHead {
                 channels: fallback_channels,
                 pre_skip: 0,
                 output_gain_db: 0.0,
+                channel_mapping: None,
             };
         }
 
@@ -65,16 +73,73 @@ impl OpusHead {
         let output_gain_raw = i16::from_le_bytes([extra_data[16], extra_data[17]]);
         let output_gain_db = output_gain_raw as f32 / 256.0;
 
+        // ChannelMappingTable::parse returns None both for mapping_family == 0 and
+        // for a table that's present-but-truncated, 
+        // so a malformed extension also falls back gracefully
+        let mapping_family = extra_data[18];
+        let channel_mapping = ChannelMappingTable::parse(mapping_family, channels, &extra_data[19..]);
+        if mapping_family != 0 && channel_mapping.is_none() {
+            tracing::warn!(
+                "[AUDIO] OpusHead declares mapping_family {} but channel mapping table is truncated — \
+                 falling back to single-stream decode",
+                mapping_family
+            );
+        }
+
         Self {
             channels,
             pre_skip,
             output_gain_db,
+            channel_mapping,
         }
     }
 
     #[inline]
     fn output_gain_linear(&self) -> f32 {
         10.0f32.powf(self.output_gain_db / 20.0)
+    }
+}
+
+/// either a plain single-stream decoder (mono/stereo)
+/// or a multistream decoder (channel mapping family 1 surround, e.g. 5.1/7.1)
+/// CELT/SILK never see more than 2 channels either way
+/// the multistream branch just fans a packet out to several single-stream decoders and reassembles the result
+enum AnyOpusDecoder {
+    Single(OpusDecoder),
+    Multi(MultistreamDecoder),
+}
+
+impl AnyOpusDecoder {
+    fn new(
+        rate: i32,
+        channels: u8,
+        mapping: Option<&ChannelMappingTable>,
+    ) -> Result<Self, String> {
+        match mapping {
+            Some(table) => MultistreamDecoder::new(rate, table.clone())
+                .map(AnyOpusDecoder::Multi)
+                .map_err(|e| format!("Failed to create multistream Opus decoder: {}", e)),
+            None => OpusDecoder::new(rate, channels as usize)
+                .map(AnyOpusDecoder::Single)
+                .map_err(|e| format!("Failed to create Opus decoder: {:?}", e)),
+        }
+    }
+
+    #[inline]
+    fn decode(
+        &mut self,
+        packet: &[u8],
+        frame_size: usize,
+        out: &mut [f32],
+    ) -> Result<usize, String> {
+        match self {
+            AnyOpusDecoder::Single(d) => {
+                d.decode(packet, frame_size, out).map_err(|e| format!("{:?}", e))
+            }
+            AnyOpusDecoder::Multi(d) => {
+                d.decode(packet, frame_size, out).map_err(|e| format!("{:?}", e))
+            }
+        }
     }
 }
 
@@ -93,7 +158,9 @@ fn probe_opus(
 
 pub struct OpusSource {
     pub format: Box<dyn FormatReader>,
-    pub decoder: OpusDecoder,
+    pub decoder: AnyOpusDecoder,
+    /// retained so seek() and the ResetRequired path in refill() can rebuild the decoder with identical parameters
+    channel_mapping: Option<ChannelMappingTable>,
     pub track_id: u32,
     pub pre_skip: u16,
     /// counts down from pre_skip at the very start of the stream, and
@@ -165,19 +232,18 @@ impl OpusSource {
 
         let head = OpusHead::parse(extra_data, fallback_channels);
 
-        // OpusDecoder::new only supports mono/stereo =>
-        // mapped multichannel opus (5.1, 7.1) needs a multistream decoder driven by the mapping table in OpusHead,
-        // which this decoder doesn't implement yet,
-        // so fail explicitly here
-        if head.channels == 0 || head.channels > 2 {
-            return Err(format!(
-                "Opus track {} has {} channels; multichannel (mapped) Opus is not supported",
-                path, head.channels
-            ));
-        }
-
-        let decoder = OpusDecoder::new(OPUS_DECODE_RATE as i32, head.channels as usize)
-            .map_err(|e| format!("Failed to create Opus decoder for {}: {:?}", path, e))?;
+        // plain mono/stereo (mapping_family == 0,
+        // or a truncated mapping table that OpusHead::parse already fell back from)
+        // goes through the single-stream OpusDecoder
+        // mapping_family 1 (5.1/7.1-style surround) routes through MultistreamDecoder instead
+        // see opus_rs::multistream
+        // either way CELT/SILK itself only ever decodes 1 or 2 channels per elementary stream
+        let decoder = AnyOpusDecoder::new(
+            OPUS_DECODE_RATE as i32,
+            head.channels,
+            head.channel_mapping.as_ref(),
+        )
+        .map_err(|e| format!("{} for {}", e, path))?;
 
         let duration = track.time_base.and_then(|tb| {
             track.duration.and_then(|d| {
@@ -191,22 +257,38 @@ impl OpusSource {
         // reuse symphonia.rs's tag-scan fallback so a track without a pre-resolved replay_gain_db still gets scanned
         let replay_gain = resolve_replay_gain(replay_gain_db, &mut format);
 
-        tracing::info!(
-            "[AUDIO] Opus track: {}Hz decode, {}ch (pre_skip={}, device {}ch) — {}",
-            OPUS_DECODE_RATE,
-            head.channels,
-            head.pre_skip,
-            device_channels,
-            path
-        );
+        match &head.channel_mapping {
+            Some(table) => tracing::info!(
+                "[AUDIO] Opus track: {}Hz decode, {}ch multistream (family 1, {} streams, {} coupled, \
+                 pre_skip={}, device {}ch) — {}",
+                OPUS_DECODE_RATE,
+                head.channels,
+                table.stream_count,
+                table.coupled_count,
+                head.pre_skip,
+                device_channels,
+                path
+            ),
+            None => tracing::info!(
+                "[AUDIO] Opus track: {}Hz decode, {}ch (pre_skip={}, device {}ch) — {}",
+                OPUS_DECODE_RATE,
+                head.channels,
+                head.pre_skip,
+                device_channels,
+                path
+            ),
+        }
+
+        let output_gain = head.output_gain_linear();
 
         Ok(Self {
             format,
             decoder,
+            channel_mapping: head.channel_mapping,
             track_id,
             pre_skip: head.pre_skip,
             pre_skip_remaining: head.pre_skip,
-            output_gain: head.output_gain_linear(),
+            output_gain,
             sample_buf: Vec::new(),
             sample_pos: 0,
             channels: NonZero::new(head.channels as u16).unwrap_or(device_channels),
@@ -241,8 +323,12 @@ impl OpusSource {
             Ok(_) => {}
             Err(e) => tracing::warn!("[AUDIO] opus seek error: {}", e),
         }
-        self.decoder = OpusDecoder::new(OPUS_DECODE_RATE as i32, self.channels.get() as usize)
-            .expect("Opus decoder rebuild after seek should never fail (same params as initial open)");
+        self.decoder = AnyOpusDecoder::new(
+            OPUS_DECODE_RATE as i32,
+            self.channels.get() as u8,
+            self.channel_mapping.as_ref(),
+        )
+        .expect("Opus decoder rebuild after seek should never fail (same params as initial open)");
         self.sample_buf.clear();
         self.sample_pos = 0;
         self.done = false;
@@ -267,9 +353,10 @@ impl OpusSource {
                     // a new internal decoder state (e.g. a chained Ogg stream) 
                     // doesn't end the track, it just means the next packet needs a fresh decoder
                     // rebuild with the same params and keep pulling packets instead of surfacing this as track-end
-                    self.decoder = OpusDecoder::new(
+                    self.decoder = AnyOpusDecoder::new(
                         OPUS_DECODE_RATE as i32,
-                        self.channels.get() as usize,
+                        self.channels.get() as u8,
+                        self.channel_mapping.as_ref(),
                     )
                     .expect(
                         "Opus decoder rebuild after ResetRequired should never fail (same params as initial open)",
@@ -314,7 +401,7 @@ impl OpusSource {
                     return true;
                 }
                 Err(e) => {
-                    tracing::debug!("[AUDIO] opus decode error, skipping packet: {:?}", e);
+                    tracing::debug!("[AUDIO] opus decode error, skipping packet: {}", e);
                     continue;
                 }
             }

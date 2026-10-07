@@ -169,6 +169,71 @@ pub fn save_album_art_from_base64(album_id: i64, base64_data: &str) -> Result<St
     save_album_art(album_id, &image_bytes)
 }
 
+/// save a track's embedded cover art (track_cover) and,
+/// if the album doesn't already have art, the album art too
+/// then persist the resulting path(s) onto the DB rows
+/// sinceinsert_or_update_track only writes tag/metadata columns
+pub fn persist_track_covers(
+    conn: &Connection,
+    track_id: i64,
+    track: &crate::db::models::TrackInsert,
+) {
+    if let Some(ref cover_bytes) = track.track_cover {
+        match save_track_cover(track_id, cover_bytes) {
+            Ok(path) => {
+                if let Err(e) =
+                    crate::db::queries::update_track_cover_path(conn, track_id, Some(&path))
+                {
+                    eprintln!(
+                        "[Cover] Failed to persist track_cover path for track {track_id}: {e}"
+                    );
+                }
+            }
+            Err(e) => eprintln!("[Cover] Failed to save track_cover for track {track_id}: {e}"),
+        }
+    }
+
+    if let Some(ref art_bytes) = track.album_art {
+        let album_id: Option<i64> = conn
+            .query_row(
+                "SELECT album_id FROM tracks WHERE id = ?1",
+                [track_id],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
+
+        if let Some(album_id) = album_id {
+            let has_art: bool = conn
+                .query_row(
+                    "SELECT art_path IS NOT NULL FROM albums WHERE id = ?1",
+                    [album_id],
+                    |row| row.get(0),
+                )
+                .unwrap_or(false);
+
+            if !has_art {
+                match save_album_art(album_id, art_bytes) {
+                    Ok(art_path) => {
+                        if let Err(e) = crate::db::queries::update_album_art_path(
+                            conn,
+                            album_id,
+                            Some(&art_path),
+                        ) {
+                            eprintln!(
+                                "[Cover] Failed to persist album art path for album {album_id}: {e}"
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[Cover] Failed to save album art for album {album_id}: {e}")
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Get cover file path for a track (verifies file exists)
 pub fn get_track_cover_file_path(conn: &Connection, track_id: i64) -> Result<Option<String>> {
     let path: Option<String> = conn

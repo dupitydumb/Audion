@@ -1,6 +1,6 @@
 // Library-related Tauri commands
 use crate::db::{queries, Database};
-use crate::scanner::{cover_storage, extract_metadata, scan_directory};
+use crate::scanner::{self, cover_storage, extract_metadata, scan_directory};
 use crate::security;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use rayon::prelude::*;
@@ -335,7 +335,7 @@ pub struct Library {
 }
 
 /// Adaptive batch sizing for rescan_music
-fn calculate_batch_size(
+pub(crate) fn calculate_batch_size(
     tracks_processed: usize,
     _total_tracks: usize,
     queue_depth: usize,
@@ -481,7 +481,11 @@ pub async fn scan_music(paths: Vec<String>, db: State<'_, Database>) -> Result<S
 
 /// Add a music folder with path validation
 #[tauri::command]
-pub async fn add_folder(path: String, db: State<'_, Database>) -> Result<(), String> {
+pub async fn add_folder(
+    path: String,
+    db: State<'_, Database>,
+    watcher: State<'_, scanner::watcher::WatcherState>,
+) -> Result<(), String> {
     let path_buf = std::path::PathBuf::from(&path);
 
     // Validate path exists and is a directory
@@ -500,9 +504,16 @@ pub async fn add_folder(path: String, db: State<'_, Database>) -> Result<(), Str
 
     let path_str = canonical_path.to_string_lossy().to_string();
 
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::register_music_folder(&conn, &path_str)
-        .map_err(|e| format!("Failed to add folder: {}", e))?;
+    let current_folders = {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        queries::register_music_folder(&conn, &path_str)
+            .map_err(|e| format!("Failed to add folder: {}", e))?;
+        // register_music_folder can collapse/absorb neighboring folders as
+        // so re-read the full set
+        // rather than assuming only 'path_str' changed.
+        queries::get_music_folders(&conn).map_err(|e| e.to_string())?
+    };
+    scanner::watcher::sync_watches(&watcher, &current_folders);
 
     Ok(())
 }
@@ -1068,18 +1079,25 @@ pub async fn scan_folder(
 
 /// remove a music folder and delete all tracks that live under it
 #[tauri::command]
-pub async fn remove_folder(path: String, db: State<'_, Database>) -> Result<usize, String> {
+pub async fn remove_folder(
+    path: String,
+    db: State<'_, Database>,
+    watcher: State<'_, scanner::watcher::WatcherState>,
+) -> Result<usize, String> {
     // canonicalize to match how add_folder stored it
     let canonical_path = std::path::PathBuf::from(&path)
         .canonicalize()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or(path);
 
-    let deleted = {
+    let (deleted, current_folders) = {
         let conn = db.conn.lock().map_err(|e| e.to_string())?;
-        queries::remove_folder_with_tracks(&conn, &canonical_path)
-            .map_err(|e| format!("Failed to remove folder: {}", e))?
+        let deleted = queries::remove_folder_with_tracks(&conn, &canonical_path)
+            .map_err(|e| format!("Failed to remove folder: {}", e))?;
+        let current_folders = queries::get_music_folders(&conn).map_err(|e| e.to_string())?;
+        (deleted, current_folders)
     };
+    scanner::watcher::sync_watches(&watcher, &current_folders);
 
     // background orphan cover art cleanup (non blocking)
     let db_conn_cleanup = Arc::clone(&db.conn);
@@ -1274,6 +1292,9 @@ pub async fn add_external_track(
         local_src: None,
         musicbrainz_recording_id: track.musicbrainz_recording_id,
         metadata_json: track.metadata_json,
+        file_id: None, // external/streamed track => no filesystem identity
+        mtime: None,
+        size: None,
     };
 
     queries::insert_or_update_track(&conn, &track_insert)

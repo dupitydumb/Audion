@@ -103,6 +103,27 @@ pub struct TrackInsert {
     pub local_src: Option<String>,
     pub musicbrainz_recording_id: Option<String>,
     pub metadata_json: Option<String>,
+    #[serde(default)]
+    pub file_id: Option<String>,
+    /// last-known mtime (unix ms) at the point this file's tags were read
+    /// paired with 'size' to cheaply decide whether a file's content changed
+    /// (skip tag re-parse if neither did)
+    #[serde(default)]
+    pub mtime: Option<i64>,
+    /// Last-known file size in bytes, see `mtime`.
+    #[serde(default)]
+    pub size: Option<i64>,
+}
+
+/// lightweight identity row used by the watcher / startup reconciliation
+/// to compare a track's last-known filesystem state against what's on disk
+#[derive(Debug, Clone)]
+pub struct TrackIdentity {
+    pub id: i64,
+    pub path: String,
+    pub file_id: Option<String>,
+    pub mtime: Option<i64>,
+    pub size: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -600,6 +600,7 @@
     .player-bar {
         height: var(--player-height);
         background-color: var(--player-bg, var(--bg-elevated));
+        transition: background-color var(--transition-slow, 400ms ease), color var(--transition-slow, 400ms ease);
         border-top: 1px solid var(--border-color);
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
@@ -677,13 +678,14 @@
         cursor: pointer;
     }
 
-    .track-artist {
+    /* rendered inside ArtistLinks => scoped selector never matches */
+    .track-details :global(.track-artist) {
         font-size: var(--font-size-xs);
-        color: var(--text-secondary);
+        color: var(--text-on-player, var(--text-secondary));
     }
 
-    .track-artist:hover {
-        color: var(--text-primary);
+    .track-details :global(.track-artist:hover) {
+        color: var(--text-on-player, var(--text-primary));
         text-decoration: underline;
         cursor: pointer;
     }
@@ -697,7 +699,7 @@
     .like-btn {
         background: none;
         border: none;
-        color: var(--text-subdued);
+        color: var(--text-on-player, var(--text-subdued));
         cursor: pointer;
         padding: 4px;
         display: flex;
@@ -710,7 +712,7 @@
     }
 
     .like-btn:hover {
-        color: var(--text-primary);
+        color: var(--text-on-player, var(--text-primary));
         transform: scale(1.15);
     }
 
@@ -786,6 +788,22 @@
         align-items: center;
         gap: 8px;
         flex-shrink: 0;
+    }
+
+    /* global icon-btn color is not player aware => follow player text */
+    .player-bar .icon-btn:not(.active),
+    .player-bar .icon-btn:not(.active):hover {
+        color: var(--text-on-player, var(--text-secondary));
+    }
+
+    .player-bar .icon-btn,
+    .player-bar .like-btn {
+        background-color: var(--player-btn-bg, transparent);
+    }
+
+    .player-bar .icon-btn:hover,
+    .player-bar .like-btn:hover {
+        background-color: var(--player-btn-bg-hover, rgba(255, 255, 255, 0.1));
     }
 
     .controls-buttons .icon-btn {
@@ -869,7 +887,8 @@
 
     .time {
         font-size: 0.7rem;
-        color: var(--text-subdued);
+        color: var(--text-on-player, var(--text-subdued));
+        opacity: 0.75;
         min-width: 40px;
         text-align: center;
     }
@@ -911,7 +930,7 @@
     .progress-fill,
     .volume-fill {
         height: 100%;
-        background-color: var(--text-secondary);
+        background-color: var(--text-on-player, var(--text-secondary));
         border-radius: var(--radius-full);
         transition: background-color var(--transition-fast);
     }
@@ -963,15 +982,11 @@
     .backend-badge:hover {
         opacity: 1;
     }
-    .backend-badge.native {
-        color: var(--text-subdued);
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-    }
+    .backend-badge.native,
     .backend-badge.html5 {
-        color: var(--text-subdued);
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        color: var(--text-on-player, var(--text-subdued));
+        background: none;
+        border: 1px solid currentColor;
     }
 
     /* LIVE badge */
@@ -1194,6 +1209,7 @@
         gap: 0;
         z-index: 900;
         background-color: var(--player-bg, var(--bg-elevated));
+        transition: background-color var(--transition-slow, 400ms ease), color var(--transition-slow, 400ms ease);
         border: none;
         border-radius: 8px;
         box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.5);

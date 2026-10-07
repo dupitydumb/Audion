@@ -998,24 +998,107 @@ pub async fn clear_base64_covers(db: State<'_, Database>) -> Result<usize, Strin
 
 use color_thief::{get_palette, ColorFormat};
 
-#[tauri::command]
-pub fn extract_palette(image_bytes: Vec<u8>) -> Result<Vec<String>, String> {
-    let img = image::load_from_memory(&image_bytes).map_err(|e| e.to_string())?;
+#[derive(Debug, Serialize, Clone)]
+pub struct PaletteColor {
+    pub hex: String,
+    pub luminance: f32,
+    pub is_dark: bool,
+    /// share of sampled pixels closest to this color (0.0 - 1.0)
+    /// used to rank colors by true visual dominance,
+    /// independent of how color_thief happened to order its output
+    pub weight: f32,
+}
+
+fn luminance(r: u8, g: u8, b: u8) -> f32 {
+    (0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32) / 255.0
+}
+
+/// core extraction logic, shared by both entry points below
+/// takes raw encoded image bytes and downsamples to a 100x100 thumbnail
+/// to keep the color extraction cheap
+fn palette_from_bytes(image_bytes: &[u8]) -> Result<Vec<PaletteColor>, String> {
+    let img = image::load_from_memory(image_bytes).map_err(|e| e.to_string())?;
     let img = img.thumbnail(100, 100);
     let rgba = img.to_rgba8();
+    let raw = rgba.as_raw();
 
-    let palette = get_palette(rgba.as_raw(), ColorFormat::Rgba, 10, 8)
+    // pull a generous pool of candidate colors (both light and dark)
+    // so there's enough material left after dominance ranking to report 5+
+    let palette = get_palette(raw, ColorFormat::Rgba, 5, 12)
         .map_err(|e| format!("{:?}", e))?;
 
-    let mut dark: Vec<(f32, String)> = palette
+    if palette.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // rank by true dominance: assign every sampled pixel to its nearest palette entry and
+    // count how often each entry wins
+    // this is independent of the internal order color_thief happens to emit
+    let mut pixel_counts = vec![0u32; palette.len()];
+    let mut total_pixels = 0u32;
+
+    for px in raw.chunks_exact(4) {
+        // skip fully (or near-fully) transparent pixels
+        // they don't represent visible cover art color
+        if px[3] < 16 {
+            continue;
+        }
+        let (r, g, b) = (px[0] as i32, px[1] as i32, px[2] as i32);
+
+        let mut best_idx = 0usize;
+        let mut best_dist = i32::MAX;
+        for (idx, c) in palette.iter().enumerate() {
+            let dr = r - c.r as i32;
+            let dg = g - c.g as i32;
+            let db = b - c.b as i32;
+            let dist = dr * dr + dg * dg + db * db;
+            if dist < best_dist {
+                best_dist = dist;
+                best_idx = idx;
+            }
+        }
+        pixel_counts[best_idx] += 1;
+        total_pixels += 1;
+    }
+
+    if total_pixels == 0 {
+        total_pixels = 1; // avoid div-by-zero; all weights will be 0
+    }
+
+    let mut colors: Vec<PaletteColor> = palette
         .iter()
-        .map(|c| {
-            let lum = (0.2126 * c.r as f32 + 0.7152 * c.g as f32 + 0.0722 * c.b as f32) / 255.0;
-            (lum, format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b))
+        .enumerate()
+        .map(|(idx, c)| {
+            let lum = luminance(c.r, c.g, c.b);
+            PaletteColor {
+                hex: format!("#{:02x}{:02x}{:02x}", c.r, c.g, c.b),
+                luminance: lum,
+                is_dark: lum < 0.5,
+                weight: pixel_counts[idx] as f32 / total_pixels as f32,
+            }
         })
-        .filter(|(lum, _)| *lum < 0.5)
         .collect();
 
-    dark.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-    Ok(dark.into_iter().map(|(_, hex)| hex).collect())
+    // most dominant (largest share of the image) first
+    colors.sort_by(|a, b| b.weight.partial_cmp(&a.weight).unwrap());
+
+    Ok(colors)
+}
+
+/// extracts a ranked palette directly from a cover file on disk
+///
+/// preferred entry point: the frontend passes only a short file path string across the IPC boundary
+#[tauri::command]
+pub fn extract_palette_from_path(file_path: String) -> Result<Vec<PaletteColor>, String> {
+    let bytes = fs::read(&file_path).map_err(|e| format!("Failed to read {}: {}", file_path, e))?;
+    palette_from_bytes(&bytes)
+}
+
+/// extracts a ranked palette from raw image bytes
+///
+/// kept for cover sources that don't live at a local file path
+/// legacy base64-stored covers and remote cover_url streaming thumbnails
+#[tauri::command]
+pub fn extract_palette(image_bytes: Vec<u8>) -> Result<Vec<PaletteColor>, String> {
+    palette_from_bytes(&image_bytes)
 }
