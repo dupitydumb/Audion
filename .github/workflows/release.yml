@@ -386,13 +386,6 @@ jobs:
           ln -s "$(basename "$ICON_FILE")" squashfs-root/.DirIcon
           test -e squashfs-root/.DirIcon || { echo "::error::.DirIcon still dangling"; exit 1; }
 
-          # normalize permissions: --appimage-extract leaves directories at 0700 (and some files at 0770)
-          chmod -R u+rwX,go+rX,go-w squashfs-root
-          chmod 755 squashfs-root/AppRun squashfs-root/AppRun-real
-          [ -f squashfs-root/AppRun-original ] && chmod 755 squashfs-root/AppRun-original
-          [ -f squashfs-root/AppRun.wrapped ] && chmod 755 squashfs-root/AppRun.wrapped
-          find squashfs-root -type d ! -perm -o+rx -o -type f ! -perm -o+r | grep . && { echo "::error::unreadable paths remain"; exit 1; } || true
-
           # Repack the AppImage
           # NOTE: appimagetool is itself an AppImage. GitHub Actions runners do not
           # have libfuse.so.2 (FUSE 2). Setting APPIMAGE_EXTRACT_AND_RUN=1 makes the
