@@ -177,8 +177,10 @@ const albumArtCache = new LRUCache<number, string>(CACHE_CONFIG.MAX_ALBUM_ART_CA
 const trackCoverCache = new LRUCache<number, string>(CACHE_CONFIG.MAX_TRACK_COVER_CACHE, {
     onEvict: (trackId, url) => {
         revokeBlobUrl(url);
+        rawTrackCoverMap.delete(trackId);
     }
 });
+const rawTrackCoverMap = new Map<number, string>();
 
 // Full object cache (for recently accessed items)
 const fullTrackCache = new LRUCache<number, Track>(1000);
@@ -366,14 +368,25 @@ function ingestTracks(incoming: Track[]): Track[] {
 
         // Priority 1: Use filesystem path (fastest, no JS overhead)
         if (track.track_cover_path) {
+            const oldUrl = trackCoverCache.get(track.id);
+            if (oldUrl && oldUrl.startsWith('blob:')) {
+                revokeBlobUrl(oldUrl);
+            }
             const url = convertFileSrc(track.track_cover_path);
             trackCoverCache.set(track.id, url);
+            rawTrackCoverMap.delete(track.id);
         }
         // Priority 2: Use base64 (fallback, expensive)
         else if (track.track_cover) {
-            if (!trackCoverCache.has(track.id)) {
+            const currentRaw = rawTrackCoverMap.get(track.id);
+            if (currentRaw !== track.track_cover || !trackCoverCache.has(track.id)) {
+                const oldUrl = trackCoverCache.get(track.id);
+                if (oldUrl && oldUrl.startsWith('blob:')) {
+                    revokeBlobUrl(oldUrl);
+                }
                 const blobUrl = convertBase64ToBlobUrl(track.track_cover);
                 trackCoverCache.set(track.id, blobUrl);
+                rawTrackCoverMap.set(track.id, track.track_cover);
             }
         }
 
@@ -816,14 +829,14 @@ export function ingestWatcherBatch(event: ScanBatchEvent): void {
     const lightTracks = ingestTracks(event.tracks);
     const incomingIds = new Set(lightTracks.map(t => t.id));
 
-    let newCount = 0;
     tracks.update(existing => {
         const deduped = existing.filter(t => !incomingIds.has(t.id));
-        const merged = [...deduped, ...lightTracks];
-        newCount = merged.length;
-        return merged;
+        return [...deduped, ...lightTracks];
     });
-    trackCount.set(newCount);
+
+    if (event.progress.tracks_added > 0) {
+        trackCount.update(c => c + event.progress.tracks_added);
+    }
 }
 
 /**
@@ -834,13 +847,11 @@ export function removeTracksByIds(ids: number[]): void {
     if (ids.length === 0) return;
     const idSet = new Set(ids);
 
-    let newCount = 0;
     tracks.update(existing => {
-        const filtered = existing.filter(t => !idSet.has(t.id));
-        newCount = filtered.length;
-        return filtered;
+        return existing.filter(t => !idSet.has(t.id));
     });
-    trackCount.set(newCount);
+
+    trackCount.update(c => Math.max(0, c - ids.length));
 }
 
 /**
