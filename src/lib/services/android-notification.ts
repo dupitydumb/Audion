@@ -56,6 +56,7 @@ let trackChangeGen = 0;
 let unsubscribers: (() => void)[] = [];
 
 export function stopAndroidNotification() {
+    trackChangeGen++;
     unsubscribers.forEach(u => u());
     unsubscribers = [];
     notificationInitialized = false;
@@ -140,7 +141,6 @@ export async function initAndroidNotification() {
         let artData: string | null = null;
         // Optimize art loading: if URL changed, resolve it to base64 or pass through if http
         if (artUrl !== lastArtUrl) {
-            lastArtUrl = artUrl;
             if (artUrl) {
                 const isRealHttpUrl = artUrl.startsWith('http') && !artUrl.includes('asset.localhost');
 
@@ -167,6 +167,7 @@ export async function initAndroidNotification() {
                 console.log('[Android Notification][Art] no artUrl for this track - clearing art');
             }
             if (gen !== trackChangeGen) return;
+            lastArtUrl = artUrl;
             lastArtBase64 = artData;
         } else {
             artData = lastArtBase64;

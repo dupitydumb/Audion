@@ -64,6 +64,13 @@ fn resolve_user_lyrics_path(app: &AppHandle, music_path: &str, format: &str) -> 
         tracing::warn!("[LYRICS] resolve_user_lyrics_path: failed to create cache dir {}: {}", dir.display(), e);
     }
     let path = dir.join(format!("{}.{}", hash, ext));
+    if !path.exists() {
+        let legacy_hash = legacy_hash_path(music_path);
+        let legacy_path = dir.join(format!("{}.{}", legacy_hash, ext));
+        if legacy_path.exists() {
+            let _ = fs::rename(&legacy_path, &path);
+        }
+    }
     tracing::info!("[LYRICS] resolve_user_lyrics_path: resolved fallback path={}", path.display());
     path
 }
@@ -111,6 +118,13 @@ fn resolve_source_lyrics_path(
         tracing::warn!("[LYRICS] resolve_source_lyrics_path: failed to create cache dir {}: {}", dir.display(), e);
     }
     let path = dir.join(format!("{}.{}.{}", hash, source_id, ext));
+    if !path.exists() {
+        let legacy_hash = legacy_hash_path(music_path);
+        let legacy_path = dir.join(format!("{}.{}.{}", legacy_hash, source_id, ext));
+        if legacy_path.exists() {
+            let _ = fs::rename(&legacy_path, &path);
+        }
+    }
     tracing::info!("[LYRICS] resolve_source_lyrics_path: resolved fallback path={}", path.display());
     path
 }
@@ -148,6 +162,14 @@ fn hash_path(music_path: &str) -> u64 {
     hasher.update(music_path.as_bytes());
     let result = hasher.finalize();
     u64::from_be_bytes(result[..8].try_into().unwrap())
+}
+
+fn legacy_hash_path(music_path: &str) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut s = DefaultHasher::new();
+    music_path.hash(&mut s);
+    s.finish()
 }
 
 fn app_lyrics_dir(app: &AppHandle) -> PathBuf {
@@ -368,30 +390,50 @@ pub struct CachedSourceInfo {
 // =======================================================
 
 /// does filename belong to the given token?
-/// expected shapes: 
+/// expected shapes:
 /// <id>.<ext> (user-imported file, no source segment)
 /// <id>.<source>.<ext> (auto fetched, one segment per source)
 /// token == all matches any recognised lyrics file regardless of source
-/// purely structural => never checks against a list of known source ids, so new sources added later need no maintainenence
-fn filename_matches_token(filename: &str, token: &str) -> bool {
-    let mut parts: Vec<&str> = filename.split('.').collect();
+fn filename_matches_token(filename: &str, stem: Option<&str>, token: &str) -> bool {
+    let parts: Vec<&str> = filename.split('.').collect();
     if parts.len() < 2 {
         return false;
     }
-    let ext = parts.pop().unwrap_or("");
+    let ext = parts[parts.len() - 1];
     if !KNOWN_FORMATS.contains(&ext) {
         return false;
     }
-    let potential_source = parts.last().cloned().unwrap_or("").to_lowercase();
-    let is_known_source = KNOWN_SOURCES.contains(&potential_source.as_str());
+
+    let source_id: Option<&str> = if let Some(stem) = stem {
+        let prefix = format!("{}.", stem);
+        if filename.starts_with(&prefix) {
+            let rem = &filename[prefix.len()..];
+            let rem_parts: Vec<&str> = rem.split('.').collect();
+            if rem_parts.len() <= 1 {
+                None
+            } else if rem_parts.len() == 2 {
+                Some(rem_parts[0])
+            } else {
+                Some(rem_parts[rem_parts.len() - 2])
+            }
+        } else {
+            None
+        }
+    } else {
+        if parts.len() <= 2 {
+            None
+        } else {
+            Some(parts[1])
+        }
+    };
 
     if token == "all" {
         return true;
     }
     if token == "user" {
-        return !is_known_source;
+        return source_id.is_none();
     }
-    potential_source == token
+    source_id.map(|s| s.eq_ignore_ascii_case(token)).unwrap_or(false)
 }
 
 /// result of a bulk delete by token
@@ -462,7 +504,7 @@ pub fn delete_lyrics_by_token(
                 let path = entry.path();
                 if !path.is_file() { continue; }
                 let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-                let is_match = filename_matches_token(name, &token);
+                let is_match = filename_matches_token(name, None, &token);
                 if cache_dump < DUMP_LIMIT {
                     tracing::info!("[LYRICS] cache_dir entry: {} matched={}", path.display(), is_match);
                     cache_dump += 1;
@@ -517,7 +559,7 @@ pub fn delete_lyrics_by_token(
                 }
                 continue;
             }
-            let is_match = filename_matches_token(name, &token);
+            let is_match = filename_matches_token(name, Some(stem), &token);
             if sidecar_dump < DUMP_LIMIT {
                 tracing::info!("[LYRICS] sidecar entry: {} matched={}", epath.display(), is_match);
                 sidecar_dump += 1;
