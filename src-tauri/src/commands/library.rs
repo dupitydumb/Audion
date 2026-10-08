@@ -1249,8 +1249,7 @@ pub async fn add_external_track(
     track: ExternalTrackInput,
     db: State<'_, Database>,
 ) -> Result<i64, String> {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+    use sha2::{Digest, Sha256};
 
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
@@ -1261,7 +1260,6 @@ pub async fn add_external_track(
         .unwrap_or_else(|| format!("{}://{}", track.source_type, track.external_id));
 
     // Generate content hash for external tracks
-    let mut hasher = DefaultHasher::new();
     let combined = format!(
         "{}|{}|{}|{}",
         track.title.trim().to_lowercase(),
@@ -1269,8 +1267,10 @@ pub async fn add_external_track(
         track.album.as_deref().unwrap_or("").trim().to_lowercase(),
         track.duration.map(|d| d.to_string()).unwrap_or_default()
     );
-    combined.hash(&mut hasher);
-    let content_hash = Some(format!("{:016x}", hasher.finish()));
+    let mut hasher = Sha256::new();
+    hasher.update(combined.as_bytes());
+    let result = hasher.finalize();
+    let content_hash = Some(format!("{:016x}", u64::from_be_bytes(result[..8].try_into().unwrap())));
 
     let track_insert = queries::TrackInsert {
         path,
@@ -1438,7 +1438,11 @@ pub async fn save_image_to_gallery(
         fs::create_dir_all(&save_dir).map_err(|e| format!("Failed to create directory: {}", e))?;
     }
 
-    let file_path = save_dir.join(filename);
+    let safe_filename = std::path::Path::new(&filename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("image.png");
+    let file_path = save_dir.join(safe_filename);
     fs::write(&file_path, bytes).map_err(|e| format!("Failed to write file: {}", e))?;
 
     Ok(file_path.to_string_lossy().to_string())

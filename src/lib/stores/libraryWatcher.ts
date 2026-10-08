@@ -70,6 +70,8 @@ export async function startLibraryWatcherSync(): Promise<void> {
         });
     } catch (error) {
         console.error('[LibraryWatcher] Failed to attach listeners:', error);
+        if (unlistenBatch) { unlistenBatch(); unlistenBatch = null; }
+        if (unlistenDeleted) { unlistenDeleted(); unlistenDeleted = null; }
         started = false;
     }
 }
