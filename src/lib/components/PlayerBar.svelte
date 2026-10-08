@@ -92,7 +92,7 @@
 
     // Load track cover - with priority order
     $: if ($currentTrack) {
-        loadTrackCover($currentTrack);
+        void loadTrackCover($currentTrack);
     } else {
         albumArt = null;
         imageLoadFailed = false;
@@ -102,19 +102,24 @@
     async function loadTrackCover(track: any) {
         imageLoadFailed = false;
 
-        if (track.track_cover_path) {
-            // Priority 1: Track's file-based cover
-            albumArt = getTrackCoverSrc(track);
-        } else if (track.track_cover) {
-            // Priority 2: Track's base64 cover - old
-            albumArt = getAlbumArtSrc(track.track_cover);
-        } else if (track.cover_url) {
-            // Priority 3: Streaming track cover URL
-            albumArt = track.cover_url;
-        } else if (track.album_id) {
-            // Priority 4 & 5: Album art (file-based or base64)
-            await loadAlbumArt(track.album_id);
-        } else {
+        try {
+            if (track.track_cover_path) {
+                // Priority 1: Track's file-based cover
+                albumArt = getTrackCoverSrc(track);
+            } else if (track.track_cover) {
+                // Priority 2: Track's base64 cover - old
+                albumArt = getAlbumArtSrc(track.track_cover);
+            } else if (track.cover_url) {
+                // Priority 3: Streaming track cover URL
+                albumArt = track.cover_url;
+            } else if (track.album_id) {
+                // Priority 4 & 5: Album art (file-based or base64)
+                await loadAlbumArt(track.album_id);
+            } else {
+                albumArt = null;
+            }
+        } catch (e) {
+            console.error("Failed to load track cover:", e);
             albumArt = null;
         }
     }

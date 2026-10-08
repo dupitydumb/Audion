@@ -4,8 +4,7 @@ use lofty::probe::Probe;
 use lofty::mp4::{Mp4Codec, Mp4File, AtomIdent, AtomData};
 use lofty::tag::Tag as LoftyTag;
 use lofty::config::{ParseOptions, ParsingMode};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use sha2::{Digest, Sha256};
 use std::path::Path;
 
 use symphonia::core::formats::FormatOptions;
@@ -23,8 +22,6 @@ fn generate_content_hash(
     album: Option<&str>,
     duration: Option<i32>,
 ) -> String {
-    let mut hasher = DefaultHasher::new();
-
     // Normalize and hash metadata fields
     let title_normalized = title.unwrap_or("").trim().to_lowercase();
     let artist_normalized = artist.unwrap_or("").trim().to_lowercase();
@@ -37,8 +34,10 @@ fn generate_content_hash(
         title_normalized, artist_normalized, album_normalized, duration_str
     );
 
-    combined.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    let mut hasher = Sha256::new();
+    hasher.update(combined.as_bytes());
+    let result = hasher.finalize();
+    format!("{:016x}", u64::from_be_bytes(result[..8].try_into().unwrap()))
 }
 
 /// probe a file's duration using Symphonia

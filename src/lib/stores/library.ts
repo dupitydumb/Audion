@@ -371,8 +371,10 @@ function ingestTracks(incoming: Track[]): Track[] {
         }
         // Priority 2: Use base64 (fallback, expensive)
         else if (track.track_cover) {
-            const blobUrl = convertBase64ToBlobUrl(track.track_cover);
-            trackCoverCache.set(track.id, blobUrl);
+            if (!trackCoverCache.has(track.id)) {
+                const blobUrl = convertBase64ToBlobUrl(track.track_cover);
+                trackCoverCache.set(track.id, blobUrl);
+            }
         }
 
         // Build bidirectional album ↔ track mapping
@@ -402,6 +404,7 @@ function ingestTracks(incoming: Track[]): Track[] {
 export function addTrackToLibrary(track: Track): void {
     const [lightweight] = ingestTracks([track]);
 
+    let isNew = false;
     // Update store
     tracks.update(current => {
         // Find if track already exists (by ID)
@@ -411,12 +414,15 @@ export function addTrackToLibrary(track: Track): void {
             updated[index] = lightweight;
             return updated;
         }
+        isNew = true;
         // Prepend new tracks to the top so they are visible immediately
         return [lightweight, ...current];
     });
 
     // Update count if it was new
-    trackCount.update(n => n + 1);
+    if (isNew) {
+        trackCount.update(n => n + 1);
+    }
 }
 
 
@@ -810,12 +816,14 @@ export function ingestWatcherBatch(event: ScanBatchEvent): void {
     const lightTracks = ingestTracks(event.tracks);
     const incomingIds = new Set(lightTracks.map(t => t.id));
 
+    let newCount = 0;
     tracks.update(existing => {
         const deduped = existing.filter(t => !incomingIds.has(t.id));
         const merged = [...deduped, ...lightTracks];
-        trackCount.set(merged.length);
+        newCount = merged.length;
         return merged;
     });
+    trackCount.set(newCount);
 }
 
 /**
@@ -826,11 +834,13 @@ export function removeTracksByIds(ids: number[]): void {
     if (ids.length === 0) return;
     const idSet = new Set(ids);
 
+    let newCount = 0;
     tracks.update(existing => {
         const filtered = existing.filter(t => !idSet.has(t.id));
-        trackCount.set(filtered.length);
+        newCount = filtered.length;
         return filtered;
     });
+    trackCount.set(newCount);
 }
 
 /**

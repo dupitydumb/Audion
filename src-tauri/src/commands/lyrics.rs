@@ -2,9 +2,8 @@ use lofty::prelude::*;
 use lofty::probe::Probe;
 use metaflac::Tag as FlacTag;
 use mp4ameta::Tag as Mp4Tag;
-use std::collections::hash_map::DefaultHasher;
+use sha2::{Digest, Sha256};
 use std::fs;
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, State};
 use crate::db::{queries, Database};
@@ -133,11 +132,22 @@ fn sanitise_format(format: &str) -> &str {
 /// load_user_lyrics_file, delete_user_lyrics_file, delete_lyrics_by_token
 /// (bulk), and get_cached_sources all probe/match against this exact list
 const KNOWN_FORMATS: &[&str] = &["lrc", "ttml", "xml", "srt", "json"];
+const KNOWN_SOURCES: &[&str] = &[
+    "lrclib",
+    "musixmatch",
+    "kugou",
+    "qq",
+    "netease",
+    "genius",
+    "spotify",
+    "applettml",
+];
 
 fn hash_path(music_path: &str) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    music_path.hash(&mut hasher);
-    hasher.finish()
+    let mut hasher = Sha256::new();
+    hasher.update(music_path.as_bytes());
+    let result = hasher.finalize();
+    u64::from_be_bytes(result[..8].try_into().unwrap())
 }
 
 fn app_lyrics_dir(app: &AppHandle) -> PathBuf {
@@ -364,26 +374,24 @@ pub struct CachedSourceInfo {
 /// token == all matches any recognised lyrics file regardless of source
 /// purely structural => never checks against a list of known source ids, so new sources added later need no maintainenence
 fn filename_matches_token(filename: &str, token: &str) -> bool {
-    // match from the right
-    let mut rsplit = filename.rsplitn(3, '.');
-    let ext = match rsplit.next() {
-        Some(e) => e,
-        None => return false,
-    };
+    let mut parts: Vec<&str> = filename.split('.').collect();
+    if parts.len() < 2 {
+        return false;
+    }
+    let ext = parts.pop().unwrap_or("");
     if !KNOWN_FORMATS.contains(&ext) {
         return false;
     }
-    let middle = match rsplit.next() {
-        Some(m) => m,
-        None => return false,
-    };
-    // if there's nothing left before middle, then middle is the stem
-    // (no source segment) => user-imported file
-    if rsplit.next().is_none() {
-        token == "all" || token == "user"
-    } else {
-        token == "all" || middle.to_lowercase() == token
+    let potential_source = parts.last().cloned().unwrap_or("").to_lowercase();
+    let is_known_source = KNOWN_SOURCES.contains(&potential_source.as_str());
+
+    if token == "all" {
+        return true;
     }
+    if token == "user" {
+        return !is_known_source;
+    }
+    potential_source == token
 }
 
 /// result of a bulk delete by token
@@ -545,6 +553,7 @@ pub async fn musixmatch_request(
     let client = reqwest::Client::builder()
         .cookie_store(true)
         .redirect(reqwest::redirect::Policy::limited(10))
+        .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| format!("Failed to create client: {}", e))?;
 

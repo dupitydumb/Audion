@@ -52,7 +52,15 @@ let lastArtUrl: string | null = null;
 let lastArtBase64: string | null = null;
 let lastProgressSecond = -1;
 let lastDurationSecond = -1;
+let trackChangeGen = 0;
+let unsubscribers: (() => void)[] = [];
 
+export function stopAndroidNotification() {
+    unsubscribers.forEach(u => u());
+    unsubscribers = [];
+    notificationInitialized = false;
+    window.AndroidMediaNotification?.stopNotification();
+}
 
 export async function initAndroidNotification() {
     if (!isAndroid() || !isTauri() || notificationInitialized) return;
@@ -104,7 +112,8 @@ export async function initAndroidNotification() {
     };
 
     // Subscribe to player state changes
-    currentTrack.subscribe(async (track) => {
+    unsubscribers.push(currentTrack.subscribe(async (track) => {
+        const gen = ++trackChangeGen;
         if (!track) {
             window.AndroidMediaNotification?.stopNotification();
             lastArtUrl = null;
@@ -133,40 +142,22 @@ export async function initAndroidNotification() {
         if (artUrl !== lastArtUrl) {
             lastArtUrl = artUrl;
             if (artUrl) {
-                // NOTE: tauri's convertFileSrc on android returns "https://asset.localhost/..." for local files
-                // MediaNotificationServic uses a plain URLConnection to load art, which can't reach asset.localhost
-                // needs the same fetch()+
-                // base64 treatment as any other local file
                 const isRealHttpUrl = artUrl.startsWith('http') && !artUrl.includes('asset.localhost');
-                console.log('[Android Notification][Art] artUrl changed, deciding path:', {
-                    artUrl,
-                    isRealHttpUrl,
-                    reason: isRealHttpUrl
-                        ? 'starts with http and is not asset.localhost -> pass through as-is'
-                        : artUrl.includes('asset.localhost')
-                            ? 'asset.localhost pseudo-host -> must fetch()+base64'
-                            : 'not an http url (local asset/file/data) -> must fetch()+base64',
-                });
 
                 if (isRealHttpUrl) {
                     artData = artUrl;
-                    console.log('[Android Notification][Art] passing remote URL through unchanged, length:', artData.length);
                 } else {
                     // Local asset/file URL - fetch and convert to base64
                     try {
                         const response = await fetch(artUrl);
-                        console.log('[Android Notification][Art] fetch() result:', {
-                            ok: response.ok,
-                            status: response.status,
-                            contentType: response.headers.get('content-type'),
-                        });
+                        if (!response.ok) throw new Error(`HTTP ${response.status}`);
                         const blob = await response.blob();
-                        artData = await new Promise<string>((resolve) => {
+                        artData = await new Promise<string | null>((resolve) => {
                             const reader = new FileReader();
                             reader.onloadend = () => resolve(reader.result as string);
+                            reader.onerror = () => resolve(null);
                             reader.readAsDataURL(blob);
                         });
-                        console.log('[Android Notification][Art] converted to base64, length:', artData.length, 'prefix:', artData.slice(0, 30));
                     } catch (e) {
                         console.warn('[Android Notification] Failed to load art:', e);
                         artData = null;
@@ -175,13 +166,13 @@ export async function initAndroidNotification() {
             } else {
                 console.log('[Android Notification][Art] no artUrl for this track - clearing art');
             }
+            if (gen !== trackChangeGen) return;
             lastArtBase64 = artData;
         } else {
             artData = lastArtBase64;
-            console.log('[Android Notification][Art] artUrl unchanged, reusing cached art (present:', artData !== null, ')');
         }
 
-        console.log('[Android Notification][Art] sending to startNotification, artData is', artData ? `present (len ${artData.length})` : 'null');
+        if (gen !== trackChangeGen) return;
 
         window.AndroidMediaNotification?.startNotification(
             track.title || 'Unknown Title',
@@ -195,9 +186,9 @@ export async function initAndroidNotification() {
             get(shuffle),
             get(repeat)
         );
-    });
+    }));
 
-    isPlaying.subscribe(async (playing) => {
+    unsubscribers.push(isPlaying.subscribe(async (playing) => {
         const track = get(currentTrack);
         if (track) {
             const loved = get(currentTrackLiked);
@@ -216,9 +207,9 @@ export async function initAndroidNotification() {
                 get(repeat)
             );
         }
-    });
+    }));
 
-    currentTime.subscribe((pos) => {
+    unsubscribers.push(currentTime.subscribe((pos) => {
         const track = get(currentTrack);
         if (!track) return;
 
@@ -245,9 +236,9 @@ export async function initAndroidNotification() {
             get(shuffle),
             get(repeat)
         );
-    });
+    }));
 
-    duration.subscribe((dur) => {
+    unsubscribers.push(duration.subscribe((dur) => {
         const track = get(currentTrack);
         if (!track) return;
 
@@ -274,16 +265,16 @@ export async function initAndroidNotification() {
             get(shuffle),
             get(repeat)
         );
-    });
+    }));
 
     // pushes shuffle/repeat toggles made in-app (not from android auto) to the
     // session too, so auto's shuffle/repeat icons stay in sync either direction
-    shuffle.subscribe(() => pushSessionUpdate());
-    repeat.subscribe(() => pushSessionUpdate());
+    unsubscribers.push(shuffle.subscribe(() => pushSessionUpdate()));
+    unsubscribers.push(repeat.subscribe(() => pushSessionUpdate()));
 
     // pushes like/unlike made from any surface (desktop, mobile, this
     // notification itself) so the notification's heart stays in sync
-    currentTrackLiked.subscribe(() => pushSessionUpdate());
+    unsubscribers.push(currentTrackLiked.subscribe(() => pushSessionUpdate()));
 
     function pushSessionUpdate() {
         const track = get(currentTrack);

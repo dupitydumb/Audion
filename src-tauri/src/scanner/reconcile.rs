@@ -290,6 +290,7 @@ pub fn run(app: &AppHandle, db: &Database) {
                 };
 
                 for (prior_move, track_data) in pending_batch.drain(..) {
+                    let had_prior_move = prior_move.is_some();
                     if let Some((id, mtime, size)) = prior_move {
                         if let Err(e) =
                             queries::update_track_path_and_stat(&tx_db, id, &track_data.path, mtime, size)
@@ -307,7 +308,7 @@ pub fn run(app: &AppHandle, db: &Database) {
                                 &tx_db, track_id, &track_data,
                             );
                             if let Ok(Some(track)) = queries::get_track_by_id(&tx_db, track_id) {
-                                outcomes.push(if was_new && prior_move.is_none() {
+                                outcomes.push(if was_new && !had_prior_move {
                                     Outcome::Added(track)
                                 } else {
                                     Outcome::Updated(track)

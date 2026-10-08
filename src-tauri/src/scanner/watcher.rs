@@ -156,20 +156,17 @@ pub fn sync_watches(state: &WatcherState, current_folders: &[String]) {
         for folder in &to_remove {
             if let Err(e) = debouncer.unwatch(Path::new(folder)) {
                 eprintln!("[Watcher] Failed to unwatch folder {folder}: {e}");
+            } else {
+                watched.remove(folder);
             }
         }
         for folder in &to_add {
             if let Err(e) = debouncer.watch(Path::new(folder), RecursiveMode::Recursive) {
                 eprintln!("[Watcher] Failed to watch folder {folder}: {e}");
+            } else {
+                watched.insert(folder.clone());
             }
         }
-    }
-
-    for folder in to_remove {
-        watched.remove(&folder);
-    }
-    for folder in to_add {
-        watched.insert(folder);
     }
 }
 
@@ -265,10 +262,10 @@ fn handle_batch(app: &AppHandle, db: &Database, events: Vec<notify_debouncer_ful
         return;
     }
 
-    let conn = match db.conn.lock() {
+    let conn = match db.open_secondary_connection() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("[Watcher] Failed to lock db for batch: {e}");
+            eprintln!("[Watcher] Failed to open secondary db connection for batch: {e}");
             return;
         }
     };
