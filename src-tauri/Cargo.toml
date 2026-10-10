@@ -48,6 +48,12 @@ dirs = "5"
 # File scanning
 walkdir = "2"
 
+# filesystem change notifications for the live library watcher
+# file-id gives a stable per-file identity
+notify = "8"
+notify-debouncer-full = "0.6"
+file-id = "0.2"
+
 # Audio metadata extraction
 lofty = "0.24.0"
 ratio-metadata = "0.1"  # Add version as needed
@@ -203,7 +209,7 @@ raw-window-handle = "0.6"
 lofty = { git = "https://github.com/SmileofHaven/lofty-rs", branch = "main" }
 
 [patch."https://github.com/restsend/opus-rs"]
-opus-rs = { git = "https://github.com/SmileofHaven/opus-rs", rev = "89b786291948980fda1203a8839ecbfb036e01c7" }
+opus-rs = { git = "https://github.com/SmileofHaven/opus-rs", rev = "ad468463ad967bd838ce1e8b59f4f714214ed73d" }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_logger = "0.14"

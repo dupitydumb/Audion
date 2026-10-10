@@ -1,6 +1,7 @@
 // Theme store - manages app theming and customization
 import { writable, derived, get } from 'svelte/store';
 import { applyEffect } from '$lib/services/effect-overlay';
+import { albumPalette, type PaletteColor } from '$lib/stores/palette';
 
 export type ThemeMode = 'dark' | 'light' | 'system';
 
@@ -67,6 +68,8 @@ export interface ThemeState {
     allowCustomJs: boolean;
     /** Custom JS script from current theme */
     customJs?: string;
+    /** drive the player bar background from the current track's cover art */
+    matchPlayerToArt: boolean;
 }
 
 const defaultAnimation: AnimationConfig = {
@@ -122,6 +125,7 @@ const defaultTheme: ThemeState = {
     background: defaultBackground,
     animation: defaultAnimation,
     allowCustomJs: false,
+    matchPlayerToArt: false,
 };
 
 // Load theme from localStorage
@@ -235,6 +239,15 @@ function createThemeStore() {
             });
         },
 
+        setMatchPlayerToArt(enabled: boolean) {
+            update(state => {
+                const newState = { ...state, matchPlayerToArt: enabled };
+                saveTheme(newState);
+                applyTheme(newState);
+                return newState;
+            });
+        },
+
         resetColors() {
             update(state => {
                 const newState = { ...state, customColors: defaultCustomColors };
@@ -266,6 +279,9 @@ function createThemeStore() {
                     animation: { ...defaultAnimation, ...(pkg.animation ?? {}) },
                     // never let a package override allowCustomJs — user controls that
                     allowCustomJs: state.allowCustomJs,
+                    // likewise: matching the player bar to cover art is a local
+                    // preference
+                    matchPlayerToArt: state.matchPlayerToArt,
                     customJs: pkg.customJs,
                 };
                 saveTheme(newState);
@@ -283,6 +299,13 @@ function createThemeStore() {
 }
 
 export const theme = createThemeStore();
+
+// keep the art-driven player bar in sync as tracks (and their extracted
+// palettes) change
+albumPalette.subscribe(() => {
+    const state = get(theme);
+    if (state.matchPlayerToArt) applyTheme(state);
+});
 
 // ── Theme package format ──────────────────────────────────────────────────────
 
@@ -322,13 +345,13 @@ function isHex(s: unknown): s is string {
 /** Parse and validate a raw JSON object as AudioThemePackage.
  *  Returns the package or throws a descriptive error string. */
 export function parseThemePackage(raw: unknown): AudioThemePackage {
-    if (typeof raw !== 'object' || raw === null) throw 'Not a JSON object';
+    if (typeof raw !== 'object' || raw === null) throw new Error('Not a JSON object');
     const r = raw as Record<string, unknown>;
 
-    if (r.version !== AUDIOTHEME_VERSION) throw `Unsupported version: ${r.version}`;
-    if (typeof r.name !== 'string' || !r.name.trim()) throw 'Missing name';
-    if (!isHex(r.accentColor)) throw 'Invalid accentColor';
-    if (r.mode !== undefined && !VALID_MODES.includes(r.mode as ThemeMode)) throw 'Invalid mode';
+    if (r.version !== AUDIOTHEME_VERSION) throw new Error(`Unsupported version: ${r.version}`);
+    if (typeof r.name !== 'string' || !r.name.trim()) throw new Error('Missing name');
+    if (!isHex(r.accentColor)) throw new Error('Invalid accentColor');
+    if (r.mode !== undefined && !VALID_MODES.includes(r.mode as ThemeMode)) throw new Error('Invalid mode');
 
     // customColors — all keys optional null or hex
     const cc: CustomColors = { ...defaultCustomColors };
@@ -338,7 +361,7 @@ export function parseThemePackage(raw: unknown): AudioThemePackage {
             const v = src[k];
             if (v === null || v === undefined) { cc[k] = null; }
             else if (isHex(v)) { cc[k] = v; }
-            else throw `Invalid customColors.${k}`;
+            else throw new Error(`Invalid customColors.${k}`);
         }
     }
 
@@ -346,7 +369,7 @@ export function parseThemePackage(raw: unknown): AudioThemePackage {
     const bg: BackgroundConfig = { ...defaultBackground };
     if (typeof r.background === 'object' && r.background !== null) {
         const b = r.background as Record<string, unknown>;
-        if (!VALID_BG_TYPES.includes(b.type as BackgroundType)) throw 'Invalid background.type';
+        if (!VALID_BG_TYPES.includes(b.type as BackgroundType)) throw new Error('Invalid background.type');
         bg.type = b.type as BackgroundType;
         // strip paths — image/video value cannot travel cross-machine
         bg.value = (bg.type === 'image' || bg.type === 'video') ? '' : (typeof b.value === 'string' ? b.value : '');
@@ -443,6 +466,37 @@ function accentTextColor(hex: string): string {
     return L > 0.179 ? '#000000' : '#ffffff';
 }
 
+// max relative luminance for the art driven player bar color (0 to 1)
+const PLAYER_ART_MAX_LUMINANCE = 0.22;
+
+// scales a color toward black in linear space until luminance <= max
+// keeps hue, only dims
+function capLuminance(hex: string, max: number): string {
+    const num = parseInt(hex6(hex).replace('#', ''), 16);
+    const toLinear = (c: number) => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    const toSrgb = (c: number) => c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+    const r = toLinear((num >> 16) / 255);
+    const g = toLinear(((num >> 8) & 0xff) / 255);
+    const b = toLinear((num & 0xff) / 255);
+    const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    if (L <= max) return hex;
+    const k = max / L;
+    const out = [r, g, b]
+        .map(c => Math.round(Math.min(1, toSrgb(c * k)) * 255).toString(16).padStart(2, '0'))
+        .join('');
+    return '#' + out;
+}
+
+// player bar text + button tint
+// dark text (light bg) => grey button fill so contrast shifts gradually
+function applyPlayerText(root: HTMLElement, bg: string): void {
+    const text = accentTextColor(bg);
+    const dark = text === '#000000';
+    root.style.setProperty('--text-on-player', text);
+    root.style.setProperty('--player-btn-bg', dark ? 'rgba(0, 0, 0, 0.12)' : 'transparent');
+    root.style.setProperty('--player-btn-bg-hover', dark ? 'rgba(0, 0, 0, 0.22)' : 'rgba(255, 255, 255, 0.1)');
+}
+
 // Convert hex to RGB string (r, g, b)
 function hexToRgb(hex: string): string {
     const num = parseInt(hex6(hex).replace('#', ''), 16);
@@ -450,6 +504,45 @@ function hexToRgb(hex: string): string {
     const G = ((num >> 8) & 0x00FF);
     const B = (num & 0x0000FF);
     return `${R}, ${G}, ${B}`;
+}
+
+// HSL saturation (0-1) of a hex color
+// used to prefer vibrant swatches over plain near-black/near-white/gray backdrops
+function hexSaturation(hex: string): number {
+    const num = parseInt(hex6(hex).replace('#', ''), 16);
+    const r = (num >> 16) / 255;
+    const g = ((num >> 8) & 0xff) / 255;
+    const b = (num & 0xff) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const l = (max + min) / 2;
+    if (max === min) return 0;
+    const d = max - min;
+    return l > 0.5 ? d / (2 - max - min) : d / (max + min);
+}
+
+/**
+ * picks the best candidate from a dominance-ranked cover-art palette to use
+ * this walks the palette (already sorted by dominance) and
+ * picks the highest-ranked color that both (a) isn't too dark/too light to read text on comfortably, and 
+ * (b) has enough saturation to feel like an intentional accent rather than a neutral
+ */
+export function pickVibrantColor(palette: PaletteColor[]): string | null {
+    if (palette.length === 0) return null;
+
+    const inLumRange = (c: PaletteColor) => c.luminance > 0.08 && c.luminance < 0.92;
+
+    // 1. best case: not too dark/light and reasonably saturated
+    const vibrant = palette.filter(c => inLumRange(c) && hexSaturation(c.hex) > 0.25);
+    if (vibrant.length > 0) return vibrant[0].hex;
+
+    // 2. relax saturation requirement, keep the luminance guard
+    const readable = palette.filter(inLumRange);
+    if (readable.length > 0) return readable[0].hex;
+
+    // 3. nothing clears the bar (e.g. a monochrome cover)
+    // ust use the most dominant color rather than showing nothing
+    return palette[0].hex;
 }
 
 /** Dark-mode defaults for each custom color slot */
@@ -503,7 +596,19 @@ export function applyTheme(state: ThemeState): void {
     root.style.setProperty('--sidebar-bg', c.sidebarBg ?? (hasBgLayer ? 'transparent' : modeDefaults.sidebarBg));
     const resolvedPlayerBg = c.playerBg ?? modeDefaults.playerBg;
     root.style.setProperty('--player-bg', resolvedPlayerBg);
-    root.style.setProperty('--text-on-player', accentTextColor(resolvedPlayerBg));
+    applyPlayerText(root, resolvedPlayerBg);
+
+    // art-driven player bar: overrides the resolved color above
+    // (but never the user's saved customColors.playerBg preference)
+    // with a vibrant pick from the current track's cover art palette
+    if (state.matchPlayerToArt) {
+        const picked = pickVibrantColor(get(albumPalette));
+        const artColor = picked ? capLuminance(picked, PLAYER_ART_MAX_LUMINANCE) : null;
+        if (artColor) {
+            root.style.setProperty('--player-bg', artColor);
+            applyPlayerText(root, artColor);
+        }
+    }
 
     // Text tokens
     root.style.setProperty('--text-primary', c.textPrimary ?? modeDefaults.textPrimary);

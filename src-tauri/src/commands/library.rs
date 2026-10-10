@@ -1,6 +1,6 @@
 // Library-related Tauri commands
 use crate::db::{queries, Database};
-use crate::scanner::{cover_storage, extract_metadata, scan_directory};
+use crate::scanner::{self, cover_storage, extract_metadata, scan_directory};
 use crate::security;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use rayon::prelude::*;
@@ -335,7 +335,7 @@ pub struct Library {
 }
 
 /// Adaptive batch sizing for rescan_music
-fn calculate_batch_size(
+pub(crate) fn calculate_batch_size(
     tracks_processed: usize,
     _total_tracks: usize,
     queue_depth: usize,
@@ -481,7 +481,11 @@ pub async fn scan_music(paths: Vec<String>, db: State<'_, Database>) -> Result<S
 
 /// Add a music folder with path validation
 #[tauri::command]
-pub async fn add_folder(path: String, db: State<'_, Database>) -> Result<(), String> {
+pub async fn add_folder(
+    path: String,
+    db: State<'_, Database>,
+    watcher: State<'_, scanner::watcher::WatcherState>,
+) -> Result<(), String> {
     let path_buf = std::path::PathBuf::from(&path);
 
     // Validate path exists and is a directory
@@ -500,9 +504,16 @@ pub async fn add_folder(path: String, db: State<'_, Database>) -> Result<(), Str
 
     let path_str = canonical_path.to_string_lossy().to_string();
 
-    let conn = db.conn.lock().map_err(|e| e.to_string())?;
-    queries::register_music_folder(&conn, &path_str)
-        .map_err(|e| format!("Failed to add folder: {}", e))?;
+    let current_folders = {
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        queries::register_music_folder(&conn, &path_str)
+            .map_err(|e| format!("Failed to add folder: {}", e))?;
+        // register_music_folder can collapse/absorb neighboring folders as
+        // so re-read the full set
+        // rather than assuming only 'path_str' changed.
+        queries::get_music_folders(&conn).map_err(|e| e.to_string())?
+    };
+    scanner::watcher::sync_watches(&watcher, &current_folders);
 
     Ok(())
 }
@@ -1068,18 +1079,25 @@ pub async fn scan_folder(
 
 /// remove a music folder and delete all tracks that live under it
 #[tauri::command]
-pub async fn remove_folder(path: String, db: State<'_, Database>) -> Result<usize, String> {
+pub async fn remove_folder(
+    path: String,
+    db: State<'_, Database>,
+    watcher: State<'_, scanner::watcher::WatcherState>,
+) -> Result<usize, String> {
     // canonicalize to match how add_folder stored it
     let canonical_path = std::path::PathBuf::from(&path)
         .canonicalize()
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or(path);
 
-    let deleted = {
+    let (deleted, current_folders) = {
         let conn = db.conn.lock().map_err(|e| e.to_string())?;
-        queries::remove_folder_with_tracks(&conn, &canonical_path)
-            .map_err(|e| format!("Failed to remove folder: {}", e))?
+        let deleted = queries::remove_folder_with_tracks(&conn, &canonical_path)
+            .map_err(|e| format!("Failed to remove folder: {}", e))?;
+        let current_folders = queries::get_music_folders(&conn).map_err(|e| e.to_string())?;
+        (deleted, current_folders)
     };
+    scanner::watcher::sync_watches(&watcher, &current_folders);
 
     // background orphan cover art cleanup (non blocking)
     let db_conn_cleanup = Arc::clone(&db.conn);
@@ -1231,8 +1249,7 @@ pub async fn add_external_track(
     track: ExternalTrackInput,
     db: State<'_, Database>,
 ) -> Result<i64, String> {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
+    use sha2::{Digest, Sha256};
 
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
 
@@ -1243,7 +1260,6 @@ pub async fn add_external_track(
         .unwrap_or_else(|| format!("{}://{}", track.source_type, track.external_id));
 
     // Generate content hash for external tracks
-    let mut hasher = DefaultHasher::new();
     let combined = format!(
         "{}|{}|{}|{}",
         track.title.trim().to_lowercase(),
@@ -1251,8 +1267,10 @@ pub async fn add_external_track(
         track.album.as_deref().unwrap_or("").trim().to_lowercase(),
         track.duration.map(|d| d.to_string()).unwrap_or_default()
     );
-    combined.hash(&mut hasher);
-    let content_hash = Some(format!("{:016x}", hasher.finish()));
+    let mut hasher = Sha256::new();
+    hasher.update(combined.as_bytes());
+    let result = hasher.finalize();
+    let content_hash = Some(format!("{:016x}", u64::from_be_bytes(result[..8].try_into().unwrap())));
 
     let track_insert = queries::TrackInsert {
         path,
@@ -1274,6 +1292,9 @@ pub async fn add_external_track(
         local_src: None,
         musicbrainz_recording_id: track.musicbrainz_recording_id,
         metadata_json: track.metadata_json,
+        file_id: None, // external/streamed track => no filesystem identity
+        mtime: None,
+        size: None,
     };
 
     queries::insert_or_update_track(&conn, &track_insert)
@@ -1417,7 +1438,11 @@ pub async fn save_image_to_gallery(
         fs::create_dir_all(&save_dir).map_err(|e| format!("Failed to create directory: {}", e))?;
     }
 
-    let file_path = save_dir.join(filename);
+    let safe_filename = std::path::Path::new(&filename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("image.png");
+    let file_path = save_dir.join(safe_filename);
     fs::write(&file_path, bytes).map_err(|e| format!("Failed to write file: {}", e))?;
 
     Ok(file_path.to_string_lossy().to_string())

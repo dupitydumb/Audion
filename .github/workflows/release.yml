@@ -514,14 +514,17 @@ jobs:
             runner: ubuntu-22.04
             use_docker: false
             docker_image: ""
+            alsa_pkg: libasound2
           - label: ubuntu-24.04
             runner: ubuntu-24.04
             use_docker: false
             docker_image: ""
+            alsa_pkg: libasound2t64
           - label: fedora-40
             runner: ubuntu-24.04
             use_docker: true
             docker_image: "fedora:40"
+            alsa_pkg: ""
     steps:
       - name: Install runtime deps (Ubuntu runner)
         if: matrix.use_docker == false
@@ -539,7 +542,7 @@ jobs:
             libxrandr2 \
             libxrender1 \
             libxfixes3 \
-            libasound2t64 \
+            ${{ matrix.alsa_pkg }} \
             xvfb \
             fuse
 
@@ -569,20 +572,24 @@ jobs:
           export GTK_IM_MODULE=simple
           export AUDION_DISABLE_DRI3=1
 
+          # Capture the app's real exit status
+          mkdir -p smoke-out
           set +e
           xvfb-run -a --server-args="-screen 0 1280x720x24 -ac" \
-            timeout 20s ./audion.AppImage 2>&1 | head -100
+            timeout 20s ./audion.AppImage > smoke-out/smoke.log 2>&1
           EXIT=$?
           set -e
+          echo "$EXIT" > smoke-out/exit-code.txt
+          head -100 smoke-out/smoke.log
 
           echo "Exit code: $EXIT"
           case $EXIT in
             0|124)  echo "✅ Launched cleanly (exit=$EXIT)" ;;
-            139|134|132|138) echo "❌ Crashed with signal (exit=$EXIT)"; exit 1 ;;
+            132|134|135|136|139) echo "❌ Crashed with signal (exit=$EXIT)"; exit 1 ;;
             *) echo "⚠️  Exited $EXIT (non-signal — treated as pass)" ;;
           esac
 
-      - name: Smoke test — Fedora 40 (Docker)
+      - name: Download AppImage from release (Fedora 40)
         if: matrix.use_docker == true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -596,22 +603,36 @@ jobs:
             -o audion.AppImage
           chmod +x audion.AppImage
 
-          # Run the smoke test inside a Fedora 40 container.
-          # --privileged: needed for FUSE (APPIMAGE_EXTRACT_AND_RUN bypasses this,
-          # but xvfb-run needs /dev/shm write access).
-          # --network=none: no outbound traffic from the app during the test.
+      # dnf needs to reach Fedora's mirrors, so this has to run in its own container with network access
+      # it can't share a 'docker run' with the actual smoke test below,
+      # which intentionally has --network=none
+      - name: Prepare Fedora 40 image with runtime deps
+        if: matrix.use_docker == true
+        run: |
+          docker run --name audion-smoke-base ${{ matrix.docker_image }} bash -c '
+            dnf install -y --quiet \
+              webkit2gtk4.1 gtk3 libappindicator-gtk3 glib2 dbus-libs \
+              libX11 libXcomposite libXdamage libXrandr libXrender libXfixes \
+              alsa-lib xorg-x11-server-Xvfb
+          '
+          docker commit audion-smoke-base audion-smoke-fedora40
+          docker rm audion-smoke-base
+
+      # Run the smoke test inside the prepared Fedora 40 image
+      # --privileged: needed for FUSE (APPIMAGE_EXTRACT_AND_RUN bypasses this,
+      # but xvfb-run needs /dev/shm write access).
+      # --network=none: no outbound traffic from the app during the test.
+      - name: Smoke test — Fedora 40 (Docker)
+        if: matrix.use_docker == true
+        run: |
+          mkdir -p smoke-out
           docker run --rm \
             --privileged \
             --network=none \
             -v "$PWD/audion.AppImage:/audion.AppImage" \
-            ${{ matrix.docker_image }} \
+            -v "$PWD/smoke-out:/out" \
+            audion-smoke-fedora40 \
             bash -c '
-              set -e
-              dnf install -y --quiet \
-                webkit2gtk4.1 gtk3 libappindicator-gtk3 glib2 dbus-libs \
-                libX11 libXcomposite libXdamage libXrandr libXrender libXfixes \
-                alsa-lib xorg-x11-server-Xvfb 2>/dev/null
-
               export APPIMAGE_EXTRACT_AND_RUN=1
               export WEBKIT_DISABLE_DMABUF_RENDERER=1
               export WEBKIT_DISABLE_COMPOSITING_MODE=1
@@ -624,17 +645,28 @@ jobs:
               set +e
               Xvfb :99 -screen 0 1280x720x24 -ac &
               sleep 1
-              DISPLAY=:99 timeout 20s /audion.AppImage 2>&1 | head -100
+              DISPLAY=:99 timeout 20s /audion.AppImage > /out/smoke.log 2>&1
               EXIT=$?
-              set -e
+              echo "$EXIT" > /out/exit-code.txt
+              head -100 /out/smoke.log
 
               echo "Exit code: $EXIT"
               case $EXIT in
                 0|124)  echo "✅ Launched cleanly (exit=$EXIT)" ;;
-                139|134|132|138) echo "❌ Crashed with signal (exit=$EXIT)"; exit 1 ;;
+                132|134|135|136|139) echo "❌ Crashed with signal (exit=$EXIT)"; exit 1 ;;
                 *) echo "⚠️  Exited $EXIT (non-signal — treated as pass)" ;;
               esac
             '
+
+      # Runs even when the smoke test step fails, so a crash still leaves its full log behind
+      - name: Upload smoke test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-log-${{ matrix.label }}
+          path: smoke-out/
+          if-no-files-found: ignore
+          retention-days: 14
 
   # ---------------------------------------------------------------------------
   # Flatpak Build
