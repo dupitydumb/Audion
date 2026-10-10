@@ -4,11 +4,14 @@
 </script>
 
 <script lang="ts">
+    import { onMount, onDestroy } from "svelte";
     import {
         searchResults,
         searchQuery,
         clearSearch,
         addItemToHistory,
+        startSearchLiveSync,
+        stopSearchLiveSync,
     } from "$lib/stores/search";
     import {
         goToAlbumDetail,
@@ -39,6 +42,15 @@
 
     import EmptyState from "./EmptyState.svelte";
     import Icon from "$lib/components/Icon.svelte";
+
+    // live re-search on watcher events while this component (the
+    // search results view) is actually mounted/visible - see search.ts
+    onMount(() => {
+        void startSearchLiveSync();
+    });
+    onDestroy(() => {
+        stopSearchLiveSync();
+    });
 
     // Props from MainView
     export let sectionOrder: SectionKey[];
@@ -140,13 +152,9 @@
     function handleTrackClick(index: number) {
         const track = $searchResults.tracks[index];
         if (track) {
-            addItemToHistory({
-                type: 'track',
-                id: track.id,
-                title: track.title || '',
-                artist: track.artist || undefined,
-                albumArt: getTrackArt(track) ?? undefined,
-            });
+            // id only
+            // title/artist/art are resolved live from library.ts's stores by resolvedSearchHistory
+            addItemToHistory({ type: 'track', id: track.id });
         }
         playTracks($searchResults.tracks, index);
     }
@@ -154,13 +162,7 @@
     function handleAlbumClick(albumId: number) {
         const album = $searchResults.albums.find(a => a.id === albumId);
         if (album) {
-            addItemToHistory({
-                type: 'album',
-                id: album.id,
-                title: album.name,
-                artist: album.artist || undefined,
-                albumArt: getAlbumCover(album) ?? undefined,
-            });
+            addItemToHistory({ type: 'album', id: album.id });
         }
         clearSearch();
         goToAlbumDetail(albumId);
@@ -172,14 +174,7 @@
     }
 
     function handlePlaylistClick(playlistId: number, name: string) {
-        const playlist = $searchResults.playlists?.find(p => p.id === playlistId);
-        const cover = playlist ? getPlaylistCover(playlist) : undefined;
-        addItemToHistory({
-            type: 'playlist',
-            id: playlistId,
-            title: name,
-            albumArt: cover,
-        });
+        addItemToHistory({ type: 'playlist', id: playlistId });
         clearSearch();
         goToPlaylistDetail(playlistId, name);
     }

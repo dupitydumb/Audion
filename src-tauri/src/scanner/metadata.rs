@@ -4,8 +4,7 @@ use lofty::probe::Probe;
 use lofty::mp4::{Mp4Codec, Mp4File, AtomIdent, AtomData};
 use lofty::tag::Tag as LoftyTag;
 use lofty::config::{ParseOptions, ParsingMode};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use sha2::{Digest, Sha256};
 use std::path::Path;
 
 use symphonia::core::formats::FormatOptions;
@@ -23,8 +22,6 @@ fn generate_content_hash(
     album: Option<&str>,
     duration: Option<i32>,
 ) -> String {
-    let mut hasher = DefaultHasher::new();
-
     // Normalize and hash metadata fields
     let title_normalized = title.unwrap_or("").trim().to_lowercase();
     let artist_normalized = artist.unwrap_or("").trim().to_lowercase();
@@ -37,8 +34,10 @@ fn generate_content_hash(
         title_normalized, artist_normalized, album_normalized, duration_str
     );
 
-    combined.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    let mut hasher = Sha256::new();
+    hasher.update(combined.as_bytes());
+    let result = hasher.finalize();
+    format!("{:016x}", u64::from_be_bytes(result[..8].try_into().unwrap()))
 }
 
 /// probe a file's duration using Symphonia
@@ -80,7 +79,43 @@ fn get_duration_via_symphonia(path: &Path) -> i32 {
     0
 }
 
+/// stat a path for its stable filesystem identity
+/// mtime/size, used to populate TrackInsert::file_id/mtime/size
+pub fn stat_identity(path: &Path) -> (Option<String>, Option<i64>, Option<i64>) {
+    // FileId (device+inode / Windows file index) only guarantees Debug, not Display
+    // format! gives a stable, equality-comparable key
+    let file_id = file_id::get_file_id(path).ok().map(|id| format!("{id:?}"));
+
+    let (mtime, size) = std::fs::metadata(path)
+        .ok()
+        .map(|meta| {
+            let mtime = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_millis() as i64);
+            (mtime, Some(meta.len() as i64))
+        })
+        .unwrap_or((None, None));
+
+    (file_id, mtime, size)
+}
+
+/// extract tags/duration/etc. for a file,
+/// then stamp on its current file_id/mtime/size in one place regardles of fallback path
 pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
+    let path_ref = Path::new(path);
+    let mut track = extract_metadata_inner(path);
+    if let Some(track) = track.as_mut() {
+        let (file_id, mtime, size) = stat_identity(path_ref);
+        track.file_id = file_id;
+        track.mtime = mtime;
+        track.size = size;
+    }
+    track
+}
+
+fn extract_metadata_inner(path: &str) -> Option<TrackInsert> {
     let path = Path::new(path);
 
     // Try to read the file
@@ -247,6 +282,9 @@ pub fn extract_metadata(path: &str) -> Option<TrackInsert> {
                 local_src: None,
                 musicbrainz_recording_id,
                 metadata_json,
+                file_id: None, // stamped by the extract_metadata wrapper
+                mtime: None,
+                size: None,
             })
         }
         None => {
@@ -332,6 +370,9 @@ fn create_fallback_metadata(path: &Path) -> TrackInsert {
         local_src: None,
         musicbrainz_recording_id: None,
         metadata_json: None,
+        file_id: None,
+        mtime: None,
+        size: None,
     }
 }
 
@@ -415,6 +456,9 @@ fn extract_alac_metadata_fallback(path: &Path) -> Option<TrackInsert> {
         local_src: None,
         musicbrainz_recording_id: None,
         metadata_json: None,
+        file_id: None,
+        mtime: None,
+        size: None,
     })
 }
 
@@ -482,6 +526,9 @@ fn extract_flac_metadata_fallback(path: &Path, _duration_hint: Option<i32>) -> O
                 local_src: None,
                 musicbrainz_recording_id: None,
                 metadata_json: None,
+                file_id: None,
+                mtime: None,
+                size: None,
             })
         }
         Err(e) => {

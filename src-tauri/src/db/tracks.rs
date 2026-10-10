@@ -140,6 +140,9 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
                 disc_number = ?15,
                 musicbrainz_recording_id = ?16,
                 metadata_json = ?17,
+                file_id = ?18,
+                mtime = ?19,
+                size = ?20,
                 date_added = COALESCE(date_added, CURRENT_TIMESTAMP)
              WHERE id = ?14",
             params![
@@ -160,6 +163,9 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
                 track.disc_number,
                 track.musicbrainz_recording_id,
                 track.metadata_json,
+                track.file_id,
+                track.mtime,
+                track.size,
             ],
         )?;
 
@@ -169,8 +175,8 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
     } else {
         // insert new track
         conn.execute(
-            "INSERT INTO tracks (path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, content_hash, local_src, disc_number, musicbrainz_recording_id, metadata_json, date_added)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, CURRENT_TIMESTAMP)",
+            "INSERT INTO tracks (path, title, artist, album, track_number, duration, album_id, format, bitrate, source_type, cover_url, external_id, content_hash, local_src, disc_number, musicbrainz_recording_id, metadata_json, file_id, mtime, size, date_added)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, CURRENT_TIMESTAMP)",
             params![
                 track.path,
                 track.title,
@@ -189,6 +195,9 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
                 track.disc_number,
                 track.musicbrainz_recording_id,
                 track.metadata_json,
+                track.file_id,
+                track.mtime,
+                track.size,
             ],
         )?;
 
@@ -197,6 +206,104 @@ pub fn insert_or_update_track(conn: &Connection, track: &TrackInsert) -> Result<
 
         Ok((new_id, true)) // Return (new_id, was_new = true)
     }
+}
+
+// watcher / reconciliation identity helpers ===========
+// operate on the lean TrackIdentity projection
+// to run a cheap identity/staleness check
+
+fn identity_from_row(row: &rusqlite::Row) -> Result<super::models::TrackIdentity> {
+    Ok(super::models::TrackIdentity {
+        id: row.get(0)?,
+        path: row.get(1)?,
+        file_id: row.get(2)?,
+        mtime: row.get(3)?,
+        size: row.get(4)?,
+    })
+}
+
+const IDENTITY_COLUMNS: &str = "id, path, file_id, mtime, size";
+
+/// look up a track's last-known identity/staleness fields by its current DB path
+/// used on 'Modify' events, where identity isn't in question
+pub fn get_track_identity_by_path(
+    conn: &Connection,
+    path: &str,
+) -> Result<Option<super::models::TrackIdentity>> {
+    conn.query_row(
+        &format!("SELECT {IDENTITY_COLUMNS} FROM tracks WHERE path = ?1 COLLATE NOCASE"),
+        params![path],
+        identity_from_row,
+    )
+    .optional()
+}
+
+/// look up a track by its stable filesystem identity
+/// a 'Create' or a reconciliation-time "path not in DB" hit
+/// gets checked here before ever being treated as a brand new track
+pub fn find_track_by_file_id(
+    conn: &Connection,
+    file_id: &str,
+) -> Result<Option<super::models::TrackIdentity>> {
+    conn.query_row(
+        &format!("SELECT {IDENTITY_COLUMNS} FROM tracks WHERE file_id = ?1"),
+        params![file_id],
+        identity_from_row,
+    )
+    .optional()
+}
+
+/// apply a move/rename in place:
+/// update only the path (and refreshed mtime/size) on an existing track row
+/// deliberately does not touch tags, content_hash, or date_added
+/// since a pure location change is not a metadata change
+/// being treated as delete+add.
+pub fn update_track_path_and_stat(
+    conn: &Connection,
+    track_id: i64,
+    new_path: &str,
+    mtime: Option<i64>,
+    size: Option<i64>,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE tracks SET path = ?1, mtime = ?2, size = ?3 WHERE id = ?4",
+        params![new_path, mtime, size, track_id],
+    )?;
+    Ok(())
+}
+
+/// refresh identity fields only (file_id/mtime/size), path unchanged
+/// used by startup reconciliation to opportunistically backfill file_id on legacy rows
+pub fn update_track_identity(
+    conn: &Connection,
+    track_id: i64,
+    file_id: Option<&str>,
+    mtime: Option<i64>,
+    size: Option<i64>,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE tracks SET file_id = ?1, mtime = ?2, size = ?3 WHERE id = ?4",
+        params![file_id, mtime, size, track_id],
+    )?;
+    Ok(())
+}
+
+/// delete a track by id
+/// thin wrapper kept alongside the identity helpers
+/// instead of reaching for the path-keyed delete_track
+pub fn delete_track_by_id(conn: &Connection, track_id: i64) -> Result<bool> {
+    let rows = conn.execute("DELETE FROM tracks WHERE id = ?1", params![track_id])?;
+    Ok(rows > 0)
+}
+
+/// every track's identity/staleness projection, for startup reconciliation
+/// done by caller
+/// deliberately unfiltered (no folder scoping here)
+/// since chck also has to be applied for placeholder rows
+pub fn get_all_track_identities(conn: &Connection) -> Result<Vec<super::models::TrackIdentity>> {
+    let mut stmt = conn.prepare(&format!("SELECT {IDENTITY_COLUMNS} FROM tracks"))?;
+    let rows = stmt.query_map([], identity_from_row)?;
+    rows.collect()
 }
 
 /// Update MusicBrainz Recording ID and/or genre for a track.

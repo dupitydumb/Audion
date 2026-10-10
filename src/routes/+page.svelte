@@ -16,6 +16,7 @@
   import StatsWrapped from "$lib/components/StatsWrapped.svelte";
 
   import { loadLibrary, loadPlaylists, getTrackByIdSync } from "$lib/stores/library";
+  import { startLibraryWatcherSync } from "$lib/stores/libraryWatcher";
   import ToastContainer from "$lib/components/ToastContainer.svelte";
   import { isTauri, getIsLinux } from "$lib/api/tauri";
   import { invoke } from "@tauri-apps/api/core";
@@ -25,7 +26,7 @@
   } from "$lib/stores/persist";
   import { playTrack, playFromQueue, queue, openAssociatedFile, dispatchSmtcEvent } from "$lib/stores/player";
   import { theme } from "$lib/stores/theme";
-  import { isMiniPlayer, withViewTransition, isStatsWrappedOpen } from "$lib/stores/ui";
+  import { isMiniPlayer, withViewTransition, isStatsWrappedOpen, appBootTransitionActive } from "$lib/stores/ui";
   import { pluginStore } from "$lib/stores/plugin-store";
   import { appSettings } from "$lib/stores/settings";
   import { isMobile, mobileSearchOpen } from "$lib/stores/mobile";
@@ -119,6 +120,9 @@
       const dataLoadStart = performance.now();
       await Promise.all([loadLibrary(), loadPlaylists()]);
 
+      // start listening for the backend's live filesystem watcher
+      void startLibraryWatcherSync();
+
       if (pendingJumpListTrackId !== null) {
         const track = getTrackByIdSync(pendingJumpListTrackId);
         if (track) {
@@ -162,10 +166,20 @@
       // sidebar (the morph target) doesn't render on mobile so disabled here
       if (get(isMobile) || getIsLinux()) {
         isLoading = false;
+        appBootTransitionActive.set(false);
       } else {
-        withViewTransition(() => {
+        const bootTransition = withViewTransition(() => {
           isLoading = false;
         }, 'app-boot-logo');
+        // once this one time morph has actually played out, drop the view-transition-name
+        // so it isn't swept into later, unrelated transitions
+        if (bootTransition) {
+          bootTransition.finished
+            .catch(() => {})
+            .finally(() => appBootTransitionActive.set(false));
+        } else {
+          appBootTransitionActive.set(false);
+        }
       }
 
       // Lazy load plugins- reduce startup time

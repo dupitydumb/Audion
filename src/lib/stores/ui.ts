@@ -34,6 +34,13 @@ function prefersReducedMotion(): boolean {
 // FullScreenPlayer reads this to skip its own Svelte fade for that same open/close
 export const nativeTransitionActive = writable(false);
 
+// true only for the duration of the app-boot logo morph (loading screen => sidebar
+// see +page.svelte's app-boot-logo transition)
+// sidebar reads this to gate its logo/text view-transition-name
+// a view-transition-name left assigned after its own transition ends,
+// gets swept into every later transition too
+export const appBootTransitionActive = writable(true);
+
 // shared choke point for native View Transitions api usage
 // feature detected with a reduced motion and
 // same document fallback to a plain synchronous mutation

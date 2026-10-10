@@ -2,9 +2,8 @@ use lofty::prelude::*;
 use lofty::probe::Probe;
 use metaflac::Tag as FlacTag;
 use mp4ameta::Tag as Mp4Tag;
-use std::collections::hash_map::DefaultHasher;
+use sha2::{Digest, Sha256};
 use std::fs;
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use tauri::{AppHandle, Manager, State};
 use crate::db::{queries, Database};
@@ -12,6 +11,25 @@ use crate::db::{queries, Database};
 // ---------------------------------------------------------------------------
 // Path helpers
 // ---------------------------------------------------------------------------
+
+/// delete a lyrics file
+/// going through the SAF-scoped delete on android first
+fn remove_lyrics_file(path: &Path) -> std::io::Result<()> {
+    #[cfg(target_os = "android")]
+    {
+        match crate::android_auto::jni_bridge::delete_via_saf(path) {
+            Some(true) => return Ok(()),
+            Some(false) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "SAF delete failed (not under a granted tree, or DocumentFile.delete() returned false)",
+                ));
+            }
+            None => {} // fall through to fs::remove_file below
+        }
+    }
+    fs::remove_file(path)
+}
 
 /// Path for user-imported lyrics.
 /// `format` determines the extension: "lrc" → song.lrc, "ttml" → song.ttml.
@@ -46,6 +64,13 @@ fn resolve_user_lyrics_path(app: &AppHandle, music_path: &str, format: &str) -> 
         tracing::warn!("[LYRICS] resolve_user_lyrics_path: failed to create cache dir {}: {}", dir.display(), e);
     }
     let path = dir.join(format!("{}.{}", hash, ext));
+    if !path.exists() {
+        let legacy_hash = legacy_hash_path(music_path);
+        let legacy_path = dir.join(format!("{}.{}", legacy_hash, ext));
+        if legacy_path.exists() {
+            let _ = fs::rename(&legacy_path, &path);
+        }
+    }
     tracing::info!("[LYRICS] resolve_user_lyrics_path: resolved fallback path={}", path.display());
     path
 }
@@ -93,6 +118,13 @@ fn resolve_source_lyrics_path(
         tracing::warn!("[LYRICS] resolve_source_lyrics_path: failed to create cache dir {}: {}", dir.display(), e);
     }
     let path = dir.join(format!("{}.{}.{}", hash, source_id, ext));
+    if !path.exists() {
+        let legacy_hash = legacy_hash_path(music_path);
+        let legacy_path = dir.join(format!("{}.{}.{}", legacy_hash, source_id, ext));
+        if legacy_path.exists() {
+            let _ = fs::rename(&legacy_path, &path);
+        }
+    }
     tracing::info!("[LYRICS] resolve_source_lyrics_path: resolved fallback path={}", path.display());
     path
 }
@@ -114,11 +146,30 @@ fn sanitise_format(format: &str) -> &str {
 /// load_user_lyrics_file, delete_user_lyrics_file, delete_lyrics_by_token
 /// (bulk), and get_cached_sources all probe/match against this exact list
 const KNOWN_FORMATS: &[&str] = &["lrc", "ttml", "xml", "srt", "json"];
+const KNOWN_SOURCES: &[&str] = &[
+    "lrclib",
+    "musixmatch",
+    "kugou",
+    "qq",
+    "netease",
+    "genius",
+    "spotify",
+    "applettml",
+];
 
 fn hash_path(music_path: &str) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    music_path.hash(&mut hasher);
-    hasher.finish()
+    let mut hasher = Sha256::new();
+    hasher.update(music_path.as_bytes());
+    let result = hasher.finalize();
+    u64::from_be_bytes(result[..8].try_into().unwrap())
+}
+
+fn legacy_hash_path(music_path: &str) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    let mut s = DefaultHasher::new();
+    music_path.hash(&mut s);
+    s.finish()
 }
 
 fn app_lyrics_dir(app: &AppHandle) -> PathBuf {
@@ -208,7 +259,7 @@ pub fn delete_user_lyrics_file(app: AppHandle, music_path: String) -> Result<boo
         let exists = path.exists();
         tracing::info!("[LYRICS] delete_user_lyrics_file: fmt={} path={} exists={}", fmt, path.display(), exists);
         if exists {
-            match fs::remove_file(&path) {
+            match remove_lyrics_file(&path) {
                 Ok(()) => {
                     tracing::info!("[LYRICS] delete_user_lyrics_file: removed {}", path.display());
                     deleted = true;
@@ -277,7 +328,7 @@ pub fn delete_source_lyrics_file(
         let exists = path.exists();
         tracing::info!("[LYRICS] delete_source_lyrics_file: fmt={} path={} exists={}", fmt, path.display(), exists);
         if exists {
-            match fs::remove_file(&path) {
+            match remove_lyrics_file(&path) {
                 Ok(()) => {
                     tracing::info!("[LYRICS] delete_source_lyrics_file: removed {}", path.display());
                     deleted = true;
@@ -339,32 +390,50 @@ pub struct CachedSourceInfo {
 // =======================================================
 
 /// does filename belong to the given token?
-/// expected shapes: 
+/// expected shapes:
 /// <id>.<ext> (user-imported file, no source segment)
 /// <id>.<source>.<ext> (auto fetched, one segment per source)
 /// token == all matches any recognised lyrics file regardless of source
-/// purely structural => never checks against a list of known source ids, so new sources added later need no maintainenence
-fn filename_matches_token(filename: &str, token: &str) -> bool {
-    // match from the right
-    let mut rsplit = filename.rsplitn(3, '.');
-    let ext = match rsplit.next() {
-        Some(e) => e,
-        None => return false,
-    };
+fn filename_matches_token(filename: &str, stem: Option<&str>, token: &str) -> bool {
+    let parts: Vec<&str> = filename.split('.').collect();
+    if parts.len() < 2 {
+        return false;
+    }
+    let ext = parts[parts.len() - 1];
     if !KNOWN_FORMATS.contains(&ext) {
         return false;
     }
-    let middle = match rsplit.next() {
-        Some(m) => m,
-        None => return false,
-    };
-    // if there's nothing left before middle, then middle is the stem
-    // (no source segment) => user-imported file
-    if rsplit.next().is_none() {
-        token == "all" || token == "user"
+
+    let source_id: Option<&str> = if let Some(stem) = stem {
+        let prefix = format!("{}.", stem);
+        if filename.starts_with(&prefix) {
+            let rem = &filename[prefix.len()..];
+            let rem_parts: Vec<&str> = rem.split('.').collect();
+            if rem_parts.len() <= 1 {
+                None
+            } else if rem_parts.len() == 2 {
+                Some(rem_parts[0])
+            } else {
+                Some(rem_parts[rem_parts.len() - 2])
+            }
+        } else {
+            None
+        }
     } else {
-        token == "all" || middle.to_lowercase() == token
+        if parts.len() <= 2 {
+            None
+        } else {
+            Some(parts[1])
+        }
+    };
+
+    if token == "all" {
+        return true;
     }
+    if token == "user" {
+        return source_id.is_none();
+    }
+    source_id.map(|s| s.eq_ignore_ascii_case(token)).unwrap_or(false)
 }
 
 /// result of a bulk delete by token
@@ -435,7 +504,7 @@ pub fn delete_lyrics_by_token(
                 let path = entry.path();
                 if !path.is_file() { continue; }
                 let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-                let is_match = filename_matches_token(name, &token);
+                let is_match = filename_matches_token(name, None, &token);
                 if cache_dump < DUMP_LIMIT {
                     tracing::info!("[LYRICS] cache_dir entry: {} matched={}", path.display(), is_match);
                     cache_dump += 1;
@@ -490,14 +559,14 @@ pub fn delete_lyrics_by_token(
                 }
                 continue;
             }
-            let is_match = filename_matches_token(name, &token);
+            let is_match = filename_matches_token(name, Some(stem), &token);
             if sidecar_dump < DUMP_LIMIT {
                 tracing::info!("[LYRICS] sidecar entry: {} matched={}", epath.display(), is_match);
                 sidecar_dump += 1;
             }
             if is_match {
                 matched += 1;
-                match fs::remove_file(&epath) {
+                match remove_lyrics_file(&epath) {
                     Ok(()) => deleted += 1,
                     Err(e) => tracing::warn!("[LYRICS] failed to delete {}: {}", epath.display(), e),
                 }
@@ -526,6 +595,7 @@ pub async fn musixmatch_request(
     let client = reqwest::Client::builder()
         .cookie_store(true)
         .redirect(reqwest::redirect::Policy::limited(10))
+        .timeout(std::time::Duration::from_secs(15))
         .build()
         .map_err(|e| format!("Failed to create client: {}", e))?;
 

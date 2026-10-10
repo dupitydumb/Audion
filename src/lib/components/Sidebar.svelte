@@ -32,6 +32,7 @@
         isSettingsOpen as isSettingsOpenUI,
         toggleSettings as toggleSettingsUI,
         contextMenu,
+        appBootTransitionActive,
     } from "$lib/stores/ui";
     import { buildPlaylistContextMenu } from "$lib/menus/contextMenus";
     import { appSettings } from "$lib/stores/settings";
@@ -73,6 +74,7 @@
     } from "$lib/stores/otaUpdate";
     import UpdatePopup from "./UpdatePopup.svelte";
     import SyncStatus from "./SyncStatus.svelte";
+    import LibraryWatcherStatus from "./LibraryWatcherStatus.svelte";
 
     import { currentPlaylistId } from "$lib/stores/player";
     import {
@@ -409,9 +411,10 @@
 <aside class="sidebar">
     <div class="sidebar-header">
         <div class="logo">
-            <img src="/logo.png" alt="Audion Logo" width="32" height="32" style="view-transition-name: {getIsLinux() ? 'none' : 'app-logo-icon'};" />
-            <span class="logo-text" style="view-transition-name: {getIsLinux() ? 'none' : 'app-logo-text'};">Audion</span>
+            <img src="/logo.png" alt="Audion Logo" width="32" height="32" style="view-transition-name: {(getIsLinux() || !$appBootTransitionActive) ? 'none' : 'app-logo-icon'};" />
+            <span class="logo-text" style="view-transition-name: {(getIsLinux() || !$appBootTransitionActive) ? 'none' : 'app-logo-text'};">Audion</span>
             <SyncStatus />
+            <LibraryWatcherStatus />
             {#if $otaState.phase === "ready"}
                 <div
                     class="update-badge restart-badge"

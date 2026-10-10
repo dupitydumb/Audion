@@ -11,6 +11,7 @@ export interface MeshSettings {
   quality: number; // internal render resolution (px per axis), 16 - 256
   spread: number; // orbit radius: how far each blob wanders from its anchor, 0.05 - 0.4
   sharpness: number; // blob edge falloff exponent, 1.5 - 8 (lower => softer blend, higher => crisper blobs)
+  colorMode: "true" | "dark"; // true: actual top dominant cover colors, light or dark. dark: darker swatches only
 }
 
 export const DEFAULT_MESH_SETTINGS: MeshSettings = {
@@ -22,6 +23,7 @@ export const DEFAULT_MESH_SETTINGS: MeshSettings = {
   quality: 48,
   spread: 0.22,
   sharpness: 3.5,
+  colorMode: "true",
 };
 
 const STORAGE_KEY = "audion:mesh-settings";
