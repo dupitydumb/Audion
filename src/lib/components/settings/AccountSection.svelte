@@ -1,6 +1,6 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
-  import { authState, isLoggedIn, isSupporter, showLoginModal, loginModalMode, logout, customServerStatus, disconnectCustomServer } from "$lib/stores/sync";
+  import { authState, isLoggedIn, isSupporter, isOnTrial, trialDaysLeft, showLoginModal, loginModalMode, logout, customServerStatus, disconnectCustomServer } from "$lib/stores/sync";
   import { appSettings } from "$lib/stores/settings";
   import { slide } from "svelte/transition";
   import { createEventDispatcher } from "svelte";
@@ -99,7 +99,9 @@
               <span class="setting-title">{accountDisplayName}</span>
               <span class="setting-description">{accountEmail}</span>
               <span class="setting-description">
-                {#if $isSupporter}
+                {#if $isOnTrial}
+                  {$_('settings.trialPlan', { default: '7-Day Free Trial' })} &bull; {$trialDaysLeft} {$_('settings.daysLeft', { default: 'days left' })}
+                {:else if $isSupporter}
                   {$_('settings.supporterUntil')}
                   {#if $authState.supporter_until}
                     {formatSupporterUntil($authState.supporter_until)}

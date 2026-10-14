@@ -26,6 +26,8 @@ export interface AuthState {
     is_supporter: boolean;
     /** Unix timestamp in milliseconds. null = no expiry (active subscription). */
     supporter_until: number | null;
+    /** Unix timestamp in milliseconds. null = never had a trial (pre-feature users or paid). */
+    trial_started_at: number | null;
 }
 
 export interface SyncStatus {
@@ -52,6 +54,7 @@ const defaultAuthState: AuthState = {
     avatar_url: null,
     is_supporter: false,
     supporter_until: null,
+    trial_started_at: null,
 };
 
 const defaultSyncStatus: SyncStatus = {
@@ -73,6 +76,25 @@ export const syncStatus = writable<SyncStatus>(defaultSyncStatus);
 export const syncProgress = writable<SyncProgress>(defaultSyncProgress);
 export const showLoginModal = writable<boolean>(false);
 export const loginModalMode = writable<'oauth' | 'custom_server'>('oauth');
+
+const TRIAL_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** true when user is on a free trial (not a paid supporter) */
+export const isOnTrial = derived(authState, ($auth) => {
+    if (!$auth.trial_started_at || !$auth.is_supporter) return false;
+    // They're a supporter — if supporterUntil matches the trial window, it's a trial
+    const trialExpiry = $auth.trial_started_at + TRIAL_MS;
+    return $auth.supporter_until !== null && Math.abs($auth.supporter_until - trialExpiry) < 60_000;
+});
+
+/** Days remaining in trial (0–7). -1 if not on trial. */
+export const trialDaysLeft = derived(authState, ($auth) => {
+    if (!$auth.trial_started_at) return -1;
+    const trialExpiry = $auth.trial_started_at + TRIAL_MS;
+    const msLeft = trialExpiry - Date.now();
+    if (msLeft <= 0) return 0;
+    return Math.ceil(msLeft / (24 * 60 * 60 * 1000));
+});
 
 export interface CustomServerStatus {
     connected: boolean;
