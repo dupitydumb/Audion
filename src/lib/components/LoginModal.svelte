@@ -157,7 +157,7 @@
                             <div class="trial-card-header">
                                 <span class="trial-pill-tag">
                                     <Icon name="zap" size={12} />
-                                    {$_('auth.trialCardTitle', { default: '7-Day Free Trial Included' })}
+                                    {$_('auth.trialCardTitle', { default: '7-Day Free Trial for Eligible Accounts' })}
                                 </span>
                             </div>
                             <h3 class="trial-headline">{$_('auth.trialCardHeadline', { default: 'Full sync access for 7 days' })}</h3>

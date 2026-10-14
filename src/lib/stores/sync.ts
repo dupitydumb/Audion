@@ -129,6 +129,52 @@ let visibilityHandler: (() => void) | null = null;
 let activePollInterval: ReturnType<typeof setInterval> | null = null;
 let activeSyncTimeout: ReturnType<typeof setTimeout> | null = null;
 
+const CONSUMED_DEEP_LINKS_KEY = 'audion_consumed_deep_links';
+const AUTH_LOGGED_OUT_KEY = 'audion_auth_logged_out';
+let deepLinkConsumptionQueue: Promise<unknown> = Promise.resolve();
+
+async function fingerprintDeepLink(url: string): Promise<string> {
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(url));
+    return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+async function isDeepLinkConsumed(url: string, markConsumed = false): Promise<boolean> {
+    const fingerprint = await fingerprintDeepLink(url);
+    // Serialize storage updates, including migration of previously stored URLs.
+    const operation = deepLinkConsumptionQueue.then(async () => {
+        try {
+            const raw = sessionStorage.getItem(CONSUMED_DEEP_LINKS_KEY);
+            const parsed: unknown = raw ? JSON.parse(raw) : [];
+            const list: string[] = Array.isArray(parsed) ? parsed.filter(item => typeof item === 'string') : [];
+            const fingerprints = await Promise.all(list.map(item =>
+                /^[a-f0-9]{64}$/.test(item) ? item : fingerprintDeepLink(item)
+            ));
+            const consumed = fingerprints.includes(fingerprint);
+            if (markConsumed && !consumed) fingerprints.push(fingerprint);
+            if (JSON.stringify(fingerprints) !== raw) {
+                sessionStorage.setItem(CONSUMED_DEEP_LINKS_KEY, JSON.stringify(fingerprints));
+            }
+            return consumed;
+        } catch {
+            return false;
+        }
+    });
+    deepLinkConsumptionQueue = operation;
+    return operation;
+}
+
+async function markDeepLinkConsumed(url: string): Promise<void> {
+    await isDeepLinkConsumed(url, true);
+}
+
+function isAuthLoggedOut(): boolean {
+    try {
+        return sessionStorage.getItem(AUTH_LOGGED_OUT_KEY) === 'true';
+    } catch {
+        return false;
+    }
+}
+
 /**
  * Initialize sync stores — call on app startup.
  * Fetches current auth state and sync status from the Rust backend.
@@ -183,34 +229,6 @@ export async function initSync(): Promise<void> {
         console.error('[Sync] Failed to set up event listeners:', error);
     }
 
-    // ─── Deep link consumption tracking (sessionStorage) ────────────────
-    const CONSUMED_DEEP_LINKS_KEY = 'audion_consumed_deep_links';
-    const AUTH_LOGGED_OUT_KEY = 'audion_auth_logged_out';
-
-    const isDeepLinkConsumed = (url: string): boolean => {
-        try {
-            const raw = sessionStorage.getItem(CONSUMED_DEEP_LINKS_KEY);
-            if (!raw) return false;
-            const list: string[] = JSON.parse(raw);
-            return Array.isArray(list) && list.includes(url);
-        } catch {
-            return false;
-        }
-    };
-
-    const markDeepLinkConsumed = (url: string): void => {
-        try {
-            const raw = sessionStorage.getItem(CONSUMED_DEEP_LINKS_KEY);
-            const list: string[] = raw ? JSON.parse(raw) : [];
-            if (!list.includes(url)) {
-                list.push(url);
-                sessionStorage.setItem(CONSUMED_DEEP_LINKS_KEY, JSON.stringify(list));
-            }
-        } catch {
-            // ignore
-        }
-    };
-
     // ─── Deep link handling (frontend fallback) ──────────────────────────
     // On some platforms, the Rust-side deep link handler may not fire.
     // Use the official JS deep-link API as a belt-and-suspenders approach.
@@ -221,15 +239,9 @@ export async function initSync(): Promise<void> {
             console.log('[Sync] Deep link received (JS):', urls);
             for (const url of urls) {
                 if (url.startsWith('audion://auth/callback')) {
-                    try {
-                        sessionStorage.removeItem(AUTH_LOGGED_OUT_KEY);
-                    } catch {
-                        // ignore
-                    }
-                    markDeepLinkConsumed(url);
                     await handleDeepLinkCallback(url);
                 } else if (url.includes('install-plugin')) {
-                    markDeepLinkConsumed(url);
+                    await markDeepLinkConsumed(url);
                     try {
                         const parsed = new URL(url);
                         const repoUrl = parsed.searchParams.get('url') || parsed.searchParams.get('repo');
@@ -249,7 +261,7 @@ export async function initSync(): Promise<void> {
                         console.error('[Sync] Failed to handle plugin install deep link:', err);
                     }
                 } else if (url.includes('install-theme')) {
-                    markDeepLinkConsumed(url);
+                    await markDeepLinkConsumed(url);
                     try {
                         const parsed = new URL(url);
                         const themeUrl = parsed.searchParams.get('url') || parsed.searchParams.get('theme');
@@ -292,35 +304,28 @@ export async function initSync(): Promise<void> {
         if (currentUrls && currentUrls.length > 0) {
             console.log('[Sync] Checking current deep link from plugin:', currentUrls);
             for (const url of currentUrls) {
-                if (isDeepLinkConsumed(url)) {
+                if (await isDeepLinkConsumed(url)) {
                     console.log('[Sync] Skipping already consumed deep link:', url);
                     continue;
                 }
 
                 if (url.startsWith('audion://auth/callback')) {
                     // If user logged out in this session, do not replay stale deep link tokens!
-                    let isLoggedOutSession = false;
-                    try {
-                        isLoggedOutSession = sessionStorage.getItem(AUTH_LOGGED_OUT_KEY) === 'true';
-                    } catch {
-                        // ignore
-                    }
-
-                    if (isLoggedOutSession) {
+                    if (isAuthLoggedOut()) {
                         console.log('[Sync] Skipping getCurrent() auth deep link — user logged out during this session');
-                        markDeepLinkConsumed(url);
+                        await markDeepLinkConsumed(url);
                         continue;
                     }
 
-                    markDeepLinkConsumed(url);
                     const currentAuth = await invoke<AuthState>('sync_get_auth_state');
                     if (!currentAuth.is_logged_in) {
                         await handleDeepLinkCallback(url);
                     } else {
+                        await markDeepLinkConsumed(url);
                         console.log('[Sync] Skipping getCurrent() deep link — user already logged in');
                     }
                 } else if (url.includes('install-plugin')) {
-                    markDeepLinkConsumed(url);
+                    await markDeepLinkConsumed(url);
                     try {
                         const parsed = new URL(url);
                         const repoUrl = parsed.searchParams.get('url') || parsed.searchParams.get('repo');
@@ -462,17 +467,7 @@ export async function initSync(): Promise<void> {
  */
 async function handleDeepLinkCallback(url: string): Promise<void> {
     try {
-        try {
-            sessionStorage.removeItem('audion_auth_logged_out');
-            const raw = sessionStorage.getItem('audion_consumed_deep_links');
-            const list: string[] = raw ? JSON.parse(raw) : [];
-            if (!list.includes(url)) {
-                list.push(url);
-                sessionStorage.setItem('audion_consumed_deep_links', JSON.stringify(list));
-            }
-        } catch {
-            // ignore
-        }
+        if (isAuthLoggedOut() || await isDeepLinkConsumed(url)) return;
 
         const parsedUrl = new URL(url);
         const accessToken = parsedUrl.searchParams.get('access_token');
@@ -482,6 +477,10 @@ async function handleDeepLinkCallback(url: string): Promise<void> {
             console.error('[Sync] Deep link missing tokens');
             return;
         }
+
+        await markDeepLinkConsumed(url);
+        // Logout may have happened while fingerprinting the callback.
+        if (isAuthLoggedOut()) return;
 
         console.log('[Sync] Processing OAuth callback from deep link...');
 
@@ -614,7 +613,7 @@ export async function startLogin(provider: 'google' | 'github' = 'google'): Prom
     if (!isTauri()) return;
 
     try {
-        sessionStorage.removeItem('audion_auth_logged_out');
+        sessionStorage.removeItem(AUTH_LOGGED_OUT_KEY);
     } catch {
         // ignore
     }
@@ -642,16 +641,13 @@ export async function logout(): Promise<void> {
 
     // Invalidate active session deep links so webview refresh doesn't replay auth
     try {
-        sessionStorage.setItem('audion_auth_logged_out', 'true');
+        sessionStorage.setItem(AUTH_LOGGED_OUT_KEY, 'true');
         const { getCurrent } = await import('@tauri-apps/plugin-deep-link');
         const currentUrls = await getCurrent();
         if (currentUrls) {
-            const raw = sessionStorage.getItem('audion_consumed_deep_links');
-            const list: string[] = raw ? JSON.parse(raw) : [];
             for (const u of currentUrls) {
-                if (!list.includes(u)) list.push(u);
+                await markDeepLinkConsumed(u);
             }
-            sessionStorage.setItem('audion_consumed_deep_links', JSON.stringify(list));
         }
     } catch {
         // ignore
