@@ -183,6 +183,34 @@ export async function initSync(): Promise<void> {
         console.error('[Sync] Failed to set up event listeners:', error);
     }
 
+    // ─── Deep link consumption tracking (sessionStorage) ────────────────
+    const CONSUMED_DEEP_LINKS_KEY = 'audion_consumed_deep_links';
+    const AUTH_LOGGED_OUT_KEY = 'audion_auth_logged_out';
+
+    const isDeepLinkConsumed = (url: string): boolean => {
+        try {
+            const raw = sessionStorage.getItem(CONSUMED_DEEP_LINKS_KEY);
+            if (!raw) return false;
+            const list: string[] = JSON.parse(raw);
+            return Array.isArray(list) && list.includes(url);
+        } catch {
+            return false;
+        }
+    };
+
+    const markDeepLinkConsumed = (url: string): void => {
+        try {
+            const raw = sessionStorage.getItem(CONSUMED_DEEP_LINKS_KEY);
+            const list: string[] = raw ? JSON.parse(raw) : [];
+            if (!list.includes(url)) {
+                list.push(url);
+                sessionStorage.setItem(CONSUMED_DEEP_LINKS_KEY, JSON.stringify(list));
+            }
+        } catch {
+            // ignore
+        }
+    };
+
     // ─── Deep link handling (frontend fallback) ──────────────────────────
     // On some platforms, the Rust-side deep link handler may not fire.
     // Use the official JS deep-link API as a belt-and-suspenders approach.
@@ -193,8 +221,15 @@ export async function initSync(): Promise<void> {
             console.log('[Sync] Deep link received (JS):', urls);
             for (const url of urls) {
                 if (url.startsWith('audion://auth/callback')) {
+                    try {
+                        sessionStorage.removeItem(AUTH_LOGGED_OUT_KEY);
+                    } catch {
+                        // ignore
+                    }
+                    markDeepLinkConsumed(url);
                     await handleDeepLinkCallback(url);
                 } else if (url.includes('install-plugin')) {
+                    markDeepLinkConsumed(url);
                     try {
                         const parsed = new URL(url);
                         const repoUrl = parsed.searchParams.get('url') || parsed.searchParams.get('repo');
@@ -214,6 +249,7 @@ export async function initSync(): Promise<void> {
                         console.error('[Sync] Failed to handle plugin install deep link:', err);
                     }
                 } else if (url.includes('install-theme')) {
+                    markDeepLinkConsumed(url);
                     try {
                         const parsed = new URL(url);
                         const themeUrl = parsed.searchParams.get('url') || parsed.searchParams.get('theme');
@@ -246,16 +282,37 @@ export async function initSync(): Promise<void> {
     }
 
     // Also check if the app was cold-started via a deep link.
-    // IMPORTANT: Only process if NOT already logged in.
-    // getCurrent() persists across webview refreshes (F5) and would re-login
-    // the user immediately after they log out if we didn't guard here.
+    // IMPORTANT:
+    // 1. Rust setup() already handles cold-start audion:// auth callbacks into SQLite.
+    // 2. getCurrent() persists indefinitely in Tauri's plugin memory across webview refreshes (F5).
+    // 3. We must never replay an auth callback if it was already consumed or if the user logged out!
     try {
         const { getCurrent } = await import('@tauri-apps/plugin-deep-link');
         const currentUrls = await getCurrent();
         if (currentUrls && currentUrls.length > 0) {
-            console.log('[Sync] App cold-started with deep link:', currentUrls);
+            console.log('[Sync] Checking current deep link from plugin:', currentUrls);
             for (const url of currentUrls) {
+                if (isDeepLinkConsumed(url)) {
+                    console.log('[Sync] Skipping already consumed deep link:', url);
+                    continue;
+                }
+
                 if (url.startsWith('audion://auth/callback')) {
+                    // If user logged out in this session, do not replay stale deep link tokens!
+                    let isLoggedOutSession = false;
+                    try {
+                        isLoggedOutSession = sessionStorage.getItem(AUTH_LOGGED_OUT_KEY) === 'true';
+                    } catch {
+                        // ignore
+                    }
+
+                    if (isLoggedOutSession) {
+                        console.log('[Sync] Skipping getCurrent() auth deep link — user logged out during this session');
+                        markDeepLinkConsumed(url);
+                        continue;
+                    }
+
+                    markDeepLinkConsumed(url);
                     const currentAuth = await invoke<AuthState>('sync_get_auth_state');
                     if (!currentAuth.is_logged_in) {
                         await handleDeepLinkCallback(url);
@@ -263,6 +320,7 @@ export async function initSync(): Promise<void> {
                         console.log('[Sync] Skipping getCurrent() deep link — user already logged in');
                     }
                 } else if (url.includes('install-plugin')) {
+                    markDeepLinkConsumed(url);
                     try {
                         const parsed = new URL(url);
                         const repoUrl = parsed.searchParams.get('url') || parsed.searchParams.get('repo');
@@ -404,6 +462,18 @@ export async function initSync(): Promise<void> {
  */
 async function handleDeepLinkCallback(url: string): Promise<void> {
     try {
+        try {
+            sessionStorage.removeItem('audion_auth_logged_out');
+            const raw = sessionStorage.getItem('audion_consumed_deep_links');
+            const list: string[] = raw ? JSON.parse(raw) : [];
+            if (!list.includes(url)) {
+                list.push(url);
+                sessionStorage.setItem('audion_consumed_deep_links', JSON.stringify(list));
+            }
+        } catch {
+            // ignore
+        }
+
         const parsedUrl = new URL(url);
         const accessToken = parsedUrl.searchParams.get('access_token');
         const refreshToken = parsedUrl.searchParams.get('refresh_token');
@@ -544,6 +614,12 @@ export async function startLogin(provider: 'google' | 'github' = 'google'): Prom
     if (!isTauri()) return;
 
     try {
+        sessionStorage.removeItem('audion_auth_logged_out');
+    } catch {
+        // ignore
+    }
+
+    try {
         const serverUrl = await invoke<string>('sync_get_server_url');
         const loginUrl = `${serverUrl}/auth/${provider}`;
 
@@ -563,6 +639,23 @@ export async function startLogin(provider: 'google' | 'github' = 'google'): Prom
  */
 export async function logout(): Promise<void> {
     if (!isTauri()) return;
+
+    // Invalidate active session deep links so webview refresh doesn't replay auth
+    try {
+        sessionStorage.setItem('audion_auth_logged_out', 'true');
+        const { getCurrent } = await import('@tauri-apps/plugin-deep-link');
+        const currentUrls = await getCurrent();
+        if (currentUrls) {
+            const raw = sessionStorage.getItem('audion_consumed_deep_links');
+            const list: string[] = raw ? JSON.parse(raw) : [];
+            for (const u of currentUrls) {
+                if (!list.includes(u)) list.push(u);
+            }
+            sessionStorage.setItem('audion_consumed_deep_links', JSON.stringify(list));
+        }
+    } catch {
+        // ignore
+    }
 
     // Clear sync account data gracefully
     await clearLibrary();
@@ -718,6 +811,12 @@ export async function testCustomServerConnection(url: string, username: string, 
 export async function connectCustomServerPassword(url: string, username: string, password: string): Promise<void> {
     if (!isTauri()) return;
     
+    try {
+        sessionStorage.removeItem('audion_auth_logged_out');
+    } catch {
+        // ignore
+    }
+
     // Clear old data gracefully before connecting to new server
     await clearLibrary();
     clearActivityData();
@@ -735,6 +834,12 @@ export async function connectCustomServerPassword(url: string, username: string,
  */
 export async function disconnectCustomServer(): Promise<void> {
     if (!isTauri()) return;
+
+    try {
+        sessionStorage.setItem('audion_auth_logged_out', 'true');
+    } catch {
+        // ignore
+    }
 
     // Clear custom server data before loading local data
     await clearLibrary();

@@ -129,10 +129,13 @@
           <div class="account-options-grid">
             <div class="account-option-card">
               <div class="option-header">
-                <div class="option-icon">
-                  <Icon name="plus" size="lg" />
+                <div class="option-icon accent">
+                  <Icon name="cloud" size="lg" />
                 </div>
-                <h3 class="option-title">{$_('settings.cloudSync')}</h3>
+                <div class="option-title-group" style="display: flex; align-items: center; justify-content: space-between; width: 100%; gap: var(--spacing-sm);">
+                  <h3 class="option-title">{$_('settings.cloudSync')}</h3>
+                  <span class="pill-badge accent" style="white-space: nowrap; font-size: 0.6875rem;">{$_('auth.cloudSyncBadge', { default: '7-Day Trial' })}</span>
+                </div>
               </div>
               <p class="option-description">
                 {$_('settings.cloudSyncDesc')}
@@ -141,16 +144,19 @@
                 class="btn-outline-compact btn-full-width"
                 style="margin-top: auto;"
                 on:click={() => { loginModalMode.set("oauth"); showLoginModal.set(true); }}
-                aria-label={$_('settings.signIn')}
-              >{$_('settings.signIn')}</button>
+                aria-label={$_('settings.signInWithOauth', { default: 'Sign in with Google / GitHub' })}
+              >{$_('settings.signInWithOauth', { default: 'Sign in with Google / GitHub' })}</button>
             </div>
 
             <div class="account-option-card">
               <div class="option-header">
-                <div class="option-icon accent">
-                  <Icon name="monitor" size="lg" />
+                <div class="option-icon">
+                  <Icon name="server" size="lg" />
                 </div>
-                <h3 class="option-title">{$_('settings.customServer')}</h3>
+                <div class="option-title-group" style="display: flex; align-items: center; justify-content: space-between; width: 100%; gap: var(--spacing-sm);">
+                  <h3 class="option-title">{$_('settings.customServer')}</h3>
+                  <span class="pill-badge" style="white-space: nowrap; font-size: 0.6875rem;">{$_('auth.selfHostedBadge', { default: 'Self-Hosted' })}</span>
+                </div>
               </div>
               <p class="option-description">
                 {$_('settings.customServerDesc')}

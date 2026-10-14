@@ -68,6 +68,9 @@ pub async fn sync_logout(
 ) -> Result<(), String> {
     tracing::info!("Logging out — revoking tokens");
 
+    // Stop SSE sync listener if running
+    crate::sync::stop_sse_listener(&sync_state);
+
     // Try to revoke refresh token on server (best-effort)
     if let Ok(Some(refresh_token)) = auth::get_refresh_token(&db) {
         let body = serde_json::json!({ "refresh_token": refresh_token }).to_string();
