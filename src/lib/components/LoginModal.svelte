@@ -114,6 +114,10 @@
                     <p class="subtitle">
                         {$_('auth.signInSubtitle')}
                     </p>
+                    <div class="trial-banner">
+                        <span class="trial-star">✦</span>
+                        <span>{$_('auth.trialBanner', { default: 'Includes 7-day free trial with full access' })}</span>
+                    </div>
                 {:else}
                     <h2>{$_('auth.customServerTitle')}</h2>
                     <p class="subtitle">
@@ -318,6 +322,24 @@
         color: var(--text-secondary);
         font-size: var(--font-size-base);
         line-height: var(--line-height-normal);
+    }
+
+    .trial-banner {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: var(--spacing-sm);
+        padding: 4px 10px;
+        border-radius: 9999px;
+        background: var(--accent-subtle, rgba(235, 30, 85, 0.12));
+        color: var(--accent, #eb1e55);
+        border: 1px solid var(--accent-border, rgba(235, 30, 85, 0.25));
+        font-size: var(--font-size-xs, 0.75rem);
+        font-weight: var(--font-weight-medium);
+    }
+
+    .trial-star {
+        font-size: 0.8125rem;
     }
 
     .modal-body {

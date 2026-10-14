@@ -67,6 +67,7 @@ const META_DEVICE_ID: &str = "device_id";
 const META_SYNC_CURSOR: &str = "sync_cursor";
 const META_IS_SUPPORTER: &str = "is_supporter";
 const META_SUPPORTER_UNTIL: &str = "supporter_until";
+const META_TRIAL_STARTED_AT: &str = "trial_started_at";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -80,6 +81,8 @@ pub struct AuthState {
     pub is_supporter: bool,
     /// Unix timestamp in milliseconds. None = no expiry (active subscription).
     pub supporter_until: Option<i64>,
+    /// Unix timestamp in milliseconds. None = no trial (pre-feature user or already paid).
+    pub trial_started_at: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -99,6 +102,9 @@ pub struct UserProfileInner {
     /// ISO 8601 datetime string (Drizzle serializes timestamp columns as Date → string in JSON)
     #[serde(rename = "supporterUntil")]
     pub supporter_until: Option<String>,
+    /// Unix timestamp in milliseconds (server sends as number)
+    #[serde(rename = "trialStartedAt")]
+    pub trial_started_at: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -182,6 +188,7 @@ fn auth_state_from_access_token(db: &Database, access_token: &str) -> Result<Aut
         avatar.as_deref(),
         claims.is_supporter,
         claims.supporter_until,
+        None, // trial_started_at not in JWT
     )?;
 
     Ok(AuthState {
@@ -192,6 +199,7 @@ fn auth_state_from_access_token(db: &Database, access_token: &str) -> Result<Aut
         avatar_url: avatar,
         is_supporter: claims.is_supporter,
         supporter_until: claims.supporter_until,
+        trial_started_at: None, // not in JWT; fetched separately from /auth/me
     })
 }
 
@@ -221,6 +229,7 @@ pub fn store_user_profile(
     avatar_url: Option<&str>,
     is_supporter: bool,
     supporter_until: Option<i64>,
+    trial_started_at: Option<i64>,
 ) -> Result<(), String> {
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
     crate::db::queries::set_sync_meta(&conn, META_USER_ID, user_id).map_err(|e| e.to_string())?;
@@ -237,6 +246,10 @@ pub fn store_user_profile(
         .map_err(|e| e.to_string())?;
     if let Some(until) = supporter_until {
         crate::db::queries::set_sync_meta(&conn, META_SUPPORTER_UNTIL, &until.to_string())
+            .map_err(|e| e.to_string())?;
+    }
+    if let Some(trial) = trial_started_at {
+        crate::db::queries::set_sync_meta(&conn, META_TRIAL_STARTED_AT, &trial.to_string())
             .map_err(|e| e.to_string())?;
     }
     Ok(())
@@ -276,6 +289,9 @@ pub fn get_auth_state(db: &Database) -> Result<AuthState, String> {
     let supporter_until = crate::db::queries::get_sync_meta(&conn, META_SUPPORTER_UNTIL)
         .map_err(|e| e.to_string())?
         .and_then(|v| v.parse::<i64>().ok());
+    let trial_started_at = crate::db::queries::get_sync_meta(&conn, META_TRIAL_STARTED_AT)
+        .map_err(|e| e.to_string())?
+        .and_then(|v| v.parse::<i64>().ok());
 
     Ok(AuthState {
         is_logged_in: has_token && user_id.is_some(),
@@ -285,6 +301,7 @@ pub fn get_auth_state(db: &Database) -> Result<AuthState, String> {
         avatar_url: avatar,
         is_supporter,
         supporter_until,
+        trial_started_at,
     })
 }
 
@@ -460,6 +477,7 @@ pub async fn fetch_and_store_profile(
         profile.user.avatar_url.as_deref(),
         profile.user.is_supporter,
         supporter_until_ms,
+        profile.user.trial_started_at,
     )?;
 
     Ok(AuthState {
@@ -470,6 +488,7 @@ pub async fn fetch_and_store_profile(
         avatar_url: profile.user.avatar_url,
         is_supporter: profile.user.is_supporter,
         supporter_until: supporter_until_ms,
+        trial_started_at: profile.user.trial_started_at,
     })
 }
 

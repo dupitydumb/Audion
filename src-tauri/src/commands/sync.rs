@@ -414,6 +414,7 @@ pub async fn server_connect(
         None,
         true,
         None,
+        None,
     )?;
 
     {
