@@ -6,6 +6,33 @@
 use crate::db::Database;
 use crate::sync::{self, auth, SyncState};
 use tauri::State;
+use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Mutex, OnceLock};
+
+static CONSUMED_REFRESH_TOKENS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+static AUTH_LOGGED_OUT: AtomicBool = AtomicBool::new(false);
+
+pub fn is_auth_logged_out() -> bool {
+    AUTH_LOGGED_OUT.load(Ordering::SeqCst)
+}
+
+pub fn is_token_consumed(refresh_token: &str) -> bool {
+    let set = CONSUMED_REFRESH_TOKENS.get_or_init(|| Mutex::new(HashSet::new()));
+    let guard = set.lock().unwrap();
+    guard.contains(refresh_token)
+}
+
+pub fn mark_token_consumed(refresh_token: &str) {
+    let set = CONSUMED_REFRESH_TOKENS.get_or_init(|| Mutex::new(HashSet::new()));
+    let mut guard = set.lock().unwrap();
+    guard.insert(refresh_token.to_string());
+}
+
+#[tauri::command]
+pub fn sync_reset_logout_state() {
+    AUTH_LOGGED_OUT.store(false, Ordering::SeqCst);
+}
 
 /// Get the current authentication state (logged in? user profile?).
 #[tauri::command]
@@ -23,7 +50,17 @@ pub async fn sync_handle_auth_callback(
     db: State<'_, Database>,
     sync_state: State<'_, SyncState>,
 ) -> Result<auth::AuthState, String> {
-    tracing::info!("Handling OAuth callback — storing tokens");
+    tracing::info!("Handling OAuth callback — validating and storing tokens");
+
+    // Enforce logout and one-time-use checks before store_auth_tokens
+    if is_auth_logged_out() {
+        return Err("Cannot restore authentication: session was logged out".to_string());
+    }
+
+    if is_token_consumed(&refresh_token) {
+        return Err("Auth callback token has already been consumed".to_string());
+    }
+    mark_token_consumed(&refresh_token);
 
     // 1. Store tokens
     auth::store_auth_tokens(&db, &access_token, &refresh_token)?;
@@ -35,6 +72,9 @@ pub async fn sync_handle_auth_callback(
 
     // 3. Ensure device ID exists
     auth::get_or_create_device_id(&db)?;
+
+    // Restart shared SSE listener after authentication and device ID setup
+    sync::start_sse_listener(&sync_state, db.inner().clone());
 
     // 4. Trigger initial full sync in background
     let db_clone = db.inner().clone();
@@ -70,6 +110,7 @@ pub async fn sync_logout(
 
     // Stop SSE sync listener if running
     crate::sync::stop_sse_listener(&sync_state);
+    AUTH_LOGGED_OUT.store(true, Ordering::SeqCst);
 
     // Try to revoke refresh token on server (best-effort)
     if let Ok(Some(refresh_token)) = auth::get_refresh_token(&db) {

@@ -536,6 +536,7 @@
     "continueWithGoogle": "Continuer avec Google",
     "customServerSubtitle": "Connectez-vous et synchronisez avec votre serveur Audion auto-hébergé.",
     "customServerTitle": "Connexion au serveur personnalisé",
+    "disconnectCustomServerFirst": "Déconnectez-vous de votre serveur personnalisé avant de vous connecter à Audion Cloud.",
     "tabCloud": "Audion Cloud",
     "tabCustom": "Serveur auto-hébergé",
     "cloudSyncBadge": "Essai 7 jours",

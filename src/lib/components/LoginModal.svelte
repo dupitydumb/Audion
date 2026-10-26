@@ -1,6 +1,6 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
-    import { showLoginModal, startLogin, connectCustomServerPassword, testCustomServerConnection, loginModalMode } from "$lib/stores/sync";
+    import { showLoginModal, startLogin, connectCustomServerPassword, testCustomServerConnection, loginModalMode, customServerStatus } from "$lib/stores/sync";
     import { fade, scale, slide } from "svelte/transition";
     import Icon from "$lib/components/Icon.svelte";
 
@@ -31,6 +31,10 @@
     }
 
     async function loginWith(provider: "google" | "github") {
+        if ($customServerStatus.connected) {
+            errorText = $_('auth.disconnectCustomServerFirst', { default: 'Disconnect from your custom server before signing in to Audion Cloud.' });
+            return;
+        }
         isLoading = true;
         try {
             await startLogin(provider);
@@ -186,11 +190,18 @@
                         <div class="provider-buttons-group">
                             <span class="provider-group-label">{$_('auth.signInWithProvider', { default: 'Sign in with your account' })}</span>
 
+                            {#if $customServerStatus.connected}
+                                <div class="server-connected-warning" transition:slide={{ duration: 150 }}>
+                                    <Icon name="alert-triangle" size={15} />
+                                    <span>{$_('auth.disconnectCustomServerFirst', { default: 'Disconnect from your custom server before signing in to Audion Cloud.' })}</span>
+                                </div>
+                            {/if}
+
                             <!-- Google Login Button -->
                             <button
                                 class="provider-btn google"
                                 on:click={() => loginWith("google")}
-                                disabled={isLoading}
+                                disabled={isLoading || $customServerStatus.connected}
                                 aria-label="Sign in with Google"
                             >
                                 <div class="provider-icon">
@@ -223,7 +234,7 @@
                             <button
                                 class="provider-btn github"
                                 on:click={() => loginWith("github")}
-                                disabled={isLoading}
+                                disabled={isLoading || $customServerStatus.connected}
                                 aria-label="Sign in with GitHub"
                             >
                                 <div class="provider-icon">
@@ -566,6 +577,20 @@
         display: flex;
         flex-direction: column;
         gap: var(--spacing-xs);
+    }
+
+    .server-connected-warning {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        background: rgba(234, 179, 8, 0.1);
+        border: 1px solid rgba(234, 179, 8, 0.25);
+        border-radius: var(--radius-md);
+        color: #facc15;
+        font-size: var(--font-size-xs);
+        line-height: 1.4;
+        margin-bottom: 4px;
     }
 
     .provider-group-label {
