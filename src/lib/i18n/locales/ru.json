@@ -702,6 +702,7 @@
     "continueWithGoogle": "Продолжить с Google",
     "customServerSubtitle": "Подключитесь и синхронизируйтесь с собственным сервером Audion.",
     "customServerTitle": "Подключение к своему серверу",
+    "disconnectCustomServerFirst": "Отключитесь от своего сервера перед входом в Audion Cloud.",
     "tabCloud": "Audion Cloud",
     "tabCustom": "Свой сервер",
     "cloudSyncBadge": "7 дней триал",

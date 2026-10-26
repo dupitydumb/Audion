@@ -631,6 +631,7 @@ export async function startLogin(provider: 'google' | 'github' = 'google'): Prom
 
     try {
         sessionStorage.removeItem(AUTH_LOGGED_OUT_KEY);
+        await invoke('sync_reset_logout_state');
     } catch {
         // ignore
     }

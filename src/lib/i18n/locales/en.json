@@ -748,6 +748,7 @@
     "continueWithGoogle": "Continue with Google",
     "customServerSubtitle": "Connect and sync with your self-hosted Audion server.",
     "customServerTitle": "Connect to Custom Server",
+    "disconnectCustomServerFirst": "Disconnect from your custom server before signing in to Audion Cloud.",
     "tabCloud": "Audion Cloud",
     "tabCustom": "Self-Hosted Server",
     "cloudSyncBadge": "7-Day Trial",
