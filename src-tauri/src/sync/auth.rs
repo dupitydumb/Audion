@@ -244,13 +244,25 @@ pub fn store_user_profile(
     }
     crate::db::queries::set_sync_meta(&conn, META_IS_SUPPORTER, if is_supporter { "true" } else { "false" })
         .map_err(|e| e.to_string())?;
-    if let Some(until) = supporter_until {
-        crate::db::queries::set_sync_meta(&conn, META_SUPPORTER_UNTIL, &until.to_string())
-            .map_err(|e| e.to_string())?;
+    match supporter_until {
+        Some(until) => {
+            crate::db::queries::set_sync_meta(&conn, META_SUPPORTER_UNTIL, &until.to_string())
+                .map_err(|e| e.to_string())?;
+        }
+        None => {
+            crate::db::queries::delete_sync_meta(&conn, META_SUPPORTER_UNTIL)
+                .map_err(|e| e.to_string())?;
+        }
     }
-    if let Some(trial) = trial_started_at {
-        crate::db::queries::set_sync_meta(&conn, META_TRIAL_STARTED_AT, &trial.to_string())
-            .map_err(|e| e.to_string())?;
+    match trial_started_at {
+        Some(trial) => {
+            crate::db::queries::set_sync_meta(&conn, META_TRIAL_STARTED_AT, &trial.to_string())
+                .map_err(|e| e.to_string())?;
+        }
+        None => {
+            crate::db::queries::delete_sync_meta(&conn, META_TRIAL_STARTED_AT)
+                .map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }

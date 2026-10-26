@@ -106,7 +106,9 @@
             on:click|stopPropagation
             role="dialog"
             aria-modal="true"
-            aria-label={$_('auth.signInTitle', { default: 'Account & Sync' })}
+            aria-label={$loginModalMode === 'oauth'
+                ? $_('auth.signInTitle', { default: 'Account & Sync' })
+                : $_('auth.customServerTitle', { default: 'Connect to Custom Server' })}
         >
             <div class="modal-top-bar">
                 <div class="modal-header-content">
