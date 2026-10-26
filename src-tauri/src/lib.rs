@@ -312,6 +312,16 @@ fn handle_deep_link_url(app_handle: &tauri::AppHandle, url_str: &str) {
         }
     };
 
+    if crate::commands::sync::is_auth_logged_out() {
+        tracing::warn!("Rejecting deep link: session was logged out");
+        return;
+    }
+    if crate::commands::sync::is_token_consumed(&rt) {
+        tracing::warn!("Rejecting deep link: token already consumed");
+        return;
+    }
+    crate::commands::sync::mark_token_consumed(&rt);
+
     let db = app_handle.state::<Database>();
     let sync_state = app_handle.state::<sync::SyncState>();
 
@@ -320,6 +330,9 @@ fn handle_deep_link_url(app_handle: &tauri::AppHandle, url_str: &str) {
         tracing::error!("Failed to store auth tokens: {}", e);
         return;
     }
+
+    let _ = sync::auth::get_or_create_device_id(&db);
+    sync::start_sse_listener(&sync_state, db.inner().clone());
 
     // Fetch profile and trigger sync in background
     let db_clone = db.inner().clone();
@@ -1424,6 +1437,7 @@ pub fn run() {
                     // =========================================================================
                     commands::sync_get_auth_state,
                     commands::sync_handle_auth_callback,
+                    commands::sync_reset_logout_state,
                     commands::sync_logout,
                     commands::sync_trigger,
                     commands::sync_get_status,
@@ -1664,6 +1678,7 @@ pub fn run() {
                     // =========================================================================
                     commands::sync_get_auth_state,
                     commands::sync_handle_auth_callback,
+                    commands::sync_reset_logout_state,
                     commands::sync_logout,
                     commands::sync_trigger,
                     commands::sync_get_status,

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
-  import { authState, isSupporter } from "$lib/stores/sync";
+  import { authState, isSupporter, isOnTrial, trialDaysLeft } from "$lib/stores/sync";
   import { slide } from "svelte/transition";
   import { createEventDispatcher } from "svelte";
   import Icon from "$lib/components/Icon.svelte";
@@ -41,6 +41,20 @@
         <div class="pill-badge accent">{$_('settings.support')}</div>
       </div>
       <a href="https://ko-fi.com/N4N5UMNR1" target="_blank" rel="noreferrer" class="btn-primary-compact" style="margin-top: var(--spacing-sm); text-align: center;">{$_('settings.supportOnKofi')}</a>
+    {:else if $isOnTrial}
+      <div class="card-header-row">
+        <div class="card-title-group">
+          <h3 class="setting-title">{$_('settings.trialActive', { default: '7-Day Free Trial' })}</h3>
+          <span class="setting-description">{$_('settings.trialActiveDesc', { default: 'Full access to cloud sync and supporter features is active.' })}</span>
+        </div>
+        <div class="pill-badge accent">{$trialDaysLeft} {$_('settings.daysLeft', { default: 'days left' })}</div>
+      </div>
+      <p class="notice-text-sm" style="margin-top: var(--spacing-sm)">
+        {#if $authState.supporter_until}
+          {$_('settings.validUntil')} {formatSupporterUntil($authState.supporter_until)}
+        {/if}
+      </p>
+      <a href="https://ko-fi.com/N4N5UMNR1" target="_blank" rel="noreferrer" class="btn-primary-compact" style="margin-top: var(--spacing-sm); text-align: center;">{$_('settings.supportToKeepAccess', { default: 'Keep Access — Support on Ko-fi' })}</a>
     {:else}
       <div class="card-header-row">
         <div class="card-title-group">

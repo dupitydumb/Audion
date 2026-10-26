@@ -678,7 +678,7 @@
             </ul>
         </section>
 
-        {#if $appSettings.showDiscord || $appSettings.showResonate}
+        {#if $appSettings.showDiscord || $appSettings.showResonate || $appSettings.showKofi || $appSettings.showPatreon}
         <section class="nav-section">
             <h3 class="nav-section-title">{$_('sidebar.community')}</h3>
             <ul class="nav-list">
@@ -712,6 +712,39 @@
                         >
                             <img src="/resonate.png" alt="Resonate" class="resonate-icon" />
                             <span>{$_('sidebar.resonate')}</span>
+                        </a>
+                    </li>
+                {/if}
+                {#if $appSettings.showKofi}
+                    <li>
+                        <a
+                            href="https://ko-fi.com/N4N5UMNR1"
+                            target="_blank"
+                            class="nav-item kofi-item"
+                        >
+                            <img src="/kofi.avif" alt="Ko-fi" class="kofi-icon" />
+                            <span>{$_('sidebar.kofi', { default: 'Ko-fi' })}</span>
+                        </a>
+                    </li>
+                {/if}
+                {#if $appSettings.showPatreon}
+                    <li>
+                        <a
+                            href="https://www.patreon.com/AudionPlayer"
+                            target="_blank"
+                            class="nav-item patreon-item"
+                        >
+                            <svg
+                                viewBox="0 0 24 24"
+                                fill="currentColor"
+                                width="24"
+                                height="24"
+                            >
+                                <path
+                                    d="M22.957 7.21c-.004-3.064-2.39-5.575-5.271-6.19-3.4-.724-7.38.52-9.426 3.42-2.32 3.29-2.32 7.79 0 11.08 2.046 2.9 6.026 4.144 9.426 3.42 2.881-.615 5.267-3.126 5.271-6.19zm-7.794 6.74c-2.41.002-4.364-1.95-4.366-4.362 0-2.41 1.952-4.364 4.362-4.366 2.41-.002 4.365 1.95 4.366 4.362.002 2.413-1.95 4.366-4.362 4.366zM0 24h4.72V0H0v24z"
+                                />
+                            </svg>
+                            <span>{$_('sidebar.patreon', { default: 'Patreon' })}</span>
                         </a>
                     </li>
                 {/if}
@@ -908,10 +941,29 @@
         opacity: 0.7;
     }
 
-    .resonate-icon {
+    .resonate-icon,
+    .kofi-icon {
         width: 24px;
         height: 24px;
         object-fit: contain;
+    }
+
+    .kofi-icon {
+        border-radius: 4px;
+    }
+
+    .discord-item:hover svg {
+        color: #5865f2;
+        opacity: 1;
+    }
+
+    .kofi-item:hover .kofi-icon {
+        opacity: 1;
+    }
+
+    .patreon-item:hover svg {
+        color: #f96854;
+        opacity: 1;
     }
 
     .nav-item.active svg {
