@@ -251,7 +251,6 @@ export async function initSync(): Promise<void> {
                 if (url.startsWith('audion://auth/callback')) {
                     await handleDeepLinkCallback(url);
                 } else if (url.includes('install-plugin')) {
-                    await markDeepLinkConsumed(url);
                     try {
                         const parsed = new URL(url);
                         const repoUrl = parsed.searchParams.get('url') || parsed.searchParams.get('repo');
@@ -264,14 +263,16 @@ export async function initSync(): Promise<void> {
                             );
                             if (confirmed) {
                                 const { pluginStore } = await import('./plugin-store');
-                                await pluginStore.installPluginFromRepo(repoUrl);
+                                const installed = await pluginStore.installPluginFromRepo(repoUrl);
+                                if (installed) {
+                                    await markDeepLinkConsumed(url);
+                                }
                             }
                         }
                     } catch (err) {
                         console.error('[Sync] Failed to handle plugin install deep link:', err);
                     }
                 } else if (url.includes('install-theme')) {
-                    await markDeepLinkConsumed(url);
                     try {
                         const parsed = new URL(url);
                         const themeUrl = parsed.searchParams.get('url') || parsed.searchParams.get('theme');
@@ -293,6 +294,7 @@ export async function initSync(): Promise<void> {
                                 theme.applyPackage(pkg);
                             }
                         }
+                        await markDeepLinkConsumed(url);
                     } catch (err) {
                         console.error('[Sync] Failed to handle theme install deep link:', err);
                     }
@@ -335,7 +337,6 @@ export async function initSync(): Promise<void> {
                         console.log('[Sync] Skipping getCurrent() deep link — user already logged in');
                     }
                 } else if (url.includes('install-plugin')) {
-                    await markDeepLinkConsumed(url);
                     try {
                         const parsed = new URL(url);
                         const repoUrl = parsed.searchParams.get('url') || parsed.searchParams.get('repo');
@@ -348,13 +349,17 @@ export async function initSync(): Promise<void> {
                             );
                             if (confirmed) {
                                 const { pluginStore } = await import('./plugin-store');
-                                await pluginStore.installPluginFromRepo(repoUrl);
+                                const installed = await pluginStore.installPluginFromRepo(repoUrl);
+                                if (installed) {
+                                    await markDeepLinkConsumed(url);
+                                }
                             }
                         }
                     } catch (err) {
                         console.error('[Sync] Failed to handle cold-start plugin install deep link:', err);
                     }
                 } else if (url.includes('install-theme')) {
+                    await markDeepLinkConsumed(url);
                     try {
                         const parsed = new URL(url);
                         const themeUrl = parsed.searchParams.get('url') || parsed.searchParams.get('theme');
@@ -488,8 +493,6 @@ async function handleDeepLinkCallback(url: string): Promise<void> {
             return;
         }
 
-        await markDeepLinkConsumed(url);
-        // Logout may have happened while fingerprinting the callback.
         if (isAuthLoggedOut()) return;
 
         console.log('[Sync] Processing OAuth callback from deep link...');
@@ -498,6 +501,10 @@ async function handleDeepLinkCallback(url: string): Promise<void> {
             accessToken,
             refreshToken,
         });
+
+        await markDeepLinkConsumed(url);
+        // Logout may have happened while processing the callback.
+        if (isAuthLoggedOut()) return;
 
         authState.set(auth);
         showLoginModal.set(false);
