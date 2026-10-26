@@ -35,6 +35,8 @@ export interface AppSettings {
     listenBrainzUsername: string;
     remoteControlEnabled: boolean;
     showResonate: boolean;
+    showKofi: boolean;
+    showPatreon: boolean;
     replayGainEnabled: boolean;
     /** master safety limiter after ReplayGain/volume/EQ
      * native backend only
@@ -71,6 +73,8 @@ const defaultSettings: AppSettings = {
     listenBrainzUsername: '',
     remoteControlEnabled: true,
     showResonate: true,
+    showKofi: true,
+    showPatreon: true,
     replayGainEnabled: true,
     limiterEnabled: true,
     outputDevice: null,
@@ -151,6 +155,22 @@ function createSettingsStore() {
         setShowResonate(enabled: boolean) {
             update(state => {
                 const newState = { ...state, showResonate: enabled };
+                saveSettings(newState);
+                return newState;
+            });
+        },
+
+        setShowKofi(enabled: boolean) {
+            update(state => {
+                const newState = { ...state, showKofi: enabled };
+                saveSettings(newState);
+                return newState;
+            });
+        },
+
+        setShowPatreon(enabled: boolean) {
+            update(state => {
+                const newState = { ...state, showPatreon: enabled };
                 saveSettings(newState);
                 return newState;
             });

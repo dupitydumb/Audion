@@ -131,9 +131,47 @@
       </button>
     </div>
 
-    <div class="button-group-row" style="margin-top: var(--spacing-sm); gap: var(--spacing-sm);">
-      <a href="https://discord.gg/27XRVQsBd9" target="_blank" rel="noreferrer" class="btn-outline-compact" style="flex: 1; text-align: center;">{$_('settings.openDiscord')}</a>
-      <a href="https://resonate.audionplayer.com?ref=audion" target="_blank" rel="noreferrer" class="btn-outline-compact" style="flex: 1; text-align: center;">{$_('settings.openResonate')}</a>
+    <div class="divider"></div>
+
+    <div class="toggle-container">
+      <div class="toggle-info">
+        <span class="setting-title">{$_('settings.kofiButton', { default: 'Ko-fi button' })}</span>
+      </div>
+      <button
+        class="toggle-btn"
+        class:active={$appSettings.showKofi}
+        on:click={() => appSettings.setShowKofi(!$appSettings.showKofi)}
+        role="switch"
+        aria-checked={$appSettings.showKofi}
+        aria-label={$_('settings.toggleKofiButton', { default: 'Toggle Ko-fi Button' })}
+      >
+        <div class="toggle-handle"></div>
+      </button>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="toggle-container">
+      <div class="toggle-info">
+        <span class="setting-title">{$_('settings.patreonButton', { default: 'Patreon button' })}</span>
+      </div>
+      <button
+        class="toggle-btn"
+        class:active={$appSettings.showPatreon}
+        on:click={() => appSettings.setShowPatreon(!$appSettings.showPatreon)}
+        role="switch"
+        aria-checked={$appSettings.showPatreon}
+        aria-label={$_('settings.togglePatreonButton', { default: 'Toggle Patreon Button' })}
+      >
+        <div class="toggle-handle"></div>
+      </button>
+    </div>
+
+    <div class="button-group-row" style="margin-top: var(--spacing-sm); gap: var(--spacing-sm); flex-wrap: wrap;">
+      <a href="https://discord.gg/27XRVQsBd9" target="_blank" rel="noreferrer" class="btn-outline-compact" style="flex: 1 1 calc(50% - var(--spacing-sm)); text-align: center;">{$_('settings.openDiscord')}</a>
+      <a href="https://resonate.audionplayer.com?ref=audion" target="_blank" rel="noreferrer" class="btn-outline-compact" style="flex: 1 1 calc(50% - var(--spacing-sm)); text-align: center;">{$_('settings.openResonate')}</a>
+      <a href="https://ko-fi.com/N4N5UMNR1" target="_blank" rel="noreferrer" class="btn-outline-compact" style="flex: 1 1 calc(50% - var(--spacing-sm)); text-align: center;">{$_('settings.openKofi', { default: 'Open Ko-fi' })}</a>
+      <a href="https://www.patreon.com/AudionPlayer" target="_blank" rel="noreferrer" class="btn-outline-compact" style="flex: 1 1 calc(50% - var(--spacing-sm)); text-align: center;">{$_('settings.openPatreon', { default: 'Open Patreon' })}</a>
     </div>
     </div>
   </div>
