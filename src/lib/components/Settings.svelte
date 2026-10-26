@@ -80,14 +80,14 @@
     { sectionId: 'account', tab: 'account', tabLabel: 'Account', title: 'Account Profile & Supporter', subtitle: 'Cloud sign-in, avatar, and supporter status', keywords: ['account', 'login', 'logout', 'user', 'profile', 'supporter', 'subscription', 'avatar'] },
     { sectionId: 'subsonic', tab: 'account', tabLabel: 'Account', title: 'Subsonic & Navidrome Server', subtitle: 'Connect your personal self-hosted music server', keywords: ['subsonic', 'navidrome', 'server', 'stream', 'remote library', 'url', 'credentials', 'self hosted'] },
     { sectionId: 'sync', tab: 'account', tabLabel: 'Account', title: 'Cloud & Database Sync', subtitle: 'Real-time synchronization across devices', keywords: ['sync', 'cloud sync', 'backup', 'devices', 'pending changes', 'library status'] },
-    { sectionId: 'community', tab: 'account', tabLabel: 'Account', title: 'ListenBrainz Scrobbling', subtitle: 'Track listening statistics and user token', keywords: ['listenbrainz', 'scrobble', 'token', 'tracking', 'history', 'stats'] },
+    { sectionId: 'community', tab: 'account', tabLabel: 'Account', title: 'Community & Scrobbling', subtitle: 'Discord, Resonate, Ko-fi, Patreon buttons and ListenBrainz', keywords: ['listenbrainz', 'scrobble', 'token', 'tracking', 'history', 'stats', 'community', 'discord', 'resonate', 'kofi', 'ko-fi', 'patreon'] },
 
     // More Tab
     { sectionId: 'shortcuts', tab: 'more', tabLabel: 'More', title: 'Keyboard Shortcuts', subtitle: 'View and customize player hotkeys', keywords: ['shortcuts', 'hotkeys', 'keyboard', 'keybindings', 'space', 'play pause', 'skip'] },
     { sectionId: 'privacy', targetElementId: 'setting-cache-database', tab: 'more', tabLabel: 'More', title: 'Cache & Reset Database', subtitle: 'Wipe database metadata, clear track index, or manage logs', keywords: ['cache', 'reset database', 'clear cache', 'database', 'wipe', 'danger zone', 'delete'] },
     { sectionId: 'privacy', tab: 'more', tabLabel: 'More', title: 'Remote Control & Privacy', subtitle: 'Allow external remote control and telemetry options', keywords: ['privacy', 'remote control', 'developer mode', 'telemetry', 'logs'] },
-    { sectionId: 'upgrade', tab: 'more', tabLabel: 'More', title: 'Support & Supporter Access', subtitle: 'Support the project development', keywords: ['upgrade', 'support', 'donate', 'patreon', 'pro', 'tier'] },
-    { sectionId: 'support', tab: 'more', tabLabel: 'More', title: 'Discord Community & Feedback', subtitle: 'Chat with developers and get assistance', keywords: ['help', 'discord', 'support', 'issues', 'bugs', 'github', 'community'] },
+    { sectionId: 'upgrade', tab: 'more', tabLabel: 'More', title: 'Support & Supporter Access', subtitle: 'Support the project development', keywords: ['upgrade', 'support', 'donate', 'patreon', 'pro', 'tier', 'kofi', 'ko-fi'] },
+    { sectionId: 'support', tab: 'more', tabLabel: 'More', title: 'Support & Community Links', subtitle: 'Ko-fi, Patreon, and project donations', keywords: ['help', 'discord', 'support', 'issues', 'bugs', 'github', 'community', 'kofi', 'ko-fi', 'patreon', 'donate'] },
     { sectionId: 'about', tab: 'more', tabLabel: 'More', title: 'About Audion & Release Notes', subtitle: 'Version info, credits, and updates', keywords: ['about', 'version', 'update', 'changelog', 'release', 'credits', 'license', 'github'] },
   ];
 
