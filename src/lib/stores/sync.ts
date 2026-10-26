@@ -6,7 +6,7 @@
 // - Login/logout actions
 // - Sync trigger
 
-import { writable, derived, get } from 'svelte/store';
+import { writable, derived, readable, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { isTauri } from '$lib/api/tauri';
@@ -79,19 +79,29 @@ export const loginModalMode = writable<'oauth' | 'custom_server'>('oauth');
 
 const TRIAL_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** true when user is on a free trial (not a paid supporter) */
-export const isOnTrial = derived(authState, ($auth) => {
+// Periodic clock store (ticks every minute) so trial status and countdown re-evaluate reactively mid-session
+const clockTime = readable(Date.now(), (set) => {
+    const interval = setInterval(() => set(Date.now()), 60 * 1000);
+    return () => clearInterval(interval);
+});
+
+/** true when user is on a free trial (not a paid supporter and not expired) */
+export const isOnTrial = derived([authState, clockTime], ([$auth, $now]) => {
     if (!$auth.trial_started_at || !$auth.is_supporter) return false;
     // They're a supporter — if supporterUntil matches the trial window, it's a trial
     const trialExpiry = $auth.trial_started_at + TRIAL_MS;
-    return $auth.supporter_until !== null && Math.abs($auth.supporter_until - trialExpiry) < 60_000;
+    return (
+        $auth.supporter_until !== null &&
+        trialExpiry > $now &&
+        Math.abs($auth.supporter_until - trialExpiry) < 60_000
+    );
 });
 
 /** Days remaining in trial (0–7). -1 if not on trial. */
-export const trialDaysLeft = derived(authState, ($auth) => {
+export const trialDaysLeft = derived([authState, clockTime], ([$auth, $now]) => {
     if (!$auth.trial_started_at) return -1;
     const trialExpiry = $auth.trial_started_at + TRIAL_MS;
-    const msLeft = trialExpiry - Date.now();
+    const msLeft = trialExpiry - $now;
     if (msLeft <= 0) return 0;
     return Math.ceil(msLeft / (24 * 60 * 60 * 1000));
 });
