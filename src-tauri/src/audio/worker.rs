@@ -141,8 +141,13 @@ impl PlaybackStateSync {
 
                         if engine_opt.is_none() {
                             let mut last_err = String::new();
+                            // a device picked in settings must be honoured
+                            let init_device = match &cmd {
+                                AudioCommand::SetOutputDevice(name) => name.clone(),
+                                _ => None,
+                            };
                             for attempt in 0..8u32 {
-                                match AudioEngine::new(&eq_settings, None) {
+                                match AudioEngine::new(&eq_settings, init_device.clone()) {
                                     Ok((e, evt_rx, gated_open_rx, dl)) => {
                                         event_rx = evt_rx;
                                         gated_open_result_rx = gated_open_rx;

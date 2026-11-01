@@ -29,7 +29,7 @@ use crate::db::{queries, Database};
 use crate::scanner::{extract_metadata, scan_directory};
 
 use super::metadata::stat_identity;
-use super::watcher::{emit_batch, Outcome};
+use super::watcher::{emit_batch, note_duplicate, note_failed, Outcome};
 
 /// "path_is_within' mirrors commands::library::path_is_within
 fn path_is_within(path: &str, folder: &str) -> bool {
@@ -226,6 +226,7 @@ pub fn run(app: &AppHandle, db: &Database) {
         .partition(|op| matches!(op, PendingOp::Reparse { .. }));
 
     let mut outcomes: Vec<Outcome> = Vec::new();
+    let extract_failed = Arc::new(AtomicUsize::new(0));
 
     // phase 3a: parallel tag extraction for reparse_ops, ==============================================
     // no DB lock held anywhere in this phase
@@ -238,14 +239,19 @@ pub fn run(app: &AppHandle, db: &Database) {
 
     if total_reparse > 0 {
         let extracted_count_producer = extracted_count.clone();
+        let extract_failed_producer = extract_failed.clone();
         std::thread::spawn(move || {
             reparse_ops.into_par_iter().for_each(|op| {
                 if let PendingOp::Reparse { path, prior_move } = op {
                     if let Some(track_data) = extract_metadata(&path) {
                         let _ = tx.send((prior_move, track_data));
+                    } else {
+                        // reason is logged by the scanner
+                        extract_failed_producer.fetch_add(1, Ordering::Relaxed);
                     }
                 }
-                extracted_count_producer.fetch_add(1, Ordering::Relaxed);
+                // release => the failure count above is visible once the consumer sees the total
+                extracted_count_producer.fetch_add(1, Ordering::Release);
             });
             // tx is dropped here once every job has been processed,
             // which unblocks the consumer's recv_timeout loop below even if a
@@ -268,7 +274,7 @@ pub fn run(app: &AppHandle, db: &Database) {
                 match rx.recv_timeout(Duration::from_millis(100)) {
                     Ok(item) => pending_batch.push(item),
                     Err(_) => {
-                        if extracted_count.load(Ordering::Relaxed) >= total_reparse {
+                        if extracted_count.load(Ordering::Acquire) >= total_reparse {
                             break;
                         }
                     }
@@ -314,11 +320,8 @@ pub fn run(app: &AppHandle, db: &Database) {
                                 });
                             }
                         }
-                        Ok(_) => {}
-                        Err(e) => eprintln!(
-                            "[Reconcile] Failed to update track at {}: {e}",
-                            track_data.path
-                        ),
+                        Ok(_) => note_duplicate(&tx_db, &track_data, &mut outcomes),
+                        Err(e) => note_failed(&track_data.path, &e, &mut outcomes),
                     }
                 }
 
@@ -393,6 +396,30 @@ pub fn run(app: &AppHandle, db: &Database) {
         if let Err(e) = queries::cleanup_empty_albums(&conn) {
             eprintln!("[Reconcile] Failed to clean up empty albums: {e}");
         }
+    }
+
+    for _ in 0..extract_failed.load(Ordering::Acquire) {
+        outcomes.push(Outcome::Failed);
+    }
+
+    // skipped and failed files are not in the library,
+    // so every startup finds them again
+    // => log a summary but keep them out of the event, otherwise each launch shows a toast
+    let skipped = outcomes
+        .iter()
+        .filter(|o| matches!(o, Outcome::Duplicate))
+        .count();
+    let failed = outcomes
+        .iter()
+        .filter(|o| matches!(o, Outcome::Failed))
+        .count();
+    if skipped + failed > 0 {
+        tracing::info!(
+            "[RECONCILE] {} duplicates skipped, {} failed",
+            skipped,
+            failed
+        );
+        outcomes.retain(|o| !matches!(o, Outcome::Duplicate | Outcome::Failed));
     }
 
     if outcomes.is_empty() {

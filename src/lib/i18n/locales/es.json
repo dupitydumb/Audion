@@ -513,5 +513,30 @@
     "artist": "Artista",
     "playAll": "Reproducir todo",
     "library": "Biblioteca Subsonic"
+  },
+  "scanStatus": {
+    "importingFolder": "Importando carpeta...",
+    "scanningLibrary": "Escaneando biblioteca...",
+    "batchInfo": "Lote n.º {batch} ({size} canciones)",
+    "elapsed": "{elapsed} transcurridos",
+    "etaRemaining": "{eta} restantes",
+    "filesProgress": "{current} de {total} archivos",
+    "tracksAdded": "{count, plural, one {# añadida} other {# añadidas}}",
+    "tracksDeleted": "{count, plural, one {# eliminada} other {# eliminadas}}",
+    "tracksDuplicates": "{count, plural, one {# duplicada omitida} other {# duplicadas omitidas}}",
+    "tracksFailed": "{count, plural, one {# fallida} other {# fallidas}}",
+    "tracksReady": "{count} canciones listas",
+    "tracksUpdated": "{count, plural, one {# actualizada} other {# actualizadas}}"
+  },
+  "menu": {
+    "added": "añadidas",
+    "updated": "actualizadas",
+    "deleted": "eliminadas",
+    "duplicates": "duplicadas omitidas",
+    "failed": "fallidas",
+    "scanComplete": "Escaneo de la biblioteca completado: {parts}",
+    "scanCompleteSimple": "Escaneo de la biblioteca completado",
+    "rescanComplete": "Reescaneo completado: {parts}",
+    "rescanCompleteNoChanges": "Reescaneo completado: sin cambios"
   }
 }

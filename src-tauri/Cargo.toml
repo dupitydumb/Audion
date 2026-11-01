@@ -122,13 +122,6 @@ tracing-appender = "0.2"
 # for better performance and reliability across all platforms.
 # =============================================================================
 rodio = { version = "0.22.2", default-features = false, features = [
-    "vorbis",
-    "symphonia-flac",
-    "symphonia-mp3",
-    "symphonia-wav",
-    "symphonia-aac",
-    "symphonia-isomp4",
-    "symphonia-all",
     "crossbeam-channel",
     "playback",
     "tracing"

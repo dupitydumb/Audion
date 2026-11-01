@@ -227,6 +227,8 @@ export const elapsedTime = derived(progressiveScan, $s => {
  */
 export const tracksAdded = derived(progressiveScan, $s => $s.progress?.tracks_added ?? 0);
 export const tracksUpdated = derived(progressiveScan, $s => $s.progress?.tracks_updated ?? 0);
+export const tracksDuplicates = derived(progressiveScan, $s => $s.progress?.tracks_duplicates ?? 0);
+export const tracksFailed = derived(progressiveScan, $s => $s.progress?.tracks_failed ?? 0);
 
 /** The playlist being imported into, or null during library scans. */
 export const importPlaylistId = derived(progressiveScan, $s => $s.playlistId);

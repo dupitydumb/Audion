@@ -38,6 +38,8 @@ pub struct ScanProgress {
     pub estimated_time_remaining_ms: u64,
     pub tracks_added: usize,
     pub tracks_updated: usize,
+    pub tracks_duplicates: usize,
+    pub tracks_failed: usize,
 }
 
 
@@ -51,6 +53,10 @@ pub enum ScanSource {
 pub struct ScanResult {
     pub tracks_added: usize,
     pub tracks_updated: usize,
+    #[serde(default)]
+    pub tracks_duplicates: usize,
+    #[serde(default)]
+    pub tracks_failed: usize,
     pub tracks_deleted: usize,
     pub errors: Vec<String>,
 }
@@ -367,6 +373,8 @@ pub(crate) fn calculate_batch_size(
 pub async fn scan_music(paths: Vec<String>, db: State<'_, Database>) -> Result<ScanResult, String> {
     let mut tracks_added = 0;
     let mut tracks_updated = 0;
+    let mut tracks_duplicates = 0;
+    let mut tracks_failed = 0;
     let mut errors = Vec::new();
 
     // Use spawn_blocking for the file system scanning and metadata extraction
@@ -438,13 +446,27 @@ pub async fn scan_music(paths: Vec<String>, db: State<'_, Database>) -> Result<S
                                     }
                                 }
 
-                                let _ = tx_clone.blocking_send(Ok((result, 0)));
+                                let _ = tx_clone.blocking_send(Ok((result, 1 - result, 0, 0)));
+                            } else {
+                                // id 0 => skipped as metadata-hash duplicate
+                                let existing =
+                                    queries::find_duplicate_path(&conn, &track_data).unwrap_or_default();
+                                tracing::info!(
+                                    "[SCAN] duplicate skipped: {} (matches {})",
+                                    track_data.path,
+                                    existing
+                                );
+                                let _ = tx_clone.blocking_send(Ok((0, 0, 1, 0)));
                             }
                         }
                         Err(e) => {
+                            tracing::warn!("[SCAN] failed to insert {}: {}", file_path, e);
                             let _ = tx_clone.blocking_send(Err(e.to_string()));
                         }
                     }
+                } else {
+                    // reason is logged by the scanner
+                    let _ = tx_clone.blocking_send(Ok((0, 0, 0, 1)));
                 }
             }
             let _ = queries::update_folder_last_scanned(&conn, &path_clone);
@@ -455,11 +477,16 @@ pub async fn scan_music(paths: Vec<String>, db: State<'_, Database>) -> Result<S
 
     while let Some(res) = rx.recv().await {
         match res {
-            Ok((added, updated)) => {
+            Ok((added, updated, duplicates, failed)) => {
                 tracks_added += added;
                 tracks_updated += updated;
+                tracks_duplicates += duplicates;
+                tracks_failed += failed;
             }
-            Err(e) => errors.push(e),
+            Err(e) => {
+                tracks_failed += 1;
+                errors.push(e);
+            }
         }
     }
 
@@ -471,9 +498,20 @@ pub async fn scan_music(paths: Vec<String>, db: State<'_, Database>) -> Result<S
     });
     let _ = queries::cleanup_empty_albums(&conn);
 
+    tracing::info!(
+        "[SCAN] complete: {} added, {} updated, {} duplicates skipped, {} failed, {} deleted",
+        tracks_added,
+        tracks_updated,
+        tracks_duplicates,
+        tracks_failed,
+        tracks_deleted
+    );
+
     Ok(ScanResult {
         tracks_added,
         tracks_updated,
+        tracks_duplicates,
+        tracks_failed,
         tracks_deleted,
         errors,
     })
@@ -571,6 +609,8 @@ async fn run_scan_and_import(
         let result = ScanResult {
             tracks_added: 0,
             tracks_updated: 0,
+            tracks_duplicates: 0,
+            tracks_failed: scan_errors.len(),
             tracks_deleted,
             errors: scan_errors,
         };
@@ -586,14 +626,20 @@ async fn run_scan_and_import(
     ) = crossbeam::channel::bounded(500);
     let extracted_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let extracted_count_clone = extracted_count.clone();
+    let extract_failed = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let extract_failed_clone = extract_failed.clone();
 
     std::thread::spawn(move || {
         all_files.par_iter().for_each(|file_path| {
             if let Some(track_data) = extract_metadata(file_path) {
                 let _ = tx.send(track_data);
+            } else {
+                // reason is logged by the scanner
+                extract_failed_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
             // increment regardless of success so the receiver loop exits cleanly
-            extracted_count_clone.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            // release => the failure count above is visible once the receiver sees the total
+            extracted_count_clone.fetch_add(1, std::sync::atomic::Ordering::Release);
         });
     });
  
@@ -603,6 +649,9 @@ async fn run_scan_and_import(
     let batch_result = tauri::async_runtime::spawn_blocking(move || {
         let mut tracks_added = 0usize;
         let mut tracks_updated = 0usize;
+        let mut tracks_duplicates = 0usize;
+        let mut batch_duplicates = 0usize;
+        let mut tracks_failed = 0usize;
         let mut tracks_inserted = 0usize;
         let mut batch_added = 0usize;
         let mut batch_updated = 0usize;
@@ -614,7 +663,7 @@ async fn run_scan_and_import(
         let mut conn = match db_conn.lock() {
             Ok(c) => c,
             Err(e) => {
-                return (0, 0, 0, vec![format!("Failed to acquire DB lock: {}", e)]);
+                return (0, 0, 0, 0, 0, vec![format!("Failed to acquire DB lock: {}", e)]);
             }
         };
  
@@ -628,7 +677,7 @@ async fn run_scan_and_import(
                     Ok(track_data) => pending.push(track_data),
                     Err(_) => {
                         // If extraction is done, stop waiting
-                        if extracted_count.load(std::sync::atomic::Ordering::Relaxed) >= total_files {
+                        if extracted_count.load(std::sync::atomic::Ordering::Acquire) >= total_files {
                             break;
                         }
                     }
@@ -768,8 +817,22 @@ async fn run_scan_and_import(
                             artists: track_data.artist.as_deref().map(crate::scanner::artist_parser::split_artists).unwrap_or_default(),
                         });
                     }
-                    Ok(_) => {}
-                    Err(e) => errors.push(format!("Insert failed for {}: {}", track_data.path, e)),
+                    Ok(_) => {
+                        // id 0 => skipped as metadata-hash duplicate
+                        batch_duplicates += 1;
+                        let existing =
+                            queries::find_duplicate_path(&tx_db, track_data).unwrap_or_default();
+                        tracing::info!(
+                            "[SCAN] duplicate skipped: {} (matches {})",
+                            track_data.path,
+                            existing
+                        );
+                    }
+                    Err(e) => {
+                        tracks_failed += 1;
+                        tracing::warn!("[SCAN] failed to insert {}: {}", track_data.path, e);
+                        errors.push(format!("Insert failed for {}: {}", track_data.path, e));
+                    }
                 }
             }
  
@@ -780,13 +843,16 @@ async fn run_scan_and_import(
                 errors.push(format!("Failed to commit batch transaction: {}", e));
                 // Don't advance tracks_sent .these weren't persisted
             } else {
-                tracks_sent += tracks_processed;
+                // duplicates count as handled so progress reaches total
+                tracks_sent += tracks_processed + batch_duplicates;
                 tracks_added += batch_added;
                 tracks_updated += batch_updated;
+                tracks_duplicates += batch_duplicates;
                 batches_sent += 1;  // only count successfully committed batches
             }
             batch_added = 0;   // reset for next batch regardless
             batch_updated = 0;
+            batch_duplicates = 0;
  
             let elapsed_ms = total_start.elapsed().as_millis() as u64;
             let avg_ms_per_track = if tracks_sent > 0 {
@@ -796,14 +862,19 @@ async fn run_scan_and_import(
             };
             let eta_ms = total_files.saturating_sub(tracks_sent) as u64 * avg_ms_per_track;
 
+            // failed files count as handled so progress reaches total
+            let failed_now =
+                tracks_failed + extract_failed.load(std::sync::atomic::Ordering::Relaxed);
             let progress = ScanProgress {
-                current: tracks_sent,
+                current: tracks_sent + failed_now,
                 total: total_files,
                 current_batch: batches_sent,
                 batch_size: tracks_processed,
                 estimated_time_remaining_ms: eta_ms,
                 tracks_added,
                 tracks_updated,
+                tracks_duplicates,
+                tracks_failed: failed_now,
             };
  
             match &source_clone {
@@ -841,20 +912,37 @@ async fn run_scan_and_import(
             }
         }
 
-        (tracks_added, tracks_updated, batches_sent, errors)
+        let tracks_failed =
+            tracks_failed + extract_failed.load(std::sync::atomic::Ordering::Relaxed);
+        (tracks_added, tracks_updated, tracks_duplicates, tracks_failed, batches_sent, errors)
     })
     .await
     .map_err(|e| e.to_string())?;
 
-    let (tracks_added, tracks_updated, _batches_sent, mut errors) = batch_result;
+    let (tracks_added, tracks_updated, tracks_duplicates, tracks_failed, _batches_sent, mut errors) =
+        batch_result;
+    // walk errors (unreadable dirs and files) count as failed too
+    let tracks_failed = tracks_failed + scan_errors.len();
     errors.extend(scan_errors);
  
     let result = ScanResult {
         tracks_added,
         tracks_updated,
+        tracks_duplicates,
+        tracks_failed,
         tracks_deleted,
         errors: errors.clone(),
     };
+
+    tracing::info!(
+        "[SCAN] complete: {} added, {} updated, {} duplicates skipped, {} failed, {} deleted, {} errors",
+        result.tracks_added,
+        result.tracks_updated,
+        result.tracks_duplicates,
+        result.tracks_failed,
+        result.tracks_deleted,
+        result.errors.len()
+    );
  
     let (complete_event, _) = event_names(&source);
     let _ = window.emit(complete_event, &result);

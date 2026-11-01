@@ -193,8 +193,8 @@ fn get_pending_open_file(state: tauri::State<'_, PendingOpenFile>) -> Option<Str
     pending.take()
 }
 
-const ASSOCIATED_AUDIO_EXTENSIONS: &[&str] =
-    &["flac", "mp3", "wav", "ogg", "opus", "m4a", "aac", "alac"];
+// same list the scanner walks => scan, file open and context menu stay in sync
+const ASSOCIATED_AUDIO_EXTENSIONS: &[&str] = scanner::walker::SUPPORTED_EXTENSIONS;
 
 fn is_associated_audio_file(path: &str) -> bool {
     std::path::Path::new(path)
