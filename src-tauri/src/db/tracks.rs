@@ -306,6 +306,18 @@ pub fn get_all_track_identities(conn: &Connection) -> Result<Vec<super::models::
     rows.collect()
 }
 
+// path of the existing track that a hash duplicate collides with
+// same match rule as the skip in insert_or_update_track
+pub fn find_duplicate_path(conn: &Connection, track: &TrackInsert) -> Option<String> {
+    let hash = track.content_hash.as_ref()?;
+    conn.query_row(
+        "SELECT path FROM tracks WHERE content_hash = ?1 AND path != ?2 COLLATE NOCASE",
+        params![hash, track.path],
+        |row| row.get(0),
+    )
+    .ok()
+}
+
 /// Update MusicBrainz Recording ID and/or genre for a track.
 /// Uses COALESCE so that passing `None` preserves the existing DB value.
 pub fn update_track_mb_data(

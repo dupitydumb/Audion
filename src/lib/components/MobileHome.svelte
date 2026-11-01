@@ -189,6 +189,18 @@
                         values: { count: result.tracks_updated },
                     }),
                 );
+            if (result.tracks_duplicates > 0)
+                parts.push(
+                    $_("scanStatus.tracksDuplicates", {
+                        values: { count: result.tracks_duplicates },
+                    }),
+                );
+            if (result.tracks_failed > 0)
+                parts.push(
+                    $_("scanStatus.tracksFailed", {
+                        values: { count: result.tracks_failed },
+                    }),
+                );
             if (result.tracks_deleted > 0)
                 parts.push(
                     $_("scanStatus.tracksDeleted", {
@@ -201,7 +213,11 @@
                     ? $_('menu.scanComplete', { values: { parts: parts.join(", ") } })
                     : $_('home.scanCompleteNoTracks');
 
-            addToast(message, "success", 4000);
+            addToast(
+                message,
+                result.tracks_failed > 0 ? "warning" : "success",
+                result.tracks_failed > 0 ? 7000 : 4000,
+            );
         } catch (error) {
             console.error("Scan failed:", error);
             addToast(

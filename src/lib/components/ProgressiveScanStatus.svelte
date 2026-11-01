@@ -7,7 +7,9 @@
         estimatedTimeRemaining,
         elapsedTime,
         tracksAdded,
-        tracksUpdated
+        tracksUpdated,
+        tracksDuplicates,
+        tracksFailed
     } from '$lib/stores/progressiveScan';
     import { trackCount } from '$lib/stores/library';
     import { fade, slide } from 'svelte/transition';
@@ -20,6 +22,8 @@
     $: elapsed = $elapsedTime;
     $: added = $tracksAdded;
     $: updated = $tracksUpdated;
+    $: duplicates = $tracksDuplicates;
+    $: failed = $tracksFailed;
     $: title = $scanMode === 'folder'
         ? $_('scanStatus.importingFolder')
         : $_('scanStatus.scanningLibrary');
@@ -66,6 +70,12 @@
                     {/if}
                     {#if updated > 0}
                         <span class="count-item updated">↻ {$_('scanStatus.tracksUpdated', { values: { count: updated } })}</span>
+                    {/if}
+                    {#if duplicates > 0}
+                        <span class="count-item duplicates">⧉ {$_('scanStatus.tracksDuplicates', { values: { count: duplicates } })}</span>
+                    {/if}
+                    {#if failed > 0}
+                        <span class="count-item failed">✕ {$_('scanStatus.tracksFailed', { values: { count: failed } })}</span>
                     {/if}
                 </div>
                 {#if progress}
@@ -214,6 +224,16 @@
     .count-item.updated {
         color: var(--info-text, #3b82f6);
         background: var(--info-bg, rgba(59, 130, 246, 0.1));
+    }
+
+    .count-item.duplicates {
+        color: var(--warning-text, #f59e0b);
+        background: var(--warning-bg, rgba(245, 158, 11, 0.1));
+    }
+
+    .count-item.failed {
+        color: var(--error-text, #ef4444);
+        background: var(--error-bg, rgba(239, 68, 68, 0.1));
     }
 
     /* Responsive - hide counts on very small screens */

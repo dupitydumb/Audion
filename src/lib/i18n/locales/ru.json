@@ -817,6 +817,8 @@
     "clearCache": "Очистить кэш",
     "clearCacheConfirm": "Вы уверены, что хотите очистить кэш приложения? Это удалит все данные о треках, поисковые индексы и текст песен. Ваши музыкальные файлы не будут затронуты.",
     "deleted": "удалено",
+    "duplicates": "дубликатов пропущено",
+    "failed": "с ошибкой",
     "file": "Файл",
     "loadFolder": "Загрузить папку",
     "loadFolderFailed": "Не удалось загрузить папку",
@@ -1018,6 +1020,8 @@
     "scanningLibrary": "Сканирование библиотеки…",
     "tracksAdded": "{count, plural, one {добавлен #} few {добавлено #} many {добавлено #} other {добавлено #}}",
     "tracksDeleted": "{count, plural, one {удалён #} few {удалено #} many {удалено #} other {удалено #}}",
+    "tracksDuplicates": "{count, plural, one {пропущен # дубликат} few {пропущено # дубликата} many {пропущено # дубликатов} other {пропущено # дубликатов}}",
+    "tracksFailed": "{count, plural, one {# ошибка} few {# ошибки} many {# ошибок} other {# ошибок}}",
     "tracksReady": "готово {count} треков",
     "tracksUpdated": "{count, plural, one {обновлён #} few {обновлено #} many {обновлено #} other {обновлено #}}"
   },

@@ -217,6 +217,8 @@ export interface Library {
 export interface ScanResult {
     tracks_added: number;
     tracks_updated: number;
+    tracks_duplicates: number;
+    tracks_failed: number;
     tracks_deleted: number;
     errors: string[];
 }
@@ -230,6 +232,8 @@ export interface ScanProgress {
     estimated_time_remaining_ms: number;
     tracks_added: number;
     tracks_updated: number;
+    tracks_duplicates: number;
+    tracks_failed: number;
 }
 
 export interface ScanBatchEvent {

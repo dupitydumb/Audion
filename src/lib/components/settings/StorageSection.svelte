@@ -81,13 +81,15 @@
   }
 
   function formatScanResultMessage(
-    result: { tracks_added: number; tracks_updated: number; tracks_deleted: number },
+    result: { tracks_added: number; tracks_updated: number; tracks_duplicates: number; tracks_failed: number; tracks_deleted: number },
     addedMessage: string,
     noChangeMessage: string,
   ): string {
     const parts: string[] = [];
     if (result.tracks_added > 0) parts.push(`${result.tracks_added} added`);
     if (result.tracks_updated > 0) parts.push(`${result.tracks_updated} updated`);
+    if (result.tracks_duplicates > 0) parts.push(`${result.tracks_duplicates} duplicates skipped`);
+    if (result.tracks_failed > 0) parts.push(`${result.tracks_failed} failed`);
     if (result.tracks_deleted > 0) parts.push(`${result.tracks_deleted} removed`);
     return parts.length > 0 ? `${addedMessage}: ${parts.join(", ")}` : noChangeMessage;
   }
