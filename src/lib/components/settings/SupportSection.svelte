@@ -2,6 +2,7 @@
   import { _ } from "svelte-i18n";
   import { slide } from "svelte/transition";
   import { createEventDispatcher } from "svelte";
+  import { appSettings } from "$lib/stores/settings";
   import Icon from "$lib/components/Icon.svelte";
 
   export let open: boolean = false;
@@ -49,6 +50,42 @@
             <span class="platform-name">Patreon</span>
             <span class="platform-tag">{$_('settings.patreonTag')}</span>
           </a>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="toggle-container">
+          <div class="toggle-info">
+            <span class="setting-title">{$_('settings.kofiButton', { default: 'Ko-fi button' })}</span>
+          </div>
+          <button
+            class="toggle-btn"
+            class:active={$appSettings.showKofi}
+            on:click={() => appSettings.setShowKofi(!$appSettings.showKofi)}
+            role="switch"
+            aria-checked={$appSettings.showKofi}
+            aria-label={$_('settings.toggleKofiButton', { default: 'Toggle Ko-fi Button' })}
+          >
+            <div class="toggle-handle"></div>
+          </button>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="toggle-container">
+          <div class="toggle-info">
+            <span class="setting-title">{$_('settings.patreonButton', { default: 'Patreon button' })}</span>
+          </div>
+          <button
+            class="toggle-btn"
+            class:active={$appSettings.showPatreon}
+            on:click={() => appSettings.setShowPatreon(!$appSettings.showPatreon)}
+            role="switch"
+            aria-checked={$appSettings.showPatreon}
+            aria-label={$_('settings.togglePatreonButton', { default: 'Toggle Patreon Button' })}
+          >
+            <div class="toggle-handle"></div>
+          </button>
         </div>
       </div>
     </div>

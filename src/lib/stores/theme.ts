@@ -345,13 +345,13 @@ function isHex(s: unknown): s is string {
 /** Parse and validate a raw JSON object as AudioThemePackage.
  *  Returns the package or throws a descriptive error string. */
 export function parseThemePackage(raw: unknown): AudioThemePackage {
-    if (typeof raw !== 'object' || raw === null) throw 'Not a JSON object';
+    if (typeof raw !== 'object' || raw === null) throw new Error('Not a JSON object');
     const r = raw as Record<string, unknown>;
 
-    if (r.version !== AUDIOTHEME_VERSION) throw `Unsupported version: ${r.version}`;
-    if (typeof r.name !== 'string' || !r.name.trim()) throw 'Missing name';
-    if (!isHex(r.accentColor)) throw 'Invalid accentColor';
-    if (r.mode !== undefined && !VALID_MODES.includes(r.mode as ThemeMode)) throw 'Invalid mode';
+    if (r.version !== AUDIOTHEME_VERSION) throw new Error(`Unsupported version: ${r.version}`);
+    if (typeof r.name !== 'string' || !r.name.trim()) throw new Error('Missing name');
+    if (!isHex(r.accentColor)) throw new Error('Invalid accentColor');
+    if (r.mode !== undefined && !VALID_MODES.includes(r.mode as ThemeMode)) throw new Error('Invalid mode');
 
     // customColors — all keys optional null or hex
     const cc: CustomColors = { ...defaultCustomColors };
@@ -361,7 +361,7 @@ export function parseThemePackage(raw: unknown): AudioThemePackage {
             const v = src[k];
             if (v === null || v === undefined) { cc[k] = null; }
             else if (isHex(v)) { cc[k] = v; }
-            else throw `Invalid customColors.${k}`;
+            else throw new Error(`Invalid customColors.${k}`);
         }
     }
 
@@ -369,7 +369,7 @@ export function parseThemePackage(raw: unknown): AudioThemePackage {
     const bg: BackgroundConfig = { ...defaultBackground };
     if (typeof r.background === 'object' && r.background !== null) {
         const b = r.background as Record<string, unknown>;
-        if (!VALID_BG_TYPES.includes(b.type as BackgroundType)) throw 'Invalid background.type';
+        if (!VALID_BG_TYPES.includes(b.type as BackgroundType)) throw new Error('Invalid background.type');
         bg.type = b.type as BackgroundType;
         // strip paths — image/video value cannot travel cross-machine
         bg.value = (bg.type === 'image' || bg.type === 'video') ? '' : (typeof b.value === 'string' ? b.value : '');

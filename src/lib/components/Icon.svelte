@@ -30,6 +30,7 @@
     Pin,
     Power,
     RefreshCw,
+    Cloud,
     CloudOff,
     CheckCircle,
     Info,
@@ -78,6 +79,7 @@
     Share2,
     FileText,
     Monitor,
+    Server,
     Smartphone,
     BarChart2,
     Star,
@@ -89,6 +91,8 @@
   } from 'lucide-svelte';
 
   export let name:
+    | 'cloud'
+    | 'server'
     | 'tag'
     | 'arrow-left'
     | 'arrow-right'
@@ -245,6 +249,8 @@
     refresh: RefreshCw,
     'sync-error': RefreshCw,
     'cloud-off': CloudOff,
+    cloud: Cloud,
+    server: Server,
     'check-circle': CheckCircle,
     info: Info,
     'alert-triangle': AlertTriangle,

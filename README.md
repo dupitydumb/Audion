@@ -1,4 +1,4 @@
-﻿<p align="center">
+<p align="center">
   <img width="850" height="230" alt="AudionBanner" src="https://github.com/user-attachments/assets/8649842c-118a-4b24-a987-6bb4be6a9036" />
 </p>
 
@@ -204,6 +204,12 @@ Contributions are welcome! Check out:
 - [Issues](https://github.com/dupitydumb/Audion/issues) for bugs and feature requests
 - [PLUGINS.md](./PLUGINS.md) to create plugins
 - [Discord](https://discord.gg/27XRVQsBd9) to discuss ideas
+
+---
+
+## 📄 License
+
+This project is licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later) - see the [LICENSE](./LICENSE) file for details.
 
 ---
 
