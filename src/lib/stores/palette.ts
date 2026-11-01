@@ -26,7 +26,11 @@ function normalizePalette(
   }));
 }
 
+let currentGen = 0;
+
 currentTrack.subscribe(async (track) => {
+  const gen = ++currentGen;
+
   if (!track) {
     albumPalette.set([]);
     return;
@@ -53,18 +57,23 @@ currentTrack.subscribe(async (track) => {
         filePath: track.track_cover_path,
       });
     } else {
-      // fallback for covers with no local file: 
+      // fallback for covers with no local file:
       // legacy base64 storage or a remote cover_url
-      const bytes = await fetch(coverSrc).then((r) => r.arrayBuffer());
+      const res = await fetch(coverSrc);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const bytes = await res.arrayBuffer();
       raw = await invoke("extract_palette", {
         imageBytes: Array.from(new Uint8Array(bytes)),
       });
     }
 
+    if (gen !== currentGen) return;
+
     const palette = normalizePalette(raw);
     cache.set(coverSrc, palette);
     albumPalette.set(palette);
   } catch (e) {
+    if (gen !== currentGen) return;
     console.error("Palette extraction failed:", e);
     albumPalette.set([]);
   }
