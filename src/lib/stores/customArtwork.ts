@@ -54,3 +54,15 @@ export function getCustomArtworkSync(map: ArtworkMap, type: ArtworkType, id: num
     const key = getStoreKey(type, id);
     return map && map[key] ? map[key] : null;
 }
+
+/**
+ * tell every cover surface to re-resolve its image without changing any artwork
+ *
+ * all ui that shows covers (lists, players, queue, search, palette, media session)
+ * already re-resolves whenever this store emits
+ * so cover changes that happen elsewhere (e.g. fetched
+ * covers being cleared) reuse the same channe
+ */
+export function notifyCoverChange() {
+    customArtworks.update((m) => ({ ...m }));
+}

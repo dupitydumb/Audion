@@ -457,6 +457,15 @@ export async function cleanupOrphanedCoverFiles(): Promise<number> {
     return await invoke('cleanup_orphaned_cover_files');
 }
 
+/**
+ * remove every cover that was auto-fetched online
+ * (not covers from files, streaming services or ones the user set)
+ * returns the ids of the tracks that were cleared
+ */
+export async function clearFetchedCovers(): Promise<number[]> {
+    return await invoke('clear_fetched_covers');
+}
+
 // Clear all base64 cover data from the database after successful migration
 // imp -Only run this after verifying all covers have been migrated
 export async function clearBase64Covers(): Promise<number> {

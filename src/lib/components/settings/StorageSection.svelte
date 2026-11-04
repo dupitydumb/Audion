@@ -7,12 +7,14 @@
     rescanMusic,
     syncCoverPathsFromFiles,
     mergeDuplicateCovers,
+    clearFetchedCovers,
     scanFolder,
     removeFolder,
     getMusicFolders,
     type MergeCoverResult,
   } from "$lib/api/tauri";
-  import { loadLibrary } from "$lib/stores/library";
+  import { loadLibrary, purgeFetchedCovers } from "$lib/stores/library";
+  import { stripFetchedCoversFromPlayer } from "$lib/stores/player";
   import { progressiveScan } from "$lib/stores/progressiveScan";
   import { confirm } from "$lib/stores/dialogs";
   import { onMount, onDestroy } from "svelte";
@@ -334,6 +336,41 @@
     }
   }
 
+  let isClearingFetched = false;
+  let clearFetchedMessage = "";
+  let clearFetchedSuccess = false;
+
+  async function handleClearFetchedCovers() {
+    if (isClearingFetched) return;
+
+    const ok = await confirm(
+      $_('settings.clearFetchedCoversConfirm', { default: 'Remove all covers that were fetched online? Covers from your music files and ones you set yourself are not affected.' }),
+      { title: $_('settings.clearFetchedCovers', { default: 'Clear fetched covers' }), danger: true },
+    );
+    if (!ok) return;
+
+    isClearingFetched = true;
+    clearFetchedMessage = "";
+    try {
+      const clearedIds = await clearFetchedCovers();
+      purgeFetchedCovers(clearedIds);
+      stripFetchedCoversFromPlayer(clearedIds);
+
+      clearFetchedSuccess = true;
+      clearFetchedMessage =
+        clearedIds.length > 0
+          ? $_('settings.clearFetchedCoversDone', { values: { count: clearedIds.length }, default: `Cleared ${clearedIds.length} fetched cover(s).` })
+          : $_('settings.clearFetchedCoversNone', { default: 'No fetched covers to clear.' });
+    } catch (error) {
+      clearFetchedSuccess = false;
+      clearFetchedMessage = $_('settings.clearFetchedCoversFailed', { values: { error: String(error) }, default: `Failed to clear fetched covers: ${error}` });
+      console.error("[Settings] Failed to clear fetched covers:", error);
+    } finally {
+      isClearingFetched = false;
+      setTimeout(() => { clearFetchedMessage = ""; }, 6000);
+    }
+  }
+
   async function handleMergeDuplicateCovers() {
     isMergingCovers = true;
     mergeMessage = "";
@@ -482,6 +519,27 @@
             <div class="toggle-handle"></div>
           </button>
         </div>
+
+        <div class="divider"></div>
+
+        <!-- clear covers that were fetched online -->
+        <div class="toggle-container" id="setting-clear-fetched-covers">
+          <div class="toggle-info">
+            <span class="setting-title">{$_('settings.clearFetchedCovers', { default: 'Clear fetched covers' })}</span>
+            <span class="setting-description">
+              {$_('settings.clearFetchedCoversDesc', {
+                default: 'Remove every cover that was downloaded online. Covers from your files and ones you set yourself are kept.',
+              })}
+            </span>
+          </div>
+          <button class="btn-outline-compact" on:click={handleClearFetchedCovers} disabled={isClearingFetched}>
+            {isClearingFetched ? $_('settings.clearing', { default: 'Clearing...' }) : $_('settings.clear', { default: 'Clear' })}
+          </button>
+        </div>
+
+        {#if clearFetchedMessage}
+          <div class="sync-message {clearFetchedSuccess ? 'success' : 'error'}">{clearFetchedMessage}</div>
+        {/if}
 
         <div class="divider"></div>
 
