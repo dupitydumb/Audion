@@ -461,6 +461,30 @@
           <span class="setting-description">{$_('settings.coverManagementDesc')}</span>
         </div>
 
+        <!-- online cover auto-fetch toggle -->
+        <div class="toggle-container" id="setting-cover-auto-fetch">
+          <div class="toggle-info">
+            <span class="setting-title">{$_('settings.coverAutoFetchTitle', { default: 'Auto-fetch missing covers online' })}</span>
+            <span class="setting-description">
+              {$_('settings.coverAutoFetchDesc', {
+                default: 'When a track has no embedded cover, look one up online as it plays. Turn off to only use covers from your files or ones you set yourself.',
+              })}
+            </span>
+          </div>
+          <button
+            class="toggle-btn"
+            class:active={$appSettings.coverAutoFetch}
+            on:click={() => appSettings.setCoverAutoFetch(!$appSettings.coverAutoFetch)}
+            role="switch"
+            aria-checked={$appSettings.coverAutoFetch}
+            aria-label={$_('settings.coverAutoFetchToggleLabel', { default: 'Toggle automatic cover fetching' })}
+          >
+            <div class="toggle-handle"></div>
+          </button>
+        </div>
+
+        <div class="divider"></div>
+
         <div class="button-group-row">
           <button class="btn-outline-compact" on:click={handleSyncCovers} disabled={isSyncingCovers}>
             {isSyncingCovers ? $_('settings.syncing') : $_('settings.syncCovers')}

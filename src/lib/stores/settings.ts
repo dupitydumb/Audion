@@ -53,6 +53,8 @@ export interface AppSettings {
     startupPage: StartupPage;
     /** when false, never auto-fetch lyrics on track change */
     lyricsAutoFetch: boolean;
+    /** when false, never look up cover art online for tracks without one */
+    coverAutoFetch: boolean;
 }
 
 const SETTINGS_STORAGE_KEY = 'audion_settings';
@@ -84,6 +86,7 @@ const defaultSettings: AppSettings = {
     crossfadeSeconds: 0,
     startupPage: 'home',
     lyricsAutoFetch: true,
+    coverAutoFetch: true,
 };
 
 // Load settings from localStorage
@@ -274,6 +277,14 @@ function createSettingsStore() {
         setLyricsAutoFetch(enabled: boolean) {
             update(state => {
                 const newState = { ...state, lyricsAutoFetch: enabled };
+                saveSettings(newState);
+                return newState;
+            });
+        },
+
+        setCoverAutoFetch(enabled: boolean) {
+            update(state => {
+                const newState = { ...state, coverAutoFetch: enabled };
                 saveSettings(newState);
                 return newState;
             });
