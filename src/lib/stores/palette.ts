@@ -1,7 +1,9 @@
 import { writable, derived } from "svelte/store";
 import { invoke } from "@tauri-apps/api/core";
 import { currentTrack } from "$lib/stores/player";
-import { getTrackCoverSrc } from "$lib/api/tauri";
+import { convertFileSrc } from "$lib/api/tauri";
+import { resolveTrackCover } from "$lib/stores/library";
+import { customArtworks } from "$lib/stores/customArtwork";
 import { meshSettings } from "$lib/stores/meshSettings";
 
 export interface PaletteColor {
@@ -28,15 +30,31 @@ function normalizePalette(
 
 let currentGen = 0;
 
-currentTrack.subscribe(async (track) => {
-  const gen = ++currentGen;
+// re-extract when the track changes or the user changes its artwork
+const paletteSource = derived([currentTrack, customArtworks], ([track]) => track);
+let lastTrackId: number | null = null;
+let lastCoverSrc: string | null = null;
 
+paletteSource.subscribe(async (track) => {
   if (!track) {
+    ++currentGen;
+    lastTrackId = null;
+    lastCoverSrc = null;
     albumPalette.set([]);
     return;
   }
 
-  const coverSrc = getTrackCoverSrc(track);
+  const coverSrc = resolveTrackCover(track);
+
+  // currentTrack emits often (e.g. cover_url updates)
+  // skip if nothing visual changed
+  // must happen before bumping currentGen, or an in-flight extraction would be discarded
+  if (track.id === lastTrackId && coverSrc === lastCoverSrc) return;
+  lastTrackId = track.id;
+  lastCoverSrc = coverSrc;
+
+  const gen = ++currentGen;
+
   if (!coverSrc) {
     albumPalette.set([]);
     return;
@@ -50,7 +68,7 @@ currentTrack.subscribe(async (track) => {
   try {
     let raw: { hex: string; luminance: number; is_dark: boolean; weight: number }[];
 
-    if (track.track_cover_path) {
+    if (track.track_cover_path && coverSrc === convertFileSrc(track.track_cover_path)) {
       // preferred path: only a short file path string crosses the IPC boundary
       // rust reads the file itself
       raw = await invoke("extract_palette_from_path", {

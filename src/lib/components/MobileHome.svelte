@@ -29,6 +29,7 @@
     import { progressiveScan, isScanning } from "$lib/stores/progressiveScan";
     import { addToast } from "$lib/stores/toast";
     import { isMobile } from "$lib/stores/mobile";
+    import { customArtworks } from "$lib/stores/customArtwork";
     import { appSettings } from "$lib/stores/settings";
     import { getLikedTracks } from "$lib/api/tauri";
     import ArtistLinks from "$lib/components/ArtistLinks.svelte";
@@ -82,13 +83,16 @@
             ? $topAlbums.slice(0, 6).map((ta) => ta.album)
             : $albums.slice(0, 6);
 
-    function getAlbumArt(album: Album): string | null {
+    // reassigned so the template re-renders when custom artwork changes
+    $: getAlbumArt = (album: Album): string | null => {
+        void $customArtworks;
         return getAlbumCoverFromTracks(album.id);
-    }
+    };
 
-    function getTrackArt(track: Track): string | null {
+    $: getTrackArt = (track: Track): string | null => {
+        void $customArtworks;
         return getTrackAlbumCover(track.id);
-    }
+    };
 
     function handlePlayTrack(index: number) {
         playTracks(recentTracks, index);
