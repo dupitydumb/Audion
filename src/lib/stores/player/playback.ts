@@ -288,7 +288,7 @@ export async function playTrack(
     await updateMediaSessionMetadata(trackForPlugins);
     await updateSmtcMetadata(trackForPlugins, direction).catch(e => console.warn('[Player] SMTC metadata update failed:', e));
 
-    if (!track.track_cover_path && !track.cover_url) {
+    if (get(appSettings).coverAutoFetch && !track.track_cover_path && !track.cover_url) {
         fetchTrackCover(track).then(async (newCoverUrl) => {
             if (newCoverUrl) {
                 console.log(`[Player] Auto-fetched cover for "${track.title}": ${newCoverUrl}`);

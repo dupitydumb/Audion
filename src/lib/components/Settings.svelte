@@ -65,7 +65,7 @@
     // Library Tab
     { sectionId: 'storage', targetElementId: 'setting-download-location', tab: 'library', tabLabel: 'Library', title: 'Download Location', subtitle: 'Directory where downloaded tracks and files are saved', keywords: ['download location', 'download folder', 'downloads', 'path', 'save directory', 'location'] },
     { sectionId: 'storage', targetElementId: 'setting-music-folders', tab: 'library', tabLabel: 'Library', title: 'Music Library Folders', subtitle: 'Folders scanned for audio files and tags', keywords: ['music folder', 'scan folder', 'add folder', 'directory', 'rescan', 'library folder', 'storage'] },
-    { sectionId: 'storage', targetElementId: 'setting-cover-management', tab: 'library', tabLabel: 'Library', title: 'Cover Management & Cache', subtitle: 'Sync album covers or merge duplicates to free disk space', keywords: ['cover', 'cache', 'covers', 'merge duplicates', 'album art', 'disk space', 'artwork'] },
+    { sectionId: 'storage', targetElementId: 'setting-cover-management', tab: 'library', tabLabel: 'Library', title: 'Cover Management & Cache', subtitle: 'Sync album covers or merge duplicates to free disk space', keywords: ['cover', 'cache', 'covers', 'merge duplicates', 'album art', 'disk space', 'artwork', 'auto fetch', 'online', 'download covers', 'fetch covers'] },
     { sectionId: 'artists', tab: 'library', tabLabel: 'Library', title: 'Artist Separation Delimiters', subtitle: 'Split collaboration tracks by delimiters', keywords: ['artist', 'separator', 'featuring', 'ft', 'delimiters', 'split', 'collab'] },
 
     // Appearance Tab
