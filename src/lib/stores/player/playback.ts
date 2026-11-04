@@ -1048,3 +1048,23 @@ export function getPlayerNativeAudioUsed(): boolean { return _nativeAudioUsed; }
 export function incrementPlayerNativeErrorCount(): number { return ++_nativeErrCount; }
 export function resetPlayerNativeErrorCount(): void { _nativeErrCount = 0; }
 export const PLAYER_NATIVE_ERROR_FALLBACK_THRESHOLD = 3;
+
+/**
+ * remove a fetched cover_url from the copies of tracks held by the player
+ * (current track and queue)
+ * those are snapshots, so they'd otherwise keep showing a cover that was just cleared
+ */
+export function stripFetchedCoversFromPlayer(trackIds: number[]): void {
+    if (trackIds.length === 0) return;
+    const idSet = new Set(trackIds);
+
+    const current = get(currentTrack);
+    if (current && idSet.has(current.id) && current.cover_url) {
+        currentTrack.set({ ...current, cover_url: null });
+    }
+
+    // only touch the queue if something in it is affected (avoids spurious queue updates)
+    if (get(queue).some(t => idSet.has(t.id) && t.cover_url)) {
+        queue.update(q => q.map(t => (idSet.has(t.id) ? { ...t, cover_url: null } : t)));
+    }
+}

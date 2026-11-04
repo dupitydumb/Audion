@@ -2,7 +2,7 @@
 import { writable, derived, get } from 'svelte/store';
 import type { Track, Album, Artist, Playlist, ScanBatchEvent } from '$lib/api/tauri';
 import { getLibrary, getPlaylists, getPlaylistTracks, getPlaylistTrackCounts, getAlbumCoverSrc, getAlbumArtSrc, getTracksPaginated, getAlbumsPaginated, searchLibrary, convertFileSrc } from '$lib/api/tauri';
-import { customArtworks, getCustomArtworkSync } from './customArtwork';
+import { customArtworks, getCustomArtworkSync, notifyCoverChange } from './customArtwork';
 import { playlistCovers, getPlaylistCoverSync } from './playlistCovers';
 
 // BLOB URL CONVERSION
@@ -474,6 +474,33 @@ export function updateTrackCover(trackId: number, coverUrl: string): void {
     fullTrackCache.delete(trackId);
 }
 
+
+/**
+ * drop fetched covers for the given tracks from every frontend cache and the library store
+ * call after the backend has cleared them (clearFetchedCovers)
+ * the tracks involved have no cover of their own, so whatever sits in trackCoverCache for them is the fetched URL
+ * loadLibrary() does not evict trackCoverCache, which is why this is needed
+ */
+export function purgeFetchedCovers(trackIds: number[]): void {
+    if (trackIds.length === 0) return;
+    const idSet = new Set(trackIds);
+
+    for (const id of trackIds) {
+        const metadata = trackMetadataCache.get(id);
+        if (metadata) {
+            trackMetadataCache.set(id, { ...metadata, cover_url: null });
+        }
+        trackCoverCache.delete(id);
+        fullTrackCache.delete(id);
+    }
+
+    tracks.update(current =>
+        current.map(t => (idSet.has(t.id) ? ({ ...t, cover_url: null } as Track) : t))
+    );
+
+    // make every cover surface re-resolve
+    notifyCoverChange();
+}
 
 // ingestAlbums — caches album metadata and album art separately
 // Returns lightweight Album[] for the store
