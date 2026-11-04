@@ -11,6 +11,7 @@ import {
 import { invoke } from '@tauri-apps/api/core';
 import { addToast } from '$lib/stores/toast';
 import { appSettings } from '$lib/stores/settings';
+import { hasCustomArtworkForTrack } from '$lib/stores/customArtwork';
 import { tracks as libraryTracks, getFullTrack, updateTrackCover } from '$lib/stores/library';
 import { fetchTrackCover } from '$lib/services/cover-fetcher';
 import { recordTrackPlay } from '$lib/stores/activity';
@@ -288,9 +289,15 @@ export async function playTrack(
     await updateMediaSessionMetadata(trackForPlugins);
     await updateSmtcMetadata(trackForPlugins, direction).catch(e => console.warn('[Player] SMTC metadata update failed:', e));
 
-    if (get(appSettings).coverAutoFetch && !track.track_cover_path && !track.cover_url) {
+    if (
+        get(appSettings).coverAutoFetch &&
+        !track.track_cover_path &&
+        !track.cover_url &&
+        !hasCustomArtworkForTrack(track)
+    ) {
         fetchTrackCover(track).then(async (newCoverUrl) => {
-            if (newCoverUrl) {
+            // artwork may have been set (or fetching turned off) while the lookup was in flight
+            if (newCoverUrl && !hasCustomArtworkForTrack(track) && get(appSettings).coverAutoFetch) {
                 console.log(`[Player] Auto-fetched cover for "${track.title}": ${newCoverUrl}`);
 
                 try {
