@@ -3,8 +3,6 @@
   import {
     formatDuration,
     getAlbumArtSrc,
-    getTrackCoverSrc,
-    getAlbumCoverSrc,
     reorderPlaylistTracks,
   } from "$lib/api/tauri";
   import {
@@ -19,9 +17,10 @@
     albums,
     playlists,
     loadPlaylists,
-    getTrackAlbumCover,
+    resolveTrackCover,
     loadMoreTracks,
   } from "$lib/stores/library";
+  import { customArtworks } from "$lib/stores/customArtwork";
   import { pluginStore } from "$lib/stores/plugin-store";
   import { addToast } from "$lib/stores/toast";
   import { isOnline } from "$lib/stores/network";
@@ -76,6 +75,12 @@
       lastAlbumsRef = $albums;
       trackAlbumArtCache.clear();
     }
+  }
+
+  // custom artwork changed (set/removed) => drop cached covers so rows re-resolve
+  $: {
+    void $customArtworks;
+    trackAlbumArtCache.clear();
   }
 
   // 2: Pre-compute playing track ID
@@ -293,8 +298,9 @@
 
   $: visibleTracksWithMetadata = virtualScrollState.visibleTracks.map(
     (track) => {
-      // Re-evaluate when runtime changes
+      // Re-evaluate when runtime or custom artwork changes
       const _ = runtime;
+      const _custom = $customArtworks;
       return {
         track,
         albumArt: getTrackAlbumArt(track),
@@ -395,32 +401,15 @@
     }, 300000);
   }
 
-  // Cached album art lookup
+  // Cached cover lookup - resolution itself lives in the shared resolver
   function getTrackAlbumArt(track: Track): string | null {
-    // Check cache first
     if (trackAlbumArtCache.has(track.id)) {
       return trackAlbumArtCache.get(track.id) ?? null;
     }
 
-    let result: string | null = null;
+    const album = track.album_id ? albumMap.get(track.album_id) : null;
+    const result = resolveTrackCover(track, album);
 
-    // Priority 1: Track's own cover (handles both track_cover_path and track_cover)
-    result = getTrackCoverSrc(track);
-
-    // Priority 2: If no track cover, try album art
-    if (!result && track.album_id) {
-      const album = albumMap.get(track.album_id);
-      if (album) {
-        result = getAlbumCoverSrc(album);
-      }
-    }
-
-    // Priority 3: fallback to library helper
-    if (!result) {
-      result = getTrackAlbumCover(track.id);
-    }
-
-    // Cache the result
     trackAlbumArtCache.set(track.id, result);
     return result;
   }

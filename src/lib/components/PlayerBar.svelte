@@ -29,14 +29,9 @@
         toggleQueue,
         toggleMiniPlayer,
     } from "$lib/stores/ui";
-    import {
-        formatDuration,
-        getAlbumArtSrc,
-        getAlbum,
-        getTrackCoverSrc,
-        getAlbumCoverSrc,
-        getIsLinux,
-    } from "$lib/api/tauri";
+    import { formatDuration, getAlbum, getIsLinux } from "$lib/api/tauri";
+    import { resolveTrackCover } from "$lib/stores/library";
+    import { customArtworks } from "$lib/stores/customArtwork";
     import { uiSlotManager } from "$lib/plugins/ui-slots";
     import { pluginDrawerOpen } from "$lib/stores/plugin-drawer";
     import { goToArtistDetail } from "$lib/stores/view";
@@ -77,7 +72,6 @@
     let isVolumeChanging = false;
     let albumArt: string | null = null;
     let imageLoadFailed = false;
-    let loadedAlbum: any = null;
     let showConnectPanel = false;
     let showSleepTimerMenu = false;
     let sleepTimerElement: HTMLDivElement;
@@ -90,64 +84,32 @@
 
     // Expose audio element for visualizer - removed for native backend
 
-    // Load track cover - with priority order
+    // Load track cover - single shared resolver (custom artwork aware)
     $: if ($currentTrack) {
-        void loadTrackCover($currentTrack);
+        void loadTrackCover($currentTrack, $customArtworks);
     } else {
         albumArt = null;
         imageLoadFailed = false;
-        loadedAlbum = null;
     }
 
-    async function loadTrackCover(track: any) {
+    async function loadTrackCover(track: any, _customs?: unknown) {
         imageLoadFailed = false;
 
         try {
-            if (track.track_cover_path) {
-                // Priority 1: Track's file-based cover
-                albumArt = getTrackCoverSrc(track);
-            } else if (track.track_cover) {
-                // Priority 2: Track's base64 cover - old
-                albumArt = getAlbumArtSrc(track.track_cover);
-            } else if (track.cover_url) {
-                // Priority 3: Streaming track cover URL
-                albumArt = track.cover_url;
-            } else if (track.album_id) {
-                // Priority 4 & 5: Album art (file-based or base64)
-                await loadAlbumArt(track.album_id);
-            } else {
-                albumArt = null;
+            let src = resolveTrackCover(track);
+
+            // album art not cached yet (library still loading) => fetch the album and retry
+            if (!src && track.album_id) {
+                const album = await getAlbum(track.album_id);
+                // ignore if the track changed while we were awaiting
+                if (get(currentTrack)?.id !== track.id) return;
+                src = resolveTrackCover(track, album);
             }
+
+            albumArt = src;
         } catch (e) {
             console.error("Failed to load track cover:", e);
             albumArt = null;
-        }
-    }
-
-    async function loadAlbumArt(albumId: number) {
-        try {
-            const album = await getAlbum(albumId);
-
-            if (!album) {
-                albumArt = null;
-                loadedAlbum = null;
-                return;
-            }
-
-            loadedAlbum = album;
-
-            if (album.art_path) {
-                // Priority 4: Album's file-based art
-                albumArt = getAlbumCoverSrc(album);
-            } else if (album.art_data) {
-                // Priority 5: Album's base64 art - old
-                albumArt = getAlbumArtSrc(album.art_data);
-            } else {
-                albumArt = null;
-            }
-        } catch {
-            albumArt = null;
-            loadedAlbum = null;
         }
     }
 
