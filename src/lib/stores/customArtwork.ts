@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { writable, get } from 'svelte/store';
 
 const STORAGE_KEY = 'audion_custom_artwork_v1';
 
@@ -65,4 +65,14 @@ export function getCustomArtworkSync(map: ArtworkMap, type: ArtworkType, id: num
  */
 export function notifyCoverChange() {
     customArtworks.update((m) => ({ ...m }));
+}
+/**
+ * true if the user has set custom artwork that applies to this track, either for the track
+ * itself or for its album
+ * used to guarantee we never fetch (or persist) an online cover for a track the user has already chosen artwork for
+ */
+export function hasCustomArtworkForTrack(track: { id: number; album_id?: number | null }): boolean {
+    const map = get(customArtworks);
+    if (getCustomArtworkSync(map, 'track', track.id)) return true;
+    return !!track.album_id && !!getCustomArtworkSync(map, 'album', track.album_id);
 }
