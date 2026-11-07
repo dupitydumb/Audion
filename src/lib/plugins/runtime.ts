@@ -11,10 +11,9 @@ import {
   queue,
   queueIndex,
   userQueueCount,
-  syncPlayerQueue,
   togglePlay,
   playTrack,
-  playQueue,
+  playTracks,
   nextTrack,
   previousTrack,
   seek,
@@ -616,10 +615,12 @@ export class PluginRuntime {
         if (Array.isArray(args[0]) && args[0].length > 0) {
           const queueTracks = args[0];
           const startIndex = typeof args[1] === 'number' ? Math.max(0, Math.min(args[1], queueTracks.length - 1)) : 0;
-          const context = args[2] ?? { type: 'plugin', name: pluginName };
+          const context = args[2] && (args[2].type === 'playlist' || args[2].type === 'album' || args[2].type === 'artist')
+            ? args[2]
+            : { type: 'playlist' as const, displayName: pluginName };
 
           html5ClearPreload();
-          playQueue(queueTracks, startIndex, context);
+          playTracks(queueTracks, startIndex, context);
           return true;
         }
         return false;
@@ -629,21 +630,8 @@ export class PluginRuntime {
         if (args[0]) {
           const track = args[0];
 
-          // Clear any dangling preload from previous session
           html5ClearPreload();
-
-          // Isolate queue to this track to prevent desync with old playlists
-          queue.set([track]);
-          queueIndex.set(0);
-          userQueueCount.set(0);
-          syncPlayerQueue();
-
-          // Use the main player logic to handle backend selection (HTML5 vs Native)
-          // resolution of stream URLs, and UI state updates.
-          playTrack(track).catch(err => {
-            console.error(`[PluginRuntime] player.setTrack failed:`, err);
-          });
-
+          playTracks([track], 0, { type: 'playlist' as const, displayName: pluginName });
           return true;
         }
         return false;
@@ -743,64 +731,70 @@ export class PluginRuntime {
         const trackData = args[0];
         if (!trackData || !trackData.title || !trackData.artist || !trackData.source_type || !trackData.external_id) {
           console.warn(`[PluginRuntime] Invalid external track data`);
-          return null;
+          return Promise.resolve(null);
         }
 
         // Call Rust command to add external track
-        const trackId = await invoke<number>('add_external_track', {
-          track: {
-            title: trackData.title,
-            artist: trackData.artist,
-            album: trackData.album || null,
-            duration: trackData.duration || null,
-            cover_url: trackData.cover_url || null,
-            source_type: trackData.source_type,
-            external_id: trackData.external_id,
-            format: trackData.format || null,
-            bitrate: trackData.bitrate || null,
-            stream_url: trackData.stream_url || null,  // The decoded stream URL
-            track_number: trackData.track_number || null,
-            disc_number: trackData.disc_number || null,
-            musicbrainz_recording_id: trackData.musicbrainz_recording_id || null,
-            metadata_json: trackData.metadata_json
-              ? JSON.stringify(trackData.metadata_json)
-              : null,
-          }
-        });
+        return (async () => {
+          const trackId = await invoke<number>('add_external_track', {
+            track: {
+              title: trackData.title,
+              artist: trackData.artist,
+              album: trackData.album || null,
+              duration: trackData.duration || null,
+              cover_url: trackData.cover_url || null,
+              source_type: trackData.source_type,
+              external_id: trackData.external_id,
+              format: trackData.format || null,
+              bitrate: trackData.bitrate || null,
+              stream_url: trackData.stream_url || null,  // The decoded stream URL
+              track_number: trackData.track_number || null,
+              disc_number: trackData.disc_number || null,
+              musicbrainz_recording_id: trackData.musicbrainz_recording_id || null,
+              metadata_json: trackData.metadata_json
+                ? JSON.stringify(trackData.metadata_json)
+                : null,
+            }
+          });
 
-        if (typeof trackId === 'number') {
-          if (trackData.liked) {
+          if (typeof trackId === 'number' && trackId > 0) {
+            if (trackData.liked) {
+              try {
+                await likeTrack(trackId);
+              } catch (likeErr) {
+                console.warn(`[PluginRuntime] Failed to auto-like external track:`, likeErr);
+              }
+            }
+            // Refresh stores so track appears instantly in Library and Liked Songs views
             try {
-              await likeTrack(trackId);
-            } catch (likeErr) {
-              console.warn(`[PluginRuntime] Failed to auto-like external track:`, likeErr);
+              await Promise.all([refreshAll(), loadLikedTracks()]);
+            } catch (syncErr) {
+              console.warn(`[PluginRuntime] Failed to refresh library stores:`, syncErr);
             }
           }
-          // Refresh stores so track appears instantly in Library and Liked Songs views
-          try {
-            await Promise.all([refreshAll(), loadLikedTracks()]);
-          } catch (syncErr) {
-            console.warn(`[PluginRuntime] Failed to refresh library stores:`, syncErr);
-          }
-        }
 
-        return trackId;
+          return trackId;
+        })();
 
       case 'library.likeTrack':
         // args: [trackId: number]
         if (typeof args[0] === 'number') {
-          await likeTrack(args[0]);
-          await loadLikedTracks();
-          return true;
+          return (async () => {
+            await likeTrack(args[0]);
+            await loadLikedTracks();
+            return true;
+          })();
         }
         return false;
 
       case 'library.unlikeTrack':
         // args: [trackId: number]
         if (typeof args[0] === 'number') {
-          await unlikeTrack(args[0]);
-          await loadLikedTracks();
-          return true;
+          return (async () => {
+            await unlikeTrack(args[0]);
+            await loadLikedTracks();
+            return true;
+          })();
         }
         return false;
 
