@@ -107,7 +107,15 @@ export async function initAudioBackend(): Promise<void> {
         onEnded: () => handleTrackEnd(),
         onError: (message) => addToast(`Streaming playback failed: ${message}`, 'error'),
         onTimeUpdate: (position, dur) => {
-            if (dur > 0 && !isNaN(dur)) duration.set(dur);
+            if (dur > 0 && !isNaN(dur) && isFinite(dur)) {
+                duration.set(dur);
+                currentTrack.update(t => {
+                    if (t && (!t.duration || t.duration === 0)) {
+                        return { ...t, duration: Math.round(dur) };
+                    }
+                    return t;
+                });
+            }
         },
         onPlayStateChange: (playing) => {
             if (get(activeBackend) === 'html5') {
@@ -313,10 +321,10 @@ export async function initAudioBackend(): Promise<void> {
         const nextItems = $queue
             .slice(currentIdx + 1, currentIdx + 6)
             .map((t) => ({
-                track_id: t.id,
+                track_id: typeof t.id === 'number' && !isNaN(t.id) ? t.id : 0,
                 title: t.title ?? 'Unknown Title',
                 artist: t.artist ?? null,
-                path: t.path,
+                path: t.path || (t as any).stream_url || '',
             }));
         if (nextItems.length > 0) {
             invoke('windows_update_jump_list', { tracks: nextItems })

@@ -142,10 +142,26 @@ reckoning.registerHtml5CrossfadeCallback(() => void _triggerHtml5Crossfade());
 // what's next/previous, respecting repeat/shuffle) and guards it with a generation counter
 // this section keeps its queue mirror in sync and applies whatever it decides
 
+function _ensureNumericId(track: any): number {
+    if (typeof track?.id === 'number' && !isNaN(track.id)) return track.id;
+    if (typeof track?.track_id === 'number' && !isNaN(track.track_id)) return track.track_id;
+    const key = track?.external_id || track?.path || (track as any)?.stream_url || track?.title || String(Math.random());
+    let hash = 0;
+    for (let i = 0; i < key.length; i++) {
+        hash = ((hash << 5) - hash) + key.charCodeAt(i);
+        hash |= 0;
+    }
+    const safeId = Math.abs(hash) || 1;
+    if (track && typeof track === 'object') {
+        track.id = safeId;
+    }
+    return safeId;
+}
+
 function _trackRefFor(track: Track): PlayerTrackRef {
     return {
-        id: track.id,
-        path: track.local_src || track.path || '',
+        id: _ensureNumericId(track),
+        path: track.local_src || track.path || (track as any).stream_url || '',
         duration_secs: track.duration ?? null,
         is_streaming: isStreaming(track),
     };
@@ -235,6 +251,7 @@ export async function playTrack(
     startTime = 0,
     direction?: 'next' | 'previous',
 ): Promise<void> {
+    _ensureNumericId(track);
     const previousTrackObj = get(currentTrack);
     const sessionId = ++_currentSessionId;
 
@@ -360,7 +377,11 @@ export async function playTrack(
             audioPath = track.external_id;
         }
 
-        const streaming = isStreaming(track) || !!(track as any).stream_url || audioPath.startsWith('http://') || audioPath.startsWith('https://');
+        if (!audioPath && track.source_type && track.external_id) {
+            audioPath = `${track.source_type}://${track.external_id}`;
+        }
+
+        const streaming = isStreaming(track) || !!(track as any).stream_url || audioPath.startsWith('http://') || audioPath.startsWith('https://') || audioPath.includes('://');
 
         let swapped = false;
         if (startTime === 0) {
@@ -1005,9 +1026,13 @@ async function _scheduleHtml5Preload(): Promise<void> {
         audioPath = nextTrackObj.external_id;
     }
 
+    if (!audioPath && nextTrackObj.source_type && nextTrackObj.external_id) {
+        audioPath = `${nextTrackObj.source_type}://${nextTrackObj.external_id}`;
+    }
+
     if (!audioPath) return;
 
-    const streaming = isStreaming(nextTrackObj) || !!(nextTrackObj as any).stream_url || audioPath.startsWith('http://') || audioPath.startsWith('https://');
+    const streaming = isStreaming(nextTrackObj) || !!(nextTrackObj as any).stream_url || audioPath.startsWith('http://') || audioPath.startsWith('https://') || audioPath.includes('://');
 
     if (!streaming) {
         return;

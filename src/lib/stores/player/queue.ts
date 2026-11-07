@@ -79,6 +79,18 @@ export function _advanceQueueIndex(dry = false): number | null {
 // ─── Queue mutations ──────────────────────────────────────────────────────────
 
 export function addToQueue(tracks: Track[]): void {
+    tracks.forEach(t => {
+        if (typeof t.id !== 'number' || isNaN(t.id)) {
+            const key = t.external_id || t.path || (t as any)?.stream_url || t.title || String(Date.now() + Math.random());
+            let hash = 0;
+            for (let i = 0; i < key.length; i++) {
+                hash = ((hash << 5) - hash) + key.charCodeAt(i);
+                hash |= 0;
+            }
+            t.id = Math.abs(hash) || Date.now();
+        }
+    });
+
     const currentIdx = get(queueIndex);
     const userCount = get(userQueueCount);
     const insertPosition = currentIdx + 1 + userCount;
