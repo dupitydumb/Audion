@@ -21,7 +21,8 @@ import {
     html5SetCallbacks, html5Stop, html5Cleanup, html5SetVolume,
 } from '$lib/services/html5-audio';
 import { listen } from '$lib/api/tauri';
-import { updateWindowsThumbarState } from '$lib/api/tauri';
+import { updateWindowsThumbarState, updateTrackDuration } from '$lib/api/tauri';
+import { updateTrackDurationInMemory } from '$lib/stores/library';
 import type { Track } from '$lib/api/tauri';
 import {
     _startReckoning, _stopReckoning, _correctReckoning,
@@ -111,7 +112,12 @@ export async function initAudioBackend(): Promise<void> {
                 duration.set(dur);
                 currentTrack.update(t => {
                     if (t && (!t.duration || t.duration === 0)) {
-                        return { ...t, duration: Math.round(dur) };
+                        const roundDur = Math.round(dur);
+                        if (t.id) {
+                            updateTrackDuration(t.id, roundDur).catch(e => console.warn('Failed to update duration in DB:', e));
+                            updateTrackDurationInMemory(t.id, roundDur);
+                        }
+                        return { ...t, duration: roundDur };
                     }
                     return t;
                 });
