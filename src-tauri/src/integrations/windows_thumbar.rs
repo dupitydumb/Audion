@@ -609,11 +609,13 @@ mod windows_impl {
             .and_then(|map| map.get(&(hwnd.0 as usize)).map(|h| h.original_wndproc));
 
         if let Some(prev_proc) = original {
-            let wndproc: WNDPROC = mem::transmute(prev_proc);
-            return CallWindowProcW(wndproc, hwnd, msg, wparam, lparam);
+            unsafe {
+                let wndproc: WNDPROC = mem::transmute(prev_proc);
+                return CallWindowProcW(wndproc, hwnd, msg, wparam, lparam);
+            }
         }
 
-        DefWindowProcW(hwnd, msg, wparam, lparam)
+        unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
     }
 
     pub(crate) fn init_thumbar(app: &AppHandle) -> Result<bool, String> {
