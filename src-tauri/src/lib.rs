@@ -1358,6 +1358,7 @@ pub fn run() {
                     commands::update_track_after_download,
                     commands::update_local_src,
                     commands::update_track_cover_url,
+                    commands::update_track_duration,
                     // Plugin commands
                     commands::list_plugins,
                     commands::install_plugin,
@@ -1611,6 +1612,7 @@ pub fn run() {
                     commands::update_track_after_download,
                     commands::update_local_src,
                     commands::update_track_cover_url,
+                    commands::update_track_duration,
                     // Plugin commands
                     commands::list_plugins,
                     commands::install_plugin,
