@@ -798,6 +798,26 @@ export class PluginRuntime {
         }
         return false;
 
+      case 'library.removeTrack':
+      case 'library.deleteTrack':
+        // args: [trackId: number]
+        if (typeof args[0] === 'number') {
+          return (async () => {
+            try {
+              const ok = await invoke<boolean>('delete_track', { trackId: args[0] });
+              await Promise.all([
+                refreshAll(),
+                loadLikedTracks()
+              ]);
+              return ok;
+            } catch (err) {
+              console.warn('[PluginRuntime] deleteTrack failed:', err);
+              return false;
+            }
+          })();
+        }
+        return false;
+
       case 'library.createPlaylist':
         // args: [name, coverUrl?]
         return invoke('create_playlist', { name: args[0], coverUrl: args[1] || null });
@@ -932,6 +952,8 @@ export class PluginRuntime {
 
       api.library.likeTrack = (trackId: number) => this.callHost(pluginName, 'library.likeTrack', trackId);
       api.library.unlikeTrack = (trackId: number) => this.callHost(pluginName, 'library.unlikeTrack', trackId);
+      api.library.removeTrack = (trackId: number) => this.callHost(pluginName, 'library.removeTrack', trackId);
+      api.library.deleteTrack = (trackId: number) => this.callHost(pluginName, 'library.deleteTrack', trackId);
       api.library.refresh = () => this.callHost(pluginName, 'library.refresh');
       api.library.createPlaylist = (name: string, coverUrl?: string) => this.callHost(pluginName, 'library.createPlaylist', name, coverUrl);
       api.library.addTrackToPlaylist = (playlistId: number, trackId: number) => this.callHost(pluginName, 'library.addTrackToPlaylist', playlistId, trackId);
