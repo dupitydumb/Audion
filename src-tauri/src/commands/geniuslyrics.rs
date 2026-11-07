@@ -236,7 +236,7 @@ fn coprimary_tags(
     let threshold = (max as f64 * (1.0 - close_pct)).floor() as usize;
     tag_counts
         .iter()
-        .filter(|(_, &count)| count >= threshold)
+        .filter(|&(_, &count)| count >= threshold)
         .map(|(tag, _)| tag.clone())
         .collect()
 }

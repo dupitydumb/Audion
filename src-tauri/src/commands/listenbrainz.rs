@@ -449,7 +449,7 @@ fn match_to_local(
     title: &str,
 ) -> Option<i64> {
     // 1. Exact MusicBrainz Recording ID
-    if let Some(ref m) = mbid {
+    if let Some(m) = mbid {
         if let Ok(id) = conn.query_row(
             "SELECT id FROM tracks WHERE musicbrainz_recording_id = ?1 LIMIT 1",
             rusqlite::params![m],

@@ -1405,27 +1405,25 @@ pub async fn save_image_to_gallery(
         .decode(base64_data)
         .map_err(|e| format!("Failed to decode base64: {}", e))?;
 
-    let mut download_dir = None;
-
     // Try to get public download/pictures directory
     #[cfg(not(target_os = "android"))]
-    {
-        download_dir = dirs::download_dir();
-    }
+    let download_dir = dirs::download_dir();
 
     #[cfg(target_os = "android")]
-    {
+    let download_dir = {
         // On Android, we prefer /storage/emulated/0/Download or /storage/emulated/0/Pictures
         let android_download = std::path::PathBuf::from("/storage/emulated/0/Download");
         if android_download.exists() {
-            download_dir = Some(android_download);
+            Some(android_download)
         } else {
             let android_pictures = std::path::PathBuf::from("/storage/emulated/0/Pictures");
             if android_pictures.exists() {
-                download_dir = Some(android_pictures);
+                Some(android_pictures)
+            } else {
+                None
             }
         }
-    }
+    };
 
     let save_dir = download_dir.unwrap_or_else(|| {
         // Fallback to app data dir if no public dir found
