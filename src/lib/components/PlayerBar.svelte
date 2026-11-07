@@ -66,7 +66,8 @@
     $: isLive = $currentTrack
         ? $currentTrack.source_type === "radio" ||
           (isStreaming($currentTrack) &&
-              (!$currentTrack.duration || $currentTrack.duration === 0))
+              (!$currentTrack.duration || $currentTrack.duration === 0) &&
+              (!$duration || $duration === 0 || !isFinite($duration)))
         : false;
 
     export let hidden: boolean = false;
