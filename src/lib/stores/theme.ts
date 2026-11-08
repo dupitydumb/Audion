@@ -1,6 +1,7 @@
 // Theme store - manages app theming and customization
 import { writable, derived, get } from 'svelte/store';
 import { applyEffect } from '$lib/services/effect-overlay';
+import { applySkinCss } from '$lib/services/skin-css';
 import { albumPalette, type PaletteColor } from '$lib/stores/palette';
 
 export type ThemeMode = 'dark' | 'light' | 'system';
@@ -57,6 +58,13 @@ export interface ThemeColors {
     accentHover: string;
 }
 
+export interface SkinScheme {
+    name: string;
+    mode: ThemeMode;
+    accentColor: string;
+    customColors: CustomColors;
+}
+
 export interface ThemeState {
     mode: ThemeMode;
     accentColor: string;
@@ -64,13 +72,26 @@ export interface ThemeState {
     customColors: CustomColors;
     background: BackgroundConfig;
     animation: AnimationConfig;
-    /** Allow custom JS in theme packages — only for locally loaded themes */
+    /** Allow custom JS in theme/skin packages — only for locally loaded skins */
     allowCustomJs: boolean;
-    /** Custom JS script from current theme */
+    /** Custom JS script from current theme/skin */
     customJs?: string;
+    /** Direct custom CSS stylesheet for skinning */
+    customCss?: string;
     /** drive the player bar background from the current track's cover art */
     matchPlayerToArt: boolean;
+
+    /** Skin metadata if a skin package is active */
+    skinName?: string;
+    skinAuthor?: string;
+    skinDescription?: string;
+    /** Active color scheme name within the skin (e.g. 'Dark', 'Light', 'Nord') */
+    activeScheme?: string;
+    /** Available color schemes in the skin */
+    schemes?: Record<string, SkinScheme>;
 }
+
+export type SkinState = ThemeState;
 
 const defaultAnimation: AnimationConfig = {
     reducedMotion: false,
@@ -125,7 +146,13 @@ const defaultTheme: ThemeState = {
     background: defaultBackground,
     animation: defaultAnimation,
     allowCustomJs: false,
+    customCss: '',
     matchPlayerToArt: false,
+    skinName: undefined,
+    skinAuthor: undefined,
+    skinDescription: undefined,
+    activeScheme: undefined,
+    schemes: undefined,
 };
 
 // Load theme from localStorage
@@ -142,6 +169,8 @@ function loadTheme(): ThemeState {
                 customColors: { ...defaultCustomColors, ...(parsed.customColors ?? {}) },
                 background: { ...defaultBackground, ...(parsed.background ?? {}) },
                 animation: { ...defaultAnimation, ...(parsed.animation ?? {}) },
+                customCss: typeof parsed.customCss === 'string' ? parsed.customCss : '',
+                schemes: parsed.schemes && typeof parsed.schemes === 'object' ? parsed.schemes : undefined,
             };
         }
     } catch (error) {
@@ -267,14 +296,41 @@ function createThemeStore() {
             });
         },
 
-        /** Apply a full theme package (from .audiotheme file) */
-        applyPackage(pkg: Partial<ThemeState>) {
+        setCustomCss(css: string) {
+            update(state => {
+                const newState = { ...state, customCss: css };
+                saveTheme(newState);
+                applySkinCss(newState.customCss);
+                return newState;
+            });
+        },
+
+        selectScheme(schemeName: string) {
+            update(state => {
+                if (!state.schemes || !state.schemes[schemeName]) return state;
+                const scheme = state.schemes[schemeName];
+                const newState: ThemeState = {
+                    ...state,
+                    activeScheme: schemeName,
+                    mode: scheme.mode,
+                    accentColor: scheme.accentColor,
+                    customColors: { ...defaultCustomColors, ...scheme.customColors },
+                };
+                saveTheme(newState);
+                applyTheme(newState);
+                return newState;
+            });
+        },
+
+        /** Apply a full theme/skin package */
+        applyPackage(pkg: Partial<ThemeState> & { name?: string; author?: string; description?: string }) {
             update(state => {
                 const newState: ThemeState = {
                     ...state,
                     ...pkg,
                     // don't overwrite current mode if package has no mode
                     mode: pkg.mode ?? state.mode,
+                    accentColor: pkg.accentColor ?? state.accentColor,
                     customColors: { ...defaultCustomColors, ...(pkg.customColors ?? {}) },
                     background: { ...defaultBackground, ...(pkg.background ?? {}) },
                     animation: { ...defaultAnimation, ...(pkg.animation ?? {}) },
@@ -284,6 +340,12 @@ function createThemeStore() {
                     // preference
                     matchPlayerToArt: state.matchPlayerToArt,
                     customJs: pkg.customJs,
+                    customCss: typeof pkg.customCss === 'string' ? pkg.customCss : (pkg.customCss === undefined ? state.customCss : ''),
+                    skinName: pkg.skinName ?? pkg.name ?? state.skinName,
+                    skinAuthor: pkg.skinAuthor ?? pkg.author ?? state.skinAuthor,
+                    skinDescription: pkg.skinDescription ?? pkg.description ?? state.skinDescription,
+                    schemes: pkg.schemes ?? state.schemes,
+                    activeScheme: pkg.activeScheme ?? state.activeScheme,
                 };
                 saveTheme(newState);
                 applyTheme(newState);
@@ -308,12 +370,13 @@ albumPalette.subscribe(() => {
     if (state.matchPlayerToArt) applyTheme(state);
 });
 
-// ── Theme package format ──────────────────────────────────────────────────────
+// ── Skin & Theme package format ───────────────────────────────────────────────
 
 export const AUDIOTHEME_VERSION = 1;
+export const AUDIOSKIN_VERSION = 2;
 
 export interface AudioThemePackage {
-    /** Format version — bump when fields change incompatibly */
+    /** Format version — 1 for legacy theme, 2 for skin */
     version: number;
     name: string;
     author?: string;
@@ -330,7 +393,15 @@ export interface AudioThemePackage {
      * Example effects: rain, snow, fireflies, floating orbs, etc.
      */
     customJs?: string;
+    /** Direct custom CSS stylesheet (user.css) */
+    customCss?: string;
+    /** Active color scheme name within the skin */
+    activeScheme?: string;
+    /** Multi-scheme color variants (Spicetify-style) */
+    schemes?: Record<string, SkinScheme>;
 }
+
+export type SkinPackage = AudioThemePackage;
 
 /** Allowed values for enum fields — used during validation */
 const VALID_BG_TYPES: BackgroundType[] = ['none', 'color', 'gradient', 'image', 'video'];
@@ -343,28 +414,34 @@ function isHex(s: unknown): s is string {
     return typeof s === 'string' && /^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(s);
 }
 
-/** Parse and validate a raw JSON object as AudioThemePackage.
+function parseCustomColorsHelper(rawColors: unknown): CustomColors {
+    const cc: CustomColors = { ...defaultCustomColors };
+    if (typeof rawColors === 'object' && rawColors !== null) {
+        const src = rawColors as Record<string, unknown>;
+        for (const k of Object.keys(defaultCustomColors) as (keyof CustomColors)[]) {
+            const v = src[k];
+            if (v === null || v === undefined) { cc[k] = null; }
+            else if (isHex(v)) { cc[k] = v; }
+        }
+    }
+    return cc;
+}
+
+/** Parse and validate a raw JSON object as SkinPackage (or legacy AudioThemePackage).
  *  Returns the package or throws a descriptive error string. */
-export function parseThemePackage(raw: unknown): AudioThemePackage {
+export function parseSkinPackage(raw: unknown): SkinPackage {
     if (typeof raw !== 'object' || raw === null) throw new Error('Not a JSON object');
     const r = raw as Record<string, unknown>;
 
-    if (r.version !== AUDIOTHEME_VERSION) throw new Error(`Unsupported version: ${r.version}`);
+    if (r.version !== AUDIOTHEME_VERSION && r.version !== AUDIOSKIN_VERSION) {
+        throw new Error(`Unsupported version: ${r.version}`);
+    }
     if (typeof r.name !== 'string' || !r.name.trim()) throw new Error('Missing name');
     if (!isHex(r.accentColor)) throw new Error('Invalid accentColor');
     if (r.mode !== undefined && !VALID_MODES.includes(r.mode as ThemeMode)) throw new Error('Invalid mode');
 
     // customColors — all keys optional null or hex
-    const cc: CustomColors = { ...defaultCustomColors };
-    if (typeof r.customColors === 'object' && r.customColors !== null) {
-        const src = r.customColors as Record<string, unknown>;
-        for (const k of Object.keys(defaultCustomColors) as (keyof CustomColors)[]) {
-            const v = src[k];
-            if (v === null || v === undefined) { cc[k] = null; }
-            else if (isHex(v)) { cc[k] = v; }
-            else throw new Error(`Invalid customColors.${k}`);
-        }
-    }
+    const cc = parseCustomColorsHelper(r.customColors);
 
     // background
     const bg: BackgroundConfig = { ...defaultBackground };
@@ -394,9 +471,40 @@ export function parseThemePackage(raw: unknown): AudioThemePackage {
     }
 
     const customJs = typeof r.customJs === 'string' && r.customJs.trim() ? r.customJs : undefined;
+    const customCss = typeof r.customCss === 'string' && r.customCss.trim() ? r.customCss : undefined;
+
+    // Multi-scheme parsing (Spicetify-style)
+    const schemes: Record<string, SkinScheme> = {};
+    if (typeof r.schemes === 'object' && r.schemes !== null) {
+        for (const [k, s] of Object.entries(r.schemes as Record<string, any>)) {
+            if (s && typeof s === 'object') {
+                schemes[k] = {
+                    name: typeof s.name === 'string' ? s.name : k,
+                    mode: VALID_MODES.includes(s.mode) ? s.mode : 'dark',
+                    accentColor: isHex(s.accentColor) ? s.accentColor : (r.accentColor as string),
+                    customColors: parseCustomColorsHelper(s.customColors),
+                };
+            }
+        }
+    }
+
+    let activeScheme = typeof r.activeScheme === 'string' && schemes[r.activeScheme] ? r.activeScheme : undefined;
+    if (!activeScheme && Object.keys(schemes).length > 0) {
+        activeScheme = Object.keys(schemes)[0];
+    }
+
+    if (!activeScheme) {
+        activeScheme = 'Default';
+        schemes[activeScheme] = {
+            name: activeScheme,
+            mode: (r.mode as ThemeMode) || 'dark',
+            accentColor: r.accentColor as string,
+            customColors: cc,
+        };
+    }
 
     return {
-        version: AUDIOTHEME_VERSION,
+        version: r.version === AUDIOSKIN_VERSION ? AUDIOSKIN_VERSION : AUDIOTHEME_VERSION,
         name: (r.name as string).trim(),
         author: typeof r.author === 'string' ? r.author.trim() : undefined,
         description: typeof r.description === 'string' ? r.description.trim() : undefined,
@@ -406,29 +514,55 @@ export function parseThemePackage(raw: unknown): AudioThemePackage {
         background: bg,
         animation: anim,
         customJs,
+        customCss,
+        activeScheme,
+        schemes,
     };
 }
 
-/** Serialize current theme state to an AudioThemePackage object */
-export function exportThemePackage(state: ThemeState, name: string, author?: string, description?: string): AudioThemePackage {
+/** Legacy alias for parseSkinPackage */
+export function parseThemePackage(raw: unknown): AudioThemePackage {
+    return parseSkinPackage(raw);
+}
+
+/** Serialize current theme/skin state to a SkinPackage object */
+export function exportSkinPackage(state: ThemeState, name: string, author?: string, description?: string): SkinPackage {
     const bg = { ...state.background };
     // strip machine-local paths
     if (bg.type === 'image' || bg.type === 'video') {
         bg.type = 'none';
         bg.value = '';
     }
+
+    const schemes: Record<string, SkinScheme> = state.schemes ? { ...state.schemes } : {};
+    const activeSchemeName = state.activeScheme || 'Default';
+    schemes[activeSchemeName] = {
+        name: activeSchemeName,
+        mode: state.mode,
+        accentColor: state.accentColor,
+        customColors: { ...state.customColors },
+    };
+
     return {
-        version: AUDIOTHEME_VERSION,
-        name: name.trim() || 'My Theme',
-        author: author?.trim() || undefined,
-        description: description?.trim() || undefined,
+        version: AUDIOSKIN_VERSION,
+        name: name.trim() || state.skinName || 'My Skin',
+        author: author?.trim() || state.skinAuthor || undefined,
+        description: description?.trim() || state.skinDescription || undefined,
         accentColor: state.accentColor,
         mode: state.mode,
         customColors: { ...state.customColors },
         background: bg,
         animation: { ...state.animation },
         customJs: state.customJs,
+        customCss: state.customCss || undefined,
+        activeScheme: activeSchemeName,
+        schemes,
     };
+}
+
+/** Legacy alias for exportSkinPackage */
+export function exportThemePackage(state: ThemeState, name: string, author?: string, description?: string): AudioThemePackage {
+    return exportSkinPackage(state, name, author, description);
 }
 
 // Normalize any hex to 6-char #RRGGBB (strips alpha if 8-char)
@@ -629,6 +763,20 @@ export function applyTheme(state: ThemeState): void {
     // Theme attribute for CSS selectors
     root.setAttribute('data-theme', isDark ? 'dark' : 'light');
 
+    // Forward tokens as --skin-* properties for user.css / custom skin stylesheets
+    root.style.setProperty('--skin-accent', state.accentColor);
+    root.style.setProperty('--skin-accent-hover', lightenColor(state.accentColor, 15));
+    root.style.setProperty('--skin-bg-base', hasBgLayer ? 'transparent' : (c.bgBase ?? modeDefaults.bgBase));
+    root.style.setProperty('--skin-bg-elevated', c.bgElevated ?? modeDefaults.bgElevated);
+    root.style.setProperty('--skin-bg-surface', c.bgSurface ?? modeDefaults.bgSurface);
+    root.style.setProperty('--skin-bg-highlight', c.bgHighlight ?? modeDefaults.bgHighlight);
+    root.style.setProperty('--skin-text-primary', c.textPrimary ?? modeDefaults.textPrimary);
+    root.style.setProperty('--skin-text-secondary', c.textSecondary ?? modeDefaults.textSecondary);
+    root.style.setProperty('--skin-text-subdued', c.textSubdued ?? modeDefaults.textSubdued);
+    root.style.setProperty('--skin-border', c.borderColor ?? modeDefaults.borderColor);
+    root.style.setProperty('--skin-sidebar-bg', c.sidebarBg ?? (hasBgLayer ? 'transparent' : modeDefaults.sidebarBg));
+    root.style.setProperty('--skin-player-bg', resolvedPlayerBg);
+
     // Apply background layer
     applyBackground(state.background);
 
@@ -637,6 +785,9 @@ export function applyTheme(state: ThemeState): void {
 
     // Apply custom JS overlay effect if allowed
     applyEffect(state.customJs, state.accentColor, state.allowCustomJs);
+
+    // Apply custom CSS (user.css / skin stylesheet)
+    applySkinCss(state.customCss);
 }
 
 /** Speed multipliers for transition tokens */
@@ -774,3 +925,12 @@ export const isDarkMode = derived(theme, $theme => {
     }
     return $theme.mode === 'dark';
 });
+
+// Global state for Skin Studio modal
+export const isSkinStudioOpen = writable<boolean>(false);
+export function openSkinStudio() {
+    isSkinStudioOpen.set(true);
+}
+export function closeSkinStudio() {
+    isSkinStudioOpen.set(false);
+}

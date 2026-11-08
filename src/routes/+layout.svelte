@@ -5,6 +5,7 @@
   import { appSettings } from "$lib/stores/settings";
   import { theme, applyBackground } from "$lib/stores/theme";
   import { applyEffect } from "$lib/services/effect-overlay";
+  import { applySkinCss } from "$lib/services/skin-css";
   import { cleanupPlayer, initAudioBackend, currentTrack } from "$lib/stores/player";
   import {
     migrateCoversToFiles,
@@ -43,6 +44,7 @@
   import ProgressiveScanStatus from "$lib/components/ProgressiveScanStatus.svelte";
   import SyncProgressOverlay from "$lib/components/SyncProgressOverlay.svelte";
   import LoginModal from "$lib/components/LoginModal.svelte";
+  import SkinStudioModal from "$lib/components/settings/SkinStudioModal.svelte";
   import { initSync, destroySync } from "$lib/stores/sync";
   import { initSubsonic } from "$lib/stores/subsonic";
   import { browser } from "$app/environment";
@@ -73,10 +75,11 @@
   let showPermissionBanner = false;
   let permissionDenied = false;
 
-  // Re-apply background and effects whenever theme config changes
+  // Re-apply background, effects, and skin CSS whenever theme config changes
   $: if (browser) {
     applyBackground($theme.background);
     applyEffect($theme.customJs, $theme.accentColor, $theme.allowCustomJs);
+    applySkinCss($theme.customCss);
   }
 
   // Page transitions via View Transitions API
@@ -396,6 +399,7 @@
 <ProgressiveScanStatus />
 <SyncProgressOverlay />
 <LoginModal />
+<SkinStudioModal />
 
 {#if showMigrationBanner}
   <div class="migration-banner">

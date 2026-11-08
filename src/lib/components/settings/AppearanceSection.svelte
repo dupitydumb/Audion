@@ -1,6 +1,19 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
-  import { theme, presetAccents, type ThemeMode, type CustomColors, type BackgroundType, type PageTransition, type VisualizationMode, type TransitionSpeed, exportThemePackage, parseThemePackage, type AnimationConfig } from "$lib/stores/theme";
+  import {
+    theme,
+    presetAccents,
+    type ThemeMode,
+    type CustomColors,
+    type BackgroundType,
+    type PageTransition,
+    type VisualizationMode,
+    type TransitionSpeed,
+    exportSkinPackage,
+    parseSkinPackage,
+    type AnimationConfig,
+    openSkinStudio,
+  } from "$lib/stores/theme";
   import { darkDefaults, lightDefaults } from "$lib/stores/theme";
   import { get } from "svelte/store";
   import { locale } from "svelte-i18n";
@@ -293,7 +306,22 @@
     mq.addEventListener('change', e => { osReducedMotion = e.matches; });
   });
 
-  // ── Theme package export / import ────────────────────────────────────────────
+  // ── Skin Studio & Package export / import ──────────────────────────────────
+
+  let customCssInput = $theme.customCss || '';
+  $: {
+    customCssInput = $theme.customCss || '';
+  }
+
+  function handleCustomCssBlur() {
+    if (customCssInput !== $theme.customCss) {
+      theme.setCustomCss(customCssInput);
+    }
+  }
+
+  function handleSchemeChange(schemeName: string) {
+    theme.selectScheme(schemeName);
+  }
 
   let pkgName = '';
   let pkgAuthor = '';
@@ -303,19 +331,25 @@
 
   async function handleExport() {
     const state = get(theme);
-    const name = pkgName.trim() || 'My Theme';
-    const pkg = exportThemePackage(state, name, pkgAuthor, pkgDescription);
+    const name = pkgName.trim() || state.skinName || 'My Skin';
+    const pkg = exportSkinPackage(state, name, pkgAuthor || state.skinAuthor, pkgDescription || state.skinDescription);
     const json = JSON.stringify(pkg, null, 2);
-    const fileName = name.replace(/[^a-z0-9_-]/gi, '_').toLowerCase() + '.audiotheme';
+    const fileName = name.replace(/[^a-z0-9_-]/gi, '_').toLowerCase() + '.audionskin';
 
     if (isTauri()) {
       try {
         const { save } = await import('@tauri-apps/plugin-dialog');
         const { writeTextFile } = await import('@tauri-apps/plugin-fs');
-        const path = await save({ defaultPath: fileName, filters: [{ name: 'Audion Theme', extensions: ['audiotheme'] }] });
+        const path = await save({
+          defaultPath: fileName,
+          filters: [
+            { name: 'Audion Skin', extensions: ['audionskin', 'audiotheme'] },
+            { name: 'JSON', extensions: ['json'] },
+          ],
+        });
         if (!path) return;
         await writeTextFile(path, json);
-        pkgImportSuccess = 'Theme exported!';
+        pkgImportSuccess = 'Skin exported!';
         setTimeout(() => { pkgImportSuccess = ''; }, 3000);
       } catch (e) {
         pkgImportError = String(e);
@@ -328,7 +362,7 @@
       const a = document.createElement('a');
       a.href = url; a.download = fileName; a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      pkgImportSuccess = 'Theme exported!';
+      pkgImportSuccess = 'Skin exported!';
       setTimeout(() => { pkgImportSuccess = ''; }, 3000);
     }
   }
@@ -341,7 +375,12 @@
       try {
         const { open } = await import('@tauri-apps/plugin-dialog');
         const { readTextFile } = await import('@tauri-apps/plugin-fs');
-        const selected = await open({ filters: [{ name: 'Audion Theme', extensions: ['audiotheme'] }], multiple: false });
+        const selected = await open({
+          filters: [
+            { name: 'Audion Skin & Theme', extensions: ['audionskin', 'audiotheme', 'json'] },
+          ],
+          multiple: false,
+        });
         if (!selected) return;
         const filePath = typeof selected === 'string' ? selected : selected[0];
         const text = await readTextFile(filePath);
@@ -354,7 +393,7 @@
       // Web fallback: file input
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.audiotheme,application/json';
+      input.accept = '.audionskin,.audiotheme,application/json';
       input.onchange = async () => {
         const file = input.files?.[0];
         if (!file) return;
@@ -367,14 +406,20 @@
   function applyImported(text: string) {
     try {
       const raw = JSON.parse(text);
-      const pkg = parseThemePackage(raw);
+      const pkg = parseSkinPackage(raw);
       theme.applyPackage({
+        skinName: pkg.name,
+        skinAuthor: pkg.author,
+        skinDescription: pkg.description,
         accentColor: pkg.accentColor,
         mode: pkg.mode,
         customColors: pkg.customColors,
         background: pkg.background,
         animation: pkg.animation,
         customJs: pkg.customJs,
+        customCss: pkg.customCss,
+        schemes: pkg.schemes,
+        activeScheme: pkg.activeScheme,
       });
       if (pkg.customJs) {
         theme.setAllowCustomJs(true);
@@ -382,7 +427,7 @@
       pkgImportSuccess = `Applied "${pkg.name}"${pkg.author ? ` by ${pkg.author}` : ''}`;
       setTimeout(() => { pkgImportSuccess = ''; }, 4000);
     } catch (e) {
-      pkgImportError = `Invalid theme file: ${e}`;
+      pkgImportError = `Invalid skin file: ${e}`;
       setTimeout(() => { pkgImportError = ''; }, 5000);
     }
   }
@@ -771,7 +816,64 @@
 
         <div class="divider"></div>
 
-        <!-- ── Theme Package ── -->
+        <!-- ── Skin Studio Promo Card ── -->
+        <div class="inner-section" id="setting-skin-studio">
+          <div class="studio-banner">
+            <div class="studio-banner-info">
+              <span class="setting-title">{$_('settings.skinStudio')}</span>
+              <span class="setting-description">{$_('settings.skinStudioDesc')}</span>
+            </div>
+            <button type="button" class="btn-studio-launch" on:click={openSkinStudio}>
+              <Icon name="sparkles" size={15} />
+              {$_('settings.openSkinStudio')}
+            </button>
+          </div>
+        </div>
+
+        {#if $theme.schemes && Object.keys($theme.schemes).length > 1}
+          <div class="divider"></div>
+          <!-- ── Color Schemes (Multi-Scheme Skin) ── -->
+          <div class="inner-section" id="setting-color-schemes">
+            <span class="setting-title">{$_('settings.colorScheme')}</span>
+            <span class="setting-description">{$_('settings.colorSchemeDesc')}</span>
+            <div class="scheme-chips-row">
+              {#each Object.keys($theme.schemes) as schemeName}
+                {@const isCurrent = ($theme.activeScheme || 'Default') === schemeName}
+                <button
+                  type="button"
+                  class="scheme-chip-btn"
+                  class:selected={isCurrent}
+                  on:click={() => handleSchemeChange(schemeName)}
+                >
+                  {#if isCurrent}
+                    <Icon name="check" size={12} />
+                  {/if}
+                  <span>{schemeName}</span>
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+        <div class="divider"></div>
+
+        <!-- ── Custom CSS (user.css) ── -->
+        <div class="inner-section" id="setting-custom-css">
+          <span class="setting-title">{$_('settings.customCss')}</span>
+          <span class="setting-description">{$_('settings.customCssDesc')}</span>
+          <textarea
+            class="quick-css-input"
+            bind:value={customCssInput}
+            on:blur={handleCustomCssBlur}
+            placeholder="/* Enter custom CSS rules to style any element across Audion (e.g. .player-bar, .sidebar, etc.) */"
+            rows="4"
+            spellcheck="false"
+          ></textarea>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- ── Theme / Skin Package ── -->
         <div class="inner-section" id="setting-theme-package">
           <span class="setting-title">{$_('settings.themePackage')}</span>
           <span class="setting-description">{$_('settings.themePackageDesc')}</span>
@@ -1161,5 +1263,98 @@
     background: var(--bg-surface);
     padding: 1px 4px;
     border-radius: 3px;
+  }
+
+  .studio-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    background: linear-gradient(135deg, rgba(var(--accent-primary-rgb, 29, 185, 84), 0.12), rgba(255, 255, 255, 0.03));
+    border: 1px solid rgba(var(--accent-primary-rgb, 29, 185, 84), 0.3);
+    border-radius: 12px;
+    gap: 16px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+
+  .studio-banner-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .btn-studio-launch {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
+    border-radius: 8px;
+    background: var(--accent-primary, #1db954);
+    color: var(--text-on-accent, #fff);
+    font-weight: 600;
+    font-size: 0.85rem;
+    border: none;
+    cursor: pointer;
+    transition: all 160ms ease;
+  }
+
+  .btn-studio-launch:hover {
+    background: var(--accent-hover, #1ed760);
+    transform: translateY(-1px);
+  }
+
+  .scheme-chips-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+
+  .scheme-chip-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    background: var(--bg-surface, #282828);
+    border: 1px solid var(--border-color, #404040);
+    color: var(--text-secondary, #ccc);
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .scheme-chip-btn:hover {
+    border-color: var(--accent-primary, #1db954);
+    color: var(--text-primary, #fff);
+  }
+
+  .scheme-chip-btn.selected {
+    background: var(--accent-subtle, rgba(29, 185, 84, 0.18));
+    border-color: var(--accent-primary, #1db954);
+    color: var(--accent-primary, #1db954);
+    font-weight: 600;
+  }
+
+  .quick-css-input {
+    width: 100%;
+    margin-top: 8px;
+    background: #0d0d0d;
+    border: 1px solid var(--border-color, #333);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: #e0e0e0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    resize: vertical;
+    outline: none;
+  }
+
+  .quick-css-input:focus {
+    border-color: var(--accent-primary, #1db954);
   }
 </style>
