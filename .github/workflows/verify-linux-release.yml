@@ -63,6 +63,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: ubuntu-22.04
+            image: ubuntu:22.04
+            pkg_manager: apt
           - name: ubuntu-24.04
             image: ubuntu:24.04
             pkg_manager: apt
@@ -143,6 +146,49 @@ jobs:
             echo "::error::Downloaded file is not an ELF/AppImage"
             exit 1
           fi
+
+      - name: Verify native package installation (DEB or RPM)
+        env:
+          VER: ${{ needs.resolve-version.outputs.version }}
+          TAG: ${{ inputs.tag_name }}
+        run: |
+          set -e
+          BASE="https://github.com/${{ github.repository }}/releases/download/${TAG}"
+          case "${{ matrix.pkg_manager }}" in
+            apt)
+              DEB_URL="${BASE}/audion_${VER}_linux.deb"
+              if curl -sILf "$DEB_URL" >/dev/null 2>&1; then
+                echo "Downloading and testing native DEB installation..."
+                curl -fSL --retry 3 -o pkg.deb "$DEB_URL"
+                apt-get install -y --no-install-recommends ./pkg.deb
+                which audion || test -f /usr/bin/audion
+                echo "DEB installed successfully on ${{ matrix.name }}"
+                rm -f pkg.deb
+              fi
+              ;;
+            dnf)
+              RPM_URL="${BASE}/audion_${VER}_x86_64.rpm"
+              if curl -sILf "$RPM_URL" >/dev/null 2>&1; then
+                echo "Downloading and testing native RPM installation..."
+                curl -fSL --retry 3 -o pkg.rpm "$RPM_URL"
+                dnf install -y ./pkg.rpm
+                which audion || test -f /usr/bin/audion
+                echo "RPM installed successfully on ${{ matrix.name }}"
+                rm -f pkg.rpm
+              fi
+              ;;
+            zypper)
+              RPM_URL="${BASE}/audion_${VER}_x86_64.rpm"
+              if curl -sILf "$RPM_URL" >/dev/null 2>&1; then
+                echo "Downloading and testing native RPM installation on openSUSE..."
+                curl -fSL --retry 3 -o pkg.rpm "$RPM_URL"
+                zypper --non-interactive install ./pkg.rpm
+                which audion || test -f /usr/bin/audion
+                echo "RPM installed successfully on ${{ matrix.name }}"
+                rm -f pkg.rpm
+              fi
+              ;;
+          esac
 
       - name: Check the release asset is the patched AppImage
         run: |

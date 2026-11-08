@@ -58,7 +58,25 @@
     },
     "linux": {
       "deb": {
-        "desktopTemplate": "../packaging/linux/audion.desktop.hbs"
+        "desktopTemplate": "../packaging/linux/audion.desktop.hbs",
+        "section": "sound",
+        "priority": "optional",
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libasound2 | libasound2t64",
+          "libayatana-appindicator3-1 | libappindicator3-1",
+          "xdg-utils"
+        ]
+      },
+      "rpm": {
+        "desktopTemplate": "../packaging/linux/audion.desktop.hbs",
+        "depends": [
+          "webkit2gtk4.1",
+          "gtk3",
+          "alsa-lib",
+          "libappindicator-gtk3"
+        ]
       }
     },
     "macOS": {
