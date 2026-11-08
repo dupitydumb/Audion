@@ -331,82 +331,15 @@ jobs:
           platform: linux
 
       - name: Build Tauri app
-        run: |
-          xvfb-run -a \
-            --server-args="-screen 0 1920x1080x24 -ac +extension GLX +render -noreset" \
-            npm run tauri build
+        run: npm run tauri build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Patch AppImage with GPU-safe wrapper script
         run: |
-          set -euo pipefail
-          APPIMAGE=$(find src-tauri/target/release/bundle/appimage -name "*.AppImage" ! -name "*-patched*" | head -1)
-          if [ -z "$APPIMAGE" ]; then echo "No AppImage found"; exit 1; fi
-          echo "Patching: $APPIMAGE"
-
-          # Extract AppImage — APPIMAGE_EXTRACT_AND_RUN=1 avoids libfuse2 requirement on
-          # ubuntu-22.04 runners which do not have libfuse2 installed by default.
-          # Pre-clean squashfs-root in case of a step retry leaving a stale dir.
-          rm -rf squashfs-root
-          chmod +x "$APPIMAGE"
-          APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE" --appimage-extract
-
-          # ---------------------------------------------------------------------------
-          # GPU / WebKit environment auto-detection
-          # Bazzite and other immutable distros may have Wayland-only or broken EGL.
-          # ---------------------------------------------------------------------------
-
-          # Back up original AppRun and replace
-          if [ -L squashfs-root/AppRun ]; then
-            rm squashfs-root/AppRun          # symlink — just remove, binary is elsewhere
-          else
-            mv squashfs-root/AppRun squashfs-root/AppRun-original
-          fi
-
-          # Copy pre-committed wrapper scripts — shebang at col 0 guaranteed.
-          # Scripts live in .github/scripts/ to avoid heredoc-indentation bugs
-          # (YAML run: | preserves indent; bash heredoc shebang would land at col 10
-          # and the kernel would reject the script with "exec format error").
-          cp .github/scripts/appimage-apprun-real.sh squashfs-root/AppRun-real
-          cp .github/scripts/appimage-apprun.sh squashfs-root/AppRun
-          chmod +x squashfs-root/AppRun-real squashfs-root/AppRun
-
-          # WebKit computes subprocess path as: dirname(binary)/../../lib/...
-          # (binary is usr/bin/audion, so two levels up = root, then lib/).
-          # The Tauri AppImage bundler does not create a root-level lib symlink,
-          # so WebKitNetworkProcess fails with ENOENT. Add the symlink.
-          ln -sf usr/lib squashfs-root/lib
-
-          # make it a relative link to the bundled top-level icon.
-          ICON_FILE=$(find squashfs-root -maxdepth 1 -type f \( -iname "*.png" -o -iname "*.svg" \) | head -1)
-          if [ -z "$ICON_FILE" ]; then echo "::error::No top-level icon found in AppDir"; exit 1; fi
-          rm -f squashfs-root/.DirIcon
-          ln -s "$(basename "$ICON_FILE")" squashfs-root/.DirIcon
-          test -e squashfs-root/.DirIcon || { echo "::error::.DirIcon still dangling"; exit 1; }
-
-          # Repack the AppImage
-          # NOTE: appimagetool is itself an AppImage. GitHub Actions runners do not
-          # have libfuse.so.2 (FUSE 2). Setting APPIMAGE_EXTRACT_AND_RUN=1 makes the
-          # AppImage runtime self-extract to a tmpdir and exec without FUSE.
-          # AppImageKit release/13 assets were renamed to "obsolete-*" and the old URL is dead.
-          # The project moved to github.com/AppImage/appimagetool (continuous is the only release).
-          wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" \
-            -O /tmp/appimagetool
-          chmod +x /tmp/appimagetool
-
-          APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 /tmp/appimagetool --no-appstream squashfs-root \
-            "src-tauri/target/release/bundle/appimage/audion-patched.AppImage"
-
-          if [ ! -f "src-tauri/target/release/bundle/appimage/audion-patched.AppImage" ]; then
-            echo "::error::appimagetool did not produce audion-patched.AppImage"
-            exit 1
-          fi
-          echo "Repacked AppImage size: $(du -sh src-tauri/target/release/bundle/appimage/audion-patched.AppImage)"
-
-          # Clean up extracted dir
-          rm -rf squashfs-root
+          chmod +x .github/scripts/patch-appimage.sh
+          .github/scripts/patch-appimage.sh
 
       - name: Rename and repackage artifacts
         env:
@@ -435,9 +368,7 @@ jobs:
           tar -czf "${BUNDLE}/appimage/audion_${VER}_x86_64.AppImage.tar.gz" \
             -C "${BUNDLE}/appimage" "audion_${VER}_x86_64.AppImage"
           npm run tauri -- signer sign \
-            "${BUNDLE}/appimage/audion_${VER}_x86_64.AppImage.tar.gz" \
-            --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
-            --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+            "${BUNDLE}/appimage/audion_${VER}_x86_64.AppImage.tar.gz"
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v3.0.1

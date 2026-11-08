@@ -4,12 +4,18 @@
 
 use std::path::Path;
 
+fn is_env_truthy(var: &str) -> bool {
+    std::env::var(var)
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
+        .unwrap_or(false)
+}
+
 /// Check whether the application is running inside a virtual machine or emulated environment.
 pub fn is_virtual_machine() -> bool {
     // 1. Explicit user override
-    if std::env::var_os("AUDION_SAFE_MODE").is_some()
-        || std::env::var_os("AUDION_SOFTWARE_RENDERING").is_some()
-        || std::env::var_os("LIBGL_ALWAYS_SOFTWARE").is_some()
+    if is_env_truthy("AUDION_SAFE_MODE")
+        || is_env_truthy("AUDION_SOFTWARE_RENDERING")
+        || is_env_truthy("LIBGL_ALWAYS_SOFTWARE")
     {
         return true;
     }
