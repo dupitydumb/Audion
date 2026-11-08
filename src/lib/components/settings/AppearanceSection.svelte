@@ -374,7 +374,11 @@
         customColors: pkg.customColors,
         background: pkg.background,
         animation: pkg.animation,
+        customJs: pkg.customJs,
       });
+      if (pkg.customJs) {
+        theme.setAllowCustomJs(true);
+      }
       pkgImportSuccess = `Applied "${pkg.name}"${pkg.author ? ` by ${pkg.author}` : ''}`;
       setTimeout(() => { pkgImportSuccess = ''; }, 4000);
     } catch (e) {

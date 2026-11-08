@@ -71,6 +71,9 @@
       const raw = JSON.parse(text);
       const pkg = parseThemePackage(raw);
       theme.applyPackage(pkg);
+      if (pkg.customJs) {
+        theme.setAllowCustomJs(true);
+      }
       lastInstalledId = card.id;
       try { localStorage.setItem('tb_last_installed', card.id); } catch {}
       installing = { ...installing, [card.id]: 'done' };

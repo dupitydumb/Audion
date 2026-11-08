@@ -73,11 +73,8 @@
   let showPermissionBanner = false;
   let permissionDenied = false;
 
-  // Re-apply background whenever config changes (e.g. opacity slider).
-  // Also re-runs when $isLoading flips to false — that's when #audion-bg-layer
-  // enters the DOM (it lives inside {#if !$isLoading && $locale}), so the
-  // first applyBackground call from theme.initialize() would have found null.
-  $: if (browser && !$isLoading) {
+  // Re-apply background and effects whenever theme config changes
+  $: if (browser) {
     applyBackground($theme.background);
     applyEffect($theme.customJs, $theme.accentColor, $theme.allowCustomJs);
   }
@@ -167,11 +164,11 @@
   }
 
   onMount(async () => {
+    theme.initialize();
+    appSettings.initialize();
+
     // Detect platform early for Linux-specific fixes (asset:// -> file://)
     await initPlatformDetection();
-
-    appSettings.initialize();
-    theme.initialize();
 
     initMobileDetection();
     await initAudioBackend();
@@ -376,6 +373,19 @@
   }
 </script>
 
+<!-- Persistent background and effect layers - unconditionally mounted so theme works regardless of i18n load timing -->
+<div
+  id="audion-bg-layer"
+  aria-hidden="true"
+  style="display:none"
+></div>
+
+<canvas
+  id="audion-effect-layer"
+  aria-hidden="true"
+  style="display:none"
+></canvas>
+
 {#if !$isLoading && $locale}
 {#if $useDesktopTitleBar && !$isMiniPlayer}
   <TitleBar />
@@ -423,18 +433,6 @@
 {/if}
 
 <a href="#main-content" class="skip-link">{$_("app.skipToMainContent")}</a>
-
-<div
-  id="audion-bg-layer"
-  aria-hidden="true"
-  style="display:none"
-></div>
-
-<canvas
-  id="audion-effect-layer"
-  aria-hidden="true"
-  style="display:none"
-></canvas>
 
 <div class="app-content" class:mobile={$isMobile} class:has-titlebar={$useDesktopTitleBar} class:pip={$isMiniPlayer} class:has-mini-player={$isMobile && $currentTrack && !$isFullScreen} id="main-content">
   <slot />
