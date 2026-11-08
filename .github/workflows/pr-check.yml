@@ -12,6 +12,31 @@ on:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # Linux compilation & type check — catches Rust type errors, target-specific
+  # integration regressions, and Svelte frontend breakages BEFORE merge
+  # ---------------------------------------------------------------------------
+  linux-pr-check:
+    name: Linux Build & Type Check
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node, Rust, cache, and Linux deps
+        uses: ./.github/actions/setup
+        with:
+          platform: linux
+
+      - name: Frontend Check (Svelte & TypeScript)
+        run: npm run check
+
+      - name: Cargo Check for Linux Target
+        run: cargo check --manifest-path src-tauri/Cargo.toml --target x86_64-unknown-linux-gnu
+
+      - name: Verify Tests Compile (no-run)
+        run: cargo test --manifest-path src-tauri/Cargo.toml --target x86_64-unknown-linux-gnu --no-run
+
+  # ---------------------------------------------------------------------------
   # Android Kotlin compilation — catches type errors, name shadowing, and
   # Gradle config issues without needing a full Android build
   # ---------------------------------------------------------------------------

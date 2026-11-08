@@ -16,7 +16,7 @@
 //! the result is a fresh insert (new date_added) rather than an in-place path update
 
 use notify::event::{ModifyKind, RenameMode};
-use notify::{EventKind, RecursiveMode, Watcher as _};
+use notify::{EventKind, RecursiveMode};
 use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, RecommendedCache};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

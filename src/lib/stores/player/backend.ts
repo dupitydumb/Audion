@@ -21,7 +21,8 @@ import {
     html5SetCallbacks, html5Stop, html5Cleanup, html5SetVolume,
 } from '$lib/services/html5-audio';
 import { listen } from '$lib/api/tauri';
-import { updateWindowsThumbarState } from '$lib/api/tauri';
+import { updateWindowsThumbarState, updateTrackDuration } from '$lib/api/tauri';
+import { updateTrackDurationInMemory } from '$lib/stores/library';
 import type { Track } from '$lib/api/tauri';
 import {
     _startReckoning, _stopReckoning, _correctReckoning,
@@ -107,7 +108,20 @@ export async function initAudioBackend(): Promise<void> {
         onEnded: () => handleTrackEnd(),
         onError: (message) => addToast(`Streaming playback failed: ${message}`, 'error'),
         onTimeUpdate: (position, dur) => {
-            if (dur > 0 && !isNaN(dur)) duration.set(dur);
+            if (dur > 0 && !isNaN(dur) && isFinite(dur)) {
+                duration.set(dur);
+                currentTrack.update(t => {
+                    if (t && (!t.duration || t.duration === 0)) {
+                        const roundDur = Math.round(dur);
+                        if (t.id) {
+                            updateTrackDuration(t.id, roundDur).catch(e => console.warn('Failed to update duration in DB:', e));
+                            updateTrackDurationInMemory(t.id, roundDur);
+                        }
+                        return { ...t, duration: roundDur };
+                    }
+                    return t;
+                });
+            }
         },
         onPlayStateChange: (playing) => {
             if (get(activeBackend) === 'html5') {
@@ -313,10 +327,10 @@ export async function initAudioBackend(): Promise<void> {
         const nextItems = $queue
             .slice(currentIdx + 1, currentIdx + 6)
             .map((t) => ({
-                track_id: t.id,
+                track_id: typeof t.id === 'number' && !isNaN(t.id) ? t.id : 0,
                 title: t.title ?? 'Unknown Title',
                 artist: t.artist ?? null,
-                path: t.path,
+                path: t.path || (t as any).stream_url || '',
             }));
         if (nextItems.length > 0) {
             invoke('windows_update_jump_list', { tracks: nextItems })

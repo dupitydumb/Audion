@@ -77,8 +77,23 @@ paletteSource.subscribe(async (track) => {
     } else {
       // fallback for covers with no local file:
       // legacy base64 storage or a remote cover_url
-      const res = await fetch(coverSrc);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      let res = await fetch(coverSrc).catch(() => null);
+      if (!res || !res.ok) {
+        // If Google CDN failed with 429 or network error and track has external_id, try YouTube fallback thumbnail
+        if (track.source_type === 'youtube' && track.external_id && !coverSrc.includes('i.ytimg.com')) {
+          const ytFallback = `https://i.ytimg.com/vi/${track.external_id}/hqdefault.jpg`;
+          res = await fetch(ytFallback).catch(() => null);
+        }
+      }
+      if (!res || !res.ok) {
+        // Silent graceful fallback if cover cannot be fetched or rate-limited
+        // a newer track may have taken over while we were fetching: don't wipe its palette
+        if (gen !== currentGen) return;
+        // forget this cover so the next currentTrack emission retries it
+        lastCoverSrc = null;
+        albumPalette.set([]);
+        return;
+      }
       const bytes = await res.arrayBuffer();
       raw = await invoke("extract_palette", {
         imageBytes: Array.from(new Uint8Array(bytes)),

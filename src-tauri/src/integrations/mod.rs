@@ -1,6 +1,8 @@
 pub mod cli;
 pub mod context_menu;
 pub mod discord;
+#[cfg(target_os = "linux")]
+pub mod linux;
 pub mod notifications;
 pub mod smtc;
 pub mod window;

@@ -226,7 +226,7 @@ pub async fn discord_update_presence(
         } else {
             None
         }
-    } else if let (Some(track_id), Some(ref cover_path)) = (data.track_id, &data.track_cover_path) {
+    } else if let (Some(track_id), Some(cover_path)) = (data.track_id, &data.track_cover_path) {
         resolve_cover_cached(&db, track_id, cover_path).await
     } else {
         None

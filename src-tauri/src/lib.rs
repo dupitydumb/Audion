@@ -69,7 +69,7 @@ mod android_audio_context {
     /// JNI export for MainActivity initAudioContext
     // non static native method
     /// so the second parameter is the calling Activity instance
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub extern "system" fn Java_com_audion_app_MainActivity_initAudioContext(
         env: jni::JNIEnv<'_>,
         activity: jni::objects::JObject<'_>,
@@ -78,7 +78,7 @@ mod android_audio_context {
     }
 
     /// JNI export for AudionApplication.onCreate
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_initAudioContextNative<
         'local,
     >(
@@ -568,55 +568,6 @@ fn tray_update_toggles(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(target_os = "linux")]
-    {
-        // Unset GTK_MODULES so WebKit child processes don't try to load host-only
-        // GTK modules (e.g. xapp-gtk3-module on Linux Mint) that are absent here.
-        // Note: GTK in the main process already read this before main() — the unset
-        // only suppresses the warning in child processes spawned by Tauri/WebKit.
-        std::env::remove_var("GTK_MODULES");
-
-        // WEBKIT_FORCE_SANDBOX is deprecated — remove old var and set replacement.
-        // Disabling the sandbox avoids seccomp/SELinux failures in VMs and containers.
-        std::env::remove_var("WEBKIT_FORCE_SANDBOX");
-        if std::env::var_os("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS").is_none() {
-            std::env::set_var("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1");
-        }
-
-        // Disable GPU/EGL paths that segfault on VirtualBox/VMware and other
-        // environments with no 3D acceleration (DRI3 absent or EGL init fails).
-        // WEBKIT_DISABLE_DMABUF_RENDERER: skip the dmabuf/DRI3 fast path.
-        // WEBKIT_DISABLE_COMPOSITING_MODE: fall back to pure software compositing;
-        //   prevents the GPU compositor from crashing when EGL context creation fails.
-        // LIBGL_ALWAYS_SOFTWARE: force Mesa softpipe so any remaining GL calls
-        //   don't hit a missing hardware driver and segfault.
-        // All three are no-ops on machines that have real GPU support.
-        for (var, val) in &[
-            ("WEBKIT_DISABLE_DMABUF_RENDERER", "1"),
-            ("LIBGL_ALWAYS_SOFTWARE", "1"),
-        ] {
-            if std::env::var_os(var).is_none() {
-                std::env::set_var(var, val);
-            }
-        }
-
-        // If individual LC_* vars use locales the C library doesn't support,
-        // GTK and WebKit subprocesses will warn "Locale not supported by C library".
-        // Normalize them to the base LANG so child processes stay quiet.
-        // We only touch the child-process environment — the user's shell is unaffected.
-        if let Ok(lang) = std::env::var("LANG") {
-            for var in &["LC_NUMERIC", "LC_MONETARY", "LC_PAPER", "LC_NAME",
-                         "LC_ADDRESS", "LC_TELEPHONE", "LC_MEASUREMENT",
-                         "LC_IDENTIFICATION"] {
-                if let Ok(val) = std::env::var(var) {
-                    if val != lang {
-                        std::env::set_var(var, &lang);
-                    }
-                }
-            }
-        }
-    }
-
     // ------------------------------------------------------------------
     // Resolve the log directory before Tauri starts so we can log early
     // failures. Use the platform app-data dir when available, otherwise
@@ -1007,21 +958,18 @@ pub fn run() {
             {
                 let window_config = integrations::window::load_window_config(app.handle());
                 if let Some(window) = app.get_webview_window("main") {
-                    // On Linux, force software rendering so the page paints on
-                    // VirtualBox / VMware / headless environments with no GPU.
-                    // webkit_settings_set_hardware_acceleration_policy(NEVER) disables
-                    // the GPU compositor entirely and falls back to Cairo (CPU) painting.
-                    // This is a no-op on machines that have working GPU acceleration.
+                    // On Linux, only force software rendering if a VM, container, or safe mode is detected.
+                    // Physical hardware with a working GPU keeps hardware acceleration enabled.
                     #[cfg(target_os = "linux")]
                     {
-                        {
+                        if integrations::linux::should_use_software_rendering() {
                             use webkit2gtk::SettingsExt;
                             match window.with_webview(|wv| {
                                 if let Some(settings) = webkit2gtk::WebViewExt::settings(&wv.inner()) {
                                     settings.set_hardware_acceleration_policy(
                                         webkit2gtk::HardwareAccelerationPolicy::Never,
                                     );
-                                    tracing::info!("WebKit hardware acceleration disabled (software rendering forced)");
+                                    tracing::info!("WebKit hardware acceleration disabled (software rendering forced for VM/safe-mode)");
                                 } else {
                                     tracing::warn!("WebKit settings unavailable — hardware acceleration NOT disabled");
                                 }
@@ -1029,6 +977,8 @@ pub fn run() {
                                 Ok(()) => {}
                                 Err(e) => tracing::warn!("with_webview failed: {:?}", e),
                             }
+                        } else {
+                            tracing::info!("WebKit hardware acceleration enabled (GPU acceleration active)");
                         }
 
                         // On X11, frameless windows (decorations=false) sometimes get an
@@ -1359,6 +1309,7 @@ pub fn run() {
                     commands::update_local_src,
                     commands::update_track_cover_url,
                     commands::clear_fetched_covers,
+                    commands::update_track_duration,
                     // Plugin commands
                     commands::list_plugins,
                     commands::install_plugin,
@@ -1613,6 +1564,7 @@ pub fn run() {
                     commands::update_local_src,
                     commands::update_track_cover_url,
                     commands::clear_fetched_covers,
+                    commands::update_track_duration,
                     // Plugin commands
                     commands::list_plugins,
                     commands::install_plugin,

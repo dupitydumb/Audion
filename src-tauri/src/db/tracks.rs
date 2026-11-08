@@ -890,6 +890,14 @@ pub fn clear_fetched_cover_urls(conn: &Connection) -> Result<Vec<i64>> {
     Ok(ids)
 }
 
+pub fn update_track_duration(conn: &Connection, track_id: i64, duration: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE tracks SET duration = ?1 WHERE id = ?2 AND (duration IS NULL OR duration = 0)",
+        params![duration, track_id],
+    )?;
+    Ok(())
+}
+
 pub fn update_local_src(conn: &Connection, track_id: i64, local_src: Option<&str>) -> Result<()> {
     conn.execute(
         "UPDATE tracks SET local_src = ?1 WHERE id = ?2",

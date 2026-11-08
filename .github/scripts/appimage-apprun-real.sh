@@ -12,25 +12,42 @@ HERE="$(dirname "$(readlink -f "${0}")")"
 # Setting APPDIR would make WebKitGTK look for them under $HERE/usr/lib/...,
 # where they do not exist, causing subprocess launch failures.
 # Only set APPDIR if the helpers are actually present in the bundle.
-if [ -f "$HERE/usr/lib/webkit2gtk-4.1/WebKitNetworkProcess" ]; then
+# WebKit helpers reside under usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/ on Debian/Ubuntu,
+# under usr/lib/webkit2gtk-4.1/ on Arch/Fedora, or via root lib/ symlink.
+if [ -f "$HERE/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess" ] || \
+   [ -f "$HERE/usr/lib/webkit2gtk-4.1/WebKitNetworkProcess" ] || \
+   [ -f "$HERE/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess" ] || \
+   [ -n "$(find "$HERE/usr/lib" "$HERE/lib" -name "WebKitNetworkProcess" 2>/dev/null | head -1)" ]; then
   export APPDIR="$HERE"
 fi
 
 # Disable dmabuf — most common blank-screen cause on Mesa/NVIDIA with no DRI3.
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
 
-# Disable WebKit sandbox — required inside AppImage (seccomp conflicts with AppImage runtime).
+# Disable WebKit sandbox — required inside AppImage & containers (seccomp / user ns restrictions).
+# WebKitGTK 2.40+ deprecates WEBKIT_FORCE_SANDBOX=0 in favor of WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1.
 export WEBKIT_FORCE_SANDBOX=0
+export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
+
+# Auto-detect missing GPU / headless / virtualized environments (e.g. CI, Xvfb, VMs, Docker):
+# When /dev/dri is missing or software Mesa is requested, disable compositing mode
+# and force llvmpipe. Accelerated compositing without DRI3 causes black/blank windows.
+if [ ! -d /dev/dri ] || [ -z "$(ls -A /dev/dri 2>/dev/null)" ] || [ "${LIBGL_ALWAYS_SOFTWARE:-0}" = "1" ]; then
+  export LIBGL_ALWAYS_SOFTWARE=1
+  export WEBKIT_DISABLE_COMPOSITING_MODE=1
+else
+  # On real hardware with /dev/dri, leave unset unless user explicitly set them
+  if [ -z "${LIBGL_ALWAYS_SOFTWARE+x}" ]; then
+    unset LIBGL_ALWAYS_SOFTWARE
+  fi
+fi
 
 # DRI3 — opt-in disable. Set LIBGL_DRI3_DISABLE=1 at runtime if you hit
 # EGL_BAD_PARAMETER crashes (AMD RX 6600 + Bazzite / Mesa 23).
-# Unconditional disable would force llvmpipe on Mesa 23+ where DRI2 hw drivers
-# were removed.
-export LIBGL_DRI3_DISABLE="${LIBGL_DRI3_DISABLE:-0}"
-
-# Software Mesa — opt-in fallback for VMs or broken GPU drivers.
-# User can set LIBGL_ALWAYS_SOFTWARE=1 before launch to force llvmpipe.
-export LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-0}"
+# Do not export =0 as some Mesa versions treat any non-empty value as enabled.
+if [ -z "${LIBGL_DRI3_DISABLE+x}" ]; then
+  unset LIBGL_DRI3_DISABLE
+fi
 # GALLIUM_DRIVER: leave unset unless the user explicitly set it.
 # Exporting an empty string breaks Mesa's implicit llvmpipe selection on some versions.
 if [ -z "${GALLIUM_DRIVER+x}" ]; then unset GALLIUM_DRIVER; fi
@@ -73,9 +90,21 @@ else
   BIN=$(find "$HERE/usr/bin" -type f -executable | head -1)
 fi
 
+# Convert relative file path arguments to absolute paths before changing directory to $HERE.
+# This ensures command-line file arguments (e.g. "audion ./song.mp3") resolve properly
+# after we change CWD to $HERE.
+ARGS=()
+for arg in "$@"; do
+  if [ -e "$arg" ]; then
+    ARGS+=("$(readlink -f "$arg")")
+  else
+    ARGS+=("$arg")
+  fi
+done
+
 # WebKit computes its subprocess path as a CWD-relative "././lib/..." string.
 # Change to APPDIR so that relative path resolves correctly regardless of
 # where the user launched the AppImage from.
 cd "$HERE"
 
-exec "$BIN" "$@"
+exec "$BIN" "${ARGS[@]}"
