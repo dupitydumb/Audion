@@ -34,6 +34,24 @@ chmod +x squashfs-root/AppRun-real squashfs-root/AppRun
 # The Tauri AppImage bundler does not create a root-level lib symlink,
 # so WebKitNetworkProcess fails with ENOENT. Add the symlink.
 ln -sf usr/lib squashfs-root/lib
+if [ -d squashfs-root/usr/lib64 ] && [ ! -e squashfs-root/lib64 ]; then
+  ln -sf usr/lib64 squashfs-root/lib64
+fi
+
+# Ensure WebKitGTK helper processes (WebKitNetworkProcess, WebKitWebProcess)
+# are present inside the AppDir. If linuxdeploy did not copy them, copy from host.
+if [ -z "$(find squashfs-root -name "WebKitNetworkProcess" 2>/dev/null | head -1)" ]; then
+  HOST_WEBKIT_DIR=$(find /usr/lib/x86_64-linux-gnu /usr/lib /usr/libexec -maxdepth 2 -type d -name "webkit2gtk-4.1" 2>/dev/null | head -1)
+  if [ -n "$HOST_WEBKIT_DIR" ] && [ -f "$HOST_WEBKIT_DIR/WebKitNetworkProcess" ]; then
+    echo "Bundling WebKitGTK helpers from $HOST_WEBKIT_DIR..."
+    TARGET_DIR="squashfs-root/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1"
+    mkdir -p "$TARGET_DIR"
+    cp -a "$HOST_WEBKIT_DIR"/* "$TARGET_DIR/"
+  fi
+fi
+
+echo "WebKit helpers located in AppDir:"
+find squashfs-root -name "*WebKit*Process*" || true
 
 # Ensure .DirIcon is a valid relative link to the bundled top-level icon
 ICON_FILE=$(find squashfs-root -maxdepth 1 -type f \( -iname "*.png" -o -iname "*.svg" \) | head -1)
@@ -81,5 +99,8 @@ if [ ! -f "$PATCHED_OUTPUT" ]; then
   echo "::error::appimagetool did not produce audion-patched.AppImage"
   exit 1
 fi
+
+# Remove the original unpatched AppImage to prevent stale/unpatched asset release
+rm -f "$APPIMAGE"
 
 echo "Successfully repacked AppImage: $(du -sh "$PATCHED_OUTPUT")"

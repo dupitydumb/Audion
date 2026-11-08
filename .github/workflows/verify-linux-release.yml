@@ -1,4 +1,13 @@
 name: Verify Linux Release
+
+# Smoke-tests the released AppImage on several distros under Xvfb.
+# "Pass" means ALL of these are true:
+#   1. the downloaded asset is a real AppImage whose AppRun is the patched wrapper
+#   2. the app process starts (launched from an unrelated cwd on purpose)
+#   3. a visible window appears
+#   4. the screen shows real content (not a black/blank window)
+#   5. the process is still alive STABLE_SECS later and still not blank
+
 on:
   workflow_call:
     inputs:
@@ -36,16 +45,20 @@ jobs:
     steps:
       - name: Resolve version from input or tag
         id: resolve
+        env:
+          IN_VERSION: ${{ inputs.version }}
+          IN_TAG: ${{ inputs.tag_name }}
         run: |
-          VER="${{ inputs.version }}"
+          VER="$IN_VERSION"
           if [ -z "$VER" ]; then
-            VER=$(echo "${{ inputs.tag_name }}" | sed 's/^v//')
+            VER="${IN_TAG#v}"
           fi
           echo "version=$VER" >> "$GITHUB_OUTPUT"
 
   smoke-test-linux:
     runs-on: ubuntu-22.04
     needs: resolve-version
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -53,6 +66,12 @@ jobs:
           - name: ubuntu-24.04
             image: ubuntu:24.04
             pkg_manager: apt
+          # Same image but WITHOUT host GTK/WebKit: proves the AppImage bundle
+          # is self-sufficient on a clean system.
+          - name: ubuntu-24.04-minimal
+            image: ubuntu:24.04
+            pkg_manager: apt
+            minimal: true
           - name: debian-12
             image: debian:12
             pkg_manager: apt
@@ -72,98 +91,234 @@ jobs:
       image: ${{ matrix.image }}
       options: --privileged
     steps:
-      - name: Install runtime deps + Xvfb + curl
-        id: deps
+      - name: Install test tooling + runtime deps
+        env:
+          MINIMAL: ${{ matrix.minimal || 'false' }}
         run: |
           set -e
+          # Test tooling on every distro: Xvfb, dbus session, pgrep, window query, screenshot.
           case "${{ matrix.pkg_manager }}" in
             apt)
               export DEBIAN_FRONTEND=noninteractive
               apt-get update
-
-              apt-get install -y --no-install-recommends \
-                curl wget file xvfb xauth ca-certificates \
-                libwebkit2gtk-4.1-0 libgtk-3-0 \
-                libayatana-appindicator3-1 \
-                libgl1 libegl1
-
+              PKGS="curl ca-certificates xvfb xauth dbus dbus-x11 procps xdotool imagemagick libgl1 libegl1"
+              if [ "$MINIMAL" != "true" ]; then
+                PKGS="$PKGS libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1"
+              fi
+              apt-get install -y --no-install-recommends $PKGS
               for pkg in libgl1-mesa-dri libasound2 libasound2t64; do
                 apt-get install -y --no-install-recommends "$pkg" 2>/dev/null || true
               done
               ;;
             dnf)
+              # curl-minimal is already in the fedora image; do not install "curl".
               dnf install -y \
-                curl wget file xorg-x11-server-Xvfb xorg-x11-xauth \
+                xorg-x11-server-Xvfb xorg-x11-xauth dbus-daemon dbus-x11 procps-ng \
+                xdotool ImageMagick \
                 webkit2gtk4.1 gtk3 libappindicator-gtk3 \
                 alsa-lib mesa-dri-drivers mesa-libEGL
               ;;
             pacman)
-              pacman -Sy --noconfirm \
-                curl wget file xorg-server-xvfb xorg-xauth \
+              pacman -Syu --noconfirm \
+                curl xorg-server-xvfb xorg-xauth dbus procps-ng xdotool imagemagick \
                 webkit2gtk-4.1 gtk3 libayatana-appindicator \
                 alsa-lib mesa
               ;;
             zypper)
+              # NOTE: "webkit2gtk3-soup2" is the old 4.0 API; the app needs 4.1.
               zypper --non-interactive install \
-                curl wget file xvfb-run xauth \
-                webkit2gtk3-soup2 gtk3 libayatana-appindicator3-1 \
-                alsa mesa-dri-devel
+                curl xvfb-run xauth dbus-1 dbus-1-x11 procps xdotool ImageMagick \
+                libwebkit2gtk-4_1-0 libgtk-3-0 libayatana-appindicator3-1 \
+                alsa Mesa-dri Mesa-libEGL1 Mesa-libGL1
               ;;
           esac
 
       - name: Download AppImage from release
-        id: download
         env:
           VER: ${{ needs.resolve-version.outputs.version }}
           TAG: ${{ inputs.tag_name }}
         run: |
           set -e
-          curl -sL -o audion.AppImage \
-            "https://github.com/${{ github.repository }}/releases/download/${TAG}/audion_${VER}_x86_64.AppImage"
+          URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/audion_${VER}_x86_64.AppImage"
+          echo "Downloading $URL"
+          # -f: fail on HTTP 404 instead of saving an HTML error page as the "AppImage"
+          curl -fSL --retry 3 --retry-delay 5 -o audion.AppImage "$URL"
           chmod +x audion.AppImage
-          file audion.AppImage
+          ls -lh audion.AppImage
 
-      - name: Launch headless, capture 6s of output
-        id: launch
-        run: |
-          set +e
-          mkdir -p result
-          xvfb-run -a --server-args="-screen 0 1920x1080x24" \
-            ./audion.AppImage --appimage-extract-and-run > result/launch.log 2>&1 &
-          APP_PID=$!
-          sleep 6
-
-          echo "----- launch.log (${{ matrix.name }}) -----"
-          cat result/launch.log
-          echo "---------------------------------------"
-
-          if kill -0 "$APP_PID" 2>/dev/null; then
-            echo "status=pass" >> "$GITHUB_OUTPUT"
-            echo "✅ App still running after 6s on ${{ matrix.name }}"
-            kill "$APP_PID" 2>/dev/null || true
-            exit 0
-          else
-            echo "status=fail" >> "$GITHUB_OUTPUT"
-            echo "::error::App exited within 6s on ${{ matrix.name }} (tag ${{ inputs.tag_name }})"
+          if [ "$(head -c 4 audion.AppImage | tail -c 3)" != "ELF" ]; then
+            echo "::error::Downloaded file is not an ELF/AppImage"
             exit 1
           fi
 
+      - name: Check the release asset is the patched AppImage
+        run: |
+          set -e
+          # The patched AppImage has a bash wrapper as AppRun. The unpatched Tauri
+          # build has a symlink to the binary and fails with the WebKit ENOENT crash.
+          rm -rf squashfs-root
+          ./audion.AppImage --appimage-extract AppRun > /dev/null
+          if [ "$(head -c 2 squashfs-root/AppRun 2>/dev/null)" != "#!" ]; then
+            echo "::error::AppRun is not the wrapper script - the unpatched AppImage was released"
+            exit 1
+          fi
+          rm -rf squashfs-root
+
+      - name: Launch, verify window renders, verify it stays alive
+        id: launch
+        env:
+          APP_BIN_NAME: audion
+          WINDOW_TIMEOUT: "60"
+          STABLE_SECS: "15"
+          MIN_COLORS: "16"
+        run: |
+          set +e
+          mkdir -p result
+
+          cat > /tmp/smoke.sh <<'EOF'
+          #!/usr/bin/env bash
+          # Runs inside xvfb-run.
+          set -u
+
+          BIN_NAME="${APP_BIN_NAME:-audion}"
+          WINDOW_TIMEOUT="${WINDOW_TIMEOUT:-60}"
+          STABLE_SECS="${STABLE_SECS:-15}"
+          MIN_COLORS="${MIN_COLORS:-16}"
+          LOG="$OUT/launch.log"
+          mkdir -p "$OUT"
+          : > "$LOG"
+
+          # ImageMagick 6 ships "import"/"identify"; IM7-only systems use "magick <tool>".
+          if command -v import >/dev/null 2>&1; then
+            shot()   { import -window root "$1"; }
+            colors() { identify -format '%k' "$1"; }
+          else
+            shot()   { magick import -window root "$1"; }
+            colors() { magick identify -format '%k' "$1"; }
+          fi
+
+          fail() {
+            echo "$1" > "$OUT/reason.txt"
+            echo "::error::$1"
+            shot "$OUT/screenshot.png" 2>/dev/null || true
+            pkill -x "$BIN_NAME" 2>/dev/null || true
+            exit 1
+          }
+
+          export XDG_RUNTIME_DIR="$(mktemp -d)"
+          chmod 700 "$XDG_RUNTIME_DIR"
+          export LANG=C.UTF-8
+          export APPIMAGE_EXTRACT_AND_RUN=1   # no FUSE inside containers
+
+          # Launch from an unrelated cwd on purpose: WebKit resolves its helper
+          # process path relative to the cwd, which was the original crash.
+          cd /tmp
+          if command -v dbus-run-session >/dev/null 2>&1; then
+            dbus-run-session -- "$APPIMAGE_PATH" >"$LOG" 2>&1 &
+          else
+            "$APPIMAGE_PATH" >"$LOG" 2>&1 &
+          fi
+          LAUNCH_PID=$!
+
+          SEEN=0; WINDOW=0; RENDERED=0; N=0
+          START=$SECONDS
+          while [ $((SECONDS - START)) -lt "$WINDOW_TIMEOUT" ]; do
+            sleep 1
+            PID=$(pgrep -xo "$BIN_NAME" || true)
+
+            if [ -z "$PID" ]; then
+              if [ "$SEEN" = 1 ]; then
+                fail "App process exited $((SECONDS - START))s after launch (crash)"
+              fi
+              if ! kill -0 "$LAUNCH_PID" 2>/dev/null; then
+                fail "Launcher exited before the app process ever started"
+              fi
+              continue
+            fi
+            SEEN=1
+
+            if [ -n "$(xdotool search --onlyvisible --pid "$PID" 2>/dev/null)" ]; then
+              WINDOW=1
+              shot "$OUT/screenshot.png" 2>/dev/null || continue
+              N=$(colors "$OUT/screenshot.png" 2>/dev/null || echo 0)
+              if [ "${N:-0}" -ge "$MIN_COLORS" ]; then
+                RENDERED=1
+                break
+              fi
+            fi
+          done
+
+          [ "$SEEN" = 1 ]     || fail "App process never started within ${WINDOW_TIMEOUT}s"
+          [ "$WINDOW" = 1 ]   || fail "App is running but no visible window appeared within ${WINDOW_TIMEOUT}s"
+          [ "$RENDERED" = 1 ] || fail "Window stayed blank/black: only ${N} distinct colors on screen after ${WINDOW_TIMEOUT}s"
+
+          # Rendered once. Now make sure it does not crash a moment later
+          # (the original bug was a window that flashed and then died).
+          for _ in $(seq 1 "$STABLE_SECS"); do
+            sleep 1
+            pgrep -x "$BIN_NAME" >/dev/null || fail "App crashed after first render (within ${STABLE_SECS}s)"
+          done
+
+          shot "$OUT/screenshot.png" 2>/dev/null || true
+          N=$(colors "$OUT/screenshot.png" 2>/dev/null || echo 0)
+          [ "${N:-0}" -ge "$MIN_COLORS" ] || fail "Window went blank after rendering (${N} colors)"
+
+          # Hard-fail log patterns (these mean the webview cannot work)
+          HARD='Unable to spawn a new child process|Failed to spawn child process|Segmentation fault|core dumped'
+          if grep -Eiq "$HARD" "$LOG"; then
+            fail "Fatal error in log: $(grep -Eim1 "$HARD" "$LOG" | cut -c1-200)"
+          fi
+          # Soft patterns: surface as warnings, do not fail
+          SOFT='undefined symbol|cannot open shared object|panicked at'
+          if grep -Eiq "$SOFT" "$LOG"; then
+            echo "::warning::Suspicious log line: $(grep -Eim1 "$SOFT" "$LOG" | cut -c1-200)"
+          fi
+
+          pkill -x "$BIN_NAME" 2>/dev/null || true
+          kill "$LAUNCH_PID" 2>/dev/null || true
+          echo "Rendered (${N} colors) and stayed alive ${STABLE_SECS}s after first paint" > "$OUT/reason.txt"
+          echo "OK: $(cat "$OUT/reason.txt")"
+          exit 0
+          EOF
+
+          export APPIMAGE_PATH="$PWD/audion.AppImage"
+          export OUT="$PWD/result"
+          xvfb-run -a --server-args="-screen 0 1280x800x24 -ac +extension GLX +render -noreset" \
+            bash /tmp/smoke.sh
+          RC=$?
+
+          echo "----- launch.log (${{ matrix.name }}) -----"
+          cat result/launch.log || true
+          echo "---------------------------------------"
+
+          if [ $RC -eq 0 ]; then
+            echo "status=pass" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=fail" >> "$GITHUB_OUTPUT"
+          fi
+          exit $RC
+
       - name: Write result metadata (always runs, even on failure)
         if: always()
+        env:
+          STATUS: ${{ steps.launch.outputs.status }}
         run: |
           mkdir -p result
-          STATUS="${{ steps.launch.outputs.status }}"
           if [ -z "$STATUS" ]; then STATUS="fail"; fi
+          if [ ! -f result/launch.log ]; then
+            echo "No launch.log produced - failed during dependency install, download or asset check, before the app launched." > result/launch.log
+          fi
+          if [ ! -f result/reason.txt ]; then
+            echo "Failed before launch (deps, download or asset check)" > result/reason.txt
+          fi
           {
             echo "distro=${{ matrix.name }}"
             echo "image=${{ matrix.image }}"
             echo "status=$STATUS"
+            echo "reason=$(tr '\n' ' ' < result/reason.txt | cut -c1-300)"
           } > result/meta.txt
-          if [ ! -f result/launch.log ]; then
-            echo "No launch.log produced — failed during dependency install or download, before the app ever launched." > result/launch.log
-          fi
 
-      - name: Upload result artifact (log always attached, pass or fail)
+      - name: Upload result artifact (log + screenshot, pass or fail)
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -185,36 +340,48 @@ jobs:
 
       - name: Build summary table with full logs
         id: build
+        env:
+          TAG: ${{ inputs.tag_name }}
+          NEEDS_RESULT: ${{ needs.smoke-test-linux.result }}
         run: |
           {
-            echo "## Linux smoke test — ${{ inputs.tag_name }}"
+            echo "## Linux smoke test - $TAG"
             echo ""
-            echo "| Distro | Image | Result |"
-            echo "|---|---|---|"
+            echo "| Distro | Image | Result | Detail |"
+            echo "|---|---|---|---|"
           } > table.md
 
           OVERALL="success"
+          COUNT=0
 
           for dir in results/*/; do
             META="${dir}meta.txt"
             if [ ! -f "$META" ]; then continue; fi
+            COUNT=$((COUNT + 1))
             DISTRO=$(grep '^distro=' "$META" | cut -d= -f2-)
             IMAGE=$(grep '^image=' "$META" | cut -d= -f2-)
             STATUS=$(grep '^status=' "$META" | cut -d= -f2-)
+            REASON=$(grep '^reason=' "$META" | cut -d= -f2-)
+            REASON="${REASON//|/\\|}"
 
             if [ "$STATUS" = "pass" ]; then
-              echo "| $DISTRO | \`$IMAGE\` | ✅ Pass |" >> table.md
+              echo "| $DISTRO | \`$IMAGE\` | ✅ Pass | $REASON |" >> table.md
             else
-              echo "| $DISTRO | \`$IMAGE\` | ❌ Fail |" >> table.md
+              echo "| $DISTRO | \`$IMAGE\` | ❌ Fail | $REASON |" >> table.md
               OVERALL="failure"
             fi
           done
 
+          # A job that died before uploading its artifact must not look like success.
+          if [ "$COUNT" -eq 0 ] || [ "$NEEDS_RESULT" != "success" ]; then
+            OVERALL="failure"
+          fi
+
           echo "" >> table.md
-          echo "### 6-second launch logs per distro" >> table.md
+          echo "### Launch logs per distro" >> table.md
+          echo "Screenshots are in the \`result-<distro>\` artifacts of this run." >> table.md
           echo "" >> table.md
 
-          # Every distro gets its log attached — pass or fail
           for dir in results/*/; do
             META="${dir}meta.txt"
             LOG="${dir}launch.log"
@@ -241,15 +408,17 @@ jobs:
       - name: Discord notification
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          OVERALL: ${{ steps.build.outputs.overall }}
+          TAG: ${{ inputs.tag_name }}
+          REPO: ${{ github.repository }}
         run: |
           if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
 
-          OVERALL="${{ steps.build.outputs.overall }}"
           if [ "$OVERALL" = "success" ]; then
-            TITLE="✅ Verified ${{ inputs.tag_name }} — all distros passed"
+            TITLE="✅ Verified $TAG - all distros passed"
             COLOR=3066993
           else
-            TITLE="🚨 Verify failed for ${{ inputs.tag_name }} — see job summary for logs"
+            TITLE="🚨 Verify failed for $TAG - see job summary for logs"
             COLOR=15158332
           fi
 
@@ -259,20 +428,28 @@ jobs:
             if [ ! -f "$META" ]; then continue; fi
             DISTRO=$(grep '^distro=' "$META" | cut -d= -f2-)
             STATUS=$(grep '^status=' "$META" | cut -d= -f2-)
+            REASON=$(grep '^reason=' "$META" | cut -d= -f2- | cut -c1-120)
             if [ "$STATUS" = "pass" ]; then
-              DESC="${DESC}✅ ${DISTRO}\\n"
+              DESC="${DESC}✅ ${DISTRO}"$'\n'
             else
-              DESC="${DESC}❌ ${DISTRO}\\n"
+              DESC="${DESC}❌ ${DISTRO}: ${REASON}"$'\n'
             fi
           done
 
-          curl -H "Content-Type: application/json" -X POST \
-            -d "{\"embeds\": [{\"title\": \"$TITLE\", \"description\": \"$DESC\", \"url\": \"https://github.com/${{ github.repository }}/releases/tag/${{ inputs.tag_name }}\", \"color\": $COLOR}]}" \
-            "$DISCORD_WEBHOOK_URL"
+          # jq builds valid JSON even if a failure reason contains quotes
+          jq -n \
+            --arg title "$TITLE" \
+            --arg desc "$DESC" \
+            --arg url "https://github.com/$REPO/releases/tag/$TAG" \
+            --argjson color "$COLOR" \
+            '{embeds: [{title: $title, description: $desc, url: $url, color: $color}]}' \
+          | curl -sS -H "Content-Type: application/json" -X POST -d @- "$DISCORD_WEBHOOK_URL"
 
       - name: Fail the workflow if any distro failed
+        env:
+          OVERALL: ${{ steps.build.outputs.overall }}
         run: |
-          if [ "${{ steps.build.outputs.overall }}" != "success" ]; then
-            echo "::error::One or more distros failed the smoke test — see summary above."
+          if [ "$OVERALL" != "success" ]; then
+            echo "::error::One or more distros failed the smoke test - see summary above."
             exit 1
           fi
