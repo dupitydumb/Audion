@@ -48,6 +48,12 @@ export interface AppSettings {
     keyboardBindings: ShortcutBinding[] | null;
     /** master toggle for keyboard shortcuts (including showHelp / Shift+/) */
     shortcutsEnabled: boolean;
+    /**
+     * type a letter in a sorted track list to jump to the first match.
+     * while on, every single-letter shortcut is moved to Alt + letter
+     * (see shortcutBindings.setAlphabeticalJump)
+     */
+    alphabeticalJump: boolean;
     crossfadeSeconds: number;
     /** which page to show on app launch; see StartupPage for details */
     startupPage: StartupPage;
@@ -83,6 +89,7 @@ const defaultSettings: AppSettings = {
     streamServerTracks: true,
     keyboardBindings: null,
     shortcutsEnabled: true,
+    alphabeticalJump: false,
     crossfadeSeconds: 0,
     startupPage: 'home',
     lyricsAutoFetch: true,
@@ -254,6 +261,14 @@ function createSettingsStore() {
         setShortcutsEnabled(enabled: boolean) {
             update(state => {
                 const newState = { ...state, shortcutsEnabled: enabled };
+                saveSettings(newState);
+                return newState;
+            });
+        },
+
+        setAlphabeticalJump(enabled: boolean) {
+            update(state => {
+                const newState = { ...state, alphabeticalJump: enabled };
                 saveSettings(newState);
                 return newState;
             });
