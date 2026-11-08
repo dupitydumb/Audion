@@ -69,7 +69,7 @@ mod android_audio_context {
     /// JNI export for MainActivity initAudioContext
     // non static native method
     /// so the second parameter is the calling Activity instance
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub extern "system" fn Java_com_audion_app_MainActivity_initAudioContext(
         env: jni::JNIEnv<'_>,
         activity: jni::objects::JObject<'_>,
@@ -78,7 +78,7 @@ mod android_audio_context {
     }
 
     /// JNI export for AudionApplication.onCreate
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_initAudioContextNative<
         'local,
     >(
@@ -574,43 +574,48 @@ pub fn run() {
         // GTK modules (e.g. xapp-gtk3-module on Linux Mint) that are absent here.
         // Note: GTK in the main process already read this before main() — the unset
         // only suppresses the warning in child processes spawned by Tauri/WebKit.
-        std::env::remove_var("GTK_MODULES");
+        // In Rust 2024, env mutation is unsafe due to multi-threaded POSIX setenv safety.
+        unsafe {
+            std::env::remove_var("GTK_MODULES");
 
-        // WEBKIT_FORCE_SANDBOX is deprecated — remove old var and set replacement.
-        // Disabling the sandbox avoids seccomp/SELinux failures in VMs and containers.
-        std::env::remove_var("WEBKIT_FORCE_SANDBOX");
-        if std::env::var_os("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS").is_none() {
-            std::env::set_var("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1");
-        }
-
-        // Disable GPU/EGL paths that segfault on VirtualBox/VMware and other
-        // environments with no 3D acceleration (DRI3 absent or EGL init fails).
-        // WEBKIT_DISABLE_DMABUF_RENDERER: skip the dmabuf/DRI3 fast path.
-        // WEBKIT_DISABLE_COMPOSITING_MODE: fall back to pure software compositing;
-        //   prevents the GPU compositor from crashing when EGL context creation fails.
-        // LIBGL_ALWAYS_SOFTWARE: force Mesa softpipe so any remaining GL calls
-        //   don't hit a missing hardware driver and segfault.
-        // All three are no-ops on machines that have real GPU support.
-        for (var, val) in &[
-            ("WEBKIT_DISABLE_DMABUF_RENDERER", "1"),
-            ("LIBGL_ALWAYS_SOFTWARE", "1"),
-        ] {
-            if std::env::var_os(var).is_none() {
-                std::env::set_var(var, val);
+            // WEBKIT_FORCE_SANDBOX is deprecated — remove old var and set replacement.
+            // Disabling the sandbox avoids seccomp/SELinux failures in VMs and containers.
+            std::env::remove_var("WEBKIT_FORCE_SANDBOX");
+            if std::env::var_os("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS").is_none() {
+                std::env::set_var("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1");
             }
-        }
 
-        // If individual LC_* vars use locales the C library doesn't support,
-        // GTK and WebKit subprocesses will warn "Locale not supported by C library".
-        // Normalize them to the base LANG so child processes stay quiet.
-        // We only touch the child-process environment — the user's shell is unaffected.
-        if let Ok(lang) = std::env::var("LANG") {
-            for var in &["LC_NUMERIC", "LC_MONETARY", "LC_PAPER", "LC_NAME",
-                         "LC_ADDRESS", "LC_TELEPHONE", "LC_MEASUREMENT",
-                         "LC_IDENTIFICATION"] {
-                if let Ok(val) = std::env::var(var) {
-                    if val != lang {
-                        std::env::set_var(var, &lang);
+            // Disable GPU/EGL paths that segfault on VirtualBox/VMware and other
+            // environments with no 3D acceleration (DRI3 absent or EGL init fails).
+            // WEBKIT_DISABLE_DMABUF_RENDERER: skip the dmabuf/DRI3 fast path.
+            // WEBKIT_DISABLE_COMPOSITING_MODE: fall back to pure software compositing;
+            //   prevents the GPU compositor from crashing when EGL context creation fails.
+            // LIBGL_ALWAYS_SOFTWARE: force Mesa softpipe so any remaining GL calls
+            //   don't hit a missing hardware driver and segfault.
+            // All three are no-ops on machines that have real GPU support.
+            for (var, val) in &[
+                ("WEBKIT_DISABLE_DMABUF_RENDERER", "1"),
+                ("LIBGL_ALWAYS_SOFTWARE", "1"),
+            ] {
+                if std::env::var_os(var).is_none() {
+                    std::env::set_var(var, val);
+                }
+            }
+
+            // If individual LC_* vars use locales the C library doesn't support,
+            // GTK and WebKit subprocesses will warn "Locale not supported by C library".
+            // Normalize them to the base LANG so child processes stay quiet.
+            // We only touch the child-process environment — the user's shell is unaffected.
+            if let Ok(lang) = std::env::var("LANG") {
+                for var in &[
+                    "LC_NUMERIC", "LC_MONETARY", "LC_PAPER", "LC_NAME",
+                    "LC_ADDRESS", "LC_TELEPHONE", "LC_MEASUREMENT",
+                    "LC_IDENTIFICATION",
+                ] {
+                    if let Ok(val) = std::env::var(var) {
+                        if val != lang {
+                            std::env::set_var(var, &lang);
+                        }
                     }
                 }
             }
