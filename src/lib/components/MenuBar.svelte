@@ -71,7 +71,7 @@
         }
 
         console.log(
-          `Scan complete: ${result.tracks_added} added, ${result.tracks_updated} updated, ${result.tracks_deleted} deleted`,
+          `Scan complete: ${result.tracks_added} added, ${result.tracks_updated} updated, ${result.tracks_duplicates} duplicates skipped, ${result.tracks_failed} failed, ${result.tracks_deleted} deleted`,
         );
 
         // Load albums/artists after progressive track loading completes
@@ -98,6 +98,10 @@
         if (result.tracks_added > 0) parts.push(`${result.tracks_added} ${$_('menu.added')}`);
         if (result.tracks_updated > 0)
           parts.push(`${result.tracks_updated} ${$_('menu.updated')}`);
+        if (result.tracks_duplicates > 0)
+          parts.push(`${result.tracks_duplicates} ${$_('menu.duplicates')}`);
+        if (result.tracks_failed > 0)
+          parts.push(`${result.tracks_failed} ${$_('menu.failed')}`);
         if (result.tracks_deleted > 0)
           parts.push(`${result.tracks_deleted} ${$_('menu.deleted')}`);
 
@@ -106,7 +110,7 @@
             ? $_('menu.scanComplete', { values: { parts: parts.join(", ") } })
             : $_('menu.scanCompleteSimple');
 
-        addToast(message, "success", 4000);
+        addToast(message, result.tracks_failed > 0 ? "warning" : "success", result.tracks_failed > 0 ? 7000 : 4000);
       } else {
         console.log("[TIMING] No path selected");
       }
@@ -145,7 +149,7 @@
       }
 
       console.log(
-        `Rescan complete: ${result.tracks_added} added, ${result.tracks_updated} updated, ${result.tracks_deleted} deleted`,
+        `Rescan complete: ${result.tracks_added} added, ${result.tracks_updated} updated, ${result.tracks_duplicates} duplicates skipped, ${result.tracks_failed} failed, ${result.tracks_deleted} deleted`,
       );
 
       // Load albums/artists after progressive track loading completes
@@ -170,6 +174,10 @@
       if (result.tracks_added > 0) parts.push(`${result.tracks_added} ${$_('menu.added')}`);
       if (result.tracks_updated > 0)
         parts.push(`${result.tracks_updated} ${$_('menu.updated')}`);
+      if (result.tracks_duplicates > 0)
+        parts.push(`${result.tracks_duplicates} ${$_('menu.duplicates')}`);
+      if (result.tracks_failed > 0)
+        parts.push(`${result.tracks_failed} ${$_('menu.failed')}`);
       if (result.tracks_deleted > 0)
         parts.push(`${result.tracks_deleted} ${$_('menu.deleted')}`);
 
@@ -178,7 +186,7 @@
           ? $_('menu.rescanComplete', { values: { parts: parts.join(", ") } })
           : $_('menu.rescanCompleteNoChanges');
 
-      addToast(message, "success", 4000);
+      addToast(message, result.tracks_failed > 0 ? "warning" : "success", result.tracks_failed > 0 ? 7000 : 4000);
     } catch (error) {
       console.error("Failed to rescan:", error);
       addToast($_('menu.rescanFailed'), "error");

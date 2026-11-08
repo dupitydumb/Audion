@@ -93,27 +93,42 @@
         "role": "Viewer"
       },
       {
-        "ext": [
-          "flac"
-        ],
+        "ext": ["mp2", "mp1"],
+        "name": "MPEG Audio",
+        "description": "MPEG Layer I/II Audio File",
+        "mimeType": "audio/mpeg",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["flac"],
         "name": "FLAC Audio",
         "description": "FLAC Audio File",
         "mimeType": "audio/flac",
         "role": "Viewer"
       },
       {
-        "ext": [
-          "wav"
-        ],
+        "ext": ["wav", "wave"],
         "name": "WAV Audio",
         "description": "WAV Audio File",
         "mimeType": "audio/wav",
         "role": "Viewer"
       },
       {
-        "ext": [
-          "ogg"
-        ],
+        "ext": ["aiff", "aif", "aifc", "afc"],
+        "name": "AIFF Audio",
+        "description": "AIFF Audio File",
+        "mimeType": "audio/aiff",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["caf"],
+        "name": "CAF Audio",
+        "description": "Core Audio Format File",
+        "mimeType": "audio/x-caf",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["ogg", "oga"],
         "name": "OGG Audio",
         "description": "OGG Vorbis Audio File",
         "mimeType": "audio/ogg",
@@ -129,18 +144,28 @@
         "role": "Viewer"
       },
       {
-        "ext": [
-          "m4a"
-        ],
+        "ext": ["m4a", "m4b", "m4p", "m4r"],
         "name": "M4A Audio",
         "description": "M4A Audio File",
         "mimeType": "audio/mp4",
         "role": "Viewer"
       },
       {
-        "ext": [
-          "aac"
-        ],
+        "ext": ["mp4"],
+        "name": "MP4 Audio",
+        "description": "MP4 Audio File",
+        "mimeType": "audio/mp4",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["mov"],
+        "name": "QuickTime Audio",
+        "description": "QuickTime Audio File",
+        "mimeType": "video/quicktime",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["aac"],
         "name": "AAC Audio",
         "description": "AAC Audio File",
         "mimeType": "audio/aac",
@@ -153,6 +178,20 @@
         "name": "ALAC Audio",
         "description": "Apple Lossless Audio File",
         "mimeType": "audio/x-alac",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["mka"],
+        "name": "Matroska Audio",
+        "description": "Matroska Audio File",
+        "mimeType": "audio/x-matroska",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["webm"],
+        "name": "WebM Audio",
+        "description": "WebM Audio File",
+        "mimeType": "audio/webm",
         "role": "Viewer"
       }
     ],

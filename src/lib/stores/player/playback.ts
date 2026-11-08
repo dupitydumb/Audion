@@ -11,6 +11,7 @@ import {
 import { invoke } from '@tauri-apps/api/core';
 import { addToast } from '$lib/stores/toast';
 import { appSettings } from '$lib/stores/settings';
+import { hasCustomArtworkForTrack } from '$lib/stores/customArtwork';
 import { tracks as libraryTracks, getFullTrack, updateTrackCover } from '$lib/stores/library';
 import { fetchTrackCover } from '$lib/services/cover-fetcher';
 import { recordTrackPlay } from '$lib/stores/activity';
@@ -305,9 +306,15 @@ export async function playTrack(
     await updateMediaSessionMetadata(trackForPlugins);
     await updateSmtcMetadata(trackForPlugins, direction).catch(e => console.warn('[Player] SMTC metadata update failed:', e));
 
-    if (!track.track_cover_path && !track.cover_url) {
+    if (
+        get(appSettings).coverAutoFetch &&
+        !track.track_cover_path &&
+        !track.cover_url &&
+        !hasCustomArtworkForTrack(track)
+    ) {
         fetchTrackCover(track).then(async (newCoverUrl) => {
-            if (newCoverUrl) {
+            // artwork may have been set (or fetching turned off) while the lookup was in flight
+            if (newCoverUrl && !hasCustomArtworkForTrack(track) && get(appSettings).coverAutoFetch) {
                 console.log(`[Player] Auto-fetched cover for "${track.title}": ${newCoverUrl}`);
 
                 try {
@@ -1073,3 +1080,23 @@ export function getPlayerNativeAudioUsed(): boolean { return _nativeAudioUsed; }
 export function incrementPlayerNativeErrorCount(): number { return ++_nativeErrCount; }
 export function resetPlayerNativeErrorCount(): void { _nativeErrCount = 0; }
 export const PLAYER_NATIVE_ERROR_FALLBACK_THRESHOLD = 3;
+
+/**
+ * remove a fetched cover_url from the copies of tracks held by the player
+ * (current track and queue)
+ * those are snapshots, so they'd otherwise keep showing a cover that was just cleared
+ */
+export function stripFetchedCoversFromPlayer(trackIds: number[]): void {
+    if (trackIds.length === 0) return;
+    const idSet = new Set(trackIds);
+
+    const current = get(currentTrack);
+    if (current && idSet.has(current.id) && current.cover_url) {
+        currentTrack.set({ ...current, cover_url: null });
+    }
+
+    // only touch the queue if something in it is affected (avoids spurious queue updates)
+    if (get(queue).some(t => idSet.has(t.id) && t.cover_url)) {
+        queue.update(q => q.map(t => (idSet.has(t.id) ? { ...t, cover_url: null } : t)));
+    }
+}

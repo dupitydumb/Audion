@@ -1,8 +1,9 @@
 // MediaSession API + Windows taskbar thumbar integration
 import { get } from 'svelte/store';
 import { currentTrack, currentTime, duration, isPlaying, activeBackend, volume } from './stores';
-import { getTrackCoverSrc, convertFileSrc, listen, initWindowsThumbar, updateWindowsThumbarState } from '$lib/api/tauri';
-import { getAlbumCoverFromTracks } from '$lib/stores/library';
+import { convertFileSrc, listen, initWindowsThumbar, updateWindowsThumbarState } from '$lib/api/tauri';
+import { getAlbumCoverFromTracks, resolveTrackCover } from '$lib/stores/library';
+import { customArtworks, getCustomArtworkSync } from '$lib/stores/customArtwork';
 import type { Track } from '$lib/api/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { activeRemoteDevice } from '$lib/stores/websocket';
@@ -160,6 +161,26 @@ export function initMediaSessionHandlers(): void {
     console.log('[Player] MediaSession action handlers registered');
 }
 
+// data: URI -> temp file path (OS media integrations can't read data: URIs)
+// cached so the same custom artwork isn't rewritten to disk on every track change
+const _dataUriTempPaths = new Map<string, string>();
+async function dataUriToTempPath(dataUri: string): Promise<string> {
+    const cached = _dataUriTempPaths.get(dataUri);
+    if (cached) return cached;
+    const tempPath = await invoke<string>('save_notification_image', { dataUri });
+    _dataUriTempPaths.set(dataUri, tempPath);
+    return tempPath;
+}
+
+// refresh OS/browser media widgets when the user changes artwork for what's playing
+// (no-op on the initial emission because nothing is playing at module load)
+customArtworks.subscribe(() => {
+    const t = get(currentTrack);
+    if (!t) return;
+    updateMediaSessionMetadata(t).catch(() => { });
+    updateSmtcMetadata(t).catch(() => { });
+});
+
 export async function updateMediaSessionMetadata(track: Track): Promise<void> {
     if (!('mediaSession' in navigator)) return;
 
@@ -170,18 +191,17 @@ export async function updateMediaSessionMetadata(track: Track): Promise<void> {
     const artworkSources: MediaImage[] = [];
     let artUrl: string | null = null;
 
-    if (track.track_cover && track.track_cover.startsWith('data:')) {
+    // shared resolver: custom artwork -> track cover -> fetched URL -> album art
+    artUrl = resolveTrackCover(track);
+
+    if (artUrl && artUrl.startsWith('data:')) {
         try {
             console.log('[MediaSession] Saving Base64 artwork to temp file...');
-            const tempPath = await invoke<string>('save_notification_image', { dataUri: track.track_cover });
-            artUrl = convertFileSrc(tempPath);
+            artUrl = convertFileSrc(await dataUriToTempPath(artUrl));
             console.log('[MediaSession] Artwork saved to:', artUrl);
         } catch (e) {
             console.error('[MediaSession] Failed to save notification image:', e);
-            artUrl = track.track_cover;
         }
-    } else {
-        artUrl = getTrackCoverSrc(track);
     }
 
     if (!artUrl && track.album_id) {
@@ -334,7 +354,20 @@ async function _smtcApplyVolume(level: number): Promise<void> {
 export async function updateSmtcMetadata(track: Track, direction?: 'next' | 'previous'): Promise<void> {
     // raw source only => never a webview asset:// URL here. smtc.rs does the
     // platform specific file:// / percent-encoding conversion on its side
-    const rawCover = track.track_cover_path || track.cover_url || null;
+    // user-set custom artwork (track, then album) wins; data: URIs are written to a temp file
+    let rawCover: string | null = null;
+    const customs = get(customArtworks);
+    const custom =
+        getCustomArtworkSync(customs, 'track', track.id) ??
+        (track.album_id ? getCustomArtworkSync(customs, 'album', track.album_id) : null);
+    if (custom) {
+        try {
+            rawCover = custom.startsWith('data:') ? await dataUriToTempPath(custom) : custom;
+        } catch (e) {
+            console.warn('[SMTC] Failed to prepare custom artwork:', e);
+        }
+    }
+    rawCover = rawCover || track.track_cover_path || track.cover_url || null;
     try {
         await invoke('smtc_set_metadata', {
             title: track.title || 'Unknown Title',

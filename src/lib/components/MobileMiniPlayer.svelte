@@ -10,50 +10,35 @@
     progress,
   } from "$lib/stores/player";
   import { isFullScreen, openFullScreen } from "$lib/stores/ui";
-  import {
-    getTrackCoverSrc,
-    getAlbumArtSrc,
-    getAlbum,
-    getAlbumCoverSrc,
-  } from "$lib/api/tauri";
+  import { getAlbum } from "$lib/api/tauri";
+  import { resolveTrackCover } from "$lib/stores/library";
+  import { customArtworks } from "$lib/stores/customArtwork";
   import Icon from "$lib/components/Icon.svelte";
 
   let albumArt: string | null = null;
   let imageLoadFailed = false;
 
   $: if ($currentTrack) {
-    loadTrackCover($currentTrack);
+    loadTrackCover($currentTrack, $customArtworks);
   } else {
     albumArt = null;
     imageLoadFailed = false;
   }
 
-  async function loadTrackCover(track: any) {
+  async function loadTrackCover(track: any, _customs?: unknown) {
     imageLoadFailed = false;
 
-    if (track.track_cover_path) {
-      albumArt = getTrackCoverSrc(track);
-    } else if (track.track_cover) {
-      albumArt = getAlbumArtSrc(track.track_cover);
-    } else if (track.cover_url) {
-      albumArt = track.cover_url;
-    } else if (track.album_id) {
-      try {
-        const loadedAlbum = await getAlbum(track.album_id);
-        if (loadedAlbum) {
-          if (loadedAlbum.art_path) {
-            albumArt = getAlbumCoverSrc(loadedAlbum);
-          } else if (loadedAlbum.art_data) {
-            albumArt = getAlbumArtSrc(loadedAlbum.art_data);
-          } else {
-            albumArt = null;
-          }
-        }
-      } catch (err) {
-        console.error("Failed to load album cover in MobileMiniPlayer:", err);
-        albumArt = null;
+    try {
+      let src = resolveTrackCover(track);
+      // album art not cached yet => fetch the album and retry
+      if (!src && track.album_id) {
+        const album = await getAlbum(track.album_id);
+        if ($currentTrack?.id !== track.id) return;
+        src = resolveTrackCover(track, album);
       }
-    } else {
+      albumArt = src;
+    } catch (err) {
+      console.error("Failed to load album cover in MobileMiniPlayer:", err);
       albumArt = null;
     }
   }

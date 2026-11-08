@@ -63,6 +63,18 @@ rm -f squashfs-root/.DirIcon
 ln -s "$(basename "$ICON_FILE")" squashfs-root/.DirIcon
 test -e squashfs-root/.DirIcon || { echo "::error::.DirIcon still dangling"; exit 1; }
 
+# Normalize permissions
+# --appimage-extract leaves dirs at 0700 and some files at 0770
+chmod -R u+rwX,go+rX,go-w squashfs-root
+chmod 755 squashfs-root/AppRun squashfs-root/AppRun-real
+for f in squashfs-root/AppRun-original squashfs-root/AppRun.wrapped; do
+  if [ -f "$f" ]; then chmod 755 "$f"; fi
+done
+if find squashfs-root \( -type d ! -perm -o+rx \) -o \( -type f ! -perm -o+r \) | grep -q .; then
+  echo "::error::unreadable paths remain"
+  exit 1
+fi
+
 # Download and verify pinned appimagetool (v1.9.1)
 APPIMAGETOOL="/tmp/appimagetool"
 APPIMAGETOOL_VERSION="1.9.1"

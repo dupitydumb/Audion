@@ -526,6 +526,31 @@
     "playAll": "Tout lire",
     "library": "Bibliothèque Subsonic"
   },
+  "scanStatus": {
+    "importingFolder": "Importation du dossier...",
+    "scanningLibrary": "Analyse de la bibliothèque...",
+    "batchInfo": "Lot n° {batch} ({size} titres)",
+    "elapsed": "Temps écoulé : {elapsed}",
+    "etaRemaining": "Temps restant : {eta}",
+    "filesProgress": "{current} sur {total} fichiers",
+    "tracksAdded": "{count, plural, one {# ajouté} other {# ajoutés}}",
+    "tracksDeleted": "{count, plural, one {# supprimé} other {# supprimés}}",
+    "tracksDuplicates": "{count, plural, one {# doublon ignoré} other {# doublons ignorés}}",
+    "tracksFailed": "{count, plural, one {# échec} other {# échecs}}",
+    "tracksReady": "{count} titres prêts",
+    "tracksUpdated": "{count, plural, one {# mis à jour} other {# mis à jour}}"
+  },
+  "menu": {
+    "added": "ajoutés",
+    "updated": "mis à jour",
+    "deleted": "supprimés",
+    "duplicates": "doublons ignorés",
+    "failed": "échecs",
+    "scanComplete": "Analyse de la bibliothèque terminée : {parts}",
+    "scanCompleteSimple": "Analyse de la bibliothèque terminée",
+    "rescanComplete": "Nouvelle analyse terminée : {parts}",
+    "rescanCompleteNoChanges": "Nouvelle analyse terminée – aucun changement"
+  },
   "auth": {
     "back": "Retour",
     "connect": "Se connecter",
@@ -565,4 +590,3 @@
     "usernamePasswordRequired": "Le nom d'utilisateur et le mot de passe sont requis"
   }
 }
-

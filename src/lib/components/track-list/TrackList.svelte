@@ -3,8 +3,6 @@
   import {
     formatDuration,
     getAlbumArtSrc,
-    getTrackCoverSrc,
-    getAlbumCoverSrc,
     reorderPlaylistTracks,
   } from "$lib/api/tauri";
   import {
@@ -14,18 +12,25 @@
     addToQueue,
     type PlaybackContext,
   } from "$lib/stores/player";
-  import { contextMenu } from "$lib/stores/ui";
+  import { contextMenu, isFullScreen } from "$lib/stores/ui";
   import {
     albums,
     playlists,
     loadPlaylists,
-    getTrackAlbumCover,
+    resolveTrackCover,
     loadMoreTracks,
+    tracks as libraryTracks,
+    trackCount,
   } from "$lib/stores/library";
+  import { get } from "svelte/store";
+  import { appSettings } from "$lib/stores/settings";
+  import { isInputElement, isShortcutsHelpVisible } from "$lib/stores/shortcuts";
+  import { customArtworks } from "$lib/stores/customArtwork";
   import { pluginStore } from "$lib/stores/plugin-store";
   import { addToast } from "$lib/stores/toast";
   import { isOnline } from "$lib/stores/network";
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
+  import { fade } from "svelte/transition";
   import { multiSelect } from "$lib/stores/multiselect";
   import { isMobile } from "$lib/stores/mobile";
   import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
@@ -76,6 +81,12 @@
       lastAlbumsRef = $albums;
       trackAlbumArtCache.clear();
     }
+  }
+
+  // custom artwork changed (set/removed) => drop cached covers so rows re-resolve
+  $: {
+    void $customArtworks;
+    trackAlbumArtCache.clear();
   }
 
   // 2: Pre-compute playing track ID
@@ -293,8 +304,9 @@
 
   $: visibleTracksWithMetadata = virtualScrollState.visibleTracks.map(
     (track) => {
-      // Re-evaluate when runtime changes
+      // Re-evaluate when runtime or custom artwork changes
       const _ = runtime;
+      const _custom = $customArtworks;
       return {
         track,
         albumArt: getTrackAlbumArt(track),
@@ -395,32 +407,15 @@
     }, 300000);
   }
 
-  // Cached album art lookup
+  // Cached cover lookup - resolution itself lives in the shared resolver
   function getTrackAlbumArt(track: Track): string | null {
-    // Check cache first
     if (trackAlbumArtCache.has(track.id)) {
       return trackAlbumArtCache.get(track.id) ?? null;
     }
 
-    let result: string | null = null;
+    const album = track.album_id ? albumMap.get(track.album_id) : null;
+    const result = resolveTrackCover(track, album);
 
-    // Priority 1: Track's own cover (handles both track_cover_path and track_cover)
-    result = getTrackCoverSrc(track);
-
-    // Priority 2: If no track cover, try album art
-    if (!result && track.album_id) {
-      const album = albumMap.get(track.album_id);
-      if (album) {
-        result = getAlbumCoverSrc(album);
-      }
-    }
-
-    // Priority 3: fallback to library helper
-    if (!result) {
-      result = getTrackAlbumCover(track.id);
-    }
-
-    // Cache the result
     trackAlbumArtCache.set(track.id, result);
     return result;
   }
@@ -819,7 +814,126 @@
 
     return raw;
   }
+
+  // ── Alphabetical jump ───────────────────────────────────────────────────
+  // With "Alphabetical jump" on (keyboard shortcuts modal) and the list sorted by title, artist
+  // or album, typing a letter scrolls to the first track in the list that starts with it.
+  const JUMP_SORT_FIELDS = new Set<SortField>(["title", "artist", "album"]);
+  let jumpInFlight = false;
+
+  function jumpValue(track: Track): string {
+    const raw =
+      sortField === "title"
+        ? track.title
+        : sortField === "artist"
+          ? track.artist
+          : track.album;
+    // same normalisation the sort itself uses (lower-cased), minus leading spaces
+    return (raw || "").toLowerCase().trimStart();
+  }
+
+  function findFirstStartingWith(char: string): number {
+    for (let i = 0; i < sortedTracks.length; i++) {
+      if (jumpValue(sortedTracks[i]).startsWith(char)) return i;
+    }
+    return -1;
+  }
+
+  // the main library list is loaded in batches; a letter may sit in a batch that isn't loaded yet
+  function canLoadMoreLibrary(): boolean {
+    const library = get(libraryTracks);
+    return tracks === library && library.length < get(trackCount);
+  }
+
+  // ── Jump indicator: an A–Z strip on the right with a bubble for the jumped-to letter ──
+  const JUMP_STRIP_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+  const JUMP_BUBBLE_MS = 800; // how long the letter bubble stays
+  const JUMP_STRIP_IDLE_MS = 1600; // the strip goes away this long after the last key press
+
+  let jumpStripVisible = false;
+  let jumpBubbleVisible = false;
+  let jumpLetter = "";
+  let jumpLetterIndex = -1; // position in the strip; -1 for letters outside A–Z (e.g. Cyrillic)
+  let jumpMatched = true;
+  let jumpBubbleTimer: ReturnType<typeof setTimeout> | undefined;
+  let jumpStripTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function showJumpIndicator(char: string) {
+    jumpLetter = char.toUpperCase();
+    jumpLetterIndex = JUMP_STRIP_LETTERS.indexOf(jumpLetter);
+    jumpMatched = true;
+    jumpStripVisible = true;
+    jumpBubbleVisible = true;
+
+    // every key press restarts both timers: bubble fades first, strip after a quiet period
+    clearTimeout(jumpBubbleTimer);
+    clearTimeout(jumpStripTimer);
+    jumpBubbleTimer = setTimeout(() => (jumpBubbleVisible = false), JUMP_BUBBLE_MS);
+    jumpStripTimer = setTimeout(() => (jumpStripVisible = false), JUMP_STRIP_IDLE_MS);
+  }
+
+  onDestroy(() => {
+    clearTimeout(jumpBubbleTimer);
+    clearTimeout(jumpStripTimer);
+  });
+
+  function scrollToIndex(index: number) {
+    if (!containerElement) return;
+    containerElement.scrollTop = index * TRACK_ROW_HEIGHT;
+  }
+
+  async function handleAlphabeticalJump(e: KeyboardEvent) {
+    const settings = get(appSettings);
+    if (!settings.alphabeticalJump || !settings.shortcutsEnabled) return;
+
+    // bare letters only (Alt + letter etc. stay shortcuts), ignore key-repeat
+    if (e.ctrlKey || e.altKey || e.metaKey || e.shiftKey || e.repeat || e.defaultPrevented) return;
+    if (!/^\p{L}$/u.test(e.key)) return;
+
+    // only when the order the user sees is alphabetical
+    if (!sortField || !JUMP_SORT_FIELDS.has(sortField)) return;
+
+    // not while typing, in a dialog/overlay, or when this list isn't the one on screen
+    if (isInputElement(e.target)) return;
+    if (get(isShortcutsHelpVisible) || get(isFullScreen) || metadataModalTrack) return;
+    if (!containerElement || containerElement.getClientRects().length === 0) return;
+    if (jumpInFlight) return;
+
+    e.preventDefault();
+    const char = e.key.toLowerCase();
+    showJumpIndicator(char);
+
+    jumpInFlight = true;
+    try {
+      let index = findFirstStartingWith(char);
+
+      // not in what's loaded: keep loading library batches until found or none are left
+      let busyRetries = 0;
+      while (index === -1 && canLoadMoreLibrary()) {
+        const loaded = await loadMoreTracks();
+        if (!loaded) {
+          // loadMoreTracks also returns false while another load is running - wait, then retry
+          if (++busyRetries > 20) break;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          continue;
+        }
+        busyRetries = 0;
+        await tick(); // let the new tracks flow through the sort
+        index = findFirstStartingWith(char);
+      }
+
+      if (index !== -1) {
+        scrollToIndex(index);
+      } else if (jumpLetter === char.toUpperCase()) {
+        jumpMatched = false; // nothing starts with this letter: show it dimmed
+      }
+    } finally {
+      jumpInFlight = false;
+    }
+  }
 </script>
+
+<svelte:window on:keydown={handleAlphabeticalJump} />
 
 {#if metadataModalTrack}
   <MetadataModal
@@ -931,6 +1045,29 @@
       </div>
     </div>
   {/if}
+
+  <!-- Alphabetical jump indicator (purely visual) -->
+  {#if !$isMobile}
+    <div
+      class="jump-strip"
+      class:visible={jumpStripVisible}
+      style="right: {scrollbarWidth + 8}px;"
+      aria-hidden="true"
+    >
+      {#each JUMP_STRIP_LETTERS as letter, i}
+        <span class="jump-cell">
+          <span class="jump-glyph" class:active={jumpStripVisible && i === jumpLetterIndex}>{letter}</span>
+          {#if jumpBubbleVisible && i === jumpLetterIndex}
+            <span class="jump-bubble" class:nomatch={!jumpMatched} transition:fade={{ duration: 180 }}>{letter}</span>
+          {/if}
+        </span>
+      {/each}
+      <!-- letters outside A–Z (e.g. Cyrillic) have no cell: show the bubble beside the strip centre -->
+      {#if jumpBubbleVisible && jumpLetterIndex === -1}
+        <span class="jump-bubble jump-bubble-free" class:nomatch={!jumpMatched} transition:fade={{ duration: 180 }}>{jumpLetter}</span>
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -939,6 +1076,92 @@
     flex-direction: column;
     height: 100%;
     overflow: hidden;
+    position: relative; /* anchors the jump strip */
+  }
+
+  /* alphabetical jump indicator */
+  .jump-strip {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    height: min(390px, calc(100% - 96px));
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2px 0;
+    pointer-events: none;
+    z-index: 20;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .jump-strip.visible {
+    opacity: 1;
+    transition-duration: 0.15s;
+  }
+
+  .jump-cell {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
+  .jump-glyph {
+    display: block;
+    color: #fff;
+    opacity: 0.7;
+    font-size: 10px;
+    line-height: 1;
+    font-weight: 500;
+    text-shadow: 0 0 3px rgba(0, 0, 0, 0.7);
+    transition: transform 0.15s ease, opacity 0.15s ease;
+  }
+
+  .jump-glyph.active {
+    opacity: 1;
+    font-weight: 700;
+    transform: scale(1.6);
+  }
+
+  .jump-bubble {
+    position: absolute;
+    right: calc(100% + 10px);
+    top: 50%;
+    transform: translateY(-50%);
+    min-width: 28px;
+    height: 28px;
+    padding: 0 6px;
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    color: #000;
+    border-radius: 6px;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  }
+
+  .jump-bubble.nomatch {
+    background: rgba(255, 255, 255, 0.55);
+  }
+
+  /* letters with no strip cell (non A–Z) */
+  .jump-bubble-free {
+    top: 50%;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .jump-glyph {
+      transition: none;
+    }
   }
 
   .list-toolbar {

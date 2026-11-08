@@ -199,7 +199,7 @@
                 }
 
                 console.log(
-                    `Scan complete: ${result.tracks_added} added, ${result.tracks_updated} updated, ${result.tracks_deleted} deleted`,
+                    `Scan complete: ${result.tracks_added} added, ${result.tracks_updated} updated, ${result.tracks_duplicates} duplicates skipped, ${result.tracks_failed} failed, ${result.tracks_deleted} deleted`,
                 );
 
                 // Tracks already loaded progressively — just fetch albums/artists
@@ -220,6 +220,18 @@
                             values: { count: result.tracks_updated },
                         }),
                     );
+                if (result.tracks_duplicates > 0)
+                    parts.push(
+                        $_("scanStatus.tracksDuplicates", {
+                            values: { count: result.tracks_duplicates },
+                        }),
+                    );
+                if (result.tracks_failed > 0)
+                    parts.push(
+                        $_("scanStatus.tracksFailed", {
+                            values: { count: result.tracks_failed },
+                        }),
+                    );
                 if (result.tracks_deleted > 0)
                     parts.push(
                         $_("scanStatus.tracksDeleted", {
@@ -232,7 +244,11 @@
                         ? $_("menu.scanComplete", { values: { parts: parts.join(", ") } })
                         : $_("menu.scanCompleteSimple");
 
-                addToast(message, "success", 4000);
+                addToast(
+                    message,
+                    result.tracks_failed > 0 ? "warning" : "success",
+                    result.tracks_failed > 0 ? 7000 : 4000,
+                );
             }
         } catch (error) {
             scanError = error instanceof Error ? error.message : String(error);
