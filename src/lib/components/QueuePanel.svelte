@@ -17,8 +17,9 @@
         shuffledIndices,
         shuffledIndex,
     } from "$lib/stores/player";
-    import { albums } from "$lib/stores/library";
-    import { formatDuration, getAlbumArtSrc, getTrackCoverSrc, getAlbumCoverSrc } from "$lib/api/tauri";
+    import { albums, resolveTrackCover } from "$lib/stores/library";
+    import { customArtworks } from "$lib/stores/customArtwork";
+    import { formatDuration } from "$lib/api/tauri";
     import ArtistLinks from "$lib/components/ArtistLinks.svelte";
     import { goToArtistDetail } from "$lib/stores/view";
     import { onMount, onDestroy } from "svelte";
@@ -45,29 +46,13 @@
     // Create album map for art lookup
     $: albumMap = new Map($albums.map((a) => [a.id, a]));
 
-    function getTrackArt(track: Track): string | null {
+    // reassigned (not a plain function)
+    // so the template re-renders when custom artwork or the album list changes
+    $: getTrackArt = (track: Track): string | null => {
         if (!track) return null;
-        
-        // Priority 1: Track's file-based cover
-        if (track.track_cover_path) return getTrackCoverSrc(track);
-        
-        // Priority 2: Track's base64 cover - old
-        if (track.track_cover) return getAlbumArtSrc(track.track_cover);
-        
-        // Priority 3: Streaming cover URL
-        if (track.cover_url) return track.cover_url;
-        
-        // Priority 4 & 5: Album art (file-based or base64)
-        if (!track.album_id) return null;
-        const album = albumMap.get(track.album_id);
-        if (!album) return null;
-        
-        // Priority 4: Album's file-based art
-        if (album.art_path) return getAlbumCoverSrc(album);
-        
-        // Priority 5: Album's base64 art - old
-        return album.art_data ? getAlbumArtSrc(album.art_data) : null;
-    }
+        void $customArtworks;
+        return resolveTrackCover(track, track.album_id ? albumMap.get(track.album_id) : null);
+    };
 
     // Derived queue state for display
     let historyTracks: Array<{ track: Track; index: number }> = [];

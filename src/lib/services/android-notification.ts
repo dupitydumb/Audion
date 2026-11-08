@@ -1,7 +1,7 @@
 import { get } from 'svelte/store';
 import { currentTrack, isPlaying, togglePlay, nextTrack, previousTrack, currentTime, duration, shuffle, repeat, toggleShuffle, cycleRepeat, playTrackById } from '$lib/stores/player';
 import { nativeAudioStop } from '$lib/services/native-audio';
-import { getTrackCoverSrc } from '$lib/api/tauri';
+import { resolveTrackCover } from '$lib/stores/library';
 import { formatDuration } from '$lib/api/tauri';
 import { isAndroid, isTauri } from '$lib/api/tauri';
 import { currentTrackLiked, toggleCurrentTrackLike } from '$lib/stores/liked';
@@ -126,7 +126,7 @@ export async function initAndroidNotification() {
 
         const playing = get(isPlaying);
         const loved = get(currentTrackLiked);
-        const artUrl = getTrackCoverSrc(track);
+        const artUrl = resolveTrackCover(track);
         const pos = get(currentTime);
         const dur = get(duration);
 
