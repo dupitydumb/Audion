@@ -2,7 +2,7 @@
 import { writable, derived, get } from 'svelte/store';
 import type { Track, Album, Artist, Playlist, ScanBatchEvent } from '$lib/api/tauri';
 import { getLibrary, getPlaylists, getPlaylistTracks, getPlaylistTrackCounts, getAlbumCoverSrc, getAlbumArtSrc, getTracksPaginated, getAlbumsPaginated, searchLibrary, convertFileSrc } from '$lib/api/tauri';
-import { customArtworks, getCustomArtworkSync } from './customArtwork';
+import { customArtworks, getCustomArtworkSync, notifyCoverChange } from './customArtwork';
 import { playlistCovers, getPlaylistCoverSync } from './playlistCovers';
 
 // BLOB URL CONVERSION
@@ -475,6 +475,33 @@ export function updateTrackCover(trackId: number, coverUrl: string): void {
 }
 
 
+/**
+ * drop fetched covers for the given tracks from every frontend cache and the library store
+ * call after the backend has cleared them (clearFetchedCovers)
+ * the tracks involved have no cover of their own, so whatever sits in trackCoverCache for them is the fetched URL
+ * loadLibrary() does not evict trackCoverCache, which is why this is needed
+ */
+export function purgeFetchedCovers(trackIds: number[]): void {
+    if (trackIds.length === 0) return;
+    const idSet = new Set(trackIds);
+
+    for (const id of trackIds) {
+        const metadata = trackMetadataCache.get(id);
+        if (metadata) {
+            trackMetadataCache.set(id, { ...metadata, cover_url: null });
+        }
+        trackCoverCache.delete(id);
+        fullTrackCache.delete(id);
+    }
+
+    tracks.update(current =>
+        current.map(t => (idSet.has(t.id) ? ({ ...t, cover_url: null } as Track) : t))
+    );
+
+    // make every cover surface re-resolve
+    notifyCoverChange();
+}
+
 // ingestAlbums — caches album metadata and album art separately
 // Returns lightweight Album[] for the store
 function ingestAlbums(incoming: Album[]): Album[] {
@@ -601,37 +628,66 @@ export function getAlbumArt(albumId: number): string | null {
     return albumArtCache.get(albumId) || null;
 }
 
+/** the minimum a track needs for cover resolution (satisfied by Track and TrackMetadata) */
+export type CoverTrackLike = Pick<Track, 'id'> &
+    Partial<Pick<Track, 'album_id' | 'track_cover_path' | 'track_cover' | 'cover_url'>>;
+
 /**
- * Get album cover for a track (follows priority: track_cover → cover_url → album art)
+ * single source for deciding "which cover does this track show"
+ * every UI surface (lists, players, queue, search, media session, ...) must go through here
+ *
+ * priority:
+ *   1. custom track artwork (user override)
+ *   2. custom album artwork (user override)
+ *   3. track's own cover (file path -> base64 -> cached/blob)
+ *   4. external / fetched cover URL
+ *   5. album art (cache first, then the optional 'album' object for callers that already hold it)
+ *
+ * reads the stores synchronously via get()
+ * a Svelte caller should reference $customArtworks in its reactive statement to re-render
+ */
+export function resolveTrackCover(track: CoverTrackLike | null | undefined, album?: Album | null): string | null {
+    if (!track) return null;
+
+    const customs = get(customArtworks);
+
+    // 1. Custom track artwork
+    const customTrack = getCustomArtworkSync(customs, 'track', track.id);
+    if (customTrack) return customTrack;
+
+    // 2. custom album artwork
+    if (track.album_id) {
+        const customAlbum = getCustomArtworkSync(customs, 'album', track.album_id);
+        if (customAlbum) return customAlbum;
+    }
+
+    // 3. track's own cover
+    if (track.track_cover_path) return convertFileSrc(track.track_cover_path);
+    if (track.track_cover) return getAlbumArtSrc(track.track_cover, false);
+    const cachedTrackCover = trackCoverCache.get(track.id);
+    if (cachedTrackCover) return cachedTrackCover;
+
+    // 4. external / fetched cover URL
+    if (track.cover_url) return track.cover_url;
+
+    // 5. album art
+    if (track.album_id) {
+        const cachedAlbumArt = albumArtCache.get(track.album_id);
+        if (cachedAlbumArt) return cachedAlbumArt;
+    }
+    if (album) return getAlbumCoverSrc(album) ?? (album.art_data ? getAlbumArtSrc(album.art_data) : null);
+
+    return null;
+}
+
+/**
+ * get album cover for a track by id
+ * (cache-backed wrapper around resolveTrackCover)
  */
 export function getTrackAlbumCover(trackId: number): string | null {
     const metadata = trackMetadataCache.get(trackId);
     if (!metadata) return null;
-
-    // Priority 0: Custom track artwork
-    const customTrack = getCustomArtworkSync(get(customArtworks), 'track', trackId);
-    if (customTrack) return customTrack;
-
-    // Priority 1: Track's embedded cover
-    const trackCover = trackCoverCache.get(trackId);
-    if (trackCover) return trackCover;
-
-    // Priority 2: External cover URL
-    if (metadata.cover_url) return metadata.cover_url;
-
-    // Priority 3: Custom album artwork
-    if (metadata.album_id) {
-        const customAlbum = getCustomArtworkSync(get(customArtworks), 'album', metadata.album_id);
-        if (customAlbum) return customAlbum;
-    }
-
-    // Priority 4: Album art
-    if (metadata.album_id) {
-        const albumArt = albumArtCache.get(metadata.album_id);
-        if (albumArt) return albumArt;
-    }
-
-    return null;
+    return resolveTrackCover(metadata);
 }
 
 // Priority: album art cache → album metadata art_path → first track cover
@@ -852,6 +908,10 @@ export function removeTracksByIds(ids: number[]): void {
     });
 
     trackCount.update(c => Math.max(0, c - ids.length));
+}
+
+export function updateTrackDurationInMemory(trackId: number, durationSecs: number): void {
+    tracks.update(existing => existing.map(t => t.id === trackId ? { ...t, duration: durationSecs } : t));
 }
 
 /**

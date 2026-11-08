@@ -2,6 +2,8 @@
 import { writable, derived, get } from 'svelte/store';
 import { likeTrack, unlikeTrack, getLikedTrackIds } from '$lib/api/tauri';
 import { currentTrack } from '$lib/stores/player';
+import { refreshAll } from '$lib/stores/library';
+import { invoke } from '@tauri-apps/api/core';
 
 // Set of liked track IDs for O(1) lookups
 export const likedTrackIds = writable<Set<number>>(new Set());
@@ -42,24 +44,63 @@ export function isLiked(trackId: number): boolean {
 
 // Toggle like/unlike a track
 export async function toggleLike(trackId: number): Promise<void> {
+    const playing = get(currentTrack);
+    let targetId = trackId;
+
+    // If this is an external streaming track that may not be in the SQLite DB yet:
+    if (playing && (playing.id === trackId || (playing as any).track_id === trackId)) {
+        if (playing.source_type && playing.source_type !== 'local' && playing.external_id) {
+            try {
+                const dbId = await invoke<number>('add_external_track', {
+                    track: {
+                        title: playing.title,
+                        artist: playing.artist,
+                        album: playing.album || null,
+                        duration: playing.duration || null,
+                        cover_url: playing.cover_url || null,
+                        source_type: playing.source_type,
+                        external_id: playing.external_id,
+                        format: playing.format || null,
+                        bitrate: playing.bitrate || null,
+                        stream_url: (playing as any).stream_url || null,
+                        track_number: playing.track_number || null,
+                        disc_number: playing.disc_number || null,
+                        musicbrainz_recording_id: (playing as any).musicbrainz_recording_id || null,
+                        metadata_json: (playing as any).metadata_json ? JSON.stringify((playing as any).metadata_json) : null,
+                    }
+                });
+                if (typeof dbId === 'number' && dbId > 0) {
+                    targetId = dbId;
+                    if (playing.id !== dbId) {
+                        playing.id = dbId;
+                        currentTrack.set(playing);
+                    }
+                }
+            } catch (err) {
+                console.warn('[Liked] Failed to ensure external track is in DB before like:', err);
+            }
+        }
+    }
+
     const currentIds = get(likedTrackIds);
-    const wasLiked = currentIds.has(trackId);
+    const wasLiked = currentIds.has(targetId);
 
     // Optimistic update
     const newIds = new Set(currentIds);
     if (wasLiked) {
-        newIds.delete(trackId);
+        newIds.delete(targetId);
     } else {
-        newIds.add(trackId);
+        newIds.add(targetId);
     }
     likedTrackIds.set(newIds);
 
     try {
         if (wasLiked) {
-            await unlikeTrack(trackId);
+            await unlikeTrack(targetId);
         } else {
-            await likeTrack(trackId);
+            await likeTrack(targetId);
         }
+        refreshAll().catch(() => {});
     } catch (error) {
         console.error('[Liked] Failed to toggle like:', error);
         // Revert on error

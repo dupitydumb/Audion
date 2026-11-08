@@ -266,6 +266,25 @@ pub async fn update_track_after_download(
         .map_err(|e| format!("Failed to update track after download: {}", e))
 }
 
+/// remove all covers that were auto-fetched online
+/// (see db::tracks::clear_fetched_cover_urls)
+/// returns the ids of the tracks that were cleared so the frontend can purge its caches
+#[command]
+pub async fn clear_fetched_covers(state: State<'_, Database>) -> Result<Vec<i64>, String> {
+    let conn = state.conn.lock().unwrap();
+    let ids = db::queries::clear_fetched_cover_urls(&conn)
+        .map_err(|e| format!("Failed to clear fetched covers: {}", e))?;
+
+    // same as update_track_cover_url: keep sync in step so a stale cover isn't restored
+    for id in &ids {
+        if let Ok(Some(track)) = db::queries::get_track_by_id(&conn, *id) {
+            let _ = db::queries::enqueue_track_sync_change(&conn, &track, "update");
+        }
+    }
+
+    Ok(ids)
+}
+
 #[command]
 pub async fn update_track_cover_url(
     state: State<'_, Database>,
@@ -275,6 +294,24 @@ pub async fn update_track_cover_url(
     let conn = state.conn.lock().unwrap();
     db::queries::update_track_cover_url(&conn, track_id, cover_url.as_deref())
         .map_err(|e| format!("Failed to update cover URL: {}", e))?;
+
+    // Enqueue sync change
+    if let Ok(Some(track)) = db::queries::get_track_by_id(&conn, track_id) {
+        let _ = db::queries::enqueue_track_sync_change(&conn, &track, "update");
+    }
+
+    Ok(())
+}
+
+#[command]
+pub async fn update_track_duration(
+    state: State<'_, Database>,
+    track_id: i64,
+    duration: i64,
+) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    db::queries::update_track_duration(&conn, track_id, duration)
+        .map_err(|e| format!("Failed to update track duration: {}", e))?;
 
     // Enqueue sync change
     if let Ok(Some(track)) = db::queries::get_track_by_id(&conn, track_id) {

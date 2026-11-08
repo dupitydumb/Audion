@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Audion",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "identifier": "com.audion.app",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -58,7 +58,25 @@
     },
     "linux": {
       "deb": {
-        "desktopTemplate": "../packaging/linux/audion.desktop.hbs"
+        "desktopTemplate": "../packaging/linux/audion.desktop.hbs",
+        "section": "sound",
+        "priority": "optional",
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libasound2 | libasound2t64",
+          "libayatana-appindicator3-1 | libappindicator3-1",
+          "xdg-utils"
+        ]
+      },
+      "rpm": {
+        "desktopTemplate": "../packaging/linux/audion.desktop.hbs",
+        "depends": [
+          "webkit2gtk4.1",
+          "gtk3",
+          "alsa-lib",
+          "libappindicator-gtk3"
+        ]
       }
     },
     "macOS": {
@@ -66,9 +84,18 @@
     },
     "fileAssociations": [
       {
-        "ext": ["mp3"],
+        "ext": [
+          "mp3"
+        ],
         "name": "MP3 Audio",
         "description": "MP3 Audio File",
+        "mimeType": "audio/mpeg",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["mp2", "mp1"],
+        "name": "MPEG Audio",
+        "description": "MPEG Layer I/II Audio File",
         "mimeType": "audio/mpeg",
         "role": "Viewer"
       },
@@ -80,31 +107,61 @@
         "role": "Viewer"
       },
       {
-        "ext": ["wav"],
+        "ext": ["wav", "wave"],
         "name": "WAV Audio",
         "description": "WAV Audio File",
         "mimeType": "audio/wav",
         "role": "Viewer"
       },
       {
-        "ext": ["ogg"],
+        "ext": ["aiff", "aif", "aifc", "afc"],
+        "name": "AIFF Audio",
+        "description": "AIFF Audio File",
+        "mimeType": "audio/aiff",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["caf"],
+        "name": "CAF Audio",
+        "description": "Core Audio Format File",
+        "mimeType": "audio/x-caf",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["ogg", "oga"],
         "name": "OGG Audio",
         "description": "OGG Vorbis Audio File",
         "mimeType": "audio/ogg",
         "role": "Viewer"
       },
       {
-        "ext": ["opus"],
+        "ext": [
+          "opus"
+        ],
         "name": "Opus Audio",
         "description": "Opus Audio File",
         "mimeType": "audio/opus",
         "role": "Viewer"
       },
       {
-        "ext": ["m4a"],
+        "ext": ["m4a", "m4b", "m4p", "m4r"],
         "name": "M4A Audio",
         "description": "M4A Audio File",
         "mimeType": "audio/mp4",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["mp4"],
+        "name": "MP4 Audio",
+        "description": "MP4 Audio File",
+        "mimeType": "audio/mp4",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["mov"],
+        "name": "QuickTime Audio",
+        "description": "QuickTime Audio File",
+        "mimeType": "video/quicktime",
         "role": "Viewer"
       },
       {
@@ -115,10 +172,26 @@
         "role": "Viewer"
       },
       {
-        "ext": ["alac"],
+        "ext": [
+          "alac"
+        ],
         "name": "ALAC Audio",
         "description": "Apple Lossless Audio File",
         "mimeType": "audio/x-alac",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["mka"],
+        "name": "Matroska Audio",
+        "description": "Matroska Audio File",
+        "mimeType": "audio/x-matroska",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["webm"],
+        "name": "WebM Audio",
+        "description": "WebM Audio File",
+        "mimeType": "audio/webm",
         "role": "Viewer"
       }
     ],

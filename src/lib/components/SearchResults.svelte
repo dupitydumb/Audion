@@ -21,16 +21,13 @@
     import { playTracks } from "$lib/stores/player";
     import ArtistLinks from "$lib/components/ArtistLinks.svelte";
     import MarqueeText from "$lib/components/MarqueeText.svelte";
-    import {
-        getAlbumArtSrc,
-        getTrackCoverSrc,
-        getAlbumCoverSrc,
-        formatDuration,
-    } from "$lib/api/tauri";
+    import { formatDuration } from "$lib/api/tauri";
     import {
         albums,
         getAlbumCoverFromTracks,
+        resolveTrackCover,
     } from "$lib/stores/library";
+    import { customArtworks } from "$lib/stores/customArtwork";
     import { contextMenu } from "$lib/stores/ui";
     import { playlistCovers } from "$lib/stores/playlistCovers";
     import {
@@ -108,46 +105,29 @@
     // Create album map for track art lookup
     $: albumMap = new Map($albums.map((a) => [a.id, a]));
 
-    // Get track art with proper priority
-    function getTrackArt(track: {
+    // Get track art via the shared resolver
+    // reassigned so the template re-renders when
+    // custom artwork or the album list changes
+    $: getTrackArt = (track: {
+        id: number;
         track_cover_path?: string | null;
         track_cover?: string | null;
         cover_url?: string | null;
         album_id?: number | null;
-    }): string | null {
-        // Priority 1: Track's file-based cover
-        if (track.track_cover_path) {
-            return getTrackCoverSrc(track as any);
-        }
-        // Priority 2: Track's base64 cover - old, for migration and as fallback
-        if (track.track_cover) {
-            return getAlbumArtSrc(track.track_cover);
-        }
-        // Priority 2: External track cover URL
-        if (track.cover_url) {
-            return track.cover_url;
-        }
-        // Priority 4 & 5: Album art (file-based or base64)
-        if (!track.album_id) return null;
-        const album = albumMap.get(track.album_id);
-        if (!album) return null;
+    }): string | null => {
+        void $customArtworks;
+        return resolveTrackCover(track, track.album_id ? albumMap.get(track.album_id) : null);
+    };
 
-        // Priority 4: Album's file-based art
-        if (album.art_path) {
-            return getAlbumCoverSrc(album);
-        }
-        // Priority 5: Album's base64 art - old
-        return album.art_data ? getAlbumArtSrc(album.art_data) : null;
-    }
-
-    // Get album cover with proper priority
-    function getAlbumCover(album: {
+    // get album cover (reassigned so custom artwork changes re-render)
+    $: getAlbumCover = (album: {
         id: number;
         art_path?: string | null;
         art_data?: string | null;
-    }): string | null {
+    }): string | null => {
+        void $customArtworks;
         return getAlbumCoverFromTracks(album.id);
-    }
+    };
 
     function handleTrackClick(index: number) {
         const track = $searchResults.tracks[index];

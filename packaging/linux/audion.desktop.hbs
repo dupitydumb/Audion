@@ -1,25 +1,26 @@
 [Desktop Entry]
 Categories={{categories}}
 {{#if comment}}Comment={{comment}}
-{{/if}}Exec=env GTK_MODULES= WEBKIT_FORCE_SANDBOX= WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 {{exec}}
+{{/if}}Exec={{exec}} %U
 Icon={{icon}}
 Name={{name}}
 Terminal=false
 Type=Application
+MimeType=audio/mpeg;audio/flac;audio/x-wav;audio/ogg;audio/opus;audio/mp4;audio/aac;audio/x-alac;x-scheme-handler/audion;
 Actions=Play;Pause;Next;Previous;
 
 [Desktop Action Play]
 Name=Play
-Exec=env GTK_MODULES= WEBKIT_FORCE_SANDBOX= WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 {{exec}} --play
+Exec={{exec}} --play
 
 [Desktop Action Pause]
 Name=Pause
-Exec=env GTK_MODULES= WEBKIT_FORCE_SANDBOX= WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 {{exec}} --pause
+Exec={{exec}} --pause
 
 [Desktop Action Next]
 Name=Next
-Exec=env GTK_MODULES= WEBKIT_FORCE_SANDBOX= WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 {{exec}} --next
+Exec={{exec}} --next
 
 [Desktop Action Previous]
 Name=Previous
-Exec=env GTK_MODULES= WEBKIT_FORCE_SANDBOX= WEBKIT_DISABLE_DMABUF_RENDERER=1 WEBKIT_DISABLE_COMPOSITING_MODE=1 {{exec}} --previous
+Exec={{exec}} --previous

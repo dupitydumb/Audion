@@ -39,7 +39,9 @@ export async function html5Play(path: string, volume: number, startTime = 0, rep
 
     const finalKind = classifyAudioPath(path);
 
-    if (finalKind === 'blob' && !rawAudioBlobUrls.has(path)) {
+    const isDash = finalKind === 'blob' && (await isDashManifest(path));
+
+    if (isDash) {
         audio = await prepareHtml5AudioForPath(audio, path);
         audio.volume = volume;
 
@@ -116,7 +118,7 @@ export async function html5Preload(path: string, trackId: string | number | null
 
     const finalKind = classifyAudioPath(path);
 
-    if (finalKind === 'blob') {
+    if (finalKind === 'blob' && (await isDashManifest(path))) {
         isPreloadDash = true;
         try {
             const mpdText = await fetch(path).then(r => r.text());
@@ -497,12 +499,40 @@ let preloadReplayGainDb: number | null = null;
 // dash.js player instance for Hi-Res DASH/MPD streaming
 let dashPlayer: any | null = null;
 
-// Raw-audio blob URLs that must NOT go through dash.js (e.g. subsonic proxy blobs)
+// Raw-audio blob URLs that must NOT go through dash.js (e.g. subsonic proxy blobs, YouTube audio streams)
 const rawAudioBlobUrls = new Set<string>();
 
 /** Register a blob URL as raw audio (not a DASH manifest) so html5Play skips dash.js. */
 export function html5RegisterRawBlobUrl(url: string): void {
     rawAudioBlobUrls.add(url);
+}
+
+/**
+ * Check whether a blob URL points to a DASH manifest (application/dash+xml / <MPD)
+ * vs raw audio (audio/mp4, audio/webm, audio/flac, etc.)
+ */
+async function isDashManifest(blobUrl: string): Promise<boolean> {
+    if (rawAudioBlobUrls.has(blobUrl)) return false;
+    try {
+        const res = await fetch(blobUrl);
+        const ct = (res.headers.get('content-type') || '').toLowerCase();
+        if (ct.startsWith('audio/') || ct.startsWith('video/')) {
+            rawAudioBlobUrls.add(blobUrl);
+            return false;
+        }
+        if (ct.includes('dash+xml')) {
+            return true;
+        }
+        const blob = await res.blob();
+        const header = await blob.slice(0, 512).text();
+        if (header.includes('<MPD') || header.includes('<mpd')) {
+            return true;
+        }
+        rawAudioBlobUrls.add(blobUrl);
+        return false;
+    } catch {
+        return false;
+    }
 }
 
 /**
@@ -660,12 +690,15 @@ function setupHtml5AudioListeners(audio: HTMLAudioElement): void {
     });
 
     // Push duration as soon as the browser parses it — poller alone would lag up to 50ms
-    audio.addEventListener('durationchange', () => {
+    const handleDuration = () => {
         if (audio !== html5Audio) return;
-        if (audio.duration && !isNaN(audio.duration)) {
+        if (audio.duration && !isNaN(audio.duration) && isFinite(audio.duration)) {
             registeredCallbacks?.onTimeUpdate(audio.currentTime, audio.duration);
         }
-    });
+    };
+
+    audio.addEventListener('durationchange', handleDuration);
+    audio.addEventListener('loadedmetadata', handleDuration);
 }
 
 // =============================================================================

@@ -2,8 +2,7 @@
   import { slide } from "svelte/transition";
   import { createEventDispatcher } from "svelte";
   import Icon from "$lib/components/Icon.svelte";
-  import { theme } from "$lib/stores/theme";
-  import { parseThemePackage } from "$lib/stores/theme";
+  import { theme, parseSkinPackage } from "$lib/stores/theme";
   import { browser } from "$app/environment";
   import { isTauri } from "$lib/api/tauri";
   import { _ } from "svelte-i18n";
@@ -23,6 +22,8 @@
     accentColor: string;
     previewColors?: string[];
     hasEffect?: boolean;
+    hasCss?: boolean;
+    schemesCount?: number;
   };
 
   let state: 'idle' | 'loading' | 'loaded' | 'error' = 'idle';
@@ -69,8 +70,11 @@
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
       const raw = JSON.parse(text);
-      const pkg = parseThemePackage(raw);
+      const pkg = parseSkinPackage(raw);
       theme.applyPackage(pkg);
+      if (pkg.customJs) {
+        theme.setAllowCustomJs(true);
+      }
       lastInstalledId = card.id;
       try { localStorage.setItem('tb_last_installed', card.id); } catch {}
       installing = { ...installing, [card.id]: 'done' };
@@ -100,18 +104,13 @@
 </script>
 
 <section class="settings-section" aria-labelledby="theme-browser-heading">
-  <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <Icon name="monitor" size="lg" className="accordion-icon" />
-    <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.themeBrowser', { default: 'Theme Browser' })}</span>
-      <span class="accordion-subtitle">{$_('settings.themeBrowserSubtitle', { default: 'Browse and install community themes' })}</span>
-    </div>
-    <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
-  </button>
+  <div class="section-header-row">
+    <h2 class="settings-section-title" id="theme-browser-heading">{$_('settings.themeBrowser', { default: 'Community Skins' })}</h2>
+    <p class="settings-section-desc">{$_('settings.themeBrowserSubtitle', { default: 'Browse and install community skins' })}</p>
+  </div>
 
-  {#if open}
-    <div class="section-body" transition:slide|local>
-      <div class="settings-card tb-card">
+  <div class="section-body">
+    <div class="settings-card tb-card">
 
         <!-- toolbar -->
         <div class="tb-toolbar">
@@ -203,6 +202,12 @@
                       {#if card.hasEffect}
                         <span class="tb-fx-pill">{$_('settings.effectBadge', { default: 'Effect' })}</span>
                       {/if}
+                      {#if card.hasCss}
+                        <span class="tb-fx-pill" style="border-color: #60a5fa; color: #60a5fa;">CSS</span>
+                      {/if}
+                      {#if card.schemesCount && card.schemesCount > 1}
+                        <span class="tb-fx-pill" style="border-color: #fabd2f; color: #fabd2f;">{card.schemesCount} Schemes</span>
+                      {/if}
                       {#if isLast}<span class="tb-badge">{$_('settings.activeTheme', { default: 'Active' })}</span>{/if}
                     </div>
                     {#if card.author}<div class="tb-author">by {card.author}</div>{/if}
@@ -236,7 +241,6 @@
 
       </div>
     </div>
-  {/if}
 </section>
 
 <style>

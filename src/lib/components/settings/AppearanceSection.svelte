@@ -1,9 +1,21 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
-  import { theme, presetAccents, type ThemeMode, type CustomColors, type BackgroundType, type PageTransition, type VisualizationMode, type TransitionSpeed, exportThemePackage, parseThemePackage, type AnimationConfig } from "$lib/stores/theme";
+  import {
+    theme,
+    presetAccents,
+    type ThemeMode,
+    type CustomColors,
+    type BackgroundType,
+    type PageTransition,
+    type VisualizationMode,
+    type TransitionSpeed,
+    exportSkinPackage,
+    parseSkinPackage,
+    type AnimationConfig,
+    openSkinStudio,
+  } from "$lib/stores/theme";
   import { darkDefaults, lightDefaults } from "$lib/stores/theme";
   import { get } from "svelte/store";
-  import { locale } from "svelte-i18n";
   import { slide } from "svelte/transition";
   import { createEventDispatcher, onMount } from "svelte";
   import { layoutOverride, type LayoutOverride } from "$lib/stores/mobile";
@@ -12,36 +24,8 @@
   import { isTauri, convertFileSrc } from "$lib/api/tauri";
 
   export let open: boolean = false;
+  export let advancedOpen: boolean = false;
   const dispatch = createEventDispatcher();
-
-  const availableLanguages = [
-    { code: "en", label: "English" },
-    { code: "es", label: "Español" },
-    { code: "fr", label: "Français" },
-    { code: "ru", label: "Русский" },
-  ];
-
-  let languageDropdownOpen = false;
-  let languageDropdownRef: HTMLDivElement | null = null;
-
-  function toggleLanguageDropdown() {
-    languageDropdownOpen = !languageDropdownOpen;
-  }
-
-  function handleLanguageDropdownKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      languageDropdownOpen = false;
-    }
-  }
-
-  function handleLanguageDropdownOutside(e: MouseEvent) {
-    if (languageDropdownRef && !languageDropdownRef.contains(e.target as Node)) {
-      languageDropdownOpen = false;
-    }
-  }
-
-  $: currentLanguageLabel =
-    availableLanguages.find((l) => l.code === $locale)?.label ?? "English";
 
   function handleModeChange(mode: ThemeMode) {
     theme.setMode(mode);
@@ -53,11 +37,6 @@
 
   function handleAccentChange(color: string) {
     theme.setAccentColor(color);
-  }
-
-  function changeLanguage(lang: string) {
-    $locale = lang;
-    localStorage.setItem("audion_language", lang);
   }
 
   let customColorInput = "#1DB954";
@@ -293,7 +272,22 @@
     mq.addEventListener('change', e => { osReducedMotion = e.matches; });
   });
 
-  // ── Theme package export / import ────────────────────────────────────────────
+  // ── Skin Studio & Package export / import ──────────────────────────────────
+
+  let customCssInput = $theme.customCss || '';
+  $: {
+    customCssInput = $theme.customCss || '';
+  }
+
+  function handleCustomCssBlur() {
+    if (customCssInput !== $theme.customCss) {
+      theme.setCustomCss(customCssInput);
+    }
+  }
+
+  function handleSchemeChange(schemeName: string) {
+    theme.selectScheme(schemeName);
+  }
 
   let pkgName = '';
   let pkgAuthor = '';
@@ -303,19 +297,25 @@
 
   async function handleExport() {
     const state = get(theme);
-    const name = pkgName.trim() || 'My Theme';
-    const pkg = exportThemePackage(state, name, pkgAuthor, pkgDescription);
+    const name = pkgName.trim() || state.skinName || 'My Skin';
+    const pkg = exportSkinPackage(state, name, pkgAuthor || state.skinAuthor, pkgDescription || state.skinDescription);
     const json = JSON.stringify(pkg, null, 2);
-    const fileName = name.replace(/[^a-z0-9_-]/gi, '_').toLowerCase() + '.audiotheme';
+    const fileName = name.replace(/[^a-z0-9_-]/gi, '_').toLowerCase() + '.audionskin';
 
     if (isTauri()) {
       try {
         const { save } = await import('@tauri-apps/plugin-dialog');
         const { writeTextFile } = await import('@tauri-apps/plugin-fs');
-        const path = await save({ defaultPath: fileName, filters: [{ name: 'Audion Theme', extensions: ['audiotheme'] }] });
+        const path = await save({
+          defaultPath: fileName,
+          filters: [
+            { name: 'Audion Skin', extensions: ['audionskin', 'audiotheme'] },
+            { name: 'JSON', extensions: ['json'] },
+          ],
+        });
         if (!path) return;
         await writeTextFile(path, json);
-        pkgImportSuccess = 'Theme exported!';
+        pkgImportSuccess = 'Skin exported!';
         setTimeout(() => { pkgImportSuccess = ''; }, 3000);
       } catch (e) {
         pkgImportError = String(e);
@@ -328,7 +328,7 @@
       const a = document.createElement('a');
       a.href = url; a.download = fileName; a.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-      pkgImportSuccess = 'Theme exported!';
+      pkgImportSuccess = 'Skin exported!';
       setTimeout(() => { pkgImportSuccess = ''; }, 3000);
     }
   }
@@ -341,7 +341,12 @@
       try {
         const { open } = await import('@tauri-apps/plugin-dialog');
         const { readTextFile } = await import('@tauri-apps/plugin-fs');
-        const selected = await open({ filters: [{ name: 'Audion Theme', extensions: ['audiotheme'] }], multiple: false });
+        const selected = await open({
+          filters: [
+            { name: 'Audion Skin & Theme', extensions: ['audionskin', 'audiotheme', 'json'] },
+          ],
+          multiple: false,
+        });
         if (!selected) return;
         const filePath = typeof selected === 'string' ? selected : selected[0];
         const text = await readTextFile(filePath);
@@ -354,7 +359,7 @@
       // Web fallback: file input
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.audiotheme,application/json';
+      input.accept = '.audionskin,.audiotheme,application/json';
       input.onchange = async () => {
         const file = input.files?.[0];
         if (!file) return;
@@ -367,94 +372,40 @@
   function applyImported(text: string) {
     try {
       const raw = JSON.parse(text);
-      const pkg = parseThemePackage(raw);
+      const pkg = parseSkinPackage(raw);
       theme.applyPackage({
+        skinName: pkg.name,
+        skinAuthor: pkg.author,
+        skinDescription: pkg.description,
         accentColor: pkg.accentColor,
         mode: pkg.mode,
         customColors: pkg.customColors,
         background: pkg.background,
         animation: pkg.animation,
+        customJs: pkg.customJs,
+        customCss: pkg.customCss,
+        schemes: pkg.schemes,
+        activeScheme: pkg.activeScheme,
       });
+      if (pkg.customJs) {
+        theme.setAllowCustomJs(true);
+      }
       pkgImportSuccess = `Applied "${pkg.name}"${pkg.author ? ` by ${pkg.author}` : ''}`;
       setTimeout(() => { pkgImportSuccess = ''; }, 4000);
     } catch (e) {
-      pkgImportError = `Invalid theme file: ${e}`;
+      pkgImportError = `Invalid skin file: ${e}`;
       setTimeout(() => { pkgImportError = ''; }, 5000);
     }
   }
 </script>
 
-<svelte:window on:mousedown={handleLanguageDropdownOutside} />
 
 <section class="settings-section" aria-labelledby="appearance-heading">
-  <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <Icon name="globe" size="lg" className="accordion-icon" />
-    <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.appearance')}</span>
-      <span class="accordion-subtitle">{$_('settings.appearanceSubtitle')}</span>
-    </div>
-    <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
-  </button>
-  {#if open}
-    <div class="section-body" transition:slide|local>
-      <div class="settings-card">
-
-        <!-- Language -->
-        <div class="inner-section" id="setting-language">
-          <span class="setting-title">{$_('settings.selectLanguage')}</span>
-          <div class="device-dropdown-wrap" style="margin-top: 6px;" bind:this={languageDropdownRef}>
-            <button
-              class="device-dropdown-trigger"
-              class:open={languageDropdownOpen}
-              on:click={toggleLanguageDropdown}
-              on:keydown={handleLanguageDropdownKeydown}
-              aria-haspopup="listbox"
-              aria-expanded={languageDropdownOpen}
-              aria-label={$_('settings.selectLanguage')}
-            >
-              <span class="device-dropdown-label">{currentLanguageLabel}</span>
-              <span class="device-dropdown-chevron" class:rotated={languageDropdownOpen}>
-                <Icon name="chevron-down" size={12} />
-              </span>
-            </button>
-
-            {#if languageDropdownOpen}
-              <div class="device-dropdown-menu language-dropdown-menu" role="listbox" aria-label={$_('settings.selectLanguage')}>
-                {#each availableLanguages as lang}
-                  {@const selected = lang.code === $locale}
-                  <div
-                    class="device-dropdown-item"
-                    class:selected
-                    role="option"
-                    aria-selected={selected}
-                    tabindex="0"
-                    on:click={() => {
-                      changeLanguage(lang.code);
-                      languageDropdownOpen = false;
-                    }}
-                    on:keydown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        changeLanguage(lang.code);
-                        languageDropdownOpen = false;
-                      }
-                    }}
-                  >
-                    <span class="device-item-name">{lang.label}</span>
-                    {#if selected}
-                      <span class="device-item-badge">✓</span>
-                    {/if}
-                  </div>
-                {/each}
-              </div>
-            {/if}
-          </div>
-        </div>
-
-        <div class="divider"></div>
+  <div class="section-body">
+    <div class="settings-card">
 
         <!-- Layout mode -->
-        <div class="inner-section">
+        <div class="inner-section" id="setting-layout-mode">
           <span class="setting-title">{$_('settings.layoutMode')}</span>
           <span class="setting-description">{$_('settings.layoutModeDesc')}</span>
           <div class="segmented-pill" style="margin-top: 6px;">
@@ -755,19 +706,89 @@
               />
               <span class="token-label">{$_('settings.accentPulse')}</span>
             </label>
-            <label class="checkbox-row">
-              <input type="checkbox"
-                checked={$theme.allowCustomJs}
-                on:change={e => theme.setAllowCustomJs((e.target as HTMLInputElement).checked)}
-              />
-              <span class="token-label">{$_('settings.enableCustomJs')}</span>
-            </label>
+            
           </div>
+        </div>
+
+        
+        <!-- ── Advanced Appearance Settings (Collapsible) ── -->
+        <div class="advanced-section-wrapper" id="setting-advanced-appearance">
+          <button
+            type="button"
+            class="advanced-toggle-btn"
+            on:click={() => advancedOpen = !advancedOpen}
+            aria-expanded={advancedOpen}
+          >
+            <span class="advanced-toggle-icon">
+              <Icon name={advancedOpen ? "chevron-down" : "chevron-right"} size={16} />
+            </span>
+            <div class="advanced-toggle-text">
+              <span class="advanced-toggle-title">{$_('settings.advancedSettings', { default: 'Advanced Appearance' })}</span>
+              <span class="advanced-toggle-subtitle">{$_('settings.advancedSettingsDesc', { default: 'Skin Studio, Custom CSS, JavaScript & Package Tools' })}</span>
+            </div>
+            <span class="pill-badge" style="margin-left: auto; font-size: 0.6875rem;">{advancedOpen ? $_('settings.hide', { default: 'Hide' }) : $_('settings.show', { default: 'Show' })}</span>
+          </button>
+
+          {#if advancedOpen}
+            <div transition:slide|local class="advanced-section-inner">
+              <!-- ── Skin Studio Promo Card ── -->
+        <div class="inner-section" id="setting-skin-studio">
+          <div class="studio-banner">
+            <div class="studio-banner-info">
+              <span class="setting-title">{$_('settings.skinStudio')}</span>
+              <span class="setting-description">{$_('settings.skinStudioDesc')}</span>
+            </div>
+            <button type="button" class="btn-studio-launch" on:click={openSkinStudio}>
+              <Icon name="sparkles" size={15} />
+              {$_('settings.openSkinStudio')}
+            </button>
+          </div>
+        </div>
+
+        {#if $theme.schemes && Object.keys($theme.schemes).length > 1}
+          <div class="divider"></div>
+          <!-- ── Color Schemes (Multi-Scheme Skin) ── -->
+          <div class="inner-section" id="setting-color-schemes">
+            <span class="setting-title">{$_('settings.colorScheme')}</span>
+            <span class="setting-description">{$_('settings.colorSchemeDesc')}</span>
+            <div class="scheme-chips-row">
+              {#each Object.keys($theme.schemes) as schemeName}
+                {@const isCurrent = ($theme.activeScheme || 'Default') === schemeName}
+                <button
+                  type="button"
+                  class="scheme-chip-btn"
+                  class:selected={isCurrent}
+                  on:click={() => handleSchemeChange(schemeName)}
+                >
+                  {#if isCurrent}
+                    <Icon name="check" size={12} />
+                  {/if}
+                  <span>{schemeName}</span>
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+        <div class="divider"></div>
+
+        <!-- ── Custom CSS (user.css) ── -->
+        <div class="inner-section" id="setting-custom-css">
+          <span class="setting-title">{$_('settings.customCss')}</span>
+          <span class="setting-description">{$_('settings.customCssDesc')}</span>
+          <textarea
+            class="quick-css-input"
+            bind:value={customCssInput}
+            on:blur={handleCustomCssBlur}
+            placeholder="/* Enter custom CSS rules to style any element across Audion (e.g. .player-bar, .sidebar, etc.) */"
+            rows="4"
+            spellcheck="false"
+          ></textarea>
         </div>
 
         <div class="divider"></div>
 
-        <!-- ── Theme Package ── -->
+        <!-- ── Theme / Skin Package ── -->
         <div class="inner-section" id="setting-theme-package">
           <span class="setting-title">{$_('settings.themePackage')}</span>
           <span class="setting-description">{$_('settings.themePackageDesc')}</span>
@@ -799,10 +820,41 @@
             Note: image and video backgrounds are not included (paths are device-specific).
           </span>
         </div>
+              
+        <div class="divider"></div>
+
+        <!-- ── Custom JavaScript ── -->
+        <div class="inner-section" id="setting-custom-js">
+          <div class="toggle-container">
+            <div class="toggle-info">
+              <span class="setting-title">{$_('settings.enableCustomJs', { default: 'Enable Custom JavaScript' })}</span>
+              <span class="setting-description">{$_('settings.customJsDesc', { default: 'Execute custom scripts bundled with skins' })}</span>
+            </div>
+            <button
+              class="toggle-btn"
+              class:active={$theme.allowCustomJs}
+              on:click={() => theme.setAllowCustomJs(!$theme.allowCustomJs)}
+              role="switch"
+              aria-checked={$theme.allowCustomJs}
+              aria-label={$_('settings.enableCustomJs', { default: 'Enable Custom JavaScript' })}
+            >
+              <div class="toggle-handle"></div>
+            </button>
+          </div>
+
+          <div class="security-warning-card" style="margin-top: 8px;">
+            <Icon name="alert-triangle" size={15} className="warning-icon" />
+            <span class="warning-text">
+              {$_('settings.customJsWarning', { default: 'Security Warning: Custom JavaScript allows arbitrary code execution in your app. Only enable if you trust the source.' })}
+            </span>
+          </div>
+        </div>
+            </div>
+          {/if}
+        </div>
 
       </div>
     </div>
-  {/if}
 </section>
 
 <style>
@@ -1158,4 +1210,174 @@
     padding: 1px 4px;
     border-radius: 3px;
   }
+
+  .studio-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px;
+    background: linear-gradient(135deg, rgba(var(--accent-primary-rgb, 29, 185, 84), 0.12), rgba(255, 255, 255, 0.03));
+    border: 1px solid rgba(var(--accent-primary-rgb, 29, 185, 84), 0.3);
+    border-radius: 12px;
+    gap: 16px;
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+
+  .studio-banner-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .btn-studio-launch {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 16px;
+    border-radius: 8px;
+    background: var(--accent-primary, #1db954);
+    color: var(--text-on-accent, #fff);
+    font-weight: 600;
+    font-size: 0.85rem;
+    border: none;
+    cursor: pointer;
+    transition: all 160ms ease;
+  }
+
+  .btn-studio-launch:hover {
+    background: var(--accent-hover, #1ed760);
+    transform: translateY(-1px);
+  }
+
+  .scheme-chips-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 8px;
+  }
+
+  .scheme-chip-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    background: var(--bg-surface, #282828);
+    border: 1px solid var(--border-color, #404040);
+    color: var(--text-secondary, #ccc);
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .scheme-chip-btn:hover {
+    border-color: var(--accent-primary, #1db954);
+    color: var(--text-primary, #fff);
+  }
+
+  .scheme-chip-btn.selected {
+    background: var(--accent-subtle, rgba(29, 185, 84, 0.18));
+    border-color: var(--accent-primary, #1db954);
+    color: var(--accent-primary, #1db954);
+    font-weight: 600;
+  }
+
+  .quick-css-input {
+    width: 100%;
+    margin-top: 8px;
+    background: #0d0d0d;
+    border: 1px solid var(--border-color, #333);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: #e0e0e0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    resize: vertical;
+    outline: none;
+  }
+
+  .quick-css-input:focus {
+    border-color: var(--accent-primary, #1db954);
+  }
+
+  .advanced-section-wrapper {
+    margin-top: var(--spacing-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md, 8px);
+    overflow: hidden;
+    background: var(--bg-surface);
+  }
+
+  .advanced-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 14px;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    cursor: pointer;
+    text-align: left;
+    transition: background var(--transition-fast);
+  }
+
+  .advanced-toggle-btn:hover {
+    background: var(--bg-highlight);
+  }
+
+  .advanced-toggle-icon {
+    color: var(--text-subdued);
+    display: flex;
+    align-items: center;
+  }
+
+  .advanced-toggle-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .advanced-toggle-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .advanced-toggle-subtitle {
+    font-size: 0.75rem;
+    color: var(--text-subdued);
+  }
+
+  .advanced-section-inner {
+    padding: 14px;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-base);
+  }
+
+  .security-warning-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    background: rgba(234, 179, 8, 0.1);
+    border: 1px solid rgba(234, 179, 8, 0.3);
+    border-radius: var(--radius-sm, 6px);
+  }
+
+  :global(.warning-icon) {
+    color: #eab308;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .warning-text {
+    font-size: 0.78125rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
 </style>

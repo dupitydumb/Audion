@@ -7,12 +7,14 @@
     rescanMusic,
     syncCoverPathsFromFiles,
     mergeDuplicateCovers,
+    clearFetchedCovers,
     scanFolder,
     removeFolder,
     getMusicFolders,
     type MergeCoverResult,
   } from "$lib/api/tauri";
-  import { loadLibrary } from "$lib/stores/library";
+  import { loadLibrary, purgeFetchedCovers } from "$lib/stores/library";
+  import { stripFetchedCoversFromPlayer } from "$lib/stores/player";
   import { progressiveScan } from "$lib/stores/progressiveScan";
   import { confirm } from "$lib/stores/dialogs";
   import { onMount, onDestroy } from "svelte";
@@ -81,13 +83,15 @@
   }
 
   function formatScanResultMessage(
-    result: { tracks_added: number; tracks_updated: number; tracks_deleted: number },
+    result: { tracks_added: number; tracks_updated: number; tracks_duplicates: number; tracks_failed: number; tracks_deleted: number },
     addedMessage: string,
     noChangeMessage: string,
   ): string {
     const parts: string[] = [];
     if (result.tracks_added > 0) parts.push(`${result.tracks_added} added`);
     if (result.tracks_updated > 0) parts.push(`${result.tracks_updated} updated`);
+    if (result.tracks_duplicates > 0) parts.push(`${result.tracks_duplicates} duplicates skipped`);
+    if (result.tracks_failed > 0) parts.push(`${result.tracks_failed} failed`);
     if (result.tracks_deleted > 0) parts.push(`${result.tracks_deleted} removed`);
     return parts.length > 0 ? `${addedMessage}: ${parts.join(", ")}` : noChangeMessage;
   }
@@ -332,6 +336,41 @@
     }
   }
 
+  let isClearingFetched = false;
+  let clearFetchedMessage = "";
+  let clearFetchedSuccess = false;
+
+  async function handleClearFetchedCovers() {
+    if (isClearingFetched) return;
+
+    const ok = await confirm(
+      $_('settings.clearFetchedCoversConfirm', { default: 'Remove all covers that were fetched online? Covers from your music files and ones you set yourself are not affected.' }),
+      { title: $_('settings.clearFetchedCovers', { default: 'Clear fetched covers' }), danger: true },
+    );
+    if (!ok) return;
+
+    isClearingFetched = true;
+    clearFetchedMessage = "";
+    try {
+      const clearedIds = await clearFetchedCovers();
+      purgeFetchedCovers(clearedIds);
+      stripFetchedCoversFromPlayer(clearedIds);
+
+      clearFetchedSuccess = true;
+      clearFetchedMessage =
+        clearedIds.length > 0
+          ? $_('settings.clearFetchedCoversDone', { values: { count: clearedIds.length }, default: `Cleared ${clearedIds.length} fetched cover(s).` })
+          : $_('settings.clearFetchedCoversNone', { default: 'No fetched covers to clear.' });
+    } catch (error) {
+      clearFetchedSuccess = false;
+      clearFetchedMessage = $_('settings.clearFetchedCoversFailed', { values: { error: String(error) }, default: `Failed to clear fetched covers: ${error}` });
+      console.error("[Settings] Failed to clear fetched covers:", error);
+    } finally {
+      isClearingFetched = false;
+      setTimeout(() => { clearFetchedMessage = ""; }, 6000);
+    }
+  }
+
   async function handleMergeDuplicateCovers() {
     isMergingCovers = true;
     mergeMessage = "";
@@ -374,17 +413,12 @@
 </script>
 
 <section class="settings-section" aria-labelledby="storage-heading">
-  <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <Icon name="folder" size="lg" className="accordion-icon" />
-    <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.storage')}</span>
-      <span class="accordion-subtitle">{$_('settings.storageSubtitle')}</span>
-    </div>
-    <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
-  </button>
-  {#if open}
-    <div class="section-body" transition:slide|local>
-      <div class="settings-card">
+  <div class="section-header-row">
+    <h2 class="settings-section-title" id="storage-heading">{$_('settings.storage', { default: 'Music Folders' })}</h2>
+    <p class="settings-section-desc">{$_('settings.storageSubtitle', { default: 'Manage music folders, cover art cache, and downloads' })}</p>
+  </div>
+  <div class="section-body">
+    <div class="settings-card">
         <div class="inner-section" id="setting-download-location">
           <span class="setting-title">{$_('settings.downloadLocation')}</span>
           <div class="path-selector">
@@ -459,6 +493,51 @@
           <span class="setting-description">{$_('settings.coverManagementDesc')}</span>
         </div>
 
+        <!-- online cover auto-fetch toggle -->
+        <div class="toggle-container" id="setting-cover-auto-fetch">
+          <div class="toggle-info">
+            <span class="setting-title">{$_('settings.coverAutoFetchTitle', { default: 'Auto-fetch missing covers online' })}</span>
+            <span class="setting-description">
+              {$_('settings.coverAutoFetchDesc', {
+                default: 'When a track has no embedded cover, look one up online as it plays. Turn off to only use covers from your files or ones you set yourself.',
+              })}
+            </span>
+          </div>
+          <button
+            class="toggle-btn"
+            class:active={$appSettings.coverAutoFetch}
+            on:click={() => appSettings.setCoverAutoFetch(!$appSettings.coverAutoFetch)}
+            role="switch"
+            aria-checked={$appSettings.coverAutoFetch}
+            aria-label={$_('settings.coverAutoFetchToggleLabel', { default: 'Toggle automatic cover fetching' })}
+          >
+            <div class="toggle-handle"></div>
+          </button>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- clear covers that were fetched online -->
+        <div class="toggle-container" id="setting-clear-fetched-covers">
+          <div class="toggle-info">
+            <span class="setting-title">{$_('settings.clearFetchedCovers', { default: 'Clear fetched covers' })}</span>
+            <span class="setting-description">
+              {$_('settings.clearFetchedCoversDesc', {
+                default: 'Remove every cover that was downloaded online. Covers from your files and ones you set yourself are kept.',
+              })}
+            </span>
+          </div>
+          <button class="btn-outline-compact" on:click={handleClearFetchedCovers} disabled={isClearingFetched}>
+            {isClearingFetched ? $_('settings.clearing', { default: 'Clearing...' }) : $_('settings.clear', { default: 'Clear' })}
+          </button>
+        </div>
+
+        {#if clearFetchedMessage}
+          <div class="sync-message {clearFetchedSuccess ? 'success' : 'error'}">{clearFetchedMessage}</div>
+        {/if}
+
+        <div class="divider"></div>
+
         <div class="button-group-row">
           <button class="btn-outline-compact" on:click={handleSyncCovers} disabled={isSyncingCovers}>
             {isSyncingCovers ? $_('settings.syncing') : $_('settings.syncCovers')}
@@ -476,5 +555,4 @@
         {/if}
       </div>
     </div>
-  {/if}
 </section>

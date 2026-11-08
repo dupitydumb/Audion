@@ -17,13 +17,9 @@
         duration,
         seek,
     } from "$lib/stores/player";
-    import {
-        getAlbumArtSrc,
-        getAlbum,
-        getTrackCoverSrc,
-        getAlbumCoverSrc,
-        formatDuration,
-    } from "$lib/api/tauri";
+    import { getAlbum, formatDuration } from "$lib/api/tauri";
+    import { resolveTrackCover } from "$lib/stores/library";
+    import { customArtworks } from "$lib/stores/customArtwork";
     import Icon from "$lib/components/Icon.svelte";
     import { getCurrentWindow } from "@tauri-apps/api/window";
     import { isTauri } from "$lib/api/tauri";
@@ -56,32 +52,23 @@
     let albumArt: string | null = null;
     let imageLoadFailed = false;
 
-    $: if ($currentTrack) loadTrackCover($currentTrack);
+    $: if ($currentTrack) loadTrackCover($currentTrack, $customArtworks);
     else {
         albumArt = null;
         imageLoadFailed = false;
     }
 
-    async function loadTrackCover(track: any) {
+    async function loadTrackCover(track: any, _customs?: unknown) {
         imageLoadFailed = false;
-        if (track.track_cover_path) albumArt = getTrackCoverSrc(track);
-        else if (track.track_cover)
-            albumArt = getAlbumArtSrc(track.track_cover);
-        else if (track.cover_url) albumArt = track.cover_url;
-        else if (track.album_id) await loadAlbumArt(track.album_id);
-        else albumArt = null;
-    }
-
-    async function loadAlbumArt(albumId: number) {
         try {
-            const album = await getAlbum(albumId);
-            if (!album) {
-                albumArt = null;
-                return;
+            let src = resolveTrackCover(track);
+            // Album art not cached yet => fetch the album and retry
+            if (!src && track.album_id) {
+                const album = await getAlbum(track.album_id);
+                if ($currentTrack?.id !== track.id) return;
+                src = resolveTrackCover(track, album);
             }
-            if (album.art_path) albumArt = getAlbumCoverSrc(album);
-            else if (album.art_data) albumArt = getAlbumArtSrc(album.art_data);
-            else albumArt = null;
+            albumArt = src;
         } catch {
             albumArt = null;
         }

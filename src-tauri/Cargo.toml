@@ -1,9 +1,9 @@
 [package]
 name = "audion"
-version = "1.4.2"
+version = "1.4.3"
 description = "A local Spotify-style music player"
 authors = ["AvKov"]
-edition = "2021"
+edition = "2024"
 license = "GPL-3.0-or-later"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -123,13 +123,6 @@ tracing-appender = "0.2"
 # for better performance and reliability across all platforms.
 # =============================================================================
 rodio = { version = "0.22.2", default-features = false, features = [
-    "vorbis",
-    "symphonia-flac",
-    "symphonia-mp3",
-    "symphonia-wav",
-    "symphonia-aac",
-    "symphonia-isomp4",
-    "symphonia-all",
     "crossbeam-channel",
     "playback",
     "tracing"

@@ -18,24 +18,24 @@ export interface CrossPluginAccess {
 
 export interface AudionPluginManifest {
   name: string;
-  safe_name?: string; // Explicit safe folder name (optional, falls back to name conversion)
+  safe_name?: string | null; // Explicit safe folder name (optional, falls back to name conversion)
   version: string;
   author: string;
-  description?: string;
-  repo?: string;
-  manifest_url?: string;
+  description?: string | null;
+  repo?: string | null;
+  manifest_url?: string | null;
   type: PluginType;
   entry: string; // JS: entry .js file, WASM: entry .wasm file
   permissions: string[];
-  cross_plugin_access?: CrossPluginAccess[];
-  ui_slots?: string[]; // UI injection points
-  icon?: string;
-  icon_url?: string;
-  homepage?: string;
-  category?: PluginCategory;
-  tags?: string[];
-  min_version?: string; // Minimum Audion version required
-  license?: string;
+  cross_plugin_access?: CrossPluginAccess[] | null;
+  ui_slots?: string[] | null; // UI injection points
+  icon?: string | null;
+  icon_url?: string | null;
+  homepage?: string | null;
+  category?: PluginCategory | null;
+  tags?: string[] | null;
+  min_version?: string | null; // Minimum Audion version required
+  license?: string | null;
 }
 
 // Permission definitions with human-readable descriptions
@@ -94,44 +94,44 @@ export function validateManifest(manifest: unknown): manifest is AudionPluginMan
     }
   }
 
-  // Optional field types
-  if (m.safe_name !== undefined && typeof m.safe_name !== 'string') {
+  // Optional field types (allow null or undefined)
+  if (m.safe_name != null && typeof m.safe_name !== 'string') {
     errors.push('safe_name must be a string');
   }
-  if (m.description !== undefined && typeof m.description !== 'string') {
+  if (m.description != null && typeof m.description !== 'string') {
     errors.push('Description must be a string');
   }
-  if (m.repo !== undefined && typeof m.repo !== 'string') {
+  if (m.repo != null && typeof m.repo !== 'string') {
     errors.push('Repo must be a string');
   }
-  if (m.manifest_url !== undefined && typeof m.manifest_url !== 'string') {
+  if (m.manifest_url != null && typeof m.manifest_url !== 'string') {
     errors.push('manifest_url must be a string');
   }
-  if (m.icon !== undefined && typeof m.icon !== 'string') {
+  if (m.icon != null && typeof m.icon !== 'string') {
     errors.push('Icon must be a string');
   }
-  if (m.icon_url !== undefined && typeof m.icon_url !== 'string') {
+  if (m.icon_url != null && typeof m.icon_url !== 'string') {
     errors.push('icon_url must be a string');
   }
-  if (m.homepage !== undefined && typeof m.homepage !== 'string') {
+  if (m.homepage != null && typeof m.homepage !== 'string') {
     errors.push('Homepage must be a string');
   }
-  if (m.license !== undefined && typeof m.license !== 'string') {
+  if (m.license != null && typeof m.license !== 'string') {
     errors.push('License must be a string');
   }
-  if (m.min_version !== undefined && typeof m.min_version !== 'string') {
+  if (m.min_version != null && typeof m.min_version !== 'string') {
     errors.push('min_version must be a string');
   }
-  if (m.category !== undefined && typeof m.category !== 'string') {
+  if (m.category != null && typeof m.category !== 'string') {
     errors.push('Category must be a string');
   }
-  if (m.ui_slots !== undefined && !Array.isArray(m.ui_slots)) {
+  if (m.ui_slots != null && !Array.isArray(m.ui_slots)) {
     errors.push('ui_slots must be an array');
   }
-  if (m.tags !== undefined && !Array.isArray(m.tags)) {
+  if (m.tags != null && !Array.isArray(m.tags)) {
     errors.push('Tags must be an array');
   }
-  if (m.cross_plugin_access !== undefined) {
+  if (m.cross_plugin_access != null) {
     if (!Array.isArray(m.cross_plugin_access)) {
       errors.push('cross_plugin_access must be an array');
     } else {

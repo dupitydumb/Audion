@@ -16,7 +16,7 @@
 //! the result is a fresh insert (new date_added) rather than an in-place path update
 
 use notify::event::{ModifyKind, RenameMode};
-use notify::{EventKind, RecursiveMode, Watcher as _};
+use notify::{EventKind, RecursiveMode};
 use notify_debouncer_full::{new_debouncer, DebounceEventResult, Debouncer, RecommendedCache};
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -177,6 +177,27 @@ pub(crate) enum Outcome {
     Updated(queries::Track),
     /// carries the deleted row's id so listeners (the frontend store) can actually remove the right track
     Deleted(i64),
+    /// skipped as a metadata-hash duplicate of another track
+    Duplicate,
+    /// could not be read or inserted
+    Failed,
+}
+
+// id 0 from the insert => skipped as metadata-hash duplicate
+pub(crate) fn note_duplicate(
+    conn: &rusqlite::Connection,
+    track: &queries::TrackInsert,
+    outcomes: &mut Vec<Outcome>,
+) {
+    let existing = queries::find_duplicate_path(conn, track).unwrap_or_default();
+    tracing::info!("[WATCH] duplicate skipped: {} (matches {})", track.path, existing);
+    outcomes.push(Outcome::Duplicate);
+}
+
+// extraction failures are logged by the scanner, insert failures here
+pub(crate) fn note_failed(path: &str, err: &dyn std::fmt::Display, outcomes: &mut Vec<Outcome>) {
+    tracing::warn!("[WATCH] failed to import {}: {}", path, err);
+    outcomes.push(Outcome::Failed);
 }
 
 /// handle one debounced batch of filesystem events
@@ -299,9 +320,11 @@ fn handle_batch(app: &AppHandle, db: &Database, events: Vec<notify_debouncer_ful
                     Ok((track_id, _was_new)) if track_id > 0 => {
                         crate::scanner::cover_storage::persist_track_covers(&conn, track_id, &track_data);
                     }
-                    Ok(_) => {}
-                    Err(e) => eprintln!("[Watcher] Failed to update track at {to_str}: {e}"),
+                    Ok(_) => note_duplicate(&conn, &track_data, &mut outcomes),
+                    Err(e) => note_failed(&to_str, &e, &mut outcomes),
                 }
+            } else {
+                outcomes.push(Outcome::Failed);
             }
         }
 
@@ -315,7 +338,14 @@ fn handle_batch(app: &AppHandle, db: &Database, events: Vec<notify_debouncer_ful
         let path_str = path.to_string_lossy().to_string();
         let identity = match queries::get_track_identity_by_path(&conn, &path_str) {
             Ok(Some(id)) => id,
-            _ => continue, // not a tracked file yet; a future Create will pick it up
+            _ => {
+                // untracked => it failed or was skipped earlier and has changed since
+                // => treat as new so it gets another chance
+                if !create_paths.contains(&path) {
+                    create_paths.push(path.clone());
+                }
+                continue;
+            }
         };
 
         let (_file_id, mtime, size) = stat_identity(&path);
@@ -331,9 +361,11 @@ fn handle_batch(app: &AppHandle, db: &Database, events: Vec<notify_debouncer_ful
                         outcomes.push(Outcome::Updated(track));
                     }
                 }
-                Ok(_) => {}
-                Err(e) => eprintln!("[Watcher] Failed to update modified track at {path_str}: {e}"),
+                Ok(_) => note_duplicate(&conn, &track_data, &mut outcomes),
+                Err(e) => note_failed(&path_str, &e, &mut outcomes),
             }
+        } else {
+            outcomes.push(Outcome::Failed);
         }
     }
 
@@ -362,9 +394,11 @@ fn handle_batch(app: &AppHandle, db: &Database, events: Vec<notify_debouncer_ful
                         Ok((track_id, _was_new)) if track_id > 0 => {
                             crate::scanner::cover_storage::persist_track_covers(&conn, track_id, &track_data);
                         }
-                        Ok(_) => {}
-                        Err(e) => eprintln!("[Watcher] Failed to update moved track at {path_str}: {e}"),
+                        Ok(_) => note_duplicate(&conn, &track_data, &mut outcomes),
+                        Err(e) => note_failed(&path_str, &e, &mut outcomes),
                     }
+                } else {
+                    outcomes.push(Outcome::Failed);
                 }
             }
 
@@ -383,9 +417,11 @@ fn handle_batch(app: &AppHandle, db: &Database, events: Vec<notify_debouncer_ful
                         });
                     }
                 }
-                Ok(_) => {}
-                Err(e) => eprintln!("[Watcher] Failed to insert new track at {path_str}: {e}"),
+                Ok(_) => note_duplicate(&conn, &track_data, &mut outcomes),
+                Err(e) => note_failed(&path_str, &e, &mut outcomes),
             }
+        } else {
+            outcomes.push(Outcome::Failed);
         }
     }
 
@@ -426,6 +462,8 @@ pub(crate) fn emit_batch(app: &AppHandle, event_name: &str, outcomes: Vec<Outcom
     let total = outcomes.len();
     let mut tracks_added = 0usize;
     let mut tracks_updated = 0usize;
+    let mut tracks_duplicates = 0usize;
+    let mut tracks_failed = 0usize;
     let mut tracks = Vec::with_capacity(total);
     let mut deleted_ids: Vec<i64> = Vec::new();
 
@@ -442,6 +480,8 @@ pub(crate) fn emit_batch(app: &AppHandle, event_name: &str, outcomes: Vec<Outcom
             Outcome::Deleted(id) => {
                 deleted_ids.push(id);
             }
+            Outcome::Duplicate => tracks_duplicates += 1,
+            Outcome::Failed => tracks_failed += 1,
         }
     }
 
@@ -453,6 +493,8 @@ pub(crate) fn emit_batch(app: &AppHandle, event_name: &str, outcomes: Vec<Outcom
         estimated_time_remaining_ms: 0,
         tracks_added,
         tracks_updated,
+        tracks_duplicates,
+        tracks_failed,
     };
 
     let _ = app.emit(
