@@ -2,22 +2,38 @@
 HERE="$(dirname "$(readlink -f "${0}")")"
 
 # ---------------------------------------------------------------------------
+# Library search path — prioritize bundled dependencies with host fallback
+# ---------------------------------------------------------------------------
+export LD_LIBRARY_PATH="${HERE}/usr/lib:${HERE}/usr/lib/x86_64-linux-gnu:${HERE}/lib:${HERE}/lib/x86_64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+# ---------------------------------------------------------------------------
 # GPU / WebKit environment — runtime auto-detection
 # Covers: VirtualBox/VMware (no /dev/dri), Bazzite/NixOS (broken EGL),
 #         Mint/Ubuntu 24 (broken gvfs symbols), Wayland+XWayland sessions.
 # ---------------------------------------------------------------------------
 
-# DO NOT set APPDIR unconditionally — Tauri does not bundle WebKit subprocess
-# helpers (WebKitNetworkProcess, WebKitWebProcess) inside the AppImage.
-# Setting APPDIR would make WebKitGTK look for them under $HERE/usr/lib/...,
-# where they do not exist, causing subprocess launch failures.
-# Only set APPDIR if the helpers are actually present in the bundle.
-# WebKit helpers reside under usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/ on Debian/Ubuntu,
-# under usr/lib/webkit2gtk-4.1/ on Arch/Fedora, or via root lib/ symlink.
-if [ -f "$HERE/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess" ] || \
-   [ -f "$HERE/usr/lib/webkit2gtk-4.1/WebKitNetworkProcess" ] || \
-   [ -f "$HERE/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess" ] || \
-   [ -n "$(find "$HERE/usr/lib" "$HERE/lib" -name "WebKitNetworkProcess" 2>/dev/null | head -1)" ]; then
+# WebKit helper processes (WebKitNetworkProcess, WebKitWebProcess) must match
+# the host libwebkit2gtk-4.1.so.0 version to prevent fatal IPC protocol desynchronization.
+# Dynamically detect host WebKit helper process directory:
+HOST_WEBKIT_EXEC=""
+for candidate in \
+  /usr/lib/x86_64-linux-gnu/webkit2gtk-4.1 \
+  /usr/libexec/webkit2gtk-4.1 \
+  /usr/lib/webkit2gtk-4.1 \
+  /usr/lib64/webkit2gtk-4.1 \
+  /usr/local/libexec/webkit2gtk-4.1; do
+  if [ -x "$candidate/WebKitNetworkProcess" ]; then
+    HOST_WEBKIT_EXEC="$candidate"
+    break
+  fi
+done
+
+if [ -n "$HOST_WEBKIT_EXEC" ]; then
+  # Host helper exists and matches host WebKit library version
+  export WEBKIT_EXEC_PATH="$HOST_WEBKIT_EXEC"
+elif [ -d "$HERE/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1" ]; then
+  # Fallback to bundled helper only if no host helper is available
+  export WEBKIT_EXEC_PATH="$HERE/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1"
   export APPDIR="$HERE"
 fi
 
@@ -25,8 +41,7 @@ fi
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
 
 # Disable WebKit sandbox — required inside AppImage & containers (seccomp / user ns restrictions).
-# WebKitGTK 2.40+ deprecates WEBKIT_FORCE_SANDBOX=0 in favor of WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1.
-export WEBKIT_FORCE_SANDBOX=0
+# Note: WEBKIT_FORCE_SANDBOX=0 is deprecated in WebKitGTK 2.40+; use WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1.
 export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
 
 # Auto-detect missing GPU / headless / virtualized environments (e.g. CI, Xvfb, VMs, Docker):
@@ -34,11 +49,16 @@ export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
 # and force llvmpipe. Accelerated compositing without DRI3 causes black/blank windows.
 if [ ! -d /dev/dri ] || [ -z "$(ls -A /dev/dri 2>/dev/null)" ] || [ "${LIBGL_ALWAYS_SOFTWARE:-0}" = "1" ]; then
   export LIBGL_ALWAYS_SOFTWARE=1
+  export GALLIUM_DRIVER=llvmpipe
   export WEBKIT_DISABLE_COMPOSITING_MODE=1
+  export WEBKIT_DISABLE_DMABUF_RENDERER=1
 else
   # On real hardware with /dev/dri, leave unset unless user explicitly set them
   if [ -z "${LIBGL_ALWAYS_SOFTWARE+x}" ]; then
     unset LIBGL_ALWAYS_SOFTWARE
+  fi
+  if [ -z "${GALLIUM_DRIVER+x}" ]; then
+    unset GALLIUM_DRIVER
   fi
 fi
 
@@ -48,9 +68,6 @@ fi
 if [ -z "${LIBGL_DRI3_DISABLE+x}" ]; then
   unset LIBGL_DRI3_DISABLE
 fi
-# GALLIUM_DRIVER: leave unset unless the user explicitly set it.
-# Exporting an empty string breaks Mesa's implicit llvmpipe selection on some versions.
-if [ -z "${GALLIUM_DRIVER+x}" ]; then unset GALLIUM_DRIVER; fi
 
 # GVfs / GIO — prevent "undefined symbol: g_task_set_static_name" crash on Mint 22 / Ubuntu 24 / Debian testing.
 # Avoid loading host GIO modules (like libgvfsdbus.so) compiled against newer GLib symbol versions.
@@ -102,9 +119,7 @@ for arg in "$@"; do
   fi
 done
 
-# WebKit computes its subprocess path as a CWD-relative "././lib/..." string.
-# Change to APPDIR so that relative path resolves correctly regardless of
-# where the user launched the AppImage from.
+# Change directory to $HERE so any remaining relative paths resolve cleanly.
 cd "$HERE"
 
 exec "$BIN" "${ARGS[@]}"
