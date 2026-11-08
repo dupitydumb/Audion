@@ -164,7 +164,8 @@ function saveTheme(state: ThemeState): void {
 
 // Create theme store
 function createThemeStore() {
-    const { subscribe, set, update } = writable<ThemeState>(defaultTheme);
+    const initialState = typeof window !== 'undefined' ? loadTheme() : defaultTheme;
+    const { subscribe, set, update } = writable<ThemeState>(initialState);
 
     return {
         subscribe,
@@ -670,12 +671,27 @@ export function applyAnimationVars(cfg: AnimationConfig): void {
 
 /** Blob URL cache for image/video backgrounds (revoked on change) */
 let _bgBlobUrl: string | null = null;
+let _pendingBg: BackgroundConfig | null = null;
+let _bgRetryRaf: number | null = null;
 
 export function applyBackground(bg: BackgroundConfig): void {
     if (typeof document === 'undefined') return;
 
+    _pendingBg = bg;
     const layer = document.getElementById('audion-bg-layer') as HTMLElement | null;
-    if (!layer) return;
+    if (!layer) {
+        if (typeof window !== 'undefined' && !_bgRetryRaf) {
+            _bgRetryRaf = requestAnimationFrame(() => {
+                _bgRetryRaf = null;
+                if (_pendingBg) applyBackground(_pendingBg);
+            });
+        }
+        return;
+    }
+    if (_bgRetryRaf) {
+        cancelAnimationFrame(_bgRetryRaf);
+        _bgRetryRaf = null;
+    }
 
     // Revoke previous blob if we're changing away from it
     if (_bgBlobUrl && bg.type !== 'image' && bg.type !== 'video') {
