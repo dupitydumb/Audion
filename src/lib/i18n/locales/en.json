@@ -1067,6 +1067,15 @@
     "viewOnListenBrainz": "View on ListenBrainz ↗"
   },
   "shortcuts": {
+    "alphaJumpTitle": "Alphabetical jump",
+    "alphaJumpDesc": "Press a letter in a track list sorted by title, artist or album to jump to the first match. Turning this on moves single-letter shortcuts to Alt + letter.",
+    "alphaJumpToggleLabel": "Toggle alphabetical jump",
+    "alphaJumpOn": "Alphabetical jump is on.",
+    "alphaJumpMoved": "{count} single-letter shortcut(s) now use Alt + letter (marked \"was ...\" below). Turn it off to restore the originals.",
+    "alphaJumpNothingMoved": "None of your shortcuts are single letters, so nothing needed to move.",
+    "alphaJumpDropped": "{count} shortcut(s) couldn't move because their Alt + letter is already in use. They stay unbound until you turn this off.",
+    "remappedBadge": "was {key}",
+    "remappedBadgeTitle": "Originally {key}. Restored when alphabetical jump is turned off.",
     "alreadyBoundTo": "is already bound to",
     "cancelsCapture": "cancels capture",
     "clickBadgeToRebind": "Click a key badge to rebind —",
