@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { createEventDispatcher, onMount } from "svelte";
+  import { createEventDispatcher, onMount, onDestroy } from "svelte";
   import { get } from "svelte/store";
   import { fade, scale } from "svelte/transition";
   import Icon from "$lib/components/Icon.svelte";
@@ -27,6 +27,15 @@
   type TabId = "css" | "schemes" | "effect" | "package";
   let activeTab: TabId = "css";
 
+  // Window view mode: modal (centered), docked (floating side panel), or popout (separate OS window)
+  type StudioViewMode = "modal" | "docked" | "popout";
+  let viewMode: StudioViewMode = "modal";
+  let modalEl: HTMLElement | null = null;
+  let modalPlaceholderEl: HTMLElement | null = null;
+  let pipWindow: any = null;
+  let isPoppedOut = false;
+  let isPipSupported = typeof window !== "undefined" && "documentPictureInPicture" in window;
+
   // Working state (isolated from store until saved, or previewed live)
   let livePreview = true;
   let skinName = "My Custom Skin";
@@ -36,12 +45,10 @@
   let customJs = "";
   let allowCustomJs = false;
 
-  // Schemes
   let schemes: Record<string, SkinScheme> = {};
   let activeSchemeName = "Default";
   let newSchemeInput = "";
 
-  // Original state for revert
   let originalCss = "";
   let originalJs = "";
   let originalAllowJs = false;
@@ -78,6 +85,12 @@
   $: if (isOpen && !wasOpen) {
     wasOpen = true;
     initFromStore();
+    requestAnimationFrame(() => {
+      if (modalEl) {
+        const activeTabBtn = modalEl.querySelector<HTMLElement>(".tab-btn.active") || modalEl;
+        activeTabBtn.focus();
+      }
+    });
   } else if (!isOpen && wasOpen) {
     wasOpen = false;
   }
@@ -89,19 +102,174 @@
   }
 
   function handleKeydown(e: KeyboardEvent) {
-    if (isOpen && e.key === "Escape") {
+    if (!isOpen) return;
+
+    if (e.key === "Escape") {
       e.preventDefault();
       handleCancel();
+      return;
+    }
+
+    if (viewMode === "modal" && modalEl && e.key === "Tab") {
+      const focusable = modalEl.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusable.length) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === first || !modalEl.contains(document.activeElement)) {
+          e.preventDefault();
+          last.focus();
+        }
+      } else {
+        if (document.activeElement === last || !modalEl.contains(document.activeElement)) {
+          e.preventDefault();
+          first.focus();
+        }
+      }
     }
   }
 
   function handleBackdropClick(e: MouseEvent) {
+    if (viewMode === "docked" || isPoppedOut) return;
     if (e.target === e.currentTarget) {
       handleCancel();
     }
   }
 
-  // Active scheme accessor
+  function toggleDockMode() {
+    if (viewMode === "docked") {
+      viewMode = "modal";
+    } else {
+      if (isPoppedOut) {
+        closePopout();
+      }
+      viewMode = "docked";
+    }
+  }
+
+  function copyStylesToPip(pip: any) {
+    document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
+      pip.document.head.appendChild(node.cloneNode(true));
+    });
+
+    pip.document.documentElement.className = document.documentElement.className;
+    pip.document.documentElement.style.cssText = document.documentElement.style.cssText;
+
+    const docObserver = new MutationObserver(() => {
+      pip.document.documentElement.className = document.documentElement.className;
+      pip.document.documentElement.style.cssText = document.documentElement.style.cssText;
+    });
+    docObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["style", "class", "data-theme"],
+    });
+
+    const headObserver = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const added of Array.from(m.addedNodes)) {
+          if (
+            added.nodeName === "STYLE" ||
+            (added.nodeName === "LINK" && (added as HTMLLinkElement).rel === "stylesheet")
+          ) {
+            const existingId = (added as HTMLElement).id;
+            if (existingId) {
+              const old = pip.document.getElementById(existingId);
+              if (old) old.remove();
+            }
+            pip.document.head.appendChild(added.cloneNode(true));
+          }
+        }
+      }
+    });
+    headObserver.observe(document.head, { childList: true, subtree: true });
+
+    pip.addEventListener("pagehide", () => {
+      docObserver.disconnect();
+      headObserver.disconnect();
+    });
+  }
+
+  async function togglePopout() {
+    if (isPoppedOut) {
+      closePopout();
+      return;
+    }
+
+    if (isPipSupported && modalEl) {
+      try {
+        const pip = await (window as any).documentPictureInPicture.requestWindow({
+          width: 600,
+          height: 820,
+        });
+        pipWindow = pip;
+
+        copyStylesToPip(pip);
+
+        if (!modalPlaceholderEl) {
+          modalPlaceholderEl = document.createElement("div");
+          modalPlaceholderEl.className = "studio-placeholder";
+        }
+        modalEl.parentNode?.insertBefore(modalPlaceholderEl, modalEl);
+
+        pip.document.body.style.margin = "0";
+        pip.document.body.style.background = "var(--bg-base, #121212)";
+        pip.document.body.style.color = "var(--text-primary, #fff)";
+        pip.document.body.style.overflow = "hidden";
+        pip.document.body.style.display = "flex";
+        pip.document.body.style.flexDirection = "column";
+        pip.document.body.style.height = "100vh";
+        pip.document.body.appendChild(modalEl);
+
+        isPoppedOut = true;
+        viewMode = "popout";
+
+        pip.addEventListener("pagehide", () => {
+          returnFromPip();
+        });
+        return;
+      } catch (err) {
+        console.warn("[SkinStudio] Picture-in-picture failed, falling back to docked mode:", err);
+      }
+    }
+
+    // Fallback: switch to docked mode
+    viewMode = viewMode === "docked" ? "modal" : "docked";
+  }
+
+  function returnFromPip() {
+    if (modalEl && modalPlaceholderEl && modalPlaceholderEl.parentNode) {
+      modalPlaceholderEl.parentNode.insertBefore(modalEl, modalPlaceholderEl);
+      modalPlaceholderEl.remove();
+      modalPlaceholderEl = null;
+    }
+    pipWindow = null;
+    isPoppedOut = false;
+    viewMode = "docked";
+  }
+
+  function closePopout() {
+    if (pipWindow) {
+      try {
+        pipWindow.close();
+      } catch {}
+      pipWindow = null;
+    }
+    returnFromPip();
+  }
+
+  onDestroy(() => {
+    if (pipWindow) {
+      try {
+        pipWindow.close();
+      } catch {}
+      pipWindow = null;
+    }
+  });
+
   $: currentScheme = schemes[activeSchemeName] || {
     name: "Default",
     mode: "dark",
@@ -109,7 +277,6 @@
     customColors: { ...darkDefaults },
   };
 
-  // Color slots definition
   const colorTokenKeys: { key: keyof CustomColors; label: string }[] = [
     { key: "bgBase", label: "Base background" },
     { key: "bgElevated", label: "Elevated background" },
@@ -123,7 +290,6 @@
     { key: "borderColor", label: "Border color" },
   ];
 
-  // Live CSS preview
   function onCssInput() {
     if (livePreview) {
       applySkinCss(customCss);
@@ -139,7 +305,6 @@
     }
   }
 
-  // Scheme actions
   function addScheme() {
     const trimmed = newSchemeInput.trim();
     if (!trimmed || schemes[trimmed]) return;
@@ -181,7 +346,6 @@
     schemes = { ...schemes };
   }
 
-  // Preset CSS snippets for quick skin creation
   const cssSnippets = [
     {
       name: "Glassmorphism Player Bar",
@@ -239,7 +403,6 @@
     onCssInput();
   }
 
-  // Preset JS effect snippets
   const jsSnippets = [
     {
       name: "Aurora Borealis Glow",
@@ -300,7 +463,6 @@ return () => cancelAnimationFrame(animId);`,
     allowCustomJs = true;
   }
 
-  // Save changes to store
   function saveAndApply() {
     const active = schemes[activeSchemeName] || currentScheme;
     theme.applyPackage({
@@ -318,20 +480,24 @@ return () => cancelAnimationFrame(animId);`,
     if (allowCustomJs) {
       theme.setAllowCustomJs(true);
     }
+    if (isPoppedOut) {
+      closePopout();
+    }
     open = false;
     closeSkinStudio();
     dispatch("close");
   }
 
   function handleCancel() {
-    // Revert CSS preview
     applySkinCss(originalCss);
+    if (isPoppedOut) {
+      closePopout();
+    }
     open = false;
     closeSkinStudio();
     dispatch("close");
   }
 
-  // Export skin bundle
   async function handleExportSkin() {
     const active = schemes[activeSchemeName] || currentScheme;
     const pkg = exportSkinPackage(
@@ -383,7 +549,6 @@ return () => cancelAnimationFrame(animId);`,
     }
   }
 
-  // Import skin bundle
   async function handleImportSkin() {
     if (isTauri()) {
       try {
@@ -452,39 +617,76 @@ return () => cancelAnimationFrame(animId);`,
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="modal-backdrop"
+    class:docked={viewMode === 'docked'}
+    class:popped-out={isPoppedOut}
     transition:fade={{ duration: 180 }}
     on:click={handleBackdropClick}
   >
     <div
+      bind:this={modalEl}
       class="studio-modal"
+      class:docked={viewMode === 'docked'}
       role="dialog"
-      aria-modal="true"
+      aria-modal={viewMode === 'modal'}
       aria-labelledby="skin-studio-title"
       tabindex="-1"
       transition:scale={{ duration: 220, start: 0.96 }}
     >
-      <!-- Modal Header -->
       <div class="studio-header">
         <div class="studio-title-wrap">
-          <div class="studio-icon-badge">
-            <Icon name="sparkles" size={18} />
+          <div class="studio-header-icon" aria-hidden="true">
+            <Icon name="palette" size={20} />
           </div>
           <div>
             <h2 id="skin-studio-title" class="studio-title">Skin Studio</h2>
             <p class="studio-subtitle">Author, edit, and style Audion skins with custom CSS & schemes</p>
           </div>
         </div>
-        <button type="button" class="close-btn" on:click={handleCancel} title="Close (Esc)">
-          <Icon name="x" size={18} />
-        </button>
+
+        <div class="header-actions">
+          {#if !isPoppedOut}
+            <button
+              type="button"
+              class="header-action-btn"
+              class:active={viewMode === 'docked'}
+              on:click={toggleDockMode}
+              title={viewMode === 'docked' ? 'Center Modal' : 'Dock to Side (keeps Audion interactive)'}
+              aria-label={viewMode === 'docked' ? 'Center modal' : 'Dock to side'}
+            >
+              <Icon name={viewMode === 'docked' ? 'maximize' : 'minimize'} size={15} />
+            </button>
+          {/if}
+
+          <button
+            type="button"
+            class="header-action-btn"
+            class:active={isPoppedOut}
+            on:click={togglePopout}
+            title={isPoppedOut ? 'Return to App' : 'Pop out to separate window'}
+            aria-label={isPoppedOut ? 'Return to main window' : 'Pop out into separate window'}
+          >
+            <Icon name="external-link" size={15} />
+          </button>
+
+          <button
+            type="button"
+            class="close-btn"
+            on:click={handleCancel}
+            title="Close (Esc)"
+            aria-label="Close Skin Studio"
+          >
+            <Icon name="x" size={18} />
+          </button>
+        </div>
       </div>
 
-      <!-- Navigation Tabs -->
-      <div class="studio-tabs">
+      <div class="studio-tabs" role="tablist" aria-label="Skin Studio sections">
         <button
           type="button"
           class="tab-btn"
           class:active={activeTab === 'css'}
+          role="tab"
+          aria-selected={activeTab === 'css'}
           on:click={() => (activeTab = 'css')}
         >
           <Icon name="file-text" size={15} />
@@ -494,6 +696,8 @@ return () => cancelAnimationFrame(animId);`,
           type="button"
           class="tab-btn"
           class:active={activeTab === 'schemes'}
+          role="tab"
+          aria-selected={activeTab === 'schemes'}
           on:click={() => (activeTab = 'schemes')}
         >
           <Icon name="sliders" size={15} />
@@ -504,6 +708,8 @@ return () => cancelAnimationFrame(animId);`,
           type="button"
           class="tab-btn"
           class:active={activeTab === 'effect'}
+          role="tab"
+          aria-selected={activeTab === 'effect'}
           on:click={() => (activeTab = 'effect')}
         >
           <Icon name="zap" size={15} />
@@ -513,6 +719,8 @@ return () => cancelAnimationFrame(animId);`,
           type="button"
           class="tab-btn"
           class:active={activeTab === 'package'}
+          role="tab"
+          aria-selected={activeTab === 'package'}
           on:click={() => (activeTab = 'package')}
         >
           <Icon name="download" size={15} />
@@ -520,11 +728,9 @@ return () => cancelAnimationFrame(animId);`,
         </button>
       </div>
 
-      <!-- Studio Content Body -->
       <div class="studio-body">
-        <!-- ── TAB 1: CSS STYLES ── -->
         {#if activeTab === 'css'}
-          <div class="tab-pane">
+          <div class="tab-pane" role="tabpanel" aria-label="Styles">
             <div class="pane-toolbar">
               <span class="pane-hint">
                 Write standard CSS to style any Audion element. Custom styles inject live.
@@ -556,6 +762,7 @@ return () => cancelAnimationFrame(animId);`,
               bind:value={customCss}
               on:input={onCssInput}
               placeholder="/* Enter custom CSS rules here (e.g. .player-bar, .sidebar, .album-art) */"
+              aria-label="Custom CSS editor"
               spellcheck="false"
             ></textarea>
 
@@ -575,13 +782,12 @@ return () => cancelAnimationFrame(animId);`,
             </div>
           </div>
 
-        <!-- ── TAB 2: COLOR SCHEMES ── -->
         {:else if activeTab === 'schemes'}
-          <div class="tab-pane">
+          <div class="tab-pane" role="tabpanel" aria-label="Color Schemes">
             <div class="scheme-bar">
               <div class="scheme-selector-group">
-                <span class="scheme-bar-label">Current Scheme:</span>
-                <select class="scheme-select" bind:value={activeSchemeName}>
+                <label for="active-scheme-select" class="scheme-bar-label">Current Scheme:</label>
+                <select id="active-scheme-select" class="scheme-select" bind:value={activeSchemeName} aria-label="Current color scheme">
                   {#each Object.keys(schemes) as name}
                     <option value={name}>{name}</option>
                   {/each}
@@ -590,6 +796,7 @@ return () => cancelAnimationFrame(animId);`,
                   <button
                     class="btn-icon-danger"
                     title="Delete Scheme"
+                    aria-label="Delete active scheme"
                     on:click={() => deleteScheme(activeSchemeName)}
                   >
                     <Icon name="trash" size={14} />
@@ -603,6 +810,7 @@ return () => cancelAnimationFrame(animId);`,
                   class="scheme-input"
                   bind:value={newSchemeInput}
                   placeholder="New scheme name (e.g. OLED, Light)"
+                  aria-label="New color scheme name"
                   maxlength="32"
                 />
                 <button class="btn-sm" on:click={addScheme} disabled={!newSchemeInput.trim()}>
@@ -638,6 +846,7 @@ return () => cancelAnimationFrame(animId);`,
                 <input
                   type="color"
                   value={safeHex(currentScheme.accentColor)}
+                  aria-label="Scheme accent color"
                   on:input={(e) => setSchemeAccent((e.target as HTMLInputElement).value)}
                 />
                 <span class="hex-text">{currentScheme.accentColor}</span>
@@ -656,12 +865,14 @@ return () => cancelAnimationFrame(animId);`,
                     <input
                       type="color"
                       value={safeHex(val)}
+                      aria-label={`${label} color picker`}
                       on:input={(e) => setSchemeToken(key, (e.target as HTMLInputElement).value)}
                     />
                     <input
                       type="text"
                       class="token-hex-input"
                       value={val}
+                      aria-label={`${label} hex value`}
                       on:change={(e) => setSchemeToken(key, (e.target as HTMLInputElement).value)}
                     />
                   </div>
@@ -670,9 +881,8 @@ return () => cancelAnimationFrame(animId);`,
             </div>
           </div>
 
-        <!-- ── TAB 3: CANVAS EFFECT ── -->
         {:else if activeTab === 'effect'}
-          <div class="tab-pane">
+          <div class="tab-pane" role="tabpanel" aria-label="Canvas Effect">
             <div class="pane-toolbar">
               <label class="toggle-label">
                 <input type="checkbox" bind:checked={allowCustomJs} />
@@ -687,7 +897,7 @@ return () => cancelAnimationFrame(animId);`,
                     class="snippet-chip"
                     on:click={() => insertJsSnippet(s.code)}
                   >
-                    <Icon name="sparkles" size={11} />
+                    <Icon name="zap" size={11} />
                     {s.name}
                   </button>
                 {/each}
@@ -698,6 +908,7 @@ return () => cancelAnimationFrame(animId);`,
               class="code-editor js-editor"
               bind:value={customJs}
               placeholder="/* JavaScript canvas animation script. Receives (canvas, ctx, accent). Must return cleanup () => void */"
+              aria-label="Canvas JavaScript animation effect code"
               spellcheck="false"
             ></textarea>
             <p class="field-hint">
@@ -705,9 +916,8 @@ return () => cancelAnimationFrame(animId);`,
             </p>
           </div>
 
-        <!-- ── TAB 4: PACKAGE & EXPORT ── -->
         {:else if activeTab === 'package'}
-          <div class="tab-pane pkg-tab">
+          <div class="tab-pane pkg-tab" role="tabpanel" aria-label="Package and Export">
             <div class="form-group">
               <label class="field-label" for="skin-meta-name">Skin Name</label>
               <input
@@ -773,7 +983,6 @@ return () => cancelAnimationFrame(animId);`,
         {/if}
       </div>
 
-      <!-- Modal Footer -->
       <div class="studio-footer">
         <button type="button" class="btn-secondary" on:click={handleCancel}>Cancel</button>
         <button type="button" class="btn-primary" on:click={saveAndApply}>
@@ -785,24 +994,58 @@ return () => cancelAnimationFrame(animId);`,
   </div>
 {/if}
 
+{#if isOpen && isPoppedOut}
+  <div class="pip-dock-pill" transition:fade={{ duration: 160 }}>
+    <div class="pip-icon-wrap" aria-hidden="true">
+      <Icon name="palette" size={16} />
+    </div>
+    <div class="pip-text-wrap">
+      <span class="pip-title">Skin Studio</span>
+      <span class="pip-subtitle">Active in separate window</span>
+    </div>
+    <button type="button" class="btn-return" on:click={closePopout}>
+      <Icon name="minimize" size={13} />
+      Return to App
+    </button>
+  </div>
+{/if}
+
 <style>
   .modal-backdrop {
     position: fixed;
     inset: 0;
     z-index: 10005;
-    background: rgba(0, 0, 0, 0.72);
-    backdrop-filter: blur(8px);
+    background: rgba(0, 0, 0, 0.65);
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 24px;
     pointer-events: auto;
+    transition: background 200ms ease;
+  }
+
+  @media (max-width: 640px) {
+    .modal-backdrop {
+      padding: 8px;
+    }
+  }
+
+  .modal-backdrop.docked {
+    background: transparent !important;
+    pointer-events: none !important;
+    align-items: stretch;
+    justify-content: flex-end;
+    padding: 0;
+  }
+
+  .modal-backdrop.popped-out {
+    display: none !important;
   }
 
   .studio-modal {
     background: var(--bg-elevated, #181818);
     border: 1px solid var(--border-color, #333);
-    border-radius: 16px;
+    border-radius: 12px;
     width: 100%;
     max-width: 860px;
     height: 82vh;
@@ -810,10 +1053,141 @@ return () => cancelAnimationFrame(animId);`,
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.65);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
     position: relative;
     z-index: 1;
     pointer-events: auto;
+    transition: all 220ms ease;
+  }
+
+  .studio-modal.docked {
+    position: fixed;
+    right: 16px;
+    top: 56px;
+    bottom: 96px;
+    width: 520px;
+    max-width: calc(100vw - 32px);
+    height: auto;
+    max-height: none;
+    pointer-events: auto;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35), 0 0 0 1px var(--border-color, #333);
+    border-radius: 12px;
+    z-index: 10005;
+  }
+
+  @media (max-width: 768px) {
+    .studio-modal.docked {
+      right: 0;
+      left: 0;
+      top: 48px;
+      bottom: 60px;
+      width: 100%;
+      max-width: 100%;
+      border-radius: 0;
+    }
+  }
+
+  :global(body > .studio-modal) {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .header-action-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-subdued, #9e9e9e);
+    cursor: pointer;
+    padding: 7px;
+    min-width: 36px;
+    min-height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 150ms ease, color 150ms ease;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .header-action-btn:hover {
+    background: var(--bg-surface, #282828);
+    color: var(--text-primary, #fff);
+  }
+
+  .header-action-btn.active {
+    background: var(--accent-subtle, rgba(29, 185, 84, 0.18));
+    color: var(--accent-primary, #1db954);
+  }
+
+  .pip-dock-pill {
+    position: fixed;
+    bottom: 100px;
+    right: 24px;
+    z-index: 10006;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--bg-elevated, #1c1c1c);
+    border: 1px solid var(--accent-primary, #1db954);
+    border-radius: 12px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+    color: var(--text-primary, #fff);
+    font-size: 0.85rem;
+    pointer-events: auto;
+  }
+
+  .pip-icon-wrap {
+    color: var(--accent-primary, #1db954);
+    display: flex;
+    align-items: center;
+  }
+
+  .pip-text-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .pip-title {
+    font-weight: 600;
+    font-size: 0.85rem;
+    line-height: 1.1;
+  }
+
+  .pip-subtitle {
+    font-size: 0.72rem;
+    color: var(--text-subdued, #9e9e9e);
+  }
+
+  .btn-return {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    background: var(--accent-primary, #1db954);
+    color: var(--text-on-accent, #fff);
+    border: none;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 150ms ease;
+  }
+
+  .btn-return:hover {
+    background: var(--accent-hover, #1ed760);
   }
 
   .studio-header {
@@ -830,15 +1204,14 @@ return () => cancelAnimationFrame(animId);`,
     gap: 12px;
   }
 
-  .studio-icon-badge {
-    width: 36px;
-    height: 36px;
-    border-radius: 10px;
-    background: var(--accent-subtle, rgba(29, 185, 84, 0.15));
+  .studio-header-icon {
+    width: 24px;
+    height: 24px;
     color: var(--accent-primary, #1db954);
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
   }
 
   .studio-title {
@@ -851,20 +1224,25 @@ return () => cancelAnimationFrame(animId);`,
   .studio-subtitle {
     margin: 2px 0 0;
     font-size: 0.8rem;
-    color: var(--text-subdued, #888);
+    color: var(--text-subdued, #9e9e9e);
   }
 
   .close-btn {
     background: transparent;
     border: none;
-    color: var(--text-subdued, #888);
+    color: var(--text-subdued, #9e9e9e);
     cursor: pointer;
     padding: 8px;
+    min-width: 36px;
+    min-height: 36px;
     border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: background 150ms ease, color 150ms ease;
+    pointer-events: auto;
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   .close-btn:hover {
@@ -878,6 +1256,14 @@ return () => cancelAnimationFrame(animId);`,
     padding: 8px 16px;
     border-bottom: 1px solid var(--border-color, #282828);
     background: var(--bg-base, #121212);
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    flex-wrap: nowrap;
+  }
+
+  .studio-tabs::-webkit-scrollbar {
+    display: none;
   }
 
   .tab-btn {
@@ -893,6 +1279,8 @@ return () => cancelAnimationFrame(animId);`,
     font-weight: 500;
     cursor: pointer;
     transition: all 160ms ease;
+    flex-shrink: 0;
+    white-space: nowrap;
   }
 
   .tab-btn:hover {
@@ -912,7 +1300,7 @@ return () => cancelAnimationFrame(animId);`,
     font-size: 0.72rem;
     font-weight: 700;
     padding: 2px 6px;
-    border-radius: 9999px;
+    border-radius: 6px;
   }
 
   .studio-body {
@@ -940,7 +1328,7 @@ return () => cancelAnimationFrame(animId);`,
 
   .pane-hint {
     font-size: 0.82rem;
-    color: var(--text-subdued, #888);
+    color: var(--text-subdued, #9e9e9e);
   }
 
   .toggle-label {
@@ -961,7 +1349,7 @@ return () => cancelAnimationFrame(animId);`,
 
   .snippet-label {
     font-size: 0.78rem;
-    color: var(--text-subdued, #888);
+    color: var(--text-subdued, #9e9e9e);
   }
 
   .snippet-chip {
@@ -970,7 +1358,7 @@ return () => cancelAnimationFrame(animId);`,
     gap: 5px;
     font-size: 0.78rem;
     padding: 4px 10px;
-    border-radius: 9999px;
+    border-radius: 6px;
     background: var(--bg-surface, #282828);
     border: 1px solid var(--border-color, #383838);
     color: var(--text-secondary, #ccc);
@@ -986,16 +1374,15 @@ return () => cancelAnimationFrame(animId);`,
   .code-editor {
     flex: 1;
     min-height: 280px;
-    background: #0d0d0d;
+    background: var(--bg-surface, #141414);
     border: 1px solid var(--border-color, #333);
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 14px;
-    color: #e0e0e0;
+    color: var(--text-primary, #e0e0e0);
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
     font-size: 0.85rem;
     line-height: 1.55;
     resize: none;
-    outline: none;
   }
 
   .code-editor:focus {
@@ -1015,7 +1402,7 @@ return () => cancelAnimationFrame(animId);`,
   .sheet-title {
     font-size: 0.75rem;
     font-weight: 600;
-    color: var(--text-subdued, #888);
+    color: var(--text-subdued, #9e9e9e);
     text-transform: uppercase;
     letter-spacing: 0.05em;
   }
@@ -1034,7 +1421,6 @@ return () => cancelAnimationFrame(animId);`,
     color: var(--accent-hover, #1ed760);
   }
 
-  /* Schemes styling */
   .scheme-bar {
     display: flex;
     align-items: center;
@@ -1043,7 +1429,7 @@ return () => cancelAnimationFrame(animId);`,
     padding: 12px;
     background: var(--bg-surface, #222);
     border: 1px solid var(--border-color, #333);
-    border-radius: 10px;
+    border-radius: 8px;
     flex-wrap: wrap;
   }
 
@@ -1065,7 +1451,6 @@ return () => cancelAnimationFrame(animId);`,
     color: var(--text-primary, #fff);
     padding: 6px 10px;
     font-size: 0.85rem;
-    outline: none;
   }
 
   .btn-icon-danger {
@@ -1073,8 +1458,13 @@ return () => cancelAnimationFrame(animId);`,
     border: none;
     color: #e57373;
     padding: 6px;
+    min-width: 32px;
+    min-height: 32px;
     border-radius: 6px;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .btn-icon-danger:hover {
@@ -1100,7 +1490,7 @@ return () => cancelAnimationFrame(animId);`,
   .mode-btn {
     border: none;
     background: transparent;
-    color: var(--text-subdued, #888);
+    color: var(--text-subdued, #9e9e9e);
     font-size: 0.8rem;
     padding: 4px 12px;
     border-radius: 6px;
@@ -1130,7 +1520,7 @@ return () => cancelAnimationFrame(animId);`,
 
   .hex-text {
     font-size: 0.8rem;
-    color: var(--text-subdued, #888);
+    color: var(--text-subdued, #9e9e9e);
     font-family: monospace;
   }
 
@@ -1164,7 +1554,7 @@ return () => cancelAnimationFrame(animId);`,
 
   .token-sub code {
     font-size: 0.72rem;
-    color: var(--text-subdued, #888);
+    color: var(--text-subdued, #9e9e9e);
   }
 
   .token-controls {
@@ -1193,7 +1583,6 @@ return () => cancelAnimationFrame(animId);`,
     font-family: monospace;
   }
 
-  /* Package tab */
   .pkg-tab {
     max-width: 600px;
     margin: 0 auto;
@@ -1219,7 +1608,6 @@ return () => cancelAnimationFrame(animId);`,
     color: var(--text-primary, #fff);
     padding: 10px 12px;
     font-size: 0.9rem;
-    outline: none;
   }
 
   .form-input:focus, .form-textarea:focus {
@@ -1232,7 +1620,7 @@ return () => cancelAnimationFrame(animId);`,
     gap: 12px;
     background: var(--bg-surface, #222);
     border: 1px solid var(--border-color, #333);
-    border-radius: 10px;
+    border-radius: 8px;
     padding: 14px;
     text-align: center;
     margin: 8px 0;
@@ -1247,7 +1635,7 @@ return () => cancelAnimationFrame(animId);`,
 
   .stat-lbl {
     font-size: 0.75rem;
-    color: var(--text-subdued, #888);
+    color: var(--text-subdued, #9e9e9e);
   }
 
   .pkg-buttons {
@@ -1257,7 +1645,6 @@ return () => cancelAnimationFrame(animId);`,
     flex-wrap: wrap;
   }
 
-  /* Footer actions */
   .studio-footer {
     display: flex;
     align-items: center;
@@ -1279,13 +1666,6 @@ return () => cancelAnimationFrame(animId);`,
     transition: all 160ms ease;
     border: none;
     pointer-events: auto;
-    user-select: none;
-    -webkit-user-select: none;
-  }
-
-  .close-btn {
-    pointer-events: auto;
-    cursor: pointer;
     user-select: none;
     -webkit-user-select: none;
   }
@@ -1329,7 +1709,52 @@ return () => cancelAnimationFrame(animId);`,
 
   .field-hint {
     font-size: 0.78rem;
-    color: var(--text-subdued, #888);
+    color: var(--text-subdued, #9e9e9e);
     margin: 4px 0 0;
+  }
+
+  /* Keyboard focus-visible rings (R-32) */
+  .tab-btn:focus-visible,
+  .header-action-btn:focus-visible,
+  .close-btn:focus-visible,
+  .btn-primary:focus-visible,
+  .btn-secondary:focus-visible,
+  .btn-return:focus-visible,
+  .snippet-chip:focus-visible,
+  .mode-btn:focus-visible,
+  .btn-icon-danger:focus-visible,
+  .btn-sm:focus-visible {
+    outline: 2px solid var(--accent-primary, #1db954);
+    outline-offset: 2px;
+  }
+
+  .code-editor:focus-visible,
+  .scheme-select:focus-visible,
+  .scheme-input:focus-visible,
+  .form-input:focus-visible,
+  .form-textarea:focus-visible,
+  .token-hex-input:focus-visible,
+  .accent-picker-inline input[type="color"]:focus-visible,
+  .token-controls input[type="color"]:focus-visible {
+    outline: 2px solid var(--accent-primary, #1db954);
+    outline-offset: 1px;
+    border-color: var(--accent-primary, #1db954);
+  }
+
+  /* Touch device target sizes (R-03 / antislop-human / antislop-layoutmobile) */
+  @media (pointer: coarse), (max-width: 768px) {
+    .header-action-btn,
+    .close-btn,
+    .btn-icon-danger {
+      min-width: 44px;
+      min-height: 44px;
+    }
+
+    .snippet-chip,
+    .mode-btn,
+    .tab-btn,
+    .btn-sm {
+      min-height: 44px;
+    }
   }
 </style>

@@ -75,33 +75,12 @@
 </script>
 
 <section class="settings-section" aria-labelledby="subsonic-heading">
-  <button
-    class="accordion-trigger"
-    on:click={() => dispatch("toggle")}
-    aria-expanded={open}
-    id="subsonic-heading"
-  >
-    <Icon name="globe" size="lg" className="accordion-icon" />
-    <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.subsonicServer', { default: 'Subsonic Server' })}</span>
-      <span class="accordion-subtitle">
-        {#if $subsonicConnected}
-          {$_('settings.synced', { default: 'Connected' })} · {$subsonicConfig.url}
-        {:else}
-          {$_('settings.subsonicSubtitle', { default: 'Stream from Navidrome, Airsonic, Jellyfin, and more' })}
-        {/if}
-      </span>
-    </div>
-    <Icon
-      name="chevron-down"
-      size={16}
-      className="accordion-chevron {open ? 'rotated' : ''}"
-    />
-  </button>
-
-  {#if open}
-    <div class="section-body" transition:slide|local>
-      <div class="settings-card">
+  <div class="section-header-row">
+    <h2 class="settings-section-title" id="subsonic-heading">{$_('settings.subsonicServer', { default: 'Subsonic & Navidrome' })}</h2>
+    <p class="settings-section-desc">{$_('settings.subsonicSubtitle', { default: 'Stream music from a remote Subsonic or Navidrome server' })}</p>
+  </div>
+  <div class="section-body">
+    <div class="settings-card" id="setting-subsonic">
 
         <!-- Enable toggle -->
         <div class="toggle-container">
@@ -206,7 +185,6 @@
 
       </div>
     </div>
-  {/if}
 </section>
 
 <style>

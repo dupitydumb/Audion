@@ -104,18 +104,13 @@
 </script>
 
 <section class="settings-section" aria-labelledby="theme-browser-heading">
-  <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <Icon name="monitor" size="lg" className="accordion-icon" />
-    <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.themeBrowser', { default: 'Skin Browser' })}</span>
-      <span class="accordion-subtitle">{$_('settings.themeBrowserSubtitle', { default: 'Browse and install community skins' })}</span>
-    </div>
-    <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
-  </button>
+  <div class="section-header-row">
+    <h2 class="settings-section-title" id="theme-browser-heading">{$_('settings.themeBrowser', { default: 'Community Skins' })}</h2>
+    <p class="settings-section-desc">{$_('settings.themeBrowserSubtitle', { default: 'Browse and install community skins' })}</p>
+  </div>
 
-  {#if open}
-    <div class="section-body" transition:slide|local>
-      <div class="settings-card tb-card">
+  <div class="section-body">
+    <div class="settings-card tb-card">
 
         <!-- toolbar -->
         <div class="tb-toolbar">
@@ -246,7 +241,6 @@
 
       </div>
     </div>
-  {/if}
 </section>
 
 <style>

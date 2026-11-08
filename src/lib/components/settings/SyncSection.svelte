@@ -65,17 +65,12 @@
 </script>
 
 <section class="settings-section" aria-labelledby="sync-heading">
-  <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <Icon name="sync" size="lg" className="accordion-icon" />
-    <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.sync')}</span>
-      <span class="accordion-subtitle">{$_('settings.syncSubtitle')}</span>
-    </div>
-    <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
-  </button>
-  {#if open}
-    <div class="section-body" transition:slide|local>
-      <div class="settings-card">
+  <div class="section-header-row">
+    <h2 class="settings-section-title" id="sync-heading">{$_('settings.sync', { default: 'Cloud Sync' })}</h2>
+    <p class="settings-section-desc">{$_('settings.syncSubtitle', { default: 'Synchronize playlists, favorites, and listening stats' })}</p>
+  </div>
+  <div class="section-body">
+    <div class="settings-card">
     <div class="card-header-row">
       <div class="card-title-group">
         <h3 class="setting-title">{$_('settings.libraryStatus')}</h3>
@@ -139,10 +134,6 @@
             {#if $syncStatus.last_error.includes("Limit Exceeded") || $syncStatus.last_error.includes("limit exceeded")}
               <p class="error-hint">
                 {$_('settings.limitExceededDesc')}
-                <br />
-                <a href="https://ko-fi.com/N4N5UMNR1" target="_blank" rel="noreferrer" class="donate-link">
-                  {$_('settings.supportAudion')}
-                </a>
               </p>
             {/if}
           </div>
@@ -150,6 +141,4 @@
       </div>
     {/if}
   </div>
-  </div>
-  {/if}
 </section>

@@ -16,7 +16,6 @@
   } from "$lib/stores/theme";
   import { darkDefaults, lightDefaults } from "$lib/stores/theme";
   import { get } from "svelte/store";
-  import { locale } from "svelte-i18n";
   import { slide } from "svelte/transition";
   import { createEventDispatcher, onMount } from "svelte";
   import { layoutOverride, type LayoutOverride } from "$lib/stores/mobile";
@@ -25,36 +24,8 @@
   import { isTauri, convertFileSrc } from "$lib/api/tauri";
 
   export let open: boolean = false;
+  export let advancedOpen: boolean = false;
   const dispatch = createEventDispatcher();
-
-  const availableLanguages = [
-    { code: "en", label: "English" },
-    { code: "es", label: "Español" },
-    { code: "fr", label: "Français" },
-    { code: "ru", label: "Русский" },
-  ];
-
-  let languageDropdownOpen = false;
-  let languageDropdownRef: HTMLDivElement | null = null;
-
-  function toggleLanguageDropdown() {
-    languageDropdownOpen = !languageDropdownOpen;
-  }
-
-  function handleLanguageDropdownKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      languageDropdownOpen = false;
-    }
-  }
-
-  function handleLanguageDropdownOutside(e: MouseEvent) {
-    if (languageDropdownRef && !languageDropdownRef.contains(e.target as Node)) {
-      languageDropdownOpen = false;
-    }
-  }
-
-  $: currentLanguageLabel =
-    availableLanguages.find((l) => l.code === $locale)?.label ?? "English";
 
   function handleModeChange(mode: ThemeMode) {
     theme.setMode(mode);
@@ -66,11 +37,6 @@
 
   function handleAccentChange(color: string) {
     theme.setAccentColor(color);
-  }
-
-  function changeLanguage(lang: string) {
-    $locale = lang;
-    localStorage.setItem("audion_language", lang);
   }
 
   let customColorInput = "#1DB954";
@@ -433,77 +399,13 @@
   }
 </script>
 
-<svelte:window on:mousedown={handleLanguageDropdownOutside} />
 
 <section class="settings-section" aria-labelledby="appearance-heading">
-  <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <Icon name="globe" size="lg" className="accordion-icon" />
-    <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.appearance')}</span>
-      <span class="accordion-subtitle">{$_('settings.appearanceSubtitle')}</span>
-    </div>
-    <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
-  </button>
-  {#if open}
-    <div class="section-body" transition:slide|local>
-      <div class="settings-card">
-
-        <!-- Language -->
-        <div class="inner-section" id="setting-language">
-          <span class="setting-title">{$_('settings.selectLanguage')}</span>
-          <div class="device-dropdown-wrap" style="margin-top: 6px;" bind:this={languageDropdownRef}>
-            <button
-              class="device-dropdown-trigger"
-              class:open={languageDropdownOpen}
-              on:click={toggleLanguageDropdown}
-              on:keydown={handleLanguageDropdownKeydown}
-              aria-haspopup="listbox"
-              aria-expanded={languageDropdownOpen}
-              aria-label={$_('settings.selectLanguage')}
-            >
-              <span class="device-dropdown-label">{currentLanguageLabel}</span>
-              <span class="device-dropdown-chevron" class:rotated={languageDropdownOpen}>
-                <Icon name="chevron-down" size={12} />
-              </span>
-            </button>
-
-            {#if languageDropdownOpen}
-              <div class="device-dropdown-menu language-dropdown-menu" role="listbox" aria-label={$_('settings.selectLanguage')}>
-                {#each availableLanguages as lang}
-                  {@const selected = lang.code === $locale}
-                  <div
-                    class="device-dropdown-item"
-                    class:selected
-                    role="option"
-                    aria-selected={selected}
-                    tabindex="0"
-                    on:click={() => {
-                      changeLanguage(lang.code);
-                      languageDropdownOpen = false;
-                    }}
-                    on:keydown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        changeLanguage(lang.code);
-                        languageDropdownOpen = false;
-                      }
-                    }}
-                  >
-                    <span class="device-item-name">{lang.label}</span>
-                    {#if selected}
-                      <span class="device-item-badge">✓</span>
-                    {/if}
-                  </div>
-                {/each}
-              </div>
-            {/if}
-          </div>
-        </div>
-
-        <div class="divider"></div>
+  <div class="section-body">
+    <div class="settings-card">
 
         <!-- Layout mode -->
-        <div class="inner-section">
+        <div class="inner-section" id="setting-layout-mode">
           <span class="setting-title">{$_('settings.layoutMode')}</span>
           <span class="setting-description">{$_('settings.layoutModeDesc')}</span>
           <div class="segmented-pill" style="margin-top: 6px;">
@@ -804,19 +706,32 @@
               />
               <span class="token-label">{$_('settings.accentPulse')}</span>
             </label>
-            <label class="checkbox-row">
-              <input type="checkbox"
-                checked={$theme.allowCustomJs}
-                on:change={e => theme.setAllowCustomJs((e.target as HTMLInputElement).checked)}
-              />
-              <span class="token-label">{$_('settings.enableCustomJs')}</span>
-            </label>
+            
           </div>
         </div>
 
-        <div class="divider"></div>
+        
+        <!-- ── Advanced Appearance Settings (Collapsible) ── -->
+        <div class="advanced-section-wrapper" id="setting-advanced-appearance">
+          <button
+            type="button"
+            class="advanced-toggle-btn"
+            on:click={() => advancedOpen = !advancedOpen}
+            aria-expanded={advancedOpen}
+          >
+            <span class="advanced-toggle-icon">
+              <Icon name={advancedOpen ? "chevron-down" : "chevron-right"} size={16} />
+            </span>
+            <div class="advanced-toggle-text">
+              <span class="advanced-toggle-title">{$_('settings.advancedSettings', { default: 'Advanced Appearance' })}</span>
+              <span class="advanced-toggle-subtitle">{$_('settings.advancedSettingsDesc', { default: 'Skin Studio, Custom CSS, JavaScript & Package Tools' })}</span>
+            </div>
+            <span class="pill-badge" style="margin-left: auto; font-size: 0.6875rem;">{advancedOpen ? $_('settings.hide', { default: 'Hide' }) : $_('settings.show', { default: 'Show' })}</span>
+          </button>
 
-        <!-- ── Skin Studio Promo Card ── -->
+          {#if advancedOpen}
+            <div transition:slide|local class="advanced-section-inner">
+              <!-- ── Skin Studio Promo Card ── -->
         <div class="inner-section" id="setting-skin-studio">
           <div class="studio-banner">
             <div class="studio-banner-info">
@@ -905,10 +820,41 @@
             Note: image and video backgrounds are not included (paths are device-specific).
           </span>
         </div>
+              
+        <div class="divider"></div>
+
+        <!-- ── Custom JavaScript ── -->
+        <div class="inner-section" id="setting-custom-js">
+          <div class="toggle-container">
+            <div class="toggle-info">
+              <span class="setting-title">{$_('settings.enableCustomJs', { default: 'Enable Custom JavaScript' })}</span>
+              <span class="setting-description">{$_('settings.customJsDesc', { default: 'Execute custom scripts bundled with skins' })}</span>
+            </div>
+            <button
+              class="toggle-btn"
+              class:active={$theme.allowCustomJs}
+              on:click={() => theme.setAllowCustomJs(!$theme.allowCustomJs)}
+              role="switch"
+              aria-checked={$theme.allowCustomJs}
+              aria-label={$_('settings.enableCustomJs', { default: 'Enable Custom JavaScript' })}
+            >
+              <div class="toggle-handle"></div>
+            </button>
+          </div>
+
+          <div class="security-warning-card" style="margin-top: 8px;">
+            <Icon name="alert-triangle" size={15} className="warning-icon" />
+            <span class="warning-text">
+              {$_('settings.customJsWarning', { default: 'Security Warning: Custom JavaScript allows arbitrary code execution in your app. Only enable if you trust the source.' })}
+            </span>
+          </div>
+        </div>
+            </div>
+          {/if}
+        </div>
 
       </div>
     </div>
-  {/if}
 </section>
 
 <style>
@@ -1357,4 +1303,81 @@
   .quick-css-input:focus {
     border-color: var(--accent-primary, #1db954);
   }
+
+  .advanced-section-wrapper {
+    margin-top: var(--spacing-md);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md, 8px);
+    overflow: hidden;
+    background: var(--bg-surface);
+  }
+
+  .advanced-toggle-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 12px 14px;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    cursor: pointer;
+    text-align: left;
+    transition: background var(--transition-fast);
+  }
+
+  .advanced-toggle-btn:hover {
+    background: var(--bg-highlight);
+  }
+
+  .advanced-toggle-icon {
+    color: var(--text-subdued);
+    display: flex;
+    align-items: center;
+  }
+
+  .advanced-toggle-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .advanced-toggle-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .advanced-toggle-subtitle {
+    font-size: 0.75rem;
+    color: var(--text-subdued);
+  }
+
+  .advanced-section-inner {
+    padding: 14px;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-base);
+  }
+
+  .security-warning-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    background: rgba(234, 179, 8, 0.1);
+    border: 1px solid rgba(234, 179, 8, 0.3);
+    border-radius: var(--radius-sm, 6px);
+  }
+
+  :global(.warning-icon) {
+    color: #eab308;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .warning-text {
+    font-size: 0.78125rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
 </style>

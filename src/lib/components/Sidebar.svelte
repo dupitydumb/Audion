@@ -832,12 +832,16 @@
         align-items: center;
         gap: var(--spacing-sm);
         color: var(--accent-primary);
+        user-select: none;
+        -webkit-user-select: none;
     }
 
     .logo-text {
         font-size: 1.5rem;
         font-weight: var(--font-weight-bold);
         letter-spacing: -0.5px;
+        user-select: none;
+        -webkit-user-select: none;
     }
 
     .update-badge {
@@ -933,6 +937,8 @@
         text-align: left;
         font-size: 0.9375rem;
         position: relative;
+        user-select: none;
+        -webkit-user-select: none;
     }
 
     .nav-item:hover {

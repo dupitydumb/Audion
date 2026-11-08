@@ -413,17 +413,12 @@
 </script>
 
 <section class="settings-section" aria-labelledby="storage-heading">
-  <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <Icon name="folder" size="lg" className="accordion-icon" />
-    <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.storage')}</span>
-      <span class="accordion-subtitle">{$_('settings.storageSubtitle')}</span>
-    </div>
-    <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
-  </button>
-  {#if open}
-    <div class="section-body" transition:slide|local>
-      <div class="settings-card">
+  <div class="section-header-row">
+    <h2 class="settings-section-title" id="storage-heading">{$_('settings.storage', { default: 'Music Folders' })}</h2>
+    <p class="settings-section-desc">{$_('settings.storageSubtitle', { default: 'Manage music folders, cover art cache, and downloads' })}</p>
+  </div>
+  <div class="section-body">
+    <div class="settings-card">
         <div class="inner-section" id="setting-download-location">
           <span class="setting-title">{$_('settings.downloadLocation')}</span>
           <div class="path-selector">
@@ -560,5 +555,4 @@
         {/if}
       </div>
     </div>
-  {/if}
 </section>
