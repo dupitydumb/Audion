@@ -391,6 +391,11 @@ export async function addExternalTrack(track: ExternalTrackInput): Promise<numbe
     return await invoke('add_external_track', { track });
 }
 
+export async function updateTrackDuration(trackId: number, duration: number): Promise<void> {
+    if (!isTauri()) return;
+    await invoke('update_track_duration', { trackId, duration: Math.round(duration) });
+}
+
 export async function deleteTrack(trackId: number): Promise<boolean> {
     return await invoke('delete_track', { trackId });
 }

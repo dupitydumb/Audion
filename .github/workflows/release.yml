@@ -331,90 +331,15 @@ jobs:
           platform: linux
 
       - name: Build Tauri app
-        run: |
-          xvfb-run -a \
-            --server-args="-screen 0 1920x1080x24 -ac +extension GLX +render -noreset" \
-            npm run tauri build
+        run: npm run tauri build
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
       - name: Patch AppImage with GPU-safe wrapper script
         run: |
-          set -euo pipefail
-          APPIMAGE=$(find src-tauri/target/release/bundle/appimage -name "*.AppImage" ! -name "*-patched*" | head -1)
-          if [ -z "$APPIMAGE" ]; then echo "No AppImage found"; exit 1; fi
-          echo "Patching: $APPIMAGE"
-
-          # Extract AppImage — APPIMAGE_EXTRACT_AND_RUN=1 avoids libfuse2 requirement on
-          # ubuntu-22.04 runners which do not have libfuse2 installed by default.
-          # Pre-clean squashfs-root in case of a step retry leaving a stale dir.
-          rm -rf squashfs-root
-          chmod +x "$APPIMAGE"
-          APPIMAGE_EXTRACT_AND_RUN=1 "$APPIMAGE" --appimage-extract
-
-          # ---------------------------------------------------------------------------
-          # GPU / WebKit environment auto-detection
-          # Bazzite and other immutable distros may have Wayland-only or broken EGL.
-          # ---------------------------------------------------------------------------
-
-          # Back up original AppRun and replace
-          if [ -L squashfs-root/AppRun ]; then
-            rm squashfs-root/AppRun          # symlink — just remove, binary is elsewhere
-          else
-            mv squashfs-root/AppRun squashfs-root/AppRun-original
-          fi
-
-          # Copy pre-committed wrapper scripts — shebang at col 0 guaranteed.
-          # Scripts live in .github/scripts/ to avoid heredoc-indentation bugs
-          # (YAML run: | preserves indent; bash heredoc shebang would land at col 10
-          # and the kernel would reject the script with "exec format error").
-          cp .github/scripts/appimage-apprun-real.sh squashfs-root/AppRun-real
-          cp .github/scripts/appimage-apprun.sh squashfs-root/AppRun
-          chmod +x squashfs-root/AppRun-real squashfs-root/AppRun
-
-          # WebKit computes subprocess path as: dirname(binary)/../../lib/...
-          # (binary is usr/bin/audion, so two levels up = root, then lib/).
-          # The Tauri AppImage bundler does not create a root-level lib symlink,
-          # so WebKitNetworkProcess fails with ENOENT. Add the symlink.
-          ln -sf usr/lib squashfs-root/lib
-
-          # make it a relative link to the bundled top-level icon.
-          ICON_FILE=$(find squashfs-root -maxdepth 1 -type f \( -iname "*.png" -o -iname "*.svg" \) | head -1)
-          if [ -z "$ICON_FILE" ]; then echo "::error::No top-level icon found in AppDir"; exit 1; fi
-          rm -f squashfs-root/.DirIcon
-          ln -s "$(basename "$ICON_FILE")" squashfs-root/.DirIcon
-          test -e squashfs-root/.DirIcon || { echo "::error::.DirIcon still dangling"; exit 1; }
-
-          # normalize permissions
-          # --appimage-extract leaves dirs at 0700 and some files at 0770
-          chmod -R u+rwX,go+rX,go-w squashfs-root
-          chmod 755 squashfs-root/AppRun squashfs-root/AppRun-real
-          [ -f squashfs-root/AppRun-original ] && chmod 755 squashfs-root/AppRun-original
-          [ -f squashfs-root/AppRun.wrapped ] && chmod 755 squashfs-root/AppRun.wrapped
-          find squashfs-root \( -type d ! -perm -o+rx \) -o \( -type f ! -perm -o+r \) | grep . && { echo "::error::unreadable paths remain"; exit 1; } || true
-
-          # Repack the AppImage
-          # NOTE: appimagetool is itself an AppImage. GitHub Actions runners do not
-          # have libfuse.so.2 (FUSE 2). Setting APPIMAGE_EXTRACT_AND_RUN=1 makes the
-          # AppImage runtime self-extract to a tmpdir and exec without FUSE.
-          # AppImageKit release/13 assets were renamed to "obsolete-*" and the old URL is dead.
-          # The project moved to github.com/AppImage/appimagetool (continuous is the only release).
-          wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage" \
-            -O /tmp/appimagetool
-          chmod +x /tmp/appimagetool
-
-          APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 /tmp/appimagetool --no-appstream squashfs-root \
-            "src-tauri/target/release/bundle/appimage/audion-patched.AppImage"
-
-          if [ ! -f "src-tauri/target/release/bundle/appimage/audion-patched.AppImage" ]; then
-            echo "::error::appimagetool did not produce audion-patched.AppImage"
-            exit 1
-          fi
-          echo "Repacked AppImage size: $(du -sh src-tauri/target/release/bundle/appimage/audion-patched.AppImage)"
-
-          # Clean up extracted dir
-          rm -rf squashfs-root
+          chmod +x .github/scripts/patch-appimage.sh
+          .github/scripts/patch-appimage.sh
 
       - name: Rename and repackage artifacts
         env:
@@ -431,7 +356,14 @@ jobs:
             mv "$DEB_FILE" "${BUNDLE}/deb/audion_${VER}_linux.deb"
           fi
 
-          # Rename patched AppImage
+          # Rename RPM (if generated)
+          RPM_FILE=$(find "${BUNDLE}/rpm" -name "*.rpm" 2>/dev/null | head -1)
+          if [ -n "$RPM_FILE" ]; then
+            mv "$RPM_FILE" "${BUNDLE}/rpm/audion_${VER}_x86_64.rpm"
+          fi
+
+          # Rename patched AppImage (ensure no other unpatched AppImages exist)
+          find "${BUNDLE}/appimage" -name "*.AppImage" ! -name "audion-patched.AppImage" -delete || true
           mv "${BUNDLE}/appimage/audion-patched.AppImage" \
              "${BUNDLE}/appimage/audion_${VER}_x86_64.AppImage"
 
@@ -443,9 +375,7 @@ jobs:
           tar -czf "${BUNDLE}/appimage/audion_${VER}_x86_64.AppImage.tar.gz" \
             -C "${BUNDLE}/appimage" "audion_${VER}_x86_64.AppImage"
           npm run tauri -- signer sign \
-            "${BUNDLE}/appimage/audion_${VER}_x86_64.AppImage.tar.gz" \
-            --private-key "$TAURI_SIGNING_PRIVATE_KEY" \
-            --password "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+            "${BUNDLE}/appimage/audion_${VER}_x86_64.AppImage.tar.gz"
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v3.0.1
@@ -454,6 +384,7 @@ jobs:
           overwrite_files: ${{ inputs.overwrite }}
           files: |
             src-tauri/target/release/bundle/deb/audion_*_linux.deb
+            src-tauri/target/release/bundle/rpm/audion_*_x86_64.rpm
             src-tauri/target/release/bundle/appimage/audion_*_x86_64.AppImage
             src-tauri/target/release/bundle/appimage/audion_*_x86_64.AppImage.tar.gz
             src-tauri/target/release/bundle/appimage/audion_*_x86_64.AppImage.tar.gz.sig
@@ -495,186 +426,17 @@ jobs:
           curl -H "Content-Type: application/json" -X POST -d "$PAYLOAD" "$DISCORD_WEBHOOK_URL"
 
   # ---------------------------------------------------------------------------
-  # Linux Smoke Test — verify AppImage launches on popular distros
-  #
-  # Runs headlessly via xvfb on 3 targets:
-  #   ubuntu-22.04  → Ubuntu 22 LTS (glibc 2.35, build runner baseline)
-  #   ubuntu-24.04  → Ubuntu 24 LTS (glibc 2.39, newest Ubuntu LTS)
-  #   fedora-40     → Fedora 40 container (glibc 2.39, Mesa 24, SELinux off)
-  #
-  # The test downloads the published AppImage, runs it headlessly for up to
-  # 20s, then checks the exit code is not a crash signal (SIGSEGV=139,
-  # SIGABRT=134, SIGILL=132, SIGBUS=138). A clean timeout (exit 0 or 124)
-  # means the app launched and ran without crashing — that's the signal we care
-  # about. A non-zero exit from the app itself is also accepted (e.g. it may
-  # exit 1 when there is no audio device), as long as it is not a signal kill.
+  # Linux Smoke Test — comprehensive verification across distros via verify-linux-release
   # ---------------------------------------------------------------------------
-  test-linux-smoke:
-    name: Smoke test AppImage (${{ matrix.label }})
-    runs-on: ${{ matrix.runner }}
+  verify-linux:
+    name: Verify Linux Release
     needs: [create-release, release-linux]
     if: needs.release-linux.result == 'success'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - label: ubuntu-22.04
-            runner: ubuntu-22.04
-            use_docker: false
-            docker_image: ""
-            alsa_pkg: libasound2
-          - label: ubuntu-24.04
-            runner: ubuntu-24.04
-            use_docker: false
-            docker_image: ""
-            alsa_pkg: libasound2t64
-          - label: fedora-40
-            runner: ubuntu-24.04
-            use_docker: true
-            docker_image: "fedora:40"
-            alsa_pkg: ""
-    steps:
-      - name: Install runtime deps (Ubuntu runner)
-        if: matrix.use_docker == false
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends \
-            libwebkit2gtk-4.1-0 \
-            libgtk-3-0 \
-            libappindicator3-1 \
-            libglib2.0-0 \
-            libdbus-1-3 \
-            libx11-6 \
-            libxcomposite1 \
-            libxdamage1 \
-            libxrandr2 \
-            libxrender1 \
-            libxfixes3 \
-            ${{ matrix.alsa_pkg }} \
-            xvfb \
-            fuse
-
-      - name: Download AppImage from release (Ubuntu runner)
-        if: matrix.use_docker == false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VER="${{ needs.create-release.outputs.version }}"
-          TAG="${{ needs.create-release.outputs.tag_name }}"
-          curl -fsSL \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/octet-stream" \
-            -L "https://github.com/${{ github.repository }}/releases/download/${TAG}/audion_${VER}_x86_64.AppImage" \
-            -o audion.AppImage
-          chmod +x audion.AppImage
-
-      - name: Smoke test — Ubuntu runner
-        if: matrix.use_docker == false
-        run: |
-          export APPIMAGE_EXTRACT_AND_RUN=1
-          export WEBKIT_DISABLE_DMABUF_RENDERER=1
-          export WEBKIT_DISABLE_COMPOSITING_MODE=1
-          export WEBKIT_FORCE_SANDBOX=0
-          export GIO_USE_VFS=local
-          export GIO_MODULE_DIR=/dev/null
-          export GTK_IM_MODULE=simple
-          export AUDION_DISABLE_DRI3=1
-
-          # Capture the app's real exit status
-          mkdir -p smoke-out
-          set +e
-          xvfb-run -a --server-args="-screen 0 1280x720x24 -ac" \
-            timeout 20s ./audion.AppImage > smoke-out/smoke.log 2>&1
-          EXIT=$?
-          set -e
-          echo "$EXIT" > smoke-out/exit-code.txt
-          head -100 smoke-out/smoke.log
-
-          echo "Exit code: $EXIT"
-          case $EXIT in
-            0|124)  echo "✅ Launched cleanly (exit=$EXIT)" ;;
-            132|134|135|136|139) echo "❌ Crashed with signal (exit=$EXIT)"; exit 1 ;;
-            *) echo "⚠️  Exited $EXIT (non-signal — treated as pass)" ;;
-          esac
-
-      - name: Download AppImage from release (Fedora 40)
-        if: matrix.use_docker == true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          VER="${{ needs.create-release.outputs.version }}"
-          TAG="${{ needs.create-release.outputs.tag_name }}"
-          curl -fsSL \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/octet-stream" \
-            -L "https://github.com/${{ github.repository }}/releases/download/${TAG}/audion_${VER}_x86_64.AppImage" \
-            -o audion.AppImage
-          chmod +x audion.AppImage
-
-      # dnf needs to reach Fedora's mirrors, so this has to run in its own container with network access
-      # it can't share a 'docker run' with the actual smoke test below,
-      # which intentionally has --network=none
-      - name: Prepare Fedora 40 image with runtime deps
-        if: matrix.use_docker == true
-        run: |
-          docker run --name audion-smoke-base ${{ matrix.docker_image }} bash -c '
-            dnf install -y --quiet \
-              webkit2gtk4.1 gtk3 libappindicator-gtk3 glib2 dbus-libs \
-              libX11 libXcomposite libXdamage libXrandr libXrender libXfixes \
-              alsa-lib xorg-x11-server-Xvfb
-          '
-          docker commit audion-smoke-base audion-smoke-fedora40
-          docker rm audion-smoke-base
-
-      # Run the smoke test inside the prepared Fedora 40 image
-      # --privileged: needed for FUSE (APPIMAGE_EXTRACT_AND_RUN bypasses this,
-      # but xvfb-run needs /dev/shm write access).
-      # --network=none: no outbound traffic from the app during the test.
-      - name: Smoke test — Fedora 40 (Docker)
-        if: matrix.use_docker == true
-        run: |
-          mkdir -p smoke-out
-          docker run --rm \
-            --privileged \
-            --network=none \
-            -v "$PWD/audion.AppImage:/audion.AppImage" \
-            -v "$PWD/smoke-out:/out" \
-            audion-smoke-fedora40 \
-            bash -c '
-              export APPIMAGE_EXTRACT_AND_RUN=1
-              export WEBKIT_DISABLE_DMABUF_RENDERER=1
-              export WEBKIT_DISABLE_COMPOSITING_MODE=1
-              export WEBKIT_FORCE_SANDBOX=0
-              export GIO_USE_VFS=local
-              export GIO_MODULE_DIR=/dev/null
-              export GTK_IM_MODULE=simple
-              export AUDION_DISABLE_DRI3=1
-
-              set +e
-              Xvfb :99 -screen 0 1280x720x24 -ac &
-              sleep 1
-              DISPLAY=:99 timeout 20s /audion.AppImage > /out/smoke.log 2>&1
-              EXIT=$?
-              echo "$EXIT" > /out/exit-code.txt
-              head -100 /out/smoke.log
-
-              echo "Exit code: $EXIT"
-              case $EXIT in
-                0|124)  echo "✅ Launched cleanly (exit=$EXIT)" ;;
-                132|134|135|136|139) echo "❌ Crashed with signal (exit=$EXIT)"; exit 1 ;;
-                *) echo "⚠️  Exited $EXIT (non-signal — treated as pass)" ;;
-              esac
-            '
-
-      # Runs even when the smoke test step fails, so a crash still leaves its full log behind
-      - name: Upload smoke test log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: smoke-log-${{ matrix.label }}
-          path: smoke-out/
-          if-no-files-found: ignore
-          retention-days: 14
+    uses: ./.github/workflows/verify-linux-release.yml
+    with:
+      tag_name: ${{ needs.create-release.outputs.tag_name }}
+      version: ${{ needs.create-release.outputs.version }}
+    secrets: inherit
 
   # ---------------------------------------------------------------------------
   # Flatpak Build

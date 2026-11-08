@@ -304,6 +304,24 @@ pub async fn update_track_cover_url(
 }
 
 #[command]
+pub async fn update_track_duration(
+    state: State<'_, Database>,
+    track_id: i64,
+    duration: i64,
+) -> Result<(), String> {
+    let conn = state.conn.lock().unwrap();
+    db::queries::update_track_duration(&conn, track_id, duration)
+        .map_err(|e| format!("Failed to update track duration: {}", e))?;
+
+    // Enqueue sync change
+    if let Ok(Some(track)) = db::queries::get_track_by_id(&conn, track_id) {
+        let _ = db::queries::enqueue_track_sync_change(&conn, &track, "update");
+    }
+
+    Ok(())
+}
+
+#[command]
 pub async fn update_local_src(
     state: State<'_, Database>,
     track_id: i64,

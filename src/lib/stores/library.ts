@@ -910,6 +910,10 @@ export function removeTracksByIds(ids: number[]): void {
     trackCount.update(c => Math.max(0, c - ids.length));
 }
 
+export function updateTrackDurationInMemory(trackId: number, durationSecs: number): void {
+    tracks.update(existing => existing.map(t => t.id === trackId ? { ...t, duration: durationSecs } : t));
+}
+
 /**
  * Load only albums and artists (tracks already populated).
  */
