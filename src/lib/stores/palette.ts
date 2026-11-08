@@ -93,6 +93,9 @@ paletteSource.subscribe(async (track) => {
   } catch (e) {
     if (gen !== currentGen) return;
     console.error("Palette extraction failed:", e);
+    // forget this cover so the next currentTrack emission retries it
+    // (otherwise the skip check above would leave the palette empty after a transient failure, e.g. a 429)
+    lastCoverSrc = null;
     albumPalette.set([]);
   }
 });
