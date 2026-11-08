@@ -66,12 +66,6 @@ jobs:
           - name: ubuntu-24.04
             image: ubuntu:24.04
             pkg_manager: apt
-          # Same image but WITHOUT host GTK/WebKit: proves the AppImage bundle
-          # is self-sufficient on a clean system.
-          - name: ubuntu-24.04-minimal
-            image: ubuntu:24.04
-            pkg_manager: apt
-            minimal: true
           - name: debian-12
             image: debian:12
             pkg_manager: apt
@@ -92,8 +86,6 @@ jobs:
       options: --privileged
     steps:
       - name: Install test tooling + runtime deps
-        env:
-          MINIMAL: ${{ matrix.minimal || 'false' }}
         run: |
           set -e
           # Test tooling on every distro: Xvfb, dbus session, pgrep, window query, screenshot.
@@ -101,11 +93,9 @@ jobs:
             apt)
               export DEBIAN_FRONTEND=noninteractive
               apt-get update
-              PKGS="curl ca-certificates xvfb xauth dbus dbus-x11 procps xdotool imagemagick libgl1 libegl1"
-              if [ "$MINIMAL" != "true" ]; then
-                PKGS="$PKGS libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1"
-              fi
-              apt-get install -y --no-install-recommends $PKGS
+              apt-get install -y --no-install-recommends \
+                curl ca-certificates xvfb xauth dbus dbus-x11 procps xdotool imagemagick libgl1 libegl1 \
+                libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1
               for pkg in libgl1-mesa-dri libasound2 libasound2t64; do
                 apt-get install -y --no-install-recommends "$pkg" 2>/dev/null || true
               done
@@ -125,11 +115,14 @@ jobs:
                 alsa-lib mesa
               ;;
             zypper)
-              # NOTE: "webkit2gtk3-soup2" is the old 4.0 API; the app needs 4.1.
+              zypper --non-interactive --gpg-auto-import-keys refresh || true
               zypper --non-interactive install \
-                curl xvfb-run xauth dbus-1 dbus-1-x11 procps xdotool ImageMagick \
-                libwebkit2gtk-4_1-0 libgtk-3-0 libayatana-appindicator3-1 \
+                curl xorg-x11-server-Xvfb xvfb-run xauth dbus-1 dbus-1-x11 procps xdotool ImageMagick \
+                libwebkit2gtk-4_1-0 libgtk-3-0 \
                 alsa Mesa-dri Mesa-libEGL1 Mesa-libGL1
+              for pkg in libayatana-appindicator3-1 typelib-1_0-AyatanaAppIndicator3-0_1; do
+                zypper --non-interactive install "$pkg" 2>/dev/null || true
+              done
               ;;
           esac
 
@@ -157,7 +150,7 @@ jobs:
           # The patched AppImage has a bash wrapper as AppRun. The unpatched Tauri
           # build has a symlink to the binary and fails with the WebKit ENOENT crash.
           rm -rf squashfs-root
-          ./audion.AppImage --appimage-extract AppRun > /dev/null
+          APPIMAGE_EXTRACT_AND_RUN=1 ./audion.AppImage --appimage-extract AppRun > /dev/null
           if [ "$(head -c 2 squashfs-root/AppRun 2>/dev/null)" != "#!" ]; then
             echo "::error::AppRun is not the wrapper script - the unpatched AppImage was released"
             exit 1

@@ -24,21 +24,29 @@ fi
 # Disable dmabuf — most common blank-screen cause on Mesa/NVIDIA with no DRI3.
 export WEBKIT_DISABLE_DMABUF_RENDERER=1
 
-# Disable WebKit sandbox — required inside AppImage (seccomp conflicts with AppImage runtime).
+# Disable WebKit sandbox — required inside AppImage & containers (seccomp / user ns restrictions).
+# WebKitGTK 2.40+ deprecates WEBKIT_FORCE_SANDBOX=0 in favor of WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1.
 export WEBKIT_FORCE_SANDBOX=0
+export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
+
+# Auto-detect missing GPU / headless / virtualized environments (e.g. CI, Xvfb, VMs, Docker):
+# When /dev/dri is missing or software Mesa is requested, disable compositing mode
+# and force llvmpipe. Accelerated compositing without DRI3 causes black/blank windows.
+if [ ! -d /dev/dri ] || [ -z "$(ls -A /dev/dri 2>/dev/null)" ] || [ "${LIBGL_ALWAYS_SOFTWARE:-0}" = "1" ]; then
+  export LIBGL_ALWAYS_SOFTWARE=1
+  export WEBKIT_DISABLE_COMPOSITING_MODE=1
+else
+  # On real hardware with /dev/dri, leave unset unless user explicitly set them
+  if [ -z "${LIBGL_ALWAYS_SOFTWARE+x}" ]; then
+    unset LIBGL_ALWAYS_SOFTWARE
+  fi
+fi
 
 # DRI3 — opt-in disable. Set LIBGL_DRI3_DISABLE=1 at runtime if you hit
 # EGL_BAD_PARAMETER crashes (AMD RX 6600 + Bazzite / Mesa 23).
 # Do not export =0 as some Mesa versions treat any non-empty value as enabled.
 if [ -z "${LIBGL_DRI3_DISABLE+x}" ]; then
   unset LIBGL_DRI3_DISABLE
-fi
-
-# Software Mesa — opt-in fallback for VMs or broken GPU drivers.
-# User can set LIBGL_ALWAYS_SOFTWARE=1 before launch to force llvmpipe.
-# Do not export =0 as some Mesa loaders treat any non-empty value as true.
-if [ -z "${LIBGL_ALWAYS_SOFTWARE+x}" ]; then
-  unset LIBGL_ALWAYS_SOFTWARE
 fi
 # GALLIUM_DRIVER: leave unset unless the user explicitly set it.
 # Exporting an empty string breaks Mesa's implicit llvmpipe selection on some versions.
