@@ -12,9 +12,12 @@
         deriveGlobalString,
         buildKeyDisplay,
         categoryNames,
+        isBareLetterBinding,
+        remapBareLetterFields,
         type ShortcutBinding,
         type ShortcutDefinition,
     } from "$lib/stores/shortcuts";
+    import { appSettings } from "$lib/stores/settings";
     import Icon from "$lib/components/Icon.svelte";
 
     let editMode = false;
@@ -32,6 +35,16 @@
     }
 
     $: byCategory = getBindingsByCategory($shortcutBindings);
+
+    // alphabetical jump: how many shortcuts it moved, and how many it had to leave unbound
+    // because their Alt + letter was already taken by another shortcut
+    $: remappedCount = $shortcutBindings.filter(b => b.remappedFrom && b.key).length;
+    $: droppedCount = $shortcutBindings.filter(b => b.remappedFrom && !b.key).length;
+
+    function toggleAlphabeticalJump() {
+        cancelCapture();
+        shortcutBindings.setAlphabeticalJump(!$appSettings.alphabeticalJump);
+    }
 
     interface CaptureTarget {
         action: string;
@@ -81,7 +94,7 @@
         const isDigitKey  = e.code.startsWith("Digit");
         const useCode     = isLetterKey || isDigitKey || ["Slash"].includes(e.code);
 
-        const candidate: Partial<ShortcutBinding> = {
+        let candidate: Partial<ShortcutBinding> = {
             key:        useCode ? e.code : e.key,
             matchType:  useCode ? "code" : "key",
             modifiers: {
@@ -91,6 +104,12 @@
             },
             keyDisplay: buildKeyDisplay(e),
         };
+
+        // alphabetical jump reserves bare letters: treat a captured letter as Alt + letter so
+        // the conflict check and what gets saved match what will actually be active
+        if ($appSettings.alphabeticalJump && isBareLetterBinding(candidate as ShortcutBinding)) {
+            candidate = { ...candidate, ...remapBareLetterFields(candidate as ShortcutBinding) };
+        }
 
         // check for conflicts , pass oldKeyDisplay so same-action multi-binding
         // actions can detect intra-action duplicates
@@ -296,6 +315,55 @@
 
             <!-- content -->
             <div class="shortcuts-content">
+                <!-- alphabetical jump -->
+                <section class="jump-card" class:on={$appSettings.alphabeticalJump}>
+                    <div class="jump-text">
+                        <span class="jump-title">{$_('shortcuts.alphaJumpTitle', { default: 'Alphabetical jump' })}</span>
+                        <span class="jump-desc">
+                            {$_('shortcuts.alphaJumpDesc', {
+                                default: 'Press a letter in a track list sorted by title, artist or album to jump to the first match. Turning this on moves single-letter shortcuts to Alt + letter.',
+                            })}
+                        </span>
+                    </div>
+                    <button
+                        class="jump-switch"
+                        class:active={$appSettings.alphabeticalJump}
+                        on:click={toggleAlphabeticalJump}
+                        role="switch"
+                        aria-checked={$appSettings.alphabeticalJump}
+                        aria-label={$_('shortcuts.alphaJumpToggleLabel', { default: 'Toggle alphabetical jump' })}
+                    >
+                        <span class="jump-handle"></span>
+                    </button>
+                </section>
+
+                {#if $appSettings.alphabeticalJump}
+                    <div class="jump-notice" role="status">
+                        {#if remappedCount + droppedCount > 0}
+                            <p>
+                                <strong>{$_('shortcuts.alphaJumpOn', { default: 'Alphabetical jump is on.' })}</strong>
+                                {$_('shortcuts.alphaJumpMoved', {
+                                    values: { count: remappedCount + droppedCount },
+                                    default: `${remappedCount + droppedCount} single-letter shortcut(s) now use Alt + letter (marked "was ..." below). Turn it off to restore the originals.`,
+                                })}
+                            </p>
+                        {:else}
+                            <p>
+                                <strong>{$_('shortcuts.alphaJumpOn', { default: 'Alphabetical jump is on.' })}</strong>
+                                {$_('shortcuts.alphaJumpNothingMoved', { default: 'None of your shortcuts are single letters, so nothing needed to move.' })}
+                            </p>
+                        {/if}
+                        {#if droppedCount > 0}
+                            <p class="jump-warning">
+                                {$_('shortcuts.alphaJumpDropped', {
+                                    values: { count: droppedCount },
+                                    default: `${droppedCount} shortcut(s) couldn't move because their Alt + letter is already in use. They stay unbound until you turn this off.`,
+                                })}
+                            </p>
+                        {/if}
+                    </div>
+                {/if}
+
                 {#each Object.entries(byCategory) as [category, entries]}
                     {#if entries.length > 0}
                         <section class="shortcut-category">
@@ -323,6 +391,16 @@
                                                         {/each}
                                                     {/if}
                                                 </button>
+
+                                                {#if binding.remappedFrom}
+                                                    <span
+                                                        class="remap-badge"
+                                                        title={$_('shortcuts.remappedBadgeTitle', {
+                                                            values: { key: binding.remappedFrom.keyDisplay },
+                                                            default: `Originally ${binding.remappedFrom.keyDisplay}. Restored when alphabetical jump is turned off.`,
+                                                        })}
+                                                    >{$_('shortcuts.remappedBadge', { values: { key: binding.remappedFrom.keyDisplay }, default: `was ${binding.remappedFrom.keyDisplay}` })}</span>
+                                                {/if}
 
                                                 <!-- global toggle -->
                                                 <button
@@ -364,6 +442,15 @@
                                                 {/if}
                                                 {#if binding.isGlobal}
                                                     <span class="global-badge" title={$_('shortcuts.globalShortcutTitle')}>G</span>
+                                                {/if}
+                                                {#if binding.remappedFrom}
+                                                    <span
+                                                        class="remap-badge"
+                                                        title={$_('shortcuts.remappedBadgeTitle', {
+                                                            values: { key: binding.remappedFrom.keyDisplay },
+                                                            default: `Originally ${binding.remappedFrom.keyDisplay}. Restored when alphabetical jump is turned off.`,
+                                                        })}
+                                                    >{$_('shortcuts.remappedBadge', { values: { key: binding.remappedFrom.keyDisplay }, default: `was ${binding.remappedFrom.keyDisplay}` })}</span>
                                                 {/if}
                                             </span>
                                         {/if}
@@ -783,6 +870,111 @@
     }
 
     .btn-secondary:hover { background-color: var(--bg-surface); }
+
+    /* alphabetical jump */
+
+    .jump-card,
+    .jump-notice {
+        grid-column: 1 / -1;
+    }
+
+    .jump-card {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        background-color: var(--bg-surface);
+        border-radius: var(--radius-md);
+        border: 1px solid transparent;
+        padding: var(--spacing-md);
+    }
+
+    .jump-card.on {
+        border-color: var(--accent-primary);
+    }
+
+    .jump-text {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        min-width: 0;
+    }
+
+    .jump-title {
+        color: var(--text-primary);
+        font-weight: var(--font-weight-semibold);
+    }
+
+    .jump-desc {
+        color: var(--text-subdued);
+        font-size: var(--font-size-xs);
+    }
+
+    .jump-switch {
+        position: relative;
+        flex-shrink: 0;
+        width: 44px;
+        height: 24px;
+        border-radius: 12px;
+        border: none;
+        padding: 0;
+        background-color: var(--bg-highlight);
+        cursor: pointer;
+        transition: background-color var(--transition-fast);
+    }
+
+    .jump-switch.active {
+        background-color: var(--accent-primary);
+    }
+
+    .jump-handle {
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background-color: #fff;
+        transition: transform var(--transition-fast);
+    }
+
+    .jump-switch.active .jump-handle {
+        transform: translateX(20px);
+    }
+
+    .jump-notice {
+        background-color: rgba(var(--accent-primary-rgb, 99, 102, 241), 0.12);
+        border-radius: var(--radius-md);
+        padding: var(--spacing-sm) var(--spacing-md);
+        color: var(--text-primary);
+        font-size: var(--font-size-sm);
+    }
+
+    .jump-notice p {
+        margin: 0;
+    }
+
+    .jump-notice p + p {
+        margin-top: 4px;
+    }
+
+    .jump-warning {
+        color: var(--text-secondary);
+        font-size: var(--font-size-xs);
+    }
+
+    .remap-badge {
+        display: inline-flex;
+        align-items: center;
+        margin-left: 6px;
+        padding: 1px 6px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--accent-primary);
+        color: var(--accent-primary);
+        font-size: 0.625rem;
+        font-weight: var(--font-weight-semibold);
+        white-space: nowrap;
+    }
 
     /* footer */
 

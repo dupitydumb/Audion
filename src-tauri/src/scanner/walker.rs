@@ -2,7 +2,22 @@
 use std::path::Path;
 use walkdir::WalkDir;
 
-const SUPPORTED_EXTENSIONS: &[&str] = &["flac", "mp3", "wav", "ogg", "opus", "m4a", "aac", "alac"];
+// only containers symphonia can demux with the features in Cargo.toml
+// formats without a decoder (ape, wv, mpc, spx, wma, dsf...) are left out on purpose
+pub const SUPPORTED_EXTENSIONS: &[&str] = &[
+    // mpeg audio
+    "mp3", "mp2", "mp1",
+    // lossless
+    "flac", "alac", "wav", "wave", "aiff", "aif", "aifc", "afc", "caf",
+    // ogg family
+    "ogg", "oga", "opus",
+    // mp4 family
+    "m4a", "m4b", "m4p", "m4r", "mp4", "mov",
+    // raw adts
+    "aac",
+    // matroska audio and webm
+    "mka", "webm",
+];
 
 pub struct ScanResult {
     pub audio_files: Vec<String>,
@@ -15,11 +30,16 @@ pub fn scan_directory(path: &str) -> ScanResult {
     let mut errors = Vec::new();
     let mut total_scanned = 0;
 
-    for entry in WalkDir::new(path)
-        .follow_links(true)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
+    for entry in WalkDir::new(path).follow_links(true) {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(e) => {
+                // unreadable dir or file, link loop...
+                tracing::warn!("[SCAN] walk error: {}", e);
+                errors.push(format!("Walk error: {}", e));
+                continue;
+            }
+        };
         let path = entry.path();
         
         if path.is_file() {
@@ -65,7 +85,12 @@ mod tests {
         assert!(is_supported_audio_file(Path::new("song.AAC")));
         assert!(is_supported_audio_file(Path::new("song.alac")));
         assert!(is_supported_audio_file(Path::new("song.ALAC")));
-        assert!(!is_supported_audio_file(Path::new("song.mp4")));
-        assert!(!is_supported_audio_file(Path::new("song.txt")));
+        for ext in ["mp2", "mp1", "wave", "aiff", "AIF", "aifc", "caf", "oga", "m4b", "mp4", "mov", "mka", "webm"] {
+            assert!(is_supported_audio_file(Path::new(&format!("song.{ext}"))), "{ext}");
+        }
+        for ext in ["txt", "jpg", "cue", "m3u", "ape", "wv", "wma", "mkv"] {
+            assert!(!is_supported_audio_file(Path::new(&format!("song.{ext}"))), "{ext}");
+        }
+        assert!(!is_supported_audio_file(Path::new("noext")));
     }
 }

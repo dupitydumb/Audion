@@ -1,4 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
+import { get } from 'svelte/store';
+import { appSettings } from '$lib/stores/settings';
+import { hasCustomArtworkForTrack } from '$lib/stores/customArtwork';
 import type { Track } from '$lib/api/tauri';
 
 const SEARCH_API = 'https://covers.musichoarders.xyz/api/search';
@@ -9,6 +12,16 @@ interface ProxyFetchResponse {
 }
 
 export async function fetchTrackCover(track: Track): Promise<string | null> {
+    // respect the user's "auto-fetch covers" setting for every caller
+    if (!get(appSettings).coverAutoFetch) {
+        return null;
+    }
+
+    // never look anything up for a track that has custom artwork
+    if (hasCustomArtworkForTrack(track)) {
+        return null;
+    }
+
     const { title, artist, album } = track;
 
     // We need at least artist and album to search effectively
