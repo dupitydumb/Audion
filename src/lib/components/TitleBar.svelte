@@ -216,7 +216,7 @@
                     <input
                         type="text"
                         class="search-input"
-                        placeholder={$_('common.search')}
+                        placeholder={$_('common.searchMusic', { default: 'Search tracks, artists, albums...' })}
                         bind:value={searchInput}
                         bind:this={searchInputEl}
                         on:input={handleSearchInput}
@@ -262,7 +262,7 @@
                 <input
                     type="text"
                     class="search-input"
-                    placeholder={$_('common.search')}
+                    placeholder={$_('common.searchMusic', { default: 'Search tracks, artists, albums...' })}
                     bind:value={searchInput}
                     bind:this={searchInputEl}
                     on:input={handleSearchInput}
@@ -414,6 +414,8 @@
         right: 0;
         z-index: 50;
         border-bottom: 1px solid var(--border-color);
+        user-select: none;
+        -webkit-user-select: none;
     }
 
     .titlebar-left {

@@ -126,19 +126,14 @@
 </script>
 
 <section class="settings-section" aria-labelledby="artists-heading">
-  <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <Icon name="users" size="lg" className="accordion-icon" />
-    <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.artists', { default: 'Artists' })}</span>
-      <span class="accordion-subtitle">{$_('settings.artistsSubtitle', { default: 'Configure how multi-artist tags are split and how album artist is determined' })}</span>
-    </div>
-    <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
-  </button>
-  {#if open}
-    <div class="section-body" transition:slide|local>
-      <div class="settings-card">
+  <div class="section-header-row">
+    <h2 class="settings-section-title" id="artists-heading">{$_('settings.artists', { default: 'Artist Delimiters' })}</h2>
+    <p class="settings-section-desc">{$_('settings.artistsSubtitle', { default: 'Configure how multi-artist tags are split and how album artist is determined' })}</p>
+  </div>
+  <div class="section-body">
+    <div class="settings-card">
         <!-- delimiter rules -->
-        <div class="inner-section">
+        <div class="inner-section" id="setting-artist-delimiters">
           <span class="setting-title">{$_('settings.artistSplitRules', { default: 'Multi-artist splitting rules' })}</span>
           <span class="setting-description">{$_('settings.artistSplitRulesDesc', { default: 'Delimiters used to split a raw artist tag into individual artists, tried in order (top = highest priority). Escape a delimiter with a backslash (e.g. "Simon \\& Garfunkel") to keep it as one artist.' })}</span>
 
@@ -225,7 +220,6 @@
         {/if}
       </div>
     </div>
-  {/if}
 </section>
 
 <style>
