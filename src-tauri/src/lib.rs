@@ -582,6 +582,10 @@ pub fn run() {
 
     tracing::info!("Audion starting up");
 
+    // Linux-specific runtime environment setup before GTK/WebKit/Mesa initializes
+    #[cfg(all(desktop, target_os = "linux"))]
+    integrations::linux::setup_environment();
+
     // Initialize security audit logging
     security::init_logger();
 
