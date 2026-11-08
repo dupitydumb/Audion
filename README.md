@@ -101,6 +101,20 @@ yay -S audion-bin
 paru -S audion-bin
 ```
 
+#### Linux Troubleshooting & Flags
+Audion uses GPU hardware acceleration on Linux by default. If you encounter driver crashes, blank windows, or run inside a VM:
+- **Force Software Rendering (Safe Mode):**
+  ```bash
+  AUDION_SAFE_MODE=1 audion
+  # or
+  AUDION_SOFTWARE_RENDERING=1 audion
+  ```
+- **Disable WebKit Sandbox (for restricted container environments):**
+  ```bash
+  AUDION_DISABLE_SANDBOX=1 audion
+  ```
+*(Note: Virtual machines such as VirtualBox, VMware, and QEMU, as well as Flatpak/AppImage sandbox restrictions, are detected automatically.)*
+
 If you prefer, download the platform-specific asset from the Releases page for your OS.
 
 ### First Run
