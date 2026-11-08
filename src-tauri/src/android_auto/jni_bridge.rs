@@ -79,7 +79,7 @@ static NOTIFICATION_CALLBACK: OnceLock<GlobalRef> = OnceLock::new();
 /// called once from MediaNotificationService.onCreate with 'this'
 /// (the service itself implements the callback interface)
 /// see NativeNotificationCallback in AudionLibraryBridge.kt
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_registerNotificationCallbackNative<
     'local,
 >(
@@ -196,7 +196,7 @@ static SAF_DELETE_CALLBACK: OnceLock<GlobalRef> = OnceLock::new();
 
 /// Java_com_audion_app_AudionLibraryBridge_registerSafDeleteCallbackNative
 /// called once from MainActivity.onCreate with 'this'
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_registerSafDeleteCallbackNative<
     'local,
 >(
@@ -432,7 +432,7 @@ pub fn init_database_cold_start(app_data_dir: &str) {
 }
 
 /// Java_com_audion_app_AudionLibraryBridge_initDatabaseNative
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_initDatabaseNative<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
@@ -464,7 +464,7 @@ fn read_jstring(env: &mut JNIEnv, s: &JString) -> String {
 
 /// Java_com_audion_app_AudionLibraryBridge_getChildrenNative
 /// returns a json array of BrowseNode
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_getChildrenNative<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
@@ -497,7 +497,7 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_getChildrenNative
 
 /// Java_com_audion_app_AudionLibraryBridge_getItemNative
 /// returns a json Track object, or the literal "null" if not found/leaf wasn't a track id
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_getItemNative<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
@@ -532,7 +532,7 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_getItemNative<'lo
 /// Java_com_audion_app_AudionLibraryBridge_searchNative
 /// scope is one of "tracks" / "albums" / "artists" / "playlists",
 /// matching the 4 library chips (anything else returns an empty array)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_searchNative<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
@@ -616,7 +616,7 @@ fn resolve_local_path(track: &crate::db::models::Track) -> String {
 /// mediaId is one of our own "track:<id>" node ids
 /// also syncs an album-context queue into PlayerStateSync
 /// (see resolve_playback_context)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_playTrackNative<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
@@ -702,7 +702,7 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_playTrackNative<'
 }
 
 /// Java_com_audion_app_AudionLibraryBridge_resumeNative (MediaSessionCompat.onPlay)
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_resumeNative<'local>(
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
@@ -716,7 +716,7 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_resumeNative<'loc
 }
 
 /// Java_com_audion_app_AudionLibraryBridge_pauseNative
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_pauseNative<'local>(
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
@@ -730,7 +730,7 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_pauseNative<'loca
 }
 
 /// Java_com_audion_app_AudionLibraryBridge_stopNative
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_stopNative<'local>(
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
@@ -747,7 +747,7 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_stopNative<'local
 /// positionSeconds is an absolute position, not a 0.0-1.0 fraction => see
 /// AudioCommand::SeekAbsolute / AudioEngine::seek_absolute
 /// for why this needs its own command rather than reusing Seek
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_seekNative<'local>(
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
@@ -761,7 +761,7 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_seekNative<'local
 }
 
 /// Java_com_audion_app_AudionLibraryBridge_nextNative
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_nextNative<'local>(
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
@@ -774,7 +774,7 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_nextNative<'local
 }
 
 /// Java_com_audion_app_AudionLibraryBridge_previousNative
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_previousNative<'local>(
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
@@ -787,7 +787,7 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_previousNative<'l
 }
 
 /// Java_com_audion_app_AudionLibraryBridge_setShuffleNative
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_setShuffleNative<'local>(
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
@@ -806,7 +806,7 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_setShuffleNative<
 
 /// Java_com_audion_app_AudionLibraryBridge_setRepeatNative
 /// mode is one of "none" / "one" / "all", matching the frontend's repeat store
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_setRepeatNative<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,

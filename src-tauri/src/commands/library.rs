@@ -1,7 +1,6 @@
 // Library-related Tauri commands
 use crate::db::{queries, Database};
 use crate::scanner::{self, cover_storage, extract_metadata, scan_directory};
-use crate::security;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
