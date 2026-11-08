@@ -135,7 +135,28 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
 }
 
 .settings-section {
-  margin-bottom: var(--spacing-sm);
+  margin-bottom: var(--spacing-md, 16px);
+}
+
+.section-header-row {
+  margin-bottom: 12px;
+  margin-top: 8px;
+}
+
+.settings-section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 3px 0;
+  letter-spacing: -0.01em;
+}
+
+.settings-section-desc {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  margin: 0;
+  line-height: 1.4;
 }
 
 .setting-item {
@@ -147,20 +168,21 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
 }
 
 .setting-title {
-  font-size: 13px;
-  font-weight: var(--font-weight-medium);
+  font-size: 15px;
+  font-weight: 500;
   color: var(--text-primary);
-  line-height: var(--line-height-tight);
+  line-height: 1.3;
   display: block;
 }
 
 .setting-description {
-  font-size: 11px;
-  font-weight: var(--font-weight-normal);
+  font-size: 13px;
+  font-weight: 400;
   color: var(--text-secondary);
   line-height: 1.4;
   margin-top: 2px;
   display: block;
+  max-width: 60ch;
 }
 
 /* Theme Mode Buttons */
@@ -660,7 +682,7 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
 }
 
 .eq-presets-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: var(--font-weight-semibold);
   color: var(--text-subdued);
   text-transform: uppercase;
@@ -675,7 +697,7 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
 
 .preset-pill {
   padding: 4px 10px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: var(--font-weight-medium);
   background-color: var(--bg-surface);
   color: var(--text-secondary);
@@ -1100,7 +1122,7 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
 }
 
 .notice-text-sm {
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.4;
 }

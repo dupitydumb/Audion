@@ -1,43 +1,40 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
   import { appSettings } from "$lib/stores/settings";
-  import { slide } from "svelte/transition";
-  import { createEventDispatcher } from "svelte";
-  import Icon from "$lib/components/Icon.svelte";
+  import SettingRow from "./SettingRow.svelte";
+  import SettingToggle from "./SettingToggle.svelte";
 
-  export let open: boolean = false;
-  const dispatch = createEventDispatcher();
+  export let open: boolean = true;
 </script>
 
 <section class="settings-section" aria-labelledby="playback-heading">
-  <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <Icon name="play" size="lg" className="accordion-icon" />
-    <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.playback')}</span>
-      <span class="accordion-subtitle">{$_('settings.playbackSubtitle')}</span>
-    </div>
-    <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
-  </button>
-  {#if open}
-    <div class="section-body" transition:slide|local>
-      <div class="settings-card">
-        <div class="toggle-container">
-          <div class="toggle-info">
-            <span class="setting-title">{$_('settings.autoplay')}</span>
-            <span class="setting-description">{$_('settings.autoplayDesc')}</span>
-          </div>
-          <button
-            class="toggle-btn"
-            class:active={$appSettings.autoplay}
-            on:click={() => appSettings.setAutoplay(!$appSettings.autoplay)}
-            role="switch"
-            aria-checked={$appSettings.autoplay}
-            aria-label={$_('settings.toggleAutoplay', { default: 'Toggle Autoplay' })}
-          >
-            <div class="toggle-handle"></div>
-          </button>
-        </div>
-      </div>
-    </div>
-  {/if}
+  <div class="settings-card">
+    <SettingRow
+      id="setting-autoplay"
+      label={$_('settings.autoplay', { default: 'Autoplay' })}
+      description={$_('settings.autoplayDesc', { default: 'Automatically queue similar music when your playback queue ends.' })}
+    >
+      <SettingToggle
+        checked={$appSettings.autoplay}
+        label={$_('settings.toggleAutoplay', { default: 'Toggle Autoplay' })}
+        on:change={(e) => appSettings.setAutoplay(e.detail)}
+      />
+    </SettingRow>
+  </div>
 </section>
+
+<style>
+  .settings-section {
+    margin-bottom: var(--spacing-md, 16px);
+  }
+
+  .settings-card {
+    background-color: var(--bg-surface);
+    border-radius: var(--radius-md, 8px);
+    border: 1px solid var(--border-color);
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+</style>

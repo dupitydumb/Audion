@@ -78,9 +78,9 @@ fn open_decoded_source(
         device_channels,
     ) {
         Ok(src) => Ok(DecodedSource::Symphonia(src)),
-        Err(e) if ext.as_deref() == Some("ogg") => {
+        Err(e) if matches!(ext.as_deref(), Some("ogg" | "oga" | "webm" | "mka" | "mkv")) => {
             tracing::info!(
-                "[AUDIO] Symphonia couldn't decode '{}' ({}) — retrying as Opus-in-Ogg",
+                "[AUDIO] Symphonia couldn't decode '{}' ({}) — retrying as Opus",
                 path,
                 e
             );

@@ -87,13 +87,15 @@
     ArrowRight,
     ArrowUp,
     ArrowDown,
-    Tag
+    Tag,
+    Palette
   } from 'lucide-svelte';
 
   export let name:
     | 'cloud'
     | 'server'
     | 'tag'
+    | 'palette'
     | 'arrow-left'
     | 'arrow-right'
     | 'arrow-up'
@@ -309,7 +311,8 @@
     'arrow-right': ArrowRight,
     'arrow-up': ArrowUp,
     'arrow-down': ArrowDown,
-    tag: Tag
+    tag: Tag,
+    palette: Palette
   };
 
   $: component = iconMap[name] || HelpCircle;

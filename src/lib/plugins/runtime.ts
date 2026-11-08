@@ -9,8 +9,11 @@ import {
   currentTime,
   duration,
   queue,
+  queueIndex,
+  userQueueCount,
   togglePlay,
   playTrack,
+  playTracks,
   nextTrack,
   previousTrack,
   seek,
@@ -21,6 +24,8 @@ import {
   clearUpcoming
 } from '$lib/stores/player';
 import { tracks, playlists, loadLibrary, refreshAll } from '$lib/stores/library';
+import { loadLikedTracks } from '$lib/stores/liked';
+import { likeTrack, unlikeTrack } from '$lib/api/tauri';
 import { PluginStorage } from './plugin-storage';
 import { RateLimiter, RATE_LIMITS } from './rate-limiter';
 import type { EventListener } from './event-emitter';
@@ -28,6 +33,7 @@ import { uiSlotManager, type UISlotName } from './ui-slots';
 import { appSettings } from '$lib/stores/settings';
 import { theme } from '$lib/stores/theme';
 import { invoke } from '@tauri-apps/api/core';
+import { html5RegisterRawBlobUrl, html5ClearPreload } from '$lib/services/html5-audio';
 
 // Cross-Plugin Permission Manager
 class PluginPermissionManager {
@@ -604,17 +610,28 @@ export class PluginRuntime {
         clearUpcoming();
         return true;
 
-      // Set current track (for streaming plugins like Tidal)
+      // Play a full queue with a starting track index
+      case 'player.playQueue':
+        if (Array.isArray(args[0]) && args[0].length > 0) {
+          const queueTracks = args[0];
+          const startIndex = typeof args[1] === 'number' ? Math.max(0, Math.min(args[1], queueTracks.length - 1)) : 0;
+          const context = args[2] && (args[2].type === 'playlist' || args[2].type === 'album' || args[2].type === 'artist')
+            ? args[2]
+            : { type: 'playlist' as const, displayName: pluginName };
+
+          html5ClearPreload();
+          playTracks(queueTracks, startIndex, context);
+          return true;
+        }
+        return false;
+
+      // Set current track (for streaming plugins like Tidal / YouTube Music)
       case 'player.setTrack':
         if (args[0]) {
           const track = args[0];
 
-          // Use the main player logic to handle backend selection (HTML5 vs Native)
-          // resolution of stream URLs, and UI state updates.
-          playTrack(track).catch(err => {
-            console.error(`[PluginRuntime] player.setTrack failed:`, err);
-          });
-
+          html5ClearPreload();
+          playTracks([track], 0, { type: 'playlist' as const, displayName: pluginName });
           return true;
         }
         return false;
@@ -710,34 +727,96 @@ export class PluginRuntime {
         return get(playlists);
 
       case 'library.addExternalTrack':
-        // args: [trackData: { title, artist, album?, duration?, cover_url?, source_type, external_id, format?, bitrate?, stream_url }]
+        // args: [trackData: { title, artist, album?, duration?, cover_url?, source_type, external_id, format?, bitrate?, stream_url, liked? }]
         const trackData = args[0];
         if (!trackData || !trackData.title || !trackData.artist || !trackData.source_type || !trackData.external_id) {
           console.warn(`[PluginRuntime] Invalid external track data`);
-          return null;
+          return Promise.resolve(null);
         }
 
         // Call Rust command to add external track
-        return invoke('add_external_track', {
-          track: {
-            title: trackData.title,
-            artist: trackData.artist,
-            album: trackData.album || null,
-            duration: trackData.duration || null,
-            cover_url: trackData.cover_url || null,
-            source_type: trackData.source_type,
-            external_id: trackData.external_id,
-            format: trackData.format || null,
-            bitrate: trackData.bitrate || null,
-            stream_url: trackData.stream_url || null,  // The decoded stream URL
-            track_number: trackData.track_number || null,
-            disc_number: trackData.disc_number || null,
-            musicbrainz_recording_id: trackData.musicbrainz_recording_id || null,
-            metadata_json: trackData.metadata_json
-              ? JSON.stringify(trackData.metadata_json)
-              : null,
+        return (async () => {
+          const trackId = await invoke<number>('add_external_track', {
+            track: {
+              title: trackData.title,
+              artist: trackData.artist,
+              album: trackData.album || null,
+              duration: trackData.duration || null,
+              cover_url: trackData.cover_url || null,
+              source_type: trackData.source_type,
+              external_id: trackData.external_id,
+              format: trackData.format || null,
+              bitrate: trackData.bitrate || null,
+              stream_url: trackData.stream_url || null,  // The decoded stream URL
+              track_number: trackData.track_number || null,
+              disc_number: trackData.disc_number || null,
+              musicbrainz_recording_id: trackData.musicbrainz_recording_id || null,
+              metadata_json: trackData.metadata_json
+                ? JSON.stringify(trackData.metadata_json)
+                : null,
+            }
+          });
+
+          if (typeof trackId === 'number' && trackId > 0) {
+            if (trackData.liked) {
+              try {
+                await likeTrack(trackId);
+              } catch (likeErr) {
+                console.warn(`[PluginRuntime] Failed to auto-like external track:`, likeErr);
+              }
+            }
+            // Refresh stores so track appears instantly in Library and Liked Songs views
+            try {
+              await Promise.all([refreshAll(), loadLikedTracks()]);
+            } catch (syncErr) {
+              console.warn(`[PluginRuntime] Failed to refresh library stores:`, syncErr);
+            }
           }
-        });
+
+          return trackId;
+        })();
+
+      case 'library.likeTrack':
+        // args: [trackId: number]
+        if (typeof args[0] === 'number') {
+          return (async () => {
+            await likeTrack(args[0]);
+            await loadLikedTracks();
+            return true;
+          })();
+        }
+        return false;
+
+      case 'library.unlikeTrack':
+        // args: [trackId: number]
+        if (typeof args[0] === 'number') {
+          return (async () => {
+            await unlikeTrack(args[0]);
+            await loadLikedTracks();
+            return true;
+          })();
+        }
+        return false;
+
+      case 'library.removeTrack':
+      case 'library.deleteTrack':
+        // args: [trackId: number]
+        if (typeof args[0] === 'number') {
+          return (async () => {
+            try {
+              const ok = await invoke<boolean>('delete_track', { trackId: args[0] });
+              await Promise.all([
+                refreshAll(),
+                loadLikedTracks()
+              ]);
+              return ok;
+            } catch (err) {
+              console.warn('[PluginRuntime] deleteTrack failed:', err);
+              return false;
+            }
+          })();
+        }
+        return false;
 
       case 'library.createPlaylist':
         // args: [name, coverUrl?]
@@ -817,6 +896,7 @@ export class PluginRuntime {
         next: () => this.callHost(pluginName, 'player.next'),
         prev: () => this.callHost(pluginName, 'player.prev'),
         setTrack: (track: any) => this.callHost(pluginName, 'player.setTrack', track),
+        playQueue: (tracks: any[], startIndex?: number, context?: any) => this.callHost(pluginName, 'player.playQueue', tracks, startIndex, context),
         addToQueue: (tracks: any[]) => this.callHost(pluginName, 'player.addToQueue', tracks),
         removeFromQueue: (index: number) => this.callHost(pluginName, 'player.removeFromQueue', index),
         reorderQueue: (from: number, to: number) => this.callHost(pluginName, 'player.reorderQueue', from, to),
@@ -867,8 +947,13 @@ export class PluginRuntime {
         disc_number?: number | null;
         musicbrainz_recording_id?: string | null;
         metadata_json?: Record<string, any> | null;
+        liked?: boolean;
       }) => this.callHost(pluginName, 'library.addExternalTrack', trackData);
 
+      api.library.likeTrack = (trackId: number) => this.callHost(pluginName, 'library.likeTrack', trackId);
+      api.library.unlikeTrack = (trackId: number) => this.callHost(pluginName, 'library.unlikeTrack', trackId);
+      api.library.removeTrack = (trackId: number) => this.callHost(pluginName, 'library.removeTrack', trackId);
+      api.library.deleteTrack = (trackId: number) => this.callHost(pluginName, 'library.deleteTrack', trackId);
       api.library.refresh = () => this.callHost(pluginName, 'library.refresh');
       api.library.createPlaylist = (name: string, coverUrl?: string) => this.callHost(pluginName, 'library.createPlaylist', name, coverUrl);
       api.library.addTrackToPlaylist = (playlistId: number, trackId: number) => this.callHost(pluginName, 'library.addTrackToPlaylist', playlistId, trackId);
@@ -1134,7 +1219,9 @@ export class PluginRuntime {
           const bytes = new Uint8Array(binary.length);
           for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
           const blob = new Blob([bytes], { type: mimeType });
-          return URL.createObjectURL(blob);
+          const blobUrl = URL.createObjectURL(blob);
+          html5RegisterRawBlobUrl(blobUrl);
+          return blobUrl;
         } catch (error) {
           console.error(`[PluginRuntime] fetchBlob failed for ${pluginName}:`, error);
           throw error;
@@ -1600,10 +1687,47 @@ export class PluginRuntime {
     try {
       console.log(`[PluginRuntime] Resolving stream URL for ${sourceType}://${externalId}`);
       const url = await resolver(externalId, options);
-      console.log(`[PluginRuntime] Resolved stream URL:`, url ? url.substring(0, 50) + '...' : 'null');
+      if (!url) return null;
+      console.log(`[PluginRuntime] Resolved stream URL:`, url.substring(0, 60) + '...');
+
+      // If the resolved URL is an external HTTP(S) URL (not already blob: or asset:),
+      // proxy it through Rust → blob: URL to bypass CORS restrictions.
+      // googlevideo.com and similar CDNs don't send Access-Control-Allow-Origin headers,
+      // so the browser blocks direct <audio src> playback from tauri.localhost.
+      if (url.startsWith('http://') || url.startsWith('https://')) {
+        try {
+          const mime = url.includes('webm') ? 'audio/webm' : 'audio/mp4';
+          const blobUrl = await this.proxyToBlobUrl(url, mime);
+          if (blobUrl) {
+            console.log(`[PluginRuntime] Stream proxied to blob URL for CORS bypass`);
+            return blobUrl;
+          }
+        } catch (proxyErr) {
+          console.warn(`[PluginRuntime] Blob proxy failed, returning raw URL (may hit CORS):`, proxyErr);
+        }
+      }
+
       return url;
     } catch (error) {
       console.error(`[PluginRuntime] Failed to resolve stream URL:`, error);
+      return null;
+    }
+  }
+
+  // Fetch a remote URL via Rust backend and return a same-origin blob: URL.
+  // This bypasses CORS completely since the fetch is done server-side.
+  private async proxyToBlobUrl(url: string, mimeType = 'audio/mp4'): Promise<string | null> {
+    try {
+      const b64: string = await invoke<string>('proxy_fetch_bytes', { url });
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: mimeType });
+      const blobUrl = URL.createObjectURL(blob);
+      html5RegisterRawBlobUrl(blobUrl);
+      return blobUrl;
+    } catch (err) {
+      console.error(`[PluginRuntime] proxyToBlobUrl failed:`, err);
       return null;
     }
   }

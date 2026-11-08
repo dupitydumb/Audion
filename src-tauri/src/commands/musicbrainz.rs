@@ -485,7 +485,7 @@ pub struct MbDiscographyItem {
 
 /// Build a human-readable release type from MB primary + secondary type fields.
 fn release_type_label(primary: &Option<String>, secondary: &Option<Vec<String>>) -> String {
-    if let Some(ref sec) = secondary {
+    if let Some(sec) = secondary {
         if !sec.is_empty() {
             return sec[0].clone();
         }

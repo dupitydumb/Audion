@@ -27,6 +27,14 @@ export interface ShortcutDefinition {
     rebindable: boolean;
 }
 
+/** what a binding looked like before alphabetical jump moved it (restored when it's turned off) */
+export interface RemappedFrom {
+    key: string;
+    matchType: KeyMatchType;
+    modifiers: ShortcutModifiers;
+    keyDisplay: string;
+}
+
 export interface ShortcutBinding {
     action: string;
     /** the key value: event.code value (e.g. "KeyF") or event.key value (e.g. "ArrowRight") */
@@ -46,6 +54,11 @@ export interface ShortcutBinding {
     globalString: string | null;
     /** set by the handler if Tauri failed to register the global shortcut */
     globalError?: string;
+    /**
+     * present only while alphabetical jump is on and this binding was a bare letter that got
+     * moved to Alt + letter. holds the original so turning the feature off restores it exactly
+     */
+    remappedFrom?: RemappedFrom;
 }
 
 
@@ -131,6 +144,110 @@ export const defaultBindings: ShortcutBinding[] = [
 ];
 
 
+// ─── Alphabetical jump: moving bare-letter shortcuts out of the way ───────────────────────────
+
+/** true for a letter pressed on its own (no Ctrl/Shift/Alt), e.g. "F" but not "Ctrl + F" */
+export function isBareLetterBinding(
+    b: Pick<ShortcutBinding, "key" | "matchType" | "modifiers">
+): boolean {
+    if (b.modifiers.ctrl || b.modifiers.shift || b.modifiers.alt) return false;
+    return (
+        (b.matchType === "code" && /^Key[A-Z]$/.test(b.key)) ||
+        (b.matchType === "key" && /^[a-zA-Z]$/.test(b.key))
+    );
+}
+
+/**
+ * the fields that change when a bare letter becomes Alt + letter. also used by the rebind UI so
+ * a letter captured while alphabetical jump is on is checked for conflicts as Alt + letter.
+ */
+export function remapBareLetterFields(
+    b: Pick<ShortcutBinding, "key" | "matchType" | "modifiers" | "keyDisplay" | "remappedFrom">
+): Pick<ShortcutBinding, "key" | "matchType" | "modifiers" | "keyDisplay" | "remappedFrom"> {
+    const letter = (b.matchType === "code" ? b.key.slice(3) : b.key).toUpperCase();
+    return {
+        key: `Key${letter}`,
+        matchType: "code",
+        modifiers: { alt: true },
+        keyDisplay: `Alt + ${letter}`,
+        remappedFrom: b.remappedFrom ?? {
+            key: b.key,
+            matchType: b.matchType,
+            modifiers: { ...b.modifiers },
+            keyDisplay: b.keyDisplay,
+        },
+    };
+}
+
+function comboId(b: Pick<ShortcutBinding, "key" | "matchType" | "modifiers">): string {
+    const m = b.modifiers;
+    return `${b.matchType}|${b.key}|${m.ctrl ? 1 : 0}${m.shift ? 1 : 0}${m.alt ? 1 : 0}`;
+}
+
+/** re-derive the OS-level shortcut string after a binding's key changed */
+function refreshGlobal(b: ShortcutBinding): ShortcutBinding {
+    if (!b.isGlobal) return b;
+    const globalString = deriveGlobalString(b);
+    return globalString
+        ? { ...b, globalString }
+        : { ...b, isGlobal: false, globalString: null };
+}
+
+/**
+ * move every bare-letter binding (defaults and user-customised alike) to Alt + letter, keeping
+ * the original on the binding. if Alt + letter is already used by another shortcut the moved one
+ * is left unbound (its original is still remembered, so it comes back when jump is turned off).
+ */
+export function applyAlphabeticalJump(bindings: ShortcutBinding[]): ShortcutBinding[] {
+    // combos held by bindings that are staying where they are
+    const occupied = new Set(
+        bindings.filter(b => b.key && !isBareLetterBinding(b)).map(comboId)
+    );
+
+    return bindings.map(b => {
+        if (!b.key || b.remappedFrom || !isBareLetterBinding(b)) return b;
+
+        const moved = refreshGlobal({ ...b, ...remapBareLetterFields(b) });
+        const id = comboId(moved);
+        if (occupied.has(id)) {
+            return {
+                ...b,
+                key: "",
+                matchType: "key",
+                modifiers: {},
+                keyDisplay: "(unbound)",
+                isGlobal: false,
+                globalString: null,
+                globalError: undefined,
+                remappedFrom: moved.remappedFrom,
+            };
+        }
+        occupied.add(id);
+        return moved;
+    });
+}
+
+/** undo applyAlphabeticalJump: every remapped binding goes back to what it was. */
+export function revertAlphabeticalJump(bindings: ShortcutBinding[]): ShortcutBinding[] {
+    return bindings.map(b => {
+        if (!b.remappedFrom) return b;
+        const { remappedFrom, ...rest } = b;
+        return refreshGlobal({
+            ...rest,
+            key: remappedFrom.key,
+            matchType: remappedFrom.matchType,
+            modifiers: { ...remappedFrom.modifiers },
+            keyDisplay: remappedFrom.keyDisplay,
+        });
+    });
+}
+
+/** while alphabetical jump is on, no binding may be a bare letter: keep that true after any edit */
+function enforceAlphabeticalJump(bindings: ShortcutBinding[]): ShortcutBinding[] {
+    return get(appSettings).alphabeticalJump ? applyAlphabeticalJump(bindings) : bindings;
+}
+
+
 /**
  * the active bindings. initialised from appSettings (persisted) or defaultBindings
  * KeyboardShortcuts.svelte reads this to drive its handler
@@ -139,7 +256,7 @@ export const defaultBindings: ShortcutBinding[] = [
 function createBindingsStore() {
     const saved = get(appSettings).keyboardBindings;
     // merge saved bindings onto defaults: saved takes precedence
-    const initial = mergeWithDefaults(saved ?? null);
+    const initial = enforceAlphabeticalJump(mergeWithDefaults(saved ?? null));
 
     const { subscribe, set, update } = writable<ShortcutBinding[]>(initial);
 
@@ -170,7 +287,13 @@ function createBindingsStore() {
                     merged.globalError  = undefined;
                 }
 
-                const updated = bindings.map((b, i) => i === idx ? merged : b);
+                // a rebind replaces whatever alphabetical jump remembered for this slot:
+                // only keep a remembered original if the new binding carries one itself
+                if (newBinding.key !== undefined) {
+                    merged.remappedFrom = newBinding.remappedFrom;
+                }
+
+                const updated = enforceAlphabeticalJump(bindings.map((b, i) => i === idx ? merged : b));
                 persistBindings(updated);
                 return updated;
             });
@@ -193,18 +316,34 @@ function createBindingsStore() {
 
         /** reset all bindings to defaults */
         resetToDefaults() {
-            persistBindings(defaultBindings);
-            set([...defaultBindings]);
+            const next = enforceAlphabeticalJump([...defaultBindings]);
+            persistBindings(next);
+            set(next);
         },
 
         /** reset a single action's bindings to defaults */
         resetAction(action: string) {
             update(bindings => {
                 const actionDefaults = defaultBindings.filter(b => b.action === action);
-                const updated = [
+                const updated = enforceAlphabeticalJump([
                     ...bindings.filter(b => b.action !== action),
                     ...actionDefaults,
-                ];
+                ]);
+                persistBindings(updated);
+                return updated;
+            });
+        },
+
+        /**
+         * turn alphabetical jump on/off. on: every single-letter shortcut moves to Alt + letter
+         * (originals are kept on each binding). off: they all go back exactly as they were.
+         */
+        setAlphabeticalJump(enabled: boolean) {
+            appSettings.setAlphabeticalJump(enabled);
+            update(bindings => {
+                const updated = enabled
+                    ? applyAlphabeticalJump(bindings)
+                    : revertAlphabeticalJump(bindings);
                 persistBindings(updated);
                 return updated;
             });

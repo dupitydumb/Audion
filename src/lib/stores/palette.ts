@@ -1,7 +1,9 @@
 import { writable, derived } from "svelte/store";
 import { invoke } from "@tauri-apps/api/core";
 import { currentTrack } from "$lib/stores/player";
-import { getTrackCoverSrc } from "$lib/api/tauri";
+import { convertFileSrc } from "$lib/api/tauri";
+import { resolveTrackCover } from "$lib/stores/library";
+import { customArtworks } from "$lib/stores/customArtwork";
 import { meshSettings } from "$lib/stores/meshSettings";
 
 export interface PaletteColor {
@@ -28,15 +30,31 @@ function normalizePalette(
 
 let currentGen = 0;
 
-currentTrack.subscribe(async (track) => {
-  const gen = ++currentGen;
+// re-extract when the track changes or the user changes its artwork
+const paletteSource = derived([currentTrack, customArtworks], ([track]) => track);
+let lastTrackId: number | null = null;
+let lastCoverSrc: string | null = null;
 
+paletteSource.subscribe(async (track) => {
   if (!track) {
+    ++currentGen;
+    lastTrackId = null;
+    lastCoverSrc = null;
     albumPalette.set([]);
     return;
   }
 
-  const coverSrc = getTrackCoverSrc(track);
+  const coverSrc = resolveTrackCover(track);
+
+  // currentTrack emits often (e.g. cover_url updates)
+  // skip if nothing visual changed
+  // must happen before bumping currentGen, or an in-flight extraction would be discarded
+  if (track.id === lastTrackId && coverSrc === lastCoverSrc) return;
+  lastTrackId = track.id;
+  lastCoverSrc = coverSrc;
+
+  const gen = ++currentGen;
+
   if (!coverSrc) {
     albumPalette.set([]);
     return;
@@ -50,7 +68,7 @@ currentTrack.subscribe(async (track) => {
   try {
     let raw: { hex: string; luminance: number; is_dark: boolean; weight: number }[];
 
-    if (track.track_cover_path) {
+    if (track.track_cover_path && coverSrc === convertFileSrc(track.track_cover_path)) {
       // preferred path: only a short file path string crosses the IPC boundary
       // rust reads the file itself
       raw = await invoke("extract_palette_from_path", {
@@ -59,8 +77,23 @@ currentTrack.subscribe(async (track) => {
     } else {
       // fallback for covers with no local file:
       // legacy base64 storage or a remote cover_url
-      const res = await fetch(coverSrc);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      let res = await fetch(coverSrc).catch(() => null);
+      if (!res || !res.ok) {
+        // If Google CDN failed with 429 or network error and track has external_id, try YouTube fallback thumbnail
+        if (track.source_type === 'youtube' && track.external_id && !coverSrc.includes('i.ytimg.com')) {
+          const ytFallback = `https://i.ytimg.com/vi/${track.external_id}/hqdefault.jpg`;
+          res = await fetch(ytFallback).catch(() => null);
+        }
+      }
+      if (!res || !res.ok) {
+        // Silent graceful fallback if cover cannot be fetched or rate-limited
+        // a newer track may have taken over while we were fetching: don't wipe its palette
+        if (gen !== currentGen) return;
+        // forget this cover so the next currentTrack emission retries it
+        lastCoverSrc = null;
+        albumPalette.set([]);
+        return;
+      }
       const bytes = await res.arrayBuffer();
       raw = await invoke("extract_palette", {
         imageBytes: Array.from(new Uint8Array(bytes)),
@@ -75,6 +108,9 @@ currentTrack.subscribe(async (track) => {
   } catch (e) {
     if (gen !== currentGen) return;
     console.error("Palette extraction failed:", e);
+    // forget this cover so the next currentTrack emission retries it
+    // (otherwise the skip check above would leave the palette empty after a transient failure, e.g. a 429)
+    lastCoverSrc = null;
     albumPalette.set([]);
   }
 });

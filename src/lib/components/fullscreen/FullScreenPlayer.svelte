@@ -40,11 +40,9 @@
     getLineSyncState,
     type LineSyncState,
   } from "$lib/stores/lyrics";
-  import {
-    getTrackCoverSrc,
-    formatDuration,
-    getIsLinux,
-  } from "$lib/api/tauri";
+  import { formatDuration, getIsLinux } from "$lib/api/tauri";
+  import { resolveTrackCover } from "$lib/stores/library";
+  import { customArtworks } from "$lib/stores/customArtwork";
   import { onMount, tick } from "svelte";
   import { likedTrackIds, toggleLike } from "$lib/stores/liked";
   import { buildTrackContextMenu } from "$lib/menus/contextMenus";
@@ -104,10 +102,11 @@
     return 0;
   }
 
-  // Load album art
+  // Load album art (shared resolver
+  // re-runs when custom artwork changes)
   $: if ($currentTrack) {
-    const trackCover = getTrackCoverSrc($currentTrack);
-    albumArt = trackCover || null;
+    void $customArtworks;
+    albumArt = resolveTrackCover($currentTrack);
   } else {
     albumArt = null;
   }

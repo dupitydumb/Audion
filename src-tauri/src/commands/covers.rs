@@ -87,7 +87,7 @@ impl<T, E: std::fmt::Display> ToStringErr<T> for Result<T, E> {
 // Calculate optimal batch size based on progress and queue depth
 fn calculate_batch_size(
     items_processed: usize,
-    total_items: usize,
+    _total_items: usize,
     queue_depth: usize,
 ) -> usize {
     if items_processed == 0 {

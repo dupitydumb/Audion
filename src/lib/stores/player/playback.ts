@@ -11,6 +11,7 @@ import {
 import { invoke } from '@tauri-apps/api/core';
 import { addToast } from '$lib/stores/toast';
 import { appSettings } from '$lib/stores/settings';
+import { hasCustomArtworkForTrack } from '$lib/stores/customArtwork';
 import { tracks as libraryTracks, getFullTrack, updateTrackCover } from '$lib/stores/library';
 import { fetchTrackCover } from '$lib/services/cover-fetcher';
 import { recordTrackPlay } from '$lib/stores/activity';
@@ -142,10 +143,26 @@ reckoning.registerHtml5CrossfadeCallback(() => void _triggerHtml5Crossfade());
 // what's next/previous, respecting repeat/shuffle) and guards it with a generation counter
 // this section keeps its queue mirror in sync and applies whatever it decides
 
+function _ensureNumericId(track: any): number {
+    if (typeof track?.id === 'number' && !isNaN(track.id)) return track.id;
+    if (typeof track?.track_id === 'number' && !isNaN(track.track_id)) return track.track_id;
+    const key = track?.external_id || track?.path || (track as any)?.stream_url || track?.title || String(Math.random());
+    let hash = 0;
+    for (let i = 0; i < key.length; i++) {
+        hash = ((hash << 5) - hash) + key.charCodeAt(i);
+        hash |= 0;
+    }
+    const safeId = Math.abs(hash) || 1;
+    if (track && typeof track === 'object') {
+        track.id = safeId;
+    }
+    return safeId;
+}
+
 function _trackRefFor(track: Track): PlayerTrackRef {
     return {
-        id: track.id,
-        path: track.local_src || track.path || '',
+        id: _ensureNumericId(track),
+        path: track.local_src || track.path || (track as any).stream_url || '',
         duration_secs: track.duration ?? null,
         is_streaming: isStreaming(track),
     };
@@ -235,6 +252,7 @@ export async function playTrack(
     startTime = 0,
     direction?: 'next' | 'previous',
 ): Promise<void> {
+    _ensureNumericId(track);
     const previousTrackObj = get(currentTrack);
     const sessionId = ++_currentSessionId;
 
@@ -288,9 +306,15 @@ export async function playTrack(
     await updateMediaSessionMetadata(trackForPlugins);
     await updateSmtcMetadata(trackForPlugins, direction).catch(e => console.warn('[Player] SMTC metadata update failed:', e));
 
-    if (!track.track_cover_path && !track.cover_url) {
+    if (
+        get(appSettings).coverAutoFetch &&
+        !track.track_cover_path &&
+        !track.cover_url &&
+        !hasCustomArtworkForTrack(track)
+    ) {
         fetchTrackCover(track).then(async (newCoverUrl) => {
-            if (newCoverUrl) {
+            // artwork may have been set (or fetching turned off) while the lookup was in flight
+            if (newCoverUrl && !hasCustomArtworkForTrack(track) && get(appSettings).coverAutoFetch) {
                 console.log(`[Player] Auto-fetched cover for "${track.title}": ${newCoverUrl}`);
 
                 try {
@@ -360,7 +384,11 @@ export async function playTrack(
             audioPath = track.external_id;
         }
 
-        const streaming = isStreaming(track) || !!(track as any).stream_url || audioPath.startsWith('http://') || audioPath.startsWith('https://');
+        if (!audioPath && track.source_type && track.external_id) {
+            audioPath = `${track.source_type}://${track.external_id}`;
+        }
+
+        const streaming = isStreaming(track) || !!(track as any).stream_url || audioPath.startsWith('http://') || audioPath.startsWith('https://') || audioPath.includes('://');
 
         let swapped = false;
         if (startTime === 0) {
@@ -1005,9 +1033,13 @@ async function _scheduleHtml5Preload(): Promise<void> {
         audioPath = nextTrackObj.external_id;
     }
 
+    if (!audioPath && nextTrackObj.source_type && nextTrackObj.external_id) {
+        audioPath = `${nextTrackObj.source_type}://${nextTrackObj.external_id}`;
+    }
+
     if (!audioPath) return;
 
-    const streaming = isStreaming(nextTrackObj) || !!(nextTrackObj as any).stream_url || audioPath.startsWith('http://') || audioPath.startsWith('https://');
+    const streaming = isStreaming(nextTrackObj) || !!(nextTrackObj as any).stream_url || audioPath.startsWith('http://') || audioPath.startsWith('https://') || audioPath.includes('://');
 
     if (!streaming) {
         return;
@@ -1048,3 +1080,23 @@ export function getPlayerNativeAudioUsed(): boolean { return _nativeAudioUsed; }
 export function incrementPlayerNativeErrorCount(): number { return ++_nativeErrCount; }
 export function resetPlayerNativeErrorCount(): void { _nativeErrCount = 0; }
 export const PLAYER_NATIVE_ERROR_FALLBACK_THRESHOLD = 3;
+
+/**
+ * remove a fetched cover_url from the copies of tracks held by the player
+ * (current track and queue)
+ * those are snapshots, so they'd otherwise keep showing a cover that was just cleared
+ */
+export function stripFetchedCoversFromPlayer(trackIds: number[]): void {
+    if (trackIds.length === 0) return;
+    const idSet = new Set(trackIds);
+
+    const current = get(currentTrack);
+    if (current && idSet.has(current.id) && current.cover_url) {
+        currentTrack.set({ ...current, cover_url: null });
+    }
+
+    // only touch the queue if something in it is affected (avoids spurious queue updates)
+    if (get(queue).some(t => idSet.has(t.id) && t.cover_url)) {
+        queue.update(q => q.map(t => (idSet.has(t.id) ? { ...t, cover_url: null } : t)));
+    }
+}

@@ -17,6 +17,7 @@ export {
     nextTrack, previousTrack,
     seek, setVolume,
     toggleShuffle, cycleRepeat,
+    stripFetchedCoversFromPlayer,
 } from './playback';
 
 // Queue management

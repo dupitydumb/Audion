@@ -40,6 +40,236 @@ fn generate_content_hash(
     format!("{:016x}", u64::from_be_bytes(result[..8].try_into().unwrap()))
 }
 
+// full symphonia scan for files lofty can't read
+// tags, cover art, duration and bitrate all come from the demuxer
+fn extract_metadata_symphonia(path: &Path) -> Result<TrackInsert, String> {
+    use symphonia::core::formats::TrackType;
+    use symphonia::core::meta::{RawValue, StandardTag, StandardVisualKey};
+    use symphonia::core::units::Timestamp;
+
+    let file = std::fs::File::open(path).map_err(|e| format!("open failed: {}", e))?;
+    let file_len = file.metadata().map(|m| m.len()).unwrap_or(0);
+    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase());
+    let mut hint = Hint::new();
+    if let Some(ref ext) = ext {
+        hint.with_extension(ext);
+    }
+
+    let mut format = get_probe()
+        .probe(
+            &hint,
+            mss,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
+        .map_err(|e| format!("probe failed: {}", e))?;
+
+    let (track_id, time_base, header_duration) = match format.default_track(TrackType::Audio) {
+        Some(t) => (t.id, t.time_base, t.duration),
+        None => return Err("no audio track".to_string()),
+    };
+    let mut duration = match (time_base, header_duration) {
+        (Some(tb), Some(d)) => tb
+            .calc_time(Timestamp::from(d.get() as i64))
+            .map(|t| t.as_secs_f64() as i32)
+            .unwrap_or(0),
+        _ => 0,
+    };
+
+    let mut title = None;
+    let mut artist = None;
+    let mut album = None;
+    let mut album_artist = None;
+    let mut track_number = None;
+    let mut disc_number = None;
+    let mut genre = None;
+    let mut composer = None;
+    let mut musicbrainz_recording_id = None;
+    let mut cover: Option<Vec<u8>> = None;
+    let mut raw_pairs: Vec<(String, String)> = Vec::new();
+
+    {
+        let metadata = format.metadata();
+        if let Some(rev) = metadata.current() {
+            let per_track = rev.per_track.iter().map(|p| &p.metadata.tags);
+            for tag in rev.media.tags.iter().chain(per_track.flatten()) {
+                match &tag.std {
+                    Some(StandardTag::TrackTitle(s)) if title.is_none() => {
+                        title = Some(s.to_string())
+                    }
+                    Some(StandardTag::Artist(s)) if artist.is_none() => {
+                        artist = Some(s.to_string())
+                    }
+                    Some(StandardTag::Album(s)) if album.is_none() => album = Some(s.to_string()),
+                    Some(StandardTag::AlbumArtist(s)) if album_artist.is_none() => {
+                        album_artist = Some(s.to_string())
+                    }
+                    Some(StandardTag::TrackNumber(n)) if track_number.is_none() => {
+                        track_number = Some(*n as i32)
+                    }
+                    Some(StandardTag::DiscNumber(n)) if disc_number.is_none() => {
+                        disc_number = Some(*n as i32)
+                    }
+                    Some(StandardTag::Genre(s)) if genre.is_none() => genre = Some(s.to_string()),
+                    Some(StandardTag::Composer(s)) if composer.is_none() => {
+                        composer = Some(s.to_string())
+                    }
+                    Some(StandardTag::MusicBrainzRecordingId(s))
+                        if musicbrainz_recording_id.is_none() =>
+                    {
+                        musicbrainz_recording_id = Some(s.to_string())
+                    }
+                    _ => {}
+                }
+                // matroska keys come namespaced (ALBUM@ARTIST) and not always mapped
+                if let RawValue::String(v) = &tag.raw.value {
+                    let key = tag.raw.key.rsplit('@').next().unwrap_or("").to_uppercase();
+                    raw_pairs.push((key, v.to_string()));
+                }
+            }
+
+            // front cover first, otherwise whatever picture comes first
+            cover = rev
+                .media
+                .visuals
+                .iter()
+                .find(|v| matches!(v.usage, Some(StandardVisualKey::FrontCover)))
+                .or_else(|| rev.media.visuals.first())
+                .map(|v| v.data.to_vec());
+        }
+    }
+
+    let leading_int = |v: &str| v.split('/').next().and_then(|n| n.trim().parse::<i32>().ok());
+    for (key, v) in raw_pairs {
+        match key.as_str() {
+            "TITLE" if title.is_none() => title = Some(v),
+            "ARTIST" if artist.is_none() => artist = Some(v),
+            "ALBUM" if album.is_none() => album = Some(v),
+            "ALBUMARTIST" | "ALBUM_ARTIST" if album_artist.is_none() => album_artist = Some(v),
+            "PART_NUMBER" | "TRACKNUMBER" | "TRACK" if track_number.is_none() => {
+                track_number = leading_int(&v)
+            }
+            "DISCNUMBER" | "DISC" if disc_number.is_none() => disc_number = leading_int(&v),
+            "GENRE" if genre.is_none() => genre = Some(v),
+            "COMPOSER" if composer.is_none() => composer = Some(v),
+            _ => {}
+        }
+    }
+    if artist.is_none() {
+        artist = album_artist.clone();
+    }
+
+    // matroska has no track duration => sum packet lengths without decoding
+    if duration == 0 {
+        if let Some(tb) = time_base {
+            let mut end = 0i64;
+            while let Ok(Some(pkt)) = format.next_packet() {
+                if pkt.track_id == track_id {
+                    end = end.max(pkt.pts.get() + pkt.dur.get() as i64);
+                }
+            }
+            // packet sums undershoot slightly => round instead of truncate
+            duration = tb
+                .calc_time(Timestamp::from(end))
+                .map(|t| t.as_secs_f64().round() as i32)
+                .unwrap_or(0);
+        }
+    }
+    let bitrate = if duration > 0 && file_len > 0 {
+        Some((file_len * 8 / duration as u64 / 1000) as i32)
+    } else {
+        None
+    };
+
+    let title = title.or_else(|| get_filename_without_ext(path));
+
+    // same key names as the lofty path so the json looks the same
+    let mut json = serde_json::Map::new();
+    for (key, val) in [
+        ("TrackTitle", &title),
+        ("TrackArtist", &artist),
+        ("AlbumTitle", &album),
+        ("AlbumArtist", &album_artist),
+        ("Genre", &genre),
+        ("Composer", &composer),
+    ] {
+        if let Some(v) = val {
+            json.insert(key.to_string(), serde_json::Value::String(v.clone()));
+        }
+    }
+    if let Some(n) = track_number {
+        json.insert(
+            "TrackNumber".to_string(),
+            serde_json::Value::String(n.to_string()),
+        );
+    }
+    if let Some(n) = disc_number {
+        json.insert(
+            "DiscNumber".to_string(),
+            serde_json::Value::String(n.to_string()),
+        );
+    }
+    let metadata_json = if json.is_empty() {
+        None
+    } else {
+        serde_json::to_string(&json).ok()
+    };
+
+    let content_hash = Some(generate_content_hash(
+        title.as_deref(),
+        artist.as_deref(),
+        album.as_deref(),
+        Some(duration),
+    ));
+
+    Ok(TrackInsert {
+        path: path.to_string_lossy().to_string(),
+        title,
+        artist,
+        album,
+        album_artist,
+        track_number,
+        disc_number,
+        duration: Some(duration),
+        album_art: cover.clone(),
+        track_cover: cover,
+        format: ext.map(|e| e.to_uppercase()),
+        bitrate,
+        source_type: None,
+        cover_url: None,
+        external_id: None,
+        content_hash,
+        local_src: None,
+        musicbrainz_recording_id,
+        metadata_json,
+        file_id: None, // stamped by the extract_metadata wrapper
+        mtime: None,
+        size: None,
+    })
+}
+
+// last resort when lofty and the format specific fallbacks can't read a file
+// a failure here means the file is reported as failed instead of imported
+fn symphonia_or_fail(path: &Path, reason: &str) -> Option<TrackInsert> {
+    match extract_metadata_symphonia(path) {
+        Ok(track) => Some(track),
+        Err(se) => {
+            tracing::warn!(
+                "[SCAN] failed to read {:?}: {}; symphonia: {}",
+                path,
+                reason,
+                se
+            );
+            None
+        }
+    }
+}
+
 /// probe a file's duration using Symphonia
 /// fallback when lofty returns zero duration due to our patch
 fn get_duration_via_symphonia(path: &Path) -> i32 {
@@ -154,10 +384,12 @@ fn extract_metadata_inner(path: &str) -> Option<TrackInsert> {
             }
     
             eprintln!(
-                "[Scanner] Failed to read audio file {:?}: {}. Returning fallback.",
+                "[Scanner] lofty failed to read {:?}: {}. Trying symphonia scan.",
                 path, e
             );
-            return Some(create_fallback_metadata(path));
+            // lofty can't read this file (caf, mka, webm, broken tags...)
+            // => full symphonia scan, only a failure there too counts as failed
+            return symphonia_or_fail(path, &format!("lofty: {}", e));
         }
     };
 
@@ -387,7 +619,7 @@ fn extract_alac_metadata_fallback(path: &Path) -> Option<TrackInsert> {
         Ok(f) => f,
         Err(e) => {
             eprintln!("[Scanner] Failed to open ALAC file {:?}: {}", path, e);
-            return Some(create_fallback_metadata(path));
+            return symphonia_or_fail(path, &format!("alac open: {}", e));
         }
     };
 
@@ -395,7 +627,7 @@ fn extract_alac_metadata_fallback(path: &Path) -> Option<TrackInsert> {
         Ok(f) => f,
         Err(e) => {
             eprintln!("[Scanner] Mp4File fallback also failed for {:?}: {}", path, e);
-            return Some(create_fallback_metadata(path));
+            return symphonia_or_fail(path, &format!("alac mp4: {}", e));
         }
     };
 
@@ -533,16 +765,7 @@ fn extract_flac_metadata_fallback(path: &Path, _duration_hint: Option<i32>) -> O
         }
         Err(e) => {
             eprintln!("[Scanner] Metaflac also failed for {:?}: {}", path, e);
-            let mut track = create_fallback_metadata(path);
-            track.duration = _duration_hint; // Use hint if available (probably None)
-            track.format = format;
-            track.content_hash = Some(generate_content_hash(
-                track.title.as_deref(),
-                track.artist.as_deref(),
-                track.album.as_deref(),
-                track.duration,
-            ));
-            Some(track)
+            symphonia_or_fail(path, &format!("metaflac: {}", e))
         }
     }
 }

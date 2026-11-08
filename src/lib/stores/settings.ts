@@ -48,11 +48,19 @@ export interface AppSettings {
     keyboardBindings: ShortcutBinding[] | null;
     /** master toggle for keyboard shortcuts (including showHelp / Shift+/) */
     shortcutsEnabled: boolean;
+    /**
+     * type a letter in a sorted track list to jump to the first match.
+     * while on, every single-letter shortcut is moved to Alt + letter
+     * (see shortcutBindings.setAlphabeticalJump)
+     */
+    alphabeticalJump: boolean;
     crossfadeSeconds: number;
     /** which page to show on app launch; see StartupPage for details */
     startupPage: StartupPage;
     /** when false, never auto-fetch lyrics on track change */
     lyricsAutoFetch: boolean;
+    /** when false, never look up cover art online for tracks without one */
+    coverAutoFetch: boolean;
 }
 
 const SETTINGS_STORAGE_KEY = 'audion_settings';
@@ -81,9 +89,11 @@ const defaultSettings: AppSettings = {
     streamServerTracks: true,
     keyboardBindings: null,
     shortcutsEnabled: true,
+    alphabeticalJump: false,
     crossfadeSeconds: 0,
     startupPage: 'home',
     lyricsAutoFetch: true,
+    coverAutoFetch: true,
 };
 
 // Load settings from localStorage
@@ -256,6 +266,14 @@ function createSettingsStore() {
             });
         },
 
+        setAlphabeticalJump(enabled: boolean) {
+            update(state => {
+                const newState = { ...state, alphabeticalJump: enabled };
+                saveSettings(newState);
+                return newState;
+            });
+        },
+
         setCrossfadeSeconds(seconds: number) {
             update(state => {
                 const newState = { ...state, crossfadeSeconds: seconds };
@@ -274,6 +292,14 @@ function createSettingsStore() {
         setLyricsAutoFetch(enabled: boolean) {
             update(state => {
                 const newState = { ...state, lyricsAutoFetch: enabled };
+                saveSettings(newState);
+                return newState;
+            });
+        },
+
+        setCoverAutoFetch(enabled: boolean) {
+            update(state => {
+                const newState = { ...state, coverAutoFetch: enabled };
                 saveSettings(newState);
                 return newState;
             });

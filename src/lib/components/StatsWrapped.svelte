@@ -11,13 +11,13 @@
         statsSummary,
     } from "$lib/stores/activity";
     import {
-        getTrackCoverSrc,
         getAlbumArtSrc,
         getTopGenresFromMb,
         proxyFetchBytes,
         saveImageToGallery,
         type Track,
     } from "$lib/api/tauri";
+    import { resolveTrackCover } from "$lib/stores/library";
     import Icon from "$lib/components/Icon.svelte";
 
     export let show = false;
@@ -249,7 +249,7 @@
 
         for (let i = 0; i < tracks.length; i++) {
             const track = tracks[i].track;
-            const coverSrc = getTrackCoverSrc(track);
+            const coverSrc = resolveTrackCover(track);
 
             if (coverSrc) {
                 try {
@@ -531,9 +531,9 @@
                                 >
                                     <div class="track-rank-badge">{i + 1}</div>
                                     <div class="track-cover-wrapper">
-                                        {#if getTrackCoverSrc(item.track)}
+                                        {#if resolveTrackCover(item.track)}
                                             <img
-                                                src={getTrackCoverSrc(
+                                                src={resolveTrackCover(
                                                     item.track,
                                                 )}
                                                 alt=""

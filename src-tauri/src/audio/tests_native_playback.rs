@@ -67,7 +67,7 @@ static DEVICE_TEST_LOCK: Mutex<()> = Mutex::new(());
 #[test]
 fn native_backend_actually_produces_audio() {
     let _guard = DEVICE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    std::env::set_var("RUST_BACKTRACE", "full");
+    unsafe { std::env::set_var("RUST_BACKTRACE", "full"); }
 
     let eq_settings = EqSettings::default();
 
@@ -276,7 +276,7 @@ fn wait_for_gated_result(
 #[test]
 fn native_crossfade_actually_overlaps_before_natural_end() {
     let _guard = DEVICE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    std::env::set_var("RUST_BACKTRACE", "full");
+    unsafe { std::env::set_var("RUST_BACKTRACE", "full"); }
 
     let eq_settings = EqSettings::default();
     let (mut engine, _event_rx, gated_open_rx, _device_list) =
@@ -405,7 +405,7 @@ fn native_crossfade_actually_overlaps_before_natural_end() {
 #[test]
 fn native_crossfade_still_fires_after_a_seek() {
     let _guard = DEVICE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
-    std::env::set_var("RUST_BACKTRACE", "full");
+    unsafe { std::env::set_var("RUST_BACKTRACE", "full"); }
 
     let eq_settings = EqSettings::default();
     let (mut engine, _event_rx, gated_open_rx, _device_list) =

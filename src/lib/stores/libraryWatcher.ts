@@ -6,16 +6,38 @@
 //
 // deliberately not routed through the progressiveScan store
 // the watcher has no session or "complete" event
-import { writable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
+import { _ } from 'svelte-i18n';
 import { listen } from '$lib/api/tauri';
 import type { ScanBatchEvent } from '$lib/api/tauri';
 import { ingestWatcherBatch, removeTracksByIds, loadAlbumsAndArtists } from '$lib/stores/library';
+import { addToast } from '$lib/stores/toast';
 
 /**
  * true whenever the backend watcher/reconciliation pass has recent activity in flight, for a small sidebar spinner
  * (see LibraryWatcherStatus.svelte)
  */
 export const isWatcherActive = writable(false);
+
+// duplicates and failures are the only watcher results worth a toast
+function reportSkipped(progress: ScanBatchEvent['progress']): void {
+    const duplicates = progress.tracks_duplicates ?? 0;
+    const failed = progress.tracks_failed ?? 0;
+    if (duplicates === 0 && failed === 0) return;
+
+    try {
+        const t = get(_);
+        const parts: string[] = [];
+        if (duplicates > 0) parts.push(t('scanStatus.tracksDuplicates', { values: { count: duplicates } }));
+        if (failed > 0) parts.push(t('scanStatus.tracksFailed', { values: { count: failed } }));
+
+        console.warn(`[LibraryWatcher] ${parts.join(', ')}`);
+        addToast(parts.join(', '), failed > 0 ? 'warning' : 'info', failed > 0 ? 7000 : 4000);
+    } catch (e) {
+        // i18n not ready => the counts are still in the backend log
+        console.warn('[LibraryWatcher] could not report skipped files', e);
+    }
+}
 
 let unlistenBatch: (() => void) | null = null;
 let unlistenDeleted: (() => void) | null = null;
@@ -48,6 +70,7 @@ export async function startLibraryWatcherSync(): Promise<void> {
     try {
         unlistenBatch = await listen<ScanBatchEvent>('watch-batch-ready', (event) => {
             const { tracks: batchTracks, progress } = event.payload;
+            reportSkipped(progress);
             if (batchTracks.length === 0) return;
 
             console.log(

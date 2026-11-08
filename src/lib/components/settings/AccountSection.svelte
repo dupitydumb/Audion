@@ -29,19 +29,10 @@
 </script>
 
 <section class="settings-section" aria-labelledby="account-heading">
-  <button class="accordion-trigger" on:click={() => dispatch('toggle')} aria-expanded={open}>
-    <Icon name="user" size="lg" className="accordion-icon" />
-    <div class="accordion-header-info">
-      <span class="accordion-title">{$_('settings.account')}</span>
-      <span class="accordion-subtitle">{$_('settings.accountSubtitle')}</span>
-    </div>
-    <Icon name="chevron-down" size={16} className="accordion-chevron {open ? 'rotated' : ''}" />
-  </button>
-  {#if open}
-    <div class="section-body" transition:slide|local>
-      <div class="settings-card">
+  <div class="section-body">
+    <div class="settings-card">
         {#if $customServerStatus.connected}
-          <div class="account-profile-row">
+          <div class="account-profile-row" id="setting-custom-server">
             <div class="avatar avatar-placeholder">S</div>
             <div class="account-details">
               <span class="setting-title">{$_('settings.selfHostedServer')}</span>
@@ -83,7 +74,7 @@
             </button>
           </div>
         {:else if $isLoggedIn}
-          <div class="account-profile-row">
+          <div class="account-profile-row" id="setting-account-profile">
             {#if $authState.avatar_url}
               <img
                 src={$authState.avatar_url}
@@ -127,7 +118,7 @@
           </div>
         {:else}
           <div class="account-options-grid">
-            <div class="account-option-card">
+            <div class="account-option-card" id="setting-account-profile">
               <div class="option-header">
                 <div class="option-icon accent">
                   <Icon name="cloud" size="lg" />
@@ -148,7 +139,7 @@
               >{$_('settings.signInWithOauth', { default: 'Sign in with Google / GitHub' })}</button>
             </div>
 
-            <div class="account-option-card">
+            <div class="account-option-card" id="setting-custom-server">
               <div class="option-header">
                 <div class="option-icon">
                   <Icon name="server" size="lg" />
@@ -193,5 +184,4 @@
         {/if}
       </div>
     </div>
-  {/if}
 </section>

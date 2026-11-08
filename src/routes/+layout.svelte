@@ -5,6 +5,7 @@
   import { appSettings } from "$lib/stores/settings";
   import { theme, applyBackground } from "$lib/stores/theme";
   import { applyEffect } from "$lib/services/effect-overlay";
+  import { applySkinCss } from "$lib/services/skin-css";
   import { cleanupPlayer, initAudioBackend, currentTrack } from "$lib/stores/player";
   import {
     migrateCoversToFiles,
@@ -43,6 +44,7 @@
   import ProgressiveScanStatus from "$lib/components/ProgressiveScanStatus.svelte";
   import SyncProgressOverlay from "$lib/components/SyncProgressOverlay.svelte";
   import LoginModal from "$lib/components/LoginModal.svelte";
+  import SkinStudioModal from "$lib/components/settings/SkinStudioModal.svelte";
   import { initSync, destroySync } from "$lib/stores/sync";
   import { initSubsonic } from "$lib/stores/subsonic";
   import { browser } from "$app/environment";
@@ -73,13 +75,11 @@
   let showPermissionBanner = false;
   let permissionDenied = false;
 
-  // Re-apply background whenever config changes (e.g. opacity slider).
-  // Also re-runs when $isLoading flips to false — that's when #audion-bg-layer
-  // enters the DOM (it lives inside {#if !$isLoading && $locale}), so the
-  // first applyBackground call from theme.initialize() would have found null.
-  $: if (browser && !$isLoading) {
+  // Re-apply background, effects, and skin CSS whenever theme config changes
+  $: if (browser) {
     applyBackground($theme.background);
     applyEffect($theme.customJs, $theme.accentColor, $theme.allowCustomJs);
+    applySkinCss($theme.customCss);
   }
 
   // Page transitions via View Transitions API
@@ -167,11 +167,11 @@
   }
 
   onMount(async () => {
+    theme.initialize();
+    appSettings.initialize();
+
     // Detect platform early for Linux-specific fixes (asset:// -> file://)
     await initPlatformDetection();
-
-    appSettings.initialize();
-    theme.initialize();
 
     initMobileDetection();
     await initAudioBackend();
@@ -376,6 +376,19 @@
   }
 </script>
 
+<!-- Persistent background and effect layers - unconditionally mounted so theme works regardless of i18n load timing -->
+<div
+  id="audion-bg-layer"
+  aria-hidden="true"
+  style="display:none"
+></div>
+
+<canvas
+  id="audion-effect-layer"
+  aria-hidden="true"
+  style="display:none"
+></canvas>
+
 {#if !$isLoading && $locale}
 {#if $useDesktopTitleBar && !$isMiniPlayer}
   <TitleBar />
@@ -386,6 +399,7 @@
 <ProgressiveScanStatus />
 <SyncProgressOverlay />
 <LoginModal />
+<SkinStudioModal />
 
 {#if showMigrationBanner}
   <div class="migration-banner">
@@ -423,18 +437,6 @@
 {/if}
 
 <a href="#main-content" class="skip-link">{$_("app.skipToMainContent")}</a>
-
-<div
-  id="audion-bg-layer"
-  aria-hidden="true"
-  style="display:none"
-></div>
-
-<canvas
-  id="audion-effect-layer"
-  aria-hidden="true"
-  style="display:none"
-></canvas>
 
 <div class="app-content" class:mobile={$isMobile} class:has-titlebar={$useDesktopTitleBar} class:pip={$isMiniPlayer} class:has-mini-player={$isMobile && $currentTrack && !$isFullScreen} id="main-content">
   <slot />
