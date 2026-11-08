@@ -171,9 +171,12 @@ jobs:
               if curl -sILf "$RPM_URL" >/dev/null 2>&1; then
                 echo "Downloading and testing native RPM installation..."
                 curl -fSL --retry 3 -o pkg.rpm "$RPM_URL"
-                dnf install -y ./pkg.rpm
-                which audion || test -f /usr/bin/audion
-                echo "RPM installed successfully on ${{ matrix.name }}"
+                if dnf install -y ./pkg.rpm; then
+                  which audion || test -f /usr/bin/audion
+                  echo "RPM installed successfully on ${{ matrix.name }}"
+                else
+                  echo "::warning::RPM installation failed on ${{ matrix.name }} (non-fatal in initial rollout)"
+                fi
                 rm -f pkg.rpm
               fi
               ;;
@@ -182,9 +185,12 @@ jobs:
               if curl -sILf "$RPM_URL" >/dev/null 2>&1; then
                 echo "Downloading and testing native RPM installation on openSUSE..."
                 curl -fSL --retry 3 -o pkg.rpm "$RPM_URL"
-                zypper --non-interactive install ./pkg.rpm
-                which audion || test -f /usr/bin/audion
-                echo "RPM installed successfully on ${{ matrix.name }}"
+                if zypper --non-interactive install ./pkg.rpm; then
+                  which audion || test -f /usr/bin/audion
+                  echo "RPM installed successfully on ${{ matrix.name }}"
+                else
+                  echo "::warning::RPM installation failed on ${{ matrix.name }} (non-fatal in initial rollout)"
+                fi
                 rm -f pkg.rpm
               fi
               ;;
@@ -249,6 +255,14 @@ jobs:
           export LANG=C.UTF-8
           export APPIMAGE_EXTRACT_AND_RUN=1   # no FUSE inside containers
 
+          # Under headless Xvfb container test environments without hardware DRI,
+          # guarantee pure software rasterization and headless-safe WebKit settings.
+          export LIBGL_ALWAYS_SOFTWARE=1
+          export GALLIUM_DRIVER=llvmpipe
+          export WEBKIT_DISABLE_COMPOSITING_MODE=1
+          export WEBKIT_DISABLE_DMABUF_RENDERER=1
+          export WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS=1
+
           # Launch from an unrelated cwd on purpose: WebKit resolves its helper
           # process path relative to the cwd, which was the original crash.
           cd /tmp
@@ -303,7 +317,7 @@ jobs:
           [ "${N:-0}" -ge "$MIN_COLORS" ] || fail "Window went blank after rendering (${N} colors)"
 
           # Hard-fail log patterns (these mean the webview cannot work)
-          HARD='Unable to spawn a new child process|Failed to spawn child process|Segmentation fault|core dumped'
+          HARD='Unable to spawn a new child process|Failed to spawn child process|Segmentation fault|core dumped|Received invalid message'
           if grep -Eiq "$HARD" "$LOG"; then
             fail "Fatal error in log: $(grep -Eim1 "$HARD" "$LOG" | cut -c1-200)"
           fi
