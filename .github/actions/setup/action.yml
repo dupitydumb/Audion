@@ -43,6 +43,7 @@ runs:
           libjavascriptcoregtk-4.1-dev \
           librsvg2-dev \
           patchelf \
+          rpm \
           libasound2-dev \
           build-essential \
           curl wget file \

@@ -356,6 +356,12 @@ jobs:
             mv "$DEB_FILE" "${BUNDLE}/deb/audion_${VER}_linux.deb"
           fi
 
+          # Rename RPM (if generated)
+          RPM_FILE=$(find "${BUNDLE}/rpm" -name "*.rpm" 2>/dev/null | head -1)
+          if [ -n "$RPM_FILE" ]; then
+            mv "$RPM_FILE" "${BUNDLE}/rpm/audion_${VER}_x86_64.rpm"
+          fi
+
           # Rename patched AppImage (ensure no other unpatched AppImages exist)
           find "${BUNDLE}/appimage" -name "*.AppImage" ! -name "audion-patched.AppImage" -delete || true
           mv "${BUNDLE}/appimage/audion-patched.AppImage" \
@@ -378,6 +384,7 @@ jobs:
           overwrite_files: ${{ inputs.overwrite }}
           files: |
             src-tauri/target/release/bundle/deb/audion_*_linux.deb
+            src-tauri/target/release/bundle/rpm/audion_*_x86_64.rpm
             src-tauri/target/release/bundle/appimage/audion_*_x86_64.AppImage
             src-tauri/target/release/bundle/appimage/audion_*_x86_64.AppImage.tar.gz
             src-tauri/target/release/bundle/appimage/audion_*_x86_64.AppImage.tar.gz.sig

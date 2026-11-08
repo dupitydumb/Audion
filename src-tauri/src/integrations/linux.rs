@@ -84,7 +84,38 @@ pub fn is_container_or_sandbox() -> bool {
 }
 
 /// Determines whether WebKit should force software rendering (Never).
+///
+/// Software rendering is only forced when:
+/// 1. Safe mode or software rendering is explicitly requested via environment variables.
+/// 2. Running inside a virtual machine without 3D acceleration.
+/// 3. Physical GPU device nodes (/dev/dri) are missing or inaccessible (e.g. headless CI,
+///    unprivileged containers without GPU passthrough).
+///
+/// Bare-metal AppImage and Flatpak environments with accessible /dev/dri retain full
+/// hardware acceleration.
 pub fn should_use_software_rendering() -> bool {
-    is_virtual_machine() || is_container_or_sandbox()
+    // 1. Explicit user override
+    if is_env_truthy("AUDION_SAFE_MODE")
+        || is_env_truthy("AUDION_SOFTWARE_RENDERING")
+        || is_env_truthy("LIBGL_ALWAYS_SOFTWARE")
+    {
+        return true;
+    }
+
+    // 2. Virtual machine detection
+    if is_virtual_machine() {
+        return true;
+    }
+
+    // 3. Headless or container environment without physical GPU device nodes
+    if !Path::new("/dev/dri").exists()
+        || std::fs::read_dir("/dev/dri")
+            .map(|mut it| it.next().is_none())
+            .unwrap_or(true)
+    {
+        return true;
+    }
+
+    false
 }
 
