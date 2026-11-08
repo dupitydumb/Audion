@@ -64,6 +64,7 @@ pub fn is_virtual_machine() -> bool {
 
 /// Check whether the application is running inside a container / sandboxed package
 /// (Flatpak, AppImage, Docker, Podman, or WSL).
+#[allow(dead_code)]
 pub fn is_container_or_sandbox() -> bool {
     std::env::var_os("AUDION_DISABLE_SANDBOX").is_some()
         || std::env::var_os("AUDION_SAFE_MODE").is_some()
@@ -78,59 +79,5 @@ pub fn is_container_or_sandbox() -> bool {
 /// Determines whether WebKit should force software rendering (Never).
 pub fn should_use_software_rendering() -> bool {
     is_virtual_machine()
-}
-
-/// Configure Linux environment variables before Tauri / GTK / WebKit initialization.
-/// In Rust 2024, setting or removing environment variables is an unsafe operation.
-pub fn init_linux_environment() {
-    unsafe {
-        // Unset GTK_MODULES so WebKit child processes don't try to load host-only
-        // GTK modules (e.g. xapp-gtk3-module on Linux Mint) that are absent in the context.
-        std::env::remove_var("GTK_MODULES");
-
-        // Clean up legacy WEBKIT_FORCE_SANDBOX if set
-        std::env::remove_var("WEBKIT_FORCE_SANDBOX");
-
-        // WEBKIT_DISABLE_DMABUF_RENDERER: Widespread Tauri fix for blank windows, Wayland,
-        // and NVIDIA/Intel driver issues in WebKitGTK. Keep this active by default.
-        if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
-            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
-        }
-
-        // WebKitGTK sandbox: only disable if in a container, Flatpak, AppImage, or VM
-        // where unprivileged user namespaces / seccomp cause launch crashes.
-        if is_container_or_sandbox() || is_virtual_machine() {
-            if std::env::var_os("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS").is_none() {
-                std::env::set_var("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1");
-            }
-        }
-
-        // Software rendering: only force on VMs or if safe mode was requested.
-        // Machines with physical GPUs retain full hardware-accelerated rendering.
-        if should_use_software_rendering() {
-            if std::env::var_os("LIBGL_ALWAYS_SOFTWARE").is_none() {
-                std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
-            }
-            if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
-                std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
-            }
-        }
-
-        // Normalize problematic locale variables to base LANG to prevent
-        // "Locale not supported by C library" warnings in GTK/WebKit subprocesses.
-        if let Ok(lang) = std::env::var("LANG") {
-            for var in &[
-                "LC_NUMERIC", "LC_MONETARY", "LC_PAPER", "LC_NAME",
-                "LC_ADDRESS", "LC_TELEPHONE", "LC_MEASUREMENT",
-                "LC_IDENTIFICATION",
-            ] {
-                if let Ok(val) = std::env::var(var) {
-                    if val != lang {
-                        std::env::set_var(var, &lang);
-                    }
-                }
-            }
-        }
-    }
 }
 

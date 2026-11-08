@@ -12,7 +12,12 @@ HERE="$(dirname "$(readlink -f "${0}")")"
 # Setting APPDIR would make WebKitGTK look for them under $HERE/usr/lib/...,
 # where they do not exist, causing subprocess launch failures.
 # Only set APPDIR if the helpers are actually present in the bundle.
-if [ -f "$HERE/usr/lib/webkit2gtk-4.1/WebKitNetworkProcess" ]; then
+# WebKit helpers reside under usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/ on Debian/Ubuntu,
+# under usr/lib/webkit2gtk-4.1/ on Arch/Fedora, or via root lib/ symlink.
+if [ -f "$HERE/usr/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess" ] || \
+   [ -f "$HERE/usr/lib/webkit2gtk-4.1/WebKitNetworkProcess" ] || \
+   [ -f "$HERE/lib/x86_64-linux-gnu/webkit2gtk-4.1/WebKitNetworkProcess" ] || \
+   [ -n "$(find "$HERE/usr/lib" "$HERE/lib" -name "WebKitNetworkProcess" 2>/dev/null | head -1)" ]; then
   export APPDIR="$HERE"
 fi
 
@@ -24,13 +29,17 @@ export WEBKIT_FORCE_SANDBOX=0
 
 # DRI3 — opt-in disable. Set LIBGL_DRI3_DISABLE=1 at runtime if you hit
 # EGL_BAD_PARAMETER crashes (AMD RX 6600 + Bazzite / Mesa 23).
-# Unconditional disable would force llvmpipe on Mesa 23+ where DRI2 hw drivers
-# were removed.
-export LIBGL_DRI3_DISABLE="${LIBGL_DRI3_DISABLE:-0}"
+# Do not export =0 as some Mesa versions treat any non-empty value as enabled.
+if [ -z "${LIBGL_DRI3_DISABLE+x}" ]; then
+  unset LIBGL_DRI3_DISABLE
+fi
 
 # Software Mesa — opt-in fallback for VMs or broken GPU drivers.
 # User can set LIBGL_ALWAYS_SOFTWARE=1 before launch to force llvmpipe.
-export LIBGL_ALWAYS_SOFTWARE="${LIBGL_ALWAYS_SOFTWARE:-0}"
+# Do not export =0 as some Mesa loaders treat any non-empty value as true.
+if [ -z "${LIBGL_ALWAYS_SOFTWARE+x}" ]; then
+  unset LIBGL_ALWAYS_SOFTWARE
+fi
 # GALLIUM_DRIVER: leave unset unless the user explicitly set it.
 # Exporting an empty string breaks Mesa's implicit llvmpipe selection on some versions.
 if [ -z "${GALLIUM_DRIVER+x}" ]; then unset GALLIUM_DRIVER; fi
@@ -73,9 +82,21 @@ else
   BIN=$(find "$HERE/usr/bin" -type f -executable | head -1)
 fi
 
+# Convert relative file path arguments to absolute paths before changing directory to $HERE.
+# This ensures command-line file arguments (e.g. "audion ./song.mp3") resolve properly
+# after we change CWD to $HERE.
+ARGS=()
+for arg in "$@"; do
+  if [ -e "$arg" ]; then
+    ARGS+=("$(readlink -f "$arg")")
+  else
+    ARGS+=("$arg")
+  fi
+done
+
 # WebKit computes its subprocess path as a CWD-relative "././lib/..." string.
 # Change to APPDIR so that relative path resolves correctly regardless of
 # where the user launched the AppImage from.
 cd "$HERE"
 
-exec "$BIN" "$@"
+exec "$BIN" "${ARGS[@]}"

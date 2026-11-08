@@ -568,9 +568,6 @@ fn tray_update_toggles(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    #[cfg(target_os = "linux")]
-    integrations::linux::init_linux_environment();
-
     // ------------------------------------------------------------------
     // Resolve the log directory before Tauri starts so we can log early
     // failures. Use the platform app-data dir when available, otherwise
