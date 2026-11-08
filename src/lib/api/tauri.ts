@@ -217,6 +217,8 @@ export interface Library {
 export interface ScanResult {
     tracks_added: number;
     tracks_updated: number;
+    tracks_duplicates: number;
+    tracks_failed: number;
     tracks_deleted: number;
     errors: string[];
 }
@@ -230,6 +232,8 @@ export interface ScanProgress {
     estimated_time_remaining_ms: number;
     tracks_added: number;
     tracks_updated: number;
+    tracks_duplicates: number;
+    tracks_failed: number;
 }
 
 export interface ScanBatchEvent {
@@ -456,6 +460,15 @@ export async function preloadCovers(trackIds: number[]): Promise<void> {
 // Returns the number of files deleted
 export async function cleanupOrphanedCoverFiles(): Promise<number> {
     return await invoke('cleanup_orphaned_cover_files');
+}
+
+/**
+ * remove every cover that was auto-fetched online
+ * (not covers from files, streaming services or ones the user set)
+ * returns the ids of the tracks that were cleared
+ */
+export async function clearFetchedCovers(): Promise<number[]> {
+    return await invoke('clear_fetched_covers');
 }
 
 // Clear all base64 cover data from the database after successful migration

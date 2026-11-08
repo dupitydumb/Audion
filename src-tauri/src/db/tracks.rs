@@ -306,6 +306,18 @@ pub fn get_all_track_identities(conn: &Connection) -> Result<Vec<super::models::
     rows.collect()
 }
 
+// path of the existing track that a hash duplicate collides with
+// same match rule as the skip in insert_or_update_track
+pub fn find_duplicate_path(conn: &Connection, track: &TrackInsert) -> Option<String> {
+    let hash = track.content_hash.as_ref()?;
+    conn.query_row(
+        "SELECT path FROM tracks WHERE content_hash = ?1 AND path != ?2 COLLATE NOCASE",
+        params![hash, track.path],
+        |row| row.get(0),
+    )
+    .ok()
+}
+
 /// Update MusicBrainz Recording ID and/or genre for a track.
 /// Uses COALESCE so that passing `None` preserves the existing DB value.
 pub fn update_track_mb_data(
@@ -845,6 +857,37 @@ pub fn update_track_cover_url(
         params![cover_url, track_id],
     )?;
     Ok(())
+}
+
+/// clear covers that were auto-fetched online and return the affected track ids
+///
+/// 'cover_url' is shared with streaming/plugin/Discord data,
+/// so only rows where it can only have come from the auto-fetcher are touched:
+/// 1. local-file tracks (source_type NULL/local)
+/// 2. not downloaded streaming tracks (no external_id, whose cover_url is legitimate)
+/// 3. with no cover of their own (track_cover_path/track_cover), which is exactly the condition under which the auto-fetcher runs
+/// this also leaves Discord's cached upload URLs alone, since those are only stored for tracks that have a cover file
+pub fn clear_fetched_cover_urls(conn: &Connection) -> Result<Vec<i64>> {
+    const WHERE_FETCHED: &str = "cover_url IS NOT NULL AND cover_url != ''
+        AND (source_type IS NULL OR source_type = 'local')
+        AND (external_id IS NULL OR external_id = '')
+        AND (track_cover_path IS NULL OR track_cover_path = '')
+        AND (track_cover IS NULL OR track_cover = '')";
+
+    let ids: Vec<i64> = {
+        let mut stmt = conn.prepare(&format!("SELECT id FROM tracks WHERE {}", WHERE_FETCHED))?;
+        let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
+        rows.collect::<Result<Vec<i64>>>()?
+    };
+
+    if !ids.is_empty() {
+        conn.execute(
+            &format!("UPDATE tracks SET cover_url = NULL WHERE {}", WHERE_FETCHED),
+            [],
+        )?;
+    }
+
+    Ok(ids)
 }
 
 pub fn update_track_duration(conn: &Connection, track_id: i64, duration: i64) -> Result<()> {

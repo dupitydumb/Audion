@@ -125,15 +125,14 @@
     // so LyricsPanel can read them and show its own overlay.
     let dropError = "";
 
+    // keep in sync with SUPPORTED_EXTENSIONS in src-tauri/src/scanner/walker.rs
     const AUDIO_EXTENSIONS = new Set([
-        "mp3",
-        "flac",
-        "wav",
-        "ogg",
-        "opus",
-        "m4a",
+        "mp3", "mp2", "mp1",
+        "flac", "alac", "wav", "wave", "aiff", "aif", "aifc", "afc", "caf",
+        "ogg", "oga", "opus",
+        "m4a", "m4b", "m4p", "m4r", "mp4", "mov",
         "aac",
-        "alac",
+        "mka", "webm",
     ]);
     const LYRICS_EXTENSIONS = new Set(["lrc", "ttml", "xml", "srt"]);
     const AUDIO_FORMATS_LABEL = [...AUDIO_EXTENSIONS]
@@ -643,7 +642,7 @@
                             {$_("main.dropMusicHere")}
                         </div>
                         <div class="drop-subtext">
-                            MP3, FLAC, M4A, WAV, OGG, ALAC
+                            MP3, FLAC, M4A, WAV, OGG, OPUS, AIFF, ALAC, AAC and more
                         </div>
                     {/if}
                 {/if}
