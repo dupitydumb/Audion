@@ -20,7 +20,14 @@ pub fn is_virtual_machine() -> bool {
         return true;
     }
 
-    // 2. DMI table vendor / product check (fast kernel sysfs, no subprocess)
+    // 2. No physical GPU device nodes available (/dev/dri missing or empty)
+    if !Path::new("/dev/dri").exists()
+        || std::fs::read_dir("/dev/dri").map(|mut it| it.next().is_none()).unwrap_or(true)
+    {
+        return true;
+    }
+
+    // 3. DMI table vendor / product check (fast kernel sysfs, no subprocess)
     for path in &[
         "/sys/class/dmi/id/product_name",
         "/sys/class/dmi/id/sys_vendor",
@@ -42,14 +49,14 @@ pub fn is_virtual_machine() -> bool {
         }
     }
 
-    // 3. /proc/cpuinfo hypervisor flag check
+    // 4. /proc/cpuinfo hypervisor flag check
     if let Ok(cpuinfo) = std::fs::read_to_string("/proc/cpuinfo") {
         if cpuinfo.lines().any(|l| l.starts_with("flags") && l.contains("hypervisor")) {
             return true;
         }
     }
 
-    // 4. systemd-detect-virt (fallback check)
+    // 5. systemd-detect-virt (fallback check)
     if let Ok(output) = std::process::Command::new("systemd-detect-virt").output() {
         if output.status.success() {
             let virt = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -78,6 +85,6 @@ pub fn is_container_or_sandbox() -> bool {
 
 /// Determines whether WebKit should force software rendering (Never).
 pub fn should_use_software_rendering() -> bool {
-    is_virtual_machine()
+    is_virtual_machine() || is_container_or_sandbox()
 }
 
