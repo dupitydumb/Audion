@@ -39,8 +39,9 @@
     } from "$lib/api/tauri";
     import { uiSlotManager } from "$lib/plugins/ui-slots";
     import { pluginDrawerOpen } from "$lib/stores/plugin-drawer";
-    import { goToArtistDetail } from "$lib/stores/view";
+    import { goToArtistDetail, goToAlbumDetail } from "$lib/stores/view";
     import { isMobile } from "$lib/stores/mobile";
+    import { albums } from "$lib/stores/library";
     import type { Album } from "$lib/api/tauri";
     import ArtistLinks from "$lib/components/ArtistLinks.svelte";
     import { likedTrackIds, toggleLike } from "$lib/stores/liked";
@@ -149,6 +150,51 @@
         } catch {
             albumArt = null;
             loadedAlbum = null;
+        }
+    }
+
+    $: canNavigateToAlbum = Boolean(
+        $currentTrack &&
+            ($currentTrack.album_id != null ||
+                loadedAlbum?.id != null ||
+                ($currentTrack.album &&
+                    $albums.some(
+                        (a) =>
+                            a.name.trim().toLowerCase() ===
+                            $currentTrack?.album?.trim().toLowerCase(),
+                    ))),
+    );
+
+    function handleAlbumClick(e: MouseEvent) {
+        e.stopPropagation();
+        if (!$currentTrack) return;
+
+        let targetAlbumId: number | null =
+            $currentTrack.album_id ?? loadedAlbum?.id ?? null;
+
+        if (!targetAlbumId && $currentTrack.album) {
+            const albumName = $currentTrack.album.trim().toLowerCase();
+            const trackArtist = $currentTrack.artist?.trim().toLowerCase();
+            const allAlbums = get(albums);
+
+            const matched =
+                allAlbums.find(
+                    (a) =>
+                        a.name.trim().toLowerCase() === albumName &&
+                        trackArtist &&
+                        a.artist?.trim().toLowerCase() === trackArtist,
+                ) ||
+                allAlbums.find((a) => a.name.trim().toLowerCase() === albumName);
+
+            if (matched) {
+                targetAlbumId = matched.id;
+            }
+        }
+
+        if (targetAlbumId) {
+            if (get(lyricsVisible)) lyricsVisible.set(false);
+            if (get(isQueueVisible)) isQueueVisible.set(false);
+            goToAlbumDetail(targetAlbumId);
         }
     }
 
@@ -292,14 +338,28 @@
     <!-- Track info -->
     <div class="track-info desktop-track-info">
             {#if $currentTrack}
-                <div
+                <button
+                    type="button"
                     class="album-art"
+                    class:clickable={canNavigateToAlbum}
+                    on:click={handleAlbumClick}
+                    disabled={!canNavigateToAlbum}
+                    title={canNavigateToAlbum
+                        ? ($currentTrack.album
+                            ? `${$_('contextMenu.goToAlbum')}: ${$currentTrack.album}`
+                            : $_('contextMenu.goToAlbum'))
+                        : undefined}
+                    aria-label={canNavigateToAlbum
+                        ? ($currentTrack.album
+                            ? `${$_('contextMenu.goToAlbum')}: ${$currentTrack.album}`
+                            : $_('contextMenu.goToAlbum'))
+                        : "Album art"}
                     style="view-transition-name: {($isFullScreen || getIsLinux()) ? 'none' : 'player-album-art'};"
                 >
                     {#if albumArt && !imageLoadFailed}
                         <img
                             src={albumArt}
-                            alt="Album art"
+                            alt={$currentTrack.album || "Album art"}
                             decoding="async"
                             on:error={() => (imageLoadFailed = true)}
                         />
@@ -308,7 +368,7 @@
                             <Icon name="music" size={24} />
                         </div>
                     {/if}
-                </div>
+                </button>
                 <div class="track-details">
                     <span class="track-title truncate"
                         >{$currentTrack.title || $_('player.unknownTitle')}</span
@@ -644,12 +704,34 @@
         overflow: hidden;
         flex-shrink: 0;
         background-color: var(--bg-surface);
-        transition: transform var(--transition-fast);
+        padding: 0;
+        border: none;
+        display: block;
+        transition: transform var(--transition-fast), filter var(--transition-fast);
+        cursor: default;
+    }
+
+    .album-art.clickable {
         cursor: pointer;
     }
 
-    .album-art:hover {
+    .album-art.clickable:hover {
         transform: scale(1.05);
+        filter: brightness(1.06);
+    }
+
+    .album-art.clickable:active {
+        transform: scale(0.97);
+    }
+
+    .album-art:focus-visible {
+        outline: 2px solid var(--accent, #1db954);
+        outline-offset: 2px;
+    }
+
+    button.album-art:disabled {
+        opacity: 1;
+        cursor: default;
     }
 
     .album-art img {
