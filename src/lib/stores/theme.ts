@@ -363,13 +363,6 @@ function createThemeStore() {
 
 export const theme = createThemeStore();
 
-// keep the art-driven player bar in sync as tracks (and their extracted
-// palettes) change
-albumPalette.subscribe(() => {
-    const state = get(theme);
-    if (state.matchPlayerToArt) applyTheme(state);
-});
-
 // ── Skin & Theme package format ───────────────────────────────────────────────
 
 export const AUDIOTHEME_VERSION = 1;
@@ -934,3 +927,14 @@ export function openSkinStudio() {
 export function closeSkinStudio() {
     isSkinStudioOpen.set(false);
 }
+
+// keep the art-driven player bar in sync as tracks (and their extracted
+// palettes) change
+//
+// NOTE: keep this at the very end of the module
+// matchPlayerToArt can already be true
+// it reads darkDefaults/lightDefaults, which are consts declared further down this file, so running it any earlier throws
+albumPalette.subscribe(() => {
+    const state = get(theme);
+    if (state.matchPlayerToArt) applyTheme(state);
+});
