@@ -55,9 +55,81 @@ jobs:
           fi
           echo "version=$VER" >> "$GITHUB_OUTPUT"
 
+  fetch-appimage:
+    runs-on: ubuntu-latest
+    needs: resolve-version
+    timeout-minutes: 10
+    steps:
+      - name: Download release assets (with retry)
+        env:
+          VER: ${{ needs.resolve-version.outputs.version }}
+          TAG: ${{ inputs.tag_name }}
+        run: |
+          set -e
+          BASE="https://github.com/${{ github.repository }}/releases/download/${TAG}"
+
+          # fetch URL OUT
+          # 0 = ok, 44 = 404 (asset does not exist, never retried), 1 = still failing after all attempts
+          # exponential backoff 5s -> 60s cap, retries on 5xx, 429 and connection errors
+          fetch() {
+            local url="$1" out="$2" attempt=1 max=8 delay=5 code
+            while :; do
+              code=$(curl -sSL -w '%{http_code}' -o "$out" "$url" || true)
+              case "$code" in
+                200) return 0 ;;
+                404) rm -f "$out"; return 44 ;;
+              esac
+              if [ "$attempt" -ge "$max" ]; then
+                echo "::error::$url failed after $max attempts (last http ${code:-000})"
+                rm -f "$out"
+                return 1
+              fi
+              echo "attempt $attempt/$max failed (http ${code:-000}) for $url, retrying in ${delay}s"
+              sleep "$delay"
+              attempt=$((attempt + 1))
+              delay=$((delay * 2))
+              [ "$delay" -gt 60 ] && delay=60
+            done
+          }
+
+          # appimage is required
+          fetch "$BASE/audion_${VER}_x86_64.AppImage" audion.AppImage || {
+            echo "::error::AppImage is missing or unreachable"
+            exit 1
+          }
+          ls -lh audion.AppImage
+          if [ "$(head -c 4 audion.AppImage | tail -c 3)" != "ELF" ]; then
+            echo "::error::Downloaded file is not an ELF/AppImage"
+            exit 1
+          fi
+
+          # deb and rpm are optional: a 404 skips the native-package test, anything else fails
+          for spec in "audion_${VER}_linux.deb:pkg.deb" "audion_${VER}_x86_64.rpm:pkg.rpm"; do
+            name="${spec%%:*}"; out="${spec##*:}"
+            rc=0
+            fetch "$BASE/$name" "$out" || rc=$?
+            if [ "$rc" = 44 ]; then
+              echo "::notice::$name not in release, native package test will be skipped"
+            elif [ "$rc" != 0 ]; then
+              exit 1
+            fi
+          done
+          ls -lh audion.AppImage pkg.* 2>/dev/null
+
+      - name: Upload release assets for the smoke jobs
+        uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: |
+            audion.AppImage
+            pkg.deb
+            pkg.rpm
+          retention-days: 1
+          if-no-files-found: error
+
   smoke-test-linux:
     runs-on: ubuntu-22.04
-    needs: resolve-version
+    needs: [resolve-version, fetch-appimage]
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -97,14 +169,13 @@ jobs:
               export DEBIAN_FRONTEND=noninteractive
               apt-get update
               apt-get install -y --no-install-recommends \
-                curl ca-certificates xvfb xauth dbus dbus-x11 procps xdotool imagemagick libgl1 libegl1 \
+                ca-certificates xvfb xauth dbus dbus-x11 procps xdotool imagemagick libgl1 libegl1 \
                 libwebkit2gtk-4.1-0 libgtk-3-0 libayatana-appindicator3-1
               for pkg in libgl1-mesa-dri libasound2 libasound2t64; do
                 apt-get install -y --no-install-recommends "$pkg" 2>/dev/null || true
               done
               ;;
             dnf)
-              # curl-minimal is already in the fedora image; do not install "curl".
               dnf install -y \
                 xorg-x11-server-Xvfb xorg-x11-xauth dbus-daemon dbus-x11 procps-ng \
                 xdotool ImageMagick \
@@ -113,64 +184,49 @@ jobs:
               ;;
             pacman)
               pacman -Syu --noconfirm \
-                curl xorg-server-xvfb xorg-xauth dbus procps-ng xdotool imagemagick \
+                xorg-server-xvfb xorg-xauth dbus procps-ng xdotool imagemagick \
                 webkit2gtk-4.1 gtk3 libayatana-appindicator \
                 alsa-lib mesa
               ;;
             zypper)
               zypper --non-interactive --gpg-auto-import-keys refresh || true
               zypper --non-interactive install \
-                curl xorg-x11-server-Xvfb xvfb-run xauth dbus-1 dbus-1-x11 procps xdotool ImageMagick \
+                xorg-x11-server-Xvfb xvfb-run xauth gawk dbus-1 procps xdotool ImageMagick \
                 libwebkit2gtk-4_1-0 libgtk-3-0 \
                 alsa Mesa-dri Mesa-libEGL1 Mesa-libGL1
-              for pkg in libayatana-appindicator3-1 typelib-1_0-AyatanaAppIndicator3-0_1; do
+              for pkg in dbus-1-x11 libayatana-appindicator3-1 typelib-1_0-AyatanaAppIndicator3-0_1; do
                 zypper --non-interactive install "$pkg" 2>/dev/null || true
               done
               ;;
           esac
 
-      - name: Download AppImage from release
-        env:
-          VER: ${{ needs.resolve-version.outputs.version }}
-          TAG: ${{ inputs.tag_name }}
-        run: |
-          set -e
-          URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/audion_${VER}_x86_64.AppImage"
-          echo "Downloading $URL"
-          # -f: fail on HTTP 404 instead of saving an HTML error page as the "AppImage"
-          curl -fSL --retry 3 --retry-delay 5 -o audion.AppImage "$URL"
-          chmod +x audion.AppImage
-          ls -lh audion.AppImage
+      - name: Download AppImage artifact
+        uses: actions/download-artifact@v6
+        with:
+          name: appimage
+          path: .
 
-          if [ "$(head -c 4 audion.AppImage | tail -c 3)" != "ELF" ]; then
-            echo "::error::Downloaded file is not an ELF/AppImage"
-            exit 1
-          fi
+      - name: Make AppImage executable
+        run: chmod +x audion.AppImage
 
       - name: Verify native package installation (DEB or RPM)
-        env:
-          VER: ${{ needs.resolve-version.outputs.version }}
-          TAG: ${{ inputs.tag_name }}
         run: |
           set -e
-          BASE="https://github.com/${{ github.repository }}/releases/download/${TAG}"
           case "${{ matrix.pkg_manager }}" in
             apt)
-              DEB_URL="${BASE}/audion_${VER}_linux.deb"
-              if curl -sILf "$DEB_URL" >/dev/null 2>&1; then
-                echo "Downloading and testing native DEB installation..."
-                curl -fSL --retry 3 -o pkg.deb "$DEB_URL"
+              if [ -f pkg.deb ]; then
+                echo "Testing native DEB installation..."
                 apt-get install -y --no-install-recommends ./pkg.deb
                 which audion || test -f /usr/bin/audion
                 echo "DEB installed successfully on ${{ matrix.name }}"
                 rm -f pkg.deb
+              else
+                echo "::notice::no DEB in release, skipping"
               fi
               ;;
             dnf)
-              RPM_URL="${BASE}/audion_${VER}_x86_64.rpm"
-              if curl -sILf "$RPM_URL" >/dev/null 2>&1; then
-                echo "Downloading and testing native RPM installation..."
-                curl -fSL --retry 3 -o pkg.rpm "$RPM_URL"
+              if [ -f pkg.rpm ]; then
+                echo "Testing native RPM installation..."
                 if dnf install -y ./pkg.rpm; then
                   which audion || test -f /usr/bin/audion
                   echo "RPM installed successfully on ${{ matrix.name }}"
@@ -178,13 +234,13 @@ jobs:
                   echo "::warning::RPM installation failed on ${{ matrix.name }} (non-fatal in initial rollout)"
                 fi
                 rm -f pkg.rpm
+              else
+                echo "::notice::no RPM in release, skipping"
               fi
               ;;
             zypper)
-              RPM_URL="${BASE}/audion_${VER}_x86_64.rpm"
-              if curl -sILf "$RPM_URL" >/dev/null 2>&1; then
-                echo "Downloading and testing native RPM installation on openSUSE..."
-                curl -fSL --retry 3 -o pkg.rpm "$RPM_URL"
+              if [ -f pkg.rpm ]; then
+                echo "Testing native RPM installation on openSUSE..."
                 if zypper --non-interactive install ./pkg.rpm; then
                   which audion || test -f /usr/bin/audion
                   echo "RPM installed successfully on ${{ matrix.name }}"
@@ -192,6 +248,8 @@ jobs:
                   echo "::warning::RPM installation failed on ${{ matrix.name }} (non-fatal in initial rollout)"
                 fi
                 rm -f pkg.rpm
+              else
+                echo "::notice::no RPM in release, skipping"
               fi
               ;;
           esac
@@ -265,6 +323,8 @@ jobs:
 
           # Launch from an unrelated cwd on purpose: WebKit resolves its helper
           # process path relative to the cwd, which was the original crash.
+          command -v dbus-uuidgen >/dev/null 2>&1 && dbus-uuidgen --ensure 2>/dev/null
+
           cd /tmp
           if command -v dbus-run-session >/dev/null 2>&1; then
             dbus-run-session -- "$APPIMAGE_PATH" >"$LOG" 2>&1 &
@@ -350,6 +410,39 @@ jobs:
             echo "status=fail" >> "$GITHUB_OUTPUT"
           fi
           exit $RC
+
+      - name: Diagnose blank window (runs only when the launch failed)
+        if: always() && steps.launch.outputs.status == 'fail'
+        continue-on-error: true
+        run: |
+          set +e
+          mkdir -p result
+          rm -rf squashfs-root
+          APPIMAGE_EXTRACT_AND_RUN=1 ./audion.AppImage --appimage-extract > /dev/null
+          rm -f squashfs-root/usr/lib/libwayland-*
+
+          # run_variant NAME APP_PATH (extra env comes from the caller)
+          run_variant() {
+            export APPIMAGE_PATH="$2"
+            export OUT="$PWD/result/variant-$1"
+            mkdir -p "$OUT"
+            APP_BIN_NAME=audion WINDOW_TIMEOUT=30 STABLE_SECS=5 MIN_COLORS=16 \
+              xvfb-run -a --server-args="-screen 0 1280x800x24 -ac +extension GLX +render -noreset" \
+              bash /tmp/smoke.sh > /dev/null 2>&1
+            rc=$?
+            echo "$1: $([ $rc = 0 ] && echo PASS || echo FAIL) - $(cat "$OUT/reason.txt" 2>/dev/null)" >> result/variants.txt
+            pkill -x audion 2>/dev/null
+            sleep 2
+          }
+
+          # 1. dri3 off (documented workaround for EGL_BAD_PARAMETER in the apprun wrapper)
+          ( export LIBGL_DRI3_DISABLE=1; run_variant dri3-off "$PWD/audion.AppImage" )
+          # 2. bundled libwayland-* removed, host copies used instead
+          run_variant strip-wayland "$PWD/squashfs-root/AppRun"
+
+          echo "----- variants (${{ matrix.name }}) -----"
+          cat result/variants.txt
+          rm -rf squashfs-root
 
       - name: Write result metadata (always runs, even on failure)
         if: always()
@@ -449,6 +542,7 @@ jobs:
               echo ""
               echo '```'
               if [ -f "$LOG" ]; then tail -c 6000 "$LOG"; else echo "(no log captured)"; fi
+              if [ -f "${dir}variants.txt" ]; then echo "--- diagnostic variants ---"; cat "${dir}variants.txt"; fi
               echo '```'
               echo "</details>"
               echo ""
