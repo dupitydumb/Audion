@@ -184,25 +184,29 @@ pub fn should_use_software_rendering() -> bool {
 /// MUST be called before GTK, WebKitGTK, or Mesa initializes (before builder.run()),
 /// so that driver and compositing environment variables take effect in Mesa/WebKit.
 pub fn setup_environment() {
-    if is_container_or_sandbox() {
-        if std::env::var_os("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS").is_none() {
-            unsafe { std::env::set_var("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1"); }
+    // SAFETY: This is called during single-threaded startup before any secondary
+    // threads or GTK/WebKit runtimes are initialized, preventing concurrent environment access.
+    unsafe {
+        if is_container_or_sandbox() {
+            if std::env::var_os("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS").is_none() {
+                std::env::set_var("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1");
+            }
         }
-    }
 
-    if should_use_software_rendering() {
-        tracing::info!("Virtual machine, headless, or software rendering environment detected — configuring software rasterization");
-        if std::env::var_os("LIBGL_ALWAYS_SOFTWARE").is_none() {
-            unsafe { std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1"); }
-        }
-        if std::env::var_os("GALLIUM_DRIVER").is_none() {
-            unsafe { std::env::set_var("GALLIUM_DRIVER", "llvmpipe"); }
-        }
-        if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
-            unsafe { std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1"); }
-        }
-        if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
-            unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1"); }
+        if should_use_software_rendering() {
+            tracing::info!("Virtual machine, headless, or software rendering environment detected — configuring software rasterization");
+            if std::env::var_os("LIBGL_ALWAYS_SOFTWARE").is_none() {
+                std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
+            }
+            if std::env::var_os("GALLIUM_DRIVER").is_none() {
+                std::env::set_var("GALLIUM_DRIVER", "llvmpipe");
+            }
+            if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
+                std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+            }
+            if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+                std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+            }
         }
     }
 }
