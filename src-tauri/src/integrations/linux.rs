@@ -186,23 +186,23 @@ pub fn should_use_software_rendering() -> bool {
 pub fn setup_environment() {
     if is_container_or_sandbox() {
         if std::env::var_os("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS").is_none() {
-            std::env::set_var("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1");
+            unsafe { std::env::set_var("WEBKIT_DISABLE_SANDBOX_THIS_IS_DANGEROUS", "1"); }
         }
     }
 
     if should_use_software_rendering() {
         tracing::info!("Virtual machine, headless, or software rendering environment detected — configuring software rasterization");
         if std::env::var_os("LIBGL_ALWAYS_SOFTWARE").is_none() {
-            std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
+            unsafe { std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1"); }
         }
         if std::env::var_os("GALLIUM_DRIVER").is_none() {
-            std::env::set_var("GALLIUM_DRIVER", "llvmpipe");
+            unsafe { std::env::set_var("GALLIUM_DRIVER", "llvmpipe"); }
         }
         if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
-            std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
+            unsafe { std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1"); }
         }
         if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
-            std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+            unsafe { std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1"); }
         }
     }
 }

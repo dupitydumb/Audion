@@ -38,6 +38,9 @@ if [ -d squashfs-root/usr/lib64 ] && [ ! -e squashfs-root/lib64 ]; then
   ln -sf usr/lib64 squashfs-root/lib64
 fi
 
+# bundled libwayland-* (ubuntu 22.04) shadow the host copies via LD_LIBRARY_PATH
+find squashfs-root -name 'libwayland-*' \( -type f -o -type l \) -print -delete
+
 # Ensure WebKitGTK helper processes (WebKitNetworkProcess, WebKitWebProcess)
 # are present inside the AppDir. If linuxdeploy did not copy them, copy from host.
 if [ -z "$(find squashfs-root -name "WebKitNetworkProcess" 2>/dev/null | head -1)" ]; then
