@@ -54,6 +54,12 @@ on:
 permissions:
   contents: write
 
+# push runs share one group => queued one after another, so assets from different commits never interleave
+# manual runs get their own group and behave as before
+concurrency:
+  group: release-${{ github.event_name == 'push' && 'push' || github.run_id }}
+  cancel-in-progress: false
+
 jobs:
   # ---------------------------------------------------------------------------
   # Create GitHub Release (pre-creates tag + release so parallel jobs never race)
@@ -914,7 +920,8 @@ jobs:
           # signing material stays inside this step; passwords reach apksigner through env, not argv
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$WORK/release.keystore"
           printf '%s\n' "$ANDROID_KEY_PROPERTIES" | tr -d '\r' > "$WORK/key.properties"
-          prop() { grep -E "^$1=" "$WORK/key.properties" | head -1 | cut -d= -f2-; }
+          # same key forms gradle accepts: "key=value", "key = value", "key: value"
+          prop() { sed -n -E "s/^[[:space:]]*$1[[:space:]]*[=:][[:space:]]*//p" "$WORK/key.properties" | head -1; }
           KS_ALIAS="$(prop keyAlias || true)"
           KS_PASS="$(prop storePassword || true)"
           KEY_PASS="$(prop keyPassword || true)"
@@ -991,17 +998,26 @@ jobs:
           CLOBBER=""
           if [ "$GH_EVENT_NAME" = "push" ] || [ "$INPUT_OVERWRITE" = "true" ]; then CLOBBER="--clobber"; fi
           maxAttempts=3
-          for attempt in $(seq 1 $maxAttempts); do
-            echo "Upload attempt $attempt of $maxAttempts"
-            if gh release upload "$TAG" release-assets/*.apk --repo "${{ github.repository }}" $CLOBBER; then
-              break
-            fi
-            if [ "$attempt" -eq "$maxAttempts" ]; then
-              echo "::error::Upload to release failed after $maxAttempts attempts"
-              exit 1
-            fi
-            echo "Upload failed (likely a transient GitHub API error), retrying in 15s..."
-            sleep 15
+          # one asset at a time => a retry only sends what is still missing
+          # without --clobber an already published name would fail the whole upload
+          for f in release-assets/*.apk; do
+            name="$(basename "$f")"
+            for attempt in $(seq 1 $maxAttempts); do
+              if [ -z "$CLOBBER" ] && gh release view "$TAG" --repo "${{ github.repository }}" --json assets -q '.assets[].name' | grep -qxF "$name"; then
+                echo "$name is already on the release, skipping"
+                break
+              fi
+              echo "Uploading $name (attempt $attempt of $maxAttempts)"
+              if gh release upload "$TAG" "$f" --repo "${{ github.repository }}" $CLOBBER; then
+                break
+              fi
+              if [ "$attempt" -eq "$maxAttempts" ]; then
+                echo "::error::Upload of $name failed after $maxAttempts attempts"
+                exit 1
+              fi
+              echo "Upload failed (likely a transient GitHub API error), retrying in 15s..."
+              sleep 15
+            done
           done
 
       - name: Discord notification
