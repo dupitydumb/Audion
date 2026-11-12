@@ -30,7 +30,10 @@ impl Database {
 
         // Enable WAL mode for better concurrency and resilience to corruption
         // Use execute_batch because these PRAGMAs return results which execute() doesn't like
-        conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
+        // busy_timeout first => the hash migration's immediate transaction waits for a lock
+        conn.execute_batch(
+            "PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;",
+        )?;
 
         // Initialize schema
         schema::init_schema(&conn)?;
