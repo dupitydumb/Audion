@@ -16,7 +16,7 @@ use symphonia::default::get_probe;
 use crate::db::queries::TrackInsert;
 
 /// Generate a content hash based on metadata for duplicate detection
-fn generate_content_hash(
+pub(crate) fn generate_content_hash(
     title: Option<&str>,
     artist: Option<&str>,
     album: Option<&str>,
