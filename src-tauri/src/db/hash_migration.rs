@@ -69,21 +69,29 @@ fn rehash_and_merge(conn: &Connection) -> Result<(usize, usize)> {
 
     let mut merged = 0;
     for (_, ids) in groups.into_iter().filter(|(_, ids)| ids.len() > 1) {
-        // keep the row with the most user data, then the oldest
-        let mut scored: Vec<(i64, i64)> = ids
+        // keep the playable row first, then the one with the most user data, then the oldest
+        let mut scored: Vec<(bool, i64, i64)> = ids
             .iter()
-            .map(|&id| Ok((user_data_score(conn, id)?, id)))
+            .map(|&id| Ok((file_exists(conn, id)?, user_data_score(conn, id)?, id)))
             .collect::<Result<_>>()?;
-        scored.sort_by_key(|&(score, id)| (Reverse(score), id));
+        scored.sort_by_key(|&(exists, score, id)| (Reverse(exists), Reverse(score), id));
 
-        let keeper = scored[0].1;
-        for &(_, loser) in &scored[1..] {
+        let keeper = scored[0].2;
+        for &(_, _, loser) in &scored[1..] {
             merge_into(conn, keeper, loser)?;
             merged += 1;
         }
     }
 
     Ok((rehashed, merged))
+}
+
+// a row whose file is gone must not outrank a playable duplicate
+// => startup reconciliation would later remove it and the merged likes and history with it
+fn file_exists(conn: &Connection, id: i64) -> Result<bool> {
+    let path: Option<String> =
+        conn.query_row("SELECT path FROM tracks WHERE id = ?1", params![id], |r| r.get(0))?;
+    Ok(path.map_or(false, |p| std::path::Path::new(&p).exists()))
 }
 
 fn user_data_score(conn: &Connection, id: i64) -> Result<i64> {
@@ -96,7 +104,7 @@ fn user_data_score(conn: &Connection, id: i64) -> Result<i64> {
     )
 }
 
-// move likes, playlist entries, plays and sync mapping to the keeper before the loser goes
+// move likes, playlist entries, plays, sync mappings and pending sync changes to the keeper before the loser goes
 // (every child table cascades on delete, so skipping this would wipe the history)
 fn merge_into(conn: &Connection, keeper: i64, loser: i64) -> Result<()> {
     let album_id: Option<i64> = conn.query_row(
@@ -105,10 +113,24 @@ fn merge_into(conn: &Connection, keeper: i64, loser: i64) -> Result<()> {
         |r| r.get(0),
     )?;
 
+    let keeper_album: Option<i64> = conn.query_row(
+        "SELECT album_id FROM tracks WHERE id = ?1",
+        params![keeper],
+        |r| r.get(0),
+    )?;
+
     conn.execute(
         "UPDATE play_history SET track_id = ?1 WHERE track_id = ?2",
         params![keeper, loser],
     )?;
+    // plays keep the album they were logged under => repoint them to the keeper's album,
+    // the loser's album can be deleted below and album stats join on play_history.album_id
+    if album_id != keeper_album {
+        conn.execute(
+            "UPDATE play_history SET album_id = ?1 WHERE track_id = ?2 AND album_id IS ?3",
+            params![keeper_album, keeper, album_id],
+        )?;
+    }
     conn.execute(
         "INSERT OR IGNORE INTO liked_tracks (track_id, liked_at)
          SELECT ?1, liked_at FROM liked_tracks WHERE track_id = ?2",
@@ -120,16 +142,27 @@ fn merge_into(conn: &Connection, keeper: i64, loser: i64) -> Result<()> {
         params![keeper, loser],
     )?;
 
-    let keeper_key = format!("lib_{}", keeper);
-    let loser_key = format!("lib_{}", loser);
+    // keep the server ids: a mapping left on the loser would make the next sync create a second entry
+    for (prefix, entity_type) in [("lib", "library_track"), ("liked", "liked_track")] {
+        let keeper_key = format!("{}_{}", prefix, keeper);
+        let loser_key = format!("{}_{}", prefix, loser);
+        conn.execute(
+            "UPDATE OR IGNORE sync_id_map SET local_id = ?1
+             WHERE local_id = ?2 AND entity_type = ?3",
+            params![keeper_key, loser_key, entity_type],
+        )?;
+        conn.execute(
+            "DELETE FROM sync_id_map WHERE local_id = ?1 AND entity_type = ?2",
+            params![loser_key, entity_type],
+        )?;
+    }
+
+    // pending changes still name the loser => repoint them, otherwise the queue processor
+    // would mint a fresh server id for the deleted row and recreate the duplicate remotely
     conn.execute(
-        "UPDATE OR IGNORE sync_id_map SET local_id = ?1
-         WHERE local_id = ?2 AND entity_type = 'library_track'",
-        params![keeper_key, loser_key],
-    )?;
-    conn.execute(
-        "DELETE FROM sync_id_map WHERE local_id = ?1 AND entity_type = 'library_track'",
-        params![loser_key],
+        "UPDATE sync_queue SET entity_id = ?1
+         WHERE entity_type = 'library_track' AND entity_id = ?2",
+        params![format!("local_lib_{}", keeper), format!("local_lib_{}", loser)],
     )?;
 
     conn.execute("DELETE FROM tracks WHERE id = ?1", params![loser])?;
