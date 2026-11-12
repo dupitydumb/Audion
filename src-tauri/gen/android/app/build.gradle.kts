@@ -26,10 +26,13 @@ android {
 
     signingConfigs {
         create("release") {
-            keyAlias = keystoreProperties.getProperty("keyAlias")
-            keyPassword = keystoreProperties.getProperty("keyPassword")
-            storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
-            storePassword = keystoreProperties.getProperty("storePassword")
+            val storePath = keystoreProperties.getProperty("storeFile")
+            if (!storePath.isNullOrBlank()) {
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+                storeFile = rootProject.file(storePath)
+                storePassword = keystoreProperties.getProperty("storePassword")
+            }
         }
     }
 
@@ -81,6 +84,12 @@ android {
             jni.srcDirs(emptyList<File>())
             jniLibs.srcDirs("src/jniLibs")
         }
+    }
+}
+
+androidComponents {
+    beforeVariants { variantBuilder ->
+        variantBuilder.enableAndroidTest = false
     }
 }
 

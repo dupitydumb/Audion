@@ -10,6 +10,7 @@ pub mod stats;
 pub mod sync;
 pub mod queries;
 pub mod schema;
+pub mod hash_migration;
 
 
 use rusqlite::Connection;
@@ -37,6 +38,11 @@ impl Database {
         // Initialize FTS search index
         if let Err(e) = queries::init_fts(&conn) {
             log::error!("[DB] Failed to initialize FTS search index: {}", e);
+        }
+
+        // after init_fts so the fts triggers exist when rows are rewritten or deleted
+        if let Err(e) = hash_migration::rehash_and_merge_duplicates_if_needed(&conn) {
+            log::error!("[DB] Failed to rehash and merge duplicates: {}", e);
         }
 
         let db = Self {

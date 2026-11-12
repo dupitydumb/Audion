@@ -171,7 +171,7 @@ jobs:
         uses: softprops/action-gh-release@v3.0.1
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
-          overwrite_files: ${{ inputs.overwrite }}
+          overwrite_files: ${{ github.event_name == 'push' || inputs.overwrite == true }}
           files: |
             src-tauri/target/release/bundle/msi/audion_*_windows.msi
             src-tauri/target/release/bundle/nsis/audion_*_windows.exe
@@ -266,7 +266,7 @@ jobs:
         uses: softprops/action-gh-release@v3.0.1
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
-          overwrite_files: ${{ inputs.overwrite }}
+          overwrite_files: ${{ github.event_name == 'push' || inputs.overwrite == true }}
           files: |
             src-tauri/target/msix/audion_*_windows.msix
         env:
@@ -381,7 +381,7 @@ jobs:
         uses: softprops/action-gh-release@v3.0.1
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
-          overwrite_files: ${{ inputs.overwrite }}
+          overwrite_files: ${{ github.event_name == 'push' || inputs.overwrite == true }}
           files: |
             src-tauri/target/release/bundle/deb/audion_*_linux.deb
             src-tauri/target/release/bundle/rpm/audion_*_x86_64.rpm
@@ -483,7 +483,7 @@ jobs:
         uses: softprops/action-gh-release@v3.0.1
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
-          overwrite_files: ${{ inputs.overwrite }}
+          overwrite_files: ${{ github.event_name == 'push' || inputs.overwrite == true }}
           files: audion_${{ needs.create-release.outputs.version }}_flatpak.flatpak
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -563,7 +563,7 @@ jobs:
         uses: softprops/action-gh-release@v3.0.1
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
-          overwrite_files: ${{ inputs.overwrite }}
+          overwrite_files: ${{ github.event_name == 'push' || inputs.overwrite == true }}
           files: |
             src-tauri/target/universal-apple-darwin/release/bundle/dmg/audion_*_macos.dmg
             src-tauri/target/universal-apple-darwin/release/bundle/macos/audion_*_macos.app.tar.gz
@@ -846,11 +846,15 @@ jobs:
       - name: Upload Android artifacts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_EVENT_NAME: ${{ github.event_name }}
+          INPUT_OVERWRITE: ${{ inputs.overwrite }}
         run: |
           APK=$(find src-tauri/gen/android/app/build/outputs/apk -name "audion_*_android.apk")
           TAG="${{ needs.create-release.outputs.tag_name }}"
+          # inputs.* is empty on push runs, so overwrite must be decided from the event:
+          # push runs rebuild the same versioned asset and replace it, manual runs follow the overwrite input
           CLOBBER=""
-          if [ "${{ inputs.overwrite }}" = "true" ]; then CLOBBER="--clobber"; fi
+          if [ "$GH_EVENT_NAME" = "push" ] || [ "$INPUT_OVERWRITE" = "true" ]; then CLOBBER="--clobber"; fi
           maxAttempts=3
           for attempt in $(seq 1 $maxAttempts); do
             echo "Upload attempt $attempt of $maxAttempts"
