@@ -119,23 +119,64 @@ fn merge_into(conn: &Connection, keeper: i64, loser: i64) -> Result<()> {
         |r| r.get(0),
     )?;
 
+    // repoint only the loser's plays to the keeper's album, and do it before they change owner
+    // => the keeper's own older plays are left alone, and the loser's album can be deleted below
+    // without orphaning them (album stats join on play_history.album_id)
+    if album_id != keeper_album {
+        conn.execute(
+            "UPDATE play_history SET album_id = ?1 WHERE track_id = ?2 AND album_id IS ?3",
+            params![keeper_album, loser, album_id],
+        )?;
+    }
     conn.execute(
         "UPDATE play_history SET track_id = ?1 WHERE track_id = ?2",
         params![keeper, loser],
     )?;
-    // plays keep the album they were logged under => repoint them to the keeper's album,
-    // the loser's album can be deleted below and album stats join on play_history.album_id
-    if album_id != keeper_album {
-        conn.execute(
-            "UPDATE play_history SET album_id = ?1 WHERE track_id = ?2 AND album_id IS ?3",
-            params![keeper_album, keeper, album_id],
-        )?;
-    }
     conn.execute(
         "INSERT OR IGNORE INTO liked_tracks (track_id, liked_at)
          SELECT ?1, liked_at FROM liked_tracks WHERE track_id = ?2",
         params![keeper, loser],
     )?;
+    // playlist entries carry a sync mapping ("{playlist}_{track}") and pending changes
+    // ("local_{playlist}_{track}") => move them with the row, or drop them if the row is dropped
+    let playlist_ids: Vec<i64> = {
+        let mut stmt =
+            conn.prepare("SELECT playlist_id FROM playlist_tracks WHERE track_id = ?1")?;
+        let rows = stmt.query_map(params![loser], |r| r.get(0))?;
+        rows.collect::<Result<_>>()?
+    };
+    for pid in playlist_ids {
+        let keeper_in: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2)",
+            params![pid, keeper],
+            |r| r.get(0),
+        )?;
+        let loser_key = format!("{}_{}", pid, loser);
+        let loser_entity = format!("local_{}", loser_key);
+        if keeper_in {
+            // the loser's row cascades away => nothing left for its pending changes to act on
+            conn.execute(
+                "DELETE FROM sync_queue WHERE entity_type = 'playlist_track' AND entity_id = ?1",
+                params![loser_entity],
+            )?;
+        } else {
+            let keeper_key = format!("{}_{}", pid, keeper);
+            conn.execute(
+                "UPDATE OR IGNORE sync_id_map SET local_id = ?1
+                 WHERE local_id = ?2 AND entity_type = 'playlist_track'",
+                params![keeper_key, loser_key],
+            )?;
+            conn.execute(
+                "UPDATE sync_queue SET entity_id = ?1
+                 WHERE entity_type = 'playlist_track' AND entity_id = ?2",
+                params![format!("local_{}", keeper_key), loser_entity],
+            )?;
+        }
+        conn.execute(
+            "DELETE FROM sync_id_map WHERE local_id = ?1 AND entity_type = 'playlist_track'",
+            params![loser_key],
+        )?;
+    }
     // keeper already in the playlist => ignored here, the leftover row cascades away
     conn.execute(
         "UPDATE OR IGNORE playlist_tracks SET track_id = ?1 WHERE track_id = ?2",
@@ -163,6 +204,20 @@ fn merge_into(conn: &Connection, keeper: i64, loser: i64) -> Result<()> {
         "UPDATE sync_queue SET entity_id = ?1
          WHERE entity_type = 'library_track' AND entity_id = ?2",
         params![format!("local_lib_{}", keeper), format!("local_lib_{}", loser)],
+    )?;
+
+    // same for pending likes => an unlike of the loser must not hit a keeper that is liked
+    let loser_liked = format!("local_liked_{}", loser);
+    conn.execute(
+        "DELETE FROM sync_queue
+         WHERE entity_type = 'liked_track' AND entity_id = ?1 AND operation = 'delete'
+         AND EXISTS (SELECT 1 FROM liked_tracks WHERE track_id = ?2)",
+        params![loser_liked, keeper],
+    )?;
+    conn.execute(
+        "UPDATE sync_queue SET entity_id = ?1
+         WHERE entity_type = 'liked_track' AND entity_id = ?2",
+        params![format!("local_liked_{}", keeper), loser_liked],
     )?;
 
     conn.execute("DELETE FROM tracks WHERE id = ?1", params![loser])?;
