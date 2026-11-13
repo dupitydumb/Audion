@@ -58,7 +58,11 @@
   export let queueTracks: Track[] | null = null; // New prop for unified queue context
 
   // Virtual scrolling configuration
-  const TRACK_ROW_HEIGHT = 50; // pixels (matches desktop row height in CSS)
+  // must match the row height in css (desktop 50px, html.layout-mobile 60px)
+  // a wrong value => rows jump every time the visible window shifts
+  const DESKTOP_ROW_HEIGHT = 50;
+  const MOBILE_ROW_HEIGHT = 60;
+  $: rowHeight = $isMobile ? MOBILE_ROW_HEIGHT : DESKTOP_ROW_HEIGHT;
   const OVERSCAN = 5; // Extra rows to render above/below viewport
 
   let containerHeight = 600; // Will be calculated from container
@@ -245,27 +249,21 @@
     visibleTracks: [] as Track[],
   };
 
-  $: {
-    const totalHeight = sortedTracks.length * TRACK_ROW_HEIGHT;
-    const startIndex = Math.max(
-      0,
-      Math.floor(scrollTop / TRACK_ROW_HEIGHT) - OVERSCAN,
-    );
-    const endIndex = Math.min(
-      sortedTracks.length,
-      Math.ceil((scrollTop + containerHeight) / TRACK_ROW_HEIGHT) + OVERSCAN,
-    );
-    const visibleTracks = sortedTracks.slice(startIndex, endIndex);
-    const offsetY = startIndex * TRACK_ROW_HEIGHT;
+  // primitives => dependants only re-run when the value actually changes,
+  // not on every scroll event
+  $: rangeStart = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN);
+  $: rangeEnd = Math.min(
+    sortedTracks.length,
+    Math.ceil((scrollTop + containerHeight) / rowHeight) + OVERSCAN,
+  );
 
-    virtualScrollState = {
-      totalHeight,
-      startIndex,
-      endIndex,
-      offsetY,
-      visibleTracks,
-    };
-  }
+  $: virtualScrollState = {
+    totalHeight: sortedTracks.length * rowHeight,
+    startIndex: rangeStart,
+    endIndex: rangeEnd,
+    offsetY: rangeStart * rowHeight,
+    visibleTracks: sortedTracks.slice(rangeStart, rangeEnd),
+  };
 
   // Infinite scroll: when virtual scroll nears the bottom of loaded tracks,
   // fetch the next paginated batch from the backend.
@@ -632,7 +630,7 @@
       const rect = containerElement.getBoundingClientRect();
       // pointer Y relative to the list content (account for scroll)
       const relY = e.clientY - rect.top + containerElement.scrollTop;
-      const idx = Math.floor(relY / TRACK_ROW_HEIGHT);
+      const idx = Math.floor(relY / rowHeight);
       const clamped = Math.max(0, Math.min(sortedTracks.length - 1, idx));
       if (clamped !== draggedIndex) newOver = clamped;
     }
@@ -742,6 +740,7 @@
     e.preventDefault();
 
     swipeDeltaX = Math.min(dx, SWIPE_MAX);
+    swipingRow.classList.add("swiping");
     swipingRow.style.transition = "none";
     swipingRow.style.transform = `translateX(${swipeDeltaX}px)`;
 
@@ -786,6 +785,7 @@
       row.style.transform = "";
       row.classList.remove("swipe-queue-ready");
     }
+    row.classList.remove("swiping");
 
     swipingRow = null;
     swipeTrackId = null;
@@ -879,7 +879,7 @@
 
   function scrollToIndex(index: number) {
     if (!containerElement) return;
-    containerElement.scrollTop = index * TRACK_ROW_HEIGHT;
+    containerElement.scrollTop = index * rowHeight;
   }
 
   async function handleAlphabeticalJump(e: KeyboardEvent) {
@@ -1237,7 +1237,8 @@
   :global(.col-header.col-checkbox) { display: flex; align-items: center; justify-content: center; }
   :global(.sort-icon) { color: var(--accent-primary); font-size: var(--font-size-xs); }
 
-  .list-body { flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; overscroll-behavior-y: contain; }
+  /* pan-y => vertical scroll stays on the compositor, only horizontal swipes reach the touch handlers */
+  .list-body { flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; overscroll-behavior-y: contain; touch-action: pan-y; }
   .virtual-spacer { position: relative; width: 100%; }
   .virtual-content { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
 
@@ -1408,7 +1409,8 @@
   :global(html.layout-mobile .downloaded-icon) { margin-left: 2px; }
   :global(html.layout-mobile .downloaded-icon svg) { width: 12px; height: 12px; }
 
-  :global(html.layout-mobile .track-row) { position: relative; will-change: transform; }
+  :global(html.layout-mobile .track-row) { position: relative; }
+  :global(html.layout-mobile .track-row.swiping) { will-change: transform; }
   :global(html.layout-mobile .track-row::before) { content: ""; position: absolute; inset: 0; border-radius: var(--radius-md); background-color: transparent; transition: background-color 0.15s ease; z-index: -1; pointer-events: none; }
   :global(html.layout-mobile .track-row.swipe-queue-ready::before) { background-color: color-mix(in srgb, var(--accent-primary), transparent 80%); }
   :global(html.layout-mobile .track-row.swipe-queue-added::before) { background-color: color-mix(in srgb, var(--accent-primary), transparent 65%); }

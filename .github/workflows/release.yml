@@ -54,6 +54,12 @@ on:
 permissions:
   contents: write
 
+# push runs share one group => queued one after another, so assets from different commits never interleave
+# manual runs get their own group and behave as before
+concurrency:
+  group: release-${{ github.event_name == 'push' && 'push' || github.run_id }}
+  cancel-in-progress: false
+
 jobs:
   # ---------------------------------------------------------------------------
   # Create GitHub Release (pre-creates tag + release so parallel jobs never race)
@@ -171,7 +177,7 @@ jobs:
         uses: softprops/action-gh-release@v3.0.1
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
-          overwrite_files: ${{ inputs.overwrite }}
+          overwrite_files: ${{ github.event_name == 'push' || inputs.overwrite == true }}
           files: |
             src-tauri/target/release/bundle/msi/audion_*_windows.msi
             src-tauri/target/release/bundle/nsis/audion_*_windows.exe
@@ -221,8 +227,10 @@ jobs:
   # ---------------------------------------------------------------------------
   release-windows-msix:
     runs-on: windows-latest
-    needs: [create-release, release-windows]
-    if: needs.release-windows.result == 'success'
+    needs: create-release
+    # runs in parallel with release-windows => the bundle tool compiles its own exe
+    if: |
+      github.event_name == 'push' || inputs.build_windows == true
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
@@ -233,12 +241,6 @@ jobs:
         uses: ./.github/actions/setup
         with:
           platform: windows
-
-      - name: Download compiled exe from build job
-        uses: actions/download-artifact@v6
-        with:
-          name: windows-exe
-          path: src-tauri/target/release
 
       - name: Decode MSIX signing cert
         shell: pwsh
@@ -266,7 +268,7 @@ jobs:
         uses: softprops/action-gh-release@v3.0.1
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
-          overwrite_files: ${{ inputs.overwrite }}
+          overwrite_files: ${{ github.event_name == 'push' || inputs.overwrite == true }}
           files: |
             src-tauri/target/msix/audion_*_windows.msix
         env:
@@ -381,7 +383,7 @@ jobs:
         uses: softprops/action-gh-release@v3.0.1
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
-          overwrite_files: ${{ inputs.overwrite }}
+          overwrite_files: ${{ github.event_name == 'push' || inputs.overwrite == true }}
           files: |
             src-tauri/target/release/bundle/deb/audion_*_linux.deb
             src-tauri/target/release/bundle/rpm/audion_*_x86_64.rpm
@@ -483,7 +485,7 @@ jobs:
         uses: softprops/action-gh-release@v3.0.1
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
-          overwrite_files: ${{ inputs.overwrite }}
+          overwrite_files: ${{ github.event_name == 'push' || inputs.overwrite == true }}
           files: audion_${{ needs.create-release.outputs.version }}_flatpak.flatpak
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -563,7 +565,7 @@ jobs:
         uses: softprops/action-gh-release@v3.0.1
         with:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
-          overwrite_files: ${{ inputs.overwrite }}
+          overwrite_files: ${{ github.event_name == 'push' || inputs.overwrite == true }}
           files: |
             src-tauri/target/universal-apple-darwin/release/bundle/dmg/audion_*_macos.dmg
             src-tauri/target/universal-apple-darwin/release/bundle/macos/audion_*_macos.app.tar.gz
@@ -710,13 +712,34 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
   # ---------------------------------------------------------------------------
-  # Android Build
+  # Android Build: one runner per ABI, then a package job merges them into the universal APK
   # ---------------------------------------------------------------------------
-  release-android:
+  build-android:
+    name: Android build (${{ matrix.abi }})
     runs-on: ubuntu-latest
     needs: create-release
     if: |
       github.event_name == 'push' || inputs.build_android == true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - abi: arm64-v8a
+            target: aarch64
+            rust_target: aarch64-linux-android
+            ndk_triple: aarch64-linux-android
+          - abi: armeabi-v7a
+            target: armv7
+            rust_target: armv7-linux-androideabi
+            ndk_triple: arm-linux-androideabi
+          - abi: x86
+            target: i686
+            rust_target: i686-linux-android
+            ndk_triple: i686-linux-android
+          - abi: x86_64
+            target: x86_64
+            rust_target: x86_64-linux-android
+            ndk_triple: x86_64-linux-android
     env:
       GRADLE_OPTS: -Xmx4096m
     steps:
@@ -740,16 +763,18 @@ jobs:
         uses: ./.github/actions/setup
         with:
           platform: android
-          rust_targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          rust_targets: ${{ matrix.rust_target }}
+          cache_key: android-${{ matrix.abi }}
 
-      - name: Cache tauri-cli
+      - name: Cache Gradle
         uses: actions/cache@v6
         with:
-          path: ~/.cargo/bin/tauri
-          key: tauri-cli-2.11.0
-
-      - name: Install tauri-cli (if not already)
-        run: cargo install tauri-cli --version 2.11.0 --locked
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('src-tauri/gen/android/**/*.gradle*', 'src-tauri/gen/android/**/gradle-wrapper.properties', 'src-tauri/gen/android/buildSrc/**') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
 
       - name: Setup Signing
         run: |
@@ -771,6 +796,9 @@ jobs:
           }
 
       - name: Bundle libc++_shared.so into jniLibs
+        env:
+          ABI: ${{ matrix.abi }}
+          TRIPLE: ${{ matrix.ndk_triple }}
         run: |
           NDK_VERSION="29.0.14206865"
           NDK_DIR="${ANDROID_HOME}/ndk/${NDK_VERSION}"
@@ -783,86 +811,213 @@ jobs:
           # It now lives under toolchains/llvm/prebuilt/<host>/lib/ per target triple
           TOOLCHAIN="${NDK_DIR}/toolchains/llvm/prebuilt/linux-x86_64"
           JNI_DIR="src-tauri/gen/android/app/src/main/jniLibs"
-          declare -A ABI_TRIPLE=(
-            [arm64-v8a]=aarch64-linux-android
-            [armeabi-v7a]=arm-linux-androideabi
-            [x86]=i686-linux-android
-            [x86_64]=x86_64-linux-android
-          )
-          for ABI in arm64-v8a armeabi-v7a x86 x86_64; do
-            TRIPLE="${ABI_TRIPLE[$ABI]}"
-            SO=$(find "${TOOLCHAIN}" -name "libc++_shared.so" -path "*/${TRIPLE}/*" | head -1)
-            if [ -z "$SO" ]; then
-              echo "ERROR: libc++_shared.so not found for ${ABI} (triple: ${TRIPLE})"
-              find "${TOOLCHAIN}" -name "libc++_shared.so" || true
+          SO=$(find "${TOOLCHAIN}" -name "libc++_shared.so" -path "*/${TRIPLE}/*" | head -1)
+          if [ -z "$SO" ]; then
+            echo "ERROR: libc++_shared.so not found for ${ABI} (triple: ${TRIPLE})"
+            find "${TOOLCHAIN}" -name "libc++_shared.so" || true
+            exit 1
+          fi
+          mkdir -p "${JNI_DIR}/${ABI}"
+          cp "$SO" "${JNI_DIR}/${ABI}/"
+          echo "Copied: $SO -> ${JNI_DIR}/${ABI}/"
+
+      - name: Build Tauri app for Android (Signed, ${{ matrix.abi }})
+        run: npm run tauri android build -- --apk --target ${{ matrix.target }}
+
+      - name: Locate and verify APK
+        env:
+          ABI: ${{ matrix.abi }}
+          VER: ${{ needs.create-release.outputs.version }}
+        run: |
+          APK_DIR="src-tauri/gen/android/app/build/outputs/apk"
+          UNIVERSAL_FLAVOR="${APK_DIR}/universal/release/app-universal-release.apk"
+          if [ -f "$UNIVERSAL_FLAVOR" ]; then
+            SRC="$UNIVERSAL_FLAVOR"
+          else
+            mapfile -t APKS < <(find "$APK_DIR" -name "*.apk")
+            if [ "${#APKS[@]}" -ne 1 ]; then
+              echo "::error::Expected exactly one APK for ${ABI}, found ${#APKS[@]}:"
+              printf '%s\n' "${APKS[@]}"
               exit 1
             fi
-            mkdir -p "${JNI_DIR}/${ABI}"
-            cp "$SO" "${JNI_DIR}/${ABI}/"
-            echo "Copied: $SO -> ${JNI_DIR}/${ABI}/"
+            SRC="${APKS[0]}"
+          fi
+          echo "Using $SRC"
+
+          LIST="$RUNNER_TEMP/apk-entries.txt"
+          unzip -Z1 "$SRC" > "$LIST"
+          echo "--- native libs in APK ---"
+          grep '^lib/' "$LIST" || true
+
+          # this leg must ship its own ABI and nothing else, otherwise the merge step would clash
+          OTHER_ABIS=$(grep '^lib/' "$LIST" | cut -d/ -f2 | sort -u | grep -vx "$ABI" || true)
+          if [ -n "$OTHER_ABIS" ]; then
+            echo "::error::APK for ${ABI} also contains native libs for: ${OTHER_ABIS}"
+            exit 1
+          fi
+          grep -q "^lib/${ABI}/libc++_shared.so$" "$LIST" || {
+            echo "::error::libc++_shared.so NOT FOUND in the ${ABI} APK — app will crash at launch"
+            exit 1
+          }
+          [ "$(grep -c "^lib/${ABI}/.*\.so$" "$LIST")" -ge 2 ] || {
+            echo "::error::the ${ABI} APK has no app native library besides libc++_shared.so"
+            exit 1
+          }
+
+          mkdir -p android-out
+          cp "$SRC" "android-out/audion_${VER}_android_${ABI}.apk"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-${{ matrix.abi }}
+          path: android-out/*.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  release-android:
+    name: Android package and release
+    runs-on: ubuntu-latest
+    needs: [create-release, build-android]
+    env:
+      VER: ${{ needs.create-release.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Download per-ABI APKs
+        uses: actions/download-artifact@v6
+        with:
+          pattern: android-apk-*
+          merge-multiple: true
+          path: apks
+
+      - name: Build, align and sign universal APK
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
+        run: |
+          set -euo pipefail
+          WORK="$RUNNER_TEMP/android-universal"
+          mkdir -p "$WORK" release-assets
+          ls -la apks
+
+          BASE="apks/audion_${VER}_android_arm64-v8a.apk"
+          OTHERS=()
+          for abi in armeabi-v7a x86 x86_64; do OTHERS+=("apks/audion_${VER}_android_${abi}.apk"); done
+          for f in "$BASE" "${OTHERS[@]}"; do
+            test -f "$f" || { echo "::error::missing $f"; exit 1; }
           done
 
-      - name: Build Tauri app for Android (Signed)
-        run: npm run tauri android build
+          # signing material stays inside this step; passwords reach apksigner through env, not argv
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$WORK/release.keystore"
+          printf '%s\n' "$ANDROID_KEY_PROPERTIES" | tr -d '\r' > "$WORK/key.properties"
+          # same key forms gradle accepts: "key=value", "key = value", "key: value"
+          prop() { sed -n -E "s/^[[:space:]]*$1[[:space:]]*[=:][[:space:]]*//p" "$WORK/key.properties" | head -1; }
+          KS_ALIAS="$(prop keyAlias || true)"
+          KS_PASS="$(prop storePassword || true)"
+          KEY_PASS="$(prop keyPassword || true)"
+          for v in "$KS_ALIAS" "$KS_PASS" "$KEY_PASS"; do
+            [ -n "$v" ] || { echo "::error::key.properties is missing keyAlias, storePassword or keyPassword"; exit 1; }
+          done
+          export KS_PASS KEY_PASS
 
-      - name: Verify libc++_shared.so is bundled
-        run: |
-          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" | head -1)
-          if [ -z "$APK" ]; then
-            echo "ERROR: No APK found"
-            exit 1
-          fi
-          echo "Checking APK: $APK"
-          echo "--- All .so files in APK ---"
-          unzip -l "$APK" | grep "\.so" || echo "WARNING: No .so files found at all"
-          echo "--- libc++ check ---"
-          if unzip -l "$APK" | grep -q "libc++_shared.so"; then
-            echo "OK: libc++_shared.so is bundled"
-          else
-            echo "ERROR: libc++_shared.so NOT FOUND in APK — app will crash at launch"
-            exit 1
-          fi
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          echo "Using build-tools: $BT"
 
-      - name: Rename Android artifacts
+          python3 .github/scripts/merge_universal_apk.py --base "$BASE" --out "$WORK/merged.apk" "${OTHERS[@]}"
+          # -P 16: 16 KB page alignment for any .so stored uncompressed (no-op while libs are compressed)
+          "$BT/zipalign" -f -P 16 4 "$WORK/merged.apk" "$WORK/aligned.apk"
+          "$BT/apksigner" sign \
+            --ks "$WORK/release.keystore" \
+            --ks-key-alias "$KS_ALIAS" \
+            --ks-pass env:KS_PASS \
+            --key-pass env:KEY_PASS \
+            --v4-signing-enabled false \
+            --out "release-assets/audion_${VER}_android.apk" \
+            "$WORK/aligned.apk"
+
+      - name: Verify universal APK
         run: |
-          VER="${{ needs.create-release.outputs.version }}"
-          # Universal APK path (most common)
-          UNIVERSAL_APK="src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk"
-          if [ -f "$UNIVERSAL_APK" ]; then
-            mv "$UNIVERSAL_APK" "src-tauri/gen/android/app/build/outputs/apk/audion_${VER}_android.apk"
-            echo "APK renamed to audion_${VER}_android.apk"
-          else
-            # Fallback: search for any APK in release directories
-            APK_FILE=$(find src-tauri/gen/android/app/build/outputs/apk -name "*.apk" | head -1)
-            if [ -n "$APK_FILE" ]; then
-              mv "$APK_FILE" "src-tauri/gen/android/app/build/outputs/apk/audion_${VER}_android.apk"
-              echo "APK renamed to audion_${VER}_android.apk"
-            else
-              echo "No APK found"
-              exit 1
-            fi
-          fi
+          set -euo pipefail
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          UNIVERSAL="release-assets/audion_${VER}_android.apk"
+
+          "$BT/apksigner" verify --verbose --print-certs "$UNIVERSAL"
+          "$BT/zipalign" -c -P 16 4 "$UNIVERSAL"
+
+          LIST="$RUNNER_TEMP/universal-entries.txt"
+          unzip -Z1 "$UNIVERSAL" > "$LIST"
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            grep -q "^lib/${abi}/libc++_shared.so$" "$LIST" || { echo "::error::universal APK is missing libc++_shared.so for ${abi}"; exit 1; }
+            [ "$(grep -c "^lib/${abi}/.*\.so$" "$LIST")" -ge 2 ] || { echo "::error::universal APK is missing the app library for ${abi}"; exit 1; }
+          done
+
+          # the merged APK must be signed with the same certificate as the per-ABI APKs
+          # empty result => apksigner could not verify the apk, not a real cert mismatch
+          cert() {
+            local out
+            out="$("$BT/apksigner" verify --print-certs "$1" 2>&1)" || {
+              echo "::error::apksigner could not verify $1"
+              echo "$out"
+              return 1
+            }
+            # compare only the hex digest => the line prefix differs per scheme (v2 vs v3)
+            echo "$out" | grep -i -m1 'certificate SHA-256 digest' | awk '{print $NF}'
+          }
+          want="$(cert "$UNIVERSAL")"
+          echo "universal: $want"
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            have="$(cert "apks/audion_${VER}_android_${abi}.apk")" || exit 1
+            echo "${abi}: $have"
+            [ "$have" = "$want" ] || { echo "::error::signing certificate of the ${abi} APK differs from the universal APK"; exit 1; }
+          done
+
+          cp apks/*.apk release-assets/
+          ls -la release-assets
+          RELEASE_APKS=(release-assets/*.apk)
+          [ "${#RELEASE_APKS[@]}" -eq 5 ] || { echo "::error::expected 5 APKs in release-assets, found ${#RELEASE_APKS[@]}"; exit 1; }
 
       - name: Upload Android artifacts
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_EVENT_NAME: ${{ github.event_name }}
+          INPUT_OVERWRITE: ${{ inputs.overwrite }}
         run: |
-          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name "audion_*_android.apk")
           TAG="${{ needs.create-release.outputs.tag_name }}"
+          # inputs.* is empty on push runs, so overwrite must be decided from the event:
+          # push runs rebuild the same versioned assets and replace them, manual runs follow the overwrite input
           CLOBBER=""
-          if [ "${{ inputs.overwrite }}" = "true" ]; then CLOBBER="--clobber"; fi
+          if [ "$GH_EVENT_NAME" = "push" ] || [ "$INPUT_OVERWRITE" = "true" ]; then CLOBBER="--clobber"; fi
           maxAttempts=3
-          for attempt in $(seq 1 $maxAttempts); do
-            echo "Upload attempt $attempt of $maxAttempts"
-            if gh release upload "$TAG" "$APK" --repo "${{ github.repository }}" $CLOBBER; then
-              break
-            fi
-            if [ "$attempt" -eq "$maxAttempts" ]; then
-              echo "::error::Upload to release failed after $maxAttempts attempts"
-              exit 1
-            fi
-            echo "Upload failed (likely a transient GitHub API error), retrying in 15s..."
-            sleep 15
+          # one asset at a time => a retry only sends what is still missing
+          # without --clobber an already published name would fail the whole upload
+          for f in release-assets/*.apk; do
+            name="$(basename "$f")"
+            for attempt in $(seq 1 $maxAttempts); do
+              if [ -z "$CLOBBER" ] && gh release view "$TAG" --repo "${{ github.repository }}" --json assets -q '.assets[].name' | grep -qxF "$name"; then
+                echo "$name is already on the release, skipping"
+                break
+              fi
+              echo "Uploading $name (attempt $attempt of $maxAttempts)"
+              if gh release upload "$TAG" "$f" --repo "${{ github.repository }}" $CLOBBER; then
+                break
+              fi
+              if [ "$attempt" -eq "$maxAttempts" ]; then
+                echo "::error::Upload of $name failed after $maxAttempts attempts"
+                exit 1
+              fi
+              echo "Upload failed (likely a transient GitHub API error), retrying in 15s..."
+              sleep 15
+            done
           done
 
       - name: Discord notification

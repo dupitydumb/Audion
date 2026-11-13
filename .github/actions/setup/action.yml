@@ -8,6 +8,10 @@ inputs:
     description: 'Additional Rust targets to install (comma-separated)'
     required: false
     default: ''
+  cache_key:
+    description: 'Extra Rust cache key, so parallel matrix legs of the same job do not share one cache'
+    required: false
+    default: ''
 runs:
   using: 'composite'
   steps:
@@ -27,6 +31,7 @@ runs:
       uses: swatinem/rust-cache@v2
       with:
         workspaces: './src-tauri -> target'
+        key: ${{ inputs.cache_key }}
 
     - name: Install dependencies (npm)
       shell: bash
