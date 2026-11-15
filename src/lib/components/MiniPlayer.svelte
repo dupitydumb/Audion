@@ -430,7 +430,7 @@
                 <div class="content-layer layer-expanded">
                     <!-- Top section: Art + Track info + Visualizer & Actions -->
                     <div class="exp-top">
-                        <!-- Art 64px -->
+                        <!-- Art 48px -->
                         <button
                             class="art-exp"
                             class:paused={!$isPlaying}
@@ -441,25 +441,29 @@
                             {#if albumArt && !imageLoadFailed}
                                 <img src={albumArt} alt="Art" decoding="async" on:error={() => (imageLoadFailed = true)} />
                             {:else}
-                                <div class="art-ph"><Icon name="music" size={24} /></div>
+                                <div class="art-ph"><Icon name="music" size={22} /></div>
                             {/if}
                         </button>
 
                         <!-- Track info -->
                         <div class="exp-info">
-                            <span class="exp-title" title={$currentTrack?.title || $_('player.noTrack')}>
-                                {$currentTrack?.title || $_('player.noTrack')}
-                            </span>
-                            <span class="exp-artist">
-                                {$currentTrack?.artist || ""}
-                            </span>
+                            <div class="marquee-wrapper">
+                                <span class="exp-title" title={$currentTrack?.title || $_('player.noTrack')}>
+                                    {$currentTrack?.title || $_('player.noTrack')}
+                                </span>
+                            </div>
+                            <div class="marquee-wrapper">
+                                <span class="exp-artist" title={$currentTrack?.artist || ""}>
+                                    {$currentTrack?.artist || ""}
+                                </span>
+                            </div>
                         </div>
 
-                        <!-- Top-Right: Visualizer + Controls -->
+                        <!-- Top-Right: Visualizer + Ghost Actions -->
                         <div class="exp-top-actions">
-                            <div class="viz-exp">
+                            <div class="viz-exp" aria-hidden="true">
                                 {#each barHeights as h, i (i)}
-                                    <div class="vbar exp-vbar" style:height="{h}px"></div>
+                                    <div class="vbar exp-vbar" style:height="{Math.min(22, Math.max(3, h * 1.35))}px"></div>
                                 {/each}
                             </div>
 
@@ -469,7 +473,7 @@
                                 data-tip={displayMode === "floating" ? "Notch mode" : "Floating mode"}
                                 aria-label="Toggle notch mode"
                             >
-                                <Icon name={displayMode === "floating" ? "minimize-2" : "maximize-2"} size={13} />
+                                <Icon name={displayMode === "floating" ? "minimize-2" : "maximize-2"} size={12} />
                             </button>
 
                             <button
@@ -478,7 +482,7 @@
                                 data-tip={$_('player.openFullPlayer')}
                                 aria-label={$_('player.openFullPlayer')}
                             >
-                                <Icon name="external-link" size={13} />
+                                <Icon name="external-link" size={12} />
                             </button>
 
                             <button
@@ -487,7 +491,7 @@
                                 data-tip="Collapse"
                                 aria-label="Collapse"
                             >
-                                <Icon name="x" size={13} />
+                                <Icon name="x" size={12} />
                             </button>
                         </div>
                     </div>
@@ -521,7 +525,7 @@
                         <span class="time-label">{remaining}</span>
                     </div>
 
-                    <!-- Bottom: Transport Controls -->
+                    <!-- Bottom: Transport Controls (Apple Dynamic Island solid filled glyphs) -->
                     <div class="exp-controls">
                         <button
                             class="ctrl-btn"
@@ -529,7 +533,7 @@
                             aria-label={$_('player.previous')}
                             data-tip={$_('player.previous')}
                         >
-                            <Icon name="skip-back" size={20} />
+                            <Icon name="skip-back" size={22} />
                         </button>
 
                         <button
@@ -538,7 +542,7 @@
                             aria-label={$isPlaying ? $_('common.pause') : $_('common.play')}
                             data-tip={$isPlaying ? $_('common.pause') : $_('common.play')}
                         >
-                            <Icon name={$isPlaying ? "pause" : "play"} size={22} />
+                            <Icon name={$isPlaying ? "pause" : "play"} size={28} />
                         </button>
 
                         <button
@@ -547,7 +551,7 @@
                             aria-label={$_('player.next')}
                             data-tip={$_('player.next')}
                         >
-                            <Icon name="skip-forward" size={20} />
+                            <Icon name="skip-forward" size={22} />
                         </button>
                     </div>
                 </div>
@@ -772,7 +776,7 @@
         box-sizing: border-box;
         flex-direction: column;
         justify-content: space-between;
-        padding: 12px 18px 12px;
+        padding: 16px;
         overflow: hidden;
     }
 
@@ -781,12 +785,12 @@
         align-items: center;
         gap: 12px;
         width: 100%;
-        min-height: 52px;
+        min-height: 48px;
     }
 
     .art-exp {
-        width: 52px;
-        height: 52px;
+        width: 48px;
+        height: 48px;
         border-radius: 10px;
         overflow: hidden;
         flex-shrink: 0;
@@ -818,10 +822,19 @@
         min-width: 0;
         display: flex;
         flex-direction: column;
-        gap: 2px;
+        gap: 3px;
+        overflow: hidden;
+    }
+
+    .marquee-wrapper {
+        width: 100%;
+        overflow: hidden;
+        white-space: nowrap;
+        position: relative;
     }
 
     .exp-title {
+        display: block;
         font-size: 14px;
         font-weight: 600;
         color: #ffffff;
@@ -833,6 +846,7 @@
     }
 
     .exp-artist {
+        display: block;
         font-size: 12px;
         font-weight: 500;
         color: rgba(255, 255, 255, 0.6);
@@ -845,47 +859,63 @@
     .exp-top-actions {
         display: flex;
         align-items: center;
-        gap: 6px;
+        gap: 4px;
         flex-shrink: 0;
+        position: relative;
     }
 
     .viz-exp {
         display: flex;
         align-items: center;
-        gap: 3px;
-        height: 16px;
-        margin-right: 4px;
+        gap: 3.5px;
+        height: 22px;
+        margin-right: 2px;
+        flex-shrink: 0;
     }
 
     .exp-vbar {
-        width: 3px;
+        width: 3.5px;
+        min-height: 3px;
+        border-radius: 9999px;
+        background: var(--accent, #ff375f);
+        filter: drop-shadow(0 0 5px var(--accent, #ff375f));
+        transition: height 60ms linear;
     }
 
     .action-btn {
-        width: 26px;
-        height: 26px;
+        width: 24px;
+        height: 24px;
         border-radius: 50%;
         border: none;
-        background: rgba(255, 255, 255, 0.08);
-        color: rgba(255, 255, 255, 0.5);
+        background: transparent;
+        color: rgba(255, 255, 255, 0.45);
         display: flex;
         align-items: center;
         justify-content: center;
         cursor: pointer;
         position: relative;
-        transition: all 150ms ease;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 180ms ease, background 150ms ease, color 150ms ease, transform 150ms ease;
     }
 
     .action-btn::after {
         content: "";
         position: absolute;
-        inset: -9px;
+        inset: -10px;
+    }
+
+    /* Reveal subtle actions on hover */
+    .pill:hover .action-btn {
+        opacity: 0.8;
+        pointer-events: auto;
     }
 
     .action-btn:hover {
-        background: rgba(255, 255, 255, 0.16);
+        opacity: 1;
+        background: rgba(255, 255, 255, 0.12);
         color: #ffffff;
-        transform: scale(1.05);
+        transform: scale(1.08);
     }
 
     .action-btn.close-btn:hover {
@@ -978,62 +1008,68 @@
         transform: translate(-50%, -50%) scale(1.1);
     }
 
-    /* Bottom: Transport Controls (miniplayer.md §6) */
+    /* Bottom: Transport Controls (Apple Dynamic Island style) */
     .exp-controls {
         display: flex;
         align-items: center;
         justify-content: center;
-        gap: 20px;
+        gap: 32px;
         width: 100%;
         margin-top: 2px;
     }
 
     .ctrl-btn {
-        width: 40px;
-        height: 40px;
+        width: 44px;
+        height: 44px;
         min-width: 44px;
         min-height: 44px;
         border-radius: 50%;
         border: none;
         background: transparent;
-        color: rgba(255, 255, 255, 0.7);
+        color: #ffffff;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         cursor: pointer;
-        transition: all 150ms ease;
+        transition: transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1), background 150ms ease, opacity 150ms ease;
+    }
+
+    /* Solid filled glyphs for all three buttons (Apple Dynamic Island) */
+    .ctrl-btn :global(svg) {
+        fill: currentColor;
+    }
+    .ctrl-btn :global(svg polygon),
+    .ctrl-btn :global(svg rect),
+    .ctrl-btn :global(svg path) {
+        fill: currentColor;
     }
 
     .ctrl-btn:hover {
-        background: rgba(255, 255, 255, 0.12);
+        background: rgba(255, 255, 255, 0.08);
         color: #ffffff;
-        transform: scale(1.06);
+        transform: scale(1.12);
     }
 
     .ctrl-btn:active {
         transform: scale(0.9);
-        background: rgba(255, 255, 255, 0.2);
+        background: rgba(255, 255, 255, 0.16);
     }
 
     .play-btn {
-        width: 46px;
-        height: 46px;
-        min-width: 46px;
-        min-height: 46px;
-        background: #ffffff;
-        color: #000000;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+        background: transparent;
+        color: #ffffff;
+        box-shadow: none;
     }
 
     .play-btn:hover {
-        background: #ffffff;
-        color: #000000;
-        transform: scale(1.08);
-        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.45);
+        background: rgba(255, 255, 255, 0.08);
+        color: #ffffff;
+        transform: scale(1.12);
+        box-shadow: none;
     }
 
     .play-btn:active {
-        transform: scale(0.92);
+        transform: scale(0.9);
     }
 
     /* ── Focus Outline (WCAG AA & R-32) ────────────────── */
