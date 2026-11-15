@@ -88,8 +88,14 @@
     ArrowUp,
     ArrowDown,
     Tag,
-    Palette
+    Palette,
+    MessageCircle,
+    Image,
+    Film
   } from 'lucide-svelte';
+  import Github from './icons/Github.svelte';
+  import Notch from './icons/Notch.svelte';
+  import Floating from './icons/Floating.svelte';
 
   export let name:
     | 'cloud'
@@ -158,7 +164,16 @@
     | 'upload'
     | 'fullscreen'
     | 'maximize'
+    | 'maximize-2'
     | 'minimize'
+    | 'minimize-2'
+    | 'notch'
+    | 'floating'
+    | 'refresh-cw'
+    | 'message-circle'
+    | 'github'
+    | 'image'
+    | 'film'
     | 'sparkles'
     | 'speaker'
     | 'headphone'
@@ -249,6 +264,7 @@
     power: Power,
     sync: RefreshCw,
     refresh: RefreshCw,
+    'refresh-cw': RefreshCw,
     'sync-error': RefreshCw,
     'cloud-off': CloudOff,
     cloud: Cloud,
@@ -270,7 +286,12 @@
     upload: Upload,
     fullscreen: Maximize2,
     maximize: Maximize2,
+    'maximize-2': Maximize2,
     minimize: Minimize2,
+    'minimize-2': Minimize2,
+    image: Image,
+    film: Film,
+    'message-circle': MessageCircle,
     sparkles: Sparkles,
     speaker: Speaker,
     headphone: Headphones,
@@ -312,7 +333,10 @@
     'arrow-up': ArrowUp,
     'arrow-down': ArrowDown,
     tag: Tag,
-    palette: Palette
+    palette: Palette,
+    github: Github,
+    notch: Notch,
+    floating: Floating
   };
 
   $: component = iconMap[name] || HelpCircle;

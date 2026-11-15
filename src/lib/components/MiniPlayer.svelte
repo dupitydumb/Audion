@@ -485,7 +485,7 @@
                                 data-tip={displayMode === "floating" ? "Notch mode" : "Floating mode"}
                                 aria-label="Toggle notch mode"
                             >
-                                <Icon name={displayMode === "floating" ? "minimize-2" : "maximize-2"} size={12} />
+                                <Icon name={displayMode === "floating" ? "notch" : "floating"} size={12} />
                             </button>
 
                             <button
