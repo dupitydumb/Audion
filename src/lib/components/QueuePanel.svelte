@@ -184,37 +184,25 @@
         historyScrollTop = (e.target as HTMLElement).scrollTop;
     }
 
+    function observeHeight(node: HTMLElement, onHeight: (h: number) => void) {
+        const update = () => {
+            if (node.clientHeight > 0) {
+                onHeight(node.clientHeight);
+            }
+        };
+        update();
+        const ro = new ResizeObserver(update);
+        ro.observe(node);
+        return {
+            destroy() {
+                ro.disconnect();
+            }
+        };
+    }
+
     onMount(() => {
         isAndroid =
             typeof navigator !== 'undefined' && /android/i.test(navigator.userAgent);
-
-        const observers: ResizeObserver[] = [];
-        
-        // Set up ResizeObserver for upcoming container
-        if (upcomingContainerElement) {
-            const updateUpcomingHeight = () => {
-                upcomingContainerHeight = upcomingContainerElement.clientHeight;
-            };
-            updateUpcomingHeight();
-            const upcomingObserver = new ResizeObserver(updateUpcomingHeight);
-            upcomingObserver.observe(upcomingContainerElement);
-            observers.push(upcomingObserver);
-        }
-        
-        // Set up ResizeObserver for history container
-        if (historyContainerElement) {
-            const updateHistoryHeight = () => {
-                historyContainerHeight = historyContainerElement.clientHeight;
-            };
-            updateHistoryHeight();
-            const historyObserver = new ResizeObserver(updateHistoryHeight);
-            historyObserver.observe(historyContainerElement);
-            observers.push(historyObserver);
-        }
-        
-        return () => {
-            observers.forEach(observer => observer.disconnect());
-        };
     });
 
     onDestroy(() => {
@@ -346,7 +334,7 @@
 
         <div class="queue-content">
             {#if $currentTrack}
-                <section class="queue-section">
+                <section class="queue-section now-playing-section">
                     <h4 class="section-title">{$_('player.nowPlaying')}</h4>
                     <div class="now-playing">
                         <div class="queue-track current"
@@ -399,7 +387,7 @@
             {/if}
 
             {#if upcomingTracks.length > 0}
-                <section class="queue-section">
+                <section class="queue-section upcoming-section">
                     <h4 class="section-title">
                         {$_('player.nextUp')}
                         <span class="count">{upcomingTracks.length}</span>
@@ -407,6 +395,7 @@
                     <div 
                         class="queue-list virtualized"
                         on:scroll={handleUpcomingScroll}
+                        use:observeHeight={(h) => (upcomingContainerHeight = h)}
                         bind:this={upcomingContainerElement}
                     >
                         <div class="virtual-spacer" style="height: {upcomingVirtualState.totalHeight}px;">
@@ -493,7 +482,7 @@
             {/if}
 
             {#if historyTracks.length > 0}
-                <section class="queue-section history">
+                <section class="queue-section history history-section">
                     <h4 class="section-title">
                         {$_('player.recentlyPlayed')}
                         <span class="count">{historyTracks.length}</span>
@@ -501,6 +490,7 @@
                     <div 
                         class="queue-list virtualized"
                         on:scroll={handleHistoryScroll}
+                        use:observeHeight={(h) => (historyContainerHeight = h)}
                         bind:this={historyContainerElement}
                     >
                         <div class="virtual-spacer" style="height: {historyVirtualState.totalHeight}px;">
@@ -658,16 +648,47 @@
 
     .queue-content {
         flex: 1;
-        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        overflow: hidden;
         padding: var(--spacing-md);
+        box-sizing: border-box;
         overscroll-behavior-y: contain;
     }
 
     .queue-section {
-        margin-bottom: var(--spacing-lg);
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        margin-bottom: var(--spacing-md);
+    }
+
+    .queue-section.now-playing-section {
+        flex-shrink: 0;
+    }
+
+    .queue-section.upcoming-section {
+        flex: 1;
+        min-height: 0;
+        margin-bottom: 0;
+    }
+
+    .queue-section.history {
+        flex-shrink: 0;
+        max-height: 40%;
+        margin-top: var(--spacing-md);
+        margin-bottom: 0;
+    }
+
+    .queue-content:not(:has(.upcoming-section)) .queue-section.history {
+        flex: 1;
+        max-height: none;
+        margin-top: 0;
     }
 
     .section-title {
+        flex-shrink: 0;
         font-size: 0.6875rem;
         font-weight: var(--font-weight-bold);
         text-transform: uppercase;
@@ -692,10 +713,12 @@
         gap: var(--spacing-xs);
     }
 
-    /* Virtualization - flexible height  */
+    /* Virtualization - fills 100% available section height */
     .queue-list.virtualized {
-        /* height for desktop can change */
-        max-height: min(400px, 40vh);
+        flex: 1;
+        height: 100%;
+        min-height: 0;
+        max-height: none;
         overflow-y: auto;
         overflow-x: hidden;
         position: relative;
@@ -902,11 +925,13 @@
     }
 
     .empty-state {
+        flex: 1;
+        height: 100%;
+        min-height: 200px;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        height: 200px;
         color: var(--text-subdued);
         text-align: center;
         gap: var(--spacing-sm);
@@ -971,8 +996,8 @@
         opacity: 1;
     }
 
-    /* On mobile virtualized listsuse more space */
+    /* On mobile virtualized lists use full available height */
     .queue-panel.mobile .queue-list.virtualized {
-        max-height: min(50vh, 500px);
+        max-height: none;
     }
 </style>
