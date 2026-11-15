@@ -36,7 +36,7 @@
         idle: { w: 120, h: 32, r: 16 },
         compact: { w: 220, h: 36, r: 18 },
         peek: { w: 300, h: 44, r: 22 },
-        expanded: { w: 380, h: 156, r: 36 },
+        expanded: { w: 380, h: 160, r: 36 },
         hud: { w: 260, h: 44, r: 22 },
     };
 
@@ -498,7 +498,7 @@
                             aria-label={$isPlaying ? $_('common.pause') : $_('common.play')}
                             data-tip={$isPlaying ? $_('common.pause') : $_('common.play')}
                         >
-                            <Icon name={$isPlaying ? "pause" : "play"} size={24} />
+                            <Icon name={$isPlaying ? "pause" : "play"} size={22} />
                         </button>
 
                         <button
@@ -538,6 +538,7 @@
         position: relative;
         overflow: hidden;
         cursor: default;
+        box-sizing: border-box;
         box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
         will-change: width, height, border-radius, box-shadow, margin-top;
         transition:
@@ -578,6 +579,7 @@
         height: 100%;
         display: flex;
         align-items: center;
+        box-sizing: border-box;
         animation: blurScaleEnter 220ms 90ms cubic-bezier(0.32, 0.72, 0, 1) both;
     }
 
@@ -716,11 +718,13 @@
         text-align: right;
     }
 
-    /* ── EXPANDED STATE (380 × 156, miniplayer.md §6) ──── */
+    /* ── EXPANDED STATE (380 × 160, miniplayer.md §6) ──── */
     .layer-expanded {
+        box-sizing: border-box;
         flex-direction: column;
         justify-content: space-between;
-        padding: 16px;
+        padding: 12px 18px 12px;
+        overflow: hidden;
     }
 
     .exp-top {
@@ -728,12 +732,13 @@
         align-items: center;
         gap: 12px;
         width: 100%;
+        min-height: 52px;
     }
 
     .art-exp {
-        width: 64px;
-        height: 64px;
-        border-radius: 12px;
+        width: 52px;
+        height: 52px;
+        border-radius: 10px;
         overflow: hidden;
         flex-shrink: 0;
         border: none;
@@ -764,26 +769,28 @@
         min-width: 0;
         display: flex;
         flex-direction: column;
-        gap: 3px;
+        gap: 2px;
     }
 
     .exp-title {
-        font-size: 15px;
+        font-size: 14px;
         font-weight: 600;
         color: #ffffff;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
         letter-spacing: -0.01em;
+        line-height: 1.25;
     }
 
     .exp-artist {
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 500;
         color: rgba(255, 255, 255, 0.6);
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+        line-height: 1.25;
     }
 
     .exp-top-actions {
@@ -816,7 +823,14 @@
         align-items: center;
         justify-content: center;
         cursor: pointer;
+        position: relative;
         transition: all 150ms ease;
+    }
+
+    .action-btn::after {
+        content: "";
+        position: absolute;
+        inset: -9px;
     }
 
     .action-btn:hover {
@@ -836,7 +850,8 @@
         align-items: center;
         gap: 10px;
         width: 100%;
-        margin-top: 4px;
+        margin-top: 2px;
+        margin-bottom: 2px;
     }
 
     .time-label {
@@ -925,6 +940,8 @@
     }
 
     .ctrl-btn {
+        width: 40px;
+        height: 40px;
         min-width: 44px;
         min-height: 44px;
         border-radius: 50%;
@@ -950,8 +967,10 @@
     }
 
     .play-btn {
-        width: 56px;
-        height: 56px;
+        width: 46px;
+        height: 46px;
+        min-width: 46px;
+        min-height: 46px;
         background: #ffffff;
         color: #000000;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
