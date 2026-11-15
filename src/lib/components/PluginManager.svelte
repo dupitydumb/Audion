@@ -14,7 +14,7 @@
   } from "$lib/plugins/schema";
   import { addToast } from "$lib/stores/toast";
   import { confirm } from "$lib/stores/dialogs";
-  import { revealItemInDir } from "@tauri-apps/plugin-opener";
+  import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
   import { invoke, convertFileSrc } from "@tauri-apps/api/core";
   import { onDestroy } from "svelte";
   import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
@@ -96,6 +96,47 @@
     }
   }
 
+  async function handleOpenRepo(url: string) {
+    try {
+      await openUrl(url);
+    } catch (err) {
+      console.error("Failed to open URL:", err);
+      window.open(url, "_blank");
+    }
+  }
+
+  function getPluginRepoUrl(plugin: MarketplacePlugin | PluginInfo | null): string | null {
+    if (!plugin) return null;
+    const rawUrl =
+      ('repo' in plugin && plugin.repo) ||
+      plugin.manifest?.repo ||
+      plugin.manifest?.homepage;
+    if (!rawUrl) return null;
+
+    const rawMatch = rawUrl.match(/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)/);
+    if (rawMatch) {
+      return `https://github.com/${rawMatch[1]}/${rawMatch[2]}`;
+    }
+
+    return rawUrl;
+  }
+
+  function formatRepoDisplay(url: string): string {
+    try {
+      const parsed = new URL(url);
+      if (parsed.hostname.includes('github.com')) {
+        const parts = parsed.pathname.split('/').filter(Boolean);
+        if (parts.length >= 2) {
+          return `${parts[0]}/${parts[1]}`;
+        }
+        return 'GitHub';
+      }
+      return parsed.hostname;
+    } catch {
+      return url;
+    }
+  }
+
   function handleSearch() {
     pluginStore.setSearchQuery(searchQuery);
   }
@@ -162,19 +203,9 @@
   }
 
   async function handleInstallClick(plugin: MarketplacePlugin) {
-    // Combine regular permissions and cross-plugin access
-    const hasPermissions = plugin.manifest.permissions.length > 0;
-    const hasCrossPluginAccess =
-      plugin.manifest.cross_plugin_access &&
-      plugin.manifest.cross_plugin_access.length > 0;
-
-    if (hasPermissions || hasCrossPluginAccess) {
-      selectedPlugin = plugin;
-      pendingPermissions = plugin.manifest.permissions;
-      showPermissionModal = true;
-    } else {
-      await pluginStore.installPlugin(plugin);
-    }
+    selectedPlugin = plugin;
+    pendingPermissions = plugin.manifest.permissions || [];
+    showPermissionModal = true;
   }
 
   async function handleConfirmInstall() {
@@ -441,12 +472,12 @@
               <Icon name="plugin" size={32} className="fallback-icon" />
             </div>
             <div class="plugin-info">
-              <span class="plugin-name truncate">{plugin.manifest.name}</span>
+              <span class="plugin-name truncate" title={plugin.manifest.name}>{plugin.manifest.name}</span>
               <span class="plugin-author truncate"
                 >{plugin.manifest.author} · v{plugin.manifest.version}</span
               >
-              <span class="plugin-desc truncate"
-                >{plugin.manifest.description || "No description"}</span
+              <span class="plugin-desc truncate" title={plugin.manifest.description || $_('pluginManager.noDescription')}
+                >{plugin.manifest.description || $_('pluginManager.noDescription')}</span
               >
               <div class="plugin-badges">
                 <span class="badge">{plugin.manifest.type.toUpperCase()}</span>
@@ -455,6 +486,20 @@
                 {/if}
                 {#if plugin.verified}
                   <span class="badge badge-verified">{$_('pluginManager.verified')}</span>
+                {/if}
+                {#if getPluginRepoUrl(plugin)}
+                  {@const cardRepoUrl = getPluginRepoUrl(plugin)}
+                  {#if cardRepoUrl}
+                    <button
+                      class="card-repo-btn"
+                      on:click|stopPropagation={() => handleOpenRepo(cardRepoUrl)}
+                      title={cardRepoUrl}
+                      aria-label="Open repository"
+                    >
+                      <Icon name="external-link" size={11} />
+                      <span class="truncate">{formatRepoDisplay(cardRepoUrl)}</span>
+                    </button>
+                  {/if}
                 {/if}
               </div>
               <div class="plugin-stats">
@@ -470,13 +515,13 @@
             </div>
             <div class="plugin-actions">
               {#if isInstalled(plugin.manifest.name)}
-                <button class="btn-secondary" disabled> Installed </button>
+                <button class="btn-secondary" disabled> {$_('pluginManager.installedBtn')} </button>
               {:else}
                 <button
                   class="btn-primary"
                   on:click={() => handleInstallClick(plugin)}
                 >
-                  Install
+                  {$_('pluginManager.installBtn')}
                 </button>
               {/if}
             </div>
@@ -512,17 +557,31 @@
               <Icon name="plugin" size={32} className="fallback-icon" />
             </div>
             <div class="plugin-info">
-              <span class="plugin-name truncate">{plugin.manifest.name}</span>
+              <span class="plugin-name truncate" title={plugin.manifest.name}>{plugin.manifest.name}</span>
               <span class="plugin-author truncate"
                 >{plugin.manifest.author} · v{plugin.manifest.version}</span
               >
-              <span class="plugin-desc truncate"
+              <span class="plugin-desc truncate" title={plugin.manifest.description || $_('pluginManager.noDescription')}
                 >{plugin.manifest.description || $_('pluginManager.noDescription')}</span
               >
               <div class="plugin-badges">
                 <span class="badge">{plugin.manifest.type.toUpperCase()}</span>
                 {#if plugin.manifest.category}
                   <span class="badge">{plugin.manifest.category}</span>
+                {/if}
+                {#if getPluginRepoUrl(plugin)}
+                  {@const cardRepoUrl = getPluginRepoUrl(plugin)}
+                  {#if cardRepoUrl}
+                    <button
+                      class="card-repo-btn"
+                      on:click|stopPropagation={() => handleOpenRepo(cardRepoUrl)}
+                      title={cardRepoUrl}
+                      aria-label="Open repository"
+                    >
+                      <Icon name="external-link" size={11} />
+                      <span class="truncate">{formatRepoDisplay(cardRepoUrl)}</span>
+                    </button>
+                  {/if}
                 {/if}
               </div>
               <div class="plugin-stats">
@@ -572,17 +631,31 @@
               <Icon name="plugin" size={32} className="fallback-icon" />
             </div>
             <div class="plugin-info">
-              <span class="plugin-name truncate">{plugin.name}</span>
+              <span class="plugin-name truncate" title={plugin.name}>{plugin.name}</span>
               <span class="plugin-author truncate"
                 >v{plugin.manifest.version}</span
               >
-              <span class="plugin-desc truncate"
+              <span class="plugin-desc truncate" title={plugin.manifest.description || $_('pluginManager.noDescription')}
                 >{plugin.manifest.description || $_('pluginManager.noDescription')}</span
               >
               <div class="plugin-badges">
                 <span class="badge">{plugin.manifest.type.toUpperCase()}</span>
                 {#if plugin.enabled}
                   <span class="badge badge-active">{$_('pluginManager.active')}</span>
+                {/if}
+                {#if getPluginRepoUrl(plugin)}
+                  {@const cardRepoUrl = getPluginRepoUrl(plugin)}
+                  {#if cardRepoUrl}
+                    <button
+                      class="card-repo-btn"
+                      on:click|stopPropagation={() => handleOpenRepo(cardRepoUrl)}
+                      title={cardRepoUrl}
+                      aria-label="Open repository"
+                    >
+                      <Icon name="external-link" size={11} />
+                      <span class="truncate">{formatRepoDisplay(cardRepoUrl)}</span>
+                    </button>
+                  {/if}
                 {/if}
               </div>
             </div>
@@ -642,53 +715,133 @@
     aria-modal="true"
   >
     <div class="modal" on:click|stopPropagation role="document">
-      <h2>{$_('pluginManager.permissionReview')}</h2>
-      <p class="modal-desc">
-        <strong>{selectedPlugin.manifest.name}</strong> {$_('pluginManager.requestsPermissions')}
-      </p>
+      <div class="modal-header">
+        <h2>
+          {pendingPermissions.length > 0 || (selectedPlugin.manifest.cross_plugin_access && selectedPlugin.manifest.cross_plugin_access.length > 0)
+            ? $_('pluginManager.permissionReview')
+            : $_('pluginManager.installPlugin')}
+        </h2>
+        <button
+          class="modal-close-btn"
+          on:click={closePermissionModal}
+          disabled={installState === "loading"}
+          aria-label="Close"
+        >
+          <Icon name="x" size={18} />
+        </button>
+      </div>
 
-      <!-- Regular Permissions -->
-      {#if pendingPermissions.length > 0}
-        <div class="permission-section">
-          <h3 class="section-title">
-            <Icon name="shield" size={16} />
-            {$_('pluginManager.systemPermissions')}
-          </h3>
-          <div class="permission-list">
-            {#each pendingPermissions as permission}
-              <div class="permission-item">
-                <span class="permission-name">{permission}</span>
-                <span class="permission-desc"
-                  >{getPermissionDescription(permission)}</span
-                >
-              </div>
-            {/each}
+      <div class="modal-plugin-header">
+        <div class="modal-plugin-icon">
+          {#if getIconUrl(selectedPlugin)}
+            <img
+              src={getIconUrl(selectedPlugin)}
+              alt={selectedPlugin.manifest.name}
+              on:error={(e) => ((e.currentTarget as HTMLElement).style.display = "none")}
+            />
+          {/if}
+          <Icon name="plugin" size={32} className="fallback-icon" />
+        </div>
+        <div class="modal-plugin-meta">
+          <h3 class="modal-plugin-name">{selectedPlugin.manifest.name}</h3>
+          <div class="modal-plugin-sub">
+            <span class="modal-plugin-author">{selectedPlugin.manifest.author}</span>
+            <span class="modal-dot">·</span>
+            <span class="modal-plugin-version">v{selectedPlugin.manifest.version}</span>
+          </div>
+          <div class="plugin-badges">
+            <span class="badge">{selectedPlugin.manifest.type.toUpperCase()}</span>
+            {#if selectedPlugin.manifest.category}
+              <span class="badge">{selectedPlugin.manifest.category}</span>
+            {/if}
+            {#if selectedPlugin.verified}
+              <span class="badge badge-verified">{$_('pluginManager.verified')}</span>
+            {/if}
           </div>
         </div>
+      </div>
+
+      {#if getPluginRepoUrl(selectedPlugin)}
+        {@const repoUrl = getPluginRepoUrl(selectedPlugin)}
+        {#if repoUrl}
+          <div class="modal-repo-row">
+            <span class="modal-repo-label">{$_('pluginManager.hostedAt')}:</span>
+            <button
+              class="modal-repo-link"
+              on:click={() => handleOpenRepo(repoUrl)}
+              title={repoUrl}
+            >
+              <Icon name="external-link" size={14} />
+              <span class="truncate">{formatRepoDisplay(repoUrl)}</span>
+            </button>
+          </div>
+        {/if}
       {/if}
 
-      <!-- Cross-Plugin Access Permissions -->
-      {#if selectedPlugin.manifest.cross_plugin_access && selectedPlugin.manifest.cross_plugin_access.length > 0}
-        <div class="permission-section">
-          <h3 class="section-title">
-            <Icon name="plus" size={16} />
-            {$_('pluginManager.pluginIntegration')}
-          </h3>
-          <div class="cross-plugin-list">
-            {#each selectedPlugin.manifest.cross_plugin_access as access}
-              <div class="cross-plugin-item">
-                <div class="cross-plugin-header">
-                  <Icon name="zap" size={14} />
-                  <span class="target-plugin">{access.plugin}</span>
+      <div class="modal-desc-section">
+        <h4 class="section-title">
+          <Icon name="file-text" size={15} />
+          {$_('pluginManager.about')}
+        </h4>
+        <div class="modal-full-desc">
+          {selectedPlugin.manifest.description || $_('pluginManager.noDescription')}
+        </div>
+      </div>
+
+      <!-- Regular Permissions -->
+      {#if pendingPermissions.length > 0 || (selectedPlugin.manifest.cross_plugin_access && selectedPlugin.manifest.cross_plugin_access.length > 0)}
+        <p class="modal-desc">
+          <strong>{selectedPlugin.manifest.name}</strong> {$_('pluginManager.requestsPermissions')}
+        </p>
+
+        <!-- Regular Permissions -->
+        {#if pendingPermissions.length > 0}
+          <div class="permission-section">
+            <h4 class="section-title">
+              <Icon name="shield" size={15} />
+              {$_('pluginManager.systemPermissions')}
+            </h4>
+            <div class="permission-list">
+              {#each pendingPermissions as permission}
+                <div class="permission-item">
+                  <span class="permission-name">{permission}</span>
+                  <span class="permission-desc"
+                    >{getPermissionDescription(permission)}</span
+                  >
                 </div>
-                <div class="method-list">
-                  {#each access.methods as method}
-                    <span class="method-badge">{method}</span>
-                  {/each}
-                </div>
-              </div>
-            {/each}
+              {/each}
+            </div>
           </div>
+        {/if}
+
+        <!-- Cross-Plugin Access Permissions -->
+        {#if selectedPlugin.manifest.cross_plugin_access && selectedPlugin.manifest.cross_plugin_access.length > 0}
+          <div class="permission-section">
+            <h4 class="section-title">
+              <Icon name="plus" size={15} />
+              {$_('pluginManager.pluginIntegration')}
+            </h4>
+            <div class="cross-plugin-list">
+              {#each selectedPlugin.manifest.cross_plugin_access as access}
+                <div class="cross-plugin-item">
+                  <div class="cross-plugin-header">
+                    <Icon name="zap" size={14} />
+                    <span class="target-plugin">{access.plugin}</span>
+                  </div>
+                  <div class="method-list">
+                    {#each access.methods as method}
+                      <span class="method-badge">{method}</span>
+                    {/each}
+                  </div>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      {:else}
+        <div class="modal-no-permissions">
+          <Icon name="check-circle" size={16} />
+          <span>{$_('pluginManager.noPermissionsRequired')}</span>
         </div>
       {/if}
 
@@ -718,8 +871,10 @@
           {:else if installState === "error"}
             <Icon name="x" size={18} />
             {$_('pluginManager.failed')}
-          {:else}
+          {:else if pendingPermissions.length > 0}
             {$_('pluginManager.grantAndInstall')}
+          {:else}
+            {$_('pluginManager.installBtn')}
           {/if}
         </button>
       </div>
@@ -996,6 +1151,27 @@
     gap: var(--spacing-xs);
     flex-wrap: wrap;
     margin-top: 4px;
+  }
+
+  .card-repo-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-subdued);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.6875rem;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    transition: color var(--transition-fast), border-color var(--transition-fast), background-color var(--transition-fast);
+    max-width: 150px;
+  }
+
+  .card-repo-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--accent-primary);
+    background-color: var(--bg-surface);
   }
 
   .plugin-stats {
@@ -1304,12 +1480,173 @@
     background-color: var(--bg-elevated);
     border-radius: var(--radius-lg);
     padding: var(--spacing-lg);
-    max-width: 500px;
+    max-width: 520px;
     width: 90%;
     max-height: 80vh;
     overflow-y: auto;
     overscroll-behavior-y: contain;
     border: 1px solid var(--border-color);
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--spacing-md);
+  }
+
+  .modal-header h2 {
+    font-size: 1.25rem;
+    font-weight: var(--font-weight-bold);
+    margin: 0;
+  }
+
+  .modal-close-btn {
+    background: none;
+    border: none;
+    color: var(--text-subdued);
+    cursor: pointer;
+    padding: var(--spacing-xs);
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color var(--transition-fast), background-color var(--transition-fast);
+  }
+
+  .modal-close-btn:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-surface);
+  }
+
+  .modal-plugin-header {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+    background-color: var(--bg-surface);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    margin-bottom: var(--spacing-md);
+  }
+
+  .modal-plugin-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-md);
+    background-color: var(--bg-elevated);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid var(--border-color);
+  }
+
+  .modal-plugin-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 1;
+  }
+
+  .modal-plugin-meta {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .modal-plugin-name {
+    font-size: 1.125rem;
+    font-weight: var(--font-weight-bold);
+    color: var(--text-primary);
+    margin: 0;
+    word-break: break-word;
+    line-height: 1.3;
+  }
+
+  .modal-plugin-sub {
+    font-size: var(--font-size-sm);
+    color: var(--text-subdued);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .modal-dot {
+    opacity: 0.6;
+  }
+
+  .modal-repo-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-md);
+    font-size: var(--font-size-sm);
+    color: var(--text-subdued);
+    background-color: var(--bg-surface);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+  }
+
+  .modal-repo-label {
+    font-weight: var(--font-weight-medium);
+  }
+
+  .modal-repo-link {
+    background: none;
+    border: none;
+    color: var(--accent-primary);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--font-size-sm);
+    padding: 2px 4px;
+    border-radius: var(--radius-sm);
+    transition: background-color var(--transition-fast), opacity var(--transition-fast);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .modal-repo-link:hover {
+    opacity: 0.85;
+  }
+
+  .modal-desc-section {
+    margin-bottom: var(--spacing-md);
+  }
+
+  .modal-full-desc {
+    background-color: var(--bg-surface);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 180px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+  }
+
+  .modal-no-permissions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background-color: rgba(30, 215, 96, 0.08);
+    border: 1px solid rgba(30, 215, 96, 0.25);
+    border-radius: var(--radius-md);
+    color: #1ed760;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    margin-bottom: var(--spacing-md);
   }
 
   .view-header h1 {
