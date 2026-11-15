@@ -10,6 +10,7 @@ pub mod stats;
 pub mod sync;
 pub mod queries;
 pub mod schema;
+pub mod hash_migration;
 
 
 use rusqlite::Connection;
@@ -29,7 +30,10 @@ impl Database {
 
         // Enable WAL mode for better concurrency and resilience to corruption
         // Use execute_batch because these PRAGMAs return results which execute() doesn't like
-        conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;")?;
+        // busy_timeout first => the hash migration's immediate transaction waits for a lock
+        conn.execute_batch(
+            "PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;",
+        )?;
 
         // Initialize schema
         schema::init_schema(&conn)?;
@@ -37,6 +41,11 @@ impl Database {
         // Initialize FTS search index
         if let Err(e) = queries::init_fts(&conn) {
             log::error!("[DB] Failed to initialize FTS search index: {}", e);
+        }
+
+        // after init_fts so the fts triggers exist when rows are rewritten or deleted
+        if let Err(e) = hash_migration::rehash_and_merge_duplicates_if_needed(&conn) {
+            log::error!("[DB] Failed to rehash and merge duplicates: {}", e);
         }
 
         let db = Self {

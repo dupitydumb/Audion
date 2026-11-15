@@ -16,6 +16,16 @@ allprojects {
     }
 }
 
+subprojects {
+    plugins.withId("com.android.base") {
+        extensions.configure<com.android.build.api.variant.AndroidComponentsExtension<*, *, *>>("androidComponents") {
+            beforeVariants { variantBuilder ->
+                (variantBuilder as? com.android.build.api.variant.HasAndroidTestBuilder)?.enableAndroidTest = false
+            }
+        }
+    }
+}
+
 tasks.register("clean").configure {
     delete("build")
 }
