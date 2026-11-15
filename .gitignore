@@ -47,6 +47,8 @@ vite.config.ts.timestamp-*
 # Plugin examples
 plugin-examples/
 
+miniplayer.md
+
 #Skills
 .agents/
 .claude/
