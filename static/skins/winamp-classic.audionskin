@@ -1,0 +1,108 @@
+{
+  "version": 2,
+  "name": "Winamp Classic",
+  "author": "Audion Community",
+  "description": "Legendary 1998 Winamp Hi-Fi retro audio deck with brushed metallic chassis, glowing green 7-segment digital LCD timers, segmented LED meters, chunky beveled 3D controls, and animated spectrum analyzer visualizer.",
+  "accentColor": "#00FF41",
+  "mode": "dark",
+  "customColors": {
+    "bgBase": "#14161B",
+    "bgElevated": "#1C1E24",
+    "bgSurface": "#262932",
+    "bgHighlight": "rgba(0, 255, 65, 0.12)",
+    "textPrimary": "#E2E8F0",
+    "textSecondary": "#A0AEC0",
+    "textSubdued": "#718096",
+    "borderColor": "#363A45",
+    "sidebarBg": "#181A20",
+    "playerBg": "#1F232B"
+  },
+  "background": {
+    "type": "none",
+    "value": "",
+    "opacity": 1,
+    "blur": 0,
+    "fixed": false
+  },
+  "animation": {
+    "reducedMotion": false,
+    "pageTransition": "fade",
+    "playerVisualization": "bars",
+    "hoverScale": false,
+    "accentPulse": false,
+    "transitionSpeed": "fast"
+  },
+  "activeScheme": "Classic Titanium",
+  "schemes": {
+    "Classic Titanium": {
+      "name": "Classic Titanium",
+      "mode": "dark",
+      "accentColor": "#00FF41",
+      "customColors": {
+        "bgBase": "#14161B",
+        "bgElevated": "#1C1E24",
+        "bgSurface": "#262932",
+        "bgHighlight": "rgba(0, 255, 65, 0.12)",
+        "textPrimary": "#E2E8F0",
+        "textSecondary": "#A0AEC0",
+        "textSubdued": "#718096",
+        "borderColor": "#363A45",
+        "sidebarBg": "#181A20",
+        "playerBg": "#1F232B"
+      }
+    },
+    "Emerald Hi-Fi": {
+      "name": "Emerald Hi-Fi",
+      "mode": "dark",
+      "accentColor": "#10B981",
+      "customColors": {
+        "bgBase": "#09120D",
+        "bgElevated": "#0E1C14",
+        "bgSurface": "#14281E",
+        "bgHighlight": "rgba(16, 185, 129, 0.14)",
+        "textPrimary": "#ECFDF5",
+        "textSecondary": "#A7F3D0",
+        "textSubdued": "#6EE7B7",
+        "borderColor": "#1E3A2B",
+        "sidebarBg": "#0C1811",
+        "playerBg": "#122419"
+      }
+    },
+    "Solar Gold": {
+      "name": "Solar Gold",
+      "mode": "dark",
+      "accentColor": "#F59E0B",
+      "customColors": {
+        "bgBase": "#16130D",
+        "bgElevated": "#211D14",
+        "bgSurface": "#2E281C",
+        "bgHighlight": "rgba(245, 158, 11, 0.14)",
+        "textPrimary": "#FFFBEB",
+        "textSecondary": "#FDE68A",
+        "textSubdued": "#D97706",
+        "borderColor": "#3D3425",
+        "sidebarBg": "#1A1710",
+        "playerBg": "#252016"
+      }
+    },
+    "Midnight Studio": {
+      "name": "Midnight Studio",
+      "mode": "dark",
+      "accentColor": "#38BDF8",
+      "customColors": {
+        "bgBase": "#0C0E12",
+        "bgElevated": "#12151B",
+        "bgSurface": "#1B1F27",
+        "bgHighlight": "rgba(56, 189, 248, 0.12)",
+        "textPrimary": "#F0F9FF",
+        "textSecondary": "#BAE6FD",
+        "textSubdued": "#7DD3FC",
+        "borderColor": "#262C38",
+        "sidebarBg": "#0F1217",
+        "playerBg": "#161A22"
+      }
+    }
+  },
+  "customCss": "/* Winamp Classic 90s Hi-Fi Skin (Engine v2) */\n\n:root {\n  font-family: \"MS Sans Serif\", \"Segoe UI\", Tahoma, sans-serif !important;\n  --radius-sm: 2px;\n  --radius-md: 3px;\n  --radius-lg: 4px;\n  --radius-full: 4px;\n}\n\n/* ============================================================\n   TOP BAR & CHASSIS (WINAMP METALLIC GROOVED TITLEBAR)\n   ============================================================ */\n.titlebar {\n  background: linear-gradient(180deg, #1b3870 0%, #0d2047 50%, #152d5e 100%) !important;\n  border-bottom: 2px ridge #3a4b6b !important;\n  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;\n}\n\n.search-input-wrapper {\n  background: #080f08 !important;\n  border: 2px inset #050b05 !important;\n  border-radius: 2px !important;\n  padding: 3px 10px !important;\n  box-shadow: inset 0 2px 4px #000000 !important;\n}\n\n.search-input {\n  color: #00ff41 !important;\n  font-family: \"Consolas\", \"Courier New\", monospace !important;\n  font-size: 13px !important;\n  font-weight: 700 !important;\n  letter-spacing: 1px !important;\n  text-shadow: 0 0 6px rgba(0, 255, 65, 0.7) !important;\n}\n\n.search-input::placeholder {\n  color: rgba(0, 255, 65, 0.4) !important;\n}\n\n.nav-btn {\n  background: linear-gradient(180deg, #424754 0%, #262a33 50%, #1b1e24 100%) !important;\n  border: 2px outset #5a606e !important;\n  border-radius: 2px !important;\n  color: #c0c6d2 !important;\n}\n\n.nav-btn:hover {\n  background: linear-gradient(180deg, #4f5564 0%, #2f343f 100%) !important;\n  color: #ffffff !important;\n}\n\n.nav-btn:active {\n  border-style: inset !important;\n  transform: translate(1px, 1px) !important;\n}\n\n/* ============================================================\n   SIDEBAR (METALLIC RACK MOUNT)\n   ============================================================ */\n.sidebar {\n  background: #1c1e24 !important;\n  border-right: 2px groove #353942 !important;\n  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.08) !important;\n}\n\n.nav-section-title {\n  font-family: \"Segoe UI\", Tahoma, sans-serif !important;\n  font-size: 10px !important;\n  font-weight: 700 !important;\n  letter-spacing: 0.1em !important;\n  text-transform: uppercase !important;\n  color: #8c94a0 !important;\n  padding: 10px 14px 4px 14px !important;\n  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;\n  margin-bottom: 4px !important;\n}\n\n.nav-item {\n  border-radius: 2px !important;\n  margin: 1px 6px !important;\n  padding: 5px 10px !important;\n  font-size: 12.5px !important;\n  border: 1px solid transparent !important;\n}\n\n.nav-item:hover:not(.active) {\n  background: #2a2e37 !important;\n  border: 1px outset #424754 !important;\n  color: #ffffff !important;\n}\n\n.nav-item.active {\n  background: #1e3a8a !important;\n  color: #ffffff !important;\n  font-weight: 700 !important;\n  border: 1px dotted rgba(255, 255, 255, 0.5) !important;\n  box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.5) !important;\n}\n\n.nav-count {\n  font-family: monospace !important;\n  font-size: 11px !important;\n  color: #00ff41 !important;\n  background: #0b130b !important;\n  border: 1px inset #050b05 !important;\n  padding: 1px 5px !important;\n  border-radius: 2px !important;\n}\n\n/* ============================================================\n   PLAYER BAR (WINAMP MAIN HI-FI DECK & GREEN LCD)\n   ============================================================ */\n.player-bar {\n  background: linear-gradient(180deg, #323741 0%, #22262e 45%, #181b21 100%) !important;\n  border-top: 3px ridge #4e5563 !important;\n  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 -4px 16px rgba(0, 0, 0, 0.5) !important;\n}\n\n.album-art {\n  border-radius: 2px !important;\n  border: 2px inset #101216 !important;\n  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6) !important;\n}\n\n/* Winamp Green LCD Time Display */\n.player-bar .time {\n  background: #080f08 !important;\n  border: 2px inset #050b05 !important;\n  border-radius: 2px !important;\n  color: #00ff41 !important;\n  font-family: \"Consolas\", \"Courier New\", monospace !important;\n  font-size: 15px !important;\n  font-weight: 700 !important;\n  padding: 2px 7px !important;\n  letter-spacing: 1.5px !important;\n  text-shadow: 0 0 8px rgba(0, 255, 65, 0.8) !important;\n  box-shadow: inset 0 2px 4px #000000 !important;\n}\n\n/* Chunky Beveled Transport Buttons */\n.controls-buttons .icon-btn,\n.player-bar .play-btn {\n  background: linear-gradient(180deg, #484f5c 0%, #2a2e36 50%, #1e2127 100%) !important;\n  border: 2px outset #606877 !important;\n  border-radius: 2px !important;\n  color: #c4ccd8 !important;\n  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4) !important;\n  transition: none !important;\n}\n\n.player-bar .play-btn {\n  width: 36px !important;\n  height: 32px !important;\n  color: #00ff41 !important;\n  text-shadow: 0 0 6px rgba(0, 255, 65, 0.7) !important;\n}\n\n.controls-buttons .icon-btn:hover,\n.player-bar .play-btn:hover {\n  background: linear-gradient(180deg, #58606f 0%, #343a44 100%) !important;\n  color: #ffffff !important;\n}\n\n.controls-buttons .icon-btn:active,\n.player-bar .play-btn:active {\n  border-style: inset !important;\n  transform: translate(1px, 1px) !important;\n  background: #181b21 !important;\n}\n\n.controls-buttons .icon-btn.active {\n  color: #00ff41 !important;\n  border-color: #00ff41 !important;\n  box-shadow: inset 0 0 6px rgba(0, 255, 65, 0.4) !important;\n}\n\n/* Winamp Segmented LED Progress Bar */\n.progress-bar {\n  height: 9px !important;\n  background: #0a0d0a !important;\n  border: 2px inset #050805 !important;\n  border-radius: 2px !important;\n  box-shadow: inset 0 1px 3px #000000 !important;\n}\n\n.progress-fill {\n  background: repeating-linear-gradient(\n    90deg,\n    #00ff41 0px,\n    #00ff41 5px,\n    #0a0d0a 5px,\n    #0a0d0a 7px\n  ) !important;\n}\n\n.progress-thumb {\n  width: 14px !important;\n  height: 14px !important;\n  border-radius: 2px !important;\n  background: linear-gradient(180deg, #606877 0%, #30353f 100%) !important;\n  border: 2px outset #808a9c !important;\n  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6) !important;\n  opacity: 1 !important;\n  transform: translateY(-2px) !important;\n}\n\n/* ============================================================\n   TRACK LIST (WINAMP CLASSIC PLAYLIST WINDOW)\n   ============================================================ */\n.track-row {\n  border-radius: 1px !important;\n  margin: 0 !important;\n  border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;\n  font-family: \"Lucida Console\", \"Consolas\", monospace !important;\n  font-size: 12px !important;\n  color: #a8d5a8 !important;\n}\n\n.track-row:hover {\n  background: #1b281b !important;\n  color: #00ff41 !important;\n}\n\n.track-row.playing {\n  background: #000080 !important;\n  color: #ffffff !important;\n  font-weight: 700 !important;\n  border: 1px dotted #ffffff !important;\n}\n\n.track-row.playing .track-name {\n  color: #ffffff !important;\n}\n\n.playing-icon {\n  color: #00ff41 !important;\n}\n\n/* ============================================================\n   MEDIA CARDS (HI-FI COMPONENT UNITS)\n   ============================================================ */\n.media-card, .card {\n  border-radius: 3px !important;\n  background: #191c22 !important;\n  border: 2px outset #3d434f !important;\n  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.4) !important;\n}\n\n.media-card:hover, .card:hover {\n  border-color: #00ff41 !important;\n  transform: translateY(-2px) !important;\n  box-shadow: 0 6px 16px rgba(0, 255, 65, 0.2) !important;\n}\n\n/* ============================================================\n   RETRO SCROLLBARS\n   ============================================================ */\n::-webkit-scrollbar {\n  width: 12px !important;\n  height: 12px !important;\n}\n\n::-webkit-scrollbar-track {\n  background: #121418 !important;\n  border: 1px inset #090a0c !important;\n}\n\n::-webkit-scrollbar-thumb {\n  background: linear-gradient(180deg, #484f5c 0%, #2a2e36 100%) !important;\n  border: 2px outset #606877 !important;\n  border-radius: 1px !important;\n}\n\n::-webkit-scrollbar-thumb:active {\n  border-style: inset !important;\n}",
+  "customJs": "// Winamp Classic Spectrum Analyzer & VU Oscilloscope\nlet rafId = null;\nlet t = 0;\nconst numBars = 28;\nconst peaks = new Array(numBars).fill(0);\nconst peakHold = new Array(numBars).fill(0);\n\nfunction draw() {\n  t += 0.05;\n  const w = canvas.width;\n  const h = canvas.height;\n  ctx.clearRect(0, 0, w, h);\n\n  // Bottom dock spectrum visualizer layout\n  const barWidth = Math.max(6, Math.floor(w / (numBars * 1.5)));\n  const gap = Math.max(2, Math.floor(barWidth * 0.28));\n  const totalWidth = numBars * (barWidth + gap);\n  const startX = (w - totalWidth) / 2;\n  const bottomY = h - 18;\n  const maxHeight = Math.min(180, h * 0.26);\n\n  for (let i = 0; i < numBars; i++) {\n    // Dynamic simulated frequency energy with sine wave variations\n    const freq = Math.sin(t * 1.8 + i * 0.32) * Math.cos(t * 0.9 - i * 0.2);\n    const pulse = (Math.sin(t * 3.5 + i * 0.6) + 1) * 0.5;\n    let height = Math.abs(freq * 0.7 + pulse * 0.3) * maxHeight;\n    height = Math.max(6, height);\n\n    // Peak decay logic (authentic Winamp gravity drop)\n    if (height > peaks[i]) {\n      peaks[i] = height;\n      peakHold[i] = 22; // hold frames\n    } else {\n      if (peakHold[i] > 0) {\n        peakHold[i]--;\n      } else {\n        peaks[i] = Math.max(0, peaks[i] - 1.8);\n      }\n    }\n\n    const x = startX + i * (barWidth + gap);\n\n    // Render segmented LED blocks\n    const blockSize = 4;\n    const blockGap = 1.5;\n    const blocks = Math.floor(height / (blockSize + blockGap));\n\n    for (let b = 0; b < blocks; b++) {\n      const by = bottomY - b * (blockSize + blockGap);\n      const ratio = b / (maxHeight / (blockSize + blockGap));\n\n      // Classic Winamp LED colors: Green -> Yellow -> Red\n      if (ratio > 0.82) {\n        ctx.fillStyle = '#ff2222'; // Peak Red\n      } else if (ratio > 0.60) {\n        ctx.fillStyle = '#ffcc00'; // Mid Yellow\n      } else {\n        ctx.fillStyle = '#00ff41'; // Base Neon Green\n      }\n      ctx.fillRect(x, by, barWidth, blockSize);\n    }\n\n    // Render floating peak cap\n    const peakY = bottomY - peaks[i];\n    ctx.fillStyle = '#ffffff';\n    ctx.fillRect(x, peakY, barWidth, 2);\n  }\n\n  // Vintage green oscilloscope line across top\n  ctx.strokeStyle = 'rgba(0, 255, 65, 0.28)';\n  ctx.lineWidth = 1.5;\n  ctx.beginPath();\n  const oscY = h - 210;\n  for (let ox = 0; ox < w; ox += 8) {\n    const wave = Math.sin(ox * 0.02 + t * 4) * Math.cos(ox * 0.01 - t * 2) * 14;\n    if (ox === 0) ctx.moveTo(ox, oscY + wave);\n    else ctx.lineTo(ox, oscY + wave);\n  }\n  ctx.stroke();\n\n  rafId = requestAnimationFrame(draw);\n}\ndraw();\nreturn () => { if (rafId) cancelAnimationFrame(rafId); };"
+}

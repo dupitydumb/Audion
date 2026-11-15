@@ -1508,3 +1508,49 @@ export async function setAutostartEnabled(enabled: boolean): Promise<void> {
     if (isAndroid()) return;
     return await invoke('set_autostart_enabled', { enabled });
 }
+
+// ====================================================================
+// Skins & Theme Management (AppData/skins)
+// ====================================================================
+
+export interface LocalSkinInfo {
+    id: string;
+    name: string;
+    author?: string;
+    description?: string;
+    version: number;
+    path: string;
+    is_folder: boolean;
+    accent_color: string;
+    preview_colors: string[];
+    has_css: boolean;
+    has_effect: boolean;
+    schemes_count: number;
+    schemes: string[];
+    raw_package: string;
+}
+
+export async function getSkinsDir(): Promise<string> {
+    if (!isTauri()) return 'Local AppData/skins';
+    return await invoke<string>('get_skins_dir');
+}
+
+export async function openSkinsDir(): Promise<void> {
+    if (!isTauri()) return;
+    return await invoke<void>('open_skins_dir');
+}
+
+export async function listLocalSkins(): Promise<LocalSkinInfo[]> {
+    if (!isTauri()) return [];
+    return await invoke<LocalSkinInfo[]>('list_local_skins');
+}
+
+export async function deleteLocalSkin(path: string): Promise<boolean> {
+    if (!isTauri()) return false;
+    return await invoke<boolean>('delete_local_skin', { path });
+}
+
+export async function saveLocalSkin(filename: string, content: string): Promise<string> {
+    if (!isTauri()) return '';
+    return await invoke<string>('save_local_skin', { filename, content });
+}

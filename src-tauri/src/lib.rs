@@ -1334,6 +1334,12 @@ pub fn run() {
                     commands::plugin_get_data,
                     commands::plugin_list_keys,
                     commands::plugin_clear_data,
+                    // Skin commands
+                    commands::get_skins_dir,
+                    commands::open_skins_dir,
+                    commands::list_local_skins,
+                    commands::delete_local_skin,
+                    commands::save_local_skin,
                     // Network commands
                     commands::proxy_fetch,
                     // ListenBrainz commands
@@ -1588,6 +1594,12 @@ pub fn run() {
                     commands::plugin_get_data,
                     commands::plugin_list_keys,
                     commands::plugin_clear_data,
+                    // Skin commands
+                    commands::get_skins_dir,
+                    commands::open_skins_dir,
+                    commands::list_local_skins,
+                    commands::delete_local_skin,
+                    commands::save_local_skin,
                     // Network commands
                     commands::proxy_fetch,
                     // ListenBrainz commands

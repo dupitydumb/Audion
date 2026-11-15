@@ -16,6 +16,7 @@ pub mod sync;
 pub mod export;
 pub mod logs;
 pub mod subsonic;
+pub mod skins;
 
 pub use activity::*;
 pub use app_settings::*;
@@ -34,3 +35,4 @@ pub use sync::*;
 pub use export::*;
 pub use logs::*;
 pub use subsonic::*;
+pub use skins::*;

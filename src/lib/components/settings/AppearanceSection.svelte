@@ -9,14 +9,10 @@
     type PageTransition,
     type VisualizationMode,
     type TransitionSpeed,
-    exportSkinPackage,
-    parseSkinPackage,
     type AnimationConfig,
-    openSkinStudio,
   } from "$lib/stores/theme";
   import { darkDefaults, lightDefaults } from "$lib/stores/theme";
   import { get } from "svelte/store";
-  import { slide } from "svelte/transition";
   import { createEventDispatcher, onMount } from "svelte";
   import { layoutOverride, type LayoutOverride } from "$lib/stores/mobile";
   import { isMobile } from "$lib/stores/mobile";
@@ -50,18 +46,38 @@
 
   // ── Custom color token overrides ────────────────────────────────────────────
 
-  const colorSlots: { key: keyof CustomColors; label: string }[] = [
-    { key: "bgBase",       label: "Base background" },
-    { key: "bgElevated",   label: "Elevated background" },
-    { key: "bgSurface",    label: "Surface / cards" },
-    { key: "bgHighlight",  label: "Highlight / hover" },
-    { key: "sidebarBg",    label: "Sidebar background" },
-    { key: "playerBg",     label: "Player bar background" },
-    { key: "textPrimary",  label: "Primary text" },
-    { key: "textSecondary",label: "Secondary text" },
-    { key: "textSubdued",  label: "Subdued text" },
-    { key: "borderColor",  label: "Borders" },
+  type ColorSlot = { key: keyof CustomColors; label: string };
+  type ColorCategory = { title: string; slots: ColorSlot[] };
+
+  const colorCategories: ColorCategory[] = [
+    {
+      title: "Surfaces & Backgrounds",
+      slots: [
+        { key: "bgBase", label: "Base background" },
+        { key: "bgElevated", label: "Elevated background" },
+        { key: "bgSurface", label: "Cards & surfaces" },
+        { key: "bgHighlight", label: "Hover highlight" },
+      ],
+    },
+    {
+      title: "Navigation & Player",
+      slots: [
+        { key: "sidebarBg", label: "Sidebar background" },
+        { key: "playerBg", label: "Player bar background" },
+      ],
+    },
+    {
+      title: "Typography & Borders",
+      slots: [
+        { key: "textPrimary", label: "Primary text" },
+        { key: "textSecondary", label: "Secondary text" },
+        { key: "textSubdued", label: "Subdued text" },
+        { key: "borderColor", label: "Hairline borders" },
+      ],
+    },
   ];
+
+  const colorSlots: ColorSlot[] = colorCategories.flatMap(c => c.slots);
 
   // ── Color parsing helpers ────────────────────────────────────────────────────
 
@@ -271,132 +287,6 @@
     osReducedMotion = mq.matches;
     mq.addEventListener('change', e => { osReducedMotion = e.matches; });
   });
-
-  // ── Skin Studio & Package export / import ──────────────────────────────────
-
-  let customCssInput = $theme.customCss || '';
-  $: {
-    customCssInput = $theme.customCss || '';
-  }
-
-  function handleCustomCssBlur() {
-    if (customCssInput !== $theme.customCss) {
-      theme.setCustomCss(customCssInput);
-    }
-  }
-
-  function handleSchemeChange(schemeName: string) {
-    theme.selectScheme(schemeName);
-  }
-
-  let pkgName = '';
-  let pkgAuthor = '';
-  let pkgDescription = '';
-  let pkgImportError = '';
-  let pkgImportSuccess = '';
-
-  async function handleExport() {
-    const state = get(theme);
-    const name = pkgName.trim() || state.skinName || 'My Skin';
-    const pkg = exportSkinPackage(state, name, pkgAuthor || state.skinAuthor, pkgDescription || state.skinDescription);
-    const json = JSON.stringify(pkg, null, 2);
-    const fileName = name.replace(/[^a-z0-9_-]/gi, '_').toLowerCase() + '.audionskin';
-
-    if (isTauri()) {
-      try {
-        const { save } = await import('@tauri-apps/plugin-dialog');
-        const { writeTextFile } = await import('@tauri-apps/plugin-fs');
-        const path = await save({
-          defaultPath: fileName,
-          filters: [
-            { name: 'Audion Skin', extensions: ['audionskin', 'audiotheme'] },
-            { name: 'JSON', extensions: ['json'] },
-          ],
-        });
-        if (!path) return;
-        await writeTextFile(path, json);
-        pkgImportSuccess = 'Skin exported!';
-        setTimeout(() => { pkgImportSuccess = ''; }, 3000);
-      } catch (e) {
-        pkgImportError = String(e);
-        setTimeout(() => { pkgImportError = ''; }, 5000);
-      }
-    } else {
-      // Web fallback: Blob download
-      const blob = new Blob([json], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url; a.download = fileName; a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      pkgImportSuccess = 'Skin exported!';
-      setTimeout(() => { pkgImportSuccess = ''; }, 3000);
-    }
-  }
-
-  async function handleImport() {
-    pkgImportError = '';
-    pkgImportSuccess = '';
-
-    if (isTauri()) {
-      try {
-        const { open } = await import('@tauri-apps/plugin-dialog');
-        const { readTextFile } = await import('@tauri-apps/plugin-fs');
-        const selected = await open({
-          filters: [
-            { name: 'Audion Skin & Theme', extensions: ['audionskin', 'audiotheme', 'json'] },
-          ],
-          multiple: false,
-        });
-        if (!selected) return;
-        const filePath = typeof selected === 'string' ? selected : selected[0];
-        const text = await readTextFile(filePath);
-        applyImported(text);
-      } catch (e) {
-        pkgImportError = String(e);
-        setTimeout(() => { pkgImportError = ''; }, 5000);
-      }
-    } else {
-      // Web fallback: file input
-      const input = document.createElement('input');
-      input.type = 'file';
-      input.accept = '.audionskin,.audiotheme,application/json';
-      input.onchange = async () => {
-        const file = input.files?.[0];
-        if (!file) return;
-        applyImported(await file.text());
-      };
-      input.click();
-    }
-  }
-
-  function applyImported(text: string) {
-    try {
-      const raw = JSON.parse(text);
-      const pkg = parseSkinPackage(raw);
-      theme.applyPackage({
-        skinName: pkg.name,
-        skinAuthor: pkg.author,
-        skinDescription: pkg.description,
-        accentColor: pkg.accentColor,
-        mode: pkg.mode,
-        customColors: pkg.customColors,
-        background: pkg.background,
-        animation: pkg.animation,
-        customJs: pkg.customJs,
-        customCss: pkg.customCss,
-        schemes: pkg.schemes,
-        activeScheme: pkg.activeScheme,
-      });
-      if (pkg.customJs) {
-        theme.setAllowCustomJs(true);
-      }
-      pkgImportSuccess = `Applied "${pkg.name}"${pkg.author ? ` by ${pkg.author}` : ''}`;
-      setTimeout(() => { pkgImportSuccess = ''; }, 4000);
-    } catch (e) {
-      pkgImportError = `Invalid skin file: ${e}`;
-      setTimeout(() => { pkgImportError = ''; }, 5000);
-    }
-  }
 </script>
 
 
@@ -463,70 +353,83 @@
         <div class="divider"></div>
 
         <!-- ── Custom color tokens ── -->
-        <div class="inner-section">
+        <div class="inner-section" id="setting-custom-colors">
           <div class="section-header-row">
             <span class="setting-title">{$_('settings.customColors')}</span>
             <button class="btn-reset-small" on:click={resetAllColors} title={$_('settings.resetAllToDefaults')}>{$_('settings.resetAll')}</button>
           </div>
           <span class="setting-description">{$_('settings.customColorsDesc')}</span>
-          <div class="color-token-grid">
-            {#each colorSlots as slot}
-              {@const current = $theme.customColors[slot.key]}
-              {@const overridden = slot.key === 'playerBg' && $theme.matchPlayerToArt}
-              <div class="color-token-row" class:disabled={overridden}>
-                <span class="token-label">{slot.label}</span>
-                <div class="token-controls">
-                  <!-- native color swatch (6-char only, drives hex6) -->
-                  <input
-                    type="color"
-                    value={slotHex[slot.key]}
-                    class="color-picker-input"
-                    disabled={overridden}
-                    on:input={e => onSlotColorPick(slot.key, (e.target as HTMLInputElement).value)}
-                    title={overridden ? $_('settings.matchPlayerToArt') : slot.label}
-                  />
-                  <!-- hex + alpha text input -->
-                  <input
-                    type="text"
-                    value={slotHexText[slot.key]}
-                    class="color-hex-input token-hex"
-                    maxlength="9"
-                    spellcheck="false"
-                    placeholder={$_('settings.hexPlaceholder')}
-                    disabled={overridden}
-                    on:input={e => onSlotHexText(slot.key, (e.target as HTMLInputElement).value)}
-                  />
-                  <!-- alpha slider -->
-                  <div class="alpha-slider-wrap" title={$_('settings.opacity')}>
-                    <div class="alpha-track" style="--color6: {slotHex[slot.key]}">
-                      <input
-                        type="range" min="0" max="1" step="0.01"
-                        value={slotAlpha[slot.key]}
-                        class="alpha-range"
-                        disabled={overridden}
-                        on:input={e => onSlotAlpha(slot.key, parseFloat((e.target as HTMLInputElement).value))}
-                      />
+
+          <div class="color-token-categories">
+            {#each colorCategories as category}
+              <div class="color-category-group">
+                <span class="color-category-title">{category.title}</span>
+                <div class="color-token-grid">
+                  {#each category.slots as slot}
+                    {@const current = $theme.customColors[slot.key]}
+                    {@const overridden = slot.key === 'playerBg' && $theme.matchPlayerToArt}
+                    <div class="color-token-row" class:disabled={overridden}>
+                      <span class="token-label">{slot.label}</span>
+                      <div class="token-controls">
+                        <!-- native color swatch (6-char only, drives hex6) -->
+                        <input
+                          type="color"
+                          value={slotHex[slot.key]}
+                          class="color-picker-input token-picker"
+                          disabled={overridden}
+                          on:input={e => onSlotColorPick(slot.key, (e.target as HTMLInputElement).value)}
+                          title={overridden ? $_('settings.matchPlayerToArt') : slot.label}
+                        />
+                        <!-- hex + alpha text input -->
+                        <input
+                          type="text"
+                          value={slotHexText[slot.key]}
+                          class="color-hex-input token-hex"
+                          maxlength="9"
+                          spellcheck="false"
+                          placeholder={$_('settings.hexPlaceholder')}
+                          disabled={overridden}
+                          on:input={e => onSlotHexText(slot.key, (e.target as HTMLInputElement).value)}
+                        />
+                        <!-- alpha slider -->
+                        <div class="alpha-slider-wrap" title={$_('settings.opacity')}>
+                          <div class="alpha-track" style="--color6: {slotHex[slot.key]}">
+                            <input
+                              type="range" min="0" max="1" step="0.01"
+                              value={slotAlpha[slot.key]}
+                              class="alpha-range"
+                              disabled={overridden}
+                              on:input={e => onSlotAlpha(slot.key, parseFloat((e.target as HTMLInputElement).value))}
+                            />
+                          </div>
+                          <span class="slider-val">{Math.round(slotAlpha[slot.key] * 100)}%</span>
+                        </div>
+                        {#if current !== null}
+                          <button class="btn-reset-token" disabled={overridden} on:click={() => resetColorToken(slot.key)} title={$_('settings.resetToDefault')}>✕</button>
+                        {:else}
+                          <span class="token-default-badge">{$_('settings.defaultBadge')}</span>
+                        {/if}
+                      </div>
                     </div>
-                    <span class="slider-val">{Math.round(slotAlpha[slot.key] * 100)}%</span>
-                  </div>
-                  {#if current !== null}
-                    <button class="btn-reset-token" disabled={overridden} on:click={() => resetColorToken(slot.key)} title={$_('settings.resetToDefault')}>✕</button>
-                  {:else}
-                    <span class="token-default-badge">{$_('settings.defaultBadge')}</span>
-                  {/if}
+                  {/each}
                 </div>
+
+                {#if category.title === "Navigation & Player"}
+                  <div class="match-player-row">
+                    <label class="checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={$theme.matchPlayerToArt}
+                        on:change={e => theme.setMatchPlayerToArt((e.target as HTMLInputElement).checked)}
+                      />
+                      <span class="token-label">{$_('settings.matchPlayerToArt')}</span>
+                    </label>
+                    <span class="setting-description match-player-desc">{$_('settings.matchPlayerToArtDesc')}</span>
+                  </div>
+                {/if}
               </div>
             {/each}
           </div>
-          <label class="checkbox-row" style="margin-top: 10px;">
-            <input
-              type="checkbox"
-              checked={$theme.matchPlayerToArt}
-              on:change={e => theme.setMatchPlayerToArt((e.target as HTMLInputElement).checked)}
-            />
-            <span class="token-label">{$_('settings.matchPlayerToArt')}</span>
-          </label>
-          <span class="setting-description">{$_('settings.matchPlayerToArtDesc')}</span>
         </div>
 
         <div class="divider"></div>
@@ -711,146 +614,16 @@
         </div>
 
         
-        <!-- ── Advanced Appearance Settings (Collapsible) ── -->
-        <div class="advanced-section-wrapper" id="setting-advanced-appearance">
-          <button
-            type="button"
-            class="advanced-toggle-btn"
-            on:click={() => advancedOpen = !advancedOpen}
-            aria-expanded={advancedOpen}
-          >
-            <span class="advanced-toggle-icon">
-              <Icon name={advancedOpen ? "chevron-down" : "chevron-right"} size={16} />
-            </span>
-            <div class="advanced-toggle-text">
-              <span class="advanced-toggle-title">{$_('settings.advancedSettings', { default: 'Advanced Appearance' })}</span>
-              <span class="advanced-toggle-subtitle">{$_('settings.advancedSettingsDesc', { default: 'Skin Studio, Custom CSS, JavaScript & Package Tools' })}</span>
-            </div>
-            <span class="pill-badge" style="margin-left: auto; font-size: 0.6875rem;">{advancedOpen ? $_('settings.hide', { default: 'Hide' }) : $_('settings.show', { default: 'Show' })}</span>
+        <!-- ── Skins & CSS Crosslink Card ── -->
+        <div class="skins-crosslink-card">
+          <div class="skins-crosslink-info">
+            <span class="setting-title">Need full themes or custom CSS?</span>
+            <span class="setting-description">Browse community skins, open the skins folder, or customize styles in the Skins tab.</span>
+          </div>
+          <button type="button" class="btn-goto-skins" on:click={() => dispatch('navigate', { tab: 'skins' })}>
+            <span>Go to Skins</span>
+            <Icon name="arrow-right" size={14} />
           </button>
-
-          {#if advancedOpen}
-            <div transition:slide|local class="advanced-section-inner">
-              <!-- ── Skin Studio Promo Card ── -->
-        <div class="inner-section" id="setting-skin-studio">
-          <div class="studio-banner">
-            <div class="studio-banner-info">
-              <span class="setting-title">{$_('settings.skinStudio')}</span>
-              <span class="setting-description">{$_('settings.skinStudioDesc')}</span>
-            </div>
-            <button type="button" class="btn-studio-launch" on:click={openSkinStudio}>
-              <Icon name="sparkles" size={15} />
-              {$_('settings.openSkinStudio')}
-            </button>
-          </div>
-        </div>
-
-        {#if $theme.schemes && Object.keys($theme.schemes).length > 1}
-          <div class="divider"></div>
-          <!-- ── Color Schemes (Multi-Scheme Skin) ── -->
-          <div class="inner-section" id="setting-color-schemes">
-            <span class="setting-title">{$_('settings.colorScheme')}</span>
-            <span class="setting-description">{$_('settings.colorSchemeDesc')}</span>
-            <div class="scheme-chips-row">
-              {#each Object.keys($theme.schemes) as schemeName}
-                {@const isCurrent = ($theme.activeScheme || 'Default') === schemeName}
-                <button
-                  type="button"
-                  class="scheme-chip-btn"
-                  class:selected={isCurrent}
-                  on:click={() => handleSchemeChange(schemeName)}
-                >
-                  {#if isCurrent}
-                    <Icon name="check" size={12} />
-                  {/if}
-                  <span>{schemeName}</span>
-                </button>
-              {/each}
-            </div>
-          </div>
-        {/if}
-
-        <div class="divider"></div>
-
-        <!-- ── Custom CSS (user.css) ── -->
-        <div class="inner-section" id="setting-custom-css">
-          <span class="setting-title">{$_('settings.customCss')}</span>
-          <span class="setting-description">{$_('settings.customCssDesc')}</span>
-          <textarea
-            class="quick-css-input"
-            bind:value={customCssInput}
-            on:blur={handleCustomCssBlur}
-            placeholder="/* Enter custom CSS rules to style any element across Audion (e.g. .player-bar, .sidebar, etc.) */"
-            rows="4"
-            spellcheck="false"
-          ></textarea>
-        </div>
-
-        <div class="divider"></div>
-
-        <!-- ── Theme / Skin Package ── -->
-        <div class="inner-section" id="setting-theme-package">
-          <span class="setting-title">{$_('settings.themePackage')}</span>
-          <span class="setting-description">{$_('settings.themePackageDesc')}</span>
-
-          <!-- Export fields -->
-          <div class="pkg-fields">
-            <input class="pkg-input" type="text" bind:value={pkgName} placeholder={$_('settings.themeNamePlaceholder')} maxlength="64" />
-            <input class="pkg-input" type="text" bind:value={pkgAuthor} placeholder={$_('settings.authorPlaceholder')} maxlength="64" />
-            <input class="pkg-input" type="text" bind:value={pkgDescription} placeholder={$_('settings.descriptionPlaceholder')} maxlength="120" />
-          </div>
-
-          <div class="pkg-actions">
-            <button class="btn-pkg btn-pkg-export" on:click={handleExport}>
-              <Icon name="download" size={14} /> {$_('settings.export')}
-            </button>
-            <button class="btn-pkg btn-pkg-import" on:click={handleImport}>
-              <Icon name="upload" size={14} /> {$_('settings.import')}
-            </button>
-          </div>
-
-          {#if pkgImportSuccess}
-            <span class="pkg-msg pkg-msg-ok">{pkgImportSuccess}</span>
-          {/if}
-          {#if pkgImportError}
-            <span class="pkg-msg pkg-msg-err">{pkgImportError}</span>
-          {/if}
-
-          <span class="setting-description" style="margin-top: 8px;">
-            Note: image and video backgrounds are not included (paths are device-specific).
-          </span>
-        </div>
-              
-        <div class="divider"></div>
-
-        <!-- ── Custom JavaScript ── -->
-        <div class="inner-section" id="setting-custom-js">
-          <div class="toggle-container">
-            <div class="toggle-info">
-              <span class="setting-title">{$_('settings.enableCustomJs', { default: 'Enable Custom JavaScript' })}</span>
-              <span class="setting-description">{$_('settings.customJsDesc', { default: 'Execute custom scripts bundled with skins' })}</span>
-            </div>
-            <button
-              class="toggle-btn"
-              class:active={$theme.allowCustomJs}
-              on:click={() => theme.setAllowCustomJs(!$theme.allowCustomJs)}
-              role="switch"
-              aria-checked={$theme.allowCustomJs}
-              aria-label={$_('settings.enableCustomJs', { default: 'Enable Custom JavaScript' })}
-            >
-              <div class="toggle-handle"></div>
-            </button>
-          </div>
-
-          <div class="security-warning-card" style="margin-top: 8px;">
-            <Icon name="alert-triangle" size={15} className="warning-icon" />
-            <span class="warning-text">
-              {$_('settings.customJsWarning', { default: 'Security Warning: Custom JavaScript allows arbitrary code execution in your app. Only enable if you trust the source.' })}
-            </span>
-          </div>
-        </div>
-            </div>
-          {/if}
         </div>
 
       </div>
@@ -900,41 +673,49 @@
   }
   .btn-add-color:hover { background: var(--accent-hover); }
 
-  /* ── Color token grid ── */
+  /* ── Color token grid & categories ── */
 
-  .section-header-row {
+  .color-token-categories {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 4px;
+    flex-direction: column;
+    gap: 14px;
+    margin-top: 12px;
   }
 
-  .btn-reset-small {
-    font-size: var(--font-size-xs);
-    color: var(--text-subdued);
-    padding: 3px 8px;
+  .color-category-group {
+    background: var(--bg-surface);
     border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: color var(--transition-fast), border-color var(--transition-fast);
+    border-radius: var(--radius-md, 8px);
+    padding: 12px 14px;
   }
-  .btn-reset-small:hover { color: var(--text-primary); border-color: var(--text-secondary); }
+
+  .color-category-title {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    display: block;
+  }
 
   .color-token-grid {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    margin-top: 10px;
+    gap: 0;
   }
 
   .color-token-row {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    flex-wrap: wrap;
+    gap: 12px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border-color);
     opacity: 1;
     transition: opacity 0.15s ease;
+  }
+
+  .color-token-row:last-child {
+    border-bottom: none;
   }
 
   .color-token-row.disabled {
@@ -945,21 +726,31 @@
     font-size: var(--font-size-sm);
     color: var(--text-secondary);
     flex: 1;
+    min-width: 120px;
   }
 
   .token-controls {
     display: flex;
     align-items: center;
     gap: 6px;
-    flex-wrap: wrap;
-    justify-content: flex-end;
+    flex-shrink: 0;
+  }
+
+  .token-picker {
+    width: 26px;
+    height: 26px;
+    padding: 1px;
+    border-radius: var(--radius-sm, 4px);
   }
 
   /* narrower hex field inside token rows */
   .token-hex {
-    width: 78px;
+    width: 74px;
+    height: 26px;
     font-size: 11px;
-    padding: 4px 6px;
+    padding: 3px 6px;
+    box-sizing: border-box;
+    text-align: center;
   }
 
   /* alpha slider composite */
@@ -972,17 +763,17 @@
   /* checkerboard + gradient track */
   .alpha-track {
     position: relative;
-    width: 64px;
-    height: 16px;
-    border-radius: 4px;
+    width: 52px;
+    height: 14px;
+    border-radius: 3px;
     /* checkerboard underneath */
     background-image:
       linear-gradient(45deg, #888 25%, transparent 25%),
       linear-gradient(-45deg, #888 25%, transparent 25%),
       linear-gradient(45deg, transparent 75%, #888 75%),
       linear-gradient(-45deg, transparent 75%, #888 75%);
-    background-size: 8px 8px;
-    background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+    background-size: 6px 6px;
+    background-position: 0 0, 0 3px, 3px -3px, -3px 0;
     background-color: #fff;
     /* color-to-transparent gradient on top */
     border: 1px solid var(--border-color);
@@ -1008,21 +799,72 @@
     margin: 0;
   }
 
-  .btn-reset-token {
+  .slider-val {
     font-size: 11px;
     color: var(--text-subdued);
-    line-height: 1;
-    cursor: pointer;
-    padding: 2px 4px;
-    border-radius: 3px;
-    transition: color var(--transition-fast);
+    font-family: monospace;
+    min-width: 30px;
+    text-align: right;
   }
-  .btn-reset-token:hover { color: var(--error-color); }
+
+  .btn-reset-token {
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    color: var(--text-subdued);
+    background: transparent;
+    border: none;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: color var(--transition-fast), background var(--transition-fast);
+  }
+  .btn-reset-token:hover {
+    color: var(--error-color, #ff4d4f);
+    background: rgba(255, 77, 79, 0.1);
+  }
 
   .token-default-badge {
     font-size: 10px;
     color: var(--text-subdued);
     font-style: italic;
+    width: 22px;
+    text-align: center;
+    display: inline-block;
+  }
+
+  .match-player-row {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-color);
+  }
+
+  .match-player-desc {
+    margin-left: 24px;
+    margin-top: 2px;
+  }
+
+  @media (max-width: 480px) {
+    .color-token-row {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 6px;
+      padding: 8px 0;
+    }
+    .token-controls {
+      width: 100%;
+      justify-content: space-between;
+    }
+    .token-hex {
+      flex: 1;
+      max-width: 80px;
+    }
+    .alpha-track {
+      flex: 1;
+      max-width: 60px;
+    }
   }
 
   /* ── Background controls ── */
@@ -1134,250 +976,45 @@
     display: block;
   }
 
-  /* ── Theme package ── */
-
-  .pkg-fields {
+  /* ── Skins crosslink card ── */
+  .skins-crosslink-card {
     display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin-top: 10px;
-  }
-
-  .pkg-input {
-    padding: 7px 10px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px;
+    margin-top: var(--spacing-lg);
     background: var(--bg-surface);
     border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
-    width: 100%;
-    box-sizing: border-box;
-    transition: border-color var(--transition-fast);
+    border-radius: var(--radius-md, 8px);
+    flex-wrap: wrap;
   }
-  .pkg-input:focus { outline: none; border-color: var(--accent-primary); }
-  .pkg-input::placeholder { color: var(--text-subdued); }
 
-  .pkg-actions {
+  .skins-crosslink-info {
     display: flex;
-    gap: 8px;
-    margin-top: 10px;
+    flex-direction: column;
+    gap: 2px;
+    flex: 1;
+    min-width: 200px;
   }
 
-  .btn-pkg {
+  .btn-goto-skins {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     padding: 7px 14px;
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
-    cursor: pointer;
-    transition: background var(--transition-fast), opacity var(--transition-fast);
-  }
-
-  .btn-pkg-export {
-    background: var(--accent-primary);
-    color: #fff;
-  }
-  .btn-pkg-export:hover { background: var(--accent-hover); }
-
-  .btn-pkg-import {
-    background: var(--bg-surface);
-    border: 1px solid var(--border-color);
+    background: var(--bg-base);
     color: var(--text-primary);
-  }
-  .btn-pkg-import:hover { background: var(--bg-highlight); }
-
-  .pkg-msg {
-    display: block;
-    margin-top: 8px;
-    font-size: var(--font-size-xs);
-    border-radius: var(--radius-sm);
-    padding: 5px 8px;
-  }
-  /* fallback first for older Android WebView that doesn't support color-mix() */
-  .pkg-msg-ok  { background: rgba(29, 185, 84, 0.15); color: var(--accent-primary); }
-  .pkg-msg-err { background: rgba(231, 76, 60, 0.12); color: var(--error-color, #e74c3c); }
-  @supports (color: color-mix(in srgb, red, blue)) {
-    .pkg-msg-ok  { background: color-mix(in srgb, var(--accent-primary) 15%, transparent); }
-    .pkg-msg-err { background: color-mix(in srgb, var(--error-color, #e74c3c) 12%, transparent); }
-  }
-
-  code {
-    font-family: monospace;
-    font-size: 0.9em;
-    background: var(--bg-surface);
-    padding: 1px 4px;
-    border-radius: 3px;
-  }
-
-  .studio-banner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 16px;
-    background: linear-gradient(135deg, rgba(var(--accent-primary-rgb, 29, 185, 84), 0.12), rgba(255, 255, 255, 0.03));
-    border: 1px solid rgba(var(--accent-primary-rgb, 29, 185, 84), 0.3);
-    border-radius: 12px;
-    gap: 16px;
-    margin-top: 6px;
-    flex-wrap: wrap;
-  }
-
-  .studio-banner-info {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .btn-studio-launch {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 9px 16px;
-    border-radius: 8px;
-    background: var(--accent-primary, #1db954);
-    color: var(--text-on-accent, #fff);
-    font-weight: 600;
-    font-size: 0.85rem;
-    border: none;
-    cursor: pointer;
-    transition: all 160ms ease;
-  }
-
-  .btn-studio-launch:hover {
-    background: var(--accent-hover, #1ed760);
-    transform: translateY(-1px);
-  }
-
-  .scheme-chips-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-top: 8px;
-  }
-
-  .scheme-chip-btn {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 14px;
-    border-radius: 8px;
-    background: var(--bg-surface, #282828);
-    border: 1px solid var(--border-color, #404040);
-    color: var(--text-secondary, #ccc);
-    font-size: 0.82rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-full);
+    font-size: 0.8125rem;
     font-weight: 500;
     cursor: pointer;
-    transition: all 150ms ease;
+    transition: background-color var(--transition-fast), border-color var(--transition-fast);
   }
 
-  .scheme-chip-btn:hover {
-    border-color: var(--accent-primary, #1db954);
-    color: var(--text-primary, #fff);
-  }
-
-  .scheme-chip-btn.selected {
-    background: var(--accent-subtle, rgba(29, 185, 84, 0.18));
-    border-color: var(--accent-primary, #1db954);
-    color: var(--accent-primary, #1db954);
-    font-weight: 600;
-  }
-
-  .quick-css-input {
-    width: 100%;
-    margin-top: 8px;
-    background: #0d0d0d;
-    border: 1px solid var(--border-color, #333);
-    border-radius: 8px;
-    padding: 10px 12px;
-    color: #e0e0e0;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 0.82rem;
-    line-height: 1.5;
-    resize: vertical;
-    outline: none;
-  }
-
-  .quick-css-input:focus {
-    border-color: var(--accent-primary, #1db954);
-  }
-
-  .advanced-section-wrapper {
-    margin-top: var(--spacing-md);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md, 8px);
-    overflow: hidden;
-    background: var(--bg-surface);
-  }
-
-  .advanced-toggle-btn {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    width: 100%;
-    padding: 12px 14px;
-    background: none;
-    border: none;
-    color: var(--text-primary);
-    cursor: pointer;
-    text-align: left;
-    transition: background var(--transition-fast);
-  }
-
-  .advanced-toggle-btn:hover {
+  .btn-goto-skins:hover {
     background: var(--bg-highlight);
+    border-color: var(--text-secondary);
   }
-
-  .advanced-toggle-icon {
-    color: var(--text-subdued);
-    display: flex;
-    align-items: center;
-  }
-
-  .advanced-toggle-text {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .advanced-toggle-title {
-    font-size: 0.875rem;
-    font-weight: 600;
-  }
-
-  .advanced-toggle-subtitle {
-    font-size: 0.75rem;
-    color: var(--text-subdued);
-  }
-
-  .advanced-section-inner {
-    padding: 14px;
-    border-top: 1px solid var(--border-color);
-    background: var(--bg-base);
-  }
-
-  .security-warning-card {
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    padding: 10px 12px;
-    background: rgba(234, 179, 8, 0.1);
-    border: 1px solid rgba(234, 179, 8, 0.3);
-    border-radius: var(--radius-sm, 6px);
-  }
-
-  :global(.warning-icon) {
-    color: #eab308;
-    flex-shrink: 0;
-    margin-top: 2px;
-  }
-
-  .warning-text {
-    font-size: 0.78125rem;
-    color: var(--text-secondary);
-    line-height: 1.4;
-  }
-
 </style>

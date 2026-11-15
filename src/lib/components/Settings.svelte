@@ -16,7 +16,7 @@
   import ArtistsSection from "./settings/ArtistsSection.svelte";
   import SubsonicSection from "./settings/SubsonicSection.svelte";
   import AppearanceSection from "./settings/AppearanceSection.svelte";
-  import ThemeBrowserSection from "./settings/ThemeBrowserSection.svelte";
+  import SkinsSection from "./settings/SkinsSection.svelte";
   import AccountSection from "./settings/AccountSection.svelte";
   import SyncSection from "./settings/SyncSection.svelte";
   import ScrobblingSection from "./settings/ScrobblingSection.svelte";
@@ -27,6 +27,7 @@
   let activeTab = "general";
   let showEqEditor = false;
   let appearanceAdvancedOpen = false;
+  let skinsAdvancedOpen = false;
   let searchQuery = "";
   let activeIdx = 0;
   let searchInputEl: HTMLInputElement | null = null;
@@ -76,7 +77,13 @@
       id: "appearance",
       icon: "palette",
       label: "Appearance",
-      subtitle: "Themes, accent colors & skin studio",
+      subtitle: "Display mode, accent colors, wallpaper & animations",
+    },
+    {
+      id: "skins",
+      icon: "sparkles",
+      label: "Skins",
+      subtitle: "Installed skins, community themes & custom CSS",
     },
     {
       id: "account",
@@ -559,11 +566,49 @@
         "video background",
       ],
     },
+    // Skins & Themes Tab
     {
-      sectionId: "appearance",
+      sectionId: "skins",
+      targetElementId: "setting-skins-folder",
+      tab: "skins",
+      tabLabel: "Skins",
+      title: "Open Skins Folder",
+      subtitle: "Open the AppData /skins directory in system file explorer",
+      keywords: [
+        "skins folder",
+        "open skins folder",
+        "appdata",
+        "skins directory",
+        "explorer",
+        "finder",
+        "custom skins",
+        "paste skin",
+      ],
+    },
+    {
+      sectionId: "skins",
+      targetElementId: "setting-installed-skins",
+      tab: "skins",
+      tabLabel: "Skins",
+      title: "Installed Skins & Themes",
+      subtitle: "Manage, preview, and apply standalone skins and folder themes",
+      keywords: [
+        "installed skins",
+        "skins",
+        "audionskin",
+        "apple music",
+        "schemes",
+        "themes",
+        "custom skin",
+        "refresh skins",
+        "delete skin",
+      ],
+    },
+    {
+      sectionId: "skins",
       targetElementId: "setting-skin-studio",
-      tab: "appearance",
-      tabLabel: "Appearance",
+      tab: "skins",
+      tabLabel: "Skins",
       title: "Skin Studio (Live Skin & CSS Editor)",
       subtitle: "Customize layouts with CSS, edit color schemes, author skins",
       keywords: [
@@ -577,67 +622,12 @@
         "spicetify",
         "author skin",
       ],
-      isAdvanced: true,
     },
     {
-      sectionId: "appearance",
-      targetElementId: "setting-custom-css",
-      tab: "appearance",
-      tabLabel: "Appearance",
-      title: "Custom CSS (user.css)",
-      subtitle:
-        "Quick live CSS stylesheet injection to style any player element",
-      keywords: [
-        "css",
-        "user.css",
-        "custom css",
-        "styling",
-        "stylesheet",
-        "inject css",
-        "custom styles",
-      ],
-      isAdvanced: true,
-    },
-    {
-      sectionId: "appearance",
-      targetElementId: "setting-custom-js",
-      tab: "appearance",
-      tabLabel: "Appearance",
-      title: "Custom JavaScript (Scripts)",
-      subtitle: "Allow custom JavaScript scripts to execute with your skins",
-      keywords: [
-        "custom js",
-        "custom javascript",
-        "scripts",
-        "plugins",
-        "extensions",
-        "scripting",
-      ],
-      isAdvanced: true,
-    },
-    {
-      sectionId: "appearance",
-      targetElementId: "setting-theme-package",
-      tab: "appearance",
-      tabLabel: "Appearance",
-      title: "Skin Package Export & Import",
-      subtitle: "Save and load .audionskin and .audiotheme files",
-      keywords: [
-        "audionskin",
-        "audiotheme",
-        "export skin",
-        "import skin",
-        "package",
-        "share skin",
-        "skins",
-      ],
-      isAdvanced: true,
-    },
-    {
-      sectionId: "appearance",
+      sectionId: "skins",
       targetElementId: "setting-community-skins",
-      tab: "appearance",
-      tabLabel: "Appearance",
+      tab: "skins",
+      tabLabel: "Skins",
       title: "Community Skin Browser",
       subtitle:
         "Explore community skins: Nord, Catppuccin, Gruvbox, Liquid Glass, etc.",
@@ -653,6 +643,59 @@
         "matrix",
         "frost",
         "install skin",
+      ],
+    },
+    {
+      sectionId: "skins",
+      targetElementId: "setting-custom-css",
+      tab: "skins",
+      tabLabel: "Skins",
+      title: "Custom CSS (user.css)",
+      subtitle:
+        "Quick live CSS stylesheet injection to style any player element",
+      keywords: [
+        "css",
+        "user.css",
+        "custom css",
+        "styling",
+        "stylesheet",
+        "inject css",
+        "custom styles",
+      ],
+      isAdvanced: true,
+    },
+    {
+      sectionId: "skins",
+      targetElementId: "setting-theme-package",
+      tab: "skins",
+      tabLabel: "Skins",
+      title: "Skin Package Export & Import",
+      subtitle: "Save and load .audionskin and .audiotheme files",
+      keywords: [
+        "audionskin",
+        "audiotheme",
+        "export skin",
+        "import skin",
+        "package",
+        "share skin",
+        "skins",
+      ],
+      isAdvanced: true,
+    },
+    {
+      sectionId: "skins",
+      targetElementId: "setting-custom-js",
+      tab: "skins",
+      tabLabel: "Skins",
+      title: "Custom JavaScript (Scripts)",
+      subtitle: "Allow custom JavaScript scripts to execute with your skins",
+      keywords: [
+        "custom js",
+        "custom javascript",
+        "scripts",
+        "plugins",
+        "extensions",
+        "scripting",
       ],
       isAdvanced: true,
     },
@@ -925,7 +968,11 @@
     showEqEditor = false;
 
     if (item.isAdvanced) {
-      appearanceAdvancedOpen = true;
+      if (item.tab === "skins") {
+        skinsAdvancedOpen = true;
+      } else {
+        appearanceAdvancedOpen = true;
+      }
     }
 
     searchQuery = "";
@@ -1202,10 +1249,13 @@
                 <AppearanceSection
                   open={true}
                   bind:advancedOpen={appearanceAdvancedOpen}
+                  on:navigate={(e) => switchTab(e.detail.tab)}
                 />
-                <div style="margin-top: var(--spacing-lg);">
-                  <ThemeBrowserSection open={true} />
-                </div>
+              {:else if activeTab === "skins"}
+                <SkinsSection
+                  open={true}
+                  bind:advancedOpen={skinsAdvancedOpen}
+                />
               {:else if activeTab === "account"}
                 <AccountSection open={true} />
                 {#if $isLoggedIn}
@@ -1393,10 +1443,16 @@
                 <AppearanceSection
                   open={true}
                   bind:advancedOpen={appearanceAdvancedOpen}
+                  on:navigate={(e) => {
+                    mobileDetailTab = e.detail.tab;
+                    activeTab = e.detail.tab;
+                  }}
                 />
-                <div style="margin-top: var(--spacing-md);">
-                  <ThemeBrowserSection open={true} />
-                </div>
+              {:else if mobileDetailTab === "skins"}
+                <SkinsSection
+                  open={true}
+                  bind:advancedOpen={skinsAdvancedOpen}
+                />
               {:else if mobileDetailTab === "account"}
                 <AccountSection open={true} />
                 {#if $isLoggedIn}

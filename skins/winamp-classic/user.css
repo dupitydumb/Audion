@@ -1,0 +1,277 @@
+/* Winamp Classic 90s Hi-Fi Skin (Engine v2) */
+
+:root {
+  font-family: "MS Sans Serif", "Segoe UI", Tahoma, sans-serif !important;
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-full: 4px;
+}
+
+/* ============================================================
+   TOP BAR & CHASSIS (WINAMP METALLIC GROOVED TITLEBAR)
+   ============================================================ */
+.titlebar {
+  background: linear-gradient(180deg, #1b3870 0%, #0d2047 50%, #152d5e 100%) !important;
+  border-bottom: 2px ridge #3a4b6b !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
+}
+
+.search-input-wrapper {
+  background: #080f08 !important;
+  border: 2px inset #050b05 !important;
+  border-radius: 2px !important;
+  padding: 3px 10px !important;
+  box-shadow: inset 0 2px 4px #000000 !important;
+}
+
+.search-input {
+  color: #00ff41 !important;
+  font-family: "Consolas", "Courier New", monospace !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  letter-spacing: 1px !important;
+  text-shadow: 0 0 6px rgba(0, 255, 65, 0.7) !important;
+}
+
+.search-input::placeholder {
+  color: rgba(0, 255, 65, 0.4) !important;
+}
+
+.nav-btn {
+  background: linear-gradient(180deg, #424754 0%, #262a33 50%, #1b1e24 100%) !important;
+  border: 2px outset #5a606e !important;
+  border-radius: 2px !important;
+  color: #c0c6d2 !important;
+}
+
+.nav-btn:hover {
+  background: linear-gradient(180deg, #4f5564 0%, #2f343f 100%) !important;
+  color: #ffffff !important;
+}
+
+.nav-btn:active {
+  border-style: inset !important;
+  transform: translate(1px, 1px) !important;
+}
+
+/* ============================================================
+   SIDEBAR (METALLIC RACK MOUNT)
+   ============================================================ */
+.sidebar {
+  background: #1c1e24 !important;
+  border-right: 2px groove #353942 !important;
+  box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.08) !important;
+}
+
+.nav-section-title {
+  font-family: "Segoe UI", Tahoma, sans-serif !important;
+  font-size: 10px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.1em !important;
+  text-transform: uppercase !important;
+  color: #8c94a0 !important;
+  padding: 10px 14px 4px 14px !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  margin-bottom: 4px !important;
+}
+
+.nav-item {
+  border-radius: 2px !important;
+  margin: 1px 6px !important;
+  padding: 5px 10px !important;
+  font-size: 12.5px !important;
+  border: 1px solid transparent !important;
+}
+
+.nav-item:hover:not(.active) {
+  background: #2a2e37 !important;
+  border: 1px outset #424754 !important;
+  color: #ffffff !important;
+}
+
+.nav-item.active {
+  background: #1e3a8a !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  border: 1px dotted rgba(255, 255, 255, 0.5) !important;
+  box-shadow: inset 1px 1px 2px rgba(0, 0, 0, 0.5) !important;
+}
+
+.nav-count {
+  font-family: monospace !important;
+  font-size: 11px !important;
+  color: #00ff41 !important;
+  background: #0b130b !important;
+  border: 1px inset #050b05 !important;
+  padding: 1px 5px !important;
+  border-radius: 2px !important;
+}
+
+/* ============================================================
+   PLAYER BAR (WINAMP MAIN HI-FI DECK & GREEN LCD)
+   ============================================================ */
+.player-bar {
+  background: linear-gradient(180deg, #323741 0%, #22262e 45%, #181b21 100%) !important;
+  border-top: 3px ridge #4e5563 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 -4px 16px rgba(0, 0, 0, 0.5) !important;
+}
+
+.album-art {
+  border-radius: 2px !important;
+  border: 2px inset #101216 !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6) !important;
+}
+
+/* Winamp Green LCD Time Display */
+.player-bar .time {
+  background: #080f08 !important;
+  border: 2px inset #050b05 !important;
+  border-radius: 2px !important;
+  color: #00ff41 !important;
+  font-family: "Consolas", "Courier New", monospace !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  padding: 2px 7px !important;
+  letter-spacing: 1.5px !important;
+  text-shadow: 0 0 8px rgba(0, 255, 65, 0.8) !important;
+  box-shadow: inset 0 2px 4px #000000 !important;
+}
+
+/* Chunky Beveled Transport Buttons */
+.controls-buttons .icon-btn,
+.player-bar .play-btn {
+  background: linear-gradient(180deg, #484f5c 0%, #2a2e36 50%, #1e2127 100%) !important;
+  border: 2px outset #606877 !important;
+  border-radius: 2px !important;
+  color: #c4ccd8 !important;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.4) !important;
+  transition: none !important;
+}
+
+.player-bar .play-btn {
+  width: 36px !important;
+  height: 32px !important;
+  color: #00ff41 !important;
+  text-shadow: 0 0 6px rgba(0, 255, 65, 0.7) !important;
+}
+
+.controls-buttons .icon-btn:hover,
+.player-bar .play-btn:hover {
+  background: linear-gradient(180deg, #58606f 0%, #343a44 100%) !important;
+  color: #ffffff !important;
+}
+
+.controls-buttons .icon-btn:active,
+.player-bar .play-btn:active {
+  border-style: inset !important;
+  transform: translate(1px, 1px) !important;
+  background: #181b21 !important;
+}
+
+.controls-buttons .icon-btn.active {
+  color: #00ff41 !important;
+  border-color: #00ff41 !important;
+  box-shadow: inset 0 0 6px rgba(0, 255, 65, 0.4) !important;
+}
+
+/* Winamp Segmented LED Progress Bar */
+.progress-bar {
+  height: 9px !important;
+  background: #0a0d0a !important;
+  border: 2px inset #050805 !important;
+  border-radius: 2px !important;
+  box-shadow: inset 0 1px 3px #000000 !important;
+}
+
+.progress-fill {
+  background: repeating-linear-gradient(
+    90deg,
+    #00ff41 0px,
+    #00ff41 5px,
+    #0a0d0a 5px,
+    #0a0d0a 7px
+  ) !important;
+}
+
+.progress-thumb {
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 2px !important;
+  background: linear-gradient(180deg, #606877 0%, #30353f 100%) !important;
+  border: 2px outset #808a9c !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.6) !important;
+  opacity: 1 !important;
+  transform: translateY(-2px) !important;
+}
+
+/* ============================================================
+   TRACK LIST (WINAMP CLASSIC PLAYLIST WINDOW)
+   ============================================================ */
+.track-row {
+  border-radius: 1px !important;
+  margin: 0 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
+  font-family: "Lucida Console", "Consolas", monospace !important;
+  font-size: 12px !important;
+  color: #a8d5a8 !important;
+}
+
+.track-row:hover {
+  background: #1b281b !important;
+  color: #00ff41 !important;
+}
+
+.track-row.playing {
+  background: #000080 !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  border: 1px dotted #ffffff !important;
+}
+
+.track-row.playing .track-name {
+  color: #ffffff !important;
+}
+
+.playing-icon {
+  color: #00ff41 !important;
+}
+
+/* ============================================================
+   MEDIA CARDS (HI-FI COMPONENT UNITS)
+   ============================================================ */
+.media-card, .card {
+  border-radius: 3px !important;
+  background: #191c22 !important;
+  border: 2px outset #3d434f !important;
+  box-shadow: inset 1px 1px 0 rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.4) !important;
+}
+
+.media-card:hover, .card:hover {
+  border-color: #00ff41 !important;
+  transform: translateY(-2px) !important;
+  box-shadow: 0 6px 16px rgba(0, 255, 65, 0.2) !important;
+}
+
+/* ============================================================
+   RETRO SCROLLBARS
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 12px !important;
+  height: 12px !important;
+}
+
+::-webkit-scrollbar-track {
+  background: #121418 !important;
+  border: 1px inset #090a0c !important;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #484f5c 0%, #2a2e36 100%) !important;
+  border: 2px outset #606877 !important;
+  border-radius: 1px !important;
+}
+
+::-webkit-scrollbar-thumb:active {
+  border-style: inset !important;
+}
