@@ -26,7 +26,7 @@ export const ISLAND_WINDOW_WIDTH = 396;
 
 export const ISLAND_WINDOW_SIZES: Record<IslandWindowState, { w: number; h: number }> = {
     idle: { w: ISLAND_WINDOW_WIDTH, h: 48 },
-    compact: { w: ISLAND_WINDOW_WIDTH, h: 52 },
+    compact: { w: ISLAND_WINDOW_WIDTH, h: 56 },
     peek: { w: ISLAND_WINDOW_WIDTH, h: 60 },
     expanded: { w: ISLAND_WINDOW_WIDTH, h: 180 },
     hud: { w: ISLAND_WINDOW_WIDTH, h: 60 },

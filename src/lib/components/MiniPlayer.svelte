@@ -35,7 +35,7 @@
 
     const SIZES: Record<IslandState, { w: number; h: number; r: number }> = {
         idle: { w: 120, h: 32, r: 16 },
-        compact: { w: 220, h: 36, r: 18 },
+        compact: { w: 220, h: 40, r: 20 },
         peek: { w: 300, h: 44, r: 22 },
         expanded: { w: 380, h: 160, r: 36 },
         hud: { w: 260, h: 44, r: 22 },
@@ -373,15 +373,27 @@
                     <span class="idle-text">{$_('player.noTrack')}</span>
                 </div>
 
-            <!-- ══ STATE 2: COMPACT (220 × 36) ═══════════════════ -->
+            <!-- ══ STATE 2: COMPACT (220 × 40) ═══════════════════ -->
             {:else if state === "compact"}
                 <div class="content-layer layer-compact">
-                    <!-- Art 24px left (inside curve) -->
+                    <!-- Art 26px left (inside curve) -->
                     <div class="art-compact" class:paused={!$isPlaying}>
                         {#if albumArt && !imageLoadFailed}
                             <img src={albumArt} alt="Art" decoding="async" on:error={() => (imageLoadFailed = true)} />
                         {:else}
-                            <div class="art-ph"><Icon name="music" size={12} /></div>
+                            <div class="art-ph"><Icon name="music" size={13} /></div>
+                        {/if}
+                    </div>
+
+                    <!-- Two-Line Micro Stack in Middle -->
+                    <div class="compact-stack">
+                        <span class="compact-title" title={$currentTrack?.title || $_('player.noTrack')}>
+                            {$currentTrack?.title || $_('player.noTrack')}
+                        </span>
+                        {#if $currentTrack?.artist}
+                            <span class="compact-artist" title={$currentTrack.artist}>
+                                {$currentTrack.artist}
+                            </span>
                         {/if}
                     </div>
 
@@ -656,17 +668,54 @@
         font-weight: 500;
     }
 
-    /* ── COMPACT STATE (220 × 36, miniplayer.md §7) ────── */
+    /* ── COMPACT STATE (220 × 40, miniplayer.md §7) ────── */
     .layer-compact {
         justify-content: space-between;
-        padding-left: 6px;
+        padding-left: 7px;
         padding-right: 14px;
     }
 
+    /* Two-Line Micro Stack (Compact) */
+    .compact-stack {
+        flex: 1;
+        min-width: 0;
+        margin: 0 10px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 1.5px;
+        pointer-events: none;
+        mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 12px), transparent 100%);
+        -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 calc(100% - 12px), transparent 100%);
+    }
+
+    .compact-title {
+        color: #ffffff;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .compact-artist {
+        color: rgba(255, 255, 255, 0.6);
+        font-size: 10px;
+        font-weight: 500;
+        letter-spacing: -0.005em;
+        line-height: 1.2;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
     .art-compact {
-        width: 24px;
-        height: 24px;
-        border-radius: 6px;
+        width: 26px;
+        height: 26px;
+        border-radius: 7px;
         overflow: hidden;
         flex-shrink: 0;
         background: #1c1c1e;
