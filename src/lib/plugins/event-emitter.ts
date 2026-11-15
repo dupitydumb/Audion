@@ -9,6 +9,7 @@ export interface PluginEvents {
     timeUpdate: { currentTime: number; duration: number };
     queueChange: { queue: any[]; index: number };
     seeked: { currentTime: number; duration: number };
+    queueExhausted: { lastTrack: any | null };
 }
 
 export class EventEmitter<EventMap extends Record<string, any>> {

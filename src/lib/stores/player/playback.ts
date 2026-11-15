@@ -185,6 +185,9 @@ export function syncPlayerQueue(): void {
 
 registerPlayerDirectiveHandler((directive: PlayerDirective) => {
     if (directive.type === 'QueueExhausted') {
+        const lastTrack = get(currentTrack);
+        pluginEvents.emit('queueExhausted', { lastTrack });
+
         // player.rs has no library/DB access
         // so autoplay from library fallback stays here
         const settings = get(appSettings);
@@ -223,19 +226,17 @@ registerPlayerDirectiveHandler((directive: PlayerDirective) => {
         // already committed this transition on its own
         // this is metadata/store sync only
         // dont call playTrack here => would restart audio that's already playing
-        _advanceUiToTrack(track);
-
-        // html5_natural_end: track ended normally, preload may have errored → nothing is playing.
-        // Try swap first (happy path: preload ready), fall back to playTrack if not.
-        // html5_auto_advance: crossfade already committed audio — don't touch it.
         if (get(activeBackend) === 'html5' && reason === 'html5_natural_end') {
             const vol = sliderToAudioVolume(get(volume));
             html5SwapPreload(track.id, vol).then(swapped => {
+                _advanceUiToTrack(track);
                 if (!swapped) {
                     console.log('[Player] Preload swap failed/missing on natural end, falling back to playTrack');
                     playTrack(track).catch(console.error);
                 }
             });
+        } else {
+            _advanceUiToTrack(track);
         }
     }
 });
