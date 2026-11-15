@@ -132,6 +132,15 @@ body {
   -webkit-user-select: none;
 }
 
+/* Island MiniPlayer transparency (miniplayer.md §14.2) */
+html.pip,
+body.pip,
+html:has(.stage),
+body:has(.stage) {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
 /* Re-enable text selection in all input fields — WebView2 on Windows
    does not focus inputs correctly when any ancestor has user-select:none */
 input,

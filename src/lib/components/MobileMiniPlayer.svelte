@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n";
   import { fly } from "svelte/transition";
   import ArtistLinks from "$lib/components/ArtistLinks.svelte";
   import { goToArtistDetail } from "$lib/stores/view";
@@ -58,12 +59,19 @@
   }
 </script>
 
-<!-- svelte-ignore a11y-click-events-have-key-events -->
-<!-- svelte-ignore a11y-no-static-element-interactions -->
 {#if $currentTrack}
   <div
     class="mobile-mini-player"
     on:click={handleOpenPlayer}
+    on:keydown={(e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        handleOpenPlayer();
+      }
+    }}
+    role="button"
+    tabindex="0"
+    aria-label={$_('player.openFullPlayer')}
     transition:fly={{ y: 50, duration: 250 }}
   >
     <!-- Extremely thin progress bar at the top -->
@@ -87,7 +95,7 @@
           {/if}
         </div>
         <div class="track-text">
-          <span class="track-title truncate">{$currentTrack.title || "Unknown Title"}</span>
+          <span class="track-title truncate">{$currentTrack.title || $_('player.unknownTitle')}</span>
           <ArtistLinks
             artist={$currentTrack.artist}
             artists={$currentTrack.artists}
@@ -103,7 +111,7 @@
         <button
           class="control-btn play-pause-btn"
           on:click={handlePlayPause}
-          aria-label={$isPlaying ? "Pause" : "Play"}
+          aria-label={$isPlaying ? $_('common.pause') : $_('common.play')}
         >
           {#if $isPlaying}
             <Icon name="pause" size={20} />
@@ -115,7 +123,7 @@
         <button
           class="control-btn next-btn"
           on:click={handleNext}
-          aria-label="Next track"
+          aria-label={$_('player.next')}
         >
           <Icon name="skip-forward" size={20} />
         </button>
@@ -131,22 +139,32 @@
     left: var(--spacing-sm);
     right: var(--spacing-sm);
     height: 64px;
-    background: rgba(18, 18, 18, 0.75);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: color-mix(in srgb, var(--bg-elevated, #181818) 92%, black);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
     border-radius: var(--radius-lg);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    box-shadow: var(--shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.4));
     z-index: 100;
     overflow: hidden;
     display: flex;
     flex-direction: column;
     justify-content: center;
     transition: background-color var(--transition-normal);
+    cursor: pointer;
+  }
+
+  .mobile-mini-player:hover {
+    background: color-mix(in srgb, var(--bg-surface, #282828) 95%, transparent);
+  }
+
+  .mobile-mini-player:focus-visible {
+    outline: 2px solid var(--accent-primary, #1db954);
+    outline-offset: 2px;
   }
 
   .mobile-mini-player:active {
-    background: rgba(28, 28, 28, 0.85);
+    background: color-mix(in srgb, var(--bg-surface, #282828) 90%, black);
   }
 
   .mini-progress-bar {
@@ -203,7 +221,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--text-secondary);
+    color: var(--text-subdued, #8e8e8e);
   }
 
   .track-text {
@@ -227,7 +245,7 @@
   .mini-controls {
     display: flex;
     align-items: center;
-    gap: var(--spacing-sm);
+    gap: var(--spacing-xs);
     flex-shrink: 0;
   }
 
@@ -235,17 +253,28 @@
     background: none;
     border: none;
     color: var(--text-primary);
-    padding: var(--spacing-xs);
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
     cursor: pointer;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     border-radius: var(--radius-full);
-    transition: transform var(--transition-fast);
+    transition: transform var(--transition-fast), background-color var(--transition-fast);
+  }
+
+  .control-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  .control-btn:focus-visible {
+    outline: 2px solid var(--accent-primary, #1db954);
+    outline-offset: 1px;
   }
 
   .control-btn:active {
-    transform: scale(0.9);
+    transform: scale(0.92);
   }
 
   .truncate {

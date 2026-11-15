@@ -22,6 +22,7 @@
   import { initAndroidNotification } from "$lib/services/android-notification";
   import { initConsoleCapture } from "$lib/services/console-capture";
   import { loadLikedTracks } from "$lib/stores/liked";
+  import { updateTrackCoverPath } from "$lib/stores/library";
   import {
     goBack,
     goToArtistDetail,
@@ -70,6 +71,7 @@
   let migrationAlbums = 0;
   let migrationErrorCount = 0;
   let unlistenGoToArtist: (() => void) | null = null;
+  let unlistenCoverCached: (() => void) | null = null;
   let migrationStatus = "";
   let showMigrationBanner = false;
   let showPermissionBanner = false;
@@ -182,6 +184,22 @@
     })
       .then((unlisten) => {
         unlistenGoToArtist = unlisten;
+      })
+      .catch(() => { });
+
+    // listen for background cover caching events and update cover paths reactively
+    listen<{ trackId: number; coverPath: string }>("track:cover_cached", (event) => {
+      if (event.payload?.trackId && event.payload?.coverPath) {
+        updateTrackCoverPath(event.payload.trackId, event.payload.coverPath);
+        currentTrack.update((t) =>
+          t && t.id === event.payload.trackId
+            ? { ...t, track_cover_path: event.payload.coverPath }
+            : t
+        );
+      }
+    })
+      .then((unlisten) => {
+        unlistenCoverCached = unlisten;
       })
       .catch(() => { });
 
@@ -351,6 +369,10 @@
       unlistenGoToArtist();
     }
 
+    if (unlistenCoverCached) {
+      unlistenCoverCached();
+    }
+
     // Cleanup Android back handler
     cleanupAndroidBackHandler();
 
@@ -375,6 +397,17 @@
     });
   }
 </script>
+
+<svelte:head>
+  {#if $isMiniPlayer}
+    <style>
+      html, body {
+        background: transparent !important;
+        background-color: transparent !important;
+      }
+    </style>
+  {/if}
+</svelte:head>
 
 <!-- Persistent background and effect layers - unconditionally mounted so theme works regardless of i18n load timing -->
 <div
@@ -554,9 +587,11 @@
     padding-bottom: calc(var(--mobile-nav-height, 60px) + 72px + var(--safe-area-bottom, 0px));
   }
 
-  /* PIP mode: no title bar, no padding */
+  /* PIP mode: no title bar, no padding, fully transparent */
   .app-content.pip {
     padding-top: 0;
+    background: transparent !important;
+    background-color: transparent !important;
   }
 
   /* Permission Banner Styles */

@@ -19,10 +19,9 @@ let originalWindowState: {
     y: number;
 } | null = null;
 
-// PIP mode dimensions - floating card size
-const PIP_WIDTH = 400;
-const PIP_HEIGHT = 148;
-const PIP_MARGIN = 16;
+// PIP mode dimensions - Island Mini-Player floating stage (miniplayer.md)
+const PIP_WIDTH = 440;
+const PIP_HEIGHT = 220;
 
 // shared choke point for every isFullScreen mutation
 function prefersReducedMotion(): boolean {
@@ -174,12 +173,10 @@ export async function setMiniPlayer(enable: boolean) {
                 // Remove minimum size constraint temporarily
                 await appWindow.setMinSize(new LogicalSize(PIP_WIDTH, PIP_HEIGHT));
 
-                // Calculate position for bottom-right corner
-                // Get screen dimensions using window.screen (web API)
+                // Calculate position for top-center island (miniplayer.md §10 & §14.3)
                 const screenWidth = window.screen.availWidth;
-                const screenHeight = window.screen.availHeight;
-                const pipX = screenWidth - PIP_WIDTH - PIP_MARGIN;
-                const pipY = screenHeight - PIP_HEIGHT - PIP_MARGIN;
+                const pipX = Math.max(0, Math.round((screenWidth - PIP_WIDTH) / 2));
+                const pipY = 0;
 
                 // ⚠️ Set store BEFORE resizing so isMobile's PIP guard (!$pip)
                 // is already active when the resize happens.

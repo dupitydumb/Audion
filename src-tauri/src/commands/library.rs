@@ -1333,12 +1333,15 @@ pub struct ExternalTrackInput {
 /// Otherwise, construct path as "{source_type}://{external_id}" for uniqueness
 #[tauri::command]
 pub async fn add_external_track(
+    app: tauri::AppHandle,
     track: ExternalTrackInput,
     db: State<'_, Database>,
 ) -> Result<i64, String> {
     use sha2::{Digest, Sha256};
 
     let conn = db.conn.lock().map_err(|e| e.to_string())?;
+
+    let cover_url_opt = track.cover_url.clone();
 
     // Use stream_url as path if provided, otherwise construct from source_type://external_id
     let path = track
@@ -1384,7 +1387,7 @@ pub async fn add_external_track(
         size: None,
     };
 
-    queries::insert_or_update_track(&conn, &track_insert)
+    let track_id = queries::insert_or_update_track(&conn, &track_insert)
         .map(|(track_id, _was_new)| {
             // Enqueue sync change
             if let Ok(Some(track)) = queries::get_track_by_id(&conn, track_id) {
@@ -1392,7 +1395,15 @@ pub async fn add_external_track(
             }
             track_id
         })
-        .map_err(|e| format!("Failed to add external track: {}", e))
+        .map_err(|e| format!("Failed to add external track: {}", e))?;
+
+    if let Some(cover_url) = cover_url_opt {
+        if !cover_url.is_empty() && cover_url.starts_with("http") {
+            crate::commands::covers::spawn_track_cover_cache(app, db.inner().clone(), track_id, cover_url);
+        }
+    }
+
+    Ok(track_id)
 }
 
 /// Reset the database by clearing all data

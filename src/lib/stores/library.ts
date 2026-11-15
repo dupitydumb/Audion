@@ -474,6 +474,34 @@ export function updateTrackCover(trackId: number, coverUrl: string): void {
     fullTrackCache.delete(trackId);
 }
 
+/**
+ * Update a track's local cover file path in the library (metadata, cache, and store)
+ */
+export function updateTrackCoverPath(trackId: number, coverPath: string): void {
+    const metadata = trackMetadataCache.get(trackId);
+    if (metadata) {
+        trackMetadataCache.set(trackId, {
+            ...metadata,
+            track_cover_path: coverPath
+        });
+    }
+
+    tracks.update(current => {
+        const index = current.findIndex(t => t.id === trackId);
+        if (index >= 0) {
+            const updated = [...current];
+            updated[index] = {
+                ...updated[index],
+                track_cover_path: coverPath
+            } as Track;
+            return updated;
+        }
+        return current;
+    });
+
+    fullTrackCache.delete(trackId);
+}
+
 
 /**
  * drop fetched covers for the given tracks from every frontend cache and the library store

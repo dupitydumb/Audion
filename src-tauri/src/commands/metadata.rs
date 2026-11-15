@@ -287,6 +287,7 @@ pub async fn clear_fetched_covers(state: State<'_, Database>) -> Result<Vec<i64>
 
 #[command]
 pub async fn update_track_cover_url(
+    app: tauri::AppHandle,
     state: State<'_, Database>,
     track_id: i64,
     cover_url: Option<String>,
@@ -298,6 +299,12 @@ pub async fn update_track_cover_url(
     // Enqueue sync change
     if let Ok(Some(track)) = db::queries::get_track_by_id(&conn, track_id) {
         let _ = db::queries::enqueue_track_sync_change(&conn, &track, "update");
+    }
+
+    if let Some(ref url) = cover_url {
+        if !url.is_empty() && url.starts_with("http") {
+            crate::commands::covers::spawn_track_cover_cache(app, state.inner().clone(), track_id, url.clone());
+        }
     }
 
     Ok(())
@@ -489,7 +496,7 @@ async fn write_metadata_to_file(
     }
 }
 
-async fn download_cover(url: &str) -> Result<Vec<u8>, String> {
+pub async fn download_cover(url: &str) -> Result<Vec<u8>, String> {
     // Validate URL
     if url.is_empty() || !url.starts_with("http") {
         return Err("Invalid cover URL".to_string());
