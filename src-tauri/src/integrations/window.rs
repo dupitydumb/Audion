@@ -173,7 +173,7 @@ pub fn set_island_window_bounds(
         use std::ffi::c_void;
         use windows::Win32::Foundation::HWND;
         use windows::Win32::Graphics::Dwm::{
-            DwmSetWindowAttribute, DWMNCRP_DISABLED, DWMWA_NCRENDERING_POLICY,
+            DwmSetWindowAttribute, DWMNCRP_USEWINDOWSTYLE, DWMWA_NCRENDERING_POLICY,
         };
         use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
 
@@ -185,7 +185,9 @@ pub fn set_island_window_bounds(
             let hwnd = HWND(h.hwnd.get() as *mut c_void);
 
             unsafe {
-                let policy = DWMNCRP_DISABLED.0;
+                // Restore DWM non-client rendering policy so Windows adheres to the frameless
+                // window style without drawing any legacy non-client title bar or outline.
+                let policy = DWMNCRP_USEWINDOWSTYLE.0;
                 let _ = DwmSetWindowAttribute(
                     hwnd,
                     DWMWA_NCRENDERING_POLICY,

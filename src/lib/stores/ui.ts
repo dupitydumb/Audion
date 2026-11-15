@@ -25,11 +25,11 @@ export type IslandWindowState = 'idle' | 'compact' | 'peek' | 'expanded' | 'hud'
 export const ISLAND_WINDOW_WIDTH = 396;
 
 export const ISLAND_WINDOW_SIZES: Record<IslandWindowState, { w: number; h: number }> = {
-    idle: { w: 140, h: 48 },
-    compact: { w: 236, h: 56 },
-    peek: { w: 316, h: 60 },
-    expanded: { w: 396, h: 180 },
-    hud: { w: 276, h: 60 },
+    idle: { w: ISLAND_WINDOW_WIDTH, h: 48 },
+    compact: { w: ISLAND_WINDOW_WIDTH, h: 56 },
+    peek: { w: ISLAND_WINDOW_WIDTH, h: 60 },
+    expanded: { w: ISLAND_WINDOW_WIDTH, h: 180 },
+    hud: { w: ISLAND_WINDOW_WIDTH, h: 60 },
 };
 
 export async function resizeIslandWindow(state: IslandWindowState): Promise<void> {
@@ -37,16 +37,17 @@ export async function resizeIslandWindow(state: IslandWindowState): Promise<void
     try {
         const target = ISLAND_WINDOW_SIZES[state] || ISLAND_WINDOW_SIZES.compact;
         const screenWidth = window.screen.availWidth;
-        const pipX = Math.max(0, Math.round((screenWidth - target.w) / 2));
+        const pipX = Math.max(0, Math.round((screenWidth - ISLAND_WINDOW_WIDTH) / 2));
         const pipY = 0;
 
-        // Use atomic Rust command for simultaneous resize & reposition (zero desync on Windows + DWM shadow strip)
+        // Keep horizontal width constant to avoid async IPC position desync glitches.
+        // We only expand or collapse height downwards.
         try {
             const { invoke } = await import('@tauri-apps/api/core');
             await invoke('set_island_window_bounds', {
                 x: pipX,
                 y: pipY,
-                width: target.w,
+                width: ISLAND_WINDOW_WIDTH,
                 height: target.h,
             });
             return;
@@ -56,7 +57,7 @@ export async function resizeIslandWindow(state: IslandWindowState): Promise<void
         const { getCurrentWindow, LogicalSize, LogicalPosition } = await import('@tauri-apps/api/window');
         const appWindow = getCurrentWindow();
         await appWindow.setMinSize(new LogicalSize(100, 30));
-        await appWindow.setSize(new LogicalSize(target.w, target.h));
+        await appWindow.setSize(new LogicalSize(ISLAND_WINDOW_WIDTH, target.h));
 
         const currentPos = await appWindow.outerPosition();
         if (Math.abs(currentPos.x - pipX) > 4 || currentPos.y !== pipY) {
