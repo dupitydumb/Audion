@@ -139,6 +139,10 @@ html:has(.stage),
 body:has(.stage) {
   background: transparent !important;
   background-color: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  outline: none !important;
+  overflow: hidden !important;
 }
 
 /* Re-enable text selection in all input fields — WebView2 on Windows

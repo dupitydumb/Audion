@@ -404,6 +404,10 @@
       html, body {
         background: transparent !important;
         background-color: transparent !important;
+        box-shadow: none !important;
+        border: none !important;
+        outline: none !important;
+        overflow: hidden !important;
       }
     </style>
   {/if}

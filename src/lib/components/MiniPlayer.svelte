@@ -5,6 +5,7 @@
         isMiniPlayer,
         toggleMiniPlayer,
         setMiniPlayer,
+        resizeIslandWindow,
     } from "$lib/stores/ui";
     import {
         currentTrack,
@@ -103,13 +104,19 @@
         prevTrackId = $currentTrack?.id ?? null;
     }
 
-    function triggerPeek() {
+    async function triggerPeek() {
         if (state === "expanded") return;
+        await resizeIslandWindow("peek");
         state = "peek";
         if (peekTimer) clearTimeout(peekTimer);
         peekTimer = setTimeout(() => {
             if (state === "peek") {
                 state = "compact";
+                setTimeout(async () => {
+                    if (state === "compact") {
+                        await resizeIslandWindow("compact");
+                    }
+                }, 480);
             }
         }, 2500);
     }
@@ -117,15 +124,22 @@
     // ── HUD Volume Feedback (miniplayer.md §5.11) ────────────
     let hudTimer: ReturnType<typeof setTimeout> | null = null;
 
-    function triggerHud() {
+    async function triggerHud() {
         if (state !== "hud") {
             previousState = state;
         }
+        await resizeIslandWindow("hud");
         state = "hud";
         if (hudTimer) clearTimeout(hudTimer);
         hudTimer = setTimeout(() => {
             if (state === "hud") {
-                state = previousState === "hud" ? "compact" : previousState;
+                const targetState = previousState === "hud" ? "compact" : previousState;
+                state = targetState;
+                setTimeout(async () => {
+                    if (state === targetState) {
+                        await resizeIslandWindow(targetState);
+                    }
+                }, 480);
             }
         }, 1500);
     }
@@ -218,15 +232,35 @@
             : "-0:00";
 
     // ── Window & State Actions ──────────────────────────────
-    function handlePillClick() {
+    async function handlePillClick() {
         if (state === "compact" || state === "peek" || state === "idle") {
-            state = "expanded";
+            await handleExpand();
         }
     }
 
-    function handleCollapse(e?: Event) {
+    async function handleExpand() {
+        if (state === "expanded") return;
+        previousState = state;
+        await resizeIslandWindow("expanded");
+        state = "expanded";
+    }
+
+    async function handleCollapse(e?: Event) {
         if (e) e.stopPropagation();
-        state = $currentTrack ? "compact" : "idle";
+        if (state !== "expanded") return;
+        const targetState = $currentTrack ? "compact" : "idle";
+        state = targetState;
+        setTimeout(async () => {
+            if (state === targetState) {
+                await resizeIslandWindow(targetState);
+            }
+        }, 480);
+    }
+
+    function onWindowBlur() {
+        if (state === "expanded") {
+            handleCollapse();
+        }
     }
 
     async function handleExpandToFull(e?: Event) {
@@ -282,6 +316,7 @@
     }
 
     onMount(() => {
+        resizeIslandWindow(state);
         animFrame = requestAnimationFrame(updateVisualizer);
     });
 
@@ -296,13 +331,18 @@
     on:mousemove={onSeekMove}
     on:mouseup={onSeekUp}
     on:keydown={onWindowKeydown}
+    on:blur={onWindowBlur}
 />
 
 {#if $isMiniPlayer}
-    <!-- Stage: fixed 440 × 220 transparent container (miniplayer.md §10 & §14.2) -->
+    <!-- Stage: transparent window container (miniplayer.md §10 & §14.2) -->
     <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="stage" on:click={handleCollapse}>
+    <div
+        class="stage"
+        class:expanded={state === "expanded"}
+        on:click={handleCollapse}
+    >
         <!-- Island Pill: single pure-black morphing shape (miniplayer.md §1) -->
         <div
             class="pill"
@@ -517,10 +557,10 @@
 {/if}
 
 <style>
-    /* ── STAGE (Fixed 440 × 220 transparent window, miniplayer.md §10 & §14.2) ── */
+    /* ── STAGE (Transparent window container, miniplayer.md §10 & §14.2) ── */
     .stage {
-        width: 440px;
-        height: 220px;
+        width: 100vw;
+        height: 100vh;
         display: flex;
         justify-content: center;
         align-items: flex-start;
@@ -528,7 +568,15 @@
         overflow: hidden;
         position: fixed;
         inset: 0;
-        background: transparent;
+        background: transparent !important;
+        box-shadow: none !important;
+        border: none !important;
+        outline: none !important;
+        pointer-events: none;
+    }
+
+    .stage.expanded {
+        pointer-events: auto;
     }
 
     /* ── THE PILL (Pure black, morphing shape, miniplayer.md §1 & §2) ── */
@@ -540,6 +588,7 @@
         cursor: default;
         box-sizing: border-box;
         box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+        pointer-events: auto;
         will-change: width, height, border-radius, box-shadow, margin-top;
         transition:
             width 480ms cubic-bezier(0.32, 0.72, 0, 1),

@@ -19,9 +19,37 @@ let originalWindowState: {
     y: number;
 } | null = null;
 
-// PIP mode dimensions - Island Mini-Player floating stage (miniplayer.md)
-const PIP_WIDTH = 440;
-const PIP_HEIGHT = 220;
+// PIP mode dimensions - Island Mini-Player floating stage (miniplayer.md §2 & §10)
+export type IslandWindowState = 'idle' | 'compact' | 'peek' | 'expanded' | 'hud';
+
+export const ISLAND_WINDOW_SIZES: Record<IslandWindowState, { w: number; h: number }> = {
+    idle: { w: 136, h: 48 },
+    compact: { w: 236, h: 52 },
+    peek: { w: 316, h: 60 },
+    expanded: { w: 396, h: 180 },
+    hud: { w: 276, h: 60 },
+};
+
+export async function resizeIslandWindow(state: IslandWindowState): Promise<void> {
+    if (!get(isMiniPlayer)) return;
+    try {
+        const { getCurrentWindow, LogicalSize, LogicalPosition } = await import('@tauri-apps/api/window');
+        const appWindow = getCurrentWindow();
+        const target = ISLAND_WINDOW_SIZES[state] || ISLAND_WINDOW_SIZES.compact;
+        const screenWidth = window.screen.availWidth;
+        const pipX = Math.max(0, Math.round((screenWidth - target.w) / 2));
+        const pipY = 0;
+
+        await appWindow.setMinSize(new LogicalSize(100, 30));
+        await appWindow.setSize(new LogicalSize(target.w, target.h));
+        await appWindow.setPosition(new LogicalPosition(pipX, pipY));
+        try {
+            await appWindow.setShadow(false);
+        } catch {}
+    } catch (err) {
+        console.warn('[Island] Failed to resize window for state', state, err);
+    }
+}
 
 // shared choke point for every isFullScreen mutation
 function prefersReducedMotion(): boolean {
@@ -167,15 +195,24 @@ export async function setMiniPlayer(enable: boolean) {
                 // Hide window decorations (title bar) for clean PIP look
                 await appWindow.setDecorations(false);
 
+                // Disable native window shadow to avoid any box shadow around the transparent stage
+                try {
+                    await appWindow.setShadow(false);
+                } catch (e) {
+                    console.warn('[PIP] Failed to disable window shadow:', e);
+                }
+
                 // Disable resizing in PIP mode
                 await appWindow.setResizable(false);
 
-                // Remove minimum size constraint temporarily
-                await appWindow.setMinSize(new LogicalSize(PIP_WIDTH, PIP_HEIGHT));
+                // Allow small dimensions for island states
+                await appWindow.setMinSize(new LogicalSize(100, 30));
 
-                // Calculate position for top-center island (miniplayer.md §10 & §14.3)
+                // Calculate position for top-center compact island
+                const initialWidth = ISLAND_WINDOW_SIZES.compact.w;
+                const initialHeight = ISLAND_WINDOW_SIZES.compact.h;
                 const screenWidth = window.screen.availWidth;
-                const pipX = Math.max(0, Math.round((screenWidth - PIP_WIDTH) / 2));
+                const pipX = Math.max(0, Math.round((screenWidth - initialWidth) / 2));
                 const pipY = 0;
 
                 // ⚠️ Set store BEFORE resizing so isMobile's PIP guard (!$pip)
@@ -183,11 +220,16 @@ export async function setMiniPlayer(enable: boolean) {
                 isMiniPlayer.set(true);
 
                 // Resize and reposition
-                await appWindow.setSize(new LogicalSize(PIP_WIDTH, PIP_HEIGHT));
+                await appWindow.setSize(new LogicalSize(initialWidth, initialHeight));
                 await appWindow.setPosition(new LogicalPosition(pipX, pipY));
             } else {
                 // Exiting PIP mode
                 await appWindow.setAlwaysOnTop(false);
+
+                // Re-enable window shadow
+                try {
+                    await appWindow.setShadow(true);
+                } catch {}
 
                 // Keep native decorations disabled.
                 // The app uses a custom desktop title bar, and enabling native
