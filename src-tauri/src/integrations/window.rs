@@ -158,3 +158,65 @@ pub fn confirm_close_and_close_window(
     confirmed.0.store(true, Ordering::SeqCst);
     window.close().map_err(|e| e.to_string())
 }
+
+#[tauri::command]
+pub fn set_island_window_bounds(
+    window: tauri::WebviewWindow,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+        use std::ffi::c_void;
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::Graphics::Dwm::{
+            DwmSetWindowAttribute, DWMNCRP_DISABLED, DWMWA_NCRENDERING_POLICY,
+        };
+        use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
+
+        let handle = window
+            .window_handle()
+            .map_err(|e| format!("Failed to get raw window handle: {e}"))?;
+
+        if let RawWindowHandle::Win32(h) = handle.as_raw() {
+            let hwnd = HWND(h.hwnd.get() as *mut c_void);
+
+            unsafe {
+                let policy = DWMNCRP_DISABLED.0;
+                let _ = DwmSetWindowAttribute(
+                    hwnd,
+                    DWMWA_NCRENDERING_POLICY,
+                    &policy as *const _ as *const c_void,
+                    std::mem::size_of_val(&policy) as u32,
+                );
+            }
+
+            let scale_factor = window.scale_factor().unwrap_or(1.0);
+            let px = (x as f64 * scale_factor).round() as i32;
+            let py = (y as f64 * scale_factor).round() as i32;
+            let pw = (width as f64 * scale_factor).round() as i32;
+            let ph = (height as f64 * scale_factor).round() as i32;
+
+            unsafe {
+                let _ = SetWindowPos(
+                    hwnd,
+                    None,
+                    px,
+                    py,
+                    pw,
+                    ph,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                );
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = window.set_position(tauri::LogicalPosition::new(x, y));
+        let _ = window.set_size(tauri::LogicalSize::new(width, height));
+    }
+    Ok(())
+}

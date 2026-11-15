@@ -238,11 +238,11 @@
         }
     }
 
-    function handleExpand() {
+    async function handleExpand() {
         if (state === "expanded") return;
         previousState = state;
+        await resizeIslandWindow("expanded");
         state = "expanded";
-        resizeIslandWindow("expanded");
     }
 
     function handleCollapse(e?: Event) {

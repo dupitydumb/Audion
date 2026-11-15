@@ -194,6 +194,7 @@ windows = { version = "0.61.3", features = [
     "Win32_Storage_EnhancedStorage",
     "Win32_Storage_FileSystem",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Dwm",
     "Win32_System_Registry",
     "Win32_Security",
 ] }

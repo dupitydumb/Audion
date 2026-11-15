@@ -1470,6 +1470,7 @@ pub fn run() {
                     integrations::window::set_autostart_enabled,
                     // last visited view (startup page = last-visited)
                     integrations::window::confirm_close,
+                    integrations::window::set_island_window_bounds,
                     get_pending_plugin_install,
                     get_pending_play_track,
                     get_pending_open_file,
