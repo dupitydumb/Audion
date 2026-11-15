@@ -104,17 +104,17 @@
         prevTrackId = $currentTrack?.id ?? null;
     }
 
-    async function triggerPeek() {
+    function triggerPeek() {
         if (state === "expanded") return;
-        await resizeIslandWindow("peek");
         state = "peek";
+        resizeIslandWindow("peek");
         if (peekTimer) clearTimeout(peekTimer);
         peekTimer = setTimeout(() => {
             if (state === "peek") {
                 state = "compact";
-                setTimeout(async () => {
+                setTimeout(() => {
                     if (state === "compact") {
-                        await resizeIslandWindow("compact");
+                        resizeIslandWindow("compact");
                     }
                 }, 480);
             }
@@ -124,20 +124,20 @@
     // ── HUD Volume Feedback (miniplayer.md §5.11) ────────────
     let hudTimer: ReturnType<typeof setTimeout> | null = null;
 
-    async function triggerHud() {
+    function triggerHud() {
         if (state !== "hud") {
             previousState = state;
         }
-        await resizeIslandWindow("hud");
         state = "hud";
+        resizeIslandWindow("hud");
         if (hudTimer) clearTimeout(hudTimer);
         hudTimer = setTimeout(() => {
             if (state === "hud") {
                 const targetState = previousState === "hud" ? "compact" : previousState;
                 state = targetState;
-                setTimeout(async () => {
+                setTimeout(() => {
                     if (state === targetState) {
-                        await resizeIslandWindow(targetState);
+                        resizeIslandWindow(targetState);
                     }
                 }, 480);
             }
@@ -232,27 +232,27 @@
             : "-0:00";
 
     // ── Window & State Actions ──────────────────────────────
-    async function handlePillClick() {
+    function handlePillClick() {
         if (state === "compact" || state === "peek" || state === "idle") {
-            await handleExpand();
+            handleExpand();
         }
     }
 
-    async function handleExpand() {
+    function handleExpand() {
         if (state === "expanded") return;
         previousState = state;
-        await resizeIslandWindow("expanded");
         state = "expanded";
+        resizeIslandWindow("expanded");
     }
 
-    async function handleCollapse(e?: Event) {
+    function handleCollapse(e?: Event) {
         if (e) e.stopPropagation();
         if (state !== "expanded") return;
         const targetState = $currentTrack ? "compact" : "idle";
         state = targetState;
-        setTimeout(async () => {
+        setTimeout(() => {
             if (state === targetState) {
-                await resizeIslandWindow(targetState);
+                resizeIslandWindow(targetState);
             }
         }, 480);
     }
@@ -633,18 +633,16 @@
         display: flex;
         align-items: center;
         box-sizing: border-box;
-        animation: blurScaleEnter 220ms 90ms cubic-bezier(0.32, 0.72, 0, 1) both;
+        animation: contentFadeEnter 180ms cubic-bezier(0.32, 0.72, 0, 1) both;
     }
 
-    @keyframes blurScaleEnter {
+    @keyframes contentFadeEnter {
         from {
             opacity: 0;
-            filter: blur(6px);
-            transform: scale(0.92);
+            transform: scale(0.96);
         }
         to {
             opacity: 1;
-            filter: blur(0);
             transform: scale(1);
         }
     }
