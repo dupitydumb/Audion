@@ -1,6 +1,6 @@
 ## [v1.4.4] - 2026-11-16
 
-### Highlights: Dynamic Island Mini-Player, Notch Mode, Per-ABI Android APKs, Skin Studio Enhancements, and Linux Compatibility
+### Highlights: Dynamic Island Mini-Player, Notch Mode, Per-ABI Android APKs, Skin Studio Enhancements, and Linux Build Verification
 
 ### New Features
 
@@ -30,22 +30,5 @@
 * **Database & Performance**:
   * Improved tracklist performance and resolved layout glitches on mobile screens.
   * Added busy timeout and duplicate merging resilience during audio hash migrations.
-
-### Linux Compatibility
-
-The Linux AppImage release is built on Ubuntu 22.04 (glibc 2.35) for maximum binary compatibility and is smoke-tested in CI across major distributions:
-
-| Distro | Runner / Container | Status |
-|--------|-------------------|--------|
-| Ubuntu 22.04 LTS | `ubuntu:22.04` | ✅ Smoke tested |
-| Ubuntu 24.04 LTS | `ubuntu:24.04` | ✅ Smoke tested |
-| Debian 12 | `debian:12` | ✅ Smoke tested |
-| Kali Rolling | `kalilinux/kali-rolling` | ✅ Smoke tested |
-| Fedora Latest | `fedora:latest` | ✅ Smoke tested |
-| Arch Linux | `archlinux:latest` | ✅ Smoke tested |
-| openSUSE Tumbleweed | `opensuse/tumbleweed` | ✅ Smoke tested |
-
-**Known distribution notes:**
-- **Bazzite / immutable distros with broken EGL**: If you encounter a blank white window, launch with `AUDION_DISABLE_DRI3=1` to force software rendering.
-- **NixOS**: Run with `--no-sandbox` or wrap via `nixpkgs.buildFHSEnv` to resolve AppImage sandbox namespacing conflicts.
-- **Wayland sessions**: Native Wayland is supported; if your session requires XWayland, ensure `xwayland` is installed or launch with `GDK_BACKEND=wayland`.
+* **Linux Compatibility**:
+  * Added automated Linux smoke-test verification and status reporting after release build across supported distributions.
