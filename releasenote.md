@@ -1,28 +1,29 @@
-## [v1.4.3] - 2026-11-08
+## [v1.4.4] - 2026-11-16
 
-### Highlights: YouTube Music Plugin Enhancements, Live Streaming Metadata Persistence, and Rate-Limit Resilience
+### Highlights: Dynamic Island Mini-Player, Notch Mode, Skin Studio Enhancements, and Performance Optimizations
 
 ### New Features
 
-* **YouTube Music Plugin**:
-  * Unified "All" search tab rendering top result hero cards, songs, and albums/playlists.
-  * Interactive subtitle links allowing direct navigation to artist and album pages.
-  * Album and playlist batch saves to local Library.
-  * Automatic duration pre-fetching when saving unplayed search results to Library.
-* **Library Host API**:
-  * Added `library.removeTrack` and `library.deleteTrack` methods to the plugin runtime API.
-  * Added `update_track_duration` Tauri command to persist resolved streaming track durations directly to the SQLite database.
+* **Island Mini-Player & Notch Mode**:
+  * Brand-new Apple Dynamic Island-inspired Mini-Player featuring fluid morphing geometry across compact, peek, HUD volume feedback, and expanded states.
+  * Dual display modes: Floating Island and Top Notch mode with screen anchoring and seamless mode switching.
+  * Two-line micro-stack layout with animated luminous audio visualizer and Dynamic Island transport glyphs.
+  * Native OS-level click-through support using Win32 GDI region masking (`SetWindowRgn`) so areas outside the island pill do not intercept mouse clicks on background apps.
+* **Skin Studio**:
+  * Added custom local skin directory support with built-in default skins and an appearance settings refactor.
+* **Plugin Installation**:
+  * Enhanced plugin install modal displaying full plugin name, author, description, and source repository.
 
 ### Improvements and Bug Fixes
 
-* **Streaming Audio & Player**:
-  * Prevented unplayed external tracks from displaying blank `--:--` durations in library views.
-  * Dynamically updated the `tracks` store and SQLite database when the audio element receives playback duration.
-* **Metadata Extraction**:
-  * Added strict filtering against duration strings, view counts, and content types during track metadata extraction.
-  * Added `findHeaderRenderer` to parse modern YouTube Music responsive headers for album title, artist, and year.
-  * Inherited album artist and playlist owner across track listings when individual row artist runs are omitted.
-* **Network & UI Resilience**:
-  * Added fallback image resolution for palette extraction when `yt3.googleusercontent.com` rate-limits requests.
-  * Silenced palette extraction error cascades on rate-limited cover URLs.
-  * Added thumbnail fallback onerror handlers in plugin templates.
+* **Mini-Player**:
+  * Eliminated faint black/transparent theme background box artifact around the island by hiding background layers in MiniPlayer mode.
+  * Fixed missing toggle icons by registering custom Notch and Floating mode icons.
+  * Resolved horizontal repositioning jumps and outline glitches during island expansion.
+  * Disabled native DWM window shadows in island mode for clean borderless presentation.
+* **Queue & Playback**:
+  * Filled section height for virtualized queue and added element resize observation.
+  * Added `queueExhausted` event handling and prevented premature audio preload eviction on natural track end.
+* **Database & Performance**:
+  * Improved tracklist performance and resolved layout glitches on mobile screens.
+  * Added busy timeout and duplicate merging resilience during audio hash migrations.

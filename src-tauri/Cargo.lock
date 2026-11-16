@@ -412,7 +412,7 @@ dependencies = [
 
 [[package]]
 name = "audion"
-version = "1.4.3"
+version = "1.4.4"
 dependencies = [
  "android_logger",
  "base64 0.22.1",
