@@ -1,6 +1,6 @@
 ## [v1.4.4] - 2026-11-16
 
-### Highlights: Dynamic Island Mini-Player, Notch Mode, Skin Studio Enhancements, and Performance Optimizations
+### Highlights: Dynamic Island Mini-Player, Notch Mode, Per-ABI Android APKs, Skin Studio Enhancements, and Linux Compatibility
 
 ### New Features
 
@@ -9,6 +9,9 @@
   * Dual display modes: Floating Island and Top Notch mode with screen anchoring and seamless mode switching.
   * Two-line micro-stack layout with animated luminous audio visualizer and Dynamic Island transport glyphs.
   * Native OS-level click-through support using Win32 GDI region masking (`SetWindowRgn`) so areas outside the island pill do not intercept mouse clicks on background apps.
+* **Android Per-ABI & Universal APKs**:
+  * Android build pipeline now runs on dedicated parallel runners per ABI to build and publish individual architecture APKs (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`), significantly reducing download and install size for users who know their device hardware.
+  * A combined `universal` Android APK is also generated and published for users who are unsure which architecture their hardware uses.
 * **Skin Studio**:
   * Added custom local skin directory support with built-in default skins and an appearance settings refactor.
 * **Plugin Installation**:
@@ -27,3 +30,22 @@
 * **Database & Performance**:
   * Improved tracklist performance and resolved layout glitches on mobile screens.
   * Added busy timeout and duplicate merging resilience during audio hash migrations.
+
+### Linux Compatibility
+
+The Linux AppImage release is built on Ubuntu 22.04 (glibc 2.35) for maximum binary compatibility and is smoke-tested in CI across major distributions:
+
+| Distro | Runner / Container | Status |
+|--------|-------------------|--------|
+| Ubuntu 22.04 LTS | `ubuntu:22.04` | ✅ Smoke tested |
+| Ubuntu 24.04 LTS | `ubuntu:24.04` | ✅ Smoke tested |
+| Debian 12 | `debian:12` | ✅ Smoke tested |
+| Kali Rolling | `kalilinux/kali-rolling` | ✅ Smoke tested |
+| Fedora Latest | `fedora:latest` | ✅ Smoke tested |
+| Arch Linux | `archlinux:latest` | ✅ Smoke tested |
+| openSUSE Tumbleweed | `opensuse/tumbleweed` | ✅ Smoke tested |
+
+**Known distribution notes:**
+- **Bazzite / immutable distros with broken EGL**: If you encounter a blank white window, launch with `AUDION_DISABLE_DRI3=1` to force software rendering.
+- **NixOS**: Run with `--no-sandbox` or wrap via `nixpkgs.buildFHSEnv` to resolve AppImage sandbox namespacing conflicts.
+- **Wayland sessions**: Native Wayland is supported; if your session requires XWayland, ensure `xwayland` is installed or launch with `GDK_BACKEND=wayland`.
