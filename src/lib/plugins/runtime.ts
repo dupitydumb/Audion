@@ -998,12 +998,25 @@ export class PluginRuntime {
           this.streamResolvers.set(sourceType, resolver);
           this.streamResolverOwners.set(sourceType, pluginName);
           console.log(`[PluginRuntime] Registered stream resolver for '${sourceType}' from plugin '${pluginName}'`);
+
+          // Bridge into globalProviders so resolveTrackStream and v1.5.0 providers know about it
+          if (!globalProviders.getStreamProvider(sourceType)) {
+            globalProviders.registerStreamProvider({
+              id: sourceType,
+              name: `${pluginName} (${sourceType})`,
+              getStream: async (extId: string, quality?: string) => {
+                const url = await resolver(extId, { quality });
+                return url ? { url } : null;
+              }
+            }, pluginName);
+          }
         },
         unregisterResolver: (sourceType: string) => {
           const owner = this.streamResolverOwners.get(sourceType);
           if (owner === pluginName) {
             this.streamResolvers.delete(sourceType);
             this.streamResolverOwners.delete(sourceType);
+            globalProviders.unregisterStreamProvider(sourceType);
           }
         },
         // Register a full StreamProvider

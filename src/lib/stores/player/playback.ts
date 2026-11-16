@@ -350,7 +350,7 @@ export async function playTrack(
     // Scrobble to Subsonic on play start
     if (track.source_type === 'subsonic' && track.external_id) {
         import('$lib/stores/subsonic').then(({ subsonicScrobble }) => {
-            subsonicScrobble(track.external_id!, false).catch(() => {});
+            subsonicScrobble(track.external_id!, false).catch(() => { });
         });
     }
 
@@ -445,6 +445,30 @@ export async function playTrack(
 
         if (!audioPath && track.source_type && track.external_id) {
             audioPath = `${track.source_type}://${track.external_id}`;
+        }
+
+        // Cross-Provider Metadata-to-Stream Handoff:
+        // If track is a catalog track (e.g. from metadata provider with a 30s preview URL or without direct audio stream),
+        // attempt to resolve a full-length audio stream via active StreamProviders!
+        const isPreviewOrCatalog = !track.local_src && (
+            track.source_type === 'itunes' ||
+            track.source_type === 'metadata' ||
+            track.source_type === 'plugin' ||
+            (audioPath && (audioPath.includes('apple.com') || audioPath.includes('itunes') || audioPath.includes('/preview/')))
+        );
+
+        if (isPreviewOrCatalog && globalProviders.getAllStreamProviders().length > 0) {
+            try {
+                console.log(`[Player] Attempting full stream handoff for catalog track: "${track.title}" by "${track.artist}"`);
+                const fullStream = await globalProviders.resolveTrackStream(track as any);
+                if (fullStream && fullStream.isFullStream && fullStream.url) {
+                    audioPath = fullStream.rawBlobUrl || fullStream.url;
+                    (track as any).stream_url = audioPath;
+                    console.log(`[Player] Successfully resolved full-length audio stream (${fullStream.format || 'audio'}, ${fullStream.bitrate || 'adaptive'} bps)`);
+                }
+            } catch (handoffErr) {
+                console.warn('[Player] Stream handoff failed, falling back to original preview/path:', handoffErr);
+            }
         }
 
         const streaming = isStreaming(track) || !!(track as any).stream_url || audioPath.startsWith('http://') || audioPath.startsWith('https://') || audioPath.includes('://');
@@ -830,7 +854,7 @@ export async function seek(position: number, previousPositionOverride?: number):
             updateMediaSessionPosition();
             const seekDirection = targetSecs > previousSecs ? 'forward'
                 : targetSecs < previousSecs ? 'backward'
-                : undefined;
+                    : undefined;
             updateSmtcPlaybackState(get(isPlaying) ? 'playing' : 'paused', { seekDirection });
             broadcastState(true);
             pluginEvents.emit('seeked', { currentTime: targetSecs, duration: dur });

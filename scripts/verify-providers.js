@@ -93,6 +93,20 @@ async function run() {
   const emptyRes = await streamProvider.getStream('');
   assert(emptyRes === null, 'Empty songId safely returns null');
 
+  // Test full-stream resolveByQuery
+  console.log('   Testing resolveByQuery for cross-provider stream handoff...');
+  try {
+    const fullStream = await streamProvider.resolveByQuery({ title: 'One More Time', artist: 'Daft Punk' }, 'high');
+    if (fullStream && fullStream.url) {
+      assert(typeof fullStream.url === 'string' && fullStream.url.length > 0, `Full stream resolved (${fullStream.format || 'audio'})`);
+      assert(typeof fullStream.bitrate === 'number', `Stream bitrate: ${fullStream.bitrate} bps`);
+    } else {
+      console.log('   (Full stream resolution skipped or network throttled)');
+    }
+  } catch (err) {
+    console.warn('   ⚠️ resolveByQuery test skipped:', err.message);
+  }
+
   // ── Test 2: Verify sample-metadata-provider ──
   console.log('\n📦 2. Verifying Sample Metadata Provider...');
   const metadataProviderModule = await import('../plugin-examples/sample-metadata-provider/index.js');

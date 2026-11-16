@@ -15,6 +15,7 @@ export interface StreamProvider {
     version?: string;
     description?: string;
     getStream(songId: string, quality?: string): Promise<StreamSourceResult | string | null>;
+    resolveByQuery?(track: { title: string; artist?: string; album?: string; duration?: number } | string, quality?: string): Promise<StreamSourceResult | string | null>;
 }
 
 export interface MetadataTrackItem {
@@ -144,6 +145,71 @@ export class ProviderRegistry {
         }
     }
 
+    /**
+     * Resolves an audio stream for a track, bridging catalog/metadata items
+     * to full-length audio from active StreamProviders with fallback to 30-second previews.
+     */
+    async resolveTrackStream(
+        track: {
+            title: string;
+            artist?: string | null;
+            album?: string | null;
+            duration?: number | null;
+            source_type?: string | null;
+            external_id?: string | null;
+            preview_url?: string | null;
+            path?: string | null;
+        },
+        quality?: string
+    ): Promise<{ url: string; format?: string; bitrate?: number; headers?: Record<string, string>; rawBlobUrl?: string; isFullStream: boolean } | null> {
+        // 1. If direct provider is registered for this source_type, try direct getStream
+        if (track.source_type && track.external_id) {
+            const provider = this.getStreamProvider(track.source_type);
+            if (provider) {
+                const res = await this.resolveStream(track.source_type, track.external_id, quality);
+                if (res) {
+                    return { ...res, isFullStream: true };
+                }
+            }
+        }
+
+        // 2. Query active StreamProviders for full-length audio stream by title + artist
+        const streamProviders = this.getAllStreamProviders();
+        for (const sp of streamProviders) {
+            try {
+                if (typeof sp.resolveByQuery === 'function') {
+                    const full = await sp.resolveByQuery({
+                        title: track.title,
+                        artist: track.artist || undefined,
+                        album: track.album || undefined,
+                        duration: track.duration || undefined
+                    }, quality);
+                    if (full) {
+                        const formatted = typeof full === 'string' ? { url: full } : full;
+                        return { ...formatted, isFullStream: true };
+                    }
+                } else {
+                    const queryStr = `query:${track.title} ${track.artist || ''}`.trim();
+                    const full = await sp.getStream(queryStr, quality);
+                    if (full) {
+                        const formatted = typeof full === 'string' ? { url: full } : full;
+                        return { ...formatted, isFullStream: true };
+                    }
+                }
+            } catch (err) {
+                console.warn(`[ProviderRegistry] StreamProvider '${sp.id}' query resolution failed:`, err);
+            }
+        }
+
+        // 3. Fallback to 30-second preview if available
+        const preview = track.preview_url || (track.path && (track.path.startsWith('http://') || track.path.startsWith('https://')) ? track.path : null);
+        if (preview) {
+            return { url: preview, isFullStream: false };
+        }
+
+        return null;
+    }
+
     // ── Metadata Providers ──
     registerMetadataProvider(provider: MetadataProvider, ownerPlugin: string = 'system'): void {
         this.metadataProviders.set(provider.id, provider);
@@ -256,6 +322,8 @@ if (typeof window !== 'undefined') {
                 globalProviders.resolveStream(providerId, songId, quality),
             resolveStream: (providerId: string, songId: string, quality?: string) =>
                 globalProviders.resolveStream(providerId, songId, quality),
+            resolveTrackStream: (track: any, quality?: string) =>
+                globalProviders.resolveTrackStream(track, quality),
             getAll: () => globalProviders.getAllStreamProviders(),
             get: (id: string) => globalProviders.getStreamProvider(id)
         },
