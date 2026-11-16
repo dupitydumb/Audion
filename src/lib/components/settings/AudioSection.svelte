@@ -338,6 +338,45 @@
           on:change={(e) => handleToggleLimiter(e.detail)}
         />
       </SettingRow>
+
+      <!-- 5b. Skip Silence (Intro/Outro RMS Dead-Air Trimming) -->
+      <SettingRow
+        id="setting-skip-silence"
+        label="Skip Silence"
+        description="Automatically trims dead-air intro and outro silence (< -60 dBFS RMS) preserving artistic mid-song pauses."
+      >
+        <SettingToggle
+          checked={$appSettings.skipSilence}
+          label="Toggle Skip Silence"
+          on:change={(e) => appSettings.setSkipSilence(e.detail)}
+        />
+      </SettingRow>
+
+      <!-- 5c. Automix (Frequency-Selective Bass Handoff) -->
+      <SettingRow
+        id="setting-automix"
+        label="Automix (Smart Bass Handoff)"
+        description="Frequency-selective transition that swaps sub-bass (< 150 Hz) at midpoint to eliminate muddy low-end clash during crossfades."
+      >
+        <SettingToggle
+          checked={$appSettings.automixEnabled}
+          label="Toggle Automix Bass Handoff"
+          on:change={(e) => appSettings.setAutomix(e.detail)}
+        />
+      </SettingRow>
+
+      <!-- 5d. Exclusive Mode (Bit-Perfect DAC Output) -->
+      <SettingRow
+        id="setting-exclusive-mode"
+        label="Exclusive Mode (Bit-Perfect DAC Output)"
+        description="Direct hardware control via WASAPI/ALSA for bit-perfect output, bypassing OS mixing. Automatically releases audio hardware on pause or idle so other apps can play sound."
+      >
+        <SettingToggle
+          checked={$appSettings.exclusiveMode}
+          label="Toggle Exclusive Mode"
+          on:change={(e) => appSettings.setExclusiveMode(e.detail)}
+        />
+      </SettingRow>
     {/if}
 
     <!-- 6. Equalizer -->

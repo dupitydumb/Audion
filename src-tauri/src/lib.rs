@@ -264,6 +264,29 @@ fn handle_deep_link_url(app_handle: &tauri::AppHandle, url_str: &str) {
         return;
     }
 
+    // audion://lastfm-callback?token=... or audion://lastfm/callback?token=...
+    if url.host_str() == Some("lastfm-callback")
+        || (url.host_str() == Some("lastfm") && url.path().trim_matches('/') == "callback")
+    {
+        let mut token_opt = None;
+        for (key, value) in url.query_pairs() {
+            if key == "token" {
+                token_opt = Some(value.into_owned());
+            }
+        }
+        if let Some(token) = token_opt {
+            tracing::info!("Deep link: Last.fm auth token received");
+            let _ = app_handle.emit("lastfm://auth-callback", token);
+            #[cfg(not(target_os = "android"))]
+            if let Some(window) = app_handle.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }
+        return;
+    }
+
     // audion://play/<track_id> => emitted by jump list entries
     if url.host_str() == Some("play") {
         let track_id = url.path().trim_start_matches('/');
@@ -1350,6 +1373,13 @@ pub fn run() {
                     commands::verify_listenbrainz_token,
                     commands::submit_listenbrainz_listen,
                     commands::fetch_listenbrainz_recommendations,
+                    // Last.fm commands
+                    commands::get_lastfm_auth_url,
+                    commands::complete_lastfm_auth,
+                    commands::get_lastfm_status,
+                    commands::disconnect_lastfm,
+                    commands::submit_lastfm_now_playing,
+                    commands::submit_lastfm_scrobble,
                     // Subsonic commands
                     commands::subsonic_save_config,
                     commands::subsonic_get_config,
@@ -1441,6 +1471,10 @@ pub fn run() {
                     audio::audio_list_output_devices,
                     audio::audio_set_output_device,
                     audio::audio_get_device_info,
+                    audio::audio_get_telemetry,
+                    audio::audio_set_skip_silence,
+                    audio::audio_set_automix,
+                    audio::audio_set_exclusive_mode,
                     audio::native_audio_available,
                     audio::audio_resolve_path,
                     audio::audio_get_stream_url,
@@ -1611,6 +1645,13 @@ pub fn run() {
                     commands::verify_listenbrainz_token,
                     commands::submit_listenbrainz_listen,
                     commands::fetch_listenbrainz_recommendations,
+                    // Last.fm commands
+                    commands::get_lastfm_auth_url,
+                    commands::complete_lastfm_auth,
+                    commands::get_lastfm_status,
+                    commands::disconnect_lastfm,
+                    commands::submit_lastfm_now_playing,
+                    commands::submit_lastfm_scrobble,
                     // Subsonic commands
                     commands::subsonic_save_config,
                     commands::subsonic_get_config,
@@ -1688,6 +1729,10 @@ pub fn run() {
                     audio::audio_list_output_devices,
                     audio::audio_set_output_device,
                     audio::audio_get_device_info,
+                    audio::audio_get_telemetry,
+                    audio::audio_set_skip_silence,
+                    audio::audio_set_automix,
+                    audio::audio_set_exclusive_mode,
                     audio::native_audio_available,
                     audio::audio_resolve_path,
                     audio::audio_get_stream_url,

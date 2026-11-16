@@ -36,10 +36,12 @@
     isQueueVisible,
     contextMenu,
     isMiniPlayer,
+    isStatsForNerdsOpen,
   } from "$lib/stores/ui";
   import { pluginStore } from "$lib/stores/plugin-store";
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
   import PromptDialog from "$lib/components/PromptDialog.svelte";
+  import StatsForNerdsModal from "$lib/components/StatsForNerdsModal.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
   import LinuxResizeHandles from "$lib/components/LinuxResizeHandles.svelte";
   import ProgressiveScanStatus from "$lib/components/ProgressiveScanStatus.svelte";
@@ -442,6 +444,7 @@
 <SyncProgressOverlay />
 <LoginModal />
 <SkinStudioModal />
+<StatsForNerdsModal open={$isStatsForNerdsOpen} onClose={() => isStatsForNerdsOpen.set(false)} />
 
 {#if showMigrationBanner}
   <div class="migration-banner">

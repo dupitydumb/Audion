@@ -10,6 +10,7 @@ let transitionStart = 0;
 const TRANSITION_MS = 600;
 
 let speed = 1;
+let baseSpeed = 1;
 let elapsed = 0; // accumulated virtual time, decoupled from speed changes
 let lastRaf = 0;
 let paused = false;
@@ -101,7 +102,10 @@ self.onmessage = (e: MessageEvent) => {
     targetColors = (e.data.colors as string[]).map(hexToRgb);
     transitionStart = performance.now();
   } else if (e.data.type === "settings") {
-    if (typeof e.data.speed === "number") speed = e.data.speed;
+    if (typeof e.data.speed === "number") {
+      baseSpeed = e.data.speed;
+      speed = baseSpeed;
+    }
     if (typeof e.data.spread === "number") spread = e.data.spread;
     if (typeof e.data.sharpness === "number") sharpness = e.data.sharpness;
     if (typeof e.data.quality === "number" && e.data.quality !== SIZE) {
@@ -118,6 +122,10 @@ self.onmessage = (e: MessageEvent) => {
       } else {
         cancelAnimationFrame(rafHandle);
       }
+    }
+  } else if (e.data.type === "playback") {
+    if (typeof e.data.playing === "boolean") {
+      speed = e.data.playing ? baseSpeed : baseSpeed * 0.15;
     }
   }
 };

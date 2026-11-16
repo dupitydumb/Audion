@@ -1277,6 +1277,91 @@ export async function fetchListenbrainzRecommendations(limit = 50): Promise<LbRe
 }
 
 // =============================================================================
+// LAST.FM
+// =============================================================================
+
+export interface LastFmStatus {
+    connected: boolean;
+    username: string | null;
+}
+
+/** Get the browser authorization URL for Last.fm web authentication. */
+export async function getLastfmAuthUrl(): Promise<string> {
+    return await invoke('get_lastfm_auth_url');
+}
+
+/** Complete authorization by exchanging auth token for session key. Returns username. */
+export async function completeLastfmAuth(token: string): Promise<string> {
+    return await invoke('complete_lastfm_auth', { token });
+}
+
+/** Get current Last.fm connection status. */
+export async function getLastfmStatus(): Promise<LastFmStatus> {
+    return await invoke('get_lastfm_status');
+}
+
+/** Disconnect Last.fm session. */
+export async function disconnectLastfm(): Promise<void> {
+    return await invoke('disconnect_lastfm');
+}
+
+/** Submit currently playing track to Last.fm. */
+export async function submitLastfmNowPlaying(
+    artist: string,
+    title: string,
+    album?: string | null,
+    durationSecs?: number | null,
+): Promise<void> {
+    return await invoke('submit_lastfm_now_playing', {
+        artist,
+        title,
+        album: album ?? null,
+        durationSecs: durationSecs ?? null,
+    });
+}
+
+/** Submit a scrobble to Last.fm. */
+export async function submitLastfmScrobble(
+    artist: string,
+    title: string,
+    album?: string | null,
+    durationSecs?: number | null,
+    timestamp?: number | null,
+): Promise<void> {
+    return await invoke('submit_lastfm_scrobble', {
+        artist,
+        title,
+        album: album ?? null,
+        durationSecs: durationSecs ?? null,
+        timestamp: timestamp ?? null,
+    });
+}
+
+// =============================================================================
+// AUDIO TELEMETRY ("Stats for Nerds")
+// =============================================================================
+
+export interface AudioTelemetry {
+    path: string | null;
+    codec: string;
+    bit_depth: number | null;
+    sample_rate: number;
+    channels: number;
+    device_sample_rate: number;
+    device_channels: number;
+    resampler_active: boolean;
+    output_device: string;
+    replay_gain_db: number | null;
+    limiter_enabled: boolean;
+    exclusive_mode?: boolean;
+}
+
+/** Get live audio engine telemetry. */
+export async function getAudioTelemetry(): Promise<AudioTelemetry> {
+    return await invoke('audio_get_telemetry');
+}
+
+// =============================================================================
 // MUSICBRAINZ
 // =============================================================================
 

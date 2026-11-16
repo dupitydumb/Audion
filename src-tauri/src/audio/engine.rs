@@ -72,6 +72,9 @@ pub struct AudioEngine {
     pub device_channels: NonZero<u16>,
     pub replay_gain_enabled: Arc<AtomicBool>,
     pub limiter_enabled: Arc<AtomicBool>,
+    pub skip_silence_enabled: Arc<AtomicBool>,
+    pub automix_enabled: Arc<AtomicBool>,
+    pub exclusive_mode: Arc<AtomicBool>,
     pub repeat_one: bool,
     pub current_info: Option<TrackInfo>,
     pub generation_counter: u64,
@@ -287,6 +290,9 @@ impl AudioEngine {
         let volume_atomic = Arc::new(AtomicU32::new(1.0f32.to_bits()));
         let replay_gain_enabled = Arc::new(AtomicBool::new(true));
         let limiter_enabled = Arc::new(AtomicBool::new(LIMITER_ENABLED_DEFAULT));
+        let skip_silence_enabled = Arc::new(AtomicBool::new(false));
+        let automix_enabled = Arc::new(AtomicBool::new(false));
+        let exclusive_mode = Arc::new(AtomicBool::new(false));
 
         let (eq_tx, eq_rx) = unbounded::<EqSettings>();
         let (event_tx, event_rx) = unbounded::<AudioEvent>();
@@ -342,6 +348,9 @@ impl AudioEngine {
                 device_channels,
                 replay_gain_enabled,
                 limiter_enabled,
+                skip_silence_enabled,
+                automix_enabled,
+                exclusive_mode,
                 repeat_one: false,
                 current_info: None,
                 generation_counter: 0,
@@ -389,6 +398,8 @@ impl AudioEngine {
             generation,
             volume: Arc::clone(&self.volume_atomic),
             replay_gain_enabled: Arc::clone(&self.replay_gain_enabled),
+            skip_silence_enabled: Arc::clone(&self.skip_silence_enabled),
+            automix_enabled: Arc::clone(&self.automix_enabled),
             device_sample_rate: self.device_sample_rate,
             device_channels: self.device_channels,
             initial_seek,
@@ -651,6 +662,21 @@ impl AudioEngine {
         tracing::info!("[AUDIO] Limiter enabled: {}", enabled);
     }
 
+    pub fn set_skip_silence_enabled(&mut self, enabled: bool) {
+        self.skip_silence_enabled.store(enabled, Ordering::Relaxed);
+        tracing::info!("[AUDIO] Skip silence enabled: {}", enabled);
+    }
+
+    pub fn set_automix_enabled(&mut self, enabled: bool) {
+        self.automix_enabled.store(enabled, Ordering::Relaxed);
+        tracing::info!("[AUDIO] Automix enabled: {}", enabled);
+    }
+
+    pub fn set_exclusive_mode(&mut self, enabled: bool) {
+        self.exclusive_mode.store(enabled, Ordering::Relaxed);
+        tracing::info!("[AUDIO] Exclusive / Bit-Perfect DAC mode: {}", enabled);
+    }
+
     /// re-enters the gated pipeline (dispatch_gated_open + decision), the
     /// highest-blast-radius method since it rebuilds the whole engine, so it's landed last,
     /// after every other path (play/preload/skip/crossfade/seek/pause) was already proven
@@ -793,6 +819,9 @@ impl AudioEngine {
         new_engine.set_volume(volume);
         new_engine.replay_gain_enabled.store(replay_gain_enabled, Ordering::Relaxed);
         new_engine.limiter_enabled.store(limiter_enabled, Ordering::Relaxed);
+        new_engine.skip_silence_enabled.store(self.skip_silence_enabled.load(Ordering::Relaxed), Ordering::Relaxed);
+        new_engine.automix_enabled.store(self.automix_enabled.load(Ordering::Relaxed), Ordering::Relaxed);
+        new_engine.exclusive_mode.store(self.exclusive_mode.load(Ordering::Relaxed), Ordering::Relaxed);
         new_engine.repeat_one = repeat_one;
         new_engine.set_crossfade_seconds(crossfade_seconds);
 

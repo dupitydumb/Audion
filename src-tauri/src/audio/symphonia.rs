@@ -492,6 +492,10 @@ pub struct SymphoniaSource {
     pub event_tx: Sender<AudioEvent>,
     pub generation: u64,
     pub use_coarse_seek: bool,
+    pub codec_name: String,
+    pub bits_per_sample: Option<u16>,
+    pub skip_silence_enabled: Arc<AtomicBool>,
+    pub intro_silence_trimmed: bool,
 }
 
 impl SymphoniaSource {
@@ -504,6 +508,7 @@ impl SymphoniaSource {
         generation: u64,
         volume: Arc<AtomicU32>,
         replay_gain_enabled: Arc<AtomicBool>,
+        skip_silence_enabled: Arc<AtomicBool>,
         device_channels: NonZero<u16>,
     ) -> Result<Self, String> {
         let file = File::open(path).map_err(|e| format!("Failed to open {}: {}", path, e))?;
@@ -537,6 +542,22 @@ impl SymphoniaSource {
         let decoder = symphonia::default::get_codecs()
             .make_audio_decoder(audio_params, &AudioDecoderOptions::default())
             .map_err(|e| format!("Failed to create decoder for {}: {}", path, e))?;
+
+        let codec_name = std::path::Path::new(path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(|s| match s.to_ascii_lowercase().as_str() {
+                "flac" => "FLAC".to_string(),
+                "mp3" => "MP3".to_string(),
+                "m4a" | "aac" => "AAC / ALAC".to_string(),
+                "ogg" | "oga" => "Ogg Vorbis".to_string(),
+                "opus" => "Opus".to_string(),
+                "wav" => "WAV / PCM".to_string(),
+                "aif" | "aiff" => "AIFF".to_string(),
+                other => other.to_uppercase(),
+            })
+            .unwrap_or_else(|| "Audio".to_string());
+        let bits_per_sample = audio_params.bits_per_sample.map(|b| b as u16);
 
         let replay_gain = resolve_replay_gain(replay_gain_db, &mut format);
 
@@ -575,10 +596,15 @@ impl SymphoniaSource {
             event_tx,
             generation,
             use_coarse_seek,
+            codec_name,
+            bits_per_sample,
+            skip_silence_enabled,
+            intro_silence_trimmed: false,
         })
     }
 
     pub fn seek(&mut self, pos: Duration) {
+        self.intro_silence_trimmed = true;
         let secs = pos.as_secs_f64();
         let Some(time) = symphonia::core::units::Time::try_from_secs_f64(secs) else {
             tracing::warn!("[AUDIO] seek: invalid position {:?}", pos);
@@ -628,6 +654,28 @@ impl SymphoniaSource {
                     let dst_ch = self.channels.get();
                     if decoded_ch != dst_ch {
                         channel_map(buf, decoded_ch, dst_ch);
+                    }
+
+                    if self.skip_silence_enabled.load(Ordering::Relaxed) && !self.intro_silence_trimmed {
+                        const SILENCE_THRESH: f32 = 0.001; // -60 dBFS
+                        let mut first_audible_idx = None;
+                        let ch_usize = dst_ch as usize;
+
+                        for (i, &s) in buf.iter().enumerate() {
+                            if s.abs() >= SILENCE_THRESH {
+                                first_audible_idx = Some(i - (i % ch_usize));
+                                break;
+                            }
+                        }
+
+                        if let Some(audible_idx) = first_audible_idx {
+                            self.intro_silence_trimmed = true;
+                            self.sample_pos = audible_idx;
+                            return true;
+                        } else {
+                            // Entire buffer is silence during intro; skip to next packet
+                            continue;
+                        }
                     }
 
                     self.sample_pos = 0;

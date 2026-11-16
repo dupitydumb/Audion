@@ -27,6 +27,7 @@
         toggleFullScreen,
         isFullScreen,
         isQueueVisible,
+        isStatsForNerdsOpen,
     } from "$lib/stores/ui";
     import {
         isInputElement,
@@ -232,6 +233,13 @@
             if (e.key === "Escape") {
                 (e.target as HTMLElement).blur();
             }
+            return;
+        }
+
+        // Toggle Stats for Nerds HUD (Ctrl+I or Cmd+I)
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "i") {
+            e.preventDefault();
+            isStatsForNerdsOpen.update(v => !v);
             return;
         }
 

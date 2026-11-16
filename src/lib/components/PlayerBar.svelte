@@ -53,6 +53,12 @@
     import AudioVisualizer from "$lib/components/AudioVisualizer.svelte";
     import { theme } from "$lib/stores/theme";
     import { wsStore } from "$lib/stores/websocket";
+    import { appSettings } from "$lib/stores/settings";
+    import {
+        nativeAudioListDevices,
+        nativeAudioSetOutputDevice,
+        type AudioDeviceInfo,
+    } from "$lib/services/native-audio";
 
     $: isCurrentLiked = $currentTrack
         ? $likedTrackIds.has($currentTrack.id)
@@ -77,6 +83,34 @@
     let showConnectPanel = false;
     let showSleepTimerMenu = false;
     let sleepTimerElement: HTMLDivElement;
+
+    // Audio Output Device Picker
+    let showDevicePicker = false;
+    let devicePickerRef: HTMLDivElement | null = null;
+    let audioDevices: AudioDeviceInfo[] = [];
+
+    async function toggleDevicePicker(e: MouseEvent) {
+        e.stopPropagation();
+        showDevicePicker = !showDevicePicker;
+        if (showDevicePicker) {
+            try {
+                const res = await nativeAudioListDevices();
+                audioDevices = res.devices || [];
+            } catch (err) {
+                console.warn("[PlayerBar] Failed to enumerate audio devices:", err);
+            }
+        }
+    }
+
+    async function selectDevice(deviceId: string | null) {
+        try {
+            await nativeAudioSetOutputDevice(deviceId);
+            appSettings.setOutputDevice(deviceId);
+        } catch (err) {
+            console.warn("[PlayerBar] Failed to switch output device:", err);
+        }
+        showDevicePicker = false;
+    }
 
     $: connectedDevices = $wsStore.devices.length;
 
@@ -263,6 +297,13 @@
                 !sleepTimerElement.contains(e.target as Node)
             ) {
                 showSleepTimerMenu = false;
+            }
+            if (
+                showDevicePicker &&
+                devicePickerRef &&
+                !devicePickerRef.contains(e.target as Node)
+            ) {
+                showDevicePicker = false;
             }
         };
 
@@ -595,6 +636,53 @@
                     </div>
                     <div class="volume-thumb" style="left: {$volume * 100}%"></div>
                 </div>
+            </div>
+
+            <!-- Audio Output Device Selector Pill -->
+            <div class="device-picker-wrapper" bind:this={devicePickerRef}>
+                <button
+                    class="icon-btn device-picker-btn"
+                    class:active={showDevicePicker || !!$appSettings.outputDevice}
+                    on:click={toggleDevicePicker}
+                    title="Audio Output Device"
+                    aria-label="Audio Output Device"
+                >
+                    <Icon name="headphones" size={18} />
+                </button>
+
+                {#if showDevicePicker}
+                    <div class="device-picker-menu" on:click|stopPropagation>
+                        <div class="device-menu-header">Output Device</div>
+                        <button
+                            class="device-option"
+                            class:active={!$appSettings.outputDevice}
+                            on:click={() => selectDevice(null)}
+                        >
+                            <span class="device-option-name">System Default</span>
+                            {#if !$appSettings.outputDevice}
+                                <Icon name="check" size={14} />
+                            {/if}
+                        </button>
+                        <div class="device-divider"></div>
+                        {#each audioDevices as dev}
+                            <button
+                                class="device-option"
+                                class:active={$appSettings.outputDevice === dev.id}
+                                on:click={() => selectDevice(dev.id)}
+                            >
+                                <div class="device-option-text">
+                                    <span class="device-option-name truncate" title={dev.name}>{dev.name}</span>
+                                    {#if dev.is_default}
+                                        <span class="device-badge">Default</span>
+                                    {/if}
+                                </div>
+                                {#if $appSettings.outputDevice === dev.id}
+                                    <Icon name="check" size={14} />
+                                {/if}
+                            </button>
+                        {/each}
+                    </div>
+                {/if}
             </div>
 
             <div class="view-controls">
@@ -1234,6 +1322,95 @@
         width: 96px;
         flex-shrink: 1;
         min-width: 60px;
+    }
+
+    /* Output Device Picker */
+    .device-picker-wrapper {
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+
+    .device-picker-menu {
+        position: absolute;
+        right: 0;
+        bottom: calc(100% + 10px);
+        width: 240px;
+        max-height: 280px;
+        overflow-y: auto;
+        padding: 8px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-color);
+        background: var(--bg-elevated);
+        box-shadow: var(--shadow-lg);
+        z-index: 60;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .device-menu-header {
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-semibold);
+        color: var(--text-subdued);
+        padding: 4px 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .device-divider {
+        height: 1px;
+        background: var(--border-color);
+        margin: 4px 0;
+    }
+
+    .device-option {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 10px;
+        background: transparent;
+        border: none;
+        border-radius: var(--radius-sm);
+        color: var(--text-secondary);
+        font-size: var(--font-size-xs);
+        cursor: pointer;
+        transition: all var(--transition-fast);
+        text-align: left;
+        width: 100%;
+        gap: 8px;
+    }
+
+    .device-option:hover {
+        background: var(--bg-surface);
+        color: var(--text-primary);
+    }
+
+    .device-option.active {
+        background: var(--bg-surface);
+        color: var(--accent-primary, #1ed760);
+        font-weight: var(--font-weight-medium);
+    }
+
+    .device-option-text {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        flex: 1;
+    }
+
+    .device-option-name {
+        flex: 1;
+    }
+
+    .device-badge {
+        font-size: 9px;
+        padding: 1px 4px;
+        border-radius: 4px;
+        background: var(--bg-card);
+        color: var(--text-subdued);
+        border: 1px solid var(--border-color);
     }
 
     .plugin-slot {

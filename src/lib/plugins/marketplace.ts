@@ -12,7 +12,27 @@ export interface MarketplacePlugin {
   downloads?: number;
   verified?: boolean;
   lastUpdated?: string;
+  sha256?: string;
+  registryName?: string;
 }
+
+export interface CommunityRegistry {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  isDefault?: boolean;
+}
+
+export const DEFAULT_REGISTRIES: CommunityRegistry[] = [
+  {
+    id: 'official',
+    name: 'Official Audion Registry',
+    url: 'https://raw.githubusercontent.com/dupitydumb/audion-plugins/main/registry/main/registry.json',
+    enabled: true,
+    isDefault: true,
+  },
+];
 
 export interface RegistryData {
   version: string;
@@ -184,6 +204,57 @@ async function fetchWithProxy<T>(url: string): Promise<T> {
   return proxyFetch<T>(url);
 }
 
+// Fetch plugins from a single registry endpoint
+export async function fetchRegistry(registry: CommunityRegistry): Promise<MarketplacePlugin[]> {
+  if (!registry.enabled || !isValidUrl(registry.url)) return [];
+
+  try {
+    const noCacheUrl = `${registry.url}?t=${Date.now()}`;
+    const data: RegistryData = await fetchWithProxy<RegistryData>(noCacheUrl);
+
+    if (!data || !Array.isArray(data.plugins)) {
+      console.warn(`[Marketplace] Registry ${registry.name} returned invalid format`);
+      return [];
+    }
+
+    const validManifests = validateManifests(data.plugins.map((p) => p.manifest));
+    return data.plugins
+      .filter((p) => validManifests.includes(p.manifest as AudionPluginManifest))
+      .map((p) => ({
+        ...p,
+        curated: !!registry.isDefault,
+        registryName: registry.name,
+      }));
+  } catch (err) {
+    console.warn(`[Marketplace] Failed to fetch registry '${registry.name}' from ${registry.url}:`, err);
+    return [];
+  }
+}
+
+// Fetch and merge plugins from multiple registries
+export async function fetchAllRegistries(registries: CommunityRegistry[]): Promise<MarketplacePlugin[]> {
+  const active = registries.filter((r) => r.enabled);
+  if (active.length === 0) return [];
+
+  const results = await Promise.allSettled(active.map((reg) => fetchRegistry(reg)));
+  const merged: MarketplacePlugin[] = [];
+  const seenRepos = new Set<string>();
+
+  for (const res of results) {
+    if (res.status === 'fulfilled') {
+      for (const plugin of res.value) {
+        const key = plugin.manifest.name || plugin.repo;
+        if (!seenRepos.has(key)) {
+          seenRepos.add(key);
+          merged.push(plugin);
+        }
+      }
+    }
+  }
+
+  return merged;
+}
+
 // Fetch curated registry
 export async function fetchCuratedRegistry(): Promise<MarketplacePlugin[]> {
   // Try local registry first (for development)
@@ -308,15 +379,23 @@ export async function fetchCommunityPlugin(url: string): Promise<MarketplacePlug
 }
 
 // Fetch all marketplace plugins
-export async function fetchMarketplacePlugins(communityUrls: string[] = []): Promise<MarketplacePlugin[]> {
+export async function fetchMarketplacePlugins(
+  communityUrls: string[] = [],
+  registries?: CommunityRegistry[]
+): Promise<MarketplacePlugin[]> {
   const results: MarketplacePlugin[] = [];
 
-  // Fetch curated plugins
-  const curated = await fetchCuratedRegistry();
-  results.push(...curated);
+  // Fetch plugins from all configured registries or default curated
+  if (registries && registries.length > 0) {
+    const registryPlugins = await fetchAllRegistries(registries);
+    results.push(...registryPlugins);
+  } else {
+    const curated = await fetchCuratedRegistry();
+    results.push(...curated);
+  }
 
   // Fetch community plugins in parallel
-  const communityPromises = communityUrls.map(url => fetchCommunityPlugin(url));
+  const communityPromises = communityUrls.map((url) => fetchCommunityPlugin(url));
   const communityResults = await Promise.all(communityPromises);
 
   for (const plugin of communityResults) {

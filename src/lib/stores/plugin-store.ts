@@ -3,7 +3,14 @@ import { writable, derived, get } from 'svelte/store';
 import { invoke } from '@tauri-apps/api/core';
 import { convertFileSrc } from '@tauri-apps/api/core';
 import type { AudionPluginManifest } from '../plugins/schema';
-import { fetchMarketplacePlugins, searchPlugins, filterByCategory, type MarketplacePlugin } from '../plugins/marketplace';
+import {
+    fetchMarketplacePlugins,
+    searchPlugins,
+    filterByCategory,
+    DEFAULT_REGISTRIES,
+    type MarketplacePlugin,
+    type CommunityRegistry,
+} from '../plugins/marketplace';
 import { PluginRuntime, setGlobalPermissionManager } from '../plugins/runtime';
 import { pingPluginInstall, fetchPluginStats } from '../api/audion-api';
 
@@ -21,6 +28,25 @@ function saveCommunityUrls(urls: string[]) {
         localStorage.setItem(COMMUNITY_URLS_KEY, JSON.stringify(urls));
     } catch (err) {
         console.error('Failed to save community URLs:', err);
+    }
+}
+
+const REGISTRIES_KEY = 'audion_custom_registries';
+function loadRegistries(): CommunityRegistry[] {
+    try {
+        const stored = localStorage.getItem(REGISTRIES_KEY);
+        if (stored) {
+            const parsed = JSON.parse(stored);
+            if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+    } catch {}
+    return DEFAULT_REGISTRIES;
+}
+function saveRegistries(registries: CommunityRegistry[]) {
+    try {
+        localStorage.setItem(REGISTRIES_KEY, JSON.stringify(registries));
+    } catch (err) {
+        console.error('Failed to save registries:', err);
     }
 }
 
@@ -44,6 +70,7 @@ export interface PluginStoreState {
     installed: PluginInfo[];
     marketplace: MarketplacePlugin[];
     communityUrls: string[];
+    registries: CommunityRegistry[];
     loading: boolean;
     error: string | null;
     searchQuery: string;
@@ -66,6 +93,7 @@ const initialState: PluginStoreState = {
     installed: [],
     marketplace: [],
     communityUrls: loadCommunityUrls(),
+    registries: loadRegistries(),
     loading: false,
     error: null,
     searchQuery: '',
@@ -339,13 +367,14 @@ function createPluginStore() {
         async refreshMarketplace() {
             update(s => ({ ...s, loading: true, error: null }));
             try {
-                // Clear cache to force latest fetch from GitHub
+                // Clear cache to force latest fetch from GitHub / registries
                 const { clearPluginCache } = await import('../plugins/marketplace');
                 clearPluginCache();
 
-                // Fetch registry from GitHub and stats from VPS in parallel
+                const currentState = get({ subscribe });
+                // Fetch registry from all enabled endpoints and stats from VPS in parallel
                 const [plugins, vpsStats] = await Promise.all([
-                    fetchMarketplacePlugins(get({ subscribe }).communityUrls),
+                    fetchMarketplacePlugins(currentState.communityUrls, currentState.registries),
                     fetchPluginStats()
                 ]);
 
@@ -383,6 +412,48 @@ function createPluginStore() {
             });
         },
 
+        // Add custom community registry
+        addRegistry(name: string, url: string) {
+            update(s => {
+                const newRegistry: CommunityRegistry = {
+                    id: `reg-${Date.now()}`,
+                    name: name.trim() || 'Custom Registry',
+                    url: url.trim(),
+                    enabled: true,
+                    isDefault: false
+                };
+                const registries = [...s.registries, newRegistry];
+                saveRegistries(registries);
+                return { ...s, registries };
+            });
+            this.refreshMarketplace();
+        },
+
+        // Remove custom registry
+        removeRegistry(id: string) {
+            update(s => {
+                const registries = s.registries.filter(r => r.id !== id || r.isDefault);
+                saveRegistries(registries);
+                return { ...s, registries };
+            });
+            this.refreshMarketplace();
+        },
+
+        // Toggle registry active state
+        toggleRegistry(id: string, enabled?: boolean) {
+            update(s => {
+                const registries = s.registries.map(r => {
+                    if (r.id === id) {
+                        return { ...r, enabled: enabled !== undefined ? enabled : !r.enabled };
+                    }
+                    return r;
+                });
+                saveRegistries(registries);
+                return { ...s, registries };
+            });
+            this.refreshMarketplace();
+        },
+
         // Install a plugin
         async installPlugin(plugin: MarketplacePlugin): Promise<boolean> {
             if (!plugin.repo) {
@@ -393,9 +464,11 @@ function createPluginStore() {
             update(s => ({ ...s, loading: true, error: null }));
 
             try {
+                const expectedSha256 = (plugin.manifest as any)?.sha256 || (plugin.manifest as any)?.integrity || plugin.sha256 || null;
                 const info = await invoke<PluginInfo>('install_plugin', {
                     repoUrl: plugin.repo,
-                    pluginDir
+                    pluginDir,
+                    expectedSha256
                 });
 
                 update(s => ({
@@ -426,13 +499,14 @@ function createPluginStore() {
         },
 
         // Install a plugin directly from repository URL
-        async installPluginFromRepo(repoUrl: string): Promise<boolean> {
+        async installPluginFromRepo(repoUrl: string, expectedSha256?: string): Promise<boolean> {
             update(s => ({ ...s, loading: true, error: null }));
 
             try {
                 const info = await invoke<PluginInfo>('install_plugin', {
                     repoUrl,
-                    pluginDir
+                    pluginDir,
+                    expectedSha256: expectedSha256 || null
                 });
 
                 update(s => ({

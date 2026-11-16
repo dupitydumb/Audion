@@ -6,7 +6,7 @@ use tauri::Emitter;
 
 use super::dsp::EqSettings;
 use super::event_bridge;
-use super::mod_types::{AudioEvent, DeviceList};
+use super::mod_types::{AudioEvent, AudioTelemetry, DeviceList};
 use super::engine::{AudioEngine, TrackInfo};
 // gated_open_result_rx (GatedOpenResult) is the only open-result channel selected on in the command loop below
 use super::gated_worker::GatedOpenResult;
@@ -29,6 +29,9 @@ pub enum AudioCommand {
     SetRepeatOne(bool),
     SetReplayGainEnabled(bool),
     SetLimiterEnabled(bool),
+    SetSkipSilence(bool),
+    SetAutomix(bool),
+    SetExclusiveMode(bool),
     SetOutputDevice(Option<String>),
     SetCrossfadeSeconds(u32),
     TriggerCrossfade,
@@ -38,6 +41,7 @@ pub enum AudioCommand {
 pub struct PlaybackStateSync {
     command_tx: Sender<AudioCommand>,
     pub device_list: Arc<Mutex<DeviceList>>,
+    pub telemetry: Arc<Mutex<AudioTelemetry>>,
 }
 
 impl PlaybackStateSync {
@@ -52,6 +56,8 @@ impl PlaybackStateSync {
         let device_list = Arc::new(Mutex::new(DeviceList {
             devices: Vec::new(),
         }));
+        let telemetry = Arc::new(Mutex::new(AudioTelemetry::default()));
+        let telemetry_clone = Arc::clone(&telemetry);
 
         let device_list_clone = Arc::clone(&device_list);
 
@@ -112,6 +118,13 @@ impl PlaybackStateSync {
                         });
                     }
                     engine.fading_out = outgoing;
+                    if let Some(mut t) = engine.decision.current_telemetry() {
+                        t.limiter_enabled = engine.limiter_enabled.load(Ordering::Relaxed);
+                        t.exclusive_mode = engine.exclusive_mode.load(Ordering::Relaxed);
+                        if let Ok(mut lock) = telemetry_clone.lock() {
+                            *lock = t;
+                        }
+                    }
                     emit(evt);
                 }
             };
@@ -207,6 +220,15 @@ impl PlaybackStateSync {
                             }
                             AudioCommand::SetLimiterEnabled(v) => {
                                 engine.set_limiter_enabled(v);
+                            }
+                            AudioCommand::SetSkipSilence(v) => {
+                                engine.set_skip_silence_enabled(v);
+                            }
+                            AudioCommand::SetAutomix(v) => {
+                                engine.set_automix_enabled(v);
+                            }
+                            AudioCommand::SetExclusiveMode(v) => {
+                                engine.set_exclusive_mode(v);
                             }
                             AudioCommand::SetOutputDevice(name) => {
                                 tracing::info!("[AUDIO] SetOutputDevice command received: {:?}", name);
@@ -339,6 +361,20 @@ impl PlaybackStateSync {
                                                 engine.paused_at = Some(engine.gated_clock.now());
                                             }
                                             engine.decision.load_current(slot);
+                                    if let Some(mut t) = engine.decision.current_telemetry() {
+                                        t.limiter_enabled = engine.limiter_enabled.load(Ordering::Relaxed);
+                                        t.exclusive_mode = engine.exclusive_mode.load(Ordering::Relaxed);
+                                        if let Ok(mut lock) = telemetry_clone.lock() {
+                                            *lock = t;
+                                        }
+                                    }
+                                     if let Some(mut t) = engine.decision.current_telemetry() {
+                                         t.limiter_enabled = engine.limiter_enabled.load(Ordering::Relaxed);
+                                         t.exclusive_mode = engine.exclusive_mode.load(Ordering::Relaxed);
+                                         if let Ok(mut lock) = telemetry_clone.lock() {
+                                             *lock = t;
+                                         }
+                                     }
                                             tracing::info!(
                                                 "[AUDIO] fade-resume incoming: decision.load_current done — \
                                                  decision.current().is_some()={}",
@@ -432,6 +468,13 @@ impl PlaybackStateSync {
                                     }
 
                                     engine.decision.load_current(slot);
+                                    if let Some(mut t) = engine.decision.current_telemetry() {
+                                        t.limiter_enabled = engine.limiter_enabled.load(Ordering::Relaxed);
+                                        t.exclusive_mode = engine.exclusive_mode.load(Ordering::Relaxed);
+                                        if let Ok(mut lock) = telemetry_clone.lock() {
+                                            *lock = t;
+                                        }
+                                    }
 
                                     tracing::info!(
                                         "[AUDIO] Gated source ready and scheduled (gen {}), duration={:?}",
@@ -584,6 +627,7 @@ impl PlaybackStateSync {
         Self {
             command_tx: tx,
             device_list,
+            telemetry,
         }
     }
 

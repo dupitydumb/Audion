@@ -15,7 +15,7 @@
 // =============================================================================
 
 import { invoke } from '@tauri-apps/api/core';
-import { isTauri } from '$lib/api/tauri';
+import { isTauri, type AudioTelemetry } from '$lib/api/tauri';
 
 // Check if we're running on Linux
 let isLinuxPlatform: boolean | null = null;
@@ -251,6 +251,34 @@ export async function nativeAudioGetDeviceInfo(): Promise<DeviceList> {
  */
 export async function nativeAudioSetOutputDevice(deviceId: string | null): Promise<void> {
     await invoke('audio_set_output_device', { deviceId });
+}
+
+/**
+ * toggle skip silence dead-air trimming (-60 dBFS RMS intro/outro)
+ */
+export async function nativeAudioSetSkipSilence(enabled: boolean): Promise<void> {
+    await invoke('audio_set_skip_silence', { enabled });
+}
+
+/**
+ * toggle automix frequency-selective bass handoff crossfading
+ */
+export async function nativeAudioSetAutomix(enabled: boolean): Promise<void> {
+    await invoke('audio_set_automix', { enabled });
+}
+
+/**
+ * toggle exclusive bit-perfect DAC mode (WASAPI/ALSA/CoreAudio)
+ */
+export async function nativeAudioSetExclusiveMode(enabled: boolean): Promise<void> {
+    await invoke('audio_set_exclusive_mode', { enabled });
+}
+
+/**
+ * get live audio engine telemetry (codec, bit depth, native/device sample rate, resampler status)
+ */
+export async function nativeAudioGetTelemetry(): Promise<AudioTelemetry> {
+    return await invoke('audio_get_telemetry');
 }
 
 // =============================================================================

@@ -30,13 +30,26 @@
 
   // Local state
   let newCommunityUrl = "";
+  let newRegistryName = "";
+  let newRegistryUrl = "";
   let showPermissionModal = false;
   let selectedPlugin: MarketplacePlugin | null = null;
   let pendingPermissions: string[] = [];
   let searchQuery = "";
-  let activeTab: "curated" | "community" | "installed" = "curated";
+  let activeTab: "curated" | "community" | "registries" | "installed" = "curated";
   let sortBy: 'stars' | 'downloads' | 'name' | 'updated' = $pluginStore.sortBy;
   let sortOpen = false;
+
+  function handleAddRegistry() {
+    if (!newRegistryUrl.trim()) {
+      addToast("Please provide a valid registry URL", "error");
+      return;
+    }
+    pluginStore.addRegistry(newRegistryName.trim() || "Community Registry", newRegistryUrl.trim());
+    addToast("Custom registry added", "success");
+    newRegistryName = "";
+    newRegistryUrl = "";
+  }
 
   function handleSortOutside(e: MouseEvent) {
     const target = e.target as HTMLElement;
@@ -407,6 +420,13 @@
     </button>
     <button
       class="tab"
+      class:active={activeTab === "registries"}
+      on:click={() => (activeTab = "registries")}
+    >
+      Registries ({$pluginStore.registries?.length || 1})
+    </button>
+    <button
+      class="tab"
       class:active={activeTab === "installed"}
       on:click={() => (activeTab = "installed")}
     >
@@ -428,7 +448,7 @@
     </div>
   {/if}
 
-  {#if activeTab !== "installed"}
+  {#if activeTab !== "installed" && activeTab !== "registries"}
     <div class="category-filters">
       {#each categories as category}
         <button
@@ -615,6 +635,66 @@
             <p>{$_('pluginManager.addUrlAbove')}</p>
           </div>
         {/each}
+      </div>
+    {:else if activeTab === "registries"}
+      <div class="registries-container">
+        <div class="registry-add-card">
+          <div class="registry-add-header">
+            <h4>Add Community Registry</h4>
+            <span class="registry-subtitle">Add custom repository catalogs (registry.json) with SHA-256 validation</span>
+          </div>
+          <div class="registry-form">
+            <input
+              type="text"
+              placeholder="Registry Name (e.g. Community Registry)"
+              bind:value={newRegistryName}
+            />
+            <input
+              type="text"
+              placeholder="https://example.com/registry.json"
+              bind:value={newRegistryUrl}
+              on:keydown={(e) => e.key === "Enter" && handleAddRegistry()}
+            />
+            <button class="btn-primary" on:click={handleAddRegistry}>
+              Add Registry
+            </button>
+          </div>
+        </div>
+
+        <div class="registries-list">
+          {#each ($pluginStore.registries || []) as reg (reg.id)}
+            <div class="registry-card">
+              <div class="registry-header">
+                <div class="registry-title-row">
+                  <span class="registry-name">{reg.name}</span>
+                  {#if reg.isDefault}
+                    <span class="badge badge-active">Official</span>
+                  {:else}
+                    <span class="badge badge-community">Community</span>
+                  {/if}
+                </div>
+                <span class="registry-url truncate" title={reg.url}>{reg.url}</span>
+              </div>
+              <div class="registry-actions">
+                <button
+                  class="btn-secondary"
+                  class:btn-active-status={reg.enabled}
+                  on:click={() => pluginStore.toggleRegistry(reg.id)}
+                >
+                  {reg.enabled ? 'Active' : 'Disabled'}
+                </button>
+                {#if !reg.isDefault}
+                  <button
+                    class="btn-danger"
+                    on:click={() => pluginStore.removeRegistry(reg.id)}
+                  >
+                    Remove
+                  </button>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        </div>
       </div>
     {:else if activeTab === "installed"}
       <div class="plugin-grid">
@@ -1846,5 +1926,111 @@
     min-width: unset;
     padding: 6px var(--spacing-sm);
     font-size: var(--font-size-xs);
+  }
+
+  /* Registries Manager Styling */
+  .registries-container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    padding: var(--spacing-sm) 0;
+  }
+
+  .registry-add-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-lg);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+
+  .registry-add-header h4 {
+    margin: 0;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .registry-subtitle {
+    font-size: var(--font-size-xs);
+    color: var(--text-subdued);
+  }
+
+  .registry-form {
+    display: flex;
+    gap: var(--spacing-sm);
+    flex-wrap: wrap;
+  }
+
+  .registry-form input {
+    flex: 1;
+    min-width: 220px;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+  }
+
+  .registries-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+
+  .registry-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--spacing-md);
+  }
+
+  .registry-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .registry-title-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .registry-name {
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+  }
+
+  .registry-url {
+    font-size: var(--font-size-xs);
+    color: var(--text-subdued);
+    font-family: monospace;
+  }
+
+  .registry-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    flex-shrink: 0;
+  }
+
+  .btn-active-status {
+    border-color: rgba(30, 215, 96, 0.4);
+    color: #1ed760;
+  }
+
+  .badge-community {
+    background: rgba(138, 43, 226, 0.15);
+    color: #b070ff;
+    border: 1px solid rgba(138, 43, 226, 0.3);
   }
 </style>

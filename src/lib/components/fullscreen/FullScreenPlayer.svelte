@@ -11,6 +11,7 @@
     toggleQueue,
     contextMenu,
     nativeTransitionActive,
+    isStatsForNerdsOpen,
   } from "$lib/stores/ui";
   import {
     currentTrack,
@@ -628,14 +629,26 @@
     {:else}
       <!-- Desktop layout (enhanced 2-column) -->
       <div class="desktop-container">
-        <!-- Close button (top right) -->
-        <button
-          class="desktop-close-btn"
-          on:click={toggleFullScreen}
-          aria-label="Close FullScreen"
-        >
-          <Icon name="x" size={24} />
-        </button>
+        <!-- Header action buttons (top right) -->
+        <div style="position: absolute; top: 20px; right: 20px; display: flex; gap: 10px; z-index: 10;">
+          <button
+            class="desktop-close-btn"
+            style="position: static;"
+            on:click={() => isStatsForNerdsOpen.update(v => !v)}
+            aria-label="Stats for Nerds"
+            title="Stats for Nerds (Ctrl+I)"
+          >
+            <Icon name="info" size={20} />
+          </button>
+          <button
+            class="desktop-close-btn"
+            style="position: static;"
+            on:click={toggleFullScreen}
+            aria-label="Close FullScreen"
+          >
+            <Icon name="x" size={24} />
+          </button>
+        </div>
 
         <div class="desktop-content">
           <!-- Left Area: Track Info & Playback Controls -->

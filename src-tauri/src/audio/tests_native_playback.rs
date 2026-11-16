@@ -104,6 +104,8 @@ fn native_backend_actually_produces_audio() {
         1, // generation => arbitrary, unused by this test
         volume,
         replay_gain_enabled,
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(AtomicBool::new(false)),
         device_sample_rate,
         device_channels,
         None,

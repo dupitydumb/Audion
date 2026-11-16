@@ -33,6 +33,9 @@ export interface AppSettings {
     /** True when a token file exists – refreshed at startup, not persisted in localStorage */
     listenBrainzTokenSet: boolean;
     listenBrainzUsername: string;
+    lastFmEnabled: boolean;
+    lastFmConnected: boolean;
+    lastFmUsername: string;
     remoteControlEnabled: boolean;
     showResonate: boolean;
     showKofi: boolean;
@@ -42,6 +45,9 @@ export interface AppSettings {
      * native backend only
      * off means audio is passed through untouched, so RG/EQ boosts can clip */
     limiterEnabled: boolean;
+    skipSilence: boolean;
+    automixEnabled: boolean;
+    exclusiveMode: boolean;
     outputDevice: string | null;
     streamServerTracks: boolean;
     /** persisted keyboard shortcut bindings. null means use defaults. */
@@ -79,12 +85,18 @@ const defaultSettings: AppSettings = {
     listenBrainzEnabled: false,
     listenBrainzTokenSet: false,
     listenBrainzUsername: '',
+    lastFmEnabled: false,
+    lastFmConnected: false,
+    lastFmUsername: '',
     remoteControlEnabled: true,
     showResonate: true,
     showKofi: true,
     showPatreon: true,
     replayGainEnabled: true,
     limiterEnabled: true,
+    skipSilence: false,
+    automixEnabled: false,
+    exclusiveMode: false,
     outputDevice: null,
     streamServerTracks: true,
     keyboardBindings: null,
@@ -226,6 +238,39 @@ function createSettingsStore() {
             });
         },
 
+        setSkipSilence(enabled: boolean) {
+            update(state => {
+                const newState = { ...state, skipSilence: enabled };
+                saveSettings(newState);
+                return newState;
+            });
+            import('$lib/services/native-audio').then(({ nativeAudioSetSkipSilence }) => {
+                nativeAudioSetSkipSilence(enabled).catch(() => {});
+            });
+        },
+
+        setAutomix(enabled: boolean) {
+            update(state => {
+                const newState = { ...state, automixEnabled: enabled };
+                saveSettings(newState);
+                return newState;
+            });
+            import('$lib/services/native-audio').then(({ nativeAudioSetAutomix }) => {
+                nativeAudioSetAutomix(enabled).catch(() => {});
+            });
+        },
+
+        setExclusiveMode(enabled: boolean) {
+            update(state => {
+                const newState = { ...state, exclusiveMode: enabled };
+                saveSettings(newState);
+                return newState;
+            });
+            import('$lib/services/native-audio').then(({ nativeAudioSetExclusiveMode }) => {
+                nativeAudioSetExclusiveMode(enabled).catch(() => {});
+            });
+        },
+
         setOutputDevice(device: string | null) {
             update(state => {
                 const newState = { ...state, outputDevice: device };
@@ -237,6 +282,14 @@ function createSettingsStore() {
         toggleListenBrainz() {
             update(state => {
                 const newState = { ...state, listenBrainzEnabled: !state.listenBrainzEnabled };
+                saveSettings(newState);
+                return newState;
+            });
+        },
+
+        toggleLastFm() {
+            update(state => {
+                const newState = { ...state, lastFmEnabled: !state.lastFmEnabled };
                 saveSettings(newState);
                 return newState;
             });
@@ -309,6 +362,10 @@ function createSettingsStore() {
             update(state => ({ ...state, listenBrainzTokenSet: set, listenBrainzUsername: username }));
         },
 
+        setLastFmConnected(connected: boolean, username = '') {
+            update(state => ({ ...state, lastFmConnected: connected, lastFmUsername: username }));
+        },
+
         async initialize() {
             const state = loadSettings();
 
@@ -342,6 +399,33 @@ function createSettingsStore() {
                 state.listenBrainzTokenSet = tokenSet;
             } catch (error) {
                 console.error('[Settings] Failed to check LB token:', error);
+            }
+
+            // Check whether Last.fm is connected
+            try {
+                const lastFmStatus = await invoke<{ connected: boolean; username: string | null }>('get_lastfm_status');
+                state.lastFmConnected = lastFmStatus.connected;
+                state.lastFmUsername = lastFmStatus.username || '';
+            } catch (error) {
+                console.error('[Settings] Failed to check Last.fm status:', error);
+            }
+
+            if (state.skipSilence) {
+                import('$lib/services/native-audio').then(({ nativeAudioSetSkipSilence }) => {
+                    nativeAudioSetSkipSilence(true).catch(() => {});
+                });
+            }
+
+            if (state.automixEnabled) {
+                import('$lib/services/native-audio').then(({ nativeAudioSetAutomix }) => {
+                    nativeAudioSetAutomix(true).catch(() => {});
+                });
+            }
+
+            if (state.exclusiveMode) {
+                import('$lib/services/native-audio').then(({ nativeAudioSetExclusiveMode }) => {
+                    nativeAudioSetExclusiveMode(true).catch(() => {});
+                });
             }
 
             set(state);

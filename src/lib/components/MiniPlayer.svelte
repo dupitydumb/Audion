@@ -6,6 +6,7 @@
         toggleMiniPlayer,
         setMiniPlayer,
         resizeIslandWindow,
+        isStatsForNerdsOpen,
     } from "$lib/stores/ui";
     import {
         currentTrack,
@@ -488,6 +489,15 @@
                                     <div class="vbar exp-vbar" style:height="{Math.min(22, Math.max(3, h * 1.35))}px"></div>
                                 {/each}
                             </div>
+
+                            <button
+                                class="action-btn"
+                                on:click={(e) => { e.stopPropagation(); isStatsForNerdsOpen.update(v => !v); }}
+                                data-tip="Stats for Nerds (Ctrl+I)"
+                                aria-label="Stats for Nerds"
+                            >
+                                <Icon name="info" size={12} />
+                            </button>
 
                             <button
                                 class="action-btn"

@@ -7,6 +7,7 @@ export const isMiniPlayer = writable(false);
 export const isQueueVisible = writable(false);
 export const isSettingsOpen = writable(false);
 export const isStatsWrappedOpen = writable(false);
+export const isStatsForNerdsOpen = writable(false);
 
 // Prevent overlapping PiP transitions that can cause inconsistent window state.
 let miniPlayerTransitionInFlight = false;

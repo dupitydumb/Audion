@@ -38,6 +38,10 @@ pub struct PluginManifest {
     pub tags: Option<Vec<String>>,
     #[serde(default)]
     pub license: Option<String>,
+    #[serde(default)]
+    pub integrity: Option<String>,
+    #[serde(default)]
+    pub sha256: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -292,7 +296,11 @@ pub fn disable_plugin(name: String, plugin_dir: String) -> Result<bool, String> 
 }
 
 #[tauri::command]
-pub async fn install_plugin(repo_url: String, plugin_dir: String) -> Result<PluginInfo, String> {
+pub async fn install_plugin(
+    repo_url: String,
+    plugin_dir: String,
+    expected_sha256: Option<String>,
+) -> Result<PluginInfo, String> {
     // Parse GitHub URL to get owner/repo
     let parts: Vec<&str> = repo_url.trim_end_matches('/').split('/').collect();
 
@@ -397,6 +405,31 @@ pub async fn install_plugin(repo_url: String, plugin_dir: String) -> Result<Plug
         .bytes()
         .await
         .map_err(|e| format!("Failed to read entry file: {}", e))?;
+
+    // Verify SHA-256 integrity hash if provided or specified in manifest
+    let target_sha256 = expected_sha256
+        .as_deref()
+        .or(manifest.sha256.as_deref())
+        .or(manifest.integrity.as_deref());
+
+    if let Some(expected_hash) = target_sha256 {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(&entry_bytes);
+        let actual_hash = format!("{:x}", hasher.finalize());
+        let clean_expected = expected_hash
+            .trim()
+            .trim_start_matches("sha256-")
+            .to_lowercase();
+
+        if actual_hash != clean_expected {
+            return Err(format!(
+                "Integrity verification failed for {}: expected SHA-256 '{}', but got '{}'",
+                manifest.entry, clean_expected, actual_hash
+            ));
+        }
+        println!("[PluginInstall] SHA-256 verified successfully for plugin {}: {}", manifest.name, actual_hash);
+    }
 
     fs::write(plugin_path.join(&manifest.entry), &entry_bytes)
         .map_err(|e| format!("Failed to save entry file: {}", e))?;

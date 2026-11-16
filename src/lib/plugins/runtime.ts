@@ -34,6 +34,12 @@ import { appSettings } from '$lib/stores/settings';
 import { theme } from '$lib/stores/theme';
 import { invoke } from '@tauri-apps/api/core';
 import { html5RegisterRawBlobUrl, html5ClearPreload } from '$lib/services/html5-audio';
+import {
+  globalProviders,
+  type StreamProvider,
+  type MetadataProvider,
+  type LyricsProvider,
+} from './providers';
 
 // Cross-Plugin Permission Manager
 class PluginPermissionManager {
@@ -982,8 +988,8 @@ export class PluginRuntime {
       };
     }
 
-    // Stream resolver registration (for external tracks like Tidal)
-    // Plugins with player:control permission can register resolvers
+    // Stream resolver and provider registration (for external tracks like Tidal / YouTube Music / community providers)
+    // Plugins with player:control permission can register resolvers or stream providers
     if (this.hasPermission(pluginName, 'player:control')) {
       api.stream = {
         // Register a resolver function for a source type (e.g., 'tidal')
@@ -999,9 +1005,40 @@ export class PluginRuntime {
             this.streamResolvers.delete(sourceType);
             this.streamResolverOwners.delete(sourceType);
           }
+        },
+        // Register a full StreamProvider
+        registerProvider: (provider: StreamProvider) => {
+          globalProviders.registerStreamProvider(provider, pluginName);
+          // Also link to this.streamResolvers so legacy callers work seamlessly
+          this.streamResolvers.set(provider.id, async (extId, opts) => {
+            const res = await provider.getStream(extId, opts?.quality);
+            return typeof res === 'string' ? res : (res?.url || null);
+          });
+          this.streamResolverOwners.set(provider.id, pluginName);
+        },
+        unregisterProvider: (id: string) => {
+          globalProviders.unregisterStreamProvider(id);
+          this.streamResolvers.delete(id);
+          this.streamResolverOwners.delete(id);
+        },
+        resolveStream: async (providerId: string, songId: string, quality?: string) => {
+          return await globalProviders.resolveStream(providerId, songId, quality);
         }
       };
     }
+
+    // Metadata provider registration
+    api.metadata = {
+      registerProvider: (provider: MetadataProvider) => {
+        globalProviders.registerMetadataProvider(provider, pluginName);
+      },
+      unregisterProvider: (id: string) => {
+        globalProviders.unregisterMetadataProvider(id);
+      },
+      search: async (query: string, type: 'all' | 'track' | 'album' | 'artist' = 'all', page: number = 1) => {
+        return await globalProviders.searchAllMetadata(query, type, page);
+      }
+    };
 
     // search registry
     // sources register themselves; consumers query all sources at once and receive
@@ -1342,6 +1379,16 @@ export class PluginRuntime {
           console.error('[PluginRuntime] Failed to get current lyric:', error);
           return null;
         }
+      },
+      // Register custom LyricsProvider
+      registerProvider: (provider: LyricsProvider) => {
+        globalProviders.registerLyricsProvider(provider, pluginName);
+      },
+      unregisterProvider: (id: string) => {
+        globalProviders.unregisterLyricsProvider(id);
+      },
+      fetchLyrics: async (track: { title: string; artist: string; album?: string; duration?: number }) => {
+        return await globalProviders.fetchLyricsFromProviders(track);
       }
     };
 
@@ -1449,7 +1496,8 @@ export class PluginRuntime {
         console.error(`[PluginRuntime] Error clearing storage:`, err);
       }
 
-      // 5. Unregister stream resolvers owned by this plugin
+      // 5. Unregister stream resolvers and modular providers owned by this plugin
+      globalProviders.unregisterPluginProviders(name);
       const streamSourceTypesToRemove: string[] = [];
       this.streamResolverOwners.forEach((owner, sourceType) => {
         if (owner === name) {
@@ -1678,7 +1726,17 @@ export class PluginRuntime {
   // Resolve stream URL for external tracks
   // Called by player.ts before playing a track with source_type != 'local'
   async resolveStreamUrl(sourceType: string, externalId: string, options?: any): Promise<string | null> {
-    const resolver = this.streamResolvers.get(sourceType);
+    let resolver = this.streamResolvers.get(sourceType);
+    if (!resolver) {
+      const provider = globalProviders.getStreamProvider(sourceType);
+      if (provider) {
+        resolver = async (extId, opts) => {
+          const res = await provider.getStream(extId, opts?.quality);
+          return typeof res === 'string' ? res : (res?.url || null);
+        };
+      }
+    }
+
     if (!resolver) {
       console.warn(`[PluginRuntime] No stream resolver registered for source type '${sourceType}'`);
       return null;

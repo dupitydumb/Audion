@@ -15,7 +15,7 @@ import { hasCustomArtworkForTrack } from '$lib/stores/customArtwork';
 import { tracks as libraryTracks, getFullTrack, updateTrackCover } from '$lib/stores/library';
 import { fetchTrackCover } from '$lib/services/cover-fetcher';
 import { recordTrackPlay } from '$lib/stores/activity';
-import { submitListenbrainzListen } from '$lib/api/tauri';
+import { submitListenbrainzListen, submitLastfmNowPlaying, submitLastfmScrobble } from '$lib/api/tauri';
 import { activeRemoteDevice } from '$lib/stores/websocket';
 import { pluginStore } from '$lib/stores/plugin-store';
 import {
@@ -275,6 +275,17 @@ export async function playTrack(
                     ).catch(e => console.warn('[ListenBrainz] Scrobble failed:', e));
                 }
             }
+            if (get(appSettings).lastFmEnabled && trackDuration > 0) {
+                const threshold = Math.min(Math.floor(trackDuration / 2), 240);
+                if (durationPlayed >= threshold) {
+                    submitLastfmScrobble(
+                        previousTrackObj.artist ?? 'Unknown Artist',
+                        previousTrackObj.title ?? 'Unknown',
+                        previousTrackObj.album,
+                        previousTrackObj.duration,
+                    ).catch(e => console.warn('[Last.fm] Scrobble failed:', e));
+                }
+            }
         }
     }
     _playStartTime = Date.now();
@@ -287,6 +298,22 @@ export async function playTrack(
             track.duration,
             true,
         ).catch(e => console.warn('[ListenBrainz] Now-playing failed:', e));
+    }
+    if (get(appSettings).lastFmEnabled) {
+        submitLastfmNowPlaying(
+            track.artist ?? 'Unknown Artist',
+            track.title ?? 'Unknown',
+            track.album,
+            track.duration,
+        ).catch(e => console.warn('[Last.fm] Now-playing failed:', e));
+    }
+    if (get(appSettings).lastFmEnabled) {
+        submitLastfmNowPlaying(
+            track.artist ?? 'Unknown Artist',
+            track.title ?? 'Unknown',
+            track.album,
+            track.duration,
+        ).catch(e => console.warn('[Last.fm] Now-playing failed:', e));
     }
 
     // Scrobble to Subsonic on play start
@@ -901,6 +928,17 @@ function _scrobblePrev(track: Track, durationPlayed: number): void {
             ).catch(e => console.warn('[ListenBrainz] Scrobble failed:', e));
         }
     }
+    if (get(appSettings).lastFmEnabled && trackDuration > 0) {
+        const threshold = Math.min(Math.floor(trackDuration / 2), 240);
+        if (durationPlayed >= threshold) {
+            submitLastfmScrobble(
+                track.artist ?? 'Unknown Artist',
+                track.title ?? 'Unknown',
+                track.album,
+                track.duration,
+            ).catch(e => console.warn('[Last.fm] Scrobble failed:', e));
+        }
+    }
     // Subsonic scrobble — fire-and-forget on listen completion
     if (track.source_type === 'subsonic' && track.external_id) {
         import('$lib/stores/subsonic').then(({ subsonicScrobble }) => {
@@ -973,6 +1011,14 @@ async function _advanceUiToTrack(track: Track): Promise<void> {
             track.duration,
             true,
         ).catch(e => console.warn('[ListenBrainz] Now-playing failed:', e));
+    }
+    if (get(appSettings).lastFmEnabled) {
+        submitLastfmNowPlaying(
+            track.artist ?? 'Unknown Artist',
+            track.title ?? 'Unknown',
+            track.album,
+            track.duration,
+        ).catch(e => console.warn('[Last.fm] Now-playing failed:', e));
     }
 }
 
