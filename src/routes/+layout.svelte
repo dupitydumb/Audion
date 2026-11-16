@@ -401,13 +401,18 @@
 <svelte:head>
   {#if $isMiniPlayer}
     <style>
-      html, body {
+      html, body, #audion-bg-layer, #audion-effect-layer, .app-content {
         background: transparent !important;
         background-color: transparent !important;
         box-shadow: none !important;
         border: none !important;
         outline: none !important;
         overflow: hidden !important;
+      }
+      #audion-bg-layer, #audion-effect-layer {
+        display: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
       }
     </style>
   {/if}

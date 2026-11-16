@@ -159,6 +159,12 @@ pub fn confirm_close_and_close_window(
     window.close().map_err(|e| e.to_string())
 }
 
+/// Set the island window position/size and restrict OS-level hit-testing to the
+/// pill rectangle so the transparent gutter around the pill is fully click-through.
+///
+/// pill_x / pill_y are in logical pixels relative to the top-left of the OS window.
+/// pill_w / pill_h are the logical pixel dimensions of the pill.
+/// Pass pill_w = 0 to clear any region (makes the full window hittable again).
 #[tauri::command]
 pub fn set_island_window_bounds(
     window: tauri::WebviewWindow,
@@ -166,6 +172,10 @@ pub fn set_island_window_bounds(
     y: i32,
     width: u32,
     height: u32,
+    pill_x: Option<i32>,
+    pill_y: Option<i32>,
+    pill_w: Option<i32>,
+    pill_h: Option<i32>,
 ) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -175,6 +185,7 @@ pub fn set_island_window_bounds(
         use windows::Win32::Graphics::Dwm::{
             DwmSetWindowAttribute, DWMNCRP_USEWINDOWSTYLE, DWMWA_NCRENDERING_POLICY,
         };
+        use windows::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, SetWindowRgn};
         use windows::Win32::UI::WindowsAndMessaging::{SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER};
 
         let handle = window
@@ -212,6 +223,44 @@ pub fn set_island_window_bounds(
                     ph,
                     SWP_NOZORDER | SWP_NOACTIVATE,
                 );
+
+                let pw_val = pill_w.unwrap_or(0);
+                let ph_val = pill_h.unwrap_or(0);
+
+                // Restrict hit-testing to the pill area so the transparent gutter
+                // around it is fully click-through at the Win32 level.
+                if pw_val > 0 && ph_val > 0 {
+                    let px_val = pill_x.unwrap_or(0);
+                    let py_val = pill_y.unwrap_or(0);
+
+                    let rpx = (px_val as f64 * scale_factor).round() as i32;
+                    let rpy = (py_val as f64 * scale_factor).round() as i32;
+                    let rpw = (pw_val as f64 * scale_factor).round() as i32;
+                    let rph = (ph_val as f64 * scale_factor).round() as i32;
+
+                    // Add a small margin (2px physical) around the pill so mouse-enter
+                    // events fire slightly before the cursor visually touches the pill.
+                    let margin = (2.0 * scale_factor).round() as i32;
+                    let rgn = CreateRectRgn(
+                        (rpx - margin).max(0),
+                        (rpy - margin).max(0),
+                        rpx + rpw + margin,
+                        rpy + rph + margin,
+                    );
+                    if !rgn.0.is_null() {
+                        // redraw=TRUE so DWM immediately repaints the window shape.
+                        // On success, the system takes ownership of the region handle.
+                        // We must only call DeleteObject if SetWindowRgn fails (returns 0).
+                        let ret = SetWindowRgn(hwnd, Some(rgn), true);
+                        if ret == 0 {
+                            let _ = DeleteObject(rgn.into());
+                        }
+                    }
+                } else {
+                    // Clear region → entire window rect is hittable again.
+                    // None passes NULL, clearing any custom window region.
+                    let _ = SetWindowRgn(hwnd, None, true);
+                }
             }
         }
     }

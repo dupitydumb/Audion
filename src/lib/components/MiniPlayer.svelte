@@ -58,6 +58,8 @@
         try {
             localStorage.setItem("island_display_mode", displayMode);
         } catch {}
+        // Re-apply the hit region for the new pill margin-top
+        resizeIslandWindow(state, displayMode);
     }
 
     // ── Dynamic Color from Album Art (miniplayer.md §8) ──────
@@ -107,14 +109,14 @@
     function triggerPeek() {
         if (state === "expanded") return;
         state = "peek";
-        resizeIslandWindow("peek");
+        resizeIslandWindow("peek", displayMode);
         if (peekTimer) clearTimeout(peekTimer);
         peekTimer = setTimeout(() => {
             if (state === "peek") {
                 state = "compact";
                 setTimeout(() => {
                     if (state === "compact") {
-                        resizeIslandWindow("compact");
+                        resizeIslandWindow("compact", displayMode);
                     }
                 }, 480);
             }
@@ -129,7 +131,7 @@
             previousState = state;
         }
         state = "hud";
-        resizeIslandWindow("hud");
+        resizeIslandWindow("hud", displayMode);
         if (hudTimer) clearTimeout(hudTimer);
         hudTimer = setTimeout(() => {
             if (state === "hud") {
@@ -137,7 +139,7 @@
                 state = targetState;
                 setTimeout(() => {
                     if (state === targetState) {
-                        resizeIslandWindow(targetState);
+                        resizeIslandWindow(targetState, displayMode);
                     }
                 }, 480);
             }
@@ -242,7 +244,7 @@
         if (state === "expanded") return;
         previousState = state;
         state = "expanded";
-        resizeIslandWindow("expanded");
+        resizeIslandWindow("expanded", displayMode);
     }
 
     function handleCollapse(e?: Event) {
@@ -252,7 +254,7 @@
         state = targetState;
         setTimeout(() => {
             if (state === targetState) {
-                resizeIslandWindow(targetState);
+                resizeIslandWindow(targetState, displayMode);
             }
         }, 480);
     }
@@ -316,11 +318,19 @@
     }
 
     onMount(() => {
-        resizeIslandWindow(state);
+        if (typeof document !== 'undefined') {
+            document.documentElement.classList.add('pip');
+            document.body.classList.add('pip');
+        }
+        resizeIslandWindow(state, displayMode);
         animFrame = requestAnimationFrame(updateVisualizer);
     });
 
     onDestroy(() => {
+        if (typeof document !== 'undefined') {
+            document.documentElement.classList.remove('pip');
+            document.body.classList.remove('pip');
+        }
         if (animFrame) cancelAnimationFrame(animFrame);
         if (peekTimer) clearTimeout(peekTimer);
         if (hudTimer) clearTimeout(hudTimer);

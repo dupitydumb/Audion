@@ -145,6 +145,21 @@ body:has(.stage) {
   overflow: hidden !important;
 }
 
+html.pip #audion-bg-layer,
+body.pip #audion-bg-layer,
+html.pip #audion-effect-layer,
+body.pip #audion-effect-layer,
+html:has(.stage) #audion-bg-layer,
+body:has(.stage) #audion-bg-layer,
+html:has(.stage) #audion-effect-layer,
+body:has(.stage) #audion-effect-layer {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
 /* Re-enable text selection in all input fields — WebView2 on Windows
    does not focus inputs correctly when any ancestor has user-select:none */
 input,

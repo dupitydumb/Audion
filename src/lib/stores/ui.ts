@@ -21,6 +21,7 @@ let originalWindowState: {
 
 // PIP mode dimensions - Island Mini-Player floating stage (miniplayer.md §2 & §10)
 export type IslandWindowState = 'idle' | 'compact' | 'peek' | 'expanded' | 'hud';
+export type IslandDisplayMode = 'floating' | 'notch';
 
 export const ISLAND_WINDOW_WIDTH = 396;
 
@@ -32,13 +33,34 @@ export const ISLAND_WINDOW_SIZES: Record<IslandWindowState, { w: number; h: numb
     hud: { w: ISLAND_WINDOW_WIDTH, h: 60 },
 };
 
-export async function resizeIslandWindow(state: IslandWindowState): Promise<void> {
+// Pill visual sizes (logical px) matching MiniPlayer.svelte SIZES
+// Used to compute the hit-region passed to set_island_window_bounds.
+const ISLAND_PILL_SIZES: Record<IslandWindowState, { w: number; h: number }> = {
+    idle: { w: 120, h: 32 },
+    compact: { w: 220, h: 40 },
+    peek: { w: 300, h: 44 },
+    expanded: { w: 380, h: 160 },
+    hud: { w: 260, h: 44 },
+};
+
+// Floating mode has an 8px top margin; notch mode sits flush at y=0.
+const ISLAND_PILL_MARGIN_TOP_FLOATING = 8;
+
+export async function resizeIslandWindow(
+    state: IslandWindowState,
+    displayMode: IslandDisplayMode = 'floating',
+): Promise<void> {
     if (!get(isMiniPlayer)) return;
     try {
         const target = ISLAND_WINDOW_SIZES[state] || ISLAND_WINDOW_SIZES.compact;
+        const pill = ISLAND_PILL_SIZES[state] || ISLAND_PILL_SIZES.compact;
         const screenWidth = window.screen.availWidth;
         const pipX = Math.max(0, Math.round((screenWidth - ISLAND_WINDOW_WIDTH) / 2));
         const pipY = 0;
+
+        // Pill position within the OS window (logical px)
+        const pillX = Math.round((ISLAND_WINDOW_WIDTH - pill.w) / 2);
+        const pillY = displayMode === 'notch' ? 0 : ISLAND_PILL_MARGIN_TOP_FLOATING;
 
         // Keep horizontal width constant to avoid async IPC position desync glitches.
         // We only expand or collapse height downwards.
@@ -49,6 +71,10 @@ export async function resizeIslandWindow(state: IslandWindowState): Promise<void
                 y: pipY,
                 width: ISLAND_WINDOW_WIDTH,
                 height: target.h,
+                pillX,
+                pillY,
+                pillW: pill.w,
+                pillH: pill.h,
             });
             return;
         } catch {}
@@ -232,9 +258,17 @@ export async function setMiniPlayer(enable: boolean) {
                 // Calculate position for top-center compact island
                 const initialWidth = ISLAND_WINDOW_SIZES.compact.w;
                 const initialHeight = ISLAND_WINDOW_SIZES.compact.h;
+                const pill = ISLAND_PILL_SIZES.compact;
                 const screenWidth = window.screen.availWidth;
                 const pipX = Math.max(0, Math.round((screenWidth - initialWidth) / 2));
                 const pipY = 0;
+                const pillX = Math.round((initialWidth - pill.w) / 2);
+                const pillY = ISLAND_PILL_MARGIN_TOP_FLOATING;
+
+                if (typeof document !== 'undefined') {
+                    document.documentElement.classList.add('pip');
+                    document.body.classList.add('pip');
+                }
 
                 // ⚠️ Set store BEFORE resizing so isMobile's PIP guard (!$pip)
                 // is already active when the resize happens.
@@ -248,6 +282,10 @@ export async function setMiniPlayer(enable: boolean) {
                         y: pipY,
                         width: initialWidth,
                         height: initialHeight,
+                        pillX,
+                        pillY,
+                        pillW: pill.w,
+                        pillH: pill.h,
                     });
                 } catch {
                     await appWindow.setSize(new LogicalSize(initialWidth, initialHeight));
@@ -255,6 +293,26 @@ export async function setMiniPlayer(enable: boolean) {
                 }
             } else {
                 // Exiting PIP mode
+                if (typeof document !== 'undefined') {
+                    document.documentElement.classList.remove('pip');
+                    document.body.classList.remove('pip');
+                }
+
+                // Clear custom window region so the restored window is fully interactive
+                try {
+                    const { invoke } = await import('@tauri-apps/api/core');
+                    await invoke('set_island_window_bounds', {
+                        x: originalWindowState?.x ?? 0,
+                        y: originalWindowState?.y ?? 0,
+                        width: originalWindowState?.width ?? 1280,
+                        height: originalWindowState?.height ?? 800,
+                        pillX: 0,
+                        pillY: 0,
+                        pillW: 0,
+                        pillH: 0,
+                    });
+                } catch {}
+
                 await appWindow.setAlwaysOnTop(false);
 
                 // Re-enable window shadow
