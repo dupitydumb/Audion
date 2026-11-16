@@ -239,3 +239,34 @@ export class ProviderRegistry {
 
 // Global singleton instance
 export const globalProviders = new ProviderRegistry();
+
+// Expose on window for DevTools interactive debugging and console testing
+if (typeof window !== 'undefined') {
+    (window as any).audion = {
+        ...(window as any).audion,
+        providers: globalProviders,
+        metadata: {
+            search: (query: string, type: 'all' | 'track' | 'album' | 'artist' = 'all', page: number = 1) =>
+                globalProviders.searchAllMetadata(query, type, page),
+            getAll: () => globalProviders.getAllMetadataProviders(),
+            get: (id: string) => globalProviders.getMetadataProvider(id)
+        },
+        stream: {
+            resolve: (providerId: string, songId: string, quality?: string) =>
+                globalProviders.resolveStream(providerId, songId, quality),
+            resolveStream: (providerId: string, songId: string, quality?: string) =>
+                globalProviders.resolveStream(providerId, songId, quality),
+            getAll: () => globalProviders.getAllStreamProviders(),
+            get: (id: string) => globalProviders.getStreamProvider(id)
+        },
+        lyrics: {
+            fetch: (track: { title: string; artist: string; album?: string; duration?: number }) =>
+                globalProviders.fetchLyricsFromProviders(track),
+            fetchLyrics: (track: { title: string; artist: string; album?: string; duration?: number }) =>
+                globalProviders.fetchLyricsFromProviders(track),
+            getAll: () => globalProviders.getAllLyricsProviders(),
+            get: (id: string) => globalProviders.getLyricsProvider(id)
+        }
+    };
+    (window as any).globalProviders = globalProviders;
+}

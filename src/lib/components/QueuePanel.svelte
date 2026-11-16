@@ -80,55 +80,30 @@
         if (isShuffle) {
             historyTracks = sIndices
                 .slice(0, sIdx)
-                .map((idx) => ({ track: q[idx], index: idx }));
+                .map((idx) => ({ track: q[idx], index: idx }))
+                .filter((item) => !!item.track);
+
+            upcomingTracks = sIndices
+                .slice(sIdx + 1)
+                .map((idx, i) => ({
+                    track: q[idx],
+                    index: idx,
+                    isPriority: i < uCount,
+                }))
+                .filter((item) => !!item.track);
         } else {
             historyTracks = q
                 .slice(0, qIdx)
                 .map((t, i) => ({ track: t, index: i }));
-        }
 
-        // Upcoming
-        if (isShuffle) {
-            upcomingTracks = [];
-
-            // 1. Priority Tracks (User Queue)
-            // These are strictly q[qIdx+1 ... qIdx+uCount]
-            for (let i = 1; i <= uCount; i++) {
-                const idx = qIdx + i;
-                if (idx < q.length) {
-                    upcomingTracks.push({
-                        track: q[idx],
-                        index: idx,
-                        isPriority: true,
-                    });
-                }
-            }
-
-            // 2. Shuffled Tracks
-            // Start from sIdx + 1
-            const remainingShuffled = sIndices.slice(sIdx + 1);
-
-            // We need to filter out tracks that are ALREADY in Priority list.
-            // Priority indices are [qIdx+1 ... qIdx+uCount].
-            const priorityIndices = new Set<number>();
-            for (let i = 1; i <= uCount; i++) priorityIndices.add(qIdx + i);
-
-            for (const idx of remainingShuffled) {
-                if (!priorityIndices.has(idx)) {
-                    upcomingTracks.push({
-                        track: q[idx],
-                        index: idx,
-                        isPriority: false,
-                    });
-                }
-            }
-        } else {
-            // Linear Upcoming
-            upcomingTracks = q.slice(qIdx + 1).map((t, i) => ({
-                track: t,
-                index: qIdx + 1 + i,
-                isPriority: i < uCount,
-            }));
+            upcomingTracks = q
+                .slice(qIdx + 1)
+                .map((t, i) => ({
+                    track: t,
+                    index: qIdx + 1 + i,
+                    isPriority: i < uCount,
+                }))
+                .filter((item) => !!item.track);
         }
     }
 

@@ -19,6 +19,8 @@
   import { onDestroy } from "svelte";
   import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
   import Icon from "$lib/components/Icon.svelte";
+  import { createSflxExtensionAdapter } from "$lib/plugins/sflx-adapter";
+  import { globalProviders } from "$lib/plugins/providers";
 
   let pluginContentEl: HTMLDivElement;
   let scrollRestored = false;
@@ -49,6 +51,45 @@
     addToast("Custom registry added", "success");
     newRegistryName = "";
     newRegistryUrl = "";
+  }
+
+  async function handleImportPackage() {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        multiple: false,
+        filters: [{
+          name: 'Extension Packages',
+          extensions: ['sflx', 'audion-ext', 'js']
+        }]
+      });
+      if (!selected || typeof selected !== 'string') return;
+
+      const { readTextFile } = await import('@tauri-apps/plugin-fs');
+      const content = await readTextFile(selected);
+      const fileName = selected.split(/[\/\\]/).pop() || 'community-package';
+
+      const adapter = createSflxExtensionAdapter(content, {
+        id: fileName.replace(/\.(sflx|js|audion-ext)$/, ''),
+        name: fileName.replace(/\.(sflx|js|audion-ext)$/, ''),
+        version: '1.0.0'
+      });
+
+      if (adapter.streamProvider) {
+        globalProviders.registerStreamProvider(adapter.streamProvider, fileName);
+      }
+      if (adapter.metadataProvider) {
+        globalProviders.registerMetadataProvider(adapter.metadataProvider, fileName);
+      }
+      if (adapter.lyricsProvider) {
+        globalProviders.registerLyricsProvider(adapter.lyricsProvider, fileName);
+      }
+
+      addToast(`Successfully loaded package: ${adapter.manifest.name}`, 'success');
+    } catch (err) {
+      console.error('[PluginManager] Failed to import package:', err);
+      addToast(`Failed to import package: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    }
   }
 
   function handleSortOutside(e: MouseEvent) {
@@ -351,6 +392,15 @@
       >
         <Icon name="folder" size={16} />
         {$_('pluginManager.openFolder')}
+      </button>
+
+      <button
+        class="btn-secondary"
+        on:click={handleImportPackage}
+        title="Import community .sflx or extension package"
+      >
+        <Icon name="file" size={16} />
+        Import Package (.sflx)
       </button>
 
       <button

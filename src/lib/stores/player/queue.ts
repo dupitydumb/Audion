@@ -43,11 +43,7 @@ export function _advanceQueueIndex(dry = false): number | null {
 
     if (q.length === 0) return null;
 
-    if (userCount > 0) {
-        idx = idx + 1;
-        if (!dry) userQueueCount.update(c => Math.max(0, c - 1));
-
-    } else if (shuf) {
+    if (shuf) {
         const shufIndices = get(shuffledIndices);
         let shufIdx = get(shuffledIndex) + 1;
 
@@ -59,8 +55,14 @@ export function _advanceQueueIndex(dry = false): number | null {
             }
         }
 
-        if (!dry) shuffledIndex.set(shufIdx);
+        if (!dry) {
+            shuffledIndex.set(shufIdx);
+            if (userCount > 0) userQueueCount.update(c => Math.max(0, c - 1));
+        }
         idx = shufIndices[shufIdx];
+    } else if (userCount > 0) {
+        idx = idx + 1;
+        if (!dry) userQueueCount.update(c => Math.max(0, c - 1));
     } else {
         idx = idx + 1;
 
@@ -110,8 +112,11 @@ export function addToQueue(tracks: Track[]): void {
         shuffledIndices.update(indices => {
             const shifted = indices.map(i => i >= insertPosition ? i + addedCount : i);
             const newIndices = Array.from({ length: addedCount }, (_, i) => insertPosition + i);
-            const shuffledNew = shuffleArray(newIndices);
-            return [...shifted, ...shuffledNew];
+            const curShufIdx = get(shuffledIndex);
+            const insertShufPos = Math.min(curShufIdx + 1 + userCount, shifted.length);
+            const copy = [...shifted];
+            copy.splice(insertShufPos, 0, ...newIndices);
+            return copy;
         });
     }
 

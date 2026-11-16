@@ -47,6 +47,7 @@ import {
 import { _advanceQueueIndex, shuffleArray, registerReorderCallback } from './queue';
 import { sendRemoteCommand, throttledRemoteCommand } from './remote';
 import { wsStore } from '$lib/stores/websocket';
+import { globalProviders } from '$lib/plugins/providers';
 import {
     registerPlayerDirectiveHandler, playerSyncQueue, playerAdvance,
     playerNativeStarted, playerHtml5CrossfadeCommitted, playerHtml5Ended,
@@ -199,7 +200,7 @@ registerPlayerDirectiveHandler((directive: PlayerDirective) => {
         return;
     }
 
-    const { reason, track: trackRef, queue_index, generation } = directive.data;
+    const { reason, track: trackRef, queue_index, generation, shuffled_index } = directive.data;
     const q = get(queue);
     const track = q[queue_index]?.id === trackRef.id ? q[queue_index] : q.find(t => t.id === trackRef.id);
     if (!track) {
@@ -210,7 +211,37 @@ registerPlayerDirectiveHandler((directive: PlayerDirective) => {
         return;
     }
 
+    const oldIdx = get(queueIndex);
+    const userCount = get(userQueueCount);
+
+    if (userCount > 0 && reason !== 'user_previous') {
+        if (get(shuffle)) {
+            userQueueCount.update(c => Math.max(0, c - 1));
+        } else {
+            const userQueueEnd = oldIdx + 1 + userCount;
+            if (queue_index > oldIdx && queue_index <= userQueueEnd) {
+                const skipped = queue_index - oldIdx;
+                userQueueCount.update(c => Math.max(0, c - skipped));
+            } else if (queue_index > userQueueEnd || queue_index < oldIdx) {
+                userQueueCount.set(0);
+            }
+        }
+    }
+
     queueIndex.set(queue_index);
+
+    if (get(shuffle)) {
+        if (typeof shuffled_index === 'number') {
+            shuffledIndex.set(shuffled_index);
+        } else {
+            const ptr = get(shuffledIndices).indexOf(queue_index);
+            if (ptr !== -1) {
+                shuffledIndex.set(ptr);
+            }
+        }
+    }
+
+    pluginEvents.emit('queueChange', { queue: q, index: queue_index });
 
     if (reason === 'user_next' || reason === 'user_previous' || reason === 'user_direct_select') {
         // nothing is playing this track yet => actually start it
@@ -436,19 +467,25 @@ export async function playTrack(
                 await nativeAudioStop().catch(() => { });
 
                 if (classifyAudioPath(audioPath) === 'custom-scheme') {
+                    const sourceType = track.source_type;
+                    const externalId = track.external_id;
+                    let resolved: string | null = null;
                     const runtime = pluginStore.getRuntime();
-                    if (runtime) {
-                        const sourceType = track.source_type;
-                        const externalId = track.external_id;
-                        if (sourceType && externalId) {
-                            console.log(`[Player] Resolving custom scheme: ${audioPath}`);
-                            const resolved = await runtime.resolveStreamUrl(sourceType, externalId, { track: trackForPlugins });
-                            if (resolved) {
-                                audioPath = resolved;
-                            } else {
-                                throw new Error(`Failed to resolve stream URL for ${sourceType}`);
-                            }
+                    if (runtime && sourceType && externalId) {
+                        console.log(`[Player] Resolving custom scheme via runtime: ${audioPath}`);
+                        resolved = await runtime.resolveStreamUrl(sourceType, externalId, { track: trackForPlugins });
+                    }
+                    if (!resolved && sourceType && externalId) {
+                        console.log(`[Player] Resolving custom scheme via globalProviders: ${audioPath}`);
+                        const streamRes = await globalProviders.resolveStream(sourceType, externalId);
+                        if (streamRes) {
+                            resolved = typeof streamRes === 'string' ? streamRes : (streamRes.rawBlobUrl || streamRes.url);
                         }
+                    }
+                    if (resolved) {
+                        audioPath = resolved;
+                    } else {
+                        throw new Error(`Failed to resolve stream URL for ${sourceType}`);
                     }
                 }
 

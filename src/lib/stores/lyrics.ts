@@ -15,6 +15,7 @@ import {
     type WordTiming,
 } from '$lib/lyrics';
 import { addToast } from '$lib/stores/toast';
+import { globalProviders } from '$lib/plugins/providers';
 
 // re-exported so Settings > Lyrics can list
 // every valid priority/delete token without importing from $lib/lyrics directly
@@ -831,6 +832,34 @@ export async function fetchLyricsForTrack(override?: LyricsQueryOverride): Promi
                 await refreshAvailableSources(track.path, isStream);
                 lyricsLoading.set(false);
                 return;
+            }
+        }
+
+        // 3. active plugins / custom LyricsProviders
+        if (fetchId === currentFetchId && globalProviders.getAllLyricsProviders().length > 0) {
+            try {
+                const providerRes = await globalProviders.fetchLyricsFromProviders({
+                    title: (override?.title ?? track.title) ?? '',
+                    artist: (override?.artist ?? track.artist) ?? '',
+                    album: (override?.album !== undefined ? override.album : track.album) ?? undefined,
+                    duration: (override?.duration !== undefined ? override.duration : track.duration) ?? undefined
+                });
+                if (providerRes && providerRes.lines && providerRes.lines.length > 0 && fetchId === currentFetchId) {
+                    const formattedResult: LyricsResult = {
+                        lines: providerRes.lines as any,
+                        source: providerRes.source || 'plugin',
+                        format: (providerRes.format as any) || 'lrc',
+                        hasWordSync: !!providerRes.hasWordSync,
+                        hasSyllableSync: !!providerRes.hasSyllableSync,
+                        raw: providerRes.raw || '',
+                        synced: true,
+                    };
+                    lyricsData.set(formattedResult);
+                    lyricsLoading.set(false);
+                    return;
+                }
+            } catch (pErr) {
+                console.warn('[Lyrics] Provider lyrics fetch failed:', pErr);
             }
         }
 
