@@ -91,7 +91,13 @@
     Palette,
     MessageCircle,
     Image,
-    Film
+    Film,
+    Grid,
+    Cpu,
+    Bookmark,
+    BookmarkCheck,
+    BookmarkPlus,
+    Save
   } from 'lucide-svelte';
   import Github from './icons/Github.svelte';
   import Notch from './icons/Notch.svelte';
@@ -334,6 +340,12 @@
     'arrow-down': ArrowDown,
     tag: Tag,
     palette: Palette,
+    grid: Grid,
+    cpu: Cpu,
+    bookmark: Bookmark,
+    'bookmark-check': BookmarkCheck,
+    'bookmark-plus': BookmarkPlus,
+    save: Save,
     github: Github,
     notch: Notch,
     floating: Floating

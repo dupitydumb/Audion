@@ -741,60 +741,122 @@ export class ProviderRegistry {
         }
     }
 
-    async getAlbum(id: string, providerId?: string): Promise<any> {
+    async getAlbum(id: string, providerId?: string, albumTitle?: string, artistName?: string): Promise<any> {
+        let res: any = null;
         if (providerId) {
             const provider = this.getMetadataProvider(providerId);
             if (provider && typeof provider.getAlbum === 'function') {
                 try {
-                    const res = await provider.getAlbum(id);
-                    if (res) return res;
+                    res = await provider.getAlbum(id);
                 } catch (e) {
                     console.warn(`[ProviderRegistry] Provider '${providerId}' getAlbum failed:`, e);
                 }
             }
         }
-        for (const provider of this.getAllMetadataProviders()) {
-            if (typeof provider.getAlbum === 'function') {
-                try {
-                    const res = await provider.getAlbum(id);
-                    if (res) return res;
-                } catch (_) {}
+        if (!res) {
+            for (const provider of this.getAllMetadataProviders()) {
+                if (typeof provider.getAlbum === 'function') {
+                    try {
+                        res = await provider.getAlbum(id);
+                        if (res) break;
+                    } catch (_) {}
+                }
             }
         }
-        return null;
+        // Fallback search if no tracks found or album lookup failed
+        if (!res || !res.tracks || res.tracks.length === 0) {
+            const query = (albumTitle || (id.startsWith('title-') ? decodeURIComponent(id.replace(/^title-/, '')) : id)).trim();
+            if (query) {
+                try {
+                    const searchTarget = artistName ? `${query} ${artistName}` : query;
+                    const searchRes = providerId 
+                        ? await this.searchProviderMetadata(searchTarget, 'track', providerId)
+                        : await this.searchAllMetadata(searchTarget, 'track');
+                    if (searchRes && searchRes.tracks && searchRes.tracks.length > 0) {
+                        res = {
+                            ...(res || {}),
+                            id: res?.id || id,
+                            title: res?.title || albumTitle || query,
+                            artist: res?.artist || artistName || searchRes.tracks[0]?.artist || 'Unknown Artist',
+                            cover_url: res?.cover_url || searchRes.tracks[0]?.cover_url,
+                            source_type: res?.source_type || providerId,
+                            provider_id: res?.provider_id || providerId,
+                            tracks: searchRes.tracks
+                        };
+                    }
+                } catch (e) {
+                    console.warn(`[ProviderRegistry] Fallback album search failed:`, e);
+                }
+            }
+        }
+        return res;
     }
 
     async getArtist(id: string, providerId?: string, artistName?: string): Promise<any> {
+        let res: any = null;
         if (providerId) {
             const provider = this.getMetadataProvider(providerId);
             if (provider && typeof provider.getArtist === 'function') {
                 try {
-                    const res = await provider.getArtist(id);
-                    if (res) return res;
+                    res = await provider.getArtist(id);
                 } catch (e) {
                     console.warn(`[ProviderRegistry] Provider '${providerId}' getArtist failed:`, e);
                 }
             }
         }
-        for (const provider of this.getAllMetadataProviders()) {
-            if (typeof provider.getArtist === 'function') {
-                try {
-                    const res = await provider.getArtist(id);
-                    if (res) return res;
-                } catch (_) {}
-            }
-        }
-        if (artistName && artistName !== id) {
+        if (!res) {
             for (const provider of this.getAllMetadataProviders()) {
                 if (typeof provider.getArtist === 'function') {
                     try {
-                        const res = await provider.getArtist(artistName);
-                        if (res) return res;
+                        res = await provider.getArtist(id);
+                        if (res) break;
                     } catch (_) {}
                 }
             }
         }
-        return null;
+        if (!res && artistName && artistName !== id) {
+            for (const provider of this.getAllMetadataProviders()) {
+                if (typeof provider.getArtist === 'function') {
+                    try {
+                        res = await provider.getArtist(artistName);
+                        if (res) break;
+                    } catch (_) {}
+                }
+            }
+        }
+        // Fallback search if no tracks/albums found or artist lookup failed
+        if (!res || !res.tracks || res.tracks.length === 0) {
+            const query = (artistName || (id.startsWith('name-') ? decodeURIComponent(id.replace(/^name-/, '')) : id)).trim();
+            if (query) {
+                try {
+                    const [trackSearch, albumSearch] = await Promise.all([
+                        providerId 
+                            ? this.searchProviderMetadata(query, 'track', providerId) 
+                            : this.searchAllMetadata(query, 'track'),
+                        providerId 
+                            ? this.searchProviderMetadata(query, 'album', providerId) 
+                            : this.searchAllMetadata(query, 'album'),
+                    ]);
+                    const tracks = trackSearch?.tracks || [];
+                    const albums = albumSearch?.albums || [];
+                    if (tracks.length > 0 || albums.length > 0) {
+                        res = {
+                            ...(res || {}),
+                            id: res?.id || id,
+                            name: res?.name || artistName || query,
+                            avatar_url: res?.avatar_url || tracks[0]?.cover_url,
+                            source_type: res?.source_type || providerId,
+                            provider_id: res?.provider_id || providerId,
+                            tracks: (res?.tracks && res.tracks.length > 0) ? res.tracks : tracks,
+                            albums: (res?.albums && res.albums.length > 0) ? res.albums : albums,
+                        };
+                    }
+                } catch (e) {
+                    console.warn(`[ProviderRegistry] Fallback artist search failed:`, e);
+                }
+            }
+        }
+        return res;
     }
 
     async getTrack(id: string, providerId?: string): Promise<MetadataTrackItem | null> {
@@ -939,8 +1001,8 @@ if (typeof window !== 'undefined') {
                 globalProviders.searchAllMetadata(query, type, page),
             searchProvider: (providerId: string, query: string, type: 'all' | 'track' | 'album' | 'artist' = 'all', page: number = 1) =>
                 globalProviders.searchProviderMetadata(providerId, query, type, page),
-            getAlbum: (id: string, providerId?: string) =>
-                globalProviders.getAlbum(id, providerId),
+            getAlbum: (id: string, providerId?: string, albumTitle?: string, artistName?: string) =>
+                globalProviders.getAlbum(id, providerId, albumTitle, artistName),
             getArtist: (id: string, providerId?: string, artistName?: string) =>
                 globalProviders.getArtist(id, providerId, artistName),
             getTrack: (id: string, providerId?: string) =>
