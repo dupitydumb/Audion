@@ -5,6 +5,7 @@
     import {
         getListenbrainzToken,
         formatDuration,
+        addExternalTrack,
         type Track,
     } from "$lib/api/tauri";
     import {
@@ -24,6 +25,7 @@
     import {
         artists as libraryArtists,
         albums as libraryAlbums,
+        addTrackToLibrary,
     } from "$lib/stores/library";
     import MediaCard from "./MediaCard.svelte";
     import Icon from "$lib/components/Icon.svelte";
@@ -80,6 +82,62 @@
 
     // Playback state
     let loadingStreamId: string | null = null;
+
+    // Save-to-library state
+    // Tracks which discover items have been saved (by external_id/id/title key)
+    let savedDiscoverKeys = new Set<string>();
+    let savingId: string | null = null;
+
+    function discoverTrackKey(track: MetadataTrackItem): string {
+        return track.external_id || track.id || track.title;
+    }
+
+    function isTrackSaved(track: MetadataTrackItem): boolean {
+        return savedDiscoverKeys.has(discoverTrackKey(track));
+    }
+
+    async function saveTrackToLibrary(track: MetadataTrackItem) {
+        const key = discoverTrackKey(track);
+        if (savingId === key) return;
+        savingId = key;
+
+        // Optimistic UI
+        savedDiscoverKeys.add(key);
+        savedDiscoverKeys = new Set(savedDiscoverKeys);
+
+        try {
+            const sourceType =
+                track.source_type ||
+                (track.provider_id === "musicbrainz"
+                    ? "musicbrainz"
+                    : track.provider_id || "plugin");
+
+            const dbId = await addExternalTrack({
+                title: track.title,
+                artist: track.artist,
+                album: track.album ?? undefined,
+                duration: track.duration ?? undefined,
+                cover_url: track.cover_url ?? undefined,
+                source_type: sourceType,
+                external_id: track.external_id || track.id,
+                track_number: track.track_number ?? undefined,
+                disc_number: track.disc_number ?? undefined,
+            });
+
+            // Update in-memory library store immediately
+            const libraryTrack = toAudionTrack(track);
+            addTrackToLibrary({ ...libraryTrack, id: dbId });
+
+            addToast("Saved to library ❤", "success");
+        } catch (e) {
+            console.error("[Discover] saveTrackToLibrary failed:", e);
+            savedDiscoverKeys.delete(key);
+            savedDiscoverKeys = new Set(savedDiscoverKeys);
+            addToast("Failed to save track", "error");
+        } finally {
+            savingId = null;
+        }
+    }
 
     // Active providers
     $: activeMetadataProviders = $providersStore.filter(
@@ -852,6 +910,21 @@
                                                     <span class="dim">—</span>
                                                 {/if}
                                             </div>
+                                            <div class="song-col-love">
+                                                <button
+                                                    class="love-btn"
+                                                    class:saved={isTrackSaved(track)}
+                                                    on:click|stopPropagation={() => saveTrackToLibrary(track)}
+                                                    title={isTrackSaved(track) ? "In library" : "Save to library"}
+                                                    aria-label={isTrackSaved(track) ? "In library" : "Save to library"}
+                                                >
+                                                    {#if savingId === discoverTrackKey(track)}
+                                                        <div class="spinner-tiny"></div>
+                                                    {:else}
+                                                        <Icon name={isTrackSaved(track) ? "heart-filled" : "heart"} size={14} />
+                                                    {/if}
+                                                </button>
+                                            </div>
                                             <div class="song-col-dur">
                                                 {track.duration
                                                     ? formatDuration(
@@ -1127,6 +1200,21 @@
                                             {:else}
                                                 <span class="dim">—</span>
                                             {/if}
+                                        </div>
+                                        <div class="song-col-love">
+                                            <button
+                                                class="love-btn"
+                                                class:saved={isTrackSaved(track)}
+                                                on:click|stopPropagation={() => saveTrackToLibrary(track)}
+                                                title={isTrackSaved(track) ? "In library" : "Save to library"}
+                                                aria-label={isTrackSaved(track) ? "In library" : "Save to library"}
+                                            >
+                                                {#if savingId === discoverTrackKey(track)}
+                                                    <div class="spinner-tiny"></div>
+                                                {:else}
+                                                    <Icon name={isTrackSaved(track) ? "heart-filled" : "heart"} size={14} />
+                                                {/if}
+                                            </button>
                                         </div>
                                         <div class="song-col-dur">
                                             {track.duration
@@ -1455,6 +1543,21 @@
                                                     currentAlbumDetail.artist}
                                             </button>
                                         </div>
+                                        <div class="song-col-love">
+                                            <button
+                                                class="love-btn"
+                                                class:saved={isTrackSaved(track)}
+                                                on:click|stopPropagation={() => saveTrackToLibrary(track)}
+                                                title={isTrackSaved(track) ? "In library" : "Save to library"}
+                                                aria-label={isTrackSaved(track) ? "In library" : "Save to library"}
+                                            >
+                                                {#if savingId === discoverTrackKey(track)}
+                                                    <div class="spinner-tiny"></div>
+                                                {:else}
+                                                    <Icon name={isTrackSaved(track) ? "heart-filled" : "heart"} size={14} />
+                                                {/if}
+                                            </button>
+                                        </div>
                                         <div class="song-col-dur">
                                             {track.duration
                                                 ? formatDuration(track.duration)
@@ -1659,6 +1762,21 @@
                                             {:else}
                                                 <span class="dim">—</span>
                                             {/if}
+                                        </div>
+                                        <div class="song-col-love">
+                                            <button
+                                                class="love-btn"
+                                                class:saved={isTrackSaved(track)}
+                                                on:click|stopPropagation={() => saveTrackToLibrary(track)}
+                                                title={isTrackSaved(track) ? "In library" : "Save to library"}
+                                                aria-label={isTrackSaved(track) ? "In library" : "Save to library"}
+                                            >
+                                                {#if savingId === discoverTrackKey(track)}
+                                                    <div class="spinner-tiny"></div>
+                                                {:else}
+                                                    <Icon name={isTrackSaved(track) ? "heart-filled" : "heart"} size={14} />
+                                                {/if}
+                                            </button>
                                         </div>
                                         <div class="song-col-dur">
                                             {track.duration
@@ -2279,6 +2397,43 @@
         text-align: right;
         font-size: 0.8rem;
         color: var(--text-subdued);
+    }
+
+    /* ── Save-to-Library Heart Button ── */
+    .song-col-love {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        flex-shrink: 0;
+    }
+
+    .love-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: var(--text-subdued);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 4px;
+        border-radius: var(--radius-sm);
+        transition: color 0.15s, transform 0.1s;
+        opacity: 0;
+    }
+
+    .song-row:hover .love-btn {
+        opacity: 1;
+    }
+
+    .love-btn:hover {
+        color: #ef4444;
+        transform: scale(1.2);
+    }
+
+    .love-btn.saved {
+        color: #ef4444;
+        opacity: 1;
     }
 
     .truncate {
