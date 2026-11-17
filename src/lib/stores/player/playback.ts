@@ -60,6 +60,14 @@ let _playStartTime: number = 0;
 let _nativeAudioUsed = false;
 let _nativeErrCount = 0;
 
+let _sleepTimerCheck: (() => boolean) | null = null;
+let _sleepTimerExpire: (() => Promise<void>) | null = null;
+
+export function registerSleepTimerHooks(check: () => boolean, expire: () => Promise<void>): void {
+    _sleepTimerCheck = check;
+    _sleepTimerExpire = expire;
+}
+
 // ─── Broadcast ────────────────────────────────────────────────────────────────
 
 let lastBroadcast = 0;
@@ -253,6 +261,12 @@ registerPlayerDirectiveHandler((directive: PlayerDirective) => {
             })
             .catch(console.error);
     } else {
+        // Sleep timer check on natural transition
+        if (_sleepTimerCheck && _sleepTimerCheck()) {
+            _sleepTimerExpire?.().catch(console.error);
+            return;
+        }
+
         // native (via engine self trigger) or HTML5 (via the report in _triggerHtml5Crossfade / html5's onEnded)
         // already committed this transition on its own
         // this is metadata/store sync only
@@ -1026,6 +1040,11 @@ export function handleTrackEnd(): void {
     if (get(repeat) === 'one' && track) {
         console.log('[Player] Repeat one: restarting current track');
         playTrack(track).catch(console.error);
+        return;
+    }
+
+    if (_sleepTimerCheck && _sleepTimerCheck()) {
+        _sleepTimerExpire?.().catch(console.error);
         return;
     }
 

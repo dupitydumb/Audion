@@ -1,25 +1,20 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
     import { onMount } from "svelte";
-    import { formatTrackArtists } from "$lib/utils/artists";
     import { fade, fly } from "svelte/transition";
     import {
-        searchArtistsMb,
-        searchReleasesMb,
-        getArtistMusicBrainzInfo,
-        getArtistDiscographyMb,
-        getReleaseGroupTracksMb,
-        getArtistTopTracksMb,
         getListenbrainzToken,
-        type MbDiscoverArtist,
-        type MbDiscoverRelease,
-        type MbArtistInfo,
-        type MbDiscographyItem,
-        type MbTrack,
+        formatDuration,
         type Track,
     } from "$lib/api/tauri";
-    import { playTracks } from "$lib/stores/player";
-    import { pluginStore } from "$lib/stores/plugin-store";
+    import {
+        globalProviders,
+        providersStore,
+        type MetadataTrackItem,
+        type MetadataAlbumItem,
+        type MetadataArtistItem,
+    } from "$lib/plugins/providers";
+    import { playTracks, currentTrack, isPlaying } from "$lib/stores/player";
     import { addToast } from "$lib/stores/toast";
     import {
         goToArtistDetail,
@@ -33,39 +28,66 @@
     import MediaCard from "./MediaCard.svelte";
     import Icon from "$lib/components/Icon.svelte";
 
-    type Tab = "artists" | "releases";
+    type Tab = "all" | "tracks" | "albums" | "artists";
     type SearchState = "idle" | "loading" | "done" | "error";
 
-    let activeTab: Tab = "artists";
+    let activeTab: Tab = "all";
     let searchInput = "";
     let searchTimer: ReturnType<typeof setTimeout> | null = null;
     let lastQuery = "";
+    let selectedProviderId = "all";
 
     // Results
-    let artistResults: MbDiscoverArtist[] = [];
-    let releaseResults: MbDiscoverRelease[] = [];
+    let trackResults: MetadataTrackItem[] = [];
+    let albumResults: MetadataAlbumItem[] = [];
+    let artistResults: MetadataArtistItem[] = [];
     let searchState: SearchState = "idle";
     let errorMsg = "";
 
-    // Inline detail panel (Artist)
-    let detailArtist: MbDiscoverArtist | null = null;
-    let detailInfo: MbArtistInfo | null = null;
-    let detailDiscography: MbDiscographyItem[] = [];
-    let detailLoading = false;
+    // Navigation Stack for in-Discover browsing: Song > Album > Artist
+    interface NavSearch {
+        type: "search";
+        title?: string;
+    }
+    interface NavAlbum {
+        type: "album";
+        albumId: string;
+        providerId?: string;
+        title?: string;
+        artist?: string;
+        cover_url?: string;
+        album?: MetadataAlbumItem;
+    }
+    interface NavArtist {
+        type: "artist";
+        artistId: string;
+        providerId?: string;
+        artistName?: string;
+        avatar_url?: string;
+        artist?: MetadataArtistItem;
+    }
+    type NavItem = NavSearch | NavAlbum | NavArtist;
 
-    // Inline detail panel (Release)
-    let detailRelease: MbDiscoverRelease | null = null;
-    let detailReleaseTracks: MbTrack[] = [];
-    let detailReleaseLoading = false;
+    let navStack: NavItem[] = [{ type: "search", title: "Search" }];
+    $: currentNav = navStack[navStack.length - 1] || { type: "search" };
 
-    // Navigation stack
-    type ViewState =
-        | { type: "artist"; artist: MbDiscoverArtist }
-        | { type: "release"; release: MbDiscoverRelease };
+    // Detail States
+    let currentAlbumDetail: MetadataAlbumItem | null = null;
+    let albumLoading = false;
+    let currentArtistDetail: MetadataArtistItem | null = null;
+    let artistLoading = false;
+    let showAllReleaseTypes = false;
 
-    let navigationStack: ViewState[] = [];
-    let detailArtistTracks: MbTrack[] = [];
-    let detailArtistTracksLoading = false;
+    // Playback state
+    let loadingStreamId: string | null = null;
+
+    // Active providers
+    $: activeMetadataProviders = $providersStore.filter(
+        (p) => p.type === "metadata" && p.enabled,
+    );
+    $: activeStreamProviders = $providersStore.filter(
+        (p) => p.type === "stream" && p.enabled,
+    );
 
     // Local library lookup sets (lowercased)
     $: localArtistSet = new Set(
@@ -75,9 +97,19 @@
         $libraryAlbums.map((a) => [a.name.toLowerCase(), a.id]),
     );
 
+    function isArtistInLibrary(name?: string): boolean {
+        if (!name) return false;
+        return localArtistSet.has(name.toLowerCase());
+    }
+
+    function findLocalAlbumId(title?: string): number | undefined {
+        if (!title) return undefined;
+        return localAlbumMap.get(title.toLowerCase());
+    }
+
     function debounceSearch() {
         if (searchTimer) clearTimeout(searchTimer);
-        searchTimer = setTimeout(() => executeSearch(), 500);
+        searchTimer = setTimeout(() => executeSearch(), 450);
     }
 
     function handleKeydown(e: KeyboardEvent) {
@@ -90,21 +122,36 @@
     async function executeSearch() {
         const q = searchInput.trim();
         if (!q || q.length < 2) return;
-        if (q === lastQuery) return;
         lastQuery = q;
-        detailArtist = null;
 
+        // Reset to search view when initiating a new search
+        navStack = [{ type: "search", title: "Search" }];
         searchState = "loading";
         errorMsg = "";
 
         try {
-            if (activeTab === "artists") {
-                artistResults = await searchArtistsMb(q, 20);
-            } else {
-                releaseResults = await searchReleasesMb(q, 20);
-            }
+            const searchType =
+                activeTab === "tracks"
+                    ? "track"
+                    : activeTab === "albums"
+                      ? "album"
+                      : activeTab === "artists"
+                        ? "artist"
+                        : "all";
+
+            const res = await globalProviders.searchProviderMetadata(
+                selectedProviderId,
+                q,
+                searchType,
+                1,
+            );
+
+            trackResults = res.tracks || [];
+            albumResults = res.albums || [];
+            artistResults = res.artists || [];
             searchState = "done";
         } catch (e) {
+            console.error("[Discover] Search failed:", e);
             errorMsg = String(e);
             searchState = "error";
         }
@@ -113,147 +160,288 @@
     function switchTab(tab: Tab) {
         if (tab === activeTab) return;
         activeTab = tab;
-        // If we have a query, re-search in the new tab
-        lastQuery = "";
         if (searchInput.trim().length >= 2) {
             executeSearch();
         }
     }
 
-    function isArtistInLibrary(name: string): boolean {
-        return localArtistSet.has(name.toLowerCase());
-    }
-
-    function findLocalAlbumId(title: string): number | undefined {
-        return localAlbumMap.get(title.toLowerCase());
-    }
-
-    function handleArtistClick(artist: MbDiscoverArtist) {
-        if (isArtistInLibrary(artist.name)) {
-            goToArtistDetail(artist.name);
-        } else {
-            pushNavigation({ type: "artist", artist });
+    function handleProviderChange(e: Event) {
+        const target = e.target as HTMLSelectElement;
+        selectedProviderId = target.value;
+        if (searchInput.trim().length >= 2) {
+            executeSearch();
         }
     }
 
-    async function handleReleaseClick(release: MbDiscoverRelease) {
-        const localId = findLocalAlbumId(release.title);
-        if (localId !== undefined) {
-            goToAlbumDetail(localId);
-        } else {
-            pushNavigation({ type: "release", release });
+    // Navigation methods
+    function pushNav(item: NavItem) {
+        navStack = [...navStack, item];
+        if (item.type === "album") {
+            loadAlbum(item);
+        } else if (item.type === "artist") {
+            loadArtist(item);
         }
     }
 
-    function pushNavigation(view: ViewState) {
-        navigationStack = [...navigationStack, view];
-        loadView(view);
-    }
-
-    function popNavigation() {
-        if (navigationStack.length > 1) {
-            navigationStack = navigationStack.slice(0, -1);
-            loadView(navigationStack[navigationStack.length - 1]);
-        } else {
-            closeDetail();
+    function popNav() {
+        if (navStack.length > 1) {
+            navStack = navStack.slice(0, -1);
+            const top = navStack[navStack.length - 1];
+            if (top.type === "album") {
+                loadAlbum(top);
+            } else if (top.type === "artist") {
+                loadArtist(top);
+            }
         }
     }
 
-    function closeDetail() {
-        detailArtist = null;
-        detailRelease = null;
-        navigationStack = [];
-    }
-
-    async function loadView(view: ViewState) {
-        if (view.type === "artist") {
-            await openArtistDetail(view.artist, false);
-        } else {
-            await openReleaseDetail(view.release, false);
+    function goToBreadcrumb(index: number) {
+        if (index < navStack.length - 1) {
+            navStack = navStack.slice(0, index + 1);
+            const top = navStack[navStack.length - 1];
+            if (top.type === "album") {
+                loadAlbum(top);
+            } else if (top.type === "artist") {
+                loadArtist(top);
+            }
         }
     }
 
-    async function openReleaseDetail(release: MbDiscoverRelease, push = true) {
-        detailArtist = null; // Close other panel
-        detailRelease = release;
-        detailReleaseTracks = [];
-        detailReleaseLoading = true;
+    function navigateToAlbum(
+        albumId?: string,
+        title?: string,
+        artist?: string,
+        providerId?: string,
+        coverUrl?: string,
+    ) {
+        if (!albumId && !title) return;
+        const id = albumId || `title-${encodeURIComponent(title || "")}`;
+        pushNav({
+            type: "album",
+            albumId: id,
+            providerId,
+            title: title || "Album",
+            artist,
+            cover_url: coverUrl,
+        });
+    }
 
-        if (push) navigationStack = [{ type: "release", release }];
+    function navigateToArtist(
+        artistId?: string,
+        artistName?: string,
+        providerId?: string,
+        avatarUrl?: string,
+    ) {
+        if (!artistId && !artistName) return;
+        const id = artistId || `name-${encodeURIComponent(artistName || "")}`;
+        pushNav({
+            type: "artist",
+            artistId: id,
+            providerId,
+            artistName: artistName || "Artist",
+            avatar_url: avatarUrl,
+        });
+    }
 
+    async function loadAlbum(entry: NavAlbum) {
+        currentAlbumDetail = null;
+        albumLoading = true;
         try {
-            detailReleaseTracks = await getReleaseGroupTracksMb(release.mbid);
+            const data = await globalProviders.getAlbum(
+                entry.albumId,
+                entry.providerId,
+            );
+            if (data) {
+                currentAlbumDetail = {
+                    ...data,
+                    title: data.title || entry.title || "Unknown Album",
+                    artist: data.artist || entry.artist || "Unknown Artist",
+                    cover_url: data.cover_url || entry.cover_url,
+                };
+            } else {
+                // Fallback shell
+                currentAlbumDetail = {
+                    id: entry.albumId,
+                    title: entry.title || "Unknown Album",
+                    artist: entry.artist || "Unknown Artist",
+                    cover_url: entry.cover_url,
+                    tracks: [],
+                };
+            }
         } catch (e) {
-            console.error("[MbDiscover] release tracks fetch error:", e);
+            console.error("[Discover] loadAlbum error:", e);
+            currentAlbumDetail = {
+                id: entry.albumId,
+                title: entry.title || "Unknown Album",
+                artist: entry.artist || "Unknown Artist",
+                cover_url: entry.cover_url,
+                tracks: [],
+            };
         } finally {
-            detailReleaseLoading = false;
+            albumLoading = false;
         }
     }
 
-    async function openArtistDetail(artist: MbDiscoverArtist, push = true) {
-        detailRelease = null; // Close other panel
-        detailArtist = artist;
-        detailInfo = null;
-        detailDiscography = [];
-        detailArtistTracks = [];
-        detailLoading = true;
-        detailArtistTracksLoading = true;
+    async function loadArtist(entry: NavArtist) {
+        currentArtistDetail = null;
+        artistLoading = true;
         showAllReleaseTypes = false;
-
-        if (push) navigationStack = [{ type: "artist", artist }];
-
         try {
-            // Fetch info and discography in parallel
-            const [info, disco] = await Promise.all([
-                getArtistMusicBrainzInfo(artist.name),
-                getArtistDiscographyMb(artist.name),
-            ]);
-            detailInfo = info;
-            detailDiscography = disco;
+            const data = await globalProviders.getArtist(
+                entry.artistId,
+                entry.providerId,
+                entry.artistName,
+            );
+            if (data) {
+                currentArtistDetail = {
+                    ...data,
+                    name: data.name || entry.artistName || "Unknown Artist",
+                    avatar_url: data.avatar_url || entry.avatar_url,
+                };
+            } else {
+                currentArtistDetail = {
+                    id: entry.artistId,
+                    name: entry.artistName || "Unknown Artist",
+                    avatar_url: entry.avatar_url,
+                    tracks: [],
+                    albums: [],
+                };
+            }
         } catch (e) {
-            console.error("[MbDiscover] artist detail error:", e);
+            console.error("[Discover] loadArtist error:", e);
+            currentArtistDetail = {
+                id: entry.artistId,
+                name: entry.artistName || "Unknown Artist",
+                avatar_url: entry.avatar_url,
+                tracks: [],
+                albums: [],
+            };
         } finally {
-            detailLoading = false;
-        }
-
-        try {
-            detailArtistTracks = await getArtistTopTracksMb(artist.mbid);
-        } catch (e) {
-            console.error("[MbDiscover] artist tracks fetch error:", e);
-        } finally {
-            detailArtistTracksLoading = false;
+            artistLoading = false;
         }
     }
 
-    $: isTidalEnabled = $pluginStore.installed.some(
-        (p) => p.name === "Tidal Search" && p.enabled,
-    );
+    function hashString(str: string): number {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            hash = (hash << 5) - hash + str.charCodeAt(i);
+            hash |= 0;
+        }
+        return hash;
+    }
 
-    let playingStreamId: string | null = null;
+    function toAudionTrack(
+        track: MetadataTrackItem,
+        fallbackAlbum?: string,
+        fallbackCover?: string,
+    ): Track {
+        let durationSec = track.duration || 0;
+        if (durationSec > 10000) durationSec = Math.round(durationSec / 1000);
 
-    async function playOnPlayback(track: MbTrack) {
-        playingStreamId = track.mbid;
+        const safeId =
+            -(
+                Math.abs(
+                    hashString(
+                        String(track.id || track.external_id || track.title),
+                    ),
+                ) % 9000000
+            ) - 1000000;
+
+        const sourceType =
+            track.source_type ||
+            (track.provider_id === "musicbrainz"
+                ? "musicbrainz"
+                : track.provider_id || "plugin");
+
+        const path =
+            track.preview_url ||
+            (track.external_id ? `${sourceType}://${track.external_id}` : "") ||
+            `plugin://${sourceType}`;
+
+        return {
+            id: safeId,
+            path,
+            title: track.title || "Unknown Title",
+            artist: track.artist || "Unknown Artist",
+            artists: track.artist ? [track.artist] : [],
+            album: track.album || fallbackAlbum || "Unknown Album",
+            track_number: track.track_number ?? null,
+            duration: durationSec || null,
+            album_id: null,
+            format: track.format || "STREAM",
+            bitrate: track.bitrate || 0,
+            source_type: sourceType,
+            external_id: track.external_id || track.id,
+            cover_url: track.cover_url || fallbackCover || null,
+            disc_number: track.disc_number ?? null,
+        };
+    }
+
+    async function playSong(
+        track: MetadataTrackItem,
+        contextTracks?: MetadataTrackItem[],
+        fallbackAlbum?: string,
+        fallbackCover?: string,
+    ) {
+        loadingStreamId = track.id || track.external_id || track.title;
+        try {
+            // Check if track is a MusicBrainz recording without external stream provider
+            if (
+                (track.source_type === "musicbrainz" ||
+                    track.provider_id === "musicbrainz") &&
+                activeStreamProviders.length === 0
+            ) {
+                await playViaListenBrainz(track);
+                return;
+            }
+
+            const queue =
+                contextTracks && contextTracks.length > 0
+                    ? contextTracks.map((t) =>
+                          toAudionTrack(t, fallbackAlbum, fallbackCover),
+                      )
+                    : [toAudionTrack(track, fallbackAlbum, fallbackCover)];
+
+            const startIdx = Math.max(
+                0,
+                queue.findIndex(
+                    (t) =>
+                        t.external_id === (track.external_id || track.id) ||
+                        t.title === track.title,
+                ),
+            );
+
+            playTracks(queue, startIdx >= 0 ? startIdx : 0);
+        } catch (e) {
+            console.error("[Discover] playSong failed:", e);
+            addToast($_("discover.metadataLookupFailed"), "error");
+        } finally {
+            loadingStreamId = null;
+        }
+    }
+
+    async function playViaListenBrainz(track: MetadataTrackItem) {
         try {
             const token = await getListenbrainzToken();
             const headers: Record<string, string> = {
                 Accept: "application/json",
             };
-            if (token) {
-                headers["Authorization"] = `Token ${token}`;
-            }
+            if (token) headers["Authorization"] = `Token ${token}`;
 
+            const mbid = track.external_id || track.id;
             const query = new URLSearchParams({
-                recording_mbids: track.mbid,
+                recording_mbids: mbid,
                 artist_name: track.artist,
                 recording_name: track.title,
                 inc: "metadata",
             });
+
             const resp = await fetch(
                 `https://api.listenbrainz.org/1/metadata/lookup/?${query.toString()}`,
                 { headers },
             );
             const data = await resp.json();
-            const meta = data[track.mbid];
+            const meta = data[mbid];
 
             let streamUrl = null;
             let sourceType = "external";
@@ -276,10 +464,7 @@
             }
 
             if (!streamUrl) {
-                addToast(
-                    $_("discover.noStreamUrl"),
-                    "error",
-                );
+                addToast($_("discover.noStreamUrl"), "error");
                 return;
             }
 
@@ -296,71 +481,53 @@
                 path: `plugin://${sourceType}`,
                 title: track.title,
                 artist: track.artist,
-                album: detailRelease?.title || "Unknown Album",
-                track_number: track.track_number,
-                duration: Math.round((track.duration_ms || 0) / 1000),
+                album: track.album || "Unknown Album",
+                track_number: track.track_number ?? 1,
+                duration: track.duration || 0,
                 album_id: null,
                 format: "STREAM",
                 bitrate: 0,
                 source_type: sourceType,
                 external_id: streamUrl,
-                cover_url: getReleaseCoverUrl(detailRelease?.mbid || ""),
-                disc_number: track.disc_number,
+                cover_url: track.cover_url || null,
+                disc_number: track.disc_number ?? 1,
             };
             playTracks([audionTrack], 0);
         } catch (e) {
-            console.error("[MbDiscover] Metadata lookup error:", e);
-            addToast(
-                $_("discover.metadataLookupFailed"),
-                "error",
-            );
-        } finally {
-            playingStreamId = null;
+            console.error("[Discover] ListenBrainz playback error:", e);
+            addToast($_("discover.metadataLookupFailed"), "error");
         }
+    }
+
+    function isCurrentTrackPlaying(track: MetadataTrackItem): boolean {
+        if (!$currentTrack || !$isPlaying) return false;
+        return (
+            $currentTrack.title === track.title &&
+            ($currentTrack.artist === track.artist ||
+                $currentTrack.external_id === (track.external_id || track.id))
+        );
     }
 
     function artistInitial(name: string): string {
-        return name.charAt(0).toUpperCase();
+        return (name || "?").charAt(0).toUpperCase();
     }
 
-    // Discography filtering — show Albums & Singles by default
-    let showAllReleaseTypes = false;
-    const PRIMARY_TYPES = ["album", "single"];
+    // Discography filter
+    const PRIMARY_TYPES = ["album", "single", "ep"];
+    $: filteredDiscography = currentArtistDetail?.albums
+        ? showAllReleaseTypes
+            ? currentArtistDetail.albums
+            : currentArtistDetail.albums.filter((a) =>
+                  PRIMARY_TYPES.includes(
+                      (a.release_type || "album").toLowerCase(),
+                  ),
+              )
+        : [];
 
-    function releaseTypeClass(rt: string): string {
-        const lower = rt.toLowerCase();
-        if (lower === "album") return "rt-album";
-        if (lower === "single") return "rt-single";
-        if (lower === "ep") return "rt-ep";
-        if (lower === "live") return "rt-live";
-        if (lower === "compilation") return "rt-compilation";
-        if (lower === "soundtrack") return "rt-soundtrack";
-        if (lower === "remix") return "rt-remix";
-        return "rt-other";
-    }
-
-    $: filteredDiscography = showAllReleaseTypes
-        ? detailDiscography
-        : detailDiscography.filter((d) =>
-              PRIMARY_TYPES.includes(d.release_type.toLowerCase()),
-          );
-
-    $: hiddenCount = detailDiscography.length - filteredDiscography.length;
-
-    function getReleaseCoverUrl(mbid: string): string {
-        return `https://coverartarchive.org/release-group/${mbid}/front-250`;
-    }
-
-    function handleImageError(e: Event) {
-        const target = e.target as HTMLImageElement;
-        if (target && target.style) {
-            target.style.display = "none";
-        }
-    }
     onMount(() => {
         if ($currentView.type === "discover" && $currentView.query) {
             searchInput = $currentView.query;
-            activeTab = "releases";
+            activeTab = "all";
             executeSearch();
         }
     });
@@ -379,617 +546,919 @@
                     </p>
                 </div>
             </div>
+
+            <!-- Provider Connection Status Bar -->
+            <div class="provider-status-bar">
+                <div class="provider-badge stream-status">
+                    {#if activeStreamProviders.length > 0}
+                        <span class="status-dot online"></span>
+                        <span class="provider-text">
+                            {$_("discover.streamingVia")}:
+                            <strong>{activeStreamProviders[0].name}</strong>
+                            {#if activeStreamProviders.length > 1}
+                                <span class="provider-extra"
+                                    >+{activeStreamProviders.length - 1}</span
+                                >
+                            {/if}
+                        </span>
+                    {:else}
+                        <span class="status-dot offline"></span>
+                        <span class="provider-text warning">
+                            {$_("discover.noStreamProvider")}
+                        </span>
+                    {/if}
+                </div>
+            </div>
         </div>
 
-        <!-- Search bar -->
-        <div class="search-bar">
-            <Icon name="search" size={20} className="search-icon" />
-            <input
-                type="text"
-                class="search-input"
-                placeholder={$_("discover.searchPlaceholder")}
-                bind:value={searchInput}
-                on:input={debounceSearch}
-                on:keydown={handleKeydown}
-            />
-            {#if searchInput}
-                <button
-                    class="clear-btn"
-                    aria-label="Clear search"
-                    on:click={() => {
-                        searchInput = "";
-                        lastQuery = "";
-                        artistResults = [];
-                        releaseResults = [];
-                        searchState = "idle";
-                        detailArtist = null;
-                    }}
+        <!-- Search Bar with Provider Selector -->
+        <div class="search-composite">
+            <div class="search-bar">
+                <Icon name="search" size={20} className="search-icon" />
+                <input
+                    type="text"
+                    class="search-input"
+                    placeholder={$_("discover.searchPlaceholder")}
+                    bind:value={searchInput}
+                    on:input={debounceSearch}
+                    on:keydown={handleKeydown}
+                />
+                {#if searchInput}
+                    <button
+                        class="clear-btn"
+                        aria-label="Clear search"
+                        on:click={() => {
+                            searchInput = "";
+                            lastQuery = "";
+                            trackResults = [];
+                            albumResults = [];
+                            artistResults = [];
+                            searchState = "idle";
+                            navStack = [{ type: "search", title: "Search" }];
+                        }}
+                    >
+                        <Icon name="x" size={18} />
+                    </button>
+                {/if}
+            </div>
+
+            <!-- Metadata Provider Filter Dropdown -->
+            <div class="provider-select-wrapper">
+                <Icon name="cpu" size={16} className="select-icon" />
+                <select
+                    class="provider-select"
+                    value={selectedProviderId}
+                    on:change={handleProviderChange}
+                    aria-label={$_("discover.provider")}
                 >
-                    <Icon name="x" size={18} />
-                </button>
-            {/if}
+                    <option value="all">🌐 {$_("discover.allProviders")}</option
+                    >
+                    {#each activeMetadataProviders as mp}
+                        <option value={mp.id}>{mp.name}</option>
+                    {/each}
+                </select>
+            </div>
         </div>
 
-        <!-- Tabs -->
-        <div class="tab-bar">
-            <button
-                class="tab"
-                class:active={activeTab === "artists"}
-                on:click={() => switchTab("artists")}
-            >
-                <Icon name="users" size={16} />
-                {$_("discover.tabArtists")}
-            </button>
-            <button
-                class="tab"
-                class:active={activeTab === "releases"}
-                on:click={() => switchTab("releases")}
-            >
-                <Icon name="disc" size={16} />
-                {$_("discover.tabReleases")}
-            </button>
-        </div>
+        <!-- Tabs & Breadcrumbs Bar -->
+        {#if currentNav.type === "search"}
+            <div class="tab-bar">
+                <button
+                    class="tab"
+                    class:active={activeTab === "all"}
+                    on:click={() => switchTab("all")}
+                >
+                    <Icon name="grid" size={16} />
+                    {$_("discover.tabAll")}
+                </button>
+                <button
+                    class="tab"
+                    class:active={activeTab === "tracks"}
+                    on:click={() => switchTab("tracks")}
+                >
+                    <Icon name="music" size={16} />
+                    {$_("discover.tabSongs")}
+                    {#if trackResults.length > 0}
+                        <span class="tab-badge">{trackResults.length}</span>
+                    {/if}
+                </button>
+                <button
+                    class="tab"
+                    class:active={activeTab === "albums"}
+                    on:click={() => switchTab("albums")}
+                >
+                    <Icon name="disc" size={16} />
+                    {$_("discover.tabReleases")}
+                    {#if albumResults.length > 0}
+                        <span class="tab-badge">{albumResults.length}</span>
+                    {/if}
+                </button>
+                <button
+                    class="tab"
+                    class:active={activeTab === "artists"}
+                    on:click={() => switchTab("artists")}
+                >
+                    <Icon name="users" size={16} />
+                    {$_("discover.tabArtists")}
+                    {#if artistResults.length > 0}
+                        <span class="tab-badge">{artistResults.length}</span>
+                    {/if}
+                </button>
+            </div>
+        {:else}
+            <!-- Breadcrumb Navigation Bar -->
+            <div class="breadcrumb-bar" in:fade={{ duration: 150 }}>
+                <button
+                    class="back-nav-btn"
+                    on:click={popNav}
+                    title={$_("discover.back")}
+                >
+                    <Icon name="arrow-left" size={18} />
+                    <span>{$_("discover.back")}</span>
+                </button>
+                <div class="breadcrumb-trail">
+                    {#each navStack as item, idx}
+                        {#if idx > 0}
+                            <span class="breadcrumb-sep">/</span>
+                        {/if}
+                        <button
+                            class="breadcrumb-item"
+                            class:active={idx === navStack.length - 1}
+                            on:click={() => goToBreadcrumb(idx)}
+                        >
+                            {#if item.type === "search"}
+                                {$_("sidebar.discover")}
+                            {:else if item.type === "album"}
+                                💿 {item.title || "Album"}
+                            {:else if item.type === "artist"}
+                                👤 {item.artistName || "Artist"}
+                            {/if}
+                        </button>
+                    {/each}
+                </div>
+            </div>
+        {/if}
     </header>
 
-    <!-- Content area -->
+    <!-- Content Area -->
     <div class="discover-content">
-        {#if searchState === "idle"}
-            <div class="empty-state" in:fade={{ duration: 200 }}>
-                <Icon name="globe" size={64} />
-                <p>
-                    {$_("discover.emptyTitle")}
-                </p>
-                <span class="hint"
-                    >{$_("discover.emptyHint")}</span
-                >
-            </div>
-        {:else if searchState === "loading"}
-            <div class="loading-state" in:fade={{ duration: 150 }}>
-                <div class="spinner"></div>
-                <p>
-                    {$_("discover.searching")}
-                </p>
-            </div>
-        {:else if searchState === "error"}
-            <div class="error-state" in:fade={{ duration: 200 }}>
-                <Icon name="alert-circle" size={48} />
-                <p>
-                    {$_("discover.searchFailedTitle")}
-                </p>
-                <span class="hint">{errorMsg}</span>
-            </div>
-        {:else if searchState === "done"}
-            <!-- Artist results -->
-            {#if activeTab === "artists"}
-                {#if artistResults.length === 0}
+        <!-- 1. SEARCH RESULTS VIEW -->
+        {#if currentNav.type === "search"}
+            {#if searchState === "idle"}
+                <div class="empty-state" in:fade={{ duration: 200 }}>
+                    <Icon name="globe" size={64} />
+                    <p>{$_("discover.emptyTitle")}</p>
+                    <span class="hint">{$_("discover.emptyHint")}</span>
+                </div>
+            {:else if searchState === "loading"}
+                <div class="loading-state" in:fade={{ duration: 150 }}>
+                    <div class="spinner"></div>
+                    <p>{$_("discover.searching")}</p>
+                </div>
+            {:else if searchState === "error"}
+                <div class="error-state" in:fade={{ duration: 200 }}>
+                    <Icon name="alert-circle" size={48} />
+                    <p>{$_("discover.searchFailedTitle")}</p>
+                    <span class="hint">{errorMsg}</span>
+                </div>
+            {:else if searchState === "done"}
+                <!-- Check if no results across any type -->
+                {#if trackResults.length === 0 && albumResults.length === 0 && artistResults.length === 0}
                     <div class="no-results" in:fade={{ duration: 200 }}>
                         <p>
-                            {$_("discover.noArtistsFoundFor")} "<strong>{lastQuery}</strong>"
+                            {$_("main.noResultsFound")} "<strong>{lastQuery}</strong
+                            >"
                         </p>
                         <span class="hint"
                             >{$_("discover.tryDifferentKeyword")}</span
                         >
                     </div>
                 {:else}
-                    <div class="artist-grid" in:fade={{ duration: 200 }}>
-                        {#each artistResults as artist (artist.mbid)}
-                            <div
-                                class="card-wrapper"
-                                role="presentation"
-                                on:click={() => handleArtistClick(artist)}
-                                on:keydown={(e) =>
-                                    e.key === "Enter" &&
-                                    handleArtistClick(artist)}
-                            >
-                                <MediaCard
-                                    variant="round"
-                                    primaryText={artist.name}
-                                    secondaryText={artist.disambiguation ||
-                                        artist.artist_type ||
-                                        ""}
-                                    isNowPlaying={isArtistInLibrary(
-                                        artist.name,
-                                    )}
-                                >
-                                    <div slot="cover" class="artist-avatar">
-                                        <span>{artistInitial(artist.name)}</span
-                                        >
-                                    </div>
-                                    <div slot="extra-info" class="card-meta">
-                                        {#if artist.country}
-                                            <span class="meta-chip"
-                                                >{artist.country}</span
-                                            >
-                                        {/if}
-                                        {#if artist.active_years}
-                                            <span class="meta-chip"
-                                                >{artist.active_years}</span
-                                            >
-                                        {/if}
-                                        {#if artist.genres.length > 0}
-                                            <div class="genre-pills">
-                                                {#each artist.genres.slice(0, 2) as genre}
-                                                    <span class="genre-pill"
-                                                        >{genre}</span
-                                                    >
-                                                {/each}
-                                            </div>
-                                        {/if}
-                                    </div>
-                                </MediaCard>
-                            </div>
-                        {/each}
-                    </div>
-                {/if}
-
-                <!-- Release results -->
-            {:else if activeTab === "releases"}
-                {#if releaseResults.length === 0}
-                    <div class="no-results" in:fade={{ duration: 200 }}>
-                        <p>
-                            {$_("discover.noReleasesFoundFor")} "<strong>{lastQuery}</strong>"
-                        </p>
-                        <span class="hint"
-                            >{$_("discover.tryDifferentKeyword")}</span
-                        >
-                    </div>
-                {:else}
-                    <div class="release-grid" in:fade={{ duration: 200 }}>
-                        {#each releaseResults as release (release.mbid)}
-                            <div
-                                class="card-wrapper"
-                                role="presentation"
-                                on:click={() => handleReleaseClick(release)}
-                                on:keydown={(e) =>
-                                    e.key === "Enter" &&
-                                    handleReleaseClick(release)}
-                            >
-                                <MediaCard
-                                    primaryText={release.title}
-                                    secondaryText={release.artist_name}
-                                    isNowPlaying={findLocalAlbumId(
-                                        release.title,
-                                    ) !== undefined}
-                                    secondaryAction={() =>
-                                        goToArtistDetail(release.artist_name)}
-                                >
-                                    <div slot="cover" class="release-icon">
-                                        <img
-                                            src={getReleaseCoverUrl(
-                                                release.mbid,
+                    <!-- OVERVIEW (ALL) TAB -->
+                    {#if activeTab === "all"}
+                        <!-- SONGS SECTION -->
+                        {#if trackResults.length > 0}
+                            <section class="section-block">
+                                <div class="section-header">
+                                    <h2>{$_("discover.tabSongs")}</h2>
+                                    <button
+                                        class="view-all-link"
+                                        on:click={() => switchTab("tracks")}
+                                    >
+                                        {$_("discover.showAllCount", {
+                                            values: {
+                                                count: trackResults.length,
+                                            },
+                                        })} →
+                                    </button>
+                                </div>
+                                <div class="song-table">
+                                    {#each trackResults.slice(0, 5) as track, idx}
+                                        <div
+                                            class="song-row"
+                                            class:playing={isCurrentTrackPlaying(
+                                                track,
                                             )}
-                                            alt={release.title}
-                                            loading="lazy"
-                                            on:error={(e) => {
-                                                const target =
-                                                    e.currentTarget as HTMLImageElement;
-                                                target.style.display = "none";
-                                                target.nextElementSibling?.classList.remove(
-                                                    "hidden",
-                                                );
-                                            }}
-                                        />
-                                        <Icon name="disc" size={32} className="hidden" />
-                                    </div>
-                                    <div slot="extra-info" class="card-meta">
-                                        {#if release.release_type}
-                                            <span class="meta-chip type-chip"
-                                                >{release.release_type}</span
-                                            >
-                                        {/if}
-                                        {#if release.year}
-                                            <span class="meta-chip"
-                                                >{release.year}</span
-                                            >
-                                        {/if}
-                                        {#if release.genres.length > 0}
-                                            <div class="genre-pills">
-                                                {#each release.genres.slice(0, 2) as genre}
-                                                    <span class="genre-pill"
-                                                        >{genre}</span
-                                                    >
-                                                {/each}
-                                            </div>
-                                        {/if}
-                                    </div>
-                                </MediaCard>
-                            </div>
-                        {/each}
-                    </div>
-                {/if}
-            {/if}
-        {/if}
-    </div>
-
-    <!-- Inline artist detail panel -->
-    {#if detailArtist}
-        <div class="detail-overlay" transition:fade={{ duration: 200 }}>
-            <div class="detail-panel" in:fly={{ x: 300, duration: 300 }}>
-                <header class="detail-header">
-                    <button
-                        class="back-btn"
-                        aria-label="Close detail panel"
-                        on:click={closeDetail}
-                    >
-                        <Icon name="arrow-left" size={24} />
-                    </button>
-                    <div class="detail-title-block">
-                        <h2>{detailArtist.name}</h2>
-                        {#if detailArtist.disambiguation}
-                            <span class="detail-disambig"
-                                >{detailArtist.disambiguation}</span
-                            >
-                        {/if}
-                    </div>
-                </header>
-
-                {#if detailLoading}
-                    <div class="detail-loading">
-                        <div class="spinner"></div>
-                        <p>
-                            {$_("discover.loadingArtistInfo")}
-                        </p>
-                    </div>
-                {:else if detailInfo}
-                    <div class="detail-body">
-                        <!-- Bio -->
-                        {#if detailInfo.bio}
-                            <section class="detail-section">
-                                <h3>
-                                    {$_("discover.biography")}
-                                </h3>
-                                <p class="bio-text">{detailInfo.bio}</p>
-                                {#if detailInfo.wikipedia_url}
-                                    <a
-                                        class="wiki-link"
-                                        href={detailInfo.wikipedia_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                    >
-                                        {$_("discover.readMoreOnWikipedia")}
-                                    </a>
-                                {/if}
-                            </section>
-                        {/if}
-
-                        <!-- Genres -->
-                        {#if detailInfo.genres.length > 0}
-                            <section class="detail-section">
-                                <h3>
-                                    {$_("artist.genres")}
-                                </h3>
-                                <div class="genre-pills detail-genres">
-                                    {#each detailInfo.genres as genre}
-                                        <span class="genre-pill">{genre}</span>
-                                    {/each}
-                                </div>
-                            </section>
-                        {/if}
-
-                        <!-- Meta chips -->
-                        <section class="detail-section">
-                            <h3>{$_("discover.details")}</h3>
-                            <div class="card-meta detail-meta">
-                                {#if detailArtist.artist_type}
-                                    <span class="meta-chip type-chip"
-                                        >{detailArtist.artist_type}</span
-                                    >
-                                {/if}
-                                {#if detailArtist.country}
-                                    <span class="meta-chip"
-                                        >🌍 {detailArtist.country}</span
-                                    >
-                                {/if}
-                                {#if detailArtist.active_years}
-                                    <span class="meta-chip"
-                                        >📅 {detailArtist.active_years}</span
-                                    >
-                                {/if}
-                            </div>
-                        </section>
-
-                        <!-- Tracks -->
-                        <section class="detail-section">
-                            <h3>
-                                {$_("discover.featuredTracks")}
-                            </h3>
-                            {#if detailArtistTracksLoading}
-                                <div class="tracks-loading">
-                                    <div class="spinner-small"></div>
-                                    <p>
-                                        {$_("discover.fetchingTracks")}
-                                    </p>
-                                </div>
-                            {:else if detailArtistTracks.length > 0}
-                                <div class="tracks-list">
-                                    {#each detailArtistTracks as track}
-                                        <div class="track-row">
-                                            <div class="track-info">
-                                                <span class="track-number"
-                                                    >{track.track_number}</span
-                                                >
-                                                <div class="track-names">
-                                                    <span class="track-title"
-                                                        >{track.title}</span
-                                                    >
-                                                    <span class="track-artist"
-                                                        >{formatTrackArtists(track)}</span
-                                                    >
-                                                </div>
-                                            </div>
-                                            <div class="track-actions">
+                                            on:dblclick={() =>
+                                                playSong(track, trackResults)}
+                                        >
+                                            <div class="song-col-play">
                                                 <button
-                                                    class="tidal-btn"
-                                                    class:loading={playingStreamId ===
-                                                        track.mbid}
-                                                    on:click={(e) => {
-                                                        e.stopPropagation();
-                                                        playOnPlayback(track);
-                                                    }}
-                                                    title={$_(
-                                                        "discover.playStream")}
+                                                    class="play-icon-btn"
+                                                    on:click={() =>
+                                                        playSong(
+                                                            track,
+                                                            trackResults,
+                                                        )}
+                                                    title={$_("discover.play")}
                                                 >
-                                                    {#if playingStreamId === track.mbid}
+                                                    {#if loadingStreamId === (track.id || track.external_id || track.title)}
                                                         <div
                                                             class="spinner-tiny"
                                                         ></div>
+                                                    {:else if isCurrentTrackPlaying(track)}
+                                                        <Icon
+                                                            name="pause"
+                                                            size={16}
+                                                        />
                                                     {:else}
-                                                        <Icon name="play" size={16} />
+                                                        <Icon
+                                                            name="play"
+                                                            size={16}
+                                                        />
                                                     {/if}
-                                                    {$_("discover.play")}
                                                 </button>
                                             </div>
-                                        </div>
-                                    {/each}
-                                </div>
-                            {:else}
-                                <p class="no-tracks">
-                                    {$_("discover.noTracksFound")}
-                                </p>
-                            {/if}
-                        </section>
-
-                        <!-- Discography -->
-                        {#if detailDiscography.length > 0}
-                            <section class="detail-section">
-                                <div class="disco-header">
-                                    <h3>
-                                        {$_("discover.discography")}
-                                    </h3>
-                                    {#if hiddenCount > 0 || showAllReleaseTypes}
-                                        <button
-                                            class="disco-filter-btn"
-                                            on:click={() =>
-                                                (showAllReleaseTypes =
-                                                    !showAllReleaseTypes)}
-                                        >
-                                            {showAllReleaseTypes
-                                                ? $_(
-                                                      "discover.albumsAndSinglesOnly")
-                                                : $_("discover.showAllCount", { values: {
-                                                          count: detailDiscography.length,
-                                                      } })}
-                                        </button>
-                                    {/if}
-                                </div>
-                                <div class="disco-list">
-                                    {#each filteredDiscography as item}
-                                        <!-- svelte-ignore a11y-click-events-have-key-events -->
-                                        <!-- svelte-ignore a11y-no-static-element-interactions -->
-                                        <div
-                                            class="disco-item"
-                                            on:click={() =>
-                                                pushNavigation({
-                                                    type: "release",
-                                                    release: {
-                                                        mbid: item.mbid,
-                                                        title: item.title,
-                                                        artist_name:
-                                                            detailArtist?.name ||
-                                                            "Unknown Artist",
-                                                        artist_mbid:
-                                                            detailArtist?.mbid ??
-                                                            null,
-                                                        release_type:
-                                                            item.release_type,
-                                                        year: item.year || null,
-                                                        country: null,
-                                                        genres: [],
-                                                    },
-                                                })}
-                                        >
                                             <div
-                                                class="disco-type-icon {releaseTypeClass(
-                                                    item.release_type,
-                                                )}"
-                                            >
-                                                <img
-                                                    src={getReleaseCoverUrl(
-                                                        item.mbid,
+                                                class="song-col-art"
+                                                on:click={() =>
+                                                    navigateToAlbum(
+                                                        track.album_id,
+                                                        track.album,
+                                                        track.artist,
+                                                        track.provider_id,
+                                                        track.cover_url,
                                                     )}
-                                                    alt=""
-                                                    loading="lazy"
-                                                    on:error={(e) => {
-                                                        const target =
-                                                            e.currentTarget as HTMLImageElement;
-                                                        target.style.display =
-                                                            "none";
-                                                        target.nextElementSibling?.classList.remove(
-                                                            "hidden",
-                                                        );
-                                                    }}
-                                                />
-                                                <div
-                                                    class="hidden icon-fallback"
-                                                >
-                                                    {#if item.release_type.toLowerCase() === "album"}
-                                                        <Icon name="disc" size={18} />
-                                                    {:else if item.release_type.toLowerCase() === "single"}
-                                                        <Icon name="music" size={18} />
-                                                    {:else if item.release_type.toLowerCase() === "ep"}
-                                                        <Icon name="disc" size={18} />
-                                                    {:else if item.release_type.toLowerCase() === "live"}
-                                                        <Icon name="mic-2" size={18} />
-                                                    {:else if item.release_type.toLowerCase() === "compilation"}
-                                                        <Icon name="library" size={18} />
-                                                    {:else if item.release_type.toLowerCase() === "soundtrack"}
-                                                        <Icon name="disc-3" size={18} />
-                                                    {:else}
-                                                        <Icon name="disc" size={18} />
-                                                    {/if}
-                                                </div>
-                                            </div>
-                                            <div class="disco-info">
-                                                <span class="disco-title"
-                                                    >{item.title}</span
-                                                >
-                                                <span class="disco-year"
-                                                    >{item.year ?? "—"}</span
-                                                >
-                                            </div>
-                                            <span
-                                                class="disco-badge {releaseTypeClass(
-                                                    item.release_type,
-                                                )}">{item.release_type}</span
                                             >
+                                                {#if track.cover_url}
+                                                    <img
+                                                        src={track.cover_url}
+                                                        alt=""
+                                                        loading="lazy"
+                                                    />
+                                                {:else}
+                                                    <div
+                                                        class="art-placeholder"
+                                                    >
+                                                        <Icon
+                                                            name="music"
+                                                            size={16}
+                                                        />
+                                                    </div>
+                                                {/if}
+                                            </div>
+                                            <div class="song-col-info">
+                                                <span class="song-title"
+                                                    >{track.title}</span
+                                                >
+                                                <button
+                                                    class="song-artist link-btn"
+                                                    on:click={() =>
+                                                        navigateToArtist(
+                                                            track.artist_id,
+                                                            track.artist,
+                                                            track.provider_id,
+                                                        )}
+                                                >
+                                                    {track.artist}
+                                                </button>
+                                            </div>
+                                            <div class="song-col-album">
+                                                {#if track.album}
+                                                    <button
+                                                        class="link-btn truncate"
+                                                        on:click={() =>
+                                                            navigateToAlbum(
+                                                                track.album_id,
+                                                                track.album,
+                                                                track.artist,
+                                                                track.provider_id,
+                                                                track.cover_url,
+                                                            )}
+                                                    >
+                                                        {track.album}
+                                                    </button>
+                                                {:else}
+                                                    <span class="dim">—</span>
+                                                {/if}
+                                            </div>
+                                            <div class="song-col-dur">
+                                                {track.duration
+                                                    ? formatDuration(
+                                                          track.duration,
+                                                      )
+                                                    : "--:--"}
+                                            </div>
                                         </div>
                                     {/each}
                                 </div>
                             </section>
                         {/if}
-                    </div>
-                {/if}
-            </div>
-        </div>
-    {/if}
 
-    <!-- Inline release detail panel -->
-    {#if detailRelease}
-        <div class="detail-overlay" transition:fade={{ duration: 200 }}>
-            <div class="detail-panel" in:fly={{ x: 300, duration: 300 }}>
-                <header class="detail-header">
-                    <button
-                        class="back-btn"
-                        aria-label="Close detail panel"
-                        on:click={closeDetail}
-                    >
-                        <Icon name="arrow-left" size={24} />
-                    </button>
-                    <div class="detail-title-block">
-                        <h2>{detailRelease.title}</h2>
-                        <button
-                            class="artist-link-btn"
-                            on:click={() => {
-                                if (
-                                    detailRelease &&
-                                    detailRelease.artist_mbid
-                                ) {
-                                    pushNavigation({
-                                        type: "artist",
-                                        artist: {
-                                            mbid: detailRelease.artist_mbid,
-                                            name: detailRelease.artist_name,
-                                            genres: [],
-                                            disambiguation: null,
-                                            artist_type: null,
-                                            country: null,
-                                            active_years: null,
-                                        },
-                                    });
-                                }
-                            }}
-                        >
-                            {detailRelease.artist_name}
-                        </button>
-                    </div>
-                </header>
-
-                <div class="detail-body">
-                    <div class="release-detail-header-block">
-                        <div class="release-detail-cover">
-                            <img
-                                src={getReleaseCoverUrl(detailRelease.mbid)}
-                                alt={detailRelease.title}
-                                on:error={(e) => {
-                                    const target =
-                                        e.currentTarget as HTMLImageElement;
-                                    target.style.display = "none";
-                                    target.nextElementSibling?.classList.remove(
-                                        "hidden",
-                                    );
-                                }}
-                            />
-                            <div class="hidden icon-fallback">
-                                <Icon name="disc" size={48} />
-                            </div>
-                        </div>
-                        <div class="release-detail-info-block">
-                            <div class="card-meta">
-                                {#if detailRelease.release_type}
-                                    <span class="meta-chip type-chip"
-                                        >{detailRelease.release_type}</span
+                        <!-- ALBUMS SECTION -->
+                        {#if albumResults.length > 0}
+                            <section class="section-block">
+                                <div class="section-header">
+                                    <h2>{$_("discover.tabReleases")}</h2>
+                                    <button
+                                        class="view-all-link"
+                                        on:click={() => switchTab("albums")}
                                     >
-                                {/if}
-                                {#if detailRelease.year}
-                                    <span class="meta-chip"
-                                        >{detailRelease.year}</span
-                                    >
-                                {/if}
-                            </div>
-                            {#if detailRelease.genres.length > 0}
-                                <div class="genre-pills">
-                                    {#each detailRelease.genres as genre}
-                                        <span class="genre-pill">{genre}</span>
+                                        {$_("discover.showAllCount", {
+                                            values: {
+                                                count: albumResults.length,
+                                            },
+                                        })} →
+                                    </button>
+                                </div>
+                                <div class="card-grid">
+                                    {#each albumResults.slice(0, 6) as album}
+                                        <div
+                                            class="card-wrapper"
+                                            on:click={() =>
+                                                navigateToAlbum(
+                                                    album.id,
+                                                    album.title,
+                                                    album.artist,
+                                                    album.provider_id,
+                                                    album.cover_url,
+                                                )}
+                                        >
+                                            <MediaCard
+                                                primaryText={album.title}
+                                                secondaryText={album.artist}
+                                                isNowPlaying={findLocalAlbumId(
+                                                    album.title,
+                                                ) !== undefined}
+                                            >
+                                                <div
+                                                    slot="cover"
+                                                    class="release-cover"
+                                                >
+                                                    {#if album.cover_url}
+                                                        <img
+                                                            src={album.cover_url}
+                                                            alt=""
+                                                            loading="lazy"
+                                                        />
+                                                    {:else}
+                                                        <Icon
+                                                            name="disc"
+                                                            size={36}
+                                                        />
+                                                    {/if}
+                                                </div>
+                                                <div
+                                                    slot="extra-info"
+                                                    class="card-meta"
+                                                >
+                                                    {#if album.year}
+                                                        <span class="meta-chip"
+                                                            >{album.year}</span
+                                                        >
+                                                    {/if}
+                                                    {#if album.release_type}
+                                                        <span
+                                                            class="meta-chip type-chip"
+                                                            >{album.release_type}</span
+                                                        >
+                                                    {/if}
+                                                </div>
+                                            </MediaCard>
+                                        </div>
                                     {/each}
+                                </div>
+                            </section>
+                        {/if}
+
+                        <!-- ARTISTS SECTION -->
+                        {#if artistResults.length > 0}
+                            <section class="section-block">
+                                <div class="section-header">
+                                    <h2>{$_("discover.tabArtists")}</h2>
+                                    <button
+                                        class="view-all-link"
+                                        on:click={() => switchTab("artists")}
+                                    >
+                                        {$_("discover.showAllCount", {
+                                            values: {
+                                                count: artistResults.length,
+                                            },
+                                        })} →
+                                    </button>
+                                </div>
+                                <div class="card-grid">
+                                    {#each artistResults.slice(0, 6) as artist}
+                                        <div
+                                            class="card-wrapper"
+                                            on:click={() =>
+                                                navigateToArtist(
+                                                    artist.id,
+                                                    artist.name,
+                                                    artist.provider_id,
+                                                    artist.avatar_url,
+                                                )}
+                                        >
+                                            <MediaCard
+                                                variant="round"
+                                                primaryText={artist.name}
+                                                secondaryText={artist.disambiguation ||
+                                                    artist.country ||
+                                                    ""}
+                                                isNowPlaying={isArtistInLibrary(
+                                                    artist.name,
+                                                )}
+                                            >
+                                                <div
+                                                    slot="cover"
+                                                    class="artist-avatar"
+                                                >
+                                                    {#if artist.avatar_url}
+                                                        <img
+                                                            src={artist.avatar_url}
+                                                            alt=""
+                                                            loading="lazy"
+                                                        />
+                                                    {:else}
+                                                        <span
+                                                            >{artistInitial(
+                                                                artist.name,
+                                                            )}</span
+                                                        >
+                                                    {/if}
+                                                </div>
+                                                <div
+                                                    slot="extra-info"
+                                                    class="card-meta"
+                                                >
+                                                    {#if artist.country}
+                                                        <span class="meta-chip"
+                                                            >{artist.country}</span
+                                                        >
+                                                    {/if}
+                                                    {#if artist.active_years}
+                                                        <span class="meta-chip"
+                                                            >{artist.active_years}</span
+                                                        >
+                                                    {/if}
+                                                </div>
+                                            </MediaCard>
+                                        </div>
+                                    {/each}
+                                </div>
+                            </section>
+                        {/if}
+
+                        <!-- SONGS ONLY TAB -->
+                    {:else if activeTab === "tracks"}
+                        {#if trackResults.length === 0}
+                            <div class="no-results">
+                                <p>
+                                    {$_("discover.noTracksFoundFor")} "<strong
+                                        >{lastQuery}</strong
+                                    >"
+                                </p>
+                            </div>
+                        {:else}
+                            <div class="song-table full-table">
+                                {#each trackResults as track}
+                                    <div
+                                        class="song-row"
+                                        class:playing={isCurrentTrackPlaying(
+                                            track,
+                                        )}
+                                        on:dblclick={() =>
+                                            playSong(track, trackResults)}
+                                    >
+                                        <div class="song-col-play">
+                                            <button
+                                                class="play-icon-btn"
+                                                on:click={() =>
+                                                    playSong(
+                                                        track,
+                                                        trackResults,
+                                                    )}
+                                                title={$_("discover.play")}
+                                            >
+                                                {#if loadingStreamId === (track.id || track.external_id || track.title)}
+                                                    <div
+                                                        class="spinner-tiny"
+                                                    ></div>
+                                                {:else if isCurrentTrackPlaying(track)}
+                                                    <Icon
+                                                        name="pause"
+                                                        size={16}
+                                                    />
+                                                {:else}
+                                                    <Icon
+                                                        name="play"
+                                                        size={16}
+                                                    />
+                                                {/if}
+                                            </button>
+                                        </div>
+                                        <div
+                                            class="song-col-art"
+                                            on:click={() =>
+                                                navigateToAlbum(
+                                                    track.album_id,
+                                                    track.album,
+                                                    track.artist,
+                                                    track.provider_id,
+                                                    track.cover_url,
+                                                )}
+                                        >
+                                            {#if track.cover_url}
+                                                <img
+                                                    src={track.cover_url}
+                                                    alt=""
+                                                    loading="lazy"
+                                                />
+                                            {:else}
+                                                <div class="art-placeholder">
+                                                    <Icon
+                                                        name="music"
+                                                        size={16}
+                                                    />
+                                                </div>
+                                            {/if}
+                                        </div>
+                                        <div class="song-col-info">
+                                            <span class="song-title"
+                                                >{track.title}</span
+                                            >
+                                            <button
+                                                class="song-artist link-btn"
+                                                on:click={() =>
+                                                    navigateToArtist(
+                                                        track.artist_id,
+                                                        track.artist,
+                                                        track.provider_id,
+                                                    )}
+                                            >
+                                                {track.artist}
+                                            </button>
+                                        </div>
+                                        <div class="song-col-album">
+                                            {#if track.album}
+                                                <button
+                                                    class="link-btn truncate"
+                                                    on:click={() =>
+                                                        navigateToAlbum(
+                                                            track.album_id,
+                                                            track.album,
+                                                            track.artist,
+                                                            track.provider_id,
+                                                            track.cover_url,
+                                                        )}
+                                                >
+                                                    {track.album}
+                                                </button>
+                                            {:else}
+                                                <span class="dim">—</span>
+                                            {/if}
+                                        </div>
+                                        <div class="song-col-dur">
+                                            {track.duration
+                                                ? formatDuration(track.duration)
+                                                : "--:--"}
+                                        </div>
+                                    </div>
+                                {/each}
+                            </div>
+                        {/if}
+
+                        <!-- ALBUMS ONLY TAB -->
+                    {:else if activeTab === "albums"}
+                        {#if albumResults.length === 0}
+                            <div class="no-results">
+                                <p>
+                                    {$_("discover.noReleasesFoundFor")} "<strong
+                                        >{lastQuery}</strong
+                                    >"
+                                </p>
+                            </div>
+                        {:else}
+                            <div class="card-grid">
+                                {#each albumResults as album}
+                                    <div
+                                        class="card-wrapper"
+                                        on:click={() =>
+                                            navigateToAlbum(
+                                                album.id,
+                                                album.title,
+                                                album.artist,
+                                                album.provider_id,
+                                                album.cover_url,
+                                            )}
+                                    >
+                                        <MediaCard
+                                            primaryText={album.title}
+                                            secondaryText={album.artist}
+                                            isNowPlaying={findLocalAlbumId(
+                                                album.title,
+                                            ) !== undefined}
+                                        >
+                                            <div
+                                                slot="cover"
+                                                class="release-cover"
+                                            >
+                                                {#if album.cover_url}
+                                                    <img
+                                                        src={album.cover_url}
+                                                        alt=""
+                                                        loading="lazy"
+                                                    />
+                                                {:else}
+                                                    <Icon
+                                                        name="disc"
+                                                        size={36}
+                                                    />
+                                                {/if}
+                                            </div>
+                                            <div
+                                                slot="extra-info"
+                                                class="card-meta"
+                                            >
+                                                {#if album.year}
+                                                    <span class="meta-chip"
+                                                        >{album.year}</span
+                                                    >
+                                                {/if}
+                                                {#if album.release_type}
+                                                    <span
+                                                        class="meta-chip type-chip"
+                                                        >{album.release_type}</span
+                                                    >
+                                                {/if}
+                                            </div>
+                                        </MediaCard>
+                                    </div>
+                                {/each}
+                            </div>
+                        {/if}
+
+                        <!-- ARTISTS ONLY TAB -->
+                    {:else if activeTab === "artists"}
+                        {#if artistResults.length === 0}
+                            <div class="no-results">
+                                <p>
+                                    {$_("discover.noArtistsFoundFor")} "<strong
+                                        >{lastQuery}</strong
+                                    >"
+                                </p>
+                            </div>
+                        {:else}
+                            <div class="card-grid">
+                                {#each artistResults as artist}
+                                    <div
+                                        class="card-wrapper"
+                                        on:click={() =>
+                                            navigateToArtist(
+                                                artist.id,
+                                                artist.name,
+                                                artist.provider_id,
+                                                artist.avatar_url,
+                                            )}
+                                    >
+                                        <MediaCard
+                                            variant="round"
+                                            primaryText={artist.name}
+                                            secondaryText={artist.disambiguation ||
+                                                artist.country ||
+                                                ""}
+                                            isNowPlaying={isArtistInLibrary(
+                                                artist.name,
+                                            )}
+                                        >
+                                            <div
+                                                slot="cover"
+                                                class="artist-avatar"
+                                            >
+                                                {#if artist.avatar_url}
+                                                    <img
+                                                        src={artist.avatar_url}
+                                                        alt=""
+                                                        loading="lazy"
+                                                    />
+                                                {:else}
+                                                    <span
+                                                        >{artistInitial(
+                                                            artist.name,
+                                                        )}</span
+                                                    >
+                                                {/if}
+                                            </div>
+                                            <div
+                                                slot="extra-info"
+                                                class="card-meta"
+                                            >
+                                                {#if artist.country}
+                                                    <span class="meta-chip"
+                                                        >{artist.country}</span
+                                                    >
+                                                {/if}
+                                                {#if artist.active_years}
+                                                    <span class="meta-chip"
+                                                        >{artist.active_years}</span
+                                                    >
+                                                {/if}
+                                            </div>
+                                        </MediaCard>
+                                    </div>
+                                {/each}
+                            </div>
+                        {/if}
+                    {/if}
+                {/if}
+            {/if}
+
+            <!-- 2. ALBUM DETAIL VIEW (Song > Album > Artist) -->
+        {:else if currentNav.type === "album"}
+            <div class="detail-page" in:fade={{ duration: 180 }}>
+                {#if albumLoading}
+                    <div class="loading-state">
+                        <div class="spinner"></div>
+                        <p>{$_("discover.fetchingTracklist")}</p>
+                    </div>
+                {:else if currentAlbumDetail}
+                    <!-- Album Header Banner -->
+                    <div class="hero-header album-hero">
+                        <div class="hero-cover album-cover-lg">
+                            {#if currentAlbumDetail.cover_url}
+                                <img
+                                    src={currentAlbumDetail.cover_url}
+                                    alt={currentAlbumDetail.title}
+                                />
+                            {:else}
+                                <div class="cover-fallback">
+                                    <Icon name="disc" size={64} />
                                 </div>
                             {/if}
                         </div>
+                        <div class="hero-info">
+                            <span class="hero-eyebrow">
+                                {currentAlbumDetail.release_type || "ALBUM"}
+                                {#if findLocalAlbumId(currentAlbumDetail.title) !== undefined}
+                                    <span class="library-badge"
+                                        >✓ {$_("discover.inLibrary")}</span
+                                    >
+                                {/if}
+                            </span>
+                            <h1 class="hero-title">
+                                {currentAlbumDetail.title}
+                            </h1>
+                            <div class="hero-meta-line">
+                                <button
+                                    class="artist-pill-btn"
+                                    on:click={() =>
+                                        navigateToArtist(
+                                            currentAlbumDetail?.artist_id,
+                                            currentAlbumDetail?.artist,
+                                            currentAlbumDetail?.provider_id,
+                                        )}
+                                >
+                                    <Icon name="user" size={14} />
+                                    <span>{currentAlbumDetail.artist}</span>
+                                    <Icon name="chevron-right" size={14} />
+                                </button>
+                                {#if currentAlbumDetail.year}
+                                    <span class="meta-dot">•</span>
+                                    <span>{currentAlbumDetail.year}</span>
+                                {/if}
+                                {#if currentAlbumDetail.tracks && currentAlbumDetail.tracks.length > 0}
+                                    <span class="meta-dot">•</span>
+                                    <span
+                                        >{currentAlbumDetail.tracks
+                                            .length} songs</span
+                                    >
+                                {/if}
+                            </div>
+
+                            <!-- Actions -->
+                            <div class="hero-actions">
+                                {#if currentAlbumDetail.tracks && currentAlbumDetail.tracks.length > 0}
+                                    <button
+                                        class="hero-play-btn"
+                                        on:click={() =>
+                                            currentAlbumDetail?.tracks &&
+                                            playSong(
+                                                currentAlbumDetail.tracks[0],
+                                                currentAlbumDetail.tracks,
+                                                currentAlbumDetail.title,
+                                                currentAlbumDetail.cover_url,
+                                            )}
+                                    >
+                                        <Icon name="play" size={18} />
+                                        {$_("discover.playAll")}
+                                    </button>
+                                {/if}
+                                {#if findLocalAlbumId(currentAlbumDetail.title) !== undefined}
+                                    <button
+                                        class="hero-sub-btn"
+                                        on:click={() => {
+                                            const id = findLocalAlbumId(
+                                                currentAlbumDetail?.title,
+                                            );
+                                            if (id !== undefined)
+                                                goToAlbumDetail(id);
+                                        }}
+                                    >
+                                        <Icon name="library" size={16} />
+                                        {$_("main.goToAlbum")}
+                                    </button>
+                                {/if}
+                            </div>
+                        </div>
                     </div>
 
-                    <section class="detail-section">
+                    <!-- Album Tracklist -->
+                    <div class="detail-tracklist-section">
                         <h3>{$_("common.tracks")}</h3>
-                        {#if detailReleaseLoading}
-                            <div class="detail-loading">
-                                <div class="spinner"></div>
-                                <p>
-                                    {$_("discover.fetchingTracklist")}
-                                </p>
-                            </div>
-                        {:else if detailReleaseTracks.length > 0}
-                            <div class="mb-track-list">
-                                {#each detailReleaseTracks as track}
-                                    <div class="mb-track-item">
-                                        <span class="track-num"
-                                            >{track.track_number}</span
-                                        >
-                                        <div class="track-info">
-                                            <span class="track-name"
-                                                >{track.title}</span
-                                            >
-                                            <span class="track-artist"
-                                                >{formatTrackArtists(track)}</span
-                                            >
+                        {#if currentAlbumDetail.tracks && currentAlbumDetail.tracks.length > 0}
+                            <div class="song-table full-table">
+                                {#each currentAlbumDetail.tracks as track, idx}
+                                    <div
+                                        class="song-row"
+                                        class:playing={isCurrentTrackPlaying(
+                                            track,
+                                        )}
+                                        on:dblclick={() =>
+                                            currentAlbumDetail?.tracks &&
+                                            playSong(
+                                                track,
+                                                currentAlbumDetail.tracks,
+                                                currentAlbumDetail.title,
+                                                currentAlbumDetail.cover_url,
+                                            )}
+                                    >
+                                        <div class="song-col-num">
+                                            {track.track_number || idx + 1}
                                         </div>
-                                        <div class="track-actions">
+                                        <div class="song-col-play">
                                             <button
-                                                class="play-tidal-btn"
-                                                title={$_(
-                                                    "discover.playStream")}
-                                                on:click={(e) => {
-                                                    e.stopPropagation();
-                                                    playOnPlayback(track);
-                                                }}
-                                                disabled={playingStreamId ===
-                                                    track.mbid}
+                                                class="play-icon-btn"
+                                                on:click={() =>
+                                                    currentAlbumDetail?.tracks &&
+                                                    playSong(
+                                                        track,
+                                                        currentAlbumDetail.tracks,
+                                                        currentAlbumDetail.title,
+                                                        currentAlbumDetail.cover_url,
+                                                    )}
+                                                title={$_("discover.play")}
                                             >
-                                                {#if playingStreamId === track.mbid}
+                                                {#if loadingStreamId === (track.id || track.external_id || track.title)}
                                                     <div
-                                                        class="spinner-xs"
+                                                        class="spinner-tiny"
                                                     ></div>
+                                                {:else if isCurrentTrackPlaying(track)}
+                                                    <Icon
+                                                        name="pause"
+                                                        size={16}
+                                                    />
                                                 {:else}
-                                                    <Icon name="play" size={18} />
+                                                    <Icon
+                                                        name="play"
+                                                        size={16}
+                                                    />
                                                 {/if}
                                             </button>
+                                        </div>
+                                        <div class="song-col-info">
+                                            <span class="song-title"
+                                                >{track.title}</span
+                                            >
+                                            <button
+                                                class="song-artist link-btn"
+                                                on:click={() =>
+                                                    navigateToArtist(
+                                                        track.artist_id ||
+                                                            currentAlbumDetail?.artist_id,
+                                                        track.artist ||
+                                                            currentAlbumDetail?.artist,
+                                                        track.provider_id ||
+                                                            currentAlbumDetail?.provider_id,
+                                                    )}
+                                            >
+                                                {track.artist ||
+                                                    currentAlbumDetail.artist}
+                                            </button>
+                                        </div>
+                                        <div class="song-col-dur">
+                                            {track.duration
+                                                ? formatDuration(track.duration)
+                                                : "--:--"}
                                         </div>
                                     </div>
                                 {/each}
@@ -999,34 +1468,316 @@
                                 {$_("discover.noTracksForRelease")}
                             </p>
                         {/if}
-                    </section>
-                </div>
+                    </div>
+                {/if}
             </div>
-        </div>
-    {/if}
+
+            <!-- 3. ARTIST DETAIL VIEW (Song > Album > Artist) -->
+        {:else if currentNav.type === "artist"}
+            <div class="detail-page" in:fade={{ duration: 180 }}>
+                {#if artistLoading}
+                    <div class="loading-state">
+                        <div class="spinner"></div>
+                        <p>{$_("discover.loadingArtistInfo")}</p>
+                    </div>
+                {:else if currentArtistDetail}
+                    <!-- Artist Header Banner -->
+                    <div class="hero-header artist-hero">
+                        <div class="hero-avatar">
+                            {#if currentArtistDetail.avatar_url}
+                                <img
+                                    src={currentArtistDetail.avatar_url}
+                                    alt={currentArtistDetail.name}
+                                />
+                            {:else}
+                                <div class="avatar-fallback">
+                                    <span
+                                        >{artistInitial(
+                                            currentArtistDetail.name,
+                                        )}</span
+                                    >
+                                </div>
+                            {/if}
+                        </div>
+                        <div class="hero-info">
+                            <span class="hero-eyebrow">
+                                {$_("discover.tabArtists").toUpperCase()}
+                                {#if isArtistInLibrary(currentArtistDetail.name)}
+                                    <span class="library-badge"
+                                        >✓ {$_("discover.inLibrary")}</span
+                                    >
+                                {/if}
+                            </span>
+                            <h1 class="hero-title">
+                                {currentArtistDetail.name}
+                            </h1>
+                            <div class="hero-meta-line">
+                                {#if currentArtistDetail.country}
+                                    <span>🌍 {currentArtistDetail.country}</span
+                                    >
+                                    <span class="meta-dot">•</span>
+                                {/if}
+                                {#if currentArtistDetail.active_years}
+                                    <span
+                                        >📅 {currentArtistDetail.active_years}</span
+                                    >
+                                {/if}
+                            </div>
+
+                            {#if currentArtistDetail.genres && currentArtistDetail.genres.length > 0}
+                                <div class="genre-pills hero-genres">
+                                    {#each currentArtistDetail.genres as g}
+                                        <span class="genre-pill">{g}</span>
+                                    {/each}
+                                </div>
+                            {/if}
+
+                            <div class="hero-actions">
+                                {#if currentArtistDetail.tracks && currentArtistDetail.tracks.length > 0}
+                                    <button
+                                        class="hero-play-btn"
+                                        on:click={() =>
+                                            currentArtistDetail?.tracks &&
+                                            playSong(
+                                                currentArtistDetail.tracks[0],
+                                                currentArtistDetail.tracks,
+                                                undefined,
+                                                currentArtistDetail.avatar_url,
+                                            )}
+                                    >
+                                        <Icon name="play" size={18} />
+                                        {$_("discover.play")}
+                                        {$_("discover.topSongs")}
+                                    </button>
+                                {/if}
+                                {#if isArtistInLibrary(currentArtistDetail.name)}
+                                    <button
+                                        class="hero-sub-btn"
+                                        on:click={() =>
+                                            currentArtistDetail?.name &&
+                                            goToArtistDetail(
+                                                currentArtistDetail.name,
+                                            )}
+                                    >
+                                        <Icon name="library" size={16} />
+                                        {$_("artist.goToArtist")}
+                                    </button>
+                                {/if}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Biography Section if available -->
+                    {#if currentArtistDetail.bio}
+                        <section class="bio-section">
+                            <h3>{$_("discover.biography")}</h3>
+                            <p class="bio-text">{currentArtistDetail.bio}</p>
+                            {#if currentArtistDetail.wikipedia_url}
+                                <a
+                                    class="wiki-link"
+                                    href={currentArtistDetail.wikipedia_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                >
+                                    {$_("discover.readMoreOnWikipedia")}
+                                </a>
+                            {/if}
+                        </section>
+                    {/if}
+
+                    <!-- Top Tracks Section -->
+                    {#if currentArtistDetail.tracks && currentArtistDetail.tracks.length > 0}
+                        <section class="section-block">
+                            <div class="section-header">
+                                <h3>{$_("discover.topSongs")}</h3>
+                            </div>
+                            <div class="song-table full-table">
+                                {#each currentArtistDetail.tracks.slice(0, 10) as track, idx}
+                                    <div
+                                        class="song-row"
+                                        class:playing={isCurrentTrackPlaying(
+                                            track,
+                                        )}
+                                        on:dblclick={() =>
+                                            currentArtistDetail?.tracks &&
+                                            playSong(
+                                                track,
+                                                currentArtistDetail.tracks,
+                                            )}
+                                    >
+                                        <div class="song-col-num">{idx + 1}</div>
+                                        <div class="song-col-play">
+                                            <button
+                                                class="play-icon-btn"
+                                                on:click={() =>
+                                                    currentArtistDetail?.tracks &&
+                                                    playSong(
+                                                        track,
+                                                        currentArtistDetail.tracks,
+                                                    )}
+                                                title={$_("discover.play")}
+                                            >
+                                                {#if loadingStreamId === (track.id || track.external_id || track.title)}
+                                                    <div
+                                                        class="spinner-tiny"
+                                                    ></div>
+                                                {:else if isCurrentTrackPlaying(track)}
+                                                    <Icon
+                                                        name="pause"
+                                                        size={16}
+                                                    />
+                                                {:else}
+                                                    <Icon
+                                                        name="play"
+                                                        size={16}
+                                                    />
+                                                {/if}
+                                            </button>
+                                        </div>
+                                        <div class="song-col-info">
+                                            <span class="song-title"
+                                                >{track.title}</span
+                                            >
+                                            <span class="song-artist dim"
+                                                >{track.artist}</span
+                                            >
+                                        </div>
+                                        <div class="song-col-album">
+                                            {#if track.album}
+                                                <button
+                                                    class="link-btn truncate"
+                                                    on:click={() =>
+                                                        navigateToAlbum(
+                                                            track.album_id,
+                                                            track.album,
+                                                            track.artist,
+                                                            track.provider_id,
+                                                        )}
+                                                >
+                                                    {track.album}
+                                                </button>
+                                            {:else}
+                                                <span class="dim">—</span>
+                                            {/if}
+                                        </div>
+                                        <div class="song-col-dur">
+                                            {track.duration
+                                                ? formatDuration(track.duration)
+                                                : "--:--"}
+                                        </div>
+                                    </div>
+                                {/each}
+                            </div>
+                        </section>
+                    {/if}
+
+                    <!-- Discography Section -->
+                    {#if currentArtistDetail.albums && currentArtistDetail.albums.length > 0}
+                        <section class="section-block">
+                            <div class="section-header">
+                                <h3>{$_("discover.discography")}</h3>
+                                {#if currentArtistDetail.albums.length > filteredDiscography.length || showAllReleaseTypes}
+                                    <button
+                                        class="filter-toggle-btn"
+                                        on:click={() =>
+                                            (showAllReleaseTypes =
+                                                !showAllReleaseTypes)}
+                                    >
+                                        {showAllReleaseTypes
+                                            ? $_("discover.albumsAndSinglesOnly")
+                                            : $_("discover.showAllCount", {
+                                                  values: {
+                                                      count: currentArtistDetail
+                                                          .albums.length,
+                                                  },
+                                              })}
+                                    </button>
+                                {/if}
+                            </div>
+                            <div class="card-grid">
+                                {#each filteredDiscography as album}
+                                    <div
+                                        class="card-wrapper"
+                                        on:click={() =>
+                                            navigateToAlbum(
+                                                album.id,
+                                                album.title,
+                                                album.artist ||
+                                                    currentArtistDetail?.name,
+                                                album.provider_id,
+                                                album.cover_url,
+                                            )}
+                                    >
+                                        <MediaCard
+                                            primaryText={album.title}
+                                            secondaryText={album.year
+                                                ? String(album.year)
+                                                : album.release_type || ""}
+                                        >
+                                            <div
+                                                slot="cover"
+                                                class="release-cover"
+                                            >
+                                                {#if album.cover_url}
+                                                    <img
+                                                        src={album.cover_url}
+                                                        alt=""
+                                                        loading="lazy"
+                                                    />
+                                                {:else}
+                                                    <Icon
+                                                        name="disc"
+                                                        size={36}
+                                                    />
+                                                {/if}
+                                            </div>
+                                            <div
+                                                slot="extra-info"
+                                                class="card-meta"
+                                            >
+                                                {#if album.release_type}
+                                                    <span
+                                                        class="meta-chip type-chip"
+                                                        >{album.release_type}</span
+                                                    >
+                                                {/if}
+                                            </div>
+                                        </MediaCard>
+                                    </div>
+                                {/each}
+                            </div>
+                        </section>
+                    {/if}
+                {/if}
+            </div>
+        {/if}
+    </div>
 </div>
 
 <style>
-    /* ─── Root layout ──────────────────────────────────────────────────────── */
+    /* ── Root Layout ── */
     .discover-root {
         display: flex;
         flex-direction: column;
         height: 100%;
         overflow: hidden;
         position: relative;
+        background: var(--bg-surface);
     }
 
     .discover-header {
         flex-shrink: 0;
-        padding: var(--spacing-lg)
-            var(--spacing-xl) 0;
+        padding: var(--spacing-lg) var(--spacing-xl) 0;
+        border-bottom: 1px solid var(--border-color);
+        background: var(--bg-surface);
     }
 
     .header-row {
         display: flex;
-        align-items: flex-start;
+        align-items: center;
         justify-content: space-between;
         margin-bottom: var(--spacing-md);
+        gap: 16px;
     }
 
     .header-title-group {
@@ -1041,7 +1792,7 @@
     }
 
     .discover-header h1 {
-        font-size: 1.65rem;
+        font-size: 1.6rem;
         font-weight: var(--font-weight-bold);
         margin: 0;
         color: var(--text-primary);
@@ -1053,16 +1804,68 @@
         margin: 2px 0 0;
     }
 
-    /* ─── Search bar ───────────────────────────────────────────────────────── */
-    .search-bar {
+    /* ── Provider Status Bar ── */
+    .provider-status-bar {
         display: flex;
         align-items: center;
         gap: 10px;
-        background: var(--bg-surface);
+    }
+
+    .provider-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 12px;
+        border-radius: var(--radius-full);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-color);
+        font-size: 0.78rem;
+        color: var(--text-secondary);
+    }
+
+    .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+
+    .status-dot.online {
+        background: #10b981;
+        box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+    }
+
+    .status-dot.offline {
+        background: #f59e0b;
+    }
+
+    .provider-extra {
+        color: var(--accent-primary);
+        font-weight: bold;
+        margin-left: 2px;
+    }
+
+    .provider-text.warning {
+        color: var(--text-subdued);
+    }
+
+    /* ── Search Composite ── */
+    .search-composite {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: var(--spacing-md);
+    }
+
+    .search-bar {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        background: var(--bg-elevated);
         border: 1px solid var(--border-color);
         border-radius: var(--radius-md);
-        padding: 10px 14px;
-        margin-bottom: var(--spacing-md);
+        padding: 9px 14px;
         transition: border-color var(--transition-fast);
     }
 
@@ -1096,36 +1899,66 @@
         padding: 2px;
         display: flex;
         border-radius: var(--radius-full);
-        transition: color var(--transition-fast);
     }
 
     .clear-btn:hover {
         color: var(--text-primary);
     }
 
-    /* ─── Tabs ─────────────────────────────────────────────────────────────── */
+    .provider-select-wrapper {
+        position: relative;
+        display: flex;
+        align-items: center;
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        padding: 0 12px;
+    }
+
+    .select-icon {
+        color: var(--accent-primary);
+        margin-right: 6px;
+        pointer-events: none;
+    }
+
+    .provider-select {
+        background: transparent;
+        border: none;
+        color: var(--text-primary);
+        font-size: 0.85rem;
+        font-weight: var(--font-weight-medium);
+        padding: 10px 6px;
+        cursor: pointer;
+        outline: none;
+    }
+
+    .provider-select option {
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+    }
+
+    /* ── Tab Bar ── */
     .tab-bar {
         display: flex;
         gap: var(--spacing-xs);
-        border-bottom: 1px solid var(--border-color);
-        padding-bottom: 0;
+        border-top: 1px solid transparent;
     }
 
     .tab {
         display: flex;
         align-items: center;
         gap: 6px;
-        padding: var(--spacing-sm) var(--spacing-md) 10px;
+        padding: 8px var(--spacing-md) 10px;
         background: none;
         border: none;
         border-bottom: 2px solid transparent;
         color: var(--text-secondary);
-        font-size: 0.85rem;
+        font-size: 0.88rem;
         font-weight: var(--font-weight-medium);
         cursor: pointer;
         transition:
-            color var(--transition-fast),
-            border-color var(--transition-fast);
+            color 0.15s,
+            border-color 0.15s;
     }
 
     .tab:hover {
@@ -1137,14 +1970,85 @@
         border-bottom-color: var(--accent-primary);
     }
 
-    /* ─── Content area ─────────────────────────────────────────────────────── */
+    .tab-badge {
+        font-size: 0.72rem;
+        background: var(--bg-highlight);
+        color: var(--text-secondary);
+        padding: 1px 6px;
+        border-radius: var(--radius-full);
+    }
+
+    /* ── Breadcrumb Bar ── */
+    .breadcrumb-bar {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        padding: 8px 0 10px;
+    }
+
+    .back-nav-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: var(--radius-md);
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        font-size: 0.82rem;
+        font-weight: var(--font-weight-medium);
+        cursor: pointer;
+        transition:
+            background 0.15s,
+            border-color 0.15s;
+    }
+
+    .back-nav-btn:hover {
+        background: var(--bg-highlight);
+        border-color: var(--accent-primary);
+    }
+
+    .breadcrumb-trail {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        overflow-x: auto;
+    }
+
+    .breadcrumb-sep {
+        color: var(--text-subdued);
+        font-size: 0.8rem;
+    }
+
+    .breadcrumb-item {
+        background: none;
+        border: none;
+        color: var(--text-secondary);
+        font-size: 0.84rem;
+        cursor: pointer;
+        padding: 3px 6px;
+        border-radius: var(--radius-sm);
+        white-space: nowrap;
+    }
+
+    .breadcrumb-item:hover {
+        color: var(--text-primary);
+        background: var(--bg-highlight);
+    }
+
+    .breadcrumb-item.active {
+        color: var(--accent-primary);
+        font-weight: var(--font-weight-semibold);
+    }
+
+    /* ── Content Area ── */
     .discover-content {
         flex: 1;
         overflow-y: auto;
-        padding: var(--spacing-lg) var(--spacing-xl) var(--spacing-xl);
+        padding: var(--spacing-lg) var(--spacing-xl) 60px;
     }
 
-    /* ─── States ───────────────────────────────────────────────────────────── */
+    /* ── States ── */
     .empty-state,
     .loading-state,
     .error-state,
@@ -1154,7 +2058,7 @@
         align-items: center;
         justify-content: center;
         text-align: center;
-        padding: 80px var(--spacing-md);
+        padding: 80px 20px;
         color: var(--text-secondary);
     }
 
@@ -1162,22 +2066,31 @@
     .loading-state p,
     .error-state p,
     .no-results p {
-        font-size: var(--font-size-md);
-        margin: var(--spacing-md) 0 var(--spacing-xs);
+        font-size: 1.05rem;
+        margin: 16px 0 6px;
         color: var(--text-primary);
     }
 
     .hint {
-        font-size: 0.82rem;
+        font-size: 0.85rem;
         color: var(--text-subdued);
     }
 
     .spinner {
-        width: 32px;
-        height: 32px;
-        border: 3px solid var(--bg-highlight);
+        width: 34px;
+        height: 34px;
+        border: 3px solid var(--border-color);
         border-top-color: var(--accent-primary);
-        border-radius: var(--radius-full);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+
+    .spinner-tiny {
+        width: 14px;
+        height: 14px;
+        border: 2px solid var(--border-color);
+        border-top-color: var(--accent-primary);
+        border-radius: 50%;
         animation: spin 0.8s linear infinite;
     }
 
@@ -1187,24 +2100,229 @@
         }
     }
 
-    /* ─── Results grid ─────────────────────────────────────────────────────── */
-    .artist-grid,
-    .release-grid {
+    /* ── Sections & Tables ── */
+    .section-block {
+        margin-bottom: 32px;
+    }
+
+    .section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 14px;
+    }
+
+    .section-header h2,
+    .section-header h3 {
+        font-size: 1.25rem;
+        font-weight: var(--font-weight-bold);
+        margin: 0;
+        color: var(--text-primary);
+    }
+
+    .view-all-link,
+    .filter-toggle-btn {
+        background: none;
+        border: none;
+        color: var(--accent-primary);
+        font-size: 0.85rem;
+        font-weight: var(--font-weight-medium);
+        cursor: pointer;
+    }
+
+    .view-all-link:hover,
+    .filter-toggle-btn:hover {
+        text-decoration: underline;
+    }
+
+    /* ── Song Table (Song > Album > Artist Navigation) ── */
+    .song-table {
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        background: var(--bg-elevated);
+        overflow: hidden;
+    }
+
+    .song-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px 14px;
+        border-bottom: 1px solid var(--border-color);
+        transition: background 0.15s;
+        user-select: none;
+    }
+
+    .song-row:last-child {
+        border-bottom: none;
+    }
+
+    .song-row:hover {
+        background: var(--bg-highlight);
+    }
+
+    .song-row.playing {
+        background: var(--accent-subtle);
+    }
+
+    .song-col-num {
+        width: 28px;
+        text-align: center;
+        font-size: 0.82rem;
+        color: var(--text-subdued);
+    }
+
+    .song-col-play {
+        width: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .play-icon-btn {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition:
+            background 0.15s,
+            transform 0.15s;
+    }
+
+    .play-icon-btn:hover {
+        background: var(--accent-primary);
+        border-color: var(--accent-primary);
+        color: #fff;
+        transform: scale(1.06);
+    }
+
+    .song-col-art {
+        width: 40px;
+        height: 40px;
+        border-radius: var(--radius-sm);
+        overflow: hidden;
+        flex-shrink: 0;
+        cursor: pointer;
+    }
+
+    .song-col-art img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .art-placeholder {
+        width: 100%;
+        height: 100%;
+        background: var(--bg-surface);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-subdued);
+    }
+
+    .song-col-info {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .song-title {
+        font-size: 0.92rem;
+        font-weight: var(--font-weight-medium);
+        color: var(--text-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .song-artist {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        text-align: left;
+    }
+
+    .link-btn {
+        background: none;
+        border: none;
+        padding: 0;
+        font-family: inherit;
+        color: var(--text-secondary);
+        cursor: pointer;
+        text-align: left;
+    }
+
+    .link-btn:hover {
+        color: var(--accent-primary);
+        text-decoration: underline;
+    }
+
+    .song-col-album {
+        flex: 0.8;
+        min-width: 0;
+        font-size: 0.82rem;
+        color: var(--text-secondary);
+    }
+
+    .song-col-dur {
+        width: 50px;
+        text-align: right;
+        font-size: 0.8rem;
+        color: var(--text-subdued);
+    }
+
+    .truncate {
+        display: block;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .dim {
+        color: var(--text-subdued);
+    }
+
+    /* ── Card Grid ── */
+    .card-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
         gap: var(--spacing-md);
     }
 
     .card-wrapper {
-        display: contents; /* Ensure grid layout is preserved */
+        display: contents;
     }
 
-    /* Target the actual card inside the wrapper for the click area if display: contents isn't enough */
     .card-wrapper > :global(*) {
         cursor: pointer;
     }
 
-    /* ─── Artist & Release cards ───────────────────────────────────────────── */
+    .release-cover {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--bg-surface);
+        color: var(--text-subdued);
+    }
+
+    .release-cover img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
     .artist-avatar {
         width: 100%;
         height: 100%;
@@ -1217,26 +2335,22 @@
         background: linear-gradient(
             135deg,
             var(--accent-primary) 0%,
-            #1a73e8 100%
+            #2563eb 100%
         );
     }
 
-    .release-icon {
+    .artist-avatar img {
         width: 100%;
         height: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--text-secondary);
-        background: var(--bg-surface);
+        object-fit: cover;
+        border-radius: 50%;
     }
 
     .card-meta {
         display: flex;
-        flex-direction: column;
+        flex-wrap: wrap;
         gap: 4px;
         margin-top: 4px;
-        align-items: inherit;
     }
 
     .meta-chip {
@@ -1247,7 +2361,6 @@
         font-size: 0.72rem;
         background: var(--bg-surface);
         color: var(--text-secondary);
-        width: fit-content;
     }
 
     .type-chip {
@@ -1256,603 +2369,231 @@
         font-weight: var(--font-weight-semibold);
     }
 
+    /* ── Detail Page (Album & Artist) ── */
+    .detail-page {
+        display: flex;
+        flex-direction: column;
+        gap: 28px;
+    }
+
+    .hero-header {
+        display: flex;
+        gap: 28px;
+        align-items: flex-end;
+        padding: 24px;
+        border-radius: var(--radius-lg);
+        background: linear-gradient(
+            180deg,
+            var(--bg-elevated) 0%,
+            var(--bg-surface) 100%
+        );
+        border: 1px solid var(--border-color);
+    }
+
+    .hero-cover,
+    .hero-avatar {
+        width: 200px;
+        height: 200px;
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        flex-shrink: 0;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    }
+
+    .hero-cover img,
+    .hero-avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .hero-avatar {
+        border-radius: 50%;
+    }
+
+    .cover-fallback,
+    .avatar-fallback {
+        width: 100%;
+        height: 100%;
+        background: var(--bg-highlight);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-subdued);
+    }
+
+    .avatar-fallback {
+        font-size: 3.5rem;
+        color: #fff;
+        background: linear-gradient(
+            135deg,
+            var(--accent-primary) 0%,
+            #2563eb 100%
+        );
+    }
+
+    .hero-info {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .hero-eyebrow {
+        font-size: 0.75rem;
+        font-weight: var(--font-weight-bold);
+        color: var(--accent-primary);
+        letter-spacing: 0.08em;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .library-badge {
+        font-size: 0.72rem;
+        background: #10b98122;
+        color: #10b981;
+        padding: 2px 8px;
+        border-radius: var(--radius-full);
+        font-weight: var(--font-weight-medium);
+    }
+
+    .hero-title {
+        font-size: 2.2rem;
+        font-weight: 800;
+        margin: 0;
+        color: var(--text-primary);
+        line-height: 1.2;
+    }
+
+    .hero-meta-line {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        flex-wrap: wrap;
+    }
+
+    .artist-pill-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        border-radius: var(--radius-full);
+        background: var(--bg-highlight);
+        border: 1px solid var(--border-color);
+        color: var(--text-primary);
+        font-size: 0.85rem;
+        font-weight: var(--font-weight-medium);
+        cursor: pointer;
+        transition:
+            background 0.15s,
+            border-color 0.15s;
+    }
+
+    .artist-pill-btn:hover {
+        background: var(--accent-primary);
+        border-color: var(--accent-primary);
+        color: #fff;
+    }
+
+    .meta-dot {
+        color: var(--text-subdued);
+    }
+
     .genre-pills {
         display: flex;
         flex-wrap: wrap;
-        gap: 4px;
-        margin-top: 2px;
-        justify-content: inherit;
+        gap: 6px;
     }
 
     .genre-pill {
-        padding: 1px 8px;
+        padding: 2px 10px;
         border-radius: var(--radius-full);
-        font-size: 0.68rem;
+        font-size: 0.72rem;
         background: var(--bg-surface);
+        border: 1px solid var(--border-color);
         color: var(--text-secondary);
     }
 
-    /* ─── Detail overlay ───────────────────────────────────────────────────── */
-    .detail-overlay {
-        position: absolute;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.5);
-        z-index: 50;
-        display: flex;
-        justify-content: flex-end;
-    }
-
-    .detail-panel {
-        width: min(480px, 100%);
-        height: 100%;
-        background: var(--bg-elevated);
-        border-left: 1px solid var(--border-color);
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-    }
-
-    .detail-header {
+    .hero-actions {
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: var(--spacing-md)
-            var(--spacing-lg) var(--spacing-md);
-        border-bottom: 1px solid var(--border-color);
-        flex-shrink: 0;
+        margin-top: 10px;
     }
 
-    .back-btn {
-        background: none;
-        border: none;
-        padding: 8px;
+    .hero-play-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 22px;
         border-radius: var(--radius-full);
-        color: var(--text-secondary);
+        background: var(--accent-primary);
+        border: none;
+        color: #fff;
+        font-size: 0.92rem;
+        font-weight: var(--font-weight-semibold);
         cursor: pointer;
         transition:
-            background 0.2s,
-            color 0.2s;
-        display: flex;
+            transform 0.15s,
+            filter 0.15s;
+    }
+
+    .hero-play-btn:hover {
+        transform: scale(1.03);
+        filter: brightness(1.1);
+    }
+
+    .hero-sub-btn {
+        display: inline-flex;
         align-items: center;
-        justify-content: center;
-    }
-
-    .back-btn:hover {
-        background: var(--bg-highlight);
-        color: var(--text-primary);
-    }
-
-    .artist-link-btn {
-        background: none;
-        border: none;
-        color: var(--accent-primary);
-        padding: 0;
-        font-size: 0.9rem;
-        cursor: pointer;
-        text-align: left;
-        font-family: inherit;
-    }
-
-    .artist-link-btn:hover {
-        text-decoration: underline;
-    }
-
-    .tracks-loading {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 12px;
-        padding: 40px 20px;
-        color: var(--text-secondary);
-    }
-
-    .tracks-list {
-        display: flex;
-        flex-direction: column;
         gap: 6px;
-        margin-top: 8px;
-    }
-
-    .track-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 8px 12px;
+        padding: 9px 16px;
+        border-radius: var(--radius-full);
         background: var(--bg-surface);
-        border-radius: var(--radius-md);
-        transition: background 0.2s;
-    }
-
-    .track-row:hover {
-        background: var(--bg-highlight);
-    }
-
-    .track-info {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        min-width: 0;
-    }
-
-    .track-number {
-        font-family: var(--font-mono);
-        color: var(--text-tertiary);
-        width: 24px;
+        border: 1px solid var(--border-color);
+        color: var(--text-secondary);
         font-size: 0.85rem;
-    }
-
-    .track-names {
-        display: flex;
-        flex-direction: column;
-        min-width: 0;
-    }
-
-    .track-title {
         font-weight: var(--font-weight-medium);
-        color: var(--text-primary);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .track-artist {
-        font-size: var(--font-size-xs);
-        color: var(--text-secondary);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .track-actions {
-        flex-shrink: 0;
-    }
-
-    .tidal-btn {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        background: #00bfaf;
-        color: white !important;
-        border: none;
-        padding: 4px 12px;
-        border-radius: var(--radius-full);
-        font-size: var(--font-size-xs);
-        font-weight: var(--font-weight-semibold);
         cursor: pointer;
-        transition:
-            transform 0.1s,
-            opacity 0.2s;
     }
 
-    .tidal-btn:hover {
-        transform: scale(1.05);
-        opacity: 0.9;
-    }
-
-    .tidal-btn.loading {
-        opacity: 0.7;
-        cursor: wait;
-    }
-
-    .spinner-small,
-    .spinner-tiny {
-        border: 2px solid var(--border-color);
-        border-top-color: var(--accent-primary);
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-    }
-
-    .spinner-small {
-        width: 20px;
-        height: 20px;
-    }
-
-    .spinner-tiny {
-        width: 14px;
-        height: 14px;
-        border-width: 1.5px;
-        border-top-color: white;
-    }
-
-    @keyframes spin {
-        to {
-            transform: rotate(360deg);
-        }
-    }
-
-    .disco-item {
-        cursor: pointer;
-        transition:
-            background 0.2s,
-            transform 0.2s;
-    }
-
-    .disco-item:hover {
-        background: var(--bg-highlight);
-        transform: translateY(-2px);
-    }
-
-    .detail-title-block h2 {
-        font-size: 1.2rem;
-        font-weight: var(--font-weight-bold);
-        margin: 0;
+    .hero-sub-btn:hover {
         color: var(--text-primary);
+        border-color: var(--accent-primary);
     }
 
-    .detail-disambig {
-        font-size: 0.78rem;
-        color: var(--text-secondary);
+    /* ── Biography Section ── */
+    .bio-section {
+        background: var(--bg-elevated);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        padding: 20px;
     }
 
-    .detail-loading {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        padding: 60px var(--spacing-md);
-        gap: var(--spacing-md);
-        color: var(--text-secondary);
-    }
-
-    .detail-body {
-        flex: 1;
-        overflow-y: auto;
-        padding: var(--spacing-lg);
-    }
-
-    .detail-section {
-        margin-bottom: 28px;
-    }
-
-    .detail-section h3 {
-        font-size: 0.8rem;
-        font-weight: var(--font-weight-semibold);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--text-secondary);
+    .bio-section h3 {
         margin: 0 0 10px;
+        font-size: 1.1rem;
+        color: var(--text-primary);
     }
 
     .bio-text {
-        font-size: 0.88rem;
+        font-size: 0.9rem;
         line-height: 1.6;
-        color: var(--text-primary);
-        margin: 0 0 10px;
+        color: var(--text-secondary);
+        margin: 0 0 12px;
     }
 
     .wiki-link {
-        font-size: 0.82rem;
+        font-size: 0.85rem;
         color: var(--accent-primary);
         text-decoration: none;
     }
 
     .wiki-link:hover {
         text-decoration: underline;
-    }
-
-    .detail-genres {
-        gap: 6px;
-    }
-
-    .detail-meta {
-        gap: var(--spacing-sm);
-    }
-
-    /* ─── Discography inside detail ────────────────────────────────────────── */
-    .disco-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 10px;
-    }
-
-    .disco-header h3 {
-        margin: 0;
-    }
-
-    .disco-filter-btn {
-        background: none;
-        border: 1px solid var(--border-color);
-        color: var(--text-secondary);
-        font-size: 0.72rem;
-        padding: 3px 10px;
-        border-radius: var(--radius-lg);
-        cursor: pointer;
-        transition:
-            color var(--transition-fast),
-            border-color var(--transition-fast);
-    }
-
-    .disco-filter-btn:hover {
-        color: var(--text-primary);
-        border-color: var(--text-subdued);
-    }
-
-    .disco-list {
-        display: flex;
-        flex-direction: column;
-        gap: var(--spacing-xs);
-    }
-
-    .disco-item {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 10px 14px;
-        border-radius: var(--radius-md);
-        background: var(--bg-surface);
-        border-left: 3px solid transparent;
-        transition: background var(--transition-fast);
-    }
-
-    .disco-item:hover {
-        background: var(--bg-highlight);
-    }
-
-    /* Per-type left border accent — album uses the app accent */
-    .disco-item.rt-album {
-        border-left-color: var(--accent-primary);
-    }
-    .disco-item.rt-single {
-        border-left-color: #e8a317;
-    }
-    .disco-item.rt-ep {
-        border-left-color: #1a73e8;
-    }
-    .disco-item.rt-live {
-        border-left-color: #e84040;
-    }
-    .disco-item.rt-compilation {
-        border-left-color: #9b59b6;
-    }
-    .disco-item.rt-soundtrack {
-        border-left-color: #e67e22;
-    }
-    .disco-item.rt-remix {
-        border-left-color: #00bcd4;
-    }
-    .disco-item.rt-other {
-        border-left-color: var(--text-subdued);
-    }
-
-    /* Type icon */
-    .disco-type-icon {
-        width: 32px;
-        height: 32px;
-        border-radius: var(--radius-sm);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-    }
-
-    .disco-type-icon.rt-album {
-        background: var(--accent-subtle);
-        color: var(--accent-primary);
-    }
-    .disco-type-icon.rt-single {
-        background: rgba(232, 163, 23, 0.12);
-        color: #e8a317;
-    }
-    .disco-type-icon.rt-ep {
-        background: rgba(26, 115, 232, 0.12);
-        color: #1a73e8;
-    }
-    .disco-type-icon.rt-live {
-        background: rgba(232, 64, 64, 0.12);
-        color: #e84040;
-    }
-    .disco-type-icon.rt-compilation {
-        background: rgba(155, 89, 182, 0.12);
-        color: #9b59b6;
-    }
-    .disco-type-icon.rt-soundtrack {
-        background: rgba(230, 126, 34, 0.12);
-        color: #e67e22;
-    }
-    .disco-type-icon.rt-remix {
-        background: rgba(0, 188, 212, 0.12);
-        color: #00bcd4;
-    }
-    .disco-type-icon.rt-other {
-        background: var(--bg-highlight);
-        color: var(--text-subdued);
-    }
-
-    .release-icon img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-
-    .release-icon svg.hidden,
-    .disco-type-icon img[style*="display: none"] + .hidden,
-    .hidden {
-        display: none !important;
-    }
-
-    .disco-type-icon {
-        position: relative;
-        overflow: hidden;
-    }
-
-    .disco-type-icon img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-
-    .icon-fallback {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .disco-title {
-        font-size: 0.88rem;
-        font-weight: var(--font-weight-medium);
-        color: var(--text-primary);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .disco-year {
-        font-size: 0.73rem;
-        color: var(--text-subdued);
-    }
-
-    /* Per-type badges — album uses the app accent */
-    .disco-badge {
-        flex-shrink: 0;
-        padding: 2px 10px;
-        border-radius: var(--radius-full);
-        font-size: 0.68rem;
-        font-weight: var(--font-weight-semibold);
-        letter-spacing: 0.02em;
-        text-transform: uppercase;
-    }
-
-    .disco-badge.rt-album {
-        background: var(--accent-subtle);
-        color: var(--accent-primary);
-    }
-    .disco-badge.rt-single {
-        background: rgba(232, 163, 23, 0.15);
-        color: #e8a317;
-    }
-    .disco-badge.rt-ep {
-        background: rgba(26, 115, 232, 0.15);
-        color: #1a73e8;
-    }
-    .disco-badge.rt-live {
-        background: rgba(232, 64, 64, 0.15);
-        color: #e84040;
-    }
-    .disco-badge.rt-compilation {
-        background: rgba(155, 89, 182, 0.15);
-        color: #9b59b6;
-    }
-    .disco-badge.rt-soundtrack {
-        background: rgba(230, 126, 34, 0.15);
-        color: #e67e22;
-    }
-    .disco-badge.rt-remix {
-        background: rgba(0, 188, 212, 0.15);
-        color: #00bcd4;
-    }
-    .disco-badge.rt-other {
-        background: var(--bg-highlight);
-        color: var(--text-subdued);
-    }
-
-    /* ─── Responsive ───────────────────────────────────────────────────────── */
-    @media (max-width: 600px) {
-        .discover-header {
-            padding: var(--spacing-md) var(--spacing-md) 0;
-        }
-
-        .discover-content {
-            padding: var(--spacing-md);
-        }
-
-        .detail-panel {
-            width: 100%;
-        }
-    }
-    .release-detail-header-block {
-        display: flex;
-        gap: var(--spacing-lg);
-        margin-bottom: var(--spacing-xl);
-    }
-    .release-detail-cover {
-        width: 140px;
-        height: 140px;
-        border-radius: var(--radius-sm);
-        overflow: hidden;
-        background: var(--bg-highlight);
-        flex-shrink: 0;
-        box-shadow: var(--shadow-md);
-    }
-    .release-detail-cover img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-    .release-detail-info-block {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        gap: var(--spacing-md);
-    }
-    .mb-track-list {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-    }
-    .mb-track-item {
-        display: flex;
-        align-items: center;
-        padding: 8px 12px;
-        border-radius: var(--radius-sm);
-        transition: background var(--transition-fast);
-        gap: var(--spacing-md);
-    }
-    .mb-track-item:hover {
-        background: var(--bg-surface);
-    }
-    .track-num {
-        width: 24px;
-        font-size: 0.82rem;
-        color: var(--text-subdued);
-        text-align: right;
-    }
-    .track-info {
-        flex: 1;
-        display: flex;
-        min-width: 0;
-        text-align: left;
-    }
-    .track-name {
-        font-size: 0.92rem;
-        font-weight: var(--font-weight-medium);
-        color: var(--text-primary);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    .track-artist {
-        font-size: 0.78rem;
-        color: var(--text-secondary);
-    }
-    .play-tidal-btn {
-        width: 32px;
-        height: 32px;
-        border-radius: var(--radius-full);
-        background: var(--bg-highlight);
-        color: var(--text-primary);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all var(--transition-fast);
-        border: none;
-        cursor: pointer;
-    }
-    .play-tidal-btn:hover:not(:disabled) {
-        background: var(--accent-primary);
-        color: white;
-        transform: scale(1.1);
-    }
-    .play-tidal-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-    .spinner-xs {
-        width: 14px;
-        height: 14px;
-        border: 2px solid rgba(255, 255, 255, 0.2);
-        border-top-color: currentColor;
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
     }
 </style>

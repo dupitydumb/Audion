@@ -1380,6 +1380,7 @@ pub fn run() {
                     commands::disconnect_lastfm,
                     commands::submit_lastfm_now_playing,
                     commands::submit_lastfm_scrobble,
+                    commands::replay_cached_scrobbles,
                     // Subsonic commands
                     commands::subsonic_save_config,
                     commands::subsonic_get_config,
@@ -1652,6 +1653,7 @@ pub fn run() {
                     commands::disconnect_lastfm,
                     commands::submit_lastfm_now_playing,
                     commands::submit_lastfm_scrobble,
+                    commands::replay_cached_scrobbles,
                     // Subsonic commands
                     commands::subsonic_save_config,
                     commands::subsonic_get_config,

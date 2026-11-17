@@ -217,6 +217,8 @@
     "repeatOne": "Один трек",
     "repeatAll": "Все",
     "sleepTimerRemaining": "Таймер сна: осталось {remaining}",
+    "endOfTrack": "До конца трека",
+    "sleepTimerFade": "Плавное затухание громкости",
     "addedToPlaylist": "Добавлено в {name}",
     "deleteTrackConfirm": "Удалить «{title}» из библиотеки?",
     "minutesLeft": "осталось {minutes} мин"
@@ -798,6 +800,7 @@
   "lyrics": {
     "cached": "В кэше",
     "closePanel": "Закрыть панель текста песни",
+    "shareCard": "Поделиться текстом",
     "embedded": "Встроенный",
     "embeddedTag": "Встроенный тег",
     "idle": "Запустите трек, чтобы увидеть текст",

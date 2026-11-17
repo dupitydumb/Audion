@@ -235,11 +235,11 @@ pub async fn submit_lastfm_scrobble(
 
     let mut params = vec![
         ("api_key".to_string(), DEFAULT_LASTFM_API_KEY.to_string()),
-        ("artist".to_string(), artist),
+        ("artist".to_string(), artist.clone()),
         ("method".to_string(), "track.scrobble".to_string()),
         ("sk".to_string(), session.session_key),
         ("timestamp".to_string(), scrobble_time.to_string()),
-        ("track".to_string(), title),
+        ("track".to_string(), title.clone()),
     ];
 
     if let Some(ref a) = album {
@@ -262,19 +262,169 @@ pub async fn submit_lastfm_scrobble(
         .build()
         .map_err(|e| e.to_string())?;
 
-    let resp = client
+    let send_res = client
         .post(LASTFM_API_BASE)
         .form(&params)
         .send()
-        .await
-        .map_err(|e| format!("Last.fm network error: {}", e))?;
+        .await;
 
-    if !resp.status().is_success() {
-        let txt = resp.text().await.unwrap_or_default();
-        tracing::warn!("Last.fm scrobble error: {}", txt);
-    } else {
-        tracing::info!("Last.fm scrobble successful");
+    match send_res {
+        Ok(resp) => {
+            if !resp.status().is_success() {
+                let txt = resp.text().await.unwrap_or_default();
+                tracing::warn!("Last.fm scrobble error: {}", txt);
+                if !txt.contains("Invalid session key") {
+                    cache_failed_scrobble(&app, "lastfm", &artist, &title, album.as_deref(), duration_secs, scrobble_time);
+                }
+            } else {
+                tracing::info!("Last.fm scrobble successful");
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Last.fm network error, caching scrobble for later: {}", e);
+            cache_failed_scrobble(&app, "lastfm", &artist, &title, album.as_deref(), duration_secs, scrobble_time);
+        }
     }
 
     Ok(())
+}
+
+fn cache_failed_scrobble(
+    app: &tauri::AppHandle,
+    service: &str,
+    artist: &str,
+    title: &str,
+    album: Option<&str>,
+    duration: Option<i32>,
+    timestamp: u64,
+) {
+    if let Some(db) = app.try_state::<crate::db::Database>() {
+        if let Ok(conn) = db.conn.lock() {
+            let _ = crate::db::scrobbles::insert_cached_scrobble(
+                &conn,
+                service,
+                artist,
+                title,
+                album,
+                duration,
+                timestamp,
+            );
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn replay_cached_scrobbles(app: tauri::AppHandle) -> Result<usize, String> {
+    let session = match read_session(&app).await {
+        Some(s) => s,
+        None => return Ok(0),
+    };
+
+    let cached = {
+        let db = app.try_state::<crate::db::Database>()
+            .ok_or_else(|| "Database not available".to_string())?;
+        let conn = db.conn.lock().map_err(|e| e.to_string())?;
+        crate::db::scrobbles::get_cached_scrobbles(&conn, 50).map_err(|e| e.to_string())?
+    };
+
+    if cached.is_empty() {
+        return Ok(0);
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent("Audion/1.5.0")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let mut replayed = 0;
+
+    for item in cached {
+        if item.service == "lastfm" {
+            let mut params = vec![
+                ("api_key".to_string(), DEFAULT_LASTFM_API_KEY.to_string()),
+                ("artist".to_string(), item.artist.clone()),
+                ("method".to_string(), "track.scrobble".to_string()),
+                ("sk".to_string(), session.session_key.clone()),
+                ("timestamp".to_string(), item.timestamp.to_string()),
+                ("track".to_string(), item.title.clone()),
+            ];
+
+            if let Some(ref a) = item.album {
+                if !a.trim().is_empty() {
+                    params.push(("album".to_string(), a.clone()));
+                }
+            }
+            if let Some(d) = item.duration {
+                if d > 0 {
+                    params.push(("duration".to_string(), d.to_string()));
+                }
+            }
+
+            let sig = create_api_signature(&params, DEFAULT_LASTFM_API_SECRET);
+            params.push(("api_sig".to_string(), sig));
+            params.push(("format".to_string(), "json".to_string()));
+
+            let res = client.post(LASTFM_API_BASE).form(&params).send().await;
+
+            let is_success;
+            let should_break;
+            let should_delete;
+            let should_retry;
+
+            match res {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        is_success = true;
+                        should_break = false;
+                        should_delete = true;
+                        should_retry = false;
+                    } else {
+                        is_success = false;
+                        let txt = resp.text().await.unwrap_or_default();
+                        if txt.contains("Invalid session key") {
+                            should_break = true;
+                            should_delete = false;
+                            should_retry = false;
+                        } else if item.retry_count >= 10 {
+                            should_break = false;
+                            should_delete = true;
+                            should_retry = false;
+                        } else {
+                            should_break = false;
+                            should_delete = false;
+                            should_retry = true;
+                        }
+                    }
+                }
+                Err(_) => {
+                    is_success = false;
+                    should_break = true;
+                    should_delete = false;
+                    should_retry = true;
+                }
+            }
+
+            let db = app.state::<crate::db::Database>();
+            if let Ok(conn) = db.conn.lock() {
+                if should_delete {
+                    let _ = crate::db::scrobbles::delete_cached_scrobble(&conn, item.id);
+                } else if should_retry {
+                    let _ = crate::db::scrobbles::increment_scrobble_retry(&conn, item.id);
+                }
+            }
+
+            if is_success {
+                replayed += 1;
+            }
+            if should_break {
+                break;
+            }
+        }
+    }
+
+    if replayed > 0 {
+        tracing::info!("Successfully replayed {} cached offline scrobbles", replayed);
+    }
+
+    Ok(replayed)
 }

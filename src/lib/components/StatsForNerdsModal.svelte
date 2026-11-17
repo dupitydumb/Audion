@@ -5,6 +5,7 @@
   import { currentTrack, activeBackend } from "$lib/stores/player";
   import { isTauri } from "$lib/api/tauri";
   import Icon from "$lib/components/Icon.svelte";
+  import { providerTelemetryStore, globalProviders, type ProviderTelemetryEntry } from "$lib/plugins/providers";
 
   export let open: boolean = false;
   export let onClose: () => void = () => { open = false; };
@@ -12,6 +13,18 @@
   let telemetry: AudioTelemetry | null = null;
   let intervalId: any = null;
   let isClosing = false;
+  let activeTab: 'audio' | 'providers' = 'audio';
+  let pingingId: string | null = null;
+
+  async function handlePing(item: ProviderTelemetryEntry) {
+    if (pingingId) return;
+    pingingId = item.id;
+    try {
+      await globalProviders.pingProvider(item.type, item.id);
+    } finally {
+      pingingId = null;
+    }
+  }
 
   async function updateTelemetry() {
     if (!open) return;
@@ -71,7 +84,26 @@
         </button>
       </div>
 
-      <!-- Live Specs Table -->
+      <!-- Tab Switcher -->
+      <div class="hud-tabs">
+        <button
+          class="hud-tab"
+          class:active={activeTab === 'audio'}
+          on:click={() => activeTab = 'audio'}
+        >
+          Audio Engine
+        </button>
+        <button
+          class="hud-tab"
+          class:active={activeTab === 'providers'}
+          on:click={() => activeTab = 'providers'}
+        >
+          Providers Matrix ({$providerTelemetryStore.length})
+        </button>
+      </div>
+
+      <!-- Live Specs Table / Providers Matrix -->
+      {#if activeTab === 'audio'}
       <div class="hud-body">
         <!-- Track Title / Path -->
         {#if $currentTrack}
@@ -181,6 +213,70 @@
           </span>
         </div>
       </div>
+      {:else}
+      <div class="hud-body providers-body">
+        {#if $providerTelemetryStore.length === 0}
+          <div class="hud-empty">
+            <Icon name="radio" size={24} />
+            <span>No modular providers active</span>
+            <small>Plugins can register Stream, Metadata & Lyrics providers.</small>
+          </div>
+        {:else}
+          <div class="provider-matrix-list">
+            {#each $providerTelemetryStore as provider (provider.id)}
+              <div class="provider-matrix-card">
+                <div class="provider-card-top">
+                  <div class="provider-card-name-group">
+                    <span class="provider-status-dot status-{provider.status}" title={provider.status}></span>
+                    <span class="provider-name truncate">{provider.name}</span>
+                    <span class="provider-type-tag type-{provider.type}">{provider.type}</span>
+                  </div>
+                  <button
+                    class="btn-ping"
+                    title="Ping provider"
+                    disabled={pingingId === provider.id}
+                    on:click={() => handlePing(provider)}
+                  >
+                    <Icon name="refresh-cw" size={10} className={pingingId === provider.id ? 'spin' : ''} />
+                  </button>
+                </div>
+
+                <div class="provider-card-stats">
+                  <div class="provider-stat-col">
+                    <span class="stat-micro-label">Latency</span>
+                    <span class="stat-micro-val">
+                      {#if provider.lastLatencyMs !== null}
+                        <span class="latency-pill" class:fast={provider.lastLatencyMs < 400} class:med={provider.lastLatencyMs >= 400 && provider.lastLatencyMs < 1200} class:slow={provider.lastLatencyMs >= 1200}>
+                          {provider.lastLatencyMs}ms
+                        </span>
+                      {:else}
+                        <span class="text-subdued">—</span>
+                      {/if}
+                    </span>
+                  </div>
+                  <div class="provider-stat-col">
+                    <span class="stat-micro-label">Avg Latency</span>
+                    <span class="stat-micro-val mono">
+                      {provider.avgLatencyMs !== null ? `${provider.avgLatencyMs}ms` : '—'}
+                    </span>
+                  </div>
+                  <div class="provider-stat-col">
+                    <span class="stat-micro-label">Success Rate</span>
+                    <span class="stat-micro-val">
+                      {#if provider.totalRequests > 0}
+                        {Math.round((provider.successCount / provider.totalRequests) * 100)}% ({provider.totalRequests})
+                      {:else}
+                        <span class="text-subdued">Idle</span>
+                      {/if}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </div>
+      {/if}
 
       <!-- Footer Shortcut Hint -->
       <div class="hud-footer">
@@ -337,5 +433,224 @@
     border-radius: 3px;
     font-size: 0.625rem;
     font-family: inherit;
+  }
+
+  /* Hud Tabs */
+  .hud-tabs {
+    display: flex;
+    background: rgba(0, 0, 0, 0.25);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .hud-tab {
+    flex: 1;
+    background: transparent;
+    border: none;
+    padding: 6px 10px;
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border-bottom: 2px solid transparent;
+  }
+
+  .hud-tab:hover {
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .hud-tab.active {
+    color: #fff;
+    border-bottom-color: var(--accent-primary, #1db954);
+    background: rgba(255, 255, 255, 0.03);
+  }
+
+  /* Provider Matrix List */
+  .providers-body {
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  .hud-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 20px 10px;
+    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.75rem;
+    text-align: center;
+  }
+
+  .hud-empty small {
+    font-size: 0.65rem;
+    color: rgba(255, 255, 255, 0.3);
+  }
+
+  .provider-matrix-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .provider-matrix-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 6px;
+    padding: 7px 9px;
+  }
+
+  .provider-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+
+  .provider-card-name-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .provider-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .provider-status-dot.status-healthy {
+    background: #4ade80;
+    box-shadow: 0 0 6px rgba(74, 222, 128, 0.6);
+  }
+
+  .provider-status-dot.status-degraded {
+    background: #fbbf24;
+    box-shadow: 0 0 6px rgba(251, 191, 36, 0.6);
+  }
+
+  .provider-status-dot.status-offline {
+    background: #f87171;
+    box-shadow: 0 0 6px rgba(248, 113, 113, 0.6);
+  }
+
+  .provider-status-dot.status-idle {
+    background: rgba(255, 255, 255, 0.3);
+  }
+
+  .provider-name {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.95);
+    max-width: 140px;
+  }
+
+  .provider-type-tag {
+    font-size: 0.58rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 1px 4px;
+    border-radius: 3px;
+    letter-spacing: 0.04em;
+  }
+
+  .provider-type-tag.type-stream {
+    background: rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+  }
+
+  .provider-type-tag.type-metadata {
+    background: rgba(168, 85, 247, 0.2);
+    color: #d8b4fe;
+  }
+
+  .provider-type-tag.type-lyrics {
+    background: rgba(236, 72, 153, 0.2);
+    color: #f472b6;
+  }
+
+  .btn-ping {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    color: rgba(255, 255, 255, 0.6);
+    padding: 3px 5px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+  }
+
+  .btn-ping:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+  }
+
+  .btn-ping:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  :global(.spin) {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  .provider-card-stats {
+    display: flex;
+    justify-content: space-between;
+    background: rgba(0, 0, 0, 0.2);
+    border-radius: 4px;
+    padding: 4px 6px;
+  }
+
+  .provider-stat-col {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  .stat-micro-label {
+    font-size: 0.55rem;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.35);
+    letter-spacing: 0.03em;
+  }
+
+  .stat-micro-val {
+    font-size: 0.68rem;
+    font-family: ui-monospace, monospace;
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  .stat-micro-val.mono {
+    font-family: ui-monospace, monospace;
+  }
+
+  .latency-pill {
+    font-weight: 600;
+  }
+
+  .latency-pill.fast {
+    color: #4ade80;
+  }
+
+  .latency-pill.med {
+    color: #fbbf24;
+  }
+
+  .latency-pill.slow {
+    color: #f87171;
+  }
+
+  .text-subdued {
+    color: rgba(255, 255, 255, 0.35);
   }
 </style>

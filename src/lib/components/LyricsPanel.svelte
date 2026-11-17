@@ -21,7 +21,10 @@
     import { importLyricsContent } from "$lib/stores/lyrics";
     import { LYRICS_SOURCES, type LyricsSource } from "$lib/lyrics";
     import LyricsView from "./LyricsView.svelte";
+    import LyricCardModal from "./LyricCardModal.svelte";
     import Icon from "$lib/components/Icon.svelte";
+
+    let showLyricCardModal = false;
 
     // -------------------------------------------------------------------------
     // lyrics rendering (word/syllable sync, scroll, alignment) now lives in LyricsView.svelte
@@ -353,6 +356,18 @@
                     </div>
                 {/if}
 
+                <!-- Share Lyric Card -->
+                {#if $lyricsData?.lines && $lyricsData.lines.length > 0}
+                    <button
+                        class="icon-btn"
+                        title={$_('lyrics.shareCard') || 'Share Lyric Card'}
+                        aria-label="Share Lyric Card"
+                        on:click={() => showLyricCardModal = true}
+                    >
+                        <Icon name="share-2" size={19} />
+                    </button>
+                {/if}
+
                 <!-- Import button -->
                 <button
                     class="icon-btn"
@@ -483,6 +498,11 @@
         {/if}
 
     </aside>
+
+    <LyricCardModal
+        bind:open={showLyricCardModal}
+        onClose={() => showLyricCardModal = false}
+    />
 {/if}
 
 <style>

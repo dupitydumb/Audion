@@ -10,7 +10,6 @@ import {
     getAlbumCoverFromTracks,
 } from './library';
 import { playlistCovers, getPlaylistCoverSync } from './playlistCovers';
-import { globalProviders } from '$lib/plugins/providers';
 
 export interface SearchResults {
     tracks: Track[];
@@ -46,93 +45,27 @@ let currentQueryId = 0;
 async function runSearch(q: string): Promise<void> {
     const queryId = ++currentQueryId;
     try {
-        const localPromise = searchLibrary(q, 100, 0).catch(err => {
+        const results = await searchLibrary(q, 100, 0).catch(err => {
             console.error("[Search] searchLibrary failed:", err);
             return { tracks: [], albums: [], artists: [], playlists: [] };
         });
 
-        const providers = globalProviders.getAllMetadataProviders();
-        const providerPromise = providers.length > 0
-            ? globalProviders.searchAllMetadata(q, 'all', 1).catch(err => {
-                console.warn("[Search] Metadata providers search failed:", err);
-                return { tracks: [], albums: [], artists: [] };
-            })
-            : Promise.resolve({ tracks: [], albums: [], artists: [] });
-
-        const [results, providerRes] = await Promise.all([localPromise, providerPromise]);
         if (queryId !== currentQueryId) return;
 
         const playlists = results.playlists ?? [];
-
-        // Convert provider tracks
-        const providerTracks: Track[] = (providerRes.tracks || []).map((t, idx) => {
-            let strHash = 0;
-            const key = String(t.external_id || t.id || t.title || idx);
-            for (let i = 0; i < key.length; i++) {
-                strHash = (strHash * 31 + key.charCodeAt(i)) & 0x7fffffff;
-            }
-            return {
-                id: -(1000000 + idx * 1000 + (strHash % 99999)),
-                path: (t as any).preview_url || t.external_id || t.id || '',
-                title: t.title || 'Unknown Title',
-                artist: t.artist || 'Unknown Artist',
-                artists: t.artist ? [t.artist] : [],
-                album: t.album || null,
-                track_number: t.track_number || null,
-                duration: t.duration || null,
-                album_id: null,
-                format: t.format || null,
-                bitrate: t.bitrate || null,
-                cover_url: t.cover_url || null,
-                source_type: t.source_type || 'plugin',
-                external_id: t.external_id || t.id,
-            };
-        });
-
-        // Filter out provider tracks that already exist in local results
-        const existingKeys = new Set(
-            results.tracks.map(lt => `${(lt.title || '').toLowerCase()}|${(lt.artist || '').toLowerCase()}`)
-        );
-        const filteredProviderTracks = providerTracks.filter(pt => {
-            const k = `${(pt.title || '').toLowerCase()}|${(pt.artist || '').toLowerCase()}`;
-            return !existingKeys.has(k);
-        });
-
-        // Convert provider albums
-        const providerAlbums: Album[] = (providerRes.albums || []).map((a, idx) => {
-            let strHash = 0;
-            const key = String(a.id || a.title || idx);
-            for (let i = 0; i < key.length; i++) {
-                strHash = (strHash * 31 + key.charCodeAt(i)) & 0x7fffffff;
-            }
-            return {
-                id: -(2000000 + idx * 1000 + (strHash % 99999)),
-                name: a.title || 'Unknown Album',
-                artist: a.artist || null,
-                art_path: a.cover_url || null,
-            };
-        });
-
-        // Convert provider artists
-        const providerArtists: Artist[] = (providerRes.artists || []).map((ar) => ({
-            name: ar.name || 'Unknown Artist',
-            track_count: 0,
-            album_count: 0,
-        }));
-
-        const mergedTracks = [...results.tracks, ...filteredProviderTracks];
-        const mergedAlbums = [...results.albums, ...providerAlbums];
-        const mergedArtists = [...results.artists, ...providerArtists];
+        const tracks = results.tracks ?? [];
+        const albums = results.albums ?? [];
+        const artists = results.artists ?? [];
 
         searchResults.set({
-            tracks: mergedTracks,
-            albums: mergedAlbums,
-            artists: mergedArtists,
-            playlists: playlists,
+            tracks,
+            albums,
+            artists,
+            playlists,
             hasResults:
-                mergedTracks.length > 0 ||
-                mergedAlbums.length > 0 ||
-                mergedArtists.length > 0 ||
+                tracks.length > 0 ||
+                albums.length > 0 ||
+                artists.length > 0 ||
                 playlists.length > 0,
             query: q,
         });
@@ -140,14 +73,7 @@ async function runSearch(q: string): Promise<void> {
         if (queryId !== currentQueryId) return;
         console.error("[Search] runSearch failed:", err);
         // Show error state so user knows it's broken, not empty
-        searchResults.set({
-            tracks: [],
-            albums: [],
-            artists: [],
-            playlists: [],
-            hasResults: false,
-            query: q,
-        });
+        searchResults.set(emptyResults());
     }
 }
 

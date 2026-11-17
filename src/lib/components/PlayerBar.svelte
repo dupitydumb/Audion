@@ -44,9 +44,13 @@
         sleepTimerActive,
         sleepTimerLastDurationMinutes,
         sleepTimerRemainingMs,
+        sleepTimerMode,
+        sleepTimerFadeEnabled,
         SLEEP_TIMER_PRESETS,
         startSleepTimer,
+        startSleepTimerEndOfTrack,
         stopSleepTimer,
+        toggleSleepTimerFade,
     } from "$lib/stores/sleepTimer";
     import ConnectPanel from "./ConnectPanel.svelte";
     import Icon from "$lib/components/Icon.svelte";
@@ -272,6 +276,11 @@
 
     function setSleepTimer(minutes: number) {
         startSleepTimer(minutes);
+        showSleepTimerMenu = false;
+    }
+
+    function setEndOfTrackTimer() {
+        startSleepTimerEndOfTrack();
         showSleepTimerMenu = false;
     }
 
@@ -559,6 +568,7 @@
                                     <button
                                         class="sleep-preset-btn"
                                         class:active={
+                                            $sleepTimerMode === 'duration' &&
                                             $sleepTimerLastDurationMinutes ===
                                             minutes
                                         }
@@ -568,6 +578,26 @@
                                     </button>
                                 {/each}
                             </div>
+
+                            <button
+                                class="sleep-preset-btn sleep-end-track-btn"
+                                class:active={$sleepTimerMode === 'end_of_track'}
+                                on:click={setEndOfTrackTimer}
+                            >
+                                <Icon name="music" size={13} />
+                                <span>{$_('player.endOfTrack')}</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                class="sleep-fade-toggle-row"
+                                class:active={$sleepTimerFadeEnabled}
+                                on:click={() => toggleSleepTimerFade()}
+                            >
+                                <Icon name="volume-2" size={13} />
+                                <span class="sleep-fade-label">{$_('player.sleepTimerFade')}</span>
+                                <span class="sleep-fade-pill">{$sleepTimerFadeEnabled ? 'ON' : 'OFF'}</span>
+                            </button>
 
                             {#if $sleepTimerActive}
                                 <button
@@ -1293,6 +1323,59 @@
 
     .sleep-preset-btn.active {
         border-color: var(--accent-color, #1db954);
+        color: var(--accent-color, #1db954);
+    }
+
+    .sleep-end-track-btn {
+        width: 100%;
+        margin-top: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+    }
+
+    .sleep-fade-toggle-row {
+        width: 100%;
+        margin-top: 6px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: transparent;
+        border: none;
+        padding: 4px 6px;
+        border-radius: var(--radius-sm);
+        color: var(--text-subdued);
+        font-size: 0.7rem;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .sleep-fade-toggle-row:hover {
+        background: var(--bg-surface);
+        color: var(--text-primary);
+    }
+
+    .sleep-fade-toggle-row.active {
+        color: var(--text-secondary);
+    }
+
+    .sleep-fade-label {
+        flex: 1;
+        text-align: left;
+    }
+
+    .sleep-fade-pill {
+        font-size: 0.62rem;
+        font-weight: var(--font-weight-bold);
+        padding: 1px 4px;
+        border-radius: 4px;
+        background: var(--bg-surface);
+        color: var(--text-subdued);
+    }
+
+    .sleep-fade-toggle-row.active .sleep-fade-pill {
+        background: rgba(29, 185, 84, 0.15);
         color: var(--accent-color, #1db954);
     }
 

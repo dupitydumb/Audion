@@ -11,6 +11,7 @@ pub mod sync;
 pub mod queries;
 pub mod schema;
 pub mod hash_migration;
+pub mod scrobbles;
 
 
 use rusqlite::Connection;

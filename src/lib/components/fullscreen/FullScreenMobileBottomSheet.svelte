@@ -15,8 +15,10 @@
   import {
     sleepTimerActive,
     sleepTimerRemainingMs,
+    sleepTimerMode,
     SLEEP_TIMER_PRESETS,
     startSleepTimer,
+    startSleepTimerEndOfTrack,
     stopSleepTimer,
   } from "$lib/stores/sleepTimer";
   import {
@@ -223,11 +225,19 @@
         {#each SLEEP_TIMER_PRESETS as minutes}
           <button
             class="sheet-timer-btn"
+            class:active={$sleepTimerMode === 'duration' && Math.ceil($sleepTimerRemainingMs / 60000) === minutes}
             on:click={() => { startSleepTimer(minutes); showMobileMenu = false; }}
           >
             {minutes}m
           </button>
         {/each}
+        <button
+          class="sheet-timer-btn end-track-btn"
+          class:active={$sleepTimerMode === 'end_of_track'}
+          on:click={() => { startSleepTimerEndOfTrack(); showMobileMenu = false; }}
+        >
+          {$_('player.endOfTrack')}
+        </button>
         {#if $sleepTimerActive}
           <button
             class="sheet-timer-btn cancel"

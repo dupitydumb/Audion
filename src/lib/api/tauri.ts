@@ -1337,6 +1337,11 @@ export async function submitLastfmScrobble(
     });
 }
 
+/** Replay any offline cached scrobbles when connection is restored. Returns replayed count. */
+export async function replayCachedScrobbles(): Promise<number> {
+    return await invoke('replay_cached_scrobbles');
+}
+
 // =============================================================================
 // AUDIO TELEMETRY ("Stats for Nerds")
 // =============================================================================

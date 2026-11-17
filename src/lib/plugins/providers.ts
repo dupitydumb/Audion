@@ -1,6 +1,14 @@
 // Typed Provider Interfaces for Modular Stream, Metadata, and Lyrics Providers
 // Supports native Audion plugins as well as bridged providers (e.g., community .sflx)
 import { writable } from 'svelte/store';
+import {
+    searchArtistsMb,
+    searchReleasesMb,
+    getArtistMusicBrainzInfo,
+    getArtistDiscographyMb,
+    getReleaseGroupTracksMb,
+    getArtistTopTracksMb,
+} from '$lib/api/tauri';
 
 export interface StreamSourceResult {
     url: string;
@@ -28,6 +36,11 @@ export interface MetadataTrackItem {
     cover_url?: string;
     source_type?: string;
     external_id?: string;
+    provider_id?: string;
+    artist_id?: string;
+    album_id?: string;
+    track_number?: number;
+    disc_number?: number;
     bitrate?: number;
     format?: string;
     [key: string]: any;
@@ -40,6 +53,12 @@ export interface MetadataAlbumItem {
     cover_url?: string;
     year?: number;
     track_count?: number;
+    artist_id?: string;
+    provider_id?: string;
+    source_type?: string;
+    release_type?: string;
+    genres?: string[];
+    tracks?: MetadataTrackItem[];
     [key: string]: any;
 }
 
@@ -47,6 +66,15 @@ export interface MetadataArtistItem {
     id: string;
     name: string;
     avatar_url?: string;
+    country?: string;
+    active_years?: string;
+    genres?: string[];
+    bio?: string;
+    disambiguation?: string;
+    provider_id?: string;
+    source_type?: string;
+    albums?: MetadataAlbumItem[];
+    tracks?: MetadataTrackItem[];
     [key: string]: any;
 }
 
@@ -180,6 +208,125 @@ function saveStoredConfig(cfg: ProviderSettingsStorage): void {
 export const providersStore = writable<ProviderItemEntry[]>([]);
 export const providerTelemetryStore = writable<ProviderTelemetryEntry[]>([]);
 
+export class MusicBrainzMetadataProvider implements MetadataProvider {
+    id = 'musicbrainz';
+    name = 'MusicBrainz';
+    version = '1.0.0';
+    description = 'Open music encyclopedia with discography, tracklists, and artist info';
+
+    async search(query: string, type: 'all' | 'track' | 'album' | 'artist' = 'all', page: number = 1): Promise<MetadataSearchResult> {
+        const limit = 20;
+        const result: MetadataSearchResult = { tracks: [], albums: [], artists: [] };
+        try {
+            if (type === 'all' || type === 'artist') {
+                const artists = await searchArtistsMb(query, limit);
+                result.artists = artists.map(a => ({
+                    id: a.mbid,
+                    name: a.name,
+                    country: a.country || undefined,
+                    active_years: a.active_years || undefined,
+                    genres: a.genres || [],
+                    disambiguation: a.disambiguation || undefined,
+                    source_type: 'musicbrainz',
+                    provider_id: 'musicbrainz'
+                }));
+            }
+            if (type === 'all' || type === 'album') {
+                const releases = await searchReleasesMb(query, limit);
+                result.albums = releases.map(r => ({
+                    id: r.mbid,
+                    title: r.title,
+                    artist: r.artist_name,
+                    artist_id: r.artist_mbid || undefined,
+                    year: r.year ? parseInt(r.year, 10) : undefined,
+                    cover_url: `https://coverartarchive.org/release-group/${r.mbid}/front-250`,
+                    release_type: r.release_type,
+                    genres: r.genres || [],
+                    source_type: 'musicbrainz',
+                    provider_id: 'musicbrainz'
+                }));
+            }
+        } catch (e) {
+            console.warn('[MusicBrainzMetadataProvider] search failed:', e);
+        }
+        return result;
+    }
+
+    async getAlbum(id: string) {
+        try {
+            const tracks = await getReleaseGroupTracksMb(id);
+            return {
+                id,
+                cover_url: `https://coverartarchive.org/release-group/${id}/front-250`,
+                source_type: 'musicbrainz',
+                provider_id: 'musicbrainz',
+                tracks: tracks.map((t, idx) => ({
+                    id: t.mbid || `mb-${id}-${idx}`,
+                    external_id: t.mbid,
+                    source_type: 'musicbrainz',
+                    provider_id: 'musicbrainz',
+                    title: t.title,
+                    artist: t.artist,
+                    track_number: t.track_number,
+                    disc_number: t.disc_number,
+                    duration: t.duration_ms ? Math.round(t.duration_ms / 1000) : 0,
+                    album_id: id,
+                    cover_url: `https://coverartarchive.org/release-group/${id}/front-250`
+                }))
+            };
+        } catch (e) {
+            console.warn('[MusicBrainzMetadataProvider] getAlbum failed:', e);
+            return null;
+        }
+    }
+
+    async getArtist(idOrName: string) {
+        try {
+            const [info, disco] = await Promise.all([
+                getArtistMusicBrainzInfo(idOrName).catch(() => null),
+                getArtistDiscographyMb(idOrName).catch(() => [])
+            ]);
+            let topTracks: any[] = [];
+            const mbid = info?.mbid || (idOrName.length === 36 && idOrName.includes('-') ? idOrName : '');
+            if (mbid) {
+                topTracks = await getArtistTopTracksMb(mbid).catch(() => []);
+            }
+            return {
+                id: mbid || idOrName,
+                name: info?.name || idOrName,
+                bio: info?.bio || undefined,
+                genres: info?.genres || [],
+                wikipedia_url: info?.wikipedia_url || undefined,
+                source_type: 'musicbrainz',
+                provider_id: 'musicbrainz',
+                tracks: topTracks.map((t, idx) => ({
+                    id: t.mbid || `mb-top-${idx}`,
+                    external_id: t.mbid,
+                    source_type: 'musicbrainz',
+                    provider_id: 'musicbrainz',
+                    title: t.title,
+                    artist: t.artist || info?.name || idOrName,
+                    track_number: t.track_number,
+                    duration: t.duration_ms ? Math.round(t.duration_ms / 1000) : 0,
+                    cover_url: `https://coverartarchive.org/release-group/${t.mbid}/front-250`
+                })),
+                albums: (disco || []).map(d => ({
+                    id: d.mbid,
+                    title: d.title,
+                    year: d.year,
+                    release_type: d.release_type,
+                    cover_url: `https://coverartarchive.org/release-group/${d.mbid}/front-250`,
+                    source_type: 'musicbrainz',
+                    provider_id: 'musicbrainz'
+                }))
+            };
+        } catch (e) {
+            console.warn('[MusicBrainzMetadataProvider] getArtist failed:', e);
+            return null;
+        }
+    }
+}
+
 export class ProviderRegistry {
     private streamProviders: Map<string, StreamProvider> = new Map();
     private metadataProviders: Map<string, MetadataProvider> = new Map();
@@ -191,6 +338,10 @@ export class ProviderRegistry {
 
     private config: ProviderSettingsStorage = loadStoredConfig();
     private telemetry: Map<string, TelemetryStats> = new Map();
+
+    constructor() {
+        this.registerMetadataProvider(new MusicBrainzMetadataProvider(), 'system');
+    }
 
     private notifyStore(): void {
         providersStore.set(this.getProviderEntries());
@@ -560,6 +711,114 @@ export class ProviderRegistry {
         return combined;
     }
 
+    async searchProviderMetadata(
+        providerId: string,
+        query: string,
+        type: 'all' | 'track' | 'album' | 'artist' = 'all',
+        page: number = 1
+    ): Promise<MetadataSearchResult> {
+        if (!providerId || providerId === 'all') {
+            return await this.searchAllMetadata(query, type, page);
+        }
+        const provider = this.getMetadataProvider(providerId);
+        if (!provider) {
+            console.warn(`[ProviderRegistry] MetadataProvider '${providerId}' not found, falling back to all`);
+            return await this.searchAllMetadata(query, type, page);
+        }
+        const t0 = performance.now();
+        try {
+            const res = await provider.search(query, type, page);
+            this.recordTelemetry(provider.id, Math.round(performance.now() - t0), true);
+            return {
+                tracks: res.tracks || [],
+                albums: res.albums || [],
+                artists: res.artists || []
+            };
+        } catch (err) {
+            this.recordTelemetry(provider.id, Math.round(performance.now() - t0), false);
+            console.warn(`[ProviderRegistry] MetadataProvider '${providerId}' search failed:`, err);
+            return { tracks: [], albums: [], artists: [] };
+        }
+    }
+
+    async getAlbum(id: string, providerId?: string): Promise<any> {
+        if (providerId) {
+            const provider = this.getMetadataProvider(providerId);
+            if (provider && typeof provider.getAlbum === 'function') {
+                try {
+                    const res = await provider.getAlbum(id);
+                    if (res) return res;
+                } catch (e) {
+                    console.warn(`[ProviderRegistry] Provider '${providerId}' getAlbum failed:`, e);
+                }
+            }
+        }
+        for (const provider of this.getAllMetadataProviders()) {
+            if (typeof provider.getAlbum === 'function') {
+                try {
+                    const res = await provider.getAlbum(id);
+                    if (res) return res;
+                } catch (_) {}
+            }
+        }
+        return null;
+    }
+
+    async getArtist(id: string, providerId?: string, artistName?: string): Promise<any> {
+        if (providerId) {
+            const provider = this.getMetadataProvider(providerId);
+            if (provider && typeof provider.getArtist === 'function') {
+                try {
+                    const res = await provider.getArtist(id);
+                    if (res) return res;
+                } catch (e) {
+                    console.warn(`[ProviderRegistry] Provider '${providerId}' getArtist failed:`, e);
+                }
+            }
+        }
+        for (const provider of this.getAllMetadataProviders()) {
+            if (typeof provider.getArtist === 'function') {
+                try {
+                    const res = await provider.getArtist(id);
+                    if (res) return res;
+                } catch (_) {}
+            }
+        }
+        if (artistName && artistName !== id) {
+            for (const provider of this.getAllMetadataProviders()) {
+                if (typeof provider.getArtist === 'function') {
+                    try {
+                        const res = await provider.getArtist(artistName);
+                        if (res) return res;
+                    } catch (_) {}
+                }
+            }
+        }
+        return null;
+    }
+
+    async getTrack(id: string, providerId?: string): Promise<MetadataTrackItem | null> {
+        if (providerId) {
+            const provider = this.getMetadataProvider(providerId);
+            if (provider && typeof provider.getTrack === 'function') {
+                try {
+                    return await provider.getTrack(id);
+                } catch (e) {
+                    console.warn(`[ProviderRegistry] Provider '${providerId}' getTrack failed:`, e);
+                }
+            }
+        }
+        for (const provider of this.getAllMetadataProviders()) {
+            if (typeof provider.getTrack === 'function') {
+                try {
+                    const res = await provider.getTrack(id);
+                    if (res) return res;
+                } catch (_) {}
+            }
+        }
+        return null;
+    }
+
     // ── Lyrics Providers ──
     registerLyricsProvider(provider: LyricsProvider, ownerPlugin: string = 'system'): void {
         this.lyricsProviders.set(provider.id, provider);
@@ -678,6 +937,14 @@ if (typeof window !== 'undefined') {
         metadata: {
             search: (query: string, type: 'all' | 'track' | 'album' | 'artist' = 'all', page: number = 1) =>
                 globalProviders.searchAllMetadata(query, type, page),
+            searchProvider: (providerId: string, query: string, type: 'all' | 'track' | 'album' | 'artist' = 'all', page: number = 1) =>
+                globalProviders.searchProviderMetadata(providerId, query, type, page),
+            getAlbum: (id: string, providerId?: string) =>
+                globalProviders.getAlbum(id, providerId),
+            getArtist: (id: string, providerId?: string, artistName?: string) =>
+                globalProviders.getArtist(id, providerId, artistName),
+            getTrack: (id: string, providerId?: string) =>
+                globalProviders.getTrack(id, providerId),
             getAll: () => globalProviders.getAllMetadataProviders(),
             get: (id: string) => globalProviders.getMetadataProvider(id)
         },
