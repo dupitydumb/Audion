@@ -2,6 +2,8 @@
   import { onMount, onDestroy } from "svelte";
   import { fade, scale } from "svelte/transition";
   import { getAudioTelemetry, type AudioTelemetry, isTauri } from "$lib/api/tauri";
+  import { nativeAudioListDevices, type DeviceList } from "$lib/services/native-audio";
+  import { appSettings } from "$lib/stores/settings";
   import { currentTrack, activeBackend, isPlaying, currentTime, duration } from "$lib/stores/player";
   import { isStatsForNerdsOpen } from "$lib/stores/ui";
   import Icon from "$lib/components/Icon.svelte";
@@ -121,29 +123,45 @@
     if ($currentTrack?.format) {
       return $currentTrack.format.toUpperCase();
     }
-    if ($currentTrack?.path) {
-      const ext = $currentTrack.path.split('.').pop();
-      if (ext && ext.length <= 5) return ext.toUpperCase();
-    }
     return $currentTrack ? "Unknown Codec" : "—";
   })();
 
-  // Purely computed bit depth (no hardcoded '16-bit PCM')
-  $: resolvedBitDepth = (() => {
-    if (!telemetry && !$currentTrack) return "—";
-    if (telemetry?.bit_depth && telemetry.bit_depth > 0) {
-      return `${telemetry.bit_depth}-bit PCM`;
+  // Bit depth only from real decoder telemetry — never guessed from the format
+  $: resolvedBitDepth =
+    telemetry?.bit_depth && telemetry.bit_depth > 0
+      ? `${telemetry.bit_depth}-bit PCM`
+      : "—";
+
+  // Telemetry only describes a live decoder once a track path is set
+  $: live = !!telemetry?.path;
+
+  const BACKEND_LABELS: Record<string, string> = {
+    native: "Rust Rodio / Symphonia (Native)",
+    html5: "WebAudio API / HTML5",
+    remote: "Remote Device (Network)",
+    none: "Idle (No Backend)",
+  };
+  $: backendLabel = BACKEND_LABELS[$activeBackend] ?? $activeBackend;
+
+  let deviceList: DeviceList | null = null;
+  let devicesLoaded = false;
+  async function loadDevices() {
+    if (devicesLoaded || !isTauri()) return;
+    try {
+      deviceList = await nativeAudioListDevices();
+      devicesLoaded = true;
+    } catch {
+      // device enumeration unavailable
     }
-    const fmt = ($currentTrack?.format || "").toLowerCase();
-    const isLossy = ['mp3', 'aac', 'm4a', 'ogg', 'opus', 'webm'].some(ext => fmt.includes(ext));
-    if (isLossy) {
-      return "32-bit Float (Lossy Decode)";
-    }
-    const isLossless = ['flac', 'wav', 'alac', 'aiff'].some(ext => fmt.includes(ext));
-    if (isLossless) {
-      return "PCM (Lossless)";
-    }
-    return $currentTrack ? "32-bit Float Pipeline" : "—";
+  }
+  $: if (open) loadDevices();
+
+  $: outputDeviceLabel = (() => {
+    if ($appSettings.audioBackend === "html5") return "Browser Default (HTML5)";
+    const configuredId = $appSettings.outputDevice;
+    if (!configuredId) return "System Default Device";
+    const device = deviceList?.devices.find((d) => d.id === configuredId);
+    return device?.name || "Custom Device";
   })();
 
   // True total duration in seconds
@@ -252,7 +270,7 @@
           <div class="hud-row">
             <span class="hud-label">Backend</span>
             <span class="hud-val accent-val">
-              {$activeBackend === 'native' ? 'Rust Rodio / Symphonia (Native)' : 'WebAudio API / HTML5'}
+              {backendLabel}
             </span>
           </div>
 
@@ -276,10 +294,8 @@
           <div class="hud-row">
             <span class="hud-label">Source Rate</span>
             <span class="hud-val mono-val">
-              {#if telemetry?.sample_rate && telemetry.sample_rate > 0}
+              {#if live && telemetry?.sample_rate}
                 {formatSampleRate(telemetry.sample_rate)}
-              {:else if $currentTrack}
-                <span class="text-subdued">44.1 kHz (Stream Native)</span>
               {:else}
                 <span class="text-subdued">—</span>
               {/if}
@@ -290,7 +306,7 @@
           <div class="hud-row">
             <span class="hud-label">Output Clock</span>
             <span class="hud-val mono-val">
-              {#if telemetry?.device_sample_rate && telemetry.device_sample_rate > 0}
+              {#if live && telemetry?.device_sample_rate}
                 {formatSampleRate(telemetry.device_sample_rate)}
               {:else}
                 <span class="text-subdued">—</span>
@@ -301,16 +317,14 @@
           <!-- Resampler Status -->
           <div class="hud-row">
             <span class="hud-label">Resampling</span>
-            {#if !$currentTrack && !telemetry}
+            {#if !live || !telemetry}
               <span class="hud-val text-subdued">—</span>
-            {:else if telemetry?.resampler_active}
+            {:else if telemetry.resampler_active}
               <span class="hud-val warn-val">
-                Rubato Sinc ({telemetry.sample_rate} → {telemetry.device_sample_rate} Hz)
+                Rubato FFT ({telemetry.sample_rate} → {telemetry.device_sample_rate} Hz)
               </span>
-            {:else if telemetry}
-              <span class="hud-val ok-val">Direct 1:1 (Bit-Perfect, No Resample)</span>
             {:else}
-              <span class="hud-val text-subdued">Bypassed</span>
+              <span class="hud-val ok-val">Direct (No Resample)</span>
             {/if}
           </div>
 
@@ -318,10 +332,8 @@
           <div class="hud-row">
             <span class="hud-label">Channels</span>
             <span class="hud-val mono-val">
-              {#if telemetry?.channels}
+              {#if live && telemetry?.channels}
                 {telemetry.channels} {telemetry.channels === 1 ? '(Mono)' : telemetry.channels === 2 ? '(Stereo)' : `(${telemetry.channels}ch)`}
-              {:else if $currentTrack}
-                2 (Stereo)
               {:else}
                 <span class="text-subdued">—</span>
               {/if}
@@ -343,19 +355,9 @@
               {#if telemetry}
                 {telemetry.limiter_enabled ? 'Active (Lookahead Safety)' : 'Bypassed'}
               {:else}
-                <span class="text-subdued">Bypassed</span>
+                <span class="text-subdued">—</span>
               {/if}
             </span>
-          </div>
-
-          <!-- Exclusive / Bit-Perfect Mode -->
-          <div class="hud-row">
-            <span class="hud-label">DAC Mode</span>
-            {#if telemetry?.exclusive_mode}
-              <span class="hud-val ok-val">Exclusive (Bit-Perfect)</span>
-            {:else}
-              <span class="hud-val mono-val">Standard (Shared Output)</span>
-            {/if}
           </div>
 
           <!-- ReplayGain -->
@@ -364,8 +366,8 @@
             <span class="hud-val mono-val">
               {#if telemetry?.replay_gain_db != null}
                 {telemetry.replay_gain_db > 0 ? '+' : ''}{telemetry.replay_gain_db.toFixed(1)} dB
-              {:else if $currentTrack}
-                0.0 dB (None applied)
+              {:else if telemetry}
+                None applied
               {:else}
                 <span class="text-subdued">—</span>
               {/if}
@@ -376,11 +378,7 @@
           <div class="hud-row">
             <span class="hud-label">Output Device</span>
             <span class="hud-val truncate mono-val">
-              {#if telemetry?.output_device && telemetry.output_device !== "Default"}
-                {telemetry.output_device}
-              {:else}
-                System Default Device
-              {/if}
+              {outputDeviceLabel}
             </span>
           </div>
         </div>
