@@ -26,7 +26,6 @@
     import {
         artists as libraryArtists,
         albums as libraryAlbums,
-        addTrackToLibrary,
         addExternalTrackToLibrary,
     } from "$lib/stores/library";
     import MediaCard from "./MediaCard.svelte";
@@ -162,7 +161,7 @@
                 addExternalTrackToLibrary({ ...libraryTrack, id: dbId });
             }
 
-            addToast("Saved to library ❤", "success");
+            addToast("Saved to library", "success");
         } catch (e) {
             console.error("[Discover] saveTrackToLibrary failed:", e);
             savedDiscoverKeys.delete(key);
@@ -664,7 +663,6 @@
     <header class="discover-header">
         <div class="header-row">
             <div class="header-title-group">
-                <Icon name="globe" size={28} className="header-icon" />
                 <div>
                     <h1>{$_("sidebar.discover")}</h1>
                     <p class="header-subtitle">
@@ -730,14 +728,14 @@
 
             <!-- Metadata Provider Filter Dropdown -->
             <div class="provider-select-wrapper">
-                <Icon name="cpu" size={16} className="select-icon" />
+                <Icon name="server" size={16} className="select-icon" />
                 <select
                     class="provider-select"
                     value={selectedProviderId}
                     on:change={handleProviderChange}
                     aria-label={$_("discover.provider")}
                 >
-                    <option value="all">🌐 {$_("discover.allProviders")}</option
+                    <option value="all">{$_("discover.allProviders")}</option
                     >
                     {#each activeMetadataProviders as mp}
                         <option value={mp.id}>{mp.name}</option>
@@ -815,9 +813,11 @@
                             {#if item.type === "search"}
                                 {$_("sidebar.discover")}
                             {:else if item.type === "album"}
-                                💿 {item.title || "Album"}
+                                <Icon name="disc" size={14} />
+                                <span>{item.title || "Album"}</span>
                             {:else if item.type === "artist"}
-                                👤 {item.artistName || "Artist"}
+                                <Icon name="user" size={14} />
+                                <span>{item.artistName || "Artist"}</span>
                             {/if}
                         </button>
                     {/each}
@@ -875,7 +875,8 @@
                                             values: {
                                                 count: trackResults.length,
                                             },
-                                        })} →
+                                        })}
+                                        <Icon name="arrow-right" size={14} />
                                     </button>
                                 </div>
                                 <div class="song-table">
@@ -975,7 +976,7 @@
                                                         {track.album}
                                                     </button>
                                                 {:else}
-                                                    <span class="dim">—</span>
+                                                    <span class="dim">-</span>
                                                 {/if}
                                             </div>
                                             <div class="song-col-love">
@@ -1019,7 +1020,8 @@
                                             values: {
                                                 count: albumResults.length,
                                             },
-                                        })} →
+                                        })}
+                                        <Icon name="arrow-right" size={14} />
                                     </button>
                                 </div>
                                 <div class="card-grid">
@@ -1095,7 +1097,8 @@
                                             values: {
                                                 count: artistResults.length,
                                             },
-                                        })} →
+                                        })}
+                                        <Icon name="arrow-right" size={14} />
                                     </button>
                                 </div>
                                 <div class="card-grid">
@@ -1266,7 +1269,7 @@
                                                     {track.album}
                                                 </button>
                                             {:else}
-                                                <span class="dim">—</span>
+                                                <span class="dim">-</span>
                                             {/if}
                                         </div>
                                         <div class="song-col-love">
@@ -1472,9 +1475,10 @@
                             <span class="hero-eyebrow">
                                 {currentAlbumDetail.release_type || "ALBUM"}
                                 {#if findLocalAlbumId(currentAlbumDetail.title) !== undefined}
-                                    <span class="library-badge"
-                                        >✓ {$_("discover.inLibrary")}</span
-                                    >
+                                    <span class="library-badge">
+                                        <Icon name="check" size={12} />
+                                        {$_("discover.inLibrary")}
+                                    </span>
                                 {/if}
                             </span>
                             <h1 class="hero-title">
@@ -1703,11 +1707,12 @@
                         </div>
                         <div class="hero-info">
                             <span class="hero-eyebrow">
-                                {$_("discover.tabArtists").toUpperCase()}
+                                {$_("discover.tabArtists")}
                                 {#if isArtistInLibrary(currentArtistDetail.name)}
-                                    <span class="library-badge"
-                                        >✓ {$_("discover.inLibrary")}</span
-                                    >
+                                    <span class="library-badge">
+                                        <Icon name="check" size={12} />
+                                        {$_("discover.inLibrary")}
+                                    </span>
                                 {/if}
                             </span>
                             <h1 class="hero-title">
@@ -1715,14 +1720,17 @@
                             </h1>
                             <div class="hero-meta-line">
                                 {#if currentArtistDetail.country}
-                                    <span>🌍 {currentArtistDetail.country}</span
-                                    >
+                                    <span class="meta-item">
+                                        <Icon name="globe" size={14} />
+                                        {currentArtistDetail.country}
+                                    </span>
                                     <span class="meta-dot">•</span>
                                 {/if}
                                 {#if currentArtistDetail.active_years}
-                                    <span
-                                        >📅 {currentArtistDetail.active_years}</span
-                                    >
+                                    <span class="meta-item">
+                                        <Icon name="clock" size={14} />
+                                        {currentArtistDetail.active_years}
+                                    </span>
                                 {/if}
                             </div>
 
@@ -1782,6 +1790,7 @@
                                     rel="noopener noreferrer"
                                 >
                                     {$_("discover.readMoreOnWikipedia")}
+                                    <Icon name="external-link" size={13} />
                                 </a>
                             {/if}
                         </section>
@@ -1859,7 +1868,7 @@
                                                     {track.album}
                                                 </button>
                                             {:else}
-                                                <span class="dim">—</span>
+                                                <span class="dim">-</span>
                                             {/if}
                                         </div>
                                         <div class="song-col-love">
@@ -1990,7 +1999,7 @@
 
     .discover-header {
         flex-shrink: 0;
-        padding: var(--spacing-lg) var(--spacing-xl) 0;
+        padding: var(--spacing-lg) var(--spacing-xl) var(--spacing-sm);
         border-bottom: 1px solid var(--border-color);
         background: var(--bg-surface);
     }
@@ -2009,14 +2018,10 @@
         gap: 14px;
     }
 
-    .header-icon {
-        color: var(--accent-primary);
-        flex-shrink: 0;
-    }
-
     .discover-header h1 {
-        font-size: 1.6rem;
+        font-size: 1.5rem;
         font-weight: var(--font-weight-bold);
+        letter-spacing: -0.01em;
         margin: 0;
         color: var(--text-primary);
     }
@@ -2054,12 +2059,11 @@
     }
 
     .status-dot.online {
-        background: #10b981;
-        box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+        background: var(--accent-primary);
     }
 
     .status-dot.offline {
-        background: #f59e0b;
+        background: var(--accent-warning);
     }
 
     .provider-extra {
@@ -2088,12 +2092,14 @@
         background: var(--bg-elevated);
         border: 1px solid var(--border-color);
         border-radius: var(--radius-md);
-        padding: 9px 14px;
-        transition: border-color var(--transition-fast);
+        min-height: 42px;
+        padding: 0 14px;
+        transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
     }
 
     .search-bar:focus-within {
         border-color: var(--accent-primary);
+        box-shadow: 0 0 0 2px var(--accent-subtle);
     }
 
     .search-icon {
@@ -2135,7 +2141,13 @@
         background: var(--bg-elevated);
         border: 1px solid var(--border-color);
         border-radius: var(--radius-md);
+        min-height: 42px;
         padding: 0 12px;
+    }
+
+    .provider-select-wrapper:focus-within {
+        border-color: var(--accent-primary);
+        box-shadow: 0 0 0 2px var(--accent-subtle);
     }
 
     .select-icon {
@@ -2171,6 +2183,7 @@
         display: flex;
         align-items: center;
         gap: 6px;
+        min-height: 42px;
         padding: 8px var(--spacing-md) 10px;
         background: none;
         border: none;
@@ -2244,6 +2257,9 @@
     }
 
     .breadcrumb-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
         background: none;
         border: none;
         color: var(--text-secondary);
@@ -2325,14 +2341,14 @@
 
     /* ── Sections & Tables ── */
     .section-block {
-        margin-bottom: 32px;
+        margin-bottom: var(--spacing-lg);
     }
 
     .section-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin-bottom: 14px;
+        margin-bottom: 12px;
     }
 
     .section-header h2,
@@ -2345,6 +2361,9 @@
 
     .view-all-link,
     .filter-toggle-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
         background: none;
         border: none;
         color: var(--accent-primary);
@@ -2423,7 +2442,7 @@
     .play-icon-btn:hover {
         background: var(--accent-primary);
         border-color: var(--accent-primary);
-        color: #fff;
+        color: #000;
         transform: scale(1.06);
     }
 
@@ -2501,7 +2520,7 @@
         width: 50px;
         text-align: right;
         font-size: 0.8rem;
-        color: var(--text-subdued);
+        color: var(--text-secondary);
     }
 
     /* ── Save-to-Library Heart Button ── */
@@ -2527,17 +2546,23 @@
         opacity: 0;
     }
 
-    .song-row:hover .love-btn {
+    .song-row:hover .love-btn,
+    .love-btn:focus-visible {
         opacity: 1;
     }
 
+    .love-btn:focus-visible {
+        outline: 2px solid var(--accent-primary);
+        outline-offset: 1px;
+    }
+
     .love-btn:hover {
-        color: #ef4444;
+        color: var(--accent-primary);
         transform: scale(1.2);
     }
 
     .love-btn.saved {
-        color: #ef4444;
+        color: var(--accent-primary);
         opacity: 1;
     }
 
@@ -2591,11 +2616,11 @@
         justify-content: center;
         font-size: 2.5rem;
         font-weight: var(--font-weight-bold);
-        color: #fff;
+        color: #000;
         background: linear-gradient(
             135deg,
             var(--accent-primary) 0%,
-            #2563eb 100%
+            color-mix(in srgb, var(--accent-primary) 55%, var(--bg-elevated)) 100%
         );
     }
 
@@ -2657,7 +2682,7 @@
         border-radius: var(--radius-md);
         overflow: hidden;
         flex-shrink: 0;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+        box-shadow: var(--shadow-lg);
     }
 
     .hero-cover img,
@@ -2684,11 +2709,11 @@
 
     .avatar-fallback {
         font-size: 3.5rem;
-        color: #fff;
+        color: #000;
         background: linear-gradient(
             135deg,
             var(--accent-primary) 0%,
-            #2563eb 100%
+            color-mix(in srgb, var(--accent-primary) 55%, var(--bg-elevated)) 100%
         );
     }
 
@@ -2704,16 +2729,19 @@
         font-size: 0.75rem;
         font-weight: var(--font-weight-bold);
         color: var(--accent-primary);
-        letter-spacing: 0.08em;
+        letter-spacing: 0.02em;
         display: flex;
         align-items: center;
         gap: 8px;
     }
 
     .library-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
         font-size: 0.72rem;
-        background: #10b98122;
-        color: #10b981;
+        background: var(--accent-subtle);
+        color: var(--accent-primary);
         padding: 2px 8px;
         border-radius: var(--radius-full);
         font-weight: var(--font-weight-medium);
@@ -2736,6 +2764,12 @@
         flex-wrap: wrap;
     }
 
+    .meta-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+
     .artist-pill-btn {
         display: inline-flex;
         align-items: center;
@@ -2756,7 +2790,7 @@
     .artist-pill-btn:hover {
         background: var(--accent-primary);
         border-color: var(--accent-primary);
-        color: #fff;
+        color: #000;
     }
 
     .meta-dot {
@@ -2793,7 +2827,7 @@
         border-radius: var(--radius-full);
         background: var(--accent-primary);
         border: none;
-        color: #fff;
+        color: #000;
         font-size: 0.92rem;
         font-weight: var(--font-weight-semibold);
         cursor: pointer;
@@ -2848,6 +2882,9 @@
     }
 
     .wiki-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
         font-size: 0.85rem;
         color: var(--accent-primary);
         text-decoration: none;
@@ -2891,6 +2928,32 @@
         overflow-x: auto;
         white-space: nowrap;
         -webkit-overflow-scrolling: touch;
+        padding-bottom: 2px;
+        scrollbar-width: none;
+    }
+
+    :global(html.layout-mobile) .tab-bar::-webkit-scrollbar {
+        display: none;
+    }
+
+    :global(html.layout-mobile) .tab {
+        min-height: 44px;
+        padding: 10px var(--spacing-md);
+    }
+
+    :global(html.layout-mobile) .back-nav-btn,
+    :global(html.layout-mobile) .clear-btn {
+        min-width: 44px;
+        min-height: 44px;
+        justify-content: center;
+    }
+
+    :global(html.layout-mobile) .breadcrumb-item {
+        min-height: 40px;
+    }
+
+    :global(html.layout-mobile) .love-btn {
+        opacity: 1;
     }
 
     :global(html.layout-mobile) .song-col-album,
@@ -2901,6 +2964,7 @@
 
     :global(html.layout-mobile) .song-row {
         gap: 10px;
+        min-height: 52px;
         padding: 8px 10px;
     }
 
@@ -2921,5 +2985,13 @@
     :global(html.layout-mobile) .hero-avatar {
         width: 160px;
         height: 160px;
+    }
+
+    :global(html.layout-mobile) .hero-meta-line {
+        justify-content: center;
+    }
+
+    :global(html.layout-mobile) .header-subtitle {
+        font-size: 0.78rem;
     }
 </style>
