@@ -381,6 +381,29 @@
               {outputDeviceLabel}
             </span>
           </div>
+
+          <!-- Exclusive DAC -->
+          <div class="hud-row">
+            <span class="hud-label">Exclusive Access</span>
+            <span class="hud-val mono-val">
+              {#if !telemetry}
+                <span class="text-subdued">—</span>
+              {:else if telemetry.exclusive_active}
+                <span class="ok-val">Active</span>
+                {telemetry.exclusive_backend ? `— ${telemetry.exclusive_backend}` : ''}
+                {telemetry.exclusive_format ? `(${telemetry.exclusive_format})` : ''}
+              {:else if telemetry.exclusive_suspended}
+                <span class="warn-val">Suspended</span>
+                — {telemetry.exclusive_error ?? 'released after pause'}
+              {:else if telemetry.exclusive_error}
+                <span class="warn-val">Unavailable</span> — {telemetry.exclusive_error}
+              {:else if !telemetry.exclusive_supported}
+                <span class="text-subdued">Not supported on this platform</span>
+              {:else}
+                <span class="text-subdued">Off</span>
+              {/if}
+            </span>
+          </div>
         </div>
       {:else}
         <!-- Tab Panel 2: Providers Matrix -->

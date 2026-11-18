@@ -430,7 +430,7 @@ fn channel_map(buf: &mut Vec<f32>, src_ch: u16, dst_ch: u16) {
 // SymphoniaSource
 // =============================================================================
 
-fn probe_with_fallback(
+pub(crate) fn probe_with_fallback(
     path: &str,
     mss: MediaSourceStream<'static>,
     hint: &Hint,

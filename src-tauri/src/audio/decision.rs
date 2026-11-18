@@ -291,6 +291,7 @@ mod tests {
             rg,
             Arc::new(AtomicBool::new(false)),
             Arc::new(AtomicBool::new(false)),
+            false,
             NonZero::new(sample_rate).unwrap(),
             NonZero::new(1).unwrap(),
             None,

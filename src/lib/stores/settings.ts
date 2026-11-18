@@ -260,15 +260,26 @@ function createSettingsStore() {
             });
         },
 
-        setExclusiveMode(enabled: boolean) {
-            update(state => {
-                const newState = { ...state, exclusiveMode: enabled };
-                saveSettings(newState);
-                return newState;
-            });
-            import('$lib/services/native-audio').then(({ nativeAudioSetExclusiveMode }) => {
-                nativeAudioSetExclusiveMode(enabled).catch(() => {});
-            });
+        /** only flips the stored preference after the backend verifies it */
+        async setExclusiveMode(enabled: boolean): Promise<boolean> {
+            const { nativeAudioSetExclusiveMode } = await import('$lib/services/native-audio');
+            try {
+                await nativeAudioSetExclusiveMode(enabled);
+                update(state => {
+                    const newState = { ...state, exclusiveMode: enabled };
+                    saveSettings(newState);
+                    return newState;
+                });
+                return true;
+            } catch (error) {
+                console.warn('[Settings] Exclusive mode rejected:', error);
+                update(state => {
+                    const newState = { ...state, exclusiveMode: !enabled };
+                    saveSettings(newState);
+                    return newState;
+                });
+                return false;
+            }
         },
 
         setOutputDevice(device: string | null) {
@@ -422,10 +433,15 @@ function createSettingsStore() {
                 });
             }
 
+            // device first: exclusive re-opens whichever device is selected
+            if (state.outputDevice) {
+                const { nativeAudioSetOutputDevice } = await import('$lib/services/native-audio');
+                await nativeAudioSetOutputDevice(state.outputDevice).catch(() => {});
+            }
+
             if (state.exclusiveMode) {
-                import('$lib/services/native-audio').then(({ nativeAudioSetExclusiveMode }) => {
-                    nativeAudioSetExclusiveMode(true).catch(() => {});
-                });
+                const { nativeAudioSetExclusiveMode } = await import('$lib/services/native-audio');
+                await nativeAudioSetExclusiveMode(true).catch(() => {});
             }
 
             set(state);

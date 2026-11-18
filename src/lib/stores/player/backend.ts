@@ -157,6 +157,12 @@ export async function initAudioBackend(): Promise<void> {
                 }
             } else if (event.type === 'DeviceListChanged') {
                 console.log('[Player] Device list updated');
+            } else if (event.type === 'ExclusiveStateChanged') {
+                const s = event.data;
+                console.log('[Player] Exclusive state:', s);
+                if (s.reason && !s.active && !s.suspended) {
+                    addToast(`Exclusive output unavailable: ${s.reason}`, 'warning');
+                }
             } else if (event.type === 'Error') {
                 console.error('[Player] Backend error event:', JSON.stringify(event));
                 console.error('[Player] Backend error:', event.data.message);

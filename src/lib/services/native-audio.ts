@@ -15,7 +15,7 @@
 // =============================================================================
 
 import { invoke } from '@tauri-apps/api/core';
-import { isTauri, type AudioTelemetry } from '$lib/api/tauri';
+import { isTauri, type AudioTelemetry, type ExclusiveStatus } from '$lib/api/tauri';
 
 // Check if we're running on Linux
 let isLinuxPlatform: boolean | null = null;
@@ -169,6 +169,7 @@ export type AudioEventType =
     | { type: 'TrackAdvanced'; data: { generation: number; new_path: string; duration: { secs: number; nanos: number } | null } }
     | { type: 'StateChanged'; data: { position: number } }
     | { type: 'DeviceListChanged'; data: { devices: DeviceList } }
+    | { type: 'ExclusiveStateChanged'; data: ExclusiveStatus }
     | { type: 'Error'; data: { message: string } };
 
 /**
@@ -268,10 +269,11 @@ export async function nativeAudioSetAutomix(enabled: boolean): Promise<void> {
 }
 
 /**
- * toggle exclusive bit-perfect DAC mode (WASAPI/ALSA/CoreAudio)
+ * toggle exclusive device access (WASAPI exclusive / ALSA hw).
+ * resolves with the verified state; rejects when the device refuses.
  */
-export async function nativeAudioSetExclusiveMode(enabled: boolean): Promise<void> {
-    await invoke('audio_set_exclusive_mode', { enabled });
+export async function nativeAudioSetExclusiveMode(enabled: boolean): Promise<ExclusiveStatus> {
+    return await invoke('audio_set_exclusive_mode', { enabled });
 }
 
 /**

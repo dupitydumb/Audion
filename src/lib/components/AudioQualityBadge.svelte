@@ -45,8 +45,6 @@
 
   $: bitDepth = telemetry?.bit_depth || (codec === "FLAC" || codec === "ALAC" ? 16 : null);
   $: sampleRate = telemetry?.sample_rate || 44100;
-  $: isExclusive = !!telemetry?.exclusive_mode;
-  $: isDirect = !telemetry?.resampler_active;
 
   $: isHiRes = (sampleRate > 48000) || (bitDepth !== null && bitDepth >= 24);
   $: isLossless = isHiRes || ["FLAC", "ALAC", "WAV", "AIFF", "DSD"].includes(codec);
@@ -80,15 +78,12 @@
     type="button"
     class="audio-quality-badge tier-{badgeTier} variant-{variant} {className}"
     class:clickable
-    class:exclusive={isExclusive}
     on:click={handleClick}
     title={clickable ? "Audio Pipeline Specs (Click for Stats for Nerds)" : "Audio Quality"}
     aria-label="Audio Quality Specs"
   >
     <!-- Visual tier indicator icon -->
-    {#if isExclusive}
-      <span class="badge-dot exclusive-dot" title="Bit-Perfect DAC Exclusive"></span>
-    {:else if isHiRes}
+    {#if isHiRes}
       <span class="badge-dot hires-dot"></span>
     {/if}
 
@@ -185,10 +180,6 @@
     color: var(--text-subdued);
   }
 
-  .exclusive {
-    border-color: var(--accent-primary, #1db954);
-  }
-
   /* Indicator dots */
   .badge-dot {
     width: 5px;
@@ -200,11 +191,6 @@
   .hires-dot {
     background: #ffd166;
     box-shadow: 0 0 6px rgba(255, 209, 102, 0.6);
-  }
-
-  .exclusive-dot {
-    background: var(--accent-primary, #1db954);
-    box-shadow: 0 0 6px var(--accent-primary, #1db954);
   }
 
   .badge-separator {

@@ -1362,12 +1362,48 @@ export interface AudioTelemetry {
     output_device: string;
     replay_gain_db: number | null;
     limiter_enabled: boolean;
-    exclusive_mode?: boolean;
+    /** user preference only; never proof that the stream is exclusive */
+    exclusive_requested: boolean;
+    /** verified: the negotiated stream is genuinely exclusive */
+    exclusive_active: boolean;
+    exclusive_supported: boolean;
+    /** was exclusive, DAC handed back after pause */
+    exclusive_suspended: boolean;
+    exclusive_backend: string | null;
+    exclusive_format: string | null;
+    exclusive_error: string | null;
 }
 
 /** Get live audio engine telemetry. */
 export async function getAudioTelemetry(): Promise<AudioTelemetry> {
     return await invoke('audio_get_telemetry');
+}
+
+export interface ExclusiveStatus {
+    requested: boolean;
+    active: boolean;
+    supported: boolean;
+    suspended: boolean;
+    backend: string | null;
+    sample_rate: number;
+    channels: number;
+    format: string | null;
+    reason: string | null;
+}
+
+export interface ExclusiveCapability {
+    supported: boolean;
+    backend: string | null;
+    reason: string | null;
+}
+
+/** Enable/disable exclusive output. Rejects when the device refuses the stream. */
+export async function setAudioExclusiveMode(enabled: boolean): Promise<ExclusiveStatus> {
+    return await invoke('audio_set_exclusive_mode', { enabled });
+}
+
+export async function getAudioExclusiveCapability(): Promise<ExclusiveCapability> {
+    return await invoke('audio_exclusive_capability');
 }
 
 // =============================================================================

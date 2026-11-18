@@ -197,6 +197,10 @@ windows = { version = "0.61.3", features = [
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
     "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_Media_Audio",
     "Win32_Security",
 ] }
 raw-window-handle = "0.6"

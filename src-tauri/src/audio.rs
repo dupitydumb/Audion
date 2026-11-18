@@ -8,7 +8,9 @@ pub mod gated;
 pub mod gated_worker;
 pub mod mod_types;
 pub mod opus;
+pub mod output;
 pub mod player;
+pub mod probe;
 pub mod resampler;
 pub mod sources;
 pub mod symphonia;
@@ -394,12 +396,24 @@ pub fn audio_set_automix(enabled: bool, state: State<'_, PlaybackStateSync>) -> 
     state.send(AudioCommand::SetAutomix(enabled))
 }
 
+/// returns the verified state; a rejected enable leaves output on shared
 #[tauri::command]
-pub fn audio_set_exclusive_mode(
+pub async fn audio_set_exclusive_mode(
     enabled: bool,
     state: State<'_, PlaybackStateSync>,
-) -> Result<(), String> {
-    state.send(AudioCommand::SetExclusiveMode(enabled))
+) -> Result<mod_types::ExclusiveStatus, String> {
+    let (tx, rx) = crossbeam::channel::bounded(1);
+    state.send(AudioCommand::SetExclusiveMode {
+        enabled,
+        reply: Some(tx),
+    })?;
+    rx.recv_timeout(std::time::Duration::from_secs(10))
+        .map_err(|_| "Audio engine did not answer the exclusive request".to_string())?
+}
+
+#[tauri::command]
+pub fn audio_exclusive_capability() -> mod_types::ExclusiveCapability {
+    output::exclusive_capability()
 }
 
 #[tauri::command]

@@ -106,6 +106,7 @@ fn native_backend_actually_produces_audio() {
         replay_gain_enabled,
         Arc::new(AtomicBool::new(false)),
         Arc::new(AtomicBool::new(false)),
+        false,
         device_sample_rate,
         device_channels,
         None,

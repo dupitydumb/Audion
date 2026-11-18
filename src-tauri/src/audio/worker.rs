@@ -6,8 +6,9 @@ use tauri::Emitter;
 
 use super::dsp::EqSettings;
 use super::event_bridge;
-use super::mod_types::{AudioEvent, AudioTelemetry, DeviceList};
+use super::mod_types::{AudioEvent, AudioTelemetry, DeviceList, ExclusiveStatus};
 use super::engine::{AudioEngine, TrackInfo};
+use super::probe::probe_audio_format;
 // gated_open_result_rx (GatedOpenResult) is the only open-result channel selected on in the command loop below
 use super::gated_worker::GatedOpenResult;
 use super::decision::TrackSlot;
@@ -31,7 +32,12 @@ pub enum AudioCommand {
     SetLimiterEnabled(bool),
     SetSkipSilence(bool),
     SetAutomix(bool),
-    SetExclusiveMode(bool),
+    /// verified result goes back on the reply channel; a rejected enable
+    /// leaves the engine on shared output
+    SetExclusiveMode {
+        enabled: bool,
+        reply: Option<Sender<Result<ExclusiveStatus, String>>>,
+    },
     SetOutputDevice(Option<String>),
     SetCrossfadeSeconds(u32),
     TriggerCrossfade,
@@ -42,6 +48,47 @@ pub struct PlaybackStateSync {
     command_tx: Sender<AudioCommand>,
     pub device_list: Arc<Mutex<DeviceList>>,
     pub telemetry: Arc<Mutex<AudioTelemetry>>,
+}
+
+/// reacquires/retunes exclusive output for `path` when the preference is on.
+/// Failure keeps whatever output the engine already has and records the reason.
+fn ensure_exclusive_format(
+    engine: &mut AudioEngine,
+    path: &str,
+    event_rx: &mut Receiver<AudioEvent>,
+    gated_open_result_rx: &mut Receiver<GatedOpenResult>,
+    emit: &dyn Fn(AudioEvent),
+) {
+    if !engine.exclusive_requested {
+        return;
+    }
+    let Ok(fmt) = probe_audio_format(path) else {
+        return;
+    };
+    let (rate, channels) = (fmt.sample_rate.get(), fmt.channels.get());
+    let needs_switch = !engine.exclusive_active
+        || engine.device_sample_rate.get() != rate
+        || engine.device_channels.get() != channels;
+    if !needs_switch {
+        return;
+    }
+    match engine.apply_exclusive(true, rate, channels, event_rx, gated_open_result_rx) {
+        Ok(()) => tracing::info!(
+            "[AUDIO] Exclusive output active at {} Hz / {} ch",
+            rate,
+            channels
+        ),
+        Err(e) => {
+            // preference stays on (settings toggle is still active); report the verified
+            // state as requested-but-suspended and retry on the next play
+            engine.exclusive_requested = true;
+            engine.exclusive_suspended = true;
+            tracing::warn!("[AUDIO] Exclusive output unavailable: {}", e)
+        }
+    }
+    emit(AudioEvent::ExclusiveStateChanged {
+        status: engine.exclusive_status(),
+    });
 }
 
 impl PlaybackStateSync {
@@ -92,6 +139,18 @@ impl PlaybackStateSync {
                 }
             };
 
+            // engine-owned fields win over whatever the per-track telemetry says
+            let publish_engine_telemetry = |engine: &AudioEngine| {
+                if let Some(mut t) = engine.decision.current_telemetry() {
+                    engine.apply_telemetry(&mut t);
+                    if let Ok(mut lock) = telemetry_clone.lock() {
+                        *lock = t;
+                    }
+                } else if let Ok(mut lock) = telemetry_clone.lock() {
+                    engine.apply_telemetry(&mut lock);
+                }
+            };
+
             // polls DecisionThread for a completed crossfade/skip transition
             // and if one is found, reconciles AudioEngine's own current_generation/current_info
             // with the newly promoted "current" slot before emitting the TrackAdvanced event
@@ -118,13 +177,7 @@ impl PlaybackStateSync {
                         });
                     }
                     engine.fading_out = outgoing;
-                    if let Some(mut t) = engine.decision.current_telemetry() {
-                        t.limiter_enabled = engine.limiter_enabled.load(Ordering::Relaxed);
-                        t.exclusive_mode = engine.exclusive_mode.load(Ordering::Relaxed);
-                        if let Ok(mut lock) = telemetry_clone.lock() {
-                            *lock = t;
-                        }
-                    }
+                    publish_engine_telemetry(engine);
                     emit(evt);
                 }
             };
@@ -143,6 +196,28 @@ impl PlaybackStateSync {
                             // has_fired() alone isn't enough (see directive.rs's doc comment)
                             // if so, promote next=>current and emit TrackAdvanced
                             poll_and_apply(engine, &emit);
+
+                            if engine.exclusive_active {
+                                let reason = engine.exclusive_health_failure().or_else(|| {
+                                    engine.exclusive_release_due()
+                                        .then(|| "Released after pause".to_string())
+                                });
+                                if reason.is_some() {
+                                    match engine.suspend_exclusive(
+                                        reason,
+                                        &mut event_rx,
+                                        &mut gated_open_result_rx,
+                                    ) {
+                                        Ok(()) => {
+                                            publish_engine_telemetry(engine);
+                                            emit(AudioEvent::ExclusiveStateChanged {
+                                                status: engine.exclusive_status(),
+                                            });
+                                        }
+                                        Err(e) => emit(AudioEvent::Error { message: e }),
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -189,15 +264,51 @@ impl PlaybackStateSync {
 
                         match cmd {
                             AudioCommand::Play(path, rg) => {
+                                // exclusive streams at the track's own rate: rebuild first
+                                ensure_exclusive_format(
+                                    engine,
+                                    &path,
+                                    &mut event_rx,
+                                    &mut gated_open_result_rx,
+                                    &emit,
+                                );
                                 engine.play(&path, rg);
                             }
                             AudioCommand::Preload(path, rg, crossfade_seconds) => {
-                                if let Err(e) = engine.preload(&path, rg, crossfade_seconds) {
+                                let skip = engine.exclusive_active
+                                    && probe_audio_format(&path).is_ok_and(|fmt| {
+                                        fmt.sample_rate.get() != engine.device_sample_rate.get()
+                                            || fmt.channels.get() != engine.device_channels.get()
+                                    });
+                                if skip {
+                                    // gapless across rates would need resampling, which
+                                    // exclusive explicitly refuses
+                                    tracing::info!(
+                                        "[AUDIO] Preload skipped in exclusive mode (rate mismatch): {}",
+                                        path
+                                    );
+                                } else if let Err(e) = engine.preload(&path, rg, crossfade_seconds) {
                                     tracing::warn!("[AUDIO] preload error: {}", e);
                                 }
                             }
                             AudioCommand::Pause => engine.pause(),
-                            AudioCommand::Resume => engine.resume(),
+                            AudioCommand::Resume => {
+                                if engine.exclusive_requested && engine.exclusive_suspended {
+                                    if let Some(path) = engine.current_info.as_ref().map(|i| i.path.clone()) {
+                                        ensure_exclusive_format(
+                                            engine,
+                                            &path,
+                                            &mut event_rx,
+                                            &mut gated_open_result_rx,
+                                            &emit,
+                                        );
+                                        // the rebuild re-dispatches the track with
+                                        // pending_paused set; resume must win over it
+                                        engine.pending_paused = false;
+                                    }
+                                }
+                                engine.resume();
+                            }
                             AudioCommand::Stop => engine.stop(),
                             AudioCommand::Seek(f) => {
                                 if let Err(e) = engine.seek(f) {
@@ -227,8 +338,52 @@ impl PlaybackStateSync {
                             AudioCommand::SetAutomix(v) => {
                                 engine.set_automix_enabled(v);
                             }
-                            AudioCommand::SetExclusiveMode(v) => {
-                                engine.set_exclusive_mode(v);
+                            AudioCommand::SetExclusiveMode { enabled, reply } => {
+                                let result = if enabled {
+                                    let current = engine
+                                        .current_info
+                                        .as_ref()
+                                        .and_then(|info| probe_audio_format(&info.path).ok());
+                                    match current {
+                                        Some(fmt) => engine.apply_exclusive(
+                                            true,
+                                            fmt.sample_rate.get(),
+                                            fmt.channels.get(),
+                                            &mut event_rx,
+                                            &mut gated_open_result_rx,
+                                        ),
+                                        // nothing playing: prove the device can go exclusive
+                                        // at its current rate
+                                        None => engine.apply_exclusive(
+                                            true,
+                                            engine.device_sample_rate.get(),
+                                            engine.device_channels.get(),
+                                            &mut event_rx,
+                                            &mut gated_open_result_rx,
+                                        ),
+                                    }
+                                } else {
+                                    engine.apply_exclusive(
+                                        false,
+                                        0,
+                                        0,
+                                        &mut event_rx,
+                                        &mut gated_open_result_rx,
+                                    )
+                                };
+                                // the user's own attempt failed: the UI toggle reverts to off,
+                                // so the backend preference must not linger either
+                                if enabled && result.is_err() {
+                                    engine.clear_exclusive_preference();
+                                }
+                                publish_engine_telemetry(engine);
+                                emit(AudioEvent::ExclusiveStateChanged {
+                                    status: engine.exclusive_status(),
+                                });
+                                if let Some(tx) = reply {
+                                    let status = engine.exclusive_status();
+                                    let _ = tx.send(result.map(|_| status));
+                                }
                             }
                             AudioCommand::SetOutputDevice(name) => {
                                 tracing::info!("[AUDIO] SetOutputDevice command received: {:?}", name);
@@ -361,20 +516,7 @@ impl PlaybackStateSync {
                                                 engine.paused_at = Some(engine.gated_clock.now());
                                             }
                                             engine.decision.load_current(slot);
-                                    if let Some(mut t) = engine.decision.current_telemetry() {
-                                        t.limiter_enabled = engine.limiter_enabled.load(Ordering::Relaxed);
-                                        t.exclusive_mode = engine.exclusive_mode.load(Ordering::Relaxed);
-                                        if let Ok(mut lock) = telemetry_clone.lock() {
-                                            *lock = t;
-                                        }
-                                    }
-                                     if let Some(mut t) = engine.decision.current_telemetry() {
-                                         t.limiter_enabled = engine.limiter_enabled.load(Ordering::Relaxed);
-                                         t.exclusive_mode = engine.exclusive_mode.load(Ordering::Relaxed);
-                                         if let Ok(mut lock) = telemetry_clone.lock() {
-                                             *lock = t;
-                                         }
-                                     }
+                                            publish_engine_telemetry(engine);
                                             tracing::info!(
                                                 "[AUDIO] fade-resume incoming: decision.load_current done — \
                                                  decision.current().is_some()={}",
@@ -468,13 +610,7 @@ impl PlaybackStateSync {
                                     }
 
                                     engine.decision.load_current(slot);
-                                    if let Some(mut t) = engine.decision.current_telemetry() {
-                                        t.limiter_enabled = engine.limiter_enabled.load(Ordering::Relaxed);
-                                        t.exclusive_mode = engine.exclusive_mode.load(Ordering::Relaxed);
-                                        if let Ok(mut lock) = telemetry_clone.lock() {
-                                            *lock = t;
-                                        }
-                                    }
+                                    publish_engine_telemetry(engine);
 
                                     tracing::info!(
                                         "[AUDIO] Gated source ready and scheduled (gen {}), duration={:?}",
@@ -557,6 +693,8 @@ impl PlaybackStateSync {
                                             }
                                             directive::NaturalEndAction::PlainFinish => {
                                                 engine.current_info = None;
+                                                // queue ran dry: hand the DAC back on next tick
+                                                engine.mark_idle();
                                                 emit(AudioEvent::TrackFinished { generation });
                                             }
                                         }

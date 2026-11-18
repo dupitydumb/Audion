@@ -144,6 +144,25 @@ impl GatedTrackHandle {
     }
 }
 
+/// how a decoded source reaches the device
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourcePlan {
+    Raw,
+    Resampled,
+    /// exclusive output never resamples: the open is refused instead
+    RateMismatch,
+}
+
+pub fn plan_source_output(source_rate: u32, device_rate: u32, exclusive: bool) -> SourcePlan {
+    if source_rate == device_rate {
+        SourcePlan::Raw
+    } else if exclusive {
+        SourcePlan::RateMismatch
+    } else {
+        SourcePlan::Resampled
+    }
+}
+
 /// opens 'path' and returns a GatedSource<ReadySource> ready to .add() onto a rodio::mixer::Mixer, plus a GatedTrackHandle for controlling it afterward
 ///
 /// straight reuse of the decode logic in engine.rs::dispatch_open (open, seek if requested, resample if the device rate differs) with no overlap-buffer branch at all
@@ -156,6 +175,7 @@ pub fn open_gated_track(
     replay_gain_enabled: Arc<AtomicBool>,
     skip_silence_enabled: Arc<AtomicBool>,
     automix_enabled: Arc<AtomicBool>,
+    exclusive: bool,
     device_sample_rate: NonZero<u32>,
     device_channels: NonZero<u16>,
     initial_seek: Option<Duration>,
@@ -187,7 +207,8 @@ pub fn open_gated_track(
     let bit_depth = src.bits_per_sample();
     let source_sample_rate = src.sample_rate().get();
     let source_channels = src.channels().get();
-    let needs_resample = src.sample_rate() != device_sample_rate;
+    let plan = plan_source_output(source_sample_rate, device_sample_rate.get(), exclusive);
+    let needs_resample = plan == SourcePlan::Resampled;
 
     let telemetry = AudioTelemetry {
         path: Some(path.to_string()),
@@ -195,19 +216,28 @@ pub fn open_gated_track(
         bit_depth,
         sample_rate: source_sample_rate,
         channels: source_channels,
+        // engine.apply_telemetry overwrites the device/output/exclusive fields
         device_sample_rate: device_sample_rate.get(),
         device_channels: device_channels.get(),
         resampler_active: needs_resample,
         output_device: "Default".to_string(),
         replay_gain_db,
         limiter_enabled: true,
-        exclusive_mode: false,
+        ..AudioTelemetry::default()
     };
 
-    let ready = if needs_resample {
-        RubatoResampler::new(src, device_sample_rate).map(ReadySource::Resampled)?
-    } else {
-        ReadySource::Raw(src)
+    let ready = match plan {
+        SourcePlan::Raw => ReadySource::Raw(src),
+        SourcePlan::Resampled => {
+            RubatoResampler::new(src, device_sample_rate).map(ReadySource::Resampled)?
+        }
+        SourcePlan::RateMismatch => {
+            return Err(format!(
+                "Exclusive output cannot resample {} Hz to {} Hz",
+                source_sample_rate,
+                device_sample_rate.get()
+            ));
+        }
     };
 
     let target_frame = Arc::new(AtomicU64::new(UNSCHEDULED));
@@ -384,6 +414,40 @@ mod tests {
     }
 
     #[test]
+    fn plan_refuses_resampling_in_exclusive() {
+        assert_eq!(plan_source_output(44100, 44100, true), SourcePlan::Raw);
+        assert_eq!(plan_source_output(44100, 48000, true), SourcePlan::RateMismatch);
+        assert_eq!(plan_source_output(44100, 48000, false), SourcePlan::Resampled);
+    }
+
+    #[test]
+    fn exclusive_open_with_rate_mismatch_fails() {
+        let path = write_test_wav(0.5, 2000, 44100);
+        let (volume, rg, event_tx) = dummy_deps();
+        let result = open_gated_track(
+            path.to_str().unwrap(),
+            None,
+            1,
+            volume,
+            rg,
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+            true,
+            NonZero::new(48000).unwrap(),
+            NonZero::new(1).unwrap(),
+            None,
+            event_tx,
+            Arc::clone(&SharedClock::new()),
+        );
+        let err = match result {
+            Ok(_) => panic!("exclusive must refuse to resample"),
+            Err(e) => e,
+        };
+        assert!(err.contains("cannot resample"), "unexpected error: {err}");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn opens_real_wav_and_stays_silent_until_scheduled() {
         let path = write_test_wav(0.5, 2000, 44100);
         let (volume, rg, event_tx) = dummy_deps();
@@ -397,6 +461,7 @@ mod tests {
             rg,
             Arc::new(AtomicBool::new(false)),
             Arc::new(AtomicBool::new(false)),
+            false,
             NonZero::new(44100).unwrap(), // matches file rate => no resample needed
             NonZero::new(1).unwrap(),
             None,
@@ -430,6 +495,7 @@ mod tests {
             rg,
             Arc::new(AtomicBool::new(false)),
             Arc::new(AtomicBool::new(false)),
+            false,
             NonZero::new(44100).unwrap(),
             NonZero::new(1).unwrap(),
             None,
@@ -464,7 +530,7 @@ mod tests {
         let (volume_a, rg_a, event_tx_a) = dummy_deps();
         let (gated_a, handle_a) = open_gated_track(
             path_a.to_str().unwrap(), None, 1, volume_a, rg_a,
-            Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)), false,
             NonZero::new(44100).unwrap(), NonZero::new(1).unwrap(), None, event_tx_a,
             Arc::clone(&clock),
         )
@@ -473,7 +539,7 @@ mod tests {
         let (volume_b, rg_b, event_tx_b) = dummy_deps();
         let (gated_b, handle_b) = open_gated_track(
             path_b.to_str().unwrap(), None, 2, volume_b, rg_b,
-            Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)), false,
             NonZero::new(44100).unwrap(), NonZero::new(1).unwrap(), None, event_tx_b,
             Arc::clone(&clock),
         )
@@ -531,6 +597,7 @@ mod tests {
             rg,
             Arc::new(AtomicBool::new(false)),
             Arc::new(AtomicBool::new(false)),
+            false,
             NonZero::new(sample_rate).unwrap(),
             NonZero::new(1).unwrap(),
             None,

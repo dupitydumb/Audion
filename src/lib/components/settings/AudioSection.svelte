@@ -12,6 +12,7 @@
     type DeviceList,
     type AudioDeviceInfo,
   } from "$lib/services/native-audio";
+  import { getAudioExclusiveCapability, type ExclusiveCapability } from "$lib/api/tauri";
   import { html5SetReplayGainEnabled } from "$lib/services/html5-audio";
   import Icon from "$lib/components/Icon.svelte";
   import { onMount } from "svelte";
@@ -27,6 +28,27 @@
   let showRefreshNotice = false;
   $: showRefreshNotice = $appSettings.audioBackend !== initialAudioBackend;
   $: outputDeviceDisabled = $appSettings.audioBackend === 'html5';
+
+  // Exclusive DAC mode
+  let exclusiveCapability: ExclusiveCapability | null = null;
+  let exclusiveBusy = false;
+  let exclusiveError: string | null = null;
+  $: exclusiveUnsupported = exclusiveCapability !== null && !exclusiveCapability.supported;
+  $: exclusiveDisabled = outputDeviceDisabled || exclusiveUnsupported || exclusiveBusy;
+  $: exclusiveDescription = exclusiveUnsupported
+    ? (exclusiveCapability?.reason ?? 'Not supported on this platform.')
+    : 'Exclusive device access, no DSP, no resample. Disables EQ, limiter, ReplayGain, crossfade and automix while active; software volume still applies. Other apps cannot use the device.';
+
+  async function handleToggleExclusive(enabled: boolean) {
+    if (exclusiveBusy) return;
+    exclusiveBusy = true;
+    exclusiveError = null;
+    const ok = await appSettings.setExclusiveMode(enabled);
+    if (!ok) {
+      exclusiveError = 'The output device refused exclusive access. Output stays shared.';
+    }
+    exclusiveBusy = false;
+  }
 
   let deviceList: DeviceList | null = null;
   let isLoadingDevices = false;
@@ -141,6 +163,11 @@
       } catch (e) {
         console.warn('[AudioSection] Failed to load cached device info:', e);
       }
+    }
+    try {
+      exclusiveCapability = await getAudioExclusiveCapability();
+    } catch (e) {
+      console.warn('[AudioSection] Failed to read exclusive capability:', e);
     }
   });
 </script>
@@ -286,6 +313,27 @@
       </div>
     </SettingRow>
 
+    <!-- 2b. Exclusive DAC Mode -->
+    <SettingRow
+      id="setting-exclusive-mode"
+      label="Exclusive DAC Mode"
+      description={exclusiveDescription}
+      disabled={exclusiveDisabled}
+      disabledReason={outputDeviceDisabled ? 'Requires Native or Rodio driver' : exclusiveCapability?.reason ?? undefined}
+    >
+      <div class="exclusive-control">
+        <SettingToggle
+          checked={$appSettings.exclusiveMode}
+          label="Toggle Exclusive DAC Mode"
+          disabled={exclusiveDisabled}
+          on:change={(e) => handleToggleExclusive(e.detail)}
+        />
+        {#if exclusiveError}
+          <span class="exclusive-error">{exclusiveError}</span>
+        {/if}
+      </div>
+    </SettingRow>
+
     <!-- 3. Crossfade -->
     <SettingRow
       id="setting-crossfade"
@@ -362,19 +410,6 @@
           checked={$appSettings.automixEnabled}
           label="Toggle Automix Bass Handoff"
           on:change={(e) => appSettings.setAutomix(e.detail)}
-        />
-      </SettingRow>
-
-      <!-- 5d. Exclusive Mode (Bit-Perfect DAC Output) -->
-      <SettingRow
-        id="setting-exclusive-mode"
-        label="Exclusive Mode (Bit-Perfect DAC Output)"
-        description="Direct hardware control via WASAPI/ALSA for bit-perfect output, bypassing OS mixing. Automatically releases audio hardware on pause or idle so other apps can play sound."
-      >
-        <SettingToggle
-          checked={$appSettings.exclusiveMode}
-          label="Toggle Exclusive Mode"
-          on:change={(e) => appSettings.setExclusiveMode(e.detail)}
         />
       </SettingRow>
     {/if}
@@ -481,6 +516,18 @@
   .device-dropdown-wrap {
     position: relative;
     width: 220px;
+  }
+
+  .exclusive-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .exclusive-error {
+    color: var(--danger-text, #e5484d);
+    font-size: 11px;
+    max-width: 220px;
   }
 
   .device-dropdown-trigger {

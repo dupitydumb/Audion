@@ -20,7 +20,15 @@ pub struct AudioTelemetry {
     pub output_device: String,
     pub replay_gain_db: Option<f32>,
     pub limiter_enabled: bool,
-    pub exclusive_mode: bool,
+    /// user preference, persisted setting echo only
+    pub exclusive_requested: bool,
+    /// verified: the negotiated stream is genuinely exclusive
+    pub exclusive_active: bool,
+    pub exclusive_supported: bool,
+    pub exclusive_suspended: bool,
+    pub exclusive_backend: Option<String>,
+    pub exclusive_format: Option<String>,
+    pub exclusive_error: Option<String>,
 }
 
 impl Default for AudioTelemetry {
@@ -37,9 +45,52 @@ impl Default for AudioTelemetry {
             output_device: "Default".to_string(),
             replay_gain_db: None,
             limiter_enabled: true,
-            exclusive_mode: false,
+            exclusive_requested: false,
+            exclusive_active: false,
+            exclusive_supported: false,
+            exclusive_suspended: false,
+            exclusive_backend: None,
+            exclusive_format: None,
+            exclusive_error: None,
         }
     }
+}
+
+/// verified exclusive state, returned by the exclusive commands
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExclusiveStatus {
+    pub requested: bool,
+    pub active: bool,
+    pub supported: bool,
+    pub suspended: bool,
+    pub backend: Option<String>,
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub format: Option<String>,
+    pub reason: Option<String>,
+}
+
+impl Default for ExclusiveStatus {
+    fn default() -> Self {
+        Self {
+            requested: false,
+            active: false,
+            supported: false,
+            suspended: false,
+            backend: None,
+            sample_rate: 44100,
+            channels: 2,
+            format: None,
+            reason: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExclusiveCapability {
+    pub supported: bool,
+    pub backend: Option<String>,
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +118,7 @@ pub enum AudioEvent {
     TrackAdvanced { generation: u64, new_path: String, duration: Option<Duration> },
     StateChanged { position: f64 },
     DeviceListChanged { devices: DeviceList },
+    ExclusiveStateChanged { status: ExclusiveStatus },
     Error { message: String },
 }
 
