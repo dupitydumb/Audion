@@ -16,7 +16,6 @@
   import { resolveTrackCover } from "$lib/stores/library";
   import { customArtworks } from "$lib/stores/customArtwork";
   import Icon from "$lib/components/Icon.svelte";
-  import AudioQualityBadge from "$lib/components/AudioQualityBadge.svelte";
 
   let albumArt: string | null = null;
   let imageLoadFailed = false;
@@ -158,7 +157,6 @@
         <div class="track-text">
           <div class="track-title-row">
             <span class="track-title truncate">{$currentTrack.title || $_('player.unknownTitle')}</span>
-            <AudioQualityBadge variant="compact" />
           </div>
           <ArtistLinks
             artist={$currentTrack.artist}

@@ -425,9 +425,14 @@
           </div>
 
           <div class="track-info">
-            <h1 class="track-title">
-              {$currentTrack?.title || $_('player.unknownTitle')}
-            </h1>
+            <div class="track-title-row">
+              <h1 class="track-title">
+                {$currentTrack?.title || $_('player.unknownTitle')}
+              </h1>
+              <div class="quality-badge-wrapper mobile-quality-badge">
+                <AudioQualityBadge variant="compact" />
+              </div>
+            </div>
             <ArtistLinks
               artist={$currentTrack?.artist || $_('common.unknownArtist')}
               artists={$currentTrack?.artists}
@@ -456,9 +461,6 @@
                 </span>
               {/if}
             {/if}
-            <div class="quality-badge-wrapper mobile-quality-badge">
-              <AudioQualityBadge variant="compact" />
-            </div>
           </div>
         {:else}
           <!-- In-place Lyrics for Mobile -->
@@ -1054,7 +1056,16 @@
   }
 
   .mobile-quality-badge {
-    margin-top: 0.6rem;
+    margin-top: 0;
+    flex-shrink: 0;
+  }
+
+  .mobile-view .track-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    width: 100%;
   }
 
   .track-info-header {
@@ -1347,6 +1358,11 @@
   }
 
   .mobile-view .track-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 1.75rem;
     font-weight: 800;
     margin-bottom: 0.5rem;
@@ -1361,6 +1377,11 @@
   }
 
   .mobile-view .track-album {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 0.9rem;
     color: rgba(255, 255, 255, 0.4);
     background: none;

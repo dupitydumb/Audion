@@ -34,11 +34,14 @@
   });
 
   // Derive badge properties
+  const EMPTY_CODECS = new Set(["", "NONE", "NULL", "UNKNOWN"]);
   $: codec = (
     telemetry?.codec ||
     activeTrack?.format ||
     ""
   ).toUpperCase();
+
+  $: hasCodec = !!codec && !EMPTY_CODECS.has(codec);
 
   $: bitDepth = telemetry?.bit_depth || (codec === "FLAC" || codec === "ALAC" ? 16 : null);
   $: sampleRate = telemetry?.sample_rate || 44100;
@@ -47,6 +50,7 @@
 
   $: isHiRes = (sampleRate > 48000) || (bitDepth !== null && bitDepth >= 24);
   $: isLossless = isHiRes || ["FLAC", "ALAC", "WAV", "AIFF", "DSD"].includes(codec);
+  $: hasInfo = isLossless || hasCodec || !!activeTrack?.bitrate;
 
   $: badgeTier = isHiRes ? "hires" : isLossless ? "lossless" : "standard";
 
@@ -71,7 +75,7 @@
   }
 </script>
 
-{#if activeTrack}
+{#if activeTrack && hasInfo}
   <button
     type="button"
     class="audio-quality-badge tier-{badgeTier} variant-{variant} {className}"
@@ -140,9 +144,11 @@
 
   /* Compact variant (e.g. for PlayerBar / MobileMiniPlayer) */
   .variant-compact {
-    padding: 1px 5px;
+    padding: 2px 7px;
     font-size: 9px;
-    border-radius: 3px;
+    line-height: 1.2;
+    border-radius: var(--radius-full, 9999px);
+    letter-spacing: 0.04em;
   }
 
   /* Full variant (e.g. FullScreenPlayer) */
@@ -155,29 +161,28 @@
     -webkit-backdrop-filter: blur(12px);
   }
 
-  /* Tier-specific styling inspired by Apple Music & BitChord */
+  /* Tier-specific styling — follows app theme tokens */
   .tier-hires {
-    background: rgba(250, 180, 20, 0.12);
-    border-color: rgba(250, 180, 20, 0.35);
-    color: #ffd166;
+    background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+    border-color: color-mix(in srgb, var(--accent-primary) 35%, transparent);
+    color: var(--accent-primary);
   }
 
   .tier-hires:hover {
-    background: rgba(250, 180, 20, 0.2);
-    border-color: rgba(250, 180, 20, 0.55);
-    color: #ffe08a;
+    background: color-mix(in srgb, var(--accent-primary) 20%, transparent);
+    border-color: color-mix(in srgb, var(--accent-primary) 55%, transparent);
   }
 
   .tier-lossless {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.18);
-    color: #f0f0f0;
+    background: var(--bg-elevated);
+    border-color: color-mix(in srgb, var(--text-primary) 18%, transparent);
+    color: var(--text-primary);
   }
 
   .tier-standard {
-    background: rgba(255, 255, 255, 0.04);
-    border-color: rgba(255, 255, 255, 0.08);
-    color: var(--text-subdued, #8e8e8e);
+    background: var(--bg-elevated);
+    border-color: var(--border-color);
+    color: var(--text-subdued);
   }
 
   .exclusive {
