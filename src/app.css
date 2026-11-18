@@ -608,7 +608,9 @@ a:hover {
     .sync-pill,
     .recap-pill,
     .sleep-fade-pill,
-    .btn-reset-skin
+    .btn-reset-skin,
+    .card-repo-btn,
+    .badge
   ) {
     min-width: 0;
     min-height: 32px;

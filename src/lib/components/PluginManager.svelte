@@ -1317,8 +1317,7 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    padding: var(--spacing-md) var(--spacing-md)
-      var(--spacing-md);
+    padding: var(--spacing-lg) var(--spacing-xl);
     overflow-x: hidden; /* Prevent horizontal overflow */
     box-sizing: border-box;
   }
@@ -1333,7 +1332,7 @@
   }
 
   .view-header h1 {
-    font-size: 1.5rem; /* Reduced from 2rem */
+    font-size: var(--font-size-3xl);
     font-weight: var(--font-weight-bold);
     margin: 0;
   }
@@ -2064,7 +2063,7 @@
   }
 
   .view-header h1 {
-    font-size: 1.5rem;
+    font-size: var(--font-size-3xl);
     font-weight: var(--font-weight-bold);
     margin: 0;
   }
@@ -2074,7 +2073,7 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    padding: var(--spacing-md);
+    padding: var(--spacing-lg) var(--spacing-xl);
     overflow-x: hidden; /* Prevent horizontal overflow */
     box-sizing: border-box;
   }
@@ -2091,6 +2090,13 @@
     font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     margin-bottom: var(--spacing-sm);
+  }
+
+  .modal-desc {
+    margin: 0 0 var(--spacing-md);
+    font-size: var(--font-size-base);
+    line-height: var(--line-height-normal);
+    color: var(--text-secondary);
   }
 
   .permission-list {
@@ -2202,26 +2208,42 @@
   }
 
   /* ── Mobile ── */
+  :global(html.layout-mobile) .plugin-view {
+    padding: var(--spacing-md);
+  }
+
   :global(html.layout-mobile) .view-header {
     flex-direction: column;
-    align-items: flex-start;
-    gap: var(--spacing-md);
+    align-items: stretch;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
   }
 
   :global(html.layout-mobile) .view-header h1 {
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
   }
 
   :global(html.layout-mobile) .header-actions {
-    width: 100%;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--spacing-sm);
+    width: 100%;
   }
 
-  :global(html.layout-mobile) .header-actions button,
+  :global(html.layout-mobile) .header-actions > button {
+    min-width: 0;
+    min-height: 40px;
+    padding: 0 var(--spacing-sm);
+    font-size: var(--font-size-xs);
+    justify-content: flex-start;
+    white-space: normal;
+    text-align: left;
+  }
+
   :global(html.layout-mobile) .sort-selector {
-    flex: 1;
-    min-width: 140px;
+    grid-column: 1 / -1;
+    min-width: 0;
+    width: 100%;
   }
 
   :global(html.layout-mobile) .sort-btn {
@@ -2236,18 +2258,55 @@
 
   :global(html.layout-mobile) .remove-btn {
     opacity: 1;
+    width: 28px;
+    height: 28px;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  :global(html.layout-mobile) .plugin-badges {
+    gap: 4px;
+  }
+
+  :global(html.layout-mobile) .badge {
+    padding: 2px 6px;
+    font-size: 0.625rem;
+  }
+
+  :global(html.layout-mobile) .card-repo-btn {
+    max-width: 100%;
   }
 
   :global(html.layout-mobile) .tabs {
-    overflow-x: auto;
-    padding-bottom: 4px;
-    gap: var(--spacing-xs);
+    flex-wrap: wrap;
+    overflow-x: visible;
+    border-bottom: none;
+    padding-bottom: 0;
+    margin-bottom: var(--spacing-md);
+    gap: 6px;
   }
 
   :global(html.layout-mobile) .tab {
-    padding: var(--spacing-xs) var(--spacing-sm);
-    font-size: var(--font-size-sm);
+    min-width: 0;
+    min-height: 36px;
+    padding: 6px 12px;
+    border-radius: var(--radius-full);
+    background-color: var(--bg-elevated);
+    border: 1px solid transparent;
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
     white-space: nowrap;
+  }
+
+  :global(html.layout-mobile) .tab:hover {
+    background-color: var(--bg-highlight);
+    color: var(--text-primary);
+  }
+
+  :global(html.layout-mobile) .tab.active {
+    background-color: var(--accent-subtle);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
   }
 
   :global(html.layout-mobile) .category-filters {
@@ -2287,6 +2346,70 @@
 
   :global(html.layout-mobile) .create-form input {
     width: 100%;
+  }
+
+  /* Permission / install modal — bottom sheet above nav + player */
+  :global(html.layout-mobile) .modal-overlay {
+    align-items: flex-end;
+    padding: 0 0 var(--mobile-bottom-inset, 130px);
+  }
+
+  :global(html.layout-mobile) .modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    padding: var(--spacing-md);
+    border-radius: 20px;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  :global(html.layout-mobile) .modal-header {
+    margin-bottom: var(--spacing-sm);
+  }
+
+  :global(html.layout-mobile) .modal-header h2 {
+    font-size: var(--font-size-lg);
+  }
+
+  :global(html.layout-mobile) .modal-plugin-header {
+    padding: var(--spacing-sm);
+    gap: var(--spacing-sm);
+  }
+
+  :global(html.layout-mobile) .modal-desc-section {
+    margin-bottom: var(--spacing-md);
+  }
+
+  :global(html.layout-mobile) .modal-desc {
+    margin-bottom: var(--spacing-md);
+  }
+
+  :global(html.layout-mobile) .modal-full-desc {
+    max-height: 30vh;
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+
+  :global(html.layout-mobile) .method-badge {
+    padding: 2px 6px;
+    font-size: 0.625rem;
+  }
+
+  /* Sticky footer keeps Cancel/Install reachable while permissions scroll */
+  :global(html.layout-mobile) .modal-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    margin: var(--spacing-md) calc(-1 * var(--spacing-md)) calc(-1 * var(--spacing-md));
+    padding: var(--spacing-sm) var(--spacing-md);
+    background-color: var(--bg-elevated);
+    border-top: 1px solid var(--border-color);
+    justify-content: stretch;
+  }
+
+  :global(html.layout-mobile) .modal-actions > button {
+    flex: 1;
+    min-width: 0;
+    min-height: 46px;
   }
 
   /* Registries Manager Styling */
