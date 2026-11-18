@@ -56,10 +56,12 @@
   import FullScreenMobileBottomSheet from "./FullScreenMobileBottomSheet.svelte";
   import FullScreenPlaybackControls from "./FullScreenPlaybackControls.svelte";
   import LyricsView from "../LyricsView.svelte";
+  import LyricCardModal from "../LyricCardModal.svelte";
   import Icon from "$lib/components/Icon.svelte";
   import AudioQualityBadge from "$lib/components/AudioQualityBadge.svelte";
 
   let showMeshSettings = false;
+  let showLyricCardModal = false;
 
   let showConnectPanel = false;
   let showMobileMenu = false;
@@ -70,6 +72,14 @@
   let isAndroid = false;
   let isLinux = false;
   $: hideAndroidLyricsControls = isAndroid && $isMobile && $lyricsVisible;
+
+  // mobile lyrics live inside this view; leaving it must not leave the
+  // desktop-style side panel open behind the main layout
+  let prevFullScreen = $isFullScreen;
+  $: {
+    if (prevFullScreen && !$isFullScreen && $isMobile) lyricsVisible.set(false);
+    prevFullScreen = $isFullScreen;
+  }
   let desktopArtWrapperEl: HTMLDivElement | null = null;
   $: if (desktopArtWrapperEl) {
     desktopArtWrapperEl.style.viewTransitionName = ($isFullScreen && !isLinux) ? 'player-album-art' : 'none';
@@ -353,6 +363,16 @@
           </button>
           <span class="now-playing-label">{$_('player.nowPlaying')}</span>
           <div class="mobile-header-btns">
+            {#if $lyricsData?.lines?.length}
+              <button
+                class="chevron-btn"
+                on:click={() => (showLyricCardModal = true)}
+                aria-label="Share Lyric Card"
+                title="Share Lyric Card"
+              >
+                <Icon name="share" size={22} />
+              </button>
+            {/if}
             <button
               class="chevron-btn"
               class:active={$lyricsVisible}
@@ -387,6 +407,11 @@
           {albumArt}
         />
       {/if}
+
+      <LyricCardModal
+        bind:open={showLyricCardModal}
+        onClose={() => (showLyricCardModal = false)}
+      />
 
       <div class="player-content mobile-view">
         {#if !$lyricsVisible}
@@ -1325,6 +1350,10 @@
     font-weight: var(--font-weight-bold);
     letter-spacing: 0.1em;
     opacity: 0.6;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .player-content.mobile-view {

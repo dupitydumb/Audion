@@ -224,7 +224,7 @@
     .view-header {
         padding: var(--spacing-xl)
             var(--spacing-xl) var(--spacing-md);
-        border-bottom: 1px solid var(--border-subtle);
+        border-bottom: 1px solid var(--border-color);
         display: flex;
         align-items: baseline;
         gap: var(--spacing-lg);
@@ -232,14 +232,14 @@
     }
 
     .view-header h1 {
-        font-size: 1.8rem;
-        font-weight: 800;
+        font-size: var(--font-size-3xl);
+        font-weight: var(--font-weight-bold);
         color: var(--text-primary);
         margin: 0;
     }
 
     .subtitle {
-        font-size: 0.9rem;
+        font-size: var(--font-size-base);
         color: var(--text-secondary);
         flex: 1;
     }
@@ -249,13 +249,13 @@
         align-items: center;
         gap: 6px;
         background: var(--bg-elevated);
-        border: 1px solid var(--border-subtle);
+        border: 1px solid var(--border-color);
         color: var(--text-secondary);
         padding: 6px 14px;
         border-radius: var(--radius-md);
-        font-size: 0.85rem;
+        font-size: var(--font-size-base);
         cursor: pointer;
-        transition: all 0.15s;
+        transition: all var(--transition-fast);
     }
 
     .refresh-btn:hover {
@@ -292,7 +292,7 @@
     }
 
     .action-link {
-        font-size: 0.85rem;
+        font-size: var(--font-size-base);
         color: var(--text-secondary);
         text-decoration: none;
     }
@@ -303,7 +303,7 @@
     }
 
     .state-card h3 {
-        font-size: 1.2rem;
+        font-size: var(--font-size-lg);
         font-weight: var(--font-weight-bold);
         color: var(--text-primary);
         margin: 0;
@@ -316,20 +316,20 @@
     }
 
     .state-card.error svg {
-        color: var(--text-error, #f44336);
+        color: var(--error-color);
     }
 
     .action-btn {
         background: var(--accent-primary);
-        color: var(--accent-on-primary, #000);
+        color: var(--text-on-accent, #000);
         border: none;
         padding: 10px 24px;
         border-radius: var(--radius-lg);
         font-weight: var(--font-weight-bold);
         cursor: pointer;
-        font-size: 0.9rem;
+        font-size: var(--font-size-base);
         margin-top: var(--spacing-sm);
-        transition: opacity 0.15s;
+        transition: opacity var(--transition-fast);
     }
 
     .action-btn:hover {
@@ -340,7 +340,7 @@
     .spinner {
         width: 40px;
         height: 40px;
-        border: 3px solid var(--border-subtle);
+        border: 3px solid var(--border-color);
         border-top-color: var(--accent-primary);
         border-radius: 50%;
         animation: spin 0.8s linear infinite;
@@ -366,7 +366,7 @@
         padding: var(--spacing-sm) var(--spacing-md);
         border-radius: var(--radius-md);
         cursor: pointer;
-        transition: background 0.12s;
+        transition: background var(--transition-fast);
         outline: none;
     }
 
@@ -407,7 +407,7 @@
 
     .rec-title {
         font-weight: var(--font-weight-semibold);
-        font-size: 0.9rem;
+        font-size: var(--font-size-base);
         color: var(--text-primary);
         white-space: nowrap;
         overflow: hidden;
@@ -415,7 +415,7 @@
     }
 
     .rec-artist {
-        font-size: 0.8rem;
+        font-size: var(--font-size-sm);
         color: var(--text-secondary);
         white-space: nowrap;
         overflow: hidden;
@@ -423,7 +423,7 @@
         display: inline-block;
         max-width: 100%;
         cursor: pointer;
-        transition: color 0.1s;
+        transition: color var(--transition-fast);
     }
 
     .rec-artist:hover {
@@ -455,7 +455,7 @@
 
     .play-btn {
         background: var(--accent-primary);
-        color: var(--accent-on-primary, #000);
+        color: var(--text-on-accent, #000);
         border: none;
         width: 32px;
         height: 32px;
@@ -465,7 +465,7 @@
         justify-content: center;
         cursor: pointer;
         opacity: 0;
-        transition: opacity 0.15s;
+        transition: opacity var(--transition-fast);
     }
 
     .rec-card:hover .play-btn,
@@ -477,5 +477,28 @@
         color: var(--text-tertiary);
         display: flex;
         align-items: center;
+    }
+
+    /* ── Mobile ── */
+    :global(html.layout-mobile) .view-header {
+        padding: var(--spacing-md);
+        gap: var(--spacing-sm);
+    }
+
+    :global(html.layout-mobile) .view-header h1 {
+        font-size: var(--font-size-2xl);
+    }
+
+    :global(html.layout-mobile) .subtitle {
+        flex-basis: 100%;
+    }
+
+    :global(html.layout-mobile) .refresh-btn {
+        min-height: 44px;
+    }
+
+    :global(html.layout-mobile) .rec-content {
+        padding: var(--spacing-md) var(--spacing-md)
+            calc(var(--mobile-bottom-inset, 130px) + var(--spacing-lg));
     }
 </style>

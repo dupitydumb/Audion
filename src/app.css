@@ -586,6 +586,34 @@ a:hover {
     min-width: 44px;
   }
 
+  /* Inline chips/pills hug their label; the 44px box turns them into squares */
+  :is(
+    .scheme-pill,
+    .source-pill,
+    .genre-pill,
+    .mb-chip,
+    .type-chip,
+    .theme-chip,
+    .snippet-chip,
+    .trial-pill-tag,
+    .artist-chip,
+    .artist-pill-btn,
+    .section-pill,
+    .pill-active,
+    .pill-inactive,
+    .category-chip,
+    .device-info-pill,
+    .latency-pill,
+    .stat-pill,
+    .sync-pill,
+    .recap-pill,
+    .sleep-fade-pill,
+    .btn-reset-skin
+  ) {
+    min-width: 0;
+    min-height: 32px;
+  }
+
   /* Smaller icon buttons are OK as long as they have padding */
   .icon-btn {
     width: 44px;

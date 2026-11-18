@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { tick } from "svelte";
   import { fade, scale } from "svelte/transition";
   import { currentTrack } from "$lib/stores/player";
   import { lyricsData, activeLine } from "$lib/stores/lyrics";
@@ -7,7 +7,6 @@
   import { proxyFetchBytes, saveImageToGallery } from "$lib/api/tauri";
   import { addToast } from "$lib/stores/toast";
   import Icon from "$lib/components/Icon.svelte";
-  import { _ } from "svelte-i18n";
 
   export let open: boolean = false;
   export let onClose: () => void = () => { open = false; };
@@ -16,11 +15,17 @@
   type AspectRatio = "1:1" | "9:16";
   type CardTheme = "frosted" | "vinyl" | "mesh" | "minimal";
 
+  const themes: { id: CardTheme; label: string; long: string }[] = [
+    { id: "frosted", label: "Frosted", long: "Frosted Glass" },
+    { id: "vinyl", label: "Vinyl", long: "Vinyl" },
+    { id: "mesh", label: "Mesh", long: "Mesh Glow" },
+    { id: "minimal", label: "Minimal", long: "Minimal" },
+  ];
+
   let aspectRatio: AspectRatio = "1:1";
   let theme: CardTheme = "frosted";
   let selectedIndices: number[] = [];
   let canvas: HTMLCanvasElement;
-  let isGenerating = false;
   let isCopying = false;
   let isSaving = false;
 
@@ -677,90 +682,47 @@
 </script>
 
 {#if open}
-  <div class="lyric-card-overlay" transition:fade={{ duration: 160 }}>
-    <div class="lyric-card-modal" transition:scale={{ duration: 180, start: 0.95 }}>
-      <!-- Modal Header -->
-      <div class="modal-header">
+  <div
+    class="lyric-card-overlay"
+    transition:fade={{ duration: 160 }}
+    role="presentation"
+    on:click|self={onClose}
+  >
+    <div
+      class="lyric-card-modal"
+      transition:scale={{ duration: 180, start: 0.96 }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Shareable Lyric Card"
+    >
+      <header class="modal-header">
         <div class="header-left">
           <Icon name="image" size={18} />
-          <span class="modal-title">Shareable Lyric Card</span>
+          <div class="header-text">
+            <span class="modal-title">Lyric Card</span>
+            <span class="modal-subtitle">Pick lines and a theme, then share</span>
+          </div>
         </div>
         <button class="btn-close" on:click={onClose} aria-label="Close">
-          <Icon name="x" size={16} />
+          <Icon name="x" size={18} />
         </button>
-      </div>
+      </header>
 
-      <div class="modal-content">
-        <!-- Live Preview Area -->
-        <div class="preview-panel">
-          <div class="canvas-container ratio-{aspectRatio === '1:1' ? 'square' : 'story'}">
+      <div class="modal-body">
+        <section class="preview-panel">
+          <div class="canvas-frame" class:story={aspectRatio === "9:16"}>
             <canvas bind:this={canvas}></canvas>
           </div>
-        </div>
+          <span class="preview-caption">
+            {selectedIndices.length} line{selectedIndices.length === 1 ? "" : "s"} · {aspectRatio === "1:1" ? "square" : "story"}
+          </span>
+        </section>
 
-        <!-- Options & Line Selector Panel -->
-        <div class="controls-panel">
-          <!-- Aspect Ratio Toggle -->
-          <div class="control-section">
-            <span class="control-label">Aspect Ratio</span>
-            <div class="button-toggle-group">
-              <button
-                class="toggle-btn"
-                class:active={aspectRatio === "1:1"}
-                on:click={() => setAspectRatio("1:1")}
-              >
-                1:1 Square (Feed)
-              </button>
-              <button
-                class="toggle-btn"
-                class:active={aspectRatio === "9:16"}
-                on:click={() => setAspectRatio("9:16")}
-              >
-                9:16 Story (Status)
-              </button>
-            </div>
-          </div>
-
-          <!-- Theme Selector -->
-          <div class="control-section">
-            <span class="control-label">Card Theme</span>
-            <div class="theme-grid">
-              <button
-                class="theme-card-btn theme-frosted"
-                class:active={theme === "frosted"}
-                on:click={() => setTheme("frosted")}
-              >
-                <span class="theme-name">Frosted Glass</span>
-              </button>
-              <button
-                class="theme-card-btn theme-vinyl"
-                class:active={theme === "vinyl"}
-                on:click={() => setTheme("vinyl")}
-              >
-                <span class="theme-name">Vinyl Card</span>
-              </button>
-              <button
-                class="theme-card-btn theme-mesh"
-                class:active={theme === "mesh"}
-                on:click={() => setTheme("mesh")}
-              >
-                <span class="theme-name">Mesh Glow</span>
-              </button>
-              <button
-                class="theme-card-btn theme-minimal"
-                class:active={theme === "minimal"}
-                on:click={() => setTheme("minimal")}
-              >
-                <span class="theme-name">Minimal</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Lyric Lines Selector -->
+        <section class="controls-panel">
           <div class="control-section lines-section">
-            <div class="lines-section-header">
-              <span class="control-label">Select Lines ({selectedIndices.length}/5)</span>
-              <small class="lines-hint">Pick up to 5 lines to display</small>
+            <div class="lines-header">
+              <span class="control-label">Choose lines</span>
+              <span class="lines-count">{selectedIndices.length}/5</span>
             </div>
             <div class="lines-list">
               {#each lines as line, idx}
@@ -770,33 +732,70 @@
                   class:selected={selectedIndices.includes(idx)}
                   on:click={() => toggleLine(idx)}
                 >
-                  <div class="line-checkbox">
+                  <span class="line-check">
                     {#if selectedIndices.includes(idx)}
                       <Icon name="check" size={12} />
                     {/if}
-                  </div>
+                  </span>
                   <span class="line-text">{line.text}</span>
                 </button>
               {/each}
             </div>
           </div>
 
-          <!-- Action Buttons -->
-          <div class="action-row">
-            <button class="btn-action primary" on:click={copyToClipboard} disabled={isCopying}>
-              <Icon name="copy" size={16} />
-              <span>{isCopying ? "Copying..." : "Copy Image"}</span>
-            </button>
-            <button class="btn-action secondary" on:click={saveImage} disabled={isSaving}>
-              <Icon name="download" size={16} />
-              <span>{isSaving ? "Saving..." : "Save PNG"}</span>
-            </button>
-            <button class="btn-action icon-only" on:click={nativeShare} title="Share">
-              <Icon name="share-2" size={16} />
-            </button>
+          <div class="options-row">
+            <div class="control-section">
+              <span class="control-label">Format</span>
+              <div class="segmented">
+                <button
+                  class="segment"
+                  class:active={aspectRatio === "1:1"}
+                  on:click={() => setAspectRatio("1:1")}
+                >
+                  <span>Square</span><small>1:1</small>
+                </button>
+                <button
+                  class="segment"
+                  class:active={aspectRatio === "9:16"}
+                  on:click={() => setAspectRatio("9:16")}
+                >
+                  <span>Story</span><small>9:16</small>
+                </button>
+              </div>
+            </div>
+
+            <div class="control-section">
+              <span class="control-label">Theme</span>
+              <div class="theme-chips">
+                {#each themes as t (t.id)}
+                  <button
+                    class="theme-chip"
+                    class:active={theme === t.id}
+                    on:click={() => setTheme(t.id)}
+                    title={t.long}
+                  >
+                    {t.label}
+                  </button>
+                {/each}
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
       </div>
+
+      <footer class="action-bar">
+        <button class="btn-action secondary" on:click={saveImage} disabled={isSaving}>
+          <Icon name="download" size={16} />
+          <span>{isSaving ? "Saving…" : "Save"}</span>
+        </button>
+        <button class="btn-action icon-only" on:click={nativeShare} title="Share" aria-label="Share">
+          <Icon name="share" size={16} />
+        </button>
+        <button class="btn-action primary" on:click={copyToClipboard} disabled={isCopying}>
+          <Icon name="copy" size={16} />
+          <span>{isCopying ? "Copying…" : "Copy image"}</span>
+        </button>
+      </footer>
     </div>
   </div>
 {/if}
@@ -806,312 +805,453 @@
     position: fixed;
     inset: 0;
     z-index: 9999;
-    background: rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(12px);
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 24px;
+    background: rgba(6, 7, 10, 0.78);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    overscroll-behavior: contain;
   }
 
   .lyric-card-modal {
-    background: rgba(22, 23, 30, 0.94);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 18px;
-    width: 100%;
-    max-width: 900px;
-    max-height: 90vh;
     display: flex;
     flex-direction: column;
+    width: 100%;
+    max-width: 860px;
+    max-height: min(92vh, 760px);
+    /* the composer is a fixed dark surface in both app themes so the preview
+       stays the visual anchor; do not follow --bg-elevated here */
+    background: rgba(22, 23, 30, 0.97);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 20px;
+    box-shadow: 0 28px 80px rgba(0, 0, 0, 0.65);
     overflow: hidden;
-    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
   }
 
+  /* ── Header ─────────────────────────────────────────────── */
   .modal-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 14px 20px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    gap: 12px;
+    padding: 15px 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    flex: 0 0 auto;
   }
 
   .header-left {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 12px;
+    min-width: 0;
     color: var(--accent-primary, #1db954);
+  }
+
+  .header-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
   }
 
   .modal-title {
     font-size: 0.95rem;
-    font-weight: 600;
+    font-weight: 650;
     color: #fff;
+    line-height: 1.2;
+  }
+
+  .modal-subtitle {
+    font-size: 0.72rem;
+    color: rgba(255, 255, 255, 0.45);
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .btn-close {
-    background: transparent;
-    border: none;
-    color: rgba(255, 255, 255, 0.6);
-    cursor: pointer;
-    padding: 6px;
-    border-radius: 6px;
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.15s ease;
+    width: 40px;
+    height: 40px;
+    margin-right: -6px;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
   }
 
   .btn-close:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.08);
     color: #fff;
   }
 
-  .modal-content {
+  /* ── Body ───────────────────────────────────────────────── */
+  .modal-body {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 24px;
     padding: 20px;
     overflow-y: auto;
-    max-height: calc(90vh - 60px);
-  }
-
-  @media (max-width: 768px) {
-    .modal-content {
-      grid-template-columns: 1fr;
-    }
+    min-height: 0;
+    overscroll-behavior: contain;
   }
 
   .preview-panel {
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.35);
-    border-radius: 14px;
-    padding: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.06);
+    gap: 10px;
+    min-width: 0;
   }
 
-  .canvas-container {
-    width: 100%;
-    max-width: 360px;
+  .canvas-frame {
     display: flex;
-    align-items: center;
-    justify-content: center;
+    width: 100%;
+    max-width: 340px;
+    aspect-ratio: 1 / 1;
+    border-radius: 14px;
+    overflow: hidden;
+    background: #0b0c10;
+    box-shadow: 0 16px 44px rgba(0, 0, 0, 0.5);
   }
 
-  .canvas-container canvas {
+  .canvas-frame.story {
+    aspect-ratio: 9 / 16;
+    max-width: 230px;
+  }
+
+  .canvas-frame canvas {
+    display: block;
     width: 100%;
-    height: auto;
-    border-radius: 12px;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    height: 100%;
+  }
+
+  .preview-caption {
+    font-size: 0.68rem;
+    color: rgba(255, 255, 255, 0.4);
+    letter-spacing: 0.02em;
   }
 
   .controls-panel {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 18px;
+    min-width: 0;
   }
 
   .control-section {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    min-width: 0;
   }
 
   .control-label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.68rem;
+    font-weight: 650;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.45);
   }
 
-  .button-toggle-group {
+  /* ── Format segmented control ───────────────────────────── */
+  .segmented {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 6px;
-    background: rgba(0, 0, 0, 0.3);
-    padding: 3px;
-    border-radius: 8px;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.06);
   }
 
-  .toggle-btn {
-    background: transparent;
-    border: none;
-    color: rgba(255, 255, 255, 0.6);
-    padding: 7px 10px;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .toggle-btn.active {
-    background: rgba(255, 255, 255, 0.12);
-    color: #fff;
-    font-weight: 600;
-  }
-
-  .theme-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-  }
-
-  .theme-card-btn {
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 8px;
-    padding: 10px;
-    color: rgba(255, 255, 255, 0.75);
-    font-size: 0.75rem;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    text-align: center;
-  }
-
-  .theme-card-btn:hover {
-    background: rgba(255, 255, 255, 0.08);
-    color: #fff;
-  }
-
-  .theme-card-btn.active {
-    border-color: var(--accent-primary, #1db954);
-    background: rgba(29, 185, 84, 0.12);
-    color: var(--accent-primary, #1db954);
-    font-weight: 600;
-  }
-
-  .lines-section {
-    flex: 1;
-    min-height: 140px;
-  }
-
-  .lines-section-header {
+  .segment {
     display: flex;
-    justify-content: space-between;
     align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 38px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.6);
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
   }
 
-  .lines-hint {
+  .segment small {
     font-size: 0.65rem;
+    font-weight: 500;
+    line-height: 1;
+    opacity: 0.6;
+  }
+
+  .segment.active {
+    background: #0d0e13;
+    color: #fff;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  }
+
+  /* ── Format + theme rows ────────────────────────────────── */
+  .options-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .theme-chips {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .theme-chip {
+    min-width: 0;
+    min-height: 38px;
+    padding: 0 6px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    border-radius: 9px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.03);
+    color: rgba(255, 255, 255, 0.55);
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+  }
+
+  .theme-chip:hover {
+    background: rgba(255, 255, 255, 0.07);
+    color: rgba(255, 255, 255, 0.85);
+  }
+
+  .theme-chip.active {
+    border-color: var(--accent-primary, #1db954);
+    background: rgba(29, 185, 84, 0.1);
+    color: var(--accent-primary, #1db954);
+  }
+
+  /* ── Line selector: the primary control ─────────────────── */
+  .lines-section {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .lines-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .lines-count {
+    font-size: 0.68rem;
+    font-weight: 600;
     color: rgba(255, 255, 255, 0.4);
   }
 
   .lines-list {
-    max-height: 180px;
-    overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: 4px;
-    padding-right: 4px;
+    max-height: min(42vh, 340px);
+    overflow-y: auto;
+    padding-right: 2px;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
   }
 
   .line-item {
     display: flex;
     align-items: center;
     gap: 10px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 6px;
-    padding: 8px 10px;
-    cursor: pointer;
+    width: 100%;
+    min-height: 40px;
+    padding: 9px 12px;
+    border-radius: 9px;
+    border: 1px solid transparent;
+    background: rgba(255, 255, 255, 0.02);
+    color: rgba(255, 255, 255, 0.8);
+    font: inherit;
+    font-size: 0.85rem;
     text-align: left;
-    transition: all 0.15s ease;
+    cursor: pointer;
+    transition: background 0.12s ease, border-color 0.12s ease;
   }
 
   .line-item:hover {
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.05);
   }
 
   .line-item.selected {
-    background: rgba(29, 185, 84, 0.12);
-    border-color: rgba(29, 185, 84, 0.35);
+    background: rgba(29, 185, 84, 0.1);
+    border-color: rgba(29, 185, 84, 0.3);
+    color: #fff;
   }
 
-  .line-checkbox {
-    width: 16px;
-    height: 16px;
-    border-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.3);
+  .line-check {
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
-    color: var(--accent-primary, #1db954);
-  }
-
-  .line-item.selected .line-checkbox {
-    background: var(--accent-primary, #1db954);
-    border-color: var(--accent-primary, #1db954);
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
     color: #000;
   }
 
+  .line-item.selected .line-check {
+    background: var(--accent-primary, #1db954);
+    border-color: var(--accent-primary, #1db954);
+  }
+
   .line-text {
-    font-size: 0.75rem;
-    color: rgba(255, 255, 255, 0.85);
-    line-height: 1.35;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    line-height: 1.35;
   }
 
-  .line-item.selected .line-text {
-    color: #fff;
-    font-weight: 500;
-  }
-
-  .action-row {
+  /* ── Actions ────────────────────────────────────────────── */
+  .action-bar {
     display: flex;
     gap: 8px;
-    margin-top: auto;
-    padding-top: 10px;
+    padding: 14px 18px calc(14px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid rgba(255, 255, 255, 0.07);
+    flex: 0 0 auto;
   }
 
   .btn-action {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    padding: 9px 14px;
-    border-radius: 8px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s ease;
+    min-height: 40px;
+    padding: 0 16px;
     border: none;
+    border-radius: 10px;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 650;
+    cursor: pointer;
+    transition: filter 0.15s ease, background 0.15s ease;
   }
 
   .btn-action.primary {
     flex: 1;
     background: var(--accent-primary, #1db954);
-    color: #000;
+    color: #03140a;
   }
 
   .btn-action.primary:hover:not(:disabled) {
-    filter: brightness(1.1);
-    transform: translateY(-1px);
+    filter: brightness(1.08);
   }
 
   .btn-action.secondary {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.08);
     color: #fff;
   }
 
   .btn-action.secondary:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.13);
   }
 
   .btn-action.icon-only {
-    background: rgba(255, 255, 255, 0.08);
+    padding: 0 12px;
+    background: rgba(255, 255, 255, 0.06);
     color: #fff;
-    padding: 9px 12px;
+  }
+
+  .btn-action.icon-only:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.12);
   }
 
   .btn-action:disabled {
     opacity: 0.5;
-    cursor: not-allowed;
+    cursor: default;
+  }
+
+  .lyric-card-modal button:focus-visible {
+    outline: 2px solid var(--accent-primary, #1db954);
+    outline-offset: 2px;
+  }
+
+  /* ── Phone: bottom sheet ────────────────────────────────── */
+  @media (max-width: 760px) {
+    .lyric-card-overlay {
+      align-items: flex-end;
+      padding: 0;
+    }
+
+    .lyric-card-modal {
+      max-width: 100%;
+      max-height: 94vh;
+      border-radius: 20px 20px 0 0;
+      border-bottom: none;
+    }
+
+    .modal-header {
+      padding: 12px 16px;
+    }
+
+    .modal-body {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 18px;
+      padding: 14px 16px;
+    }
+
+    .canvas-frame {
+      max-width: min(44vw, 190px);
+    }
+
+    .canvas-frame.story {
+      max-width: min(32vw, 140px);
+    }
+
+    .segment,
+    .line-item {
+      min-height: 44px;
+    }
+
+    .lines-list {
+      max-height: 34vh;
+    }
+
+    .action-bar {
+      padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+    }
+
+    .btn-action {
+      min-height: 46px;
+      font-size: 0.85rem;
+    }
+
+    .btn-action.secondary {
+      flex: 0 0 auto;
+    }
+  }
+
+  @media (max-width: 380px) {
+    .theme-chips {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
 </style>

@@ -1515,7 +1515,7 @@
                             <div class="hero-actions">
                                 {#if currentAlbumDetail.tracks && currentAlbumDetail.tracks.length > 0}
                                     <button
-                                        class="hero-play-btn"
+                                        class="btn-primary"
                                         on:click={() =>
                                             currentAlbumDetail?.tracks &&
                                             playSong(
@@ -1529,7 +1529,7 @@
                                         {$_("discover.playAll")}
                                     </button>
                                     <button
-                                        class="hero-sub-btn"
+                                        class="btn-secondary"
                                         on:click={() =>
                                             currentAlbumDetail &&
                                             saveAlbumToLibrary(currentAlbumDetail)}
@@ -1550,7 +1550,7 @@
                                 {/if}
                                 {#if findLocalAlbumId(currentAlbumDetail.title) !== undefined}
                                     <button
-                                        class="hero-sub-btn"
+                                        class="btn-secondary"
                                         on:click={() => {
                                             const id = findLocalAlbumId(
                                                 currentAlbumDetail?.title,
@@ -1745,7 +1745,7 @@
                             <div class="hero-actions">
                                 {#if currentArtistDetail.tracks && currentArtistDetail.tracks.length > 0}
                                     <button
-                                        class="hero-play-btn"
+                                        class="btn-primary"
                                         on:click={() =>
                                             currentArtistDetail?.tracks &&
                                             playSong(
@@ -1762,7 +1762,7 @@
                                 {/if}
                                 {#if isArtistInLibrary(currentArtistDetail.name)}
                                     <button
-                                        class="hero-sub-btn"
+                                        class="btn-secondary"
                                         on:click={() =>
                                             currentArtistDetail?.name &&
                                             goToArtistDetail(
@@ -1994,14 +1994,13 @@
         height: 100%;
         overflow: hidden;
         position: relative;
-        background: var(--bg-surface);
+        background: transparent;
     }
 
     .discover-header {
         flex-shrink: 0;
         padding: var(--spacing-lg) var(--spacing-xl) var(--spacing-sm);
-        border-bottom: 1px solid var(--border-color);
-        background: var(--bg-surface);
+        background: transparent;
     }
 
     .header-row {
@@ -2019,7 +2018,7 @@
     }
 
     .discover-header h1 {
-        font-size: 1.5rem;
+        font-size: var(--font-size-3xl);
         font-weight: var(--font-weight-bold);
         letter-spacing: -0.01em;
         margin: 0;
@@ -2027,7 +2026,7 @@
     }
 
     .header-subtitle {
-        font-size: 0.82rem;
+        font-size: var(--font-size-sm);
         color: var(--text-secondary);
         margin: 2px 0 0;
     }
@@ -2047,7 +2046,7 @@
         border-radius: var(--radius-full);
         background: var(--bg-elevated);
         border: 1px solid var(--border-color);
-        font-size: 0.78rem;
+        font-size: var(--font-size-xs);
         color: var(--text-secondary);
     }
 
@@ -2112,7 +2111,7 @@
         background: none;
         border: none;
         color: var(--text-primary);
-        font-size: 0.95rem;
+        font-size: var(--font-size-md);
         outline: none;
     }
 
@@ -2160,7 +2159,7 @@
         background: transparent;
         border: none;
         color: var(--text-primary);
-        font-size: 0.85rem;
+        font-size: var(--font-size-base);
         font-weight: var(--font-weight-medium);
         padding: 10px 6px;
         cursor: pointer;
@@ -2189,12 +2188,12 @@
         border: none;
         border-bottom: 2px solid transparent;
         color: var(--text-secondary);
-        font-size: 0.88rem;
+        font-size: var(--font-size-base);
         font-weight: var(--font-weight-medium);
         cursor: pointer;
         transition:
-            color 0.15s,
-            border-color 0.15s;
+            color var(--transition-fast),
+            border-color var(--transition-fast);
     }
 
     .tab:hover {
@@ -2207,7 +2206,7 @@
     }
 
     .tab-badge {
-        font-size: 0.72rem;
+        font-size: var(--font-size-xs);
         background: var(--bg-highlight);
         color: var(--text-secondary);
         padding: 1px 6px;
@@ -2231,12 +2230,12 @@
         background: var(--bg-elevated);
         border: 1px solid var(--border-color);
         color: var(--text-primary);
-        font-size: 0.82rem;
+        font-size: var(--font-size-sm);
         font-weight: var(--font-weight-medium);
         cursor: pointer;
         transition:
-            background 0.15s,
-            border-color 0.15s;
+            background var(--transition-fast),
+            border-color var(--transition-fast);
     }
 
     .back-nav-btn:hover {
@@ -2253,7 +2252,7 @@
 
     .breadcrumb-sep {
         color: var(--text-subdued);
-        font-size: 0.8rem;
+        font-size: var(--font-size-sm);
     }
 
     .breadcrumb-item {
@@ -2263,7 +2262,7 @@
         background: none;
         border: none;
         color: var(--text-secondary);
-        font-size: 0.84rem;
+        font-size: var(--font-size-sm);
         cursor: pointer;
         padding: 3px 6px;
         border-radius: var(--radius-sm);
@@ -2305,13 +2304,13 @@
     .loading-state p,
     .error-state p,
     .no-results p {
-        font-size: 1.05rem;
+        font-size: var(--font-size-lg);
         margin: 16px 0 6px;
         color: var(--text-primary);
     }
 
     .hint {
-        font-size: 0.85rem;
+        font-size: var(--font-size-base);
         color: var(--text-subdued);
     }
 
@@ -2341,19 +2340,19 @@
 
     /* ── Sections & Tables ── */
     .section-block {
-        margin-bottom: var(--spacing-lg);
+        margin-bottom: var(--spacing-xl);
     }
 
     .section-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin-bottom: 12px;
+        margin-bottom: var(--spacing-md);
     }
 
     .section-header h2,
     .section-header h3 {
-        font-size: 1.25rem;
+        font-size: 1.4rem;
         font-weight: var(--font-weight-bold);
         margin: 0;
         color: var(--text-primary);
@@ -2367,7 +2366,7 @@
         background: none;
         border: none;
         color: var(--accent-primary);
-        font-size: 0.85rem;
+        font-size: var(--font-size-base);
         font-weight: var(--font-weight-medium);
         cursor: pointer;
     }
@@ -2393,7 +2392,7 @@
         gap: 12px;
         padding: 8px 14px;
         border-bottom: 1px solid var(--border-color);
-        transition: background 0.15s;
+        transition: background var(--transition-fast);
         user-select: none;
     }
 
@@ -2412,7 +2411,7 @@
     .song-col-num {
         width: 28px;
         text-align: center;
-        font-size: 0.82rem;
+        font-size: var(--font-size-sm);
         color: var(--text-subdued);
     }
 
@@ -2435,14 +2434,14 @@
         justify-content: center;
         cursor: pointer;
         transition:
-            background 0.15s,
-            transform 0.15s;
+            background var(--transition-fast),
+            transform var(--transition-fast);
     }
 
     .play-icon-btn:hover {
         background: var(--accent-primary);
         border-color: var(--accent-primary);
-        color: #000;
+        color: var(--text-on-accent, #000);
         transform: scale(1.06);
     }
 
@@ -2480,7 +2479,7 @@
     }
 
     .song-title {
-        font-size: 0.92rem;
+        font-size: var(--font-size-base);
         font-weight: var(--font-weight-medium);
         color: var(--text-primary);
         white-space: nowrap;
@@ -2489,7 +2488,7 @@
     }
 
     .song-artist {
-        font-size: 0.8rem;
+        font-size: var(--font-size-sm);
         color: var(--text-secondary);
         text-align: left;
     }
@@ -2512,14 +2511,14 @@
     .song-col-album {
         flex: 0.8;
         min-width: 0;
-        font-size: 0.82rem;
+        font-size: var(--font-size-sm);
         color: var(--text-secondary);
     }
 
     .song-col-dur {
         width: 50px;
         text-align: right;
-        font-size: 0.8rem;
+        font-size: var(--font-size-sm);
         color: var(--text-secondary);
     }
 
@@ -2542,7 +2541,7 @@
         justify-content: center;
         padding: 4px;
         border-radius: var(--radius-sm);
-        transition: color 0.15s, transform 0.1s;
+        transition: color var(--transition-fast), transform var(--transition-fast);
         opacity: 0;
     }
 
@@ -2581,7 +2580,7 @@
     .card-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-        gap: var(--spacing-md);
+        gap: var(--spacing-lg);
     }
 
     .card-wrapper {
@@ -2616,7 +2615,7 @@
         justify-content: center;
         font-size: 2.5rem;
         font-weight: var(--font-weight-bold);
-        color: #000;
+        color: var(--text-on-accent, #000);
         background: linear-gradient(
             135deg,
             var(--accent-primary) 0%,
@@ -2643,7 +2642,7 @@
         align-items: center;
         padding: 1px 8px;
         border-radius: var(--radius-sm);
-        font-size: 0.72rem;
+        font-size: var(--font-size-xs);
         background: var(--bg-surface);
         color: var(--text-secondary);
     }
@@ -2658,21 +2657,20 @@
     .detail-page {
         display: flex;
         flex-direction: column;
-        gap: 28px;
+        gap: var(--spacing-lg);
     }
 
     .hero-header {
         display: flex;
-        gap: 28px;
+        gap: var(--spacing-lg);
         align-items: flex-end;
         padding: 24px;
         border-radius: var(--radius-lg);
         background: linear-gradient(
             180deg,
-            var(--bg-elevated) 0%,
-            var(--bg-surface) 100%
+            var(--bg-surface) 0%,
+            var(--bg-base) 100%
         );
-        border: 1px solid var(--border-color);
     }
 
     .hero-cover,
@@ -2709,7 +2707,7 @@
 
     .avatar-fallback {
         font-size: 3.5rem;
-        color: #000;
+        color: var(--text-on-accent, #000);
         background: linear-gradient(
             135deg,
             var(--accent-primary) 0%,
@@ -2726,10 +2724,11 @@
     }
 
     .hero-eyebrow {
-        font-size: 0.75rem;
-        font-weight: var(--font-weight-bold);
-        color: var(--accent-primary);
-        letter-spacing: 0.02em;
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-semibold);
+        color: var(--text-primary);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
         display: flex;
         align-items: center;
         gap: 8px;
@@ -2739,27 +2738,29 @@
         display: inline-flex;
         align-items: center;
         gap: 4px;
-        font-size: 0.72rem;
+        font-size: var(--font-size-xs);
         background: var(--accent-subtle);
         color: var(--accent-primary);
         padding: 2px 8px;
         border-radius: var(--radius-full);
         font-weight: var(--font-weight-medium);
+        letter-spacing: normal;
+        text-transform: none;
     }
 
     .hero-title {
-        font-size: 2.2rem;
-        font-weight: 800;
-        margin: 0;
+        font-size: 3rem;
+        font-weight: var(--font-weight-bold);
+        margin: var(--spacing-sm) 0;
         color: var(--text-primary);
-        line-height: 1.2;
+        line-height: 1.1;
     }
 
     .hero-meta-line {
         display: flex;
         align-items: center;
         gap: 8px;
-        font-size: 0.9rem;
+        font-size: var(--font-size-base);
         color: var(--text-secondary);
         flex-wrap: wrap;
     }
@@ -2779,18 +2780,18 @@
         background: var(--bg-highlight);
         border: 1px solid var(--border-color);
         color: var(--text-primary);
-        font-size: 0.85rem;
+        font-size: var(--font-size-base);
         font-weight: var(--font-weight-medium);
         cursor: pointer;
         transition:
-            background 0.15s,
-            border-color 0.15s;
+            background var(--transition-fast),
+            border-color var(--transition-fast);
     }
 
     .artist-pill-btn:hover {
         background: var(--accent-primary);
         border-color: var(--accent-primary);
-        color: #000;
+        color: var(--text-on-accent, #000);
     }
 
     .meta-dot {
@@ -2806,7 +2807,7 @@
     .genre-pill {
         padding: 2px 10px;
         border-radius: var(--radius-full);
-        font-size: 0.72rem;
+        font-size: var(--font-size-xs);
         background: var(--bg-surface);
         border: 1px solid var(--border-color);
         color: var(--text-secondary);
@@ -2815,49 +2816,16 @@
     .hero-actions {
         display: flex;
         align-items: center;
-        gap: 12px;
-        margin-top: 10px;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-md);
     }
 
-    .hero-play-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        padding: 10px 22px;
-        border-radius: var(--radius-full);
-        background: var(--accent-primary);
-        border: none;
-        color: #000;
-        font-size: 0.92rem;
-        font-weight: var(--font-weight-semibold);
-        cursor: pointer;
-        transition:
-            transform 0.15s,
-            filter 0.15s;
-    }
-
-    .hero-play-btn:hover {
-        transform: scale(1.03);
-        filter: brightness(1.1);
-    }
-
-    .hero-sub-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 9px 16px;
-        border-radius: var(--radius-full);
-        background: var(--bg-surface);
-        border: 1px solid var(--border-color);
-        color: var(--text-secondary);
-        font-size: 0.85rem;
-        font-weight: var(--font-weight-medium);
-        cursor: pointer;
-    }
-
-    .hero-sub-btn:hover {
-        color: var(--text-primary);
-        border-color: var(--accent-primary);
+    .hero-actions :global(.btn-primary:disabled),
+    .hero-actions :global(.btn-secondary:disabled) {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
     }
 
     /* ── Biography Section ── */
@@ -2870,12 +2838,12 @@
 
     .bio-section h3 {
         margin: 0 0 10px;
-        font-size: 1.1rem;
+        font-size: var(--font-size-lg);
         color: var(--text-primary);
     }
 
     .bio-text {
-        font-size: 0.9rem;
+        font-size: var(--font-size-base);
         line-height: 1.6;
         color: var(--text-secondary);
         margin: 0 0 12px;
@@ -2885,7 +2853,7 @@
         display: inline-flex;
         align-items: center;
         gap: 4px;
-        font-size: 0.85rem;
+        font-size: var(--font-size-base);
         color: var(--accent-primary);
         text-decoration: none;
     }
@@ -2906,7 +2874,7 @@
     }
 
     :global(html.layout-mobile) .discover-header h1 {
-        font-size: 1.3rem;
+        font-size: var(--font-size-xl);
     }
 
     :global(html.layout-mobile) .search-composite {
@@ -2991,7 +2959,11 @@
         justify-content: center;
     }
 
+    :global(html.layout-mobile) .hero-title {
+        font-size: var(--font-size-2xl);
+    }
+
     :global(html.layout-mobile) .header-subtitle {
-        font-size: 0.78rem;
+        font-size: var(--font-size-xs);
     }
 </style>

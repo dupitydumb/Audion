@@ -364,7 +364,7 @@
                         aria-label="Share Lyric Card"
                         on:click={() => showLyricCardModal = true}
                     >
-                        <Icon name="share-2" size={19} />
+                        <Icon name="share" size={19} />
                     </button>
                 {/if}
 
