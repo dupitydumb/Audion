@@ -73,21 +73,49 @@
     renderCard();
   }
 
+  // Tauri serves local files from http(s)://asset.localhost/... (v2) or
+  // asset://localhost/... — not tauri.localhost (that is the webview origin).
+  function isTauriAssetUrl(src: string): boolean {
+    return src.startsWith("asset:") || /\/\/(asset|tauri)\.localhost(?::\d+)?\//i.test(src);
+  }
+
+  function blobToDataUrl(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  }
+
   async function loadImage(src: string): Promise<HTMLImageElement> {
+    // Normalize covers to data: URLs where possible. Remote hosts go through
+    // Rust (no CORS); asset-protocol files are fetched by the webview. A data:
+    // URL never taints the canvas, so toBlob/toDataURL keep working when the
+    // card is exported on Windows and on mobile.
     let finalSrc = src;
-    if (src.startsWith("http") && !src.includes("tauri.localhost")) {
+    if (src.startsWith("http") && !isTauriAssetUrl(src)) {
       try {
         const base64 = await proxyFetchBytes(src);
-        const ext = src.split(".").pop()?.toLowerCase();
-        const mime = ext === "png" ? "image/png" : "image/jpeg";
+        const ext = src.split("?")[0].split(".").pop()?.toLowerCase();
+        const mime = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
         finalSrc = `data:${mime};base64,${base64}`;
       } catch (e) {
         console.warn("[LyricCard] Failed to proxy fetch cover:", e);
       }
+    } else if (isTauriAssetUrl(src)) {
+      try {
+        const res = await fetch(src);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        finalSrc = await blobToDataUrl(await res.blob());
+      } catch (e) {
+        // Fall back to the raw asset URL: preview still renders (raw asset
+        // images load without CORS), only export would be blocked if tainted.
+        console.warn("[LyricCard] Failed to inline asset cover:", e);
+      }
     }
     return new Promise((resolve, reject) => {
       const img = new Image();
-      img.crossOrigin = "anonymous";
       img.onload = () => resolve(img);
       img.onerror = reject;
       img.src = finalSrc;
@@ -143,11 +171,21 @@
     return currentY + lineHeight;
   }
 
+  let renderToken = 0;
+
   async function renderCard() {
+    const token = ++renderToken;
     await tick();
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+    // Canvas cannot use a webfont until it is loaded; without this the first
+    // render after opening can fall back to a system font.
+    try {
+      await document.fonts?.ready;
+    } catch {
+      /* font loading unsupported */
+    }
 
     const width = 1080;
     const height = aspectRatio === "1:1" ? 1080 : 1920;
@@ -168,6 +206,10 @@
         coverImg = null;
       }
     }
+
+    // A newer render started while the cover was loading (theme/ratio/line
+    // toggled quickly) — discard this one so the canvas shows the last choice.
+    if (token !== renderToken) return;
 
     // ── 1. Draw Background ──
     if (theme === "frosted") {
@@ -569,7 +611,9 @@
       }
     } catch (err) {
       console.error("[LyricCard] Clipboard copy failed:", err);
-      addToast("Failed to copy card to clipboard", "error");
+      // Image clipboard writes are unsupported on some WebViews (Android),
+      // so save to the gallery instead of failing outright.
+      await saveImage();
     } finally {
       isCopying = false;
     }
@@ -586,16 +630,22 @@
       const cleanArtist = (track?.artist || "Audion").replace(/[\\/:*?"<>|]/g, "_");
       const fileName = `${cleanArtist} - ${cleanTitle} (Lyrics).png`;
 
-      await saveImageToGallery(base64Data, fileName);
-      addToast("Lyric card saved to gallery!", "success");
+      try {
+        await saveImageToGallery(base64Data, fileName);
+        addToast("Lyric card saved to gallery!", "success");
+      } catch (err) {
+        console.warn("[LyricCard] Gallery save failed, falling back to download:", err);
+        const link = document.createElement("a");
+        link.download = fileName;
+        link.href = dataUrl;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        addToast("Lyric card downloaded!", "success");
+      }
     } catch (err) {
-      console.error("[LyricCard] Image save failed:", err);
-      // Browser fallback
-      const link = document.createElement("a");
-      link.download = "Audion_Lyrics.png";
-      link.href = canvas.toDataURL("image/png");
-      link.click();
-      addToast("Lyric card downloaded!", "success");
+      console.error("[LyricCard] Image export failed:", err);
+      addToast("Failed to export lyric card", "error");
     } finally {
       isSaving = false;
     }
