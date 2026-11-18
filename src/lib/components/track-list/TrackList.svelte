@@ -38,6 +38,7 @@
   import EmptyState from "$lib/components/EmptyState.svelte";
   import { _, locale } from "svelte-i18n";
   import { buildTrackContextMenu, isTrackUnavailable } from "$lib/menus/contextMenus";
+  import { providersStore } from "$lib/plugins/providers";
   import TrackListHeader from "./TrackListHeader.svelte";
   import TrackListRow from "./TrackListRow.svelte";
 
@@ -116,13 +117,15 @@
     return result;
   }
 
-  // Clear availability cache when dependencies change (including plugin store)
+  // Clear availability cache when dependencies change (including plugin store and providers store)
   // references $pluginStore to ensure reactivity when store state changes (e.g. init -> loaded)
   $: runtime = $pluginStore && pluginStore.getRuntime();
+  $: activeProviders = $providersStore;
   $: {
     // Watch all relevant dependencies
     const _ = runtime;
-    if ($isOnline !== undefined || isTidalAvailable !== undefined) {
+    const __ = activeProviders;
+    if ($isOnline !== undefined || isTidalAvailable !== undefined || activeProviders !== undefined) {
       availabilityCache.clear();
     }
   }

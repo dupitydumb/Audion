@@ -464,10 +464,16 @@ export async function playTrack(
         // Cross-Provider Metadata-to-Stream Handoff:
         // If track is a catalog track (e.g. from metadata provider with a 30s preview URL or without direct audio stream),
         // attempt to resolve a full-length audio stream via active StreamProviders!
+        const runtime = pluginStore.getRuntime();
+        const hasDirectResolver = (runtime && track.source_type && runtime.streamResolvers.has(track.source_type)) ||
+            (track.source_type && globalProviders.getStreamProvider(track.source_type));
+
         const isPreviewOrCatalog = !track.local_src && (
             track.source_type === 'itunes' ||
             track.source_type === 'metadata' ||
+            track.source_type === 'musicbrainz' ||
             track.source_type === 'plugin' ||
+            !hasDirectResolver ||
             (audioPath && (audioPath.includes('apple.com') || audioPath.includes('itunes') || audioPath.includes('/preview/')))
         );
 
@@ -508,7 +514,6 @@ export async function playTrack(
                     const sourceType = track.source_type;
                     const externalId = track.external_id;
                     let resolved: string | null = null;
-                    const runtime = pluginStore.getRuntime();
                     if (runtime && sourceType && externalId) {
                         console.log(`[Player] Resolving custom scheme via runtime: ${audioPath}`);
                         resolved = await runtime.resolveStreamUrl(sourceType, externalId, { track: trackForPlugins });
@@ -518,6 +523,13 @@ export async function playTrack(
                         const streamRes = await globalProviders.resolveStream(sourceType, externalId);
                         if (streamRes) {
                             resolved = typeof streamRes === 'string' ? streamRes : (streamRes.rawBlobUrl || streamRes.url);
+                        }
+                    }
+                    if (!resolved && globalProviders.getAllStreamProviders().length > 0) {
+                        console.log(`[Player] Resolving custom scheme via query handoff: ${audioPath}`);
+                        const queryStream = await globalProviders.resolveTrackStream(track as any);
+                        if (queryStream && queryStream.url) {
+                            resolved = queryStream.rawBlobUrl || queryStream.url;
                         }
                     }
                     if (resolved) {
@@ -1177,20 +1189,33 @@ async function _scheduleHtml5Preload(): Promise<void> {
 
     if (isCustomScheme) {
         const runtime = pluginStore.getRuntime();
-        if (runtime) {
-            const sourceType = nextTrackObj.source_type;
-            const externalId = nextTrackObj.external_id;
-            if (sourceType && externalId) {
-                try {
-                    const fullTrack = await getFullTrack(nextTrackObj.id, true);
-                    const trackForPlugins = fullTrack || nextTrackObj;
-                    const resolved = await runtime.resolveStreamUrl(sourceType, externalId, { track: trackForPlugins });
-                    if (resolved) {
-                        audioPath = resolved;
-                    }
-                } catch (e) {
-                    console.error('[Player] Failed to resolve custom scheme for preload:', e);
+        const sourceType = nextTrackObj.source_type;
+        const externalId = nextTrackObj.external_id;
+        if (sourceType && externalId) {
+            try {
+                const fullTrack = await getFullTrack(nextTrackObj.id, true);
+                const trackForPlugins = fullTrack || nextTrackObj;
+                let resolved: string | null = null;
+                if (runtime) {
+                    resolved = await runtime.resolveStreamUrl(sourceType, externalId, { track: trackForPlugins });
                 }
+                if (!resolved) {
+                    const streamRes = await globalProviders.resolveStream(sourceType, externalId);
+                    if (streamRes) {
+                        resolved = typeof streamRes === 'string' ? streamRes : (streamRes.rawBlobUrl || streamRes.url);
+                    }
+                }
+                if (!resolved && globalProviders.getAllStreamProviders().length > 0) {
+                    const fullStream = await globalProviders.resolveTrackStream(nextTrackObj as any);
+                    if (fullStream && fullStream.url) {
+                        resolved = fullStream.rawBlobUrl || fullStream.url;
+                    }
+                }
+                if (resolved) {
+                    audioPath = resolved;
+                }
+            } catch (e) {
+                console.error('[Player] Failed to resolve custom scheme for preload:', e);
             }
         }
     }

@@ -364,12 +364,12 @@
         mask-image: linear-gradient(
             to bottom,
             transparent 0%,
-            black 8%,
-            black 90%,
+            black 14%,
+            black 86%,
             transparent 100%
         );
         -webkit-mask-image: linear-gradient(
-            to bottom, transparent 0%, black 8%, black 90%, transparent 100%
+            to bottom, transparent 0%, black 14%, black 86%, transparent 100%
         );
     }
 
@@ -575,13 +575,13 @@
         font-weight: 800;
         filter: blur(0px);
         opacity: 1;
-        transform: scale(1) translateY(0);
+        transform: scale(1.02) translateY(0);
     }
 
     :global([data-theme="dark"]) .lyric-line.active {
         text-shadow:
-            0 0 20px rgba(255, 255, 255, 0.15),
-            0 0 40px rgba(255, 255, 255, 0.06);
+            0 0 16px rgba(255, 255, 255, 0.25),
+            0 0 32px rgba(255, 255, 255, 0.1);
     }
 
     :global([data-theme="dark"]) .reduced-motion .lyric-line.active {

@@ -31,6 +31,7 @@
     import { isMobile } from "$lib/stores/mobile";
     import { customArtworks } from "$lib/stores/customArtwork";
     import { appSettings } from "$lib/stores/settings";
+    import { pluginDrawerOpen } from "$lib/stores/plugin-drawer";
     import { getLikedTracks } from "$lib/api/tauri";
     import ArtistLinks from "$lib/components/ArtistLinks.svelte";
     import { likedTrackIds } from "$lib/stores/liked";
@@ -260,6 +261,13 @@
                     <Icon name="folder" size={22} />
                 </button>
             {/if}
+            <button
+                class="settings-btn"
+                on:click={() => pluginDrawerOpen.set(true)}
+                title={$_('nav.actions')}
+            >
+                <Icon name="zap" size={22} />
+            </button>
             <button
                 class="settings-btn"
                 on:click={goToSettings}

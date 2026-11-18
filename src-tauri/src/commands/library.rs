@@ -1406,6 +1406,15 @@ pub async fn add_external_track(
     Ok(track_id)
 }
 
+#[tauri::command]
+pub async fn get_track_by_id(
+    track_id: i64,
+    db: State<'_, Database>,
+) -> Result<Option<queries::Track>, String> {
+    let conn = db.conn.lock().map_err(|e| e.to_string())?;
+    queries::get_track_by_id(&conn, track_id).map_err(|e| e.to_string())
+}
+
 /// Reset the database by clearing all data
 #[tauri::command]
 pub async fn reset_database(db: State<'_, Database>) -> Result<(), String> {

@@ -57,6 +57,7 @@
   import FullScreenPlaybackControls from "./FullScreenPlaybackControls.svelte";
   import LyricsView from "../LyricsView.svelte";
   import Icon from "$lib/components/Icon.svelte";
+  import AudioQualityBadge from "$lib/components/AudioQualityBadge.svelte";
 
   let showMeshSettings = false;
 
@@ -270,6 +271,39 @@
     return () => {};
   });
 
+  // Touch swipe-down to dismiss on mobile
+  let mobileTouchStartY = 0;
+  let mobileTouchStartX = 0;
+  let mobileDragY = 0;
+  let isMobileDragging = false;
+
+  function handleMobileTouchStart(e: TouchEvent) {
+    if (e.touches.length !== 1) return;
+    mobileTouchStartY = e.touches[0].clientY;
+    mobileTouchStartX = e.touches[0].clientX;
+    mobileDragY = 0;
+    isMobileDragging = true;
+  }
+
+  function handleMobileTouchMove(e: TouchEvent) {
+    if (!isMobileDragging || e.touches.length !== 1) return;
+    const dy = e.touches[0].clientY - mobileTouchStartY;
+    const dx = e.touches[0].clientX - mobileTouchStartX;
+    if (dy > 0 && Math.abs(dy) > Math.abs(dx)) {
+      mobileDragY = dy * 0.45;
+    }
+  }
+
+  function handleMobileTouchEnd() {
+    if (!isMobileDragging) return;
+    isMobileDragging = false;
+    const finalDy = mobileDragY / 0.45;
+    mobileDragY = 0;
+    if (finalDy > 65) {
+      toggleFullScreen();
+    }
+  }
+
   $: if (!$isFullScreen && showMeshSettings) showMeshSettings = false;
 </script>
 
@@ -300,39 +334,48 @@
     {/if}
 
     {#if $isMobile}
-      <!-- Mobile header -->
-      <div class="mobile-header">
-        <button
-          class="chevron-btn"
-          on:click={toggleFullScreen}
-          aria-label="Close"
-        >
-          <Icon name="chevron-down" size={28} />
-        </button>
-        <span class="now-playing-label">{$_('player.nowPlaying')}</span>
-        <div class="mobile-header-btns">
+      <!-- Mobile header zone with drag pill and pull-to-dismiss gesture -->
+      <div
+        class="mobile-header-zone"
+        on:touchstart={handleMobileTouchStart}
+        on:touchmove={handleMobileTouchMove}
+        on:touchend={handleMobileTouchEnd}
+        style="transform: translate3d(0, {mobileDragY}px, 0);"
+      >
+        <div class="mobile-drag-pill" aria-hidden="true"></div>
+        <div class="mobile-header">
           <button
             class="chevron-btn"
-            class:active={$lyricsVisible}
-            on:click={handleMobileLyricsToggle}
-            aria-label="Lyrics"
+            on:click={toggleFullScreen}
+            aria-label="Close"
           >
-            <Icon name="lyrics" size={24} />
+            <Icon name="chevron-down" size={28} />
           </button>
-          <button
-            class="chevron-btn"
-            on:click={handleMobileQueueToggle}
-            aria-label="Queue"
-          >
-            <Icon name="queue" size={24} />
-          </button>
-          <button
-            class="chevron-btn"
-            on:click={() => (showMobileMenu = !showMobileMenu)}
-            aria-label="More options"
-          >
-            <Icon name="more-vertical" size={24} />
-          </button>
+          <span class="now-playing-label">{$_('player.nowPlaying')}</span>
+          <div class="mobile-header-btns">
+            <button
+              class="chevron-btn"
+              class:active={$lyricsVisible}
+              on:click={handleMobileLyricsToggle}
+              aria-label="Lyrics"
+            >
+              <Icon name="lyrics" size={24} />
+            </button>
+            <button
+              class="chevron-btn"
+              on:click={handleMobileQueueToggle}
+              aria-label="Queue"
+            >
+              <Icon name="queue" size={24} />
+            </button>
+            <button
+              class="chevron-btn"
+              on:click={() => (showMobileMenu = !showMobileMenu)}
+              aria-label="More options"
+            >
+              <Icon name="more-vertical" size={24} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -413,6 +456,9 @@
                 </span>
               {/if}
             {/if}
+            <div class="quality-badge-wrapper mobile-quality-badge">
+              <AudioQualityBadge variant="compact" />
+            </div>
           </div>
         {:else}
           <!-- In-place Lyrics for Mobile -->
@@ -634,7 +680,7 @@
           <button
             class="desktop-close-btn"
             style="position: static;"
-            on:click={() => isStatsForNerdsOpen.update(v => !v)}
+            on:click={(e) => { e.stopPropagation(); isStatsForNerdsOpen.update(v => !v); }}
             aria-label="Stats for Nerds"
             title="Stats for Nerds (Ctrl+I)"
           >
@@ -710,6 +756,10 @@
                   </span>
                 {/if}
               {/if}
+
+              <div class="quality-badge-wrapper desktop-quality-badge">
+                <AudioQualityBadge variant="full" />
+              </div>
 
               <div class="action-buttons">
                 <button
@@ -993,6 +1043,20 @@
     color: rgba(255, 255, 255, 0.64);
   }
 
+  .quality-badge-wrapper {
+    display: flex;
+    align-items: center;
+  }
+
+  .desktop-quality-badge {
+    margin-top: 0.75rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .mobile-quality-badge {
+    margin-top: 0.6rem;
+  }
+
   .track-info-header {
     display: flex;
     align-items: flex-start;
@@ -1214,11 +1278,26 @@
   }
 
   /* Mobile View Fixes */
+  .mobile-header-zone {
+    width: 100%;
+    z-index: 100;
+    transition: transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    touch-action: pan-y;
+  }
+
+  .mobile-drag-pill {
+    width: 36px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+    margin: calc(var(--safe-area-top) + 6px) auto 0;
+  }
+
   .mobile-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: calc(1rem + var(--safe-area-top)) 1.5rem 1rem;
+    padding: 0.5rem 1.5rem 0.75rem;
     z-index: 100;
   }
 
@@ -1249,10 +1328,12 @@
   .mobile-view .art-container {
     width: 100%;
     aspect-ratio: 1;
-    border-radius: 16px;
+    border-radius: 18px;
     overflow: hidden;
-    max-height: 48vh;
+    max-height: 46vh;
     margin: 0 auto;
+    box-shadow: 0 20px 48px -12px rgba(0, 0, 0, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
   .mobile-view .art-container img {
@@ -1361,7 +1442,9 @@
     align-items: center;
     gap: 0.75rem;
     width: 100%;
-    margin-top: 1.25rem;
+    margin-top: var(--spacing-lg);
+    margin-bottom: var(--spacing-sm);
+    padding: 0 var(--spacing-xs);
   }
 
   .mobile-view .mobile-volume-row .volume-icon {
@@ -1376,6 +1459,8 @@
     background: none;
     border: none;
     padding: 6px;
+    min-width: 44px;
+    min-height: 44px;
     flex-shrink: 0;
     cursor: pointer;
   }

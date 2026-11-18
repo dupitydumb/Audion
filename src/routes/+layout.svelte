@@ -444,7 +444,6 @@
 <SyncProgressOverlay />
 <LoginModal />
 <SkinStudioModal />
-<StatsForNerdsModal open={$isStatsForNerdsOpen} onClose={() => isStatsForNerdsOpen.set(false)} />
 
 {#if showMigrationBanner}
   <div class="migration-banner">
@@ -490,6 +489,8 @@
 {#if $isMobile && $currentTrack && !$isFullScreen}
   <MobileMiniPlayer />
 {/if}
+
+<StatsForNerdsModal open={$isStatsForNerdsOpen} onClose={() => isStatsForNerdsOpen.set(false)} />
 {/if}
 
 <style>

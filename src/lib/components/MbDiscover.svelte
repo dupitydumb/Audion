@@ -6,6 +6,7 @@
         getListenbrainzToken,
         formatDuration,
         addExternalTrack,
+        getTrackById,
         type Track,
     } from "$lib/api/tauri";
     import {
@@ -26,6 +27,7 @@
         artists as libraryArtists,
         albums as libraryAlbums,
         addTrackToLibrary,
+        addExternalTrackToLibrary,
     } from "$lib/stores/library";
     import MediaCard from "./MediaCard.svelte";
     import Icon from "$lib/components/Icon.svelte";
@@ -87,6 +89,14 @@
     // Tracks which discover items have been saved (by external_id/id/title key)
     let savedDiscoverKeys = new Set<string>();
     let savingId: string | null = null;
+    let isSavingAlbum = false;
+
+    $: isCurrentAlbumSaved =
+        !!currentAlbumDetail &&
+        (findLocalAlbumId(currentAlbumDetail.title) !== undefined ||
+            (currentAlbumDetail.tracks?.length
+                ? currentAlbumDetail.tracks.every((t) => isTrackSaved(t))
+                : false));
 
     function discoverTrackKey(track: MetadataTrackItem): string {
         return track.external_id || track.id || track.title;
@@ -96,7 +106,12 @@
         return savedDiscoverKeys.has(discoverTrackKey(track));
     }
 
-    async function saveTrackToLibrary(track: MetadataTrackItem) {
+    async function saveTrackToLibrary(
+        track: MetadataTrackItem,
+        fallbackAlbum?: string,
+        fallbackCover?: string,
+        fallbackArtist?: string,
+    ) {
         const key = discoverTrackKey(track);
         if (savingId === key) return;
         savingId = key;
@@ -112,21 +127,40 @@
                     ? "musicbrainz"
                     : track.provider_id || "plugin");
 
+            const finalAlbum = track.album || fallbackAlbum || undefined;
+            const finalCover = track.cover_url || fallbackCover || undefined;
+            const finalArtist = track.artist || fallbackArtist || "Unknown Artist";
+
             const dbId = await addExternalTrack({
                 title: track.title,
-                artist: track.artist,
-                album: track.album ?? undefined,
+                artist: finalArtist,
+                album: finalAlbum,
                 duration: track.duration ?? undefined,
-                cover_url: track.cover_url ?? undefined,
+                cover_url: finalCover,
                 source_type: sourceType,
                 external_id: track.external_id || track.id,
                 track_number: track.track_number ?? undefined,
                 disc_number: track.disc_number ?? undefined,
+                stream_url: track.preview_url || undefined,
             });
 
-            // Update in-memory library store immediately
-            const libraryTrack = toAudionTrack(track);
-            addTrackToLibrary({ ...libraryTrack, id: dbId });
+            // Fetch the authoritative track record from SQLite DB
+            // This contains the real album_id and date_added generated on insert
+            const savedTrack = await getTrackById(dbId);
+            if (savedTrack) {
+                if (!savedTrack.cover_url && finalCover) {
+                    savedTrack.cover_url = finalCover;
+                }
+                addExternalTrackToLibrary(savedTrack);
+            } else {
+                const libraryTrack = toAudionTrack(
+                    track,
+                    fallbackAlbum,
+                    fallbackCover,
+                    fallbackArtist,
+                );
+                addExternalTrackToLibrary({ ...libraryTrack, id: dbId });
+            }
 
             addToast("Saved to library ❤", "success");
         } catch (e) {
@@ -136,6 +170,34 @@
             addToast("Failed to save track", "error");
         } finally {
             savingId = null;
+        }
+    }
+
+    async function saveAlbumToLibrary(album: MetadataAlbumItem) {
+        if (!album || !album.tracks || album.tracks.length === 0) {
+            addToast("No tracks in album to save", "error");
+            return;
+        }
+        if (isSavingAlbum) return;
+        isSavingAlbum = true;
+
+        try {
+            let savedCount = 0;
+            for (const track of album.tracks) {
+                await saveTrackToLibrary(
+                    track,
+                    album.title,
+                    album.cover_url,
+                    album.artist,
+                );
+                savedCount++;
+            }
+            addToast(`Saved "${album.title}" (${savedCount} tracks)`, "success");
+        } catch (e) {
+            console.error("[Discover] saveAlbumToLibrary failed:", e);
+            addToast("Failed to save some tracks from album", "error");
+        } finally {
+            isSavingAlbum = false;
         }
     }
 
@@ -392,6 +454,7 @@
         track: MetadataTrackItem,
         fallbackAlbum?: string,
         fallbackCover?: string,
+        fallbackArtist?: string,
     ): Track {
         let durationSec = track.duration || 0;
         if (durationSec > 10000) durationSec = Math.round(durationSec / 1000);
@@ -416,13 +479,17 @@
             (track.external_id ? `${sourceType}://${track.external_id}` : "") ||
             `plugin://${sourceType}`;
 
+        const chosenArtist = track.artist || fallbackArtist || "Unknown Artist";
+        const chosenAlbum = track.album || fallbackAlbum || "Unknown Album";
+        const chosenCover = track.cover_url || fallbackCover || null;
+
         return {
             id: safeId,
             path,
             title: track.title || "Unknown Title",
-            artist: track.artist || "Unknown Artist",
-            artists: track.artist ? [track.artist] : [],
-            album: track.album || fallbackAlbum || "Unknown Album",
+            artist: chosenArtist,
+            artists: chosenArtist ? [chosenArtist] : [],
+            album: chosenAlbum,
             track_number: track.track_number ?? null,
             duration: durationSec || null,
             album_id: null,
@@ -430,8 +497,9 @@
             bitrate: track.bitrate || 0,
             source_type: sourceType,
             external_id: track.external_id || track.id,
-            cover_url: track.cover_url || fallbackCover || null,
+            cover_url: chosenCover,
             disc_number: track.disc_number ?? null,
+            date_added: new Date().toISOString(),
         };
     }
 
@@ -1205,7 +1273,13 @@
                                             <button
                                                 class="love-btn"
                                                 class:saved={isTrackSaved(track)}
-                                                on:click|stopPropagation={() => saveTrackToLibrary(track)}
+                                                on:click|stopPropagation={() =>
+                                                    saveTrackToLibrary(
+                                                        track,
+                                                        track.album,
+                                                        track.cover_url || currentArtistDetail?.avatar_url,
+                                                        track.artist || currentArtistDetail?.name,
+                                                    )}
                                                 title={isTrackSaved(track) ? "In library" : "Save to library"}
                                                 aria-label={isTrackSaved(track) ? "In library" : "Save to library"}
                                             >
@@ -1450,6 +1524,25 @@
                                         <Icon name="play" size={18} />
                                         {$_("discover.playAll")}
                                     </button>
+                                    <button
+                                        class="hero-sub-btn"
+                                        on:click={() =>
+                                            currentAlbumDetail &&
+                                            saveAlbumToLibrary(currentAlbumDetail)}
+                                        disabled={isSavingAlbum}
+                                        title={isCurrentAlbumSaved ? "Album saved in library" : "Save all tracks in album to library"}
+                                    >
+                                        {#if isSavingAlbum}
+                                            <div class="spinner-tiny"></div>
+                                            <span>Saving album...</span>
+                                        {:else if isCurrentAlbumSaved}
+                                            <Icon name="heart-filled" size={16} />
+                                            <span>In library</span>
+                                        {:else}
+                                            <Icon name="heart" size={16} />
+                                            <span>Save Album</span>
+                                        {/if}
+                                    </button>
                                 {/if}
                                 {#if findLocalAlbumId(currentAlbumDetail.title) !== undefined}
                                     <button
@@ -1547,7 +1640,13 @@
                                             <button
                                                 class="love-btn"
                                                 class:saved={isTrackSaved(track)}
-                                                on:click|stopPropagation={() => saveTrackToLibrary(track)}
+                                                on:click|stopPropagation={() =>
+                                                    saveTrackToLibrary(
+                                                        track,
+                                                        currentAlbumDetail?.title,
+                                                        currentAlbumDetail?.cover_url,
+                                                        currentAlbumDetail?.artist,
+                                                    )}
                                                 title={isTrackSaved(track) ? "In library" : "Save to library"}
                                                 aria-label={isTrackSaved(track) ? "In library" : "Save to library"}
                                             >
@@ -1767,7 +1866,13 @@
                                             <button
                                                 class="love-btn"
                                                 class:saved={isTrackSaved(track)}
-                                                on:click|stopPropagation={() => saveTrackToLibrary(track)}
+                                                on:click|stopPropagation={() =>
+                                                    saveTrackToLibrary(
+                                                        track,
+                                                        track.album,
+                                                        track.cover_url || currentArtistDetail?.avatar_url,
+                                                        track.artist || currentArtistDetail?.name,
+                                                    )}
                                                 title={isTrackSaved(track) ? "In library" : "Save to library"}
                                                 aria-label={isTrackSaved(track) ? "In library" : "Save to library"}
                                             >
@@ -2750,5 +2855,71 @@
 
     .wiki-link:hover {
         text-decoration: underline;
+    }
+
+    /* ── Mobile ── */
+    :global(html.layout-mobile) .discover-header {
+        padding: var(--spacing-md) var(--spacing-md) 0;
+    }
+
+    :global(html.layout-mobile) .header-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--spacing-sm);
+    }
+
+    :global(html.layout-mobile) .discover-header h1 {
+        font-size: 1.3rem;
+    }
+
+    :global(html.layout-mobile) .search-composite {
+        flex-direction: column;
+        align-items: stretch;
+        gap: var(--spacing-sm);
+    }
+
+    :global(html.layout-mobile) .search-composite select {
+        width: 100%;
+    }
+
+    :global(html.layout-mobile) .discover-content {
+        padding: var(--spacing-md) var(--spacing-md)
+            calc(var(--mobile-bottom-inset, 130px) + var(--spacing-xl));
+    }
+
+    :global(html.layout-mobile) .tab-bar {
+        overflow-x: auto;
+        white-space: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    :global(html.layout-mobile) .song-col-album,
+    :global(html.layout-mobile) .song-col-dur,
+    :global(html.layout-mobile) .song-col-num {
+        display: none;
+    }
+
+    :global(html.layout-mobile) .song-row {
+        gap: 10px;
+        padding: 8px 10px;
+    }
+
+    :global(html.layout-mobile) .card-grid {
+        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+        gap: var(--spacing-sm);
+    }
+
+    :global(html.layout-mobile) .hero-header {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        padding: var(--spacing-md);
+        gap: var(--spacing-md);
+    }
+
+    :global(html.layout-mobile) .hero-cover,
+    :global(html.layout-mobile) .hero-avatar {
+        width: 160px;
+        height: 160px;
     }
 </style>

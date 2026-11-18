@@ -2262,6 +2262,33 @@
     font-size: var(--font-size-xs);
   }
 
+  :global(html.layout-mobile) .plugin-actions button {
+    min-height: 44px;
+    flex: 1;
+    min-width: 100px;
+  }
+
+  :global(html.layout-mobile) .provider-row {
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+  }
+
+  :global(html.layout-mobile) .registry-card {
+    padding: var(--spacing-md);
+  }
+
+  :global(html.layout-mobile) .registries-container {
+    padding: 0 var(--spacing-sm);
+  }
+
+  :global(html.layout-mobile) .create-form {
+    flex-direction: column;
+  }
+
+  :global(html.layout-mobile) .create-form input {
+    width: 100%;
+  }
+
   /* Registries Manager Styling */
   .registries-container {
     display: flex;

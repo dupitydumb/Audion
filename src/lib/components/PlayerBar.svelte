@@ -54,6 +54,7 @@
     } from "$lib/stores/sleepTimer";
     import ConnectPanel from "./ConnectPanel.svelte";
     import Icon from "$lib/components/Icon.svelte";
+    import AudioQualityBadge from "$lib/components/AudioQualityBadge.svelte";
     import AudioVisualizer from "$lib/components/AudioVisualizer.svelte";
     import { theme } from "$lib/stores/theme";
     import { wsStore } from "$lib/stores/websocket";
@@ -380,9 +381,12 @@
                     {/if}
                 </button>
                 <div class="track-details">
-                    <span class="track-title truncate"
-                        >{$currentTrack.title || $_('player.unknownTitle')}</span
-                    >
+                    <div class="track-title-row">
+                        <span class="track-title truncate"
+                            >{$currentTrack.title || $_('player.unknownTitle')}</span
+                        >
+                        <AudioQualityBadge variant="compact" />
+                    </div>
                     <ArtistLinks
                         artist={$currentTrack.artist || $_('common.unknownArtist')}
                         artists={$currentTrack.artists}
@@ -496,6 +500,14 @@
                                 class="progress-fill"
                                 style="width: {$progress * 100}%"
                             ></div>
+                            {#if $duration > 15 && $appSettings?.crossfadeSeconds > 0}
+                                {@const automixPct = Math.min(30, ($appSettings.crossfadeSeconds / $duration) * 100)}
+                                <div
+                                    class="automix-cue-zone"
+                                    style="width: {automixPct}%;"
+                                    title="Automix Handoff Zone ({$appSettings.crossfadeSeconds}s)"
+                                ></div>
+                            {/if}
                         </div>
                         <div
                             class="progress-thumb"
@@ -744,8 +756,12 @@
     .player-bar {
         height: var(--player-height);
         background-color: var(--player-bg, var(--bg-elevated));
+        background: color-mix(in srgb, var(--player-bg, var(--bg-elevated)) 85%, transparent);
+        backdrop-filter: blur(24px) saturate(180%);
+        -webkit-backdrop-filter: blur(24px) saturate(180%);
         transition: background-color var(--transition-slow, 400ms ease), color var(--transition-slow, 400ms ease);
         border-top: 1px solid var(--border-color);
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.25);
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
         align-items: center;
@@ -830,6 +846,13 @@
     .track-details {
         display: flex;
         flex-direction: column;
+        min-width: 0;
+    }
+
+    .track-title-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
         min-width: 0;
     }
 
@@ -1083,6 +1106,17 @@
         background-color: var(--bg-highlight);
         border-radius: var(--radius-full);
         overflow: hidden;
+        position: relative;
+    }
+
+    .automix-cue-zone {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        background: linear-gradient(to right, transparent, rgba(29, 185, 84, 0.4));
+        pointer-events: none;
+        border-radius: 0 var(--radius-full) var(--radius-full) 0;
     }
 
     .volume-track {

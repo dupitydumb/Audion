@@ -9,15 +9,15 @@
         goToArtists,
         goToPlaylists,
         goToPlugins,
+        goToDiscover,
     } from "$lib/stores/view";
     import { clearSearch } from "$lib/stores/search";
     import { currentTrack } from "$lib/stores/player";
     import { uiSlotManager } from "$lib/plugins/ui-slots";
-    import { pluginDrawerOpen } from "$lib/stores/plugin-drawer";
     import { onMount } from "svelte";
     import Icon from "$lib/components/Icon.svelte";
 
-    type MobileTab = "home" | "library" | "plugins";
+    type MobileTab = "home" | "library" | "discover" | "plugins";
 
     let pluginSlot: HTMLDivElement;
 
@@ -42,6 +42,7 @@
 
     function deriveActiveTab(viewType: string): MobileTab {
         if (viewType === "home") return "home";
+        if (viewType === "discover") return "discover";
         if (viewType === "plugins" || viewType === "settings") return "plugins";
         return "library";
     }
@@ -74,6 +75,9 @@
                 break;
             case "plugins":
                 goToPlugins();
+                break;
+            case "discover":
+                goToDiscover();
                 break;
         }
     }
@@ -109,21 +113,20 @@
 
     <button
         class="nav-item"
+        class:active={activeTab === "discover"}
+        on:click={() => handleTabClick("discover")}
+    >
+        <Icon name="compass" size={24} className="nav-icon" />
+        <span>{$_('sidebar.discover')}</span>
+    </button>
+
+    <button
+        class="nav-item"
         class:active={activeTab === "plugins"}
         on:click={() => handleTabClick("plugins")}
     >
         <Icon name="plugin" size={24} className="nav-icon" />
         <span>{$_('sidebar.plugins')}</span>
-    </button>
-
-    <!-- Plugin actions drawer trigger -->
-    <button
-        class="nav-item"
-        class:active={$pluginDrawerOpen}
-        on:click={() => pluginDrawerOpen.set(true)}
-    >
-        <Icon name="zap" size={24} className="nav-icon" />
-        <span>{$_('nav.actions')}</span>
     </button>
 
     <!-- Plugin slot for bottom nav extensions -->
@@ -138,7 +141,11 @@
         width: 100%;
         height: calc(60px + env(safe-area-inset-bottom));
         background-color: var(--bg-base);
-        border-top: 1px solid var(--border-color);
+        background: color-mix(in srgb, var(--bg-base) 82%, transparent);
+        backdrop-filter: blur(28px) saturate(190%);
+        -webkit-backdrop-filter: blur(28px) saturate(190%);
+        border-top: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.35);
         display: flex;
         justify-content: space-around;
         align-items: flex-start;
@@ -150,6 +157,7 @@
     }
 
     .nav-item {
+        position: relative;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -158,10 +166,10 @@
         text-align: center;
         font-size: 10px;
         font-weight: var(--font-weight-medium);
-        gap: 2px;
+        gap: 3px;
         padding: 4px 12px;
         border-radius: var(--radius-sm);
-        transition: color var(--transition-fast);
+        transition: transform 140ms cubic-bezier(0.34, 1.56, 0.64, 1), color 150ms ease;
         background: none;
         border: none;
         cursor: pointer;
@@ -171,11 +179,23 @@
     }
 
     .nav-item:active {
-        transform: scale(0.92);
+        transform: scale(0.90);
     }
 
     .nav-item.active {
         color: var(--text-primary);
+        font-weight: var(--font-weight-semibold);
+    }
+
+    .nav-item.active::before {
+        content: "";
+        position: absolute;
+        top: 2px;
+        width: 48px;
+        height: 28px;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: var(--radius-full, 9999px);
+        z-index: -1;
     }
 
     .nav-item.active :global(.nav-icon) {

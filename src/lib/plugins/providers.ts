@@ -770,7 +770,7 @@ export class ProviderRegistry {
                 try {
                     const searchTarget = artistName ? `${query} ${artistName}` : query;
                     const searchRes = providerId 
-                        ? await this.searchProviderMetadata(searchTarget, 'track', providerId)
+                        ? await this.searchProviderMetadata(providerId, searchTarget, 'track')
                         : await this.searchAllMetadata(searchTarget, 'track');
                     if (searchRes && searchRes.tracks && searchRes.tracks.length > 0) {
                         res = {
@@ -831,10 +831,10 @@ export class ProviderRegistry {
                 try {
                     const [trackSearch, albumSearch] = await Promise.all([
                         providerId 
-                            ? this.searchProviderMetadata(query, 'track', providerId) 
+                            ? this.searchProviderMetadata(providerId, query, 'track') 
                             : this.searchAllMetadata(query, 'track'),
                         providerId 
-                            ? this.searchProviderMetadata(query, 'album', providerId) 
+                            ? this.searchProviderMetadata(providerId, query, 'album') 
                             : this.searchAllMetadata(query, 'album'),
                     ]);
                     const tracks = trackSearch?.tracks || [];
