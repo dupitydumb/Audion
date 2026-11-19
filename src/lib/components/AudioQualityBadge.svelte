@@ -2,7 +2,12 @@
   import { onMount, onDestroy } from "svelte";
   import { currentTrack, activeBackend, isPlaying } from "$lib/stores/player";
   import { isStatsForNerdsOpen } from "$lib/stores/ui";
-  import { isTauri, getAudioTelemetry, type AudioTelemetry, type Track } from "$lib/api/tauri";
+  import {
+    isTauri,
+    getAudioTelemetry,
+    type AudioTelemetry,
+    type Track,
+  } from "$lib/api/tauri";
   import Icon from "$lib/components/Icon.svelte";
 
   export let track: Track | null = null;
@@ -23,7 +28,11 @@
   }
 
   // Also re-query telemetry when playback begins if telemetry was previously unready
-  $: if ($isPlaying && activeTrack && (!telemetry || isBlankCodec(telemetry?.codec))) {
+  $: if (
+    $isPlaying &&
+    activeTrack &&
+    (!telemetry || isBlankCodec(telemetry?.codec))
+  ) {
     triggerTelemetryFetch();
   }
 
@@ -40,9 +49,12 @@
         telemetry = data;
         // If telemetry returned default/idle state ("None" or blank), retry shortly while track is starting
         if (isBlankCodec(data.codec) && retryCount < 5) {
-          retryTimer = setTimeout(() => {
-            refreshTelemetry(retryCount + 1);
-          }, 150 * (retryCount + 1));
+          retryTimer = setTimeout(
+            () => {
+              refreshTelemetry(retryCount + 1);
+            },
+            150 * (retryCount + 1),
+          );
         }
       }
     } catch {
@@ -63,7 +75,14 @@
   });
 
   const EMPTY_CODECS = new Set(["", "NONE", "NULL", "UNKNOWN", "UNDEFINED"]);
-  const LOSSLESS_CODECS = new Set(["FLAC", "ALAC", "WAV", "AIFF", "DSD", "PCM"]);
+  const LOSSLESS_CODECS = new Set([
+    "FLAC",
+    "ALAC",
+    "WAV",
+    "AIFF",
+    "DSD",
+    "PCM",
+  ]);
 
   function isBlankCodec(val?: string | null): boolean {
     if (!val) return true;
@@ -89,19 +108,45 @@
 
   // Normalize codec and distinguish ALAC from generic M4A / AAC
   $: codec = (() => {
-    if (tCodec === "ALAC" || trackFormat === "ALAC" || pathExt === "ALAC") return "ALAC";
-    if (tCodec === "FLAC" || trackFormat === "FLAC" || pathExt === "FLAC") return "FLAC";
-    if (tCodec === "WAV" || trackFormat === "WAV" || pathExt === "WAV" || tCodec.includes("PCM")) return "WAV";
-    if (tCodec === "AIFF" || trackFormat === "AIFF" || pathExt === "AIFF" || pathExt === "AIF") return "AIFF";
-    if (tCodec === "DSD" || trackFormat === "DSD" || pathExt === "DSF" || pathExt === "DFF") return "DSD";
-    if (tCodec === "OPUS" || trackFormat === "OPUS" || pathExt === "OPUS") return "Opus";
-    if (tCodec === "MP3" || trackFormat === "MP3" || pathExt === "MP3") return "MP3";
-    if (tCodec === "OGG" || trackFormat === "OGG" || pathExt === "OGG") return "Vorbis";
+    if (tCodec === "ALAC" || trackFormat === "ALAC" || pathExt === "ALAC")
+      return "ALAC";
+    if (tCodec === "FLAC" || trackFormat === "FLAC" || pathExt === "FLAC")
+      return "FLAC";
+    if (
+      tCodec === "WAV" ||
+      trackFormat === "WAV" ||
+      pathExt === "WAV" ||
+      tCodec.includes("PCM")
+    )
+      return "WAV";
+    if (
+      tCodec === "AIFF" ||
+      trackFormat === "AIFF" ||
+      pathExt === "AIFF" ||
+      pathExt === "AIF"
+    )
+      return "AIFF";
+    if (
+      tCodec === "DSD" ||
+      trackFormat === "DSD" ||
+      pathExt === "DSF" ||
+      pathExt === "DFF"
+    )
+      return "DSD";
+    if (tCodec === "OPUS" || trackFormat === "OPUS" || pathExt === "OPUS")
+      return "Opus";
+    if (tCodec === "MP3" || trackFormat === "MP3" || pathExt === "MP3")
+      return "MP3";
+    if (tCodec === "OGG" || trackFormat === "OGG" || pathExt === "OGG")
+      return "Vorbis";
 
     // Handle M4A container (could be ALAC or AAC)
     if (tCodec === "AAC / ALAC" || trackFormat === "M4A" || pathExt === "M4A") {
       // If telemetry reports bit_depth (e.g. 16 or 24) or bit rate is lossless (> 450 kbps)
-      if ((telemetry?.bit_depth && telemetry.bit_depth > 0) || (activeTrack?.bitrate && activeTrack.bitrate > 450)) {
+      if (
+        (telemetry?.bit_depth && telemetry.bit_depth > 0) ||
+        (activeTrack?.bitrate && activeTrack.bitrate > 450)
+      ) {
         return "ALAC";
       }
       return "AAC";
@@ -113,10 +158,11 @@
 
   $: hasCodec = !!codec && !EMPTY_CODECS.has(codec);
 
-  $: bitDepth = telemetry?.bit_depth || (codec === "FLAC" || codec === "ALAC" ? 16 : null);
+  $: bitDepth =
+    telemetry?.bit_depth || (codec === "FLAC" || codec === "ALAC" ? 16 : null);
   $: sampleRate = telemetry?.sample_rate || 44100;
 
-  $: isHiRes = (sampleRate > 48000) || (bitDepth !== null && bitDepth >= 24);
+  $: isHiRes = sampleRate > 48000 || (bitDepth !== null && bitDepth >= 24);
   $: isLossless = isHiRes || LOSSLESS_CODECS.has(codec);
   $: hasInfo = isLossless || hasCodec || !!activeTrack?.bitrate;
 
@@ -126,15 +172,21 @@
     ? "Hi-Res"
     : isLossless
       ? "Lossless"
-      : (hasCodec ? codec : "HQ");
+      : hasCodec
+        ? codec
+        : "HQ";
 
   $: detailText = isHiRes
     ? `${bitDepth ? `${bitDepth}-bit/` : ""}${Math.round(sampleRate / 1000)}kHz`
     : isLossless
-      ? (bitDepth ? `${bitDepth}-bit` : codec)
+      ? bitDepth
+        ? `${bitDepth}-bit`
+        : codec
       : activeTrack?.bitrate
         ? `${activeTrack.bitrate}k`
-        : (hasCodec ? codec : "Audio");
+        : hasCodec
+          ? codec
+          : "Audio";
 
   function handleClick(e: MouseEvent) {
     if (!clickable) return;
@@ -149,14 +201,11 @@
     class="audio-quality-badge tier-{badgeTier} variant-{variant} {className}"
     class:clickable
     on:click={handleClick}
-    title={clickable ? "Audio Pipeline Specs (Click for Stats for Nerds)" : "Audio Quality"}
+    title={clickable
+      ? "Audio Pipeline Specs (Click for Stats for Nerds)"
+      : "Audio Quality"}
     aria-label="Audio Quality Specs"
   >
-    <!-- Visual tier indicator icon -->
-    {#if isHiRes}
-      <span class="badge-dot hires-dot"></span>
-    {/if}
-
     <span class="badge-title">{mainLabel}</span>
 
     {#if variant !== "compact" && detailText}
@@ -176,7 +225,7 @@
     align-items: center;
     gap: 4px;
     padding: 2px 7px;
-    border-radius: var(--radius-sm, 4px);
+    border-radius: var(--radius-full, 9999px);
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.04em;
@@ -226,18 +275,8 @@
     -webkit-backdrop-filter: blur(12px);
   }
 
-  /* Tier-specific styling — follows app theme tokens */
-  .tier-hires {
-    background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
-    border-color: color-mix(in srgb, var(--accent-primary) 35%, transparent);
-    color: var(--accent-primary);
-  }
-
-  .tier-hires:hover {
-    background: color-mix(in srgb, var(--accent-primary) 20%, transparent);
-    border-color: color-mix(in srgb, var(--accent-primary) 55%, transparent);
-  }
-
+  /* Tier-specific styling — consistent and unified across all tiers */
+  .tier-hires,
   .tier-lossless {
     background: var(--bg-elevated);
     border-color: color-mix(in srgb, var(--text-primary) 18%, transparent);
@@ -248,19 +287,6 @@
     background: var(--bg-elevated);
     border-color: var(--border-color);
     color: var(--text-subdued);
-  }
-
-  /* Indicator dots */
-  .badge-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    display: inline-block;
-  }
-
-  .hires-dot {
-    background: #ffd166;
-    box-shadow: 0 0 6px rgba(255, 209, 102, 0.6);
   }
 
   .badge-separator {
