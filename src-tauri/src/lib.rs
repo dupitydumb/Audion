@@ -985,6 +985,31 @@ pub fn run() {
             {
                 let window_config = integrations::window::load_window_config(app.handle());
                 if let Some(window) = app.get_webview_window("main") {
+                    // PiP leftovers: closing the app while the mini player was active makes
+                    // tauri-plugin-window-state persist the island frame (as small as 396x56).
+                    // On the next launch that restores a sliver-sized window rendering the
+                    // normal layout. Reset to a usable size when the restored frame is smaller
+                    // than the normal window minimum.
+                    if let Ok(size) = window.inner_size() {
+                        let scale = window.scale_factor().unwrap_or(1.0);
+                        let logical_w = size.width as f64 / scale;
+                        let logical_h = size.height as f64 / scale;
+                        if logical_w < 320.0 || logical_h < 200.0 {
+                            tracing::warn!(
+                                width = logical_w,
+                                height = logical_h,
+                                "Restored window matches PiP island size; resetting to default window size"
+                            );
+                            window
+                                .set_min_size(Some(tauri::LogicalSize::new(320.0, 480.0)))
+                                .ok();
+                            window
+                                .set_size(tauri::LogicalSize::new(1280.0, 800.0))
+                                .ok();
+                            window.center().ok();
+                        }
+                    }
+
                     // On Linux, only force software rendering if a VM, container, or safe mode is detected.
                     // Physical hardware with a working GPU keeps hardware acceleration enabled.
                     #[cfg(target_os = "linux")]

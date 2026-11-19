@@ -36,6 +36,7 @@
     isQueueVisible,
     contextMenu,
     isMiniPlayer,
+    setMiniPlayer,
     isStatsForNerdsOpen,
   } from "$lib/stores/ui";
   import { pluginStore } from "$lib/stores/plugin-store";
@@ -212,6 +213,12 @@
     // once we are done, we call confirm_close to let the close actually go through
     listen("app://request-last-view", async () => {
       try {
+        // Leave PiP before closing: the window-state plugin persists the
+        // current geometry on exit, and a saved island-sized window would
+        // reopen as the normal layout squeezed into a 396x56 frame.
+        if (get(isMiniPlayer)) {
+          await setMiniPlayer(false);
+        }
         const view = get(currentView);
         cacheLastViewForNextLaunch(view);
         await invoke("confirm_close");
