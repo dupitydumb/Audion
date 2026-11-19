@@ -11,7 +11,7 @@
     type TransitionSpeed,
     type AnimationConfig,
   } from "$lib/stores/theme";
-  import { darkDefaults, lightDefaults } from "$lib/stores/theme";
+  import { darkDefaults, lightDefaults, isDarkMode } from "$lib/stores/theme";
   import { get } from "svelte/store";
   import { createEventDispatcher, onMount } from "svelte";
   import { layoutOverride, type LayoutOverride } from "$lib/stores/mobile";
@@ -114,7 +114,7 @@
   let slotHexText: Record<string, string> = {};
 
   // Resolved default color per slot (what null actually renders as)
-  $: resolvedDefaults = ($theme.mode === 'light' ? lightDefaults : darkDefaults);
+  $: resolvedDefaults = ($isDarkMode ? darkDefaults : lightDefaults);
 
   // Keep local state in sync when store changes externally (e.g. reset all, import theme).
   // Must reassign the objects (not just mutate) so Svelte propagates changes to the UI.
