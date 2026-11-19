@@ -133,7 +133,7 @@
     <div class="settings-card" id="setting-lastfm" style="margin-bottom: var(--spacing-md, 16px);">
       <div class="toggle-container">
         <div class="toggle-info">
-          <span class="setting-title">Last.fm</span>
+          <span class="setting-title">{$_('settings.lastFm', { default: 'Last.fm' })}</span>
           <span class="setting-description">{$_('settings.lastFmDesc', { default: 'Automatically scrobble your plays and live now-playing status to Last.fm' })}</span>
         </div>
         <button
@@ -142,7 +142,7 @@
           on:click={() => appSettings.toggleLastFm()}
           role="switch"
           aria-checked={$appSettings.lastFmEnabled}
-          aria-label="Toggle Last.fm"
+          aria-label={$_('settings.toggleLastFm', { default: 'Toggle Last.fm' })}
         >
           <div class="toggle-handle"></div>
         </button>
@@ -158,7 +158,9 @@
             </span>
             <div style="display: flex; flex-wrap: wrap; gap: var(--spacing-sm, 8px); align-items: center; margin-top: 8px;">
               <button class="btn-primary-compact" on:click={handleConnectLastfm} disabled={lastfmIsConnecting}>
-                {lastfmIsConnecting ? "Opening Browser..." : "Authorize on Last.fm ↗"}
+                {lastfmIsConnecting
+                  ? $_('settings.openingBrowser', { default: 'Opening Browser...' })
+                  : $_('settings.authorizeLastfm', { default: 'Authorize on Last.fm ↗' })}
               </button>
             </div>
 
@@ -171,7 +173,7 @@
                 <input
                   type="text"
                   bind:value={lastfmTokenInput}
-                  placeholder="Last.fm Auth Token"
+                  placeholder={$_('settings.lastFmAuthToken', { default: 'Last.fm Auth Token' })}
                   class="input-compact"
                   style="flex: 1; min-width: 0;"
                   on:keydown={(e) => { if (e.key === 'Enter') handleCompleteLastfmAuth(lastfmTokenInput); }}
@@ -193,10 +195,10 @@
             <div class="lb-status-row" style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0;">
               <div style="display: flex; align-items: center; gap: 8px;">
                 <span class="pill-badge accent" style="font-size: 0.7rem;">✓ {$_('settings.connected', { default: 'Connected' })}</span>
-                <span style="font-size: 0.8125rem;">{$_('settings.loggedInAs', { default: 'Logged in as' })} <strong>{$appSettings.lastFmUsername || 'User'}</strong></span>
+                <span style="font-size: 0.8125rem;">{$_('settings.loggedInAs', { default: 'Logged in as' })} <strong>{$appSettings.lastFmUsername || $_('settings.user', { default: 'User' })}</strong></span>
               </div>
               <button class="btn-text-small" on:click={handleDisconnectLastfm} style="color: var(--error-color);">
-                {$_('settings.remove', { default: 'Disconnect' })}
+                {$_('settings.disconnect', { default: 'Disconnect' })}
               </button>
             </div>
           {/if}
@@ -256,10 +258,10 @@
             <div class="lb-status-row" style="display: flex; justify-content: space-between; align-items: center; padding: 4px 0;">
               <div style="display: flex; align-items: center; gap: 8px;">
                 <span class="pill-badge accent" style="font-size: 0.7rem;">✓ {$_('settings.connected', { default: 'Connected' })}</span>
-                <span style="font-size: 0.8125rem;">{$_('settings.loggedInAs', { default: 'Logged in as' })} <strong>{$appSettings.listenBrainzUsername || 'User'}</strong></span>
+                <span style="font-size: 0.8125rem;">{$_('settings.loggedInAs', { default: 'Logged in as' })} <strong>{$appSettings.listenBrainzUsername || $_('settings.user', { default: 'User' })}</strong></span>
               </div>
               <button class="btn-text-small" on:click={handleRemoveLbToken} style="color: var(--error-color);">
-                {$_('settings.remove', { default: 'Disconnect' })}
+                {$_('settings.disconnect', { default: 'Disconnect' })}
               </button>
             </div>
           {/if}
