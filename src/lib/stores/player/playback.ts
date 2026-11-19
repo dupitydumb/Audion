@@ -304,19 +304,21 @@ function _looksLikePreviewUrl(p: string | null | undefined): boolean {
 // reuses the in-memory `stream_url` so play + preload never query twice
 // provider URLs can be signed/expiring => never persisted
 async function _resolveCatalogStream(track: Track, audioPath: string | null | undefined): Promise<string | null> {
+    // Local files and offline caches MUST ALWAYS take priority: never hijack local audio
     if (track.local_src) return null;
+    if (!track.source_type || track.source_type === 'local') return null;
+    if (track.source_type === 'server' || track.source_type === 'subsonic') return null;
+    if (!isStreaming(track)) return null;
+    if (audioPath && classifyAudioPath(audioPath) === 'local') return null;
 
     const cached = (track as any).stream_url as string | undefined;
     if (cached) return cached;
 
-    // already a full local/server source: never let a provider query hijack it
-    if (track.source_type === 'server' || track.source_type === 'subsonic' || track.source_type === 'local') {
-        return null;
-    }
-
     const runtime = pluginStore.getRuntime();
-    const hasDirectResolver = (runtime && track.source_type && runtime.streamResolvers.has(track.source_type)) ||
-        (track.source_type && globalProviders.getStreamProvider(track.source_type));
+    const hasDirectResolver = !!(
+        (runtime && track.source_type && runtime.streamResolvers.has(track.source_type)) ||
+        (track.source_type && globalProviders.getStreamProvider(track.source_type))
+    );
 
     const isPreviewOrCatalog = (
         track.source_type === 'itunes' ||

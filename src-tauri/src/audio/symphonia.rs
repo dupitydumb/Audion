@@ -543,20 +543,30 @@ impl SymphoniaSource {
             .make_audio_decoder(audio_params, &AudioDecoderOptions::default())
             .map_err(|e| format!("Failed to create decoder for {}: {}", path, e))?;
 
-        let codec_name = std::path::Path::new(path)
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(|s| match s.to_ascii_lowercase().as_str() {
-                "flac" => "FLAC".to_string(),
-                "mp3" => "MP3".to_string(),
-                "m4a" | "aac" => "AAC / ALAC".to_string(),
-                "ogg" | "oga" => "Ogg Vorbis".to_string(),
-                "opus" => "Opus".to_string(),
-                "wav" => "WAV / PCM".to_string(),
-                "aif" | "aiff" => "AIFF".to_string(),
-                other => other.to_uppercase(),
-            })
-            .unwrap_or_else(|| "Audio".to_string());
+        let codec_name = match audio_params.codec {
+            symphonia::core::codecs::audio::well_known::CODEC_ID_ALAC => "ALAC".to_string(),
+            symphonia::core::codecs::audio::well_known::CODEC_ID_FLAC => "FLAC".to_string(),
+            symphonia::core::codecs::audio::well_known::CODEC_ID_AAC => "AAC".to_string(),
+            symphonia::core::codecs::audio::well_known::CODEC_ID_MP3 => "MP3".to_string(),
+            symphonia::core::codecs::audio::well_known::CODEC_ID_VORBIS => "Ogg Vorbis".to_string(),
+            symphonia::core::codecs::audio::well_known::CODEC_ID_OPUS => "Opus".to_string(),
+            _ => std::path::Path::new(path)
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|s| match s.to_ascii_lowercase().as_str() {
+                    "flac" => "FLAC".to_string(),
+                    "mp3" => "MP3".to_string(),
+                    "alac" => "ALAC".to_string(),
+                    "m4a" => "AAC / ALAC".to_string(),
+                    "aac" => "AAC".to_string(),
+                    "ogg" | "oga" => "Ogg Vorbis".to_string(),
+                    "opus" => "Opus".to_string(),
+                    "wav" => "WAV / PCM".to_string(),
+                    "aif" | "aiff" => "AIFF".to_string(),
+                    other => other.to_uppercase(),
+                })
+                .unwrap_or_else(|| "Audio".to_string()),
+        };
         let bits_per_sample = audio_params.bits_per_sample.map(|b| b as u16);
 
         let replay_gain = resolve_replay_gain(replay_gain_db, &mut format);
