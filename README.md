@@ -34,6 +34,10 @@
   <a href="#-support"><strong>Support</strong></a>
 </p>
 
+<p align="center">
+  <a href="https://fmhy.net/audio#audio-players" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/available/fmhy/cozy.svg" alt="Featured on FMHY" height="55"/></a>
+</p>
+
 ---
 
 ## 🎵 What is Audion?
