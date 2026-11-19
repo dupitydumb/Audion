@@ -416,10 +416,10 @@ export class ProviderRegistry {
     }
 
     getProviderEntries(): ProviderItemEntry[] {
-        const list: ProviderItemEntry[] = [];
+        const streamList: ProviderItemEntry[] = [];
         for (const [id, provider] of this.streamProviders.entries()) {
             const cfg = this.config.stream[id] || { enabled: true, priority: 1 };
-            list.push({
+            streamList.push({
                 id,
                 name: provider.name,
                 type: 'stream',
@@ -430,9 +430,12 @@ export class ProviderRegistry {
                 priority: cfg.priority,
             });
         }
+        streamList.sort((a, b) => a.priority - b.priority);
+
+        const metadataList: ProviderItemEntry[] = [];
         for (const [id, provider] of this.metadataProviders.entries()) {
             const cfg = this.config.metadata[id] || { enabled: true, priority: 1 };
-            list.push({
+            metadataList.push({
                 id,
                 name: provider.name,
                 type: 'metadata',
@@ -443,9 +446,12 @@ export class ProviderRegistry {
                 priority: cfg.priority,
             });
         }
+        metadataList.sort((a, b) => a.priority - b.priority);
+
+        const lyricsList: ProviderItemEntry[] = [];
         for (const [id, provider] of this.lyricsProviders.entries()) {
             const cfg = this.config.lyrics[id] || { enabled: true, priority: 1 };
-            list.push({
+            lyricsList.push({
                 id,
                 name: provider.name,
                 type: 'lyrics',
@@ -456,12 +462,16 @@ export class ProviderRegistry {
                 priority: cfg.priority,
             });
         }
-        return list;
+        lyricsList.sort((a, b) => a.priority - b.priority);
+
+        return [...streamList, ...metadataList, ...lyricsList];
     }
 
     setProviderEnabled(type: 'stream' | 'metadata' | 'lyrics', id: string, enabled: boolean): void {
         if (!this.config[type][id]) {
-            this.config[type][id] = { enabled, priority: 999 };
+            const existingPriorities = Object.values(this.config[type]).map(c => c.priority);
+            const nextPri = existingPriorities.length > 0 ? Math.max(...existingPriorities) + 1 : 1;
+            this.config[type][id] = { enabled, priority: nextPri };
         } else {
             this.config[type][id].enabled = enabled;
         }
@@ -490,37 +500,37 @@ export class ProviderRegistry {
         const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
         if (targetIdx < 0 || targetIdx >= items.length) return;
 
-        const currentItem = items[idx];
-        const swapItem = items[targetIdx];
+        const [movedItem] = items.splice(idx, 1);
+        items.splice(targetIdx, 0, movedItem);
 
-        const oldPri = currentItem.priority;
-        const swapPri = swapItem.priority === oldPri
-            ? (direction === 'up' ? oldPri - 1 : oldPri + 1)
-            : swapItem.priority;
-
-        this.setProviderPriority(type, currentItem.id, swapPri);
-        this.setProviderPriority(type, swapItem.id, oldPri);
-
-        // Normalize priorities
-        const reordered = this.getProviderEntries()
-            .filter(p => p.type === type)
-            .sort((a, b) => a.priority - b.priority);
-        reordered.forEach((p, i) => {
-            if (this.config[type][p.id]) {
+        // Normalize priorities sequentially 1..N
+        items.forEach((p, i) => {
+            if (!this.config[type][p.id]) {
+                this.config[type][p.id] = { enabled: p.enabled, priority: i + 1 };
+            } else {
                 this.config[type][p.id].priority = i + 1;
             }
         });
+
         saveStoredConfig(this.config);
         this.notifyStore();
     }
 
     resetPriorities(type: 'stream' | 'metadata' | 'lyrics'): void {
-        const items = this.getProviderEntries().filter(p => p.type === type);
-        items.forEach((p, i) => {
-            if (this.config[type][p.id]) {
-                this.config[type][p.id].priority = i + 1;
+        let map: Map<string, any>;
+        if (type === 'stream') map = this.streamProviders;
+        else if (type === 'metadata') map = this.metadataProviders;
+        else map = this.lyricsProviders;
+
+        let i = 1;
+        for (const id of map.keys()) {
+            if (!this.config[type][id]) {
+                this.config[type][id] = { enabled: true, priority: i };
+            } else {
+                this.config[type][id].priority = i;
             }
-        });
+            i++;
+        }
         saveStoredConfig(this.config);
         this.notifyStore();
     }

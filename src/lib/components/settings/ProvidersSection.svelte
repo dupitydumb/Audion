@@ -45,6 +45,12 @@
 
   $: providers = $providersStore;
 
+  $: providersByType = {
+    stream: providers.filter((p) => p.type === "stream").sort((a, b) => a.priority - b.priority),
+    metadata: providers.filter((p) => p.type === "metadata").sort((a, b) => a.priority - b.priority),
+    lyrics: providers.filter((p) => p.type === "lyrics").sort((a, b) => a.priority - b.priority),
+  };
+
   const tr: Translate = (key, fallback) => $_(key, { default: fallback });
 
   // Provider owners arrive as display name, safe_name, or folder name.
@@ -55,8 +61,8 @@
     return match?.manifest.name ?? humanizeIdentifier(owner || "system");
   }
 
-  function listFor(type: ProviderType): ProviderItemEntry[] {
-    return providers.filter((p) => p.type === type);
+  function listFor(type: ProviderType, all: ProviderItemEntry[] = providers): ProviderItemEntry[] {
+    return providersByType[type] || all.filter((p) => p.type === type).sort((a, b) => a.priority - b.priority);
   }
 
   function toggleProvider(type: ProviderType, id: string, current: boolean) {
@@ -84,7 +90,7 @@
     </div>
   {:else}
     {#each SECTIONS as section (section.type)}
-      {@const list = listFor(section.type)}
+      {@const list = listFor(section.type, providers)}
       <div class="provider-category" id={`setting-providers-${section.type}`}>
         <div class="category-header">
           <div class="category-title-group">
