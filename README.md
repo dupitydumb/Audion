@@ -5,7 +5,7 @@
 <h1 align="center">Audion</h1>
 
 <p align="center">
-  <strong>A local-first music player with a Spotify-inspired interface</strong>
+  <strong>A local-first music player for your own library</strong>
 </p>
 
 <p align="center">
@@ -42,7 +42,7 @@
 
 ## 🎵 What is Audion?
 
-Audion brings the Spotify experience to your own music library. Index your folders once, then get synced lyrics, smart queues, custom themes, plugins, and streaming to any device — all without an account, tracking, or a permanent internet connection.
+Audion is a desktop and mobile player for the music you already own. Index your folders once, then get synced lyrics, smart queues, custom themes, plugins, and streaming to any device — all without an account, tracking, or a permanent internet connection.
 
 **In short:** your files, beautiful interface, nothing phoning home.
 
