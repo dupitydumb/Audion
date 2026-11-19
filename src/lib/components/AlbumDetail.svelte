@@ -548,6 +548,14 @@
         min-height: 0;
     }
 
+    /* multi-disc: each disc's TrackList is unconstrained, so its .list-body
+       is an un-scrollable scroll container. Its overscroll-behavior: contain
+       would swallow the wheel before it reaches this section, leaving only
+       the disc headers scrollable. Restore chaining. */
+    .track-list-section :global(.list-body) {
+        overscroll-behavior-y: auto;
+    }
+
     .btn-secondary {
         background-color: transparent;
         border: 1px solid var(--border-color);
