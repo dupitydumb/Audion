@@ -11,6 +11,7 @@
   import AudioSection from "./settings/AudioSection.svelte";
   import EqualizerEditor from "./settings/EqualizerEditor.svelte";
   import PlaybackSection from "./settings/PlaybackSection.svelte";
+  import ProvidersSection from "./settings/ProvidersSection.svelte";
   import LyricsSection from "./settings/LyricsSection.svelte";
   import StorageSection from "./settings/StorageSection.svelte";
   import ArtistsSection from "./settings/ArtistsSection.svelte";
@@ -66,6 +67,12 @@
       icon: "play",
       label: "Playback",
       subtitle: "Autoplay & lyrics settings",
+    },
+    {
+      id: "extensions",
+      icon: "plugin",
+      label: "Extensions",
+      subtitle: "Stream providers, metadata & lyrics services",
     },
     {
       id: "library",
@@ -369,6 +376,47 @@
         "clear lyrics cache",
         "remove lyrics",
         "purge lyrics",
+      ],
+    },
+
+    // Extensions Tab
+    {
+      sectionId: "stream-providers",
+      targetElementId: "setting-providers-stream",
+      tab: "extensions",
+      tabLabel: "Extensions",
+      title: "Audio Stream Providers",
+      subtitle:
+        "Plugins that resolve full playback streams (YouTube, Tidal, etc.)",
+      keywords: [
+        "youtube",
+        "stream",
+        "streaming",
+        "provider",
+        "audio source",
+        "plugin",
+        "tidal",
+        "deezer",
+        "soundcloud",
+        "music source",
+        "playback source",
+      ],
+    },
+    {
+      sectionId: "metadata-providers",
+      targetElementId: "setting-providers-metadata",
+      tab: "extensions",
+      tabLabel: "Extensions",
+      title: "Metadata & Lyrics Providers",
+      subtitle: "Providers for artwork, album info, and synced lyrics",
+      keywords: [
+        "metadata",
+        "lyrics",
+        "artwork",
+        "musicbrainz",
+        "catalog",
+        "provider",
+        "plugin",
       ],
     },
 
@@ -1066,6 +1114,12 @@
       if (savedTab && TABS.some((t) => t.id === savedTab)) {
         activeTab = savedTab;
       }
+      // One-shot deep link (e.g. Plugins → Settings → Extensions)
+      const directTab = localStorage.getItem("audion_settings_open_tab");
+      if (directTab) {
+        localStorage.removeItem("audion_settings_open_tab");
+        if (TABS.some((t) => t.id === directTab)) switchTab(directTab);
+      }
     } catch {}
 
     // Clean matchMedia setup
@@ -1237,6 +1291,8 @@
                 <div style="margin-top: var(--spacing-lg);">
                   <LyricsSection open={true} />
                 </div>
+              {:else if activeTab === "extensions"}
+                <ProvidersSection />
               {:else if activeTab === "library"}
                 <StorageSection open={true} />
                 <div style="margin-top: var(--spacing-lg);">
@@ -1431,6 +1487,8 @@
                 <div style="margin-top: var(--spacing-md);">
                   <LyricsSection open={true} />
                 </div>
+              {:else if mobileDetailTab === "extensions"}
+                <ProvidersSection />
               {:else if mobileDetailTab === "library"}
                 <StorageSection open={true} />
                 <div style="margin-top: var(--spacing-md);">

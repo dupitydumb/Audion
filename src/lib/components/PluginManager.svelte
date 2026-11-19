@@ -1,4 +1,4 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { onMount } from "svelte";
   import { _ } from "svelte-i18n";
   import {
@@ -20,7 +20,15 @@
   import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
   import Icon from "$lib/components/Icon.svelte";
   import { createSflxExtensionAdapter } from "$lib/plugins/sflx-adapter";
-  import { globalProviders, providersStore, type ProviderItemEntry } from "$lib/plugins/providers";
+  import { globalProviders } from "$lib/plugins/providers";
+  import { goToSettings } from "$lib/stores/view";
+
+  function openProviderSettings() {
+    try {
+      localStorage.setItem("audion_settings_open_tab", "extensions");
+    } catch {}
+    goToSettings();
+  }
 
   let pluginContentEl: HTMLDivElement;
   let scrollRestored = false;
@@ -38,36 +46,9 @@
   let selectedPlugin: MarketplacePlugin | null = null;
   let pendingPermissions: string[] = [];
   let searchQuery = "";
-  let activeTab: "curated" | "community" | "registries" | "installed" | "providers" = "curated";
+  let activeTab: "curated" | "community" | "registries" | "installed" = "curated";
   let sortBy: 'stars' | 'downloads' | 'name' | 'updated' = $pluginStore.sortBy;
   let sortOpen = false;
-
-  $: providerList = $providersStore;
-  $: filteredProviders = searchQuery.trim()
-    ? providerList.filter(
-        (p) =>
-          p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          p.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (p.description && p.description.toLowerCase().includes(searchQuery.toLowerCase()))
-      )
-    : providerList;
-  $: streamProviders = filteredProviders.filter((p) => p.type === "stream");
-  $: metadataProviders = filteredProviders.filter((p) => p.type === "metadata");
-  $: lyricsProviders = filteredProviders.filter((p) => p.type === "lyrics");
-
-  function toggleProvider(type: 'stream' | 'metadata' | 'lyrics', id: string, current: boolean) {
-    globalProviders.setProviderEnabled(type, id, !current);
-    addToast(`Provider '${id}' ${!current ? 'enabled' : 'disabled'}`, 'info');
-  }
-
-  function movePriority(type: 'stream' | 'metadata' | 'lyrics', id: string, direction: 'up' | 'down') {
-    globalProviders.moveProviderPriority(type, id, direction);
-  }
-
-  function resetProviderPriorities(type: 'stream' | 'metadata' | 'lyrics') {
-    globalProviders.resetPriorities(type);
-    addToast(`Reset ${type} provider priorities`, 'info');
-  }
 
   function handleAddRegistry() {
     if (!newRegistryUrl.trim()) {
@@ -445,7 +426,16 @@
         {/if}
       </button>
 
-      {#if activeTab !== "installed" && activeTab !== "registries" && activeTab !== "providers"}
+      <button
+        class="btn-secondary providers-link"
+        on:click={openProviderSettings}
+        title="Configure stream, metadata and lyrics providers"
+      >
+        <Icon name="sliders" size={16} />
+        Providers
+      </button>
+
+      {#if activeTab !== "installed" && activeTab !== "registries"}
         <div class="sort-selector">
           <button
             class="sort-btn"
@@ -509,13 +499,6 @@
     >
       {$_('pluginManager.installedTab', { values: { count: $pluginStore.installed.length } })}
     </button>
-    <button
-      class="tab"
-      class:active={activeTab === "providers"}
-      on:click={() => (activeTab = "providers")}
-    >
-      Providers ({providerList.length})
-    </button>
   </div>
 
   {#if activeTab === "community"}
@@ -532,7 +515,7 @@
     </div>
   {/if}
 
-  {#if activeTab !== "installed" && activeTab !== "registries" && activeTab !== "providers"}
+  {#if activeTab !== "installed" && activeTab !== "registries"}
     <div class="category-filters">
       {#each categories as category}
         <button
@@ -578,7 +561,7 @@
             <div class="plugin-info">
               <span class="plugin-name truncate" title={plugin.manifest.name}>{plugin.manifest.name}</span>
               <span class="plugin-author truncate"
-                >{plugin.manifest.author} · v{plugin.manifest.version}</span
+                >{plugin.manifest.author} Â· v{plugin.manifest.version}</span
               >
               <span class="plugin-desc truncate" title={plugin.manifest.description || $_('pluginManager.noDescription')}
                 >{plugin.manifest.description || $_('pluginManager.noDescription')}</span
@@ -663,7 +646,7 @@
             <div class="plugin-info">
               <span class="plugin-name truncate" title={plugin.manifest.name}>{plugin.manifest.name}</span>
               <span class="plugin-author truncate"
-                >{plugin.manifest.author} · v{plugin.manifest.version}</span
+                >{plugin.manifest.author} Â· v{plugin.manifest.version}</span
               >
               <span class="plugin-desc truncate" title={plugin.manifest.description || $_('pluginManager.noDescription')}
                 >{plugin.manifest.description || $_('pluginManager.noDescription')}</span
@@ -866,256 +849,6 @@
           </div>
         {/each}
       </div>
-    {:else if activeTab === "providers"}
-      <div class="providers-container">
-        {#if providerList.length === 0}
-          <div class="empty-state">
-            <Icon name="plugin" size={48} />
-            <h3>No providers registered</h3>
-            <p>Enable plugins providing audio streaming, metadata catalogs, or lyrics services.</p>
-          </div>
-        {:else}
-          <div class="providers-header-bar">
-            <div class="providers-summary">
-              <h3>Active Providers & Services</h3>
-              <p class="providers-subtitle">
-                Manage audio stream resolvers, metadata search catalogs, and lyrics providers. Reorder execution priorities or disable individual providers.
-              </p>
-            </div>
-          </div>
-
-          <!-- 1. Audio Stream Providers Section -->
-          <div class="provider-category-section">
-            <div class="category-header">
-              <div class="category-title-group">
-                <Icon name="radio" size={16} />
-                <div>
-                  <h4>Audio Stream Providers ({streamProviders.length})</h4>
-                  <span class="category-desc">Resolves playback streams and formats. Priority #1 is resolved first with automatic fallback.</span>
-                </div>
-              </div>
-              {#if streamProviders.length > 1}
-                <button class="btn-secondary btn-sm" on:click={() => resetProviderPriorities('stream')}>
-                  Reset Order
-                </button>
-              {/if}
-            </div>
-
-            {#if streamProviders.length === 0}
-              <div class="category-empty">
-                <p>No audio stream providers registered</p>
-                <span>Enable a streaming plugin to resolve full audio playback streams.</span>
-              </div>
-            {:else}
-              <div class="providers-list">
-                {#each streamProviders as prov, idx (prov.id)}
-                  <div class="provider-row" class:disabled={!prov.enabled}>
-                    <div class="provider-rank">#{idx + 1}</div>
-                    <div class="provider-info">
-                      <div class="provider-name-row">
-                        <span class="provider-name">{prov.name}</span>
-                        <span class="provider-id-tag">{prov.id}</span>
-                        {#if prov.version}
-                          <span class="badge">v{prov.version}</span>
-                        {/if}
-                        <span class="badge">Plugin: {prov.ownerPlugin}</span>
-                      </div>
-                      {#if prov.description}
-                        <p class="provider-description">{prov.description}</p>
-                      {/if}
-                    </div>
-
-                    <div class="provider-actions">
-                      <div class="priority-reorder-btns">
-                        <button
-                          class="icon-btn-sm"
-                          disabled={idx === 0}
-                          title="Increase priority"
-                          aria-label="Increase priority"
-                          on:click={() => movePriority('stream', prov.id, 'up')}
-                        >
-                          <Icon name="chevron-up" size={14} />
-                        </button>
-                        <button
-                          class="icon-btn-sm"
-                          disabled={idx === streamProviders.length - 1}
-                          title="Decrease priority"
-                          aria-label="Decrease priority"
-                          on:click={() => movePriority('stream', prov.id, 'down')}
-                        >
-                          <Icon name="chevron-down" size={14} />
-                        </button>
-                      </div>
-
-                      <button
-                        class="btn-secondary"
-                        class:btn-active-status={prov.enabled}
-                        on:click={() => toggleProvider('stream', prov.id, prov.enabled)}
-                      >
-                        {prov.enabled ? 'Enabled' : 'Disabled'}
-                      </button>
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            {/if}
-          </div>
-
-          <!-- 2. Metadata Catalog Providers Section -->
-          <div class="provider-category-section">
-            <div class="category-header">
-              <div class="category-title-group">
-                <Icon name="search" size={16} />
-                <div>
-                  <h4>Metadata Catalog Providers ({metadataProviders.length})</h4>
-                  <span class="category-desc">Searches remote catalogs for artwork, album details, and artist discovery.</span>
-                </div>
-              </div>
-              {#if metadataProviders.length > 1}
-                <button class="btn-secondary btn-sm" on:click={() => resetProviderPriorities('metadata')}>
-                  Reset Order
-                </button>
-              {/if}
-            </div>
-
-            {#if metadataProviders.length === 0}
-              <div class="category-empty">
-                <p>No metadata catalog providers registered</p>
-                <span>Enable a metadata plugin to enable remote catalog searches.</span>
-              </div>
-            {:else}
-              <div class="providers-list">
-                {#each metadataProviders as prov, idx (prov.id)}
-                  <div class="provider-row" class:disabled={!prov.enabled}>
-                    <div class="provider-rank">#{idx + 1}</div>
-                    <div class="provider-info">
-                      <div class="provider-name-row">
-                        <span class="provider-name">{prov.name}</span>
-                        <span class="provider-id-tag">{prov.id}</span>
-                        {#if prov.version}
-                          <span class="badge">v{prov.version}</span>
-                        {/if}
-                        <span class="badge">Plugin: {prov.ownerPlugin}</span>
-                      </div>
-                      {#if prov.description}
-                        <p class="provider-description">{prov.description}</p>
-                      {/if}
-                    </div>
-
-                    <div class="provider-actions">
-                      <div class="priority-reorder-btns">
-                        <button
-                          class="icon-btn-sm"
-                          disabled={idx === 0}
-                          title="Increase priority"
-                          aria-label="Increase priority"
-                          on:click={() => movePriority('metadata', prov.id, 'up')}
-                        >
-                          <Icon name="chevron-up" size={14} />
-                        </button>
-                        <button
-                          class="icon-btn-sm"
-                          disabled={idx === metadataProviders.length - 1}
-                          title="Decrease priority"
-                          aria-label="Decrease priority"
-                          on:click={() => movePriority('metadata', prov.id, 'down')}
-                        >
-                          <Icon name="chevron-down" size={14} />
-                        </button>
-                      </div>
-
-                      <button
-                        class="btn-secondary"
-                        class:btn-active-status={prov.enabled}
-                        on:click={() => toggleProvider('metadata', prov.id, prov.enabled)}
-                      >
-                        {prov.enabled ? 'Enabled' : 'Disabled'}
-                      </button>
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            {/if}
-          </div>
-
-          <!-- 3. Lyrics Providers Section -->
-          <div class="provider-category-section">
-            <div class="category-header">
-              <div class="category-title-group">
-                <Icon name="mic-2" size={16} />
-                <div>
-                  <h4>Synchronized Lyrics Providers ({lyricsProviders.length})</h4>
-                  <span class="category-desc">Retrieves timestamped LRC lines and syllable karaoke tokens for active playback.</span>
-                </div>
-              </div>
-              {#if lyricsProviders.length > 1}
-                <button class="btn-secondary btn-sm" on:click={() => resetProviderPriorities('lyrics')}>
-                  Reset Order
-                </button>
-              {/if}
-            </div>
-
-            {#if lyricsProviders.length === 0}
-              <div class="category-empty">
-                <p>No lyrics providers registered</p>
-                <span>Enable plugins providing LRCLIB or synced lyrics.</span>
-              </div>
-            {:else}
-              <div class="providers-list">
-                {#each lyricsProviders as prov, idx (prov.id)}
-                  <div class="provider-row" class:disabled={!prov.enabled}>
-                    <div class="provider-rank">#{idx + 1}</div>
-                    <div class="provider-info">
-                      <div class="provider-name-row">
-                        <span class="provider-name">{prov.name}</span>
-                        <span class="provider-id-tag">{prov.id}</span>
-                        {#if prov.version}
-                          <span class="badge">v{prov.version}</span>
-                        {/if}
-                        <span class="badge">Plugin: {prov.ownerPlugin}</span>
-                      </div>
-                      {#if prov.description}
-                        <p class="provider-description">{prov.description}</p>
-                      {/if}
-                    </div>
-
-                    <div class="provider-actions">
-                      <div class="priority-reorder-btns">
-                        <button
-                          class="icon-btn-sm"
-                          disabled={idx === 0}
-                          title="Increase priority"
-                          aria-label="Increase priority"
-                          on:click={() => movePriority('lyrics', prov.id, 'up')}
-                        >
-                          <Icon name="chevron-up" size={14} />
-                        </button>
-                        <button
-                          class="icon-btn-sm"
-                          disabled={idx === lyricsProviders.length - 1}
-                          title="Decrease priority"
-                          aria-label="Decrease priority"
-                          on:click={() => movePriority('lyrics', prov.id, 'down')}
-                        >
-                          <Icon name="chevron-down" size={14} />
-                        </button>
-                      </div>
-
-                      <button
-                        class="btn-secondary"
-                        class:btn-active-status={prov.enabled}
-                        on:click={() => toggleProvider('lyrics', prov.id, prov.enabled)}
-                      >
-                        {prov.enabled ? 'Enabled' : 'Disabled'}
-                      </button>
-                    </div>
-                  </div>
-                {/each}
-              </div>
-            {/if}
-          </div>
-        {/if}
-      </div>
     {/if}
   </div>
 </div>
@@ -1160,7 +893,7 @@
           <h3 class="modal-plugin-name">{selectedPlugin.manifest.name}</h3>
           <div class="modal-plugin-sub">
             <span class="modal-plugin-author">{selectedPlugin.manifest.author}</span>
-            <span class="modal-dot">·</span>
+            <span class="modal-dot">Â·</span>
             <span class="modal-plugin-version">v{selectedPlugin.manifest.version}</span>
           </div>
           <div class="plugin-badges">
@@ -2207,7 +1940,7 @@
     white-space: nowrap;
   }
 
-  /* ── Mobile ── */
+  /* â”€â”€ Mobile â”€â”€ */
   :global(html.layout-mobile) .plugin-view {
     padding: var(--spacing-md);
   }
@@ -2327,11 +2060,6 @@
     min-width: 100px;
   }
 
-  :global(html.layout-mobile) .provider-row {
-    flex-wrap: wrap;
-    gap: var(--spacing-sm);
-  }
-
   :global(html.layout-mobile) .registry-card {
     padding: var(--spacing-md);
   }
@@ -2348,7 +2076,7 @@
     width: 100%;
   }
 
-  /* Permission / install modal — bottom sheet above nav + player */
+  /* Permission / install modal â€” bottom sheet above nav + player */
   :global(html.layout-mobile) .modal-overlay {
     align-items: flex-end;
     padding: 0 0 var(--mobile-bottom-inset, 130px);
@@ -2518,205 +2246,4 @@
     border: 1px solid rgba(138, 43, 226, 0.3);
   }
 
-  /* Providers Tab Styling */
-  .providers-container {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-xl);
-    padding: var(--spacing-sm) 0 var(--spacing-2xl);
-  }
-
-  .providers-header-bar {
-    background: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-md) var(--spacing-lg);
-  }
-
-  .providers-summary h3 {
-    margin: 0 0 4px 0;
-    font-size: var(--font-size-base);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
-  }
-
-  .providers-subtitle {
-    margin: 0;
-    font-size: var(--font-size-sm);
-    color: var(--text-subdued);
-    line-height: 1.4;
-  }
-
-  .provider-category-section {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-sm);
-  }
-
-  .category-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: var(--spacing-md);
-    padding-bottom: var(--spacing-xs);
-    border-bottom: 1px solid var(--border-color);
-  }
-
-  .category-title-group {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    color: var(--text-subdued);
-  }
-
-  .category-title-group h4 {
-    margin: 0;
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
-  }
-
-  .category-desc {
-    font-size: var(--font-size-xs);
-    color: var(--text-subdued);
-  }
-
-  .category-empty {
-    background: var(--bg-surface);
-    border: 1px dashed var(--border-color);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-lg);
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .category-empty p {
-    margin: 0;
-    font-size: var(--font-size-sm);
-    color: var(--text-primary);
-  }
-
-  .category-empty span {
-    font-size: var(--font-size-xs);
-    color: var(--text-subdued);
-  }
-
-  .providers-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-xs);
-  }
-
-  .provider-row {
-    background: var(--bg-surface);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-md);
-    padding: var(--spacing-sm) var(--spacing-md);
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-md);
-    transition: border-color 0.15s ease;
-  }
-
-  .provider-row:hover {
-    border-color: rgba(255, 255, 255, 0.15);
-  }
-
-  .provider-row.disabled {
-    opacity: 0.55;
-    border-style: dashed;
-  }
-
-  .provider-rank {
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    color: var(--text-subdued);
-    background: rgba(255, 255, 255, 0.04);
-    border: 1px solid var(--border-color);
-    border-radius: var(--radius-xs);
-    padding: 2px 7px;
-    font-family: monospace;
-    flex-shrink: 0;
-  }
-
-  .provider-info {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-  }
-
-  .provider-name-row {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--spacing-xs) var(--spacing-sm);
-  }
-
-  .provider-name {
-    font-size: var(--font-size-sm);
-    font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
-  }
-
-  .provider-id-tag {
-    font-size: var(--font-size-xs);
-    color: var(--text-subdued);
-    font-family: monospace;
-    background: rgba(255, 255, 255, 0.04);
-    padding: 1px 6px;
-    border-radius: var(--radius-xs);
-  }
-
-  .provider-description {
-    margin: 0;
-    font-size: var(--font-size-xs);
-    color: var(--text-subdued);
-    line-height: 1.4;
-  }
-
-  .provider-actions {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-    flex-shrink: 0;
-  }
-
-  .priority-reorder-btns {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-  }
-
-  .icon-btn-sm {
-    background: transparent;
-    border: 1px solid var(--border-color);
-    color: var(--text-subdued);
-    padding: 4px 6px;
-    border-radius: var(--radius-xs);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.15s ease;
-  }
-
-  .icon-btn-sm:hover:not(:disabled) {
-    color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.2);
-  }
-
-  .icon-btn-sm:disabled {
-    opacity: 0.25;
-    cursor: not-allowed;
-  }
-
-  .btn-sm {
-    padding: 3px 8px;
-    font-size: var(--font-size-xs);
-  }
 </style>
