@@ -676,14 +676,16 @@
     "sortStars": "По звёздам",
     "sortUpdated": "По дате обновления",
     "categoryAll": "Все",
-    "categoryAudio": "Аудио",
-    "categoryUi": "Интерфейс",
+    "categoryStreaming": "Стриминг",
+    "categoryMetadata": "Метаданные",
     "categoryLyrics": "Тексты",
     "categoryLibrary": "Библиотека",
+    "categoryIntegration": "Интеграции",
     "categoryUtility": "Утилиты",
     "categoryAppearance": "Оформление",
-    "categorySocial": "Соцсети",
-    "categorySync": "Синхронизация"
+    "capabilityStream": "Поток",
+    "capabilityMetadata": "Метаданные",
+    "capabilityLyrics": "Тексты"
   },
   "app": {
     "logoAlt": "Логотип Audion",

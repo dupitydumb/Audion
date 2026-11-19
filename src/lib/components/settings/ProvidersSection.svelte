@@ -1,8 +1,11 @@
 <script lang="ts">
+  import { _ } from "svelte-i18n";
   import Icon from "$lib/components/Icon.svelte";
   import { providersStore, globalProviders, type ProviderItemEntry } from "$lib/plugins/providers";
   import { addToast } from "$lib/stores/toast";
   import { goToPlugins } from "$lib/stores/view";
+  import { pluginStore } from "$lib/stores/plugin-store";
+  import { getCapabilityLabel, humanizeIdentifier, type Translate } from "$lib/plugins/categories";
 
   type ProviderType = "stream" | "metadata" | "lyrics";
 
@@ -42,13 +45,23 @@
 
   $: providers = $providersStore;
 
+  const tr: Translate = (key, fallback) => $_(key, { default: fallback });
+
+  // Provider owners arrive as display name, safe_name, or folder name.
+  function ownerDisplay(owner: string): string {
+    const match = $pluginStore.installed.find(
+      (p) => p.folder_name === owner || p.manifest.safe_name === owner || p.name === owner
+    );
+    return match?.manifest.name ?? humanizeIdentifier(owner || "system");
+  }
+
   function listFor(type: ProviderType): ProviderItemEntry[] {
     return providers.filter((p) => p.type === type);
   }
 
   function toggleProvider(type: ProviderType, id: string, current: boolean) {
     globalProviders.setProviderEnabled(type, id, !current);
-    addToast(`Provider '${id}' ${!current ? "enabled" : "disabled"}`, "info");
+    addToast(`${humanizeIdentifier(id)} ${!current ? "enabled" : "disabled"}`, "info");
   }
 
   function movePriority(type: ProviderType, id: string, direction: "up" | "down") {
@@ -57,7 +70,7 @@
 
   function resetPriorities(type: ProviderType) {
     globalProviders.resetPriorities(type);
-    addToast(`Reset ${type} provider priorities`, "info");
+    addToast(`Reset ${getCapabilityLabel(type, tr)} provider priorities`, "info");
   }
 </script>
 
@@ -103,7 +116,7 @@
                       <div class="provider-name-row">
                         <span class="provider-rank">#{idx + 1}</span>
                         <span class="setting-title">{prov.name}</span>
-                        <span class="pill-badge">{prov.ownerPlugin}</span>
+                        <span class="pill-badge" title={prov.ownerPlugin}>{ownerDisplay(prov.ownerPlugin)}</span>
                       </div>
                       {#if prov.description}
                         <p class="setting-description">{prov.description}</p>
@@ -122,7 +135,9 @@
                   </div>
                 </div>
                 <div class="provider-actions">
-                  <span class="provider-id-tag">{prov.id}</span>
+                  <span class="provider-id-tag" title={prov.id}
+                    >{getCapabilityLabel(section.type, tr)}</span
+                  >
                   <div class="priority-reorder-btns">
                     <button
                       class="icon-btn-sm"
@@ -290,7 +305,6 @@
   .provider-id-tag {
     font-size: var(--font-size-xs);
     color: var(--text-subdued);
-    font-family: monospace;
     background: rgba(255, 255, 255, 0.04);
     padding: 1px 6px;
     border-radius: var(--radius-sm);

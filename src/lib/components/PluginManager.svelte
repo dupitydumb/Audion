@@ -22,6 +22,16 @@
   import { createSflxExtensionAdapter } from "$lib/plugins/sflx-adapter";
   import { globalProviders } from "$lib/plugins/providers";
   import { goToSettings } from "$lib/stores/view";
+  import {
+    CATEGORIES,
+    getCategoryLabel,
+    getDisplayCapabilities,
+    getCapabilityLabel,
+    getCapabilityIcon,
+    type Translate,
+  } from "$lib/plugins/categories";
+
+  const tr: Translate = (key, fallback) => $_(key, { default: fallback });
 
   function openProviderSettings() {
     try {
@@ -117,15 +127,12 @@
 
   // Categories for filtering
   const categories = [
-    { id: "all", key: "pluginManager.categoryAll" },
-    { id: "audio", key: "pluginManager.categoryAudio" },
-    { id: "ui", key: "pluginManager.categoryUi" },
-    { id: "lyrics", key: "pluginManager.categoryLyrics" },
-    { id: "library", key: "pluginManager.categoryLibrary" },
-    { id: "utility", key: "pluginManager.categoryUtility" },
-    { id: "appearance", key: "pluginManager.categoryAppearance" },
-    { id: "social", key: "pluginManager.categorySocial" },
-    { id: "sync", key: "pluginManager.categorySync" },
+    { id: "all", key: "pluginManager.categoryAll", label: "All" },
+    ...CATEGORIES.map((id) => ({
+      id,
+      key: `pluginManager.category${id[0].toUpperCase()}${id.slice(1)}`,
+      label: getCategoryLabel(id),
+    })),
   ];
 
   let confettiParticles: {
@@ -523,7 +530,7 @@
           class:active={$pluginStore.categoryFilter === category.id}
           on:click={() => pluginStore.setCategoryFilter(category.id)}
         >
-          {$_(category.key)}
+          {$_(category.key, { default: category.label })}
         </button>
       {/each}
     </div>
@@ -567,10 +574,17 @@
                 >{plugin.manifest.description || $_('pluginManager.noDescription')}</span
               >
               <div class="plugin-badges">
-                <span class="badge">{plugin.manifest.type.toUpperCase()}</span>
                 {#if plugin.manifest.category}
-                  <span class="badge">{plugin.manifest.category}</span>
+                  <span class="badge" title={plugin.manifest.category}
+                    >{getCategoryLabel(plugin.manifest.category, tr)}</span
+                  >
                 {/if}
+                {#each getDisplayCapabilities(plugin.manifest) as cap}
+                  <span class="badge badge-capability" title={cap}>
+                    <Icon name={getCapabilityIcon(cap)} size={11} />
+                    {getCapabilityLabel(cap, tr)}
+                  </span>
+                {/each}
                 {#if plugin.verified}
                   <span class="badge badge-verified">{$_('pluginManager.verified')}</span>
                 {/if}
@@ -652,10 +666,17 @@
                 >{plugin.manifest.description || $_('pluginManager.noDescription')}</span
               >
               <div class="plugin-badges">
-                <span class="badge">{plugin.manifest.type.toUpperCase()}</span>
                 {#if plugin.manifest.category}
-                  <span class="badge">{plugin.manifest.category}</span>
+                  <span class="badge" title={plugin.manifest.category}
+                    >{getCategoryLabel(plugin.manifest.category, tr)}</span
+                  >
                 {/if}
+                {#each getDisplayCapabilities(plugin.manifest) as cap}
+                  <span class="badge badge-capability" title={cap}>
+                    <Icon name={getCapabilityIcon(cap)} size={11} />
+                    {getCapabilityLabel(cap, tr)}
+                  </span>
+                {/each}
                 {#if getPluginRepoUrl(plugin)}
                   {@const cardRepoUrl = getPluginRepoUrl(plugin)}
                   {#if cardRepoUrl}
@@ -786,7 +807,17 @@
                 >{plugin.manifest.description || $_('pluginManager.noDescription')}</span
               >
               <div class="plugin-badges">
-                <span class="badge">{plugin.manifest.type.toUpperCase()}</span>
+                {#if plugin.manifest.category}
+                  <span class="badge" title={plugin.manifest.category}
+                    >{getCategoryLabel(plugin.manifest.category, tr)}</span
+                  >
+                {/if}
+                {#each getDisplayCapabilities(plugin.manifest) as cap}
+                  <span class="badge badge-capability" title={cap}>
+                    <Icon name={getCapabilityIcon(cap)} size={11} />
+                    {getCapabilityLabel(cap, tr)}
+                  </span>
+                {/each}
                 {#if plugin.enabled}
                   <span class="badge badge-active">{$_('pluginManager.active')}</span>
                 {/if}
@@ -899,8 +930,16 @@
           <div class="plugin-badges">
             <span class="badge">{selectedPlugin.manifest.type.toUpperCase()}</span>
             {#if selectedPlugin.manifest.category}
-              <span class="badge">{selectedPlugin.manifest.category}</span>
+              <span class="badge" title={selectedPlugin.manifest.category}
+                >{getCategoryLabel(selectedPlugin.manifest.category, tr)}</span
+              >
             {/if}
+            {#each getDisplayCapabilities(selectedPlugin.manifest) as cap}
+              <span class="badge badge-capability" title={cap}>
+                <Icon name={getCapabilityIcon(cap)} size={11} />
+                {getCapabilityLabel(cap, tr)}
+              </span>
+            {/each}
             {#if selectedPlugin.verified}
               <span class="badge badge-verified">{$_('pluginManager.verified')}</span>
             {/if}
@@ -1346,6 +1385,9 @@
   }
 
   .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     padding: var(--spacing-xs) var(--spacing-sm);
     border-radius: var(--radius-full);
     font-size: 0.6875rem;
@@ -1353,6 +1395,12 @@
     text-transform: uppercase;
     background-color: var(--bg-surface);
     color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .badge-capability {
+    background-color: rgba(99, 102, 241, 0.12);
+    color: var(--accent-primary);
   }
 
   .badge-verified {

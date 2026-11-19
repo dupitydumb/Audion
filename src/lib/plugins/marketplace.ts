@@ -1,6 +1,13 @@
 // Plugin registry and marketplace client
 import type { AudionPluginManifest } from './schema';
 import { validateManifest, validateManifests } from './schema';
+import {
+  CATEGORY_TO_CAPABILITY,
+  getCapabilities,
+  getCapabilityLabel,
+  getCategoryLabel,
+  normalizeCategory,
+} from './categories';
 import { proxyFetch } from '../network';
 
 export interface MarketplacePlugin {
@@ -419,15 +426,23 @@ export function searchPlugins(plugins: MarketplacePlugin[], query: string): Mark
       m.description?.toLowerCase().includes(q) ||
       m.author.toLowerCase().includes(q) ||
       m.tags?.some(t => t.toLowerCase().includes(q)) ||
-      m.category?.toLowerCase().includes(q)
+      m.category?.toLowerCase().includes(q) ||
+      getCategoryLabel(m.category).toLowerCase().includes(q) ||
+      getCapabilities(m).some(cap => getCapabilityLabel(cap).toLowerCase().includes(q))
     );
   });
 }
 
-// Filter plugins by category
+// Filter plugins by category (canonical category or derived capability)
 export function filterByCategory(plugins: MarketplacePlugin[], category: string): MarketplacePlugin[] {
   if (!category || category === 'all') return plugins;
-  return plugins.filter(p => p.manifest.category === category);
+  const target = normalizeCategory(category);
+  const targetCap = target ? CATEGORY_TO_CAPABILITY[target] : undefined;
+  return plugins.filter(p => {
+    const canonical = normalizeCategory(p.manifest.category) ?? p.manifest.category;
+    if (canonical === (target ?? category)) return true;
+    return targetCap ? getCapabilities(p.manifest).includes(targetCap) : false;
+  });
 }
 
 // Clear plugin cache

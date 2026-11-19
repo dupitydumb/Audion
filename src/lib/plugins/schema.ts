@@ -1,8 +1,12 @@
 // Plugin manifest schema for JS and WASM plugins
 
 // Known categories (plugins can use custom categories too)
-export type PluginCategory = 'audio' | 'ui' | 'lyrics' | 'library' | 'utility' | 'appearance' | 'social' | 'sync' | string;
+export type PluginCategory =
+  | 'streaming' | 'metadata' | 'lyrics' | 'library' | 'integration' | 'appearance' | 'utility'
+  | 'audio' | 'ui' | 'social' | 'sync'
+  | string;
 export type PluginType = 'js' | 'wasm';
+export type PluginCapability = 'stream' | 'metadata' | 'lyrics';
 
 // Cache validated manifests to avoid re-validation
 const validationCache = new WeakMap<object, boolean>();
@@ -34,6 +38,7 @@ export interface AudionPluginManifest {
   homepage?: string | null;
   category?: PluginCategory | null;
   tags?: string[] | null;
+  provides?: PluginCapability[] | null; // Capabilities this plugin adds (stream/metadata/lyrics)
   min_version?: string | null; // Minimum Audion version required
   license?: string | null;
 }
@@ -130,6 +135,14 @@ export function validateManifest(manifest: unknown): manifest is AudionPluginMan
   }
   if (m.tags != null && !Array.isArray(m.tags)) {
     errors.push('Tags must be an array');
+  }
+  if (m.provides != null) {
+    if (!Array.isArray(m.provides)) {
+      errors.push('provides must be an array');
+    } else if (m.provides.some((cap) => typeof cap !== 'string')) {
+      // Unknown capability strings are allowed; display filters them.
+      errors.push('Invalid provides entry');
+    }
   }
   if (m.cross_plugin_access != null) {
     if (!Array.isArray(m.cross_plugin_access)) {

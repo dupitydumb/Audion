@@ -827,14 +827,16 @@
     "sortStars": "Most Stars",
     "sortUpdated": "Recently Updated",
     "categoryAll": "All",
-    "categoryAudio": "Audio",
-    "categoryUi": "UI",
+    "categoryStreaming": "Streaming",
+    "categoryMetadata": "Metadata",
     "categoryLyrics": "Lyrics",
     "categoryLibrary": "Library",
+    "categoryIntegration": "Integration",
     "categoryUtility": "Utility",
     "categoryAppearance": "Appearance",
-    "categorySocial": "Social",
-    "categorySync": "Sync"
+    "capabilityStream": "Stream",
+    "capabilityMetadata": "Metadata",
+    "capabilityLyrics": "Lyrics"
   },
   "app": {
     "logoAlt": "Audion Logo",

@@ -37,6 +37,8 @@ pub struct PluginManifest {
     #[serde(default)]
     pub tags: Option<Vec<String>>,
     #[serde(default)]
+    pub provides: Option<Vec<String>>,
+    #[serde(default)]
     pub license: Option<String>,
     #[serde(default)]
     pub integrity: Option<String>,
