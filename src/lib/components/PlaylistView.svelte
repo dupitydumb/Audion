@@ -465,6 +465,12 @@
         display: flex;
         align-items: center;
         gap: var(--spacing-sm);
+        flex-wrap: wrap;
+    }
+
+    .header-actions .btn-secondary {
+        white-space: nowrap;
+        flex-shrink: 0;
     }
 
     /* Mobile: hide the big heading => the pill tabs above already show

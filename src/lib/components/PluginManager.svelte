@@ -1424,6 +1424,12 @@
     display: flex;
     align-items: center;
     gap: var(--spacing-sm);
+    flex-wrap: wrap;
+  }
+
+  .header-actions .btn-secondary {
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .btn-primary {

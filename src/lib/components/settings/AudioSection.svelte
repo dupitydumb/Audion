@@ -56,6 +56,10 @@
   let deviceDropdownRef: HTMLDivElement | null = null;
   let infoPopoverDevice: AudioDeviceInfo | null = null;
 
+  // Stored preference is a device id (e.g. "wasapi:{0.0.0.00000000}.{...}") — show its name
+  $: selectedDevice = deviceList?.devices.find((d) => d.id === $appSettings.outputDevice) ?? null;
+  $: outputDeviceLabel = selectedDevice?.extended[0] ?? selectedDevice?.name ?? $appSettings.outputDevice;
+
   function handleDeviceDropdownToggle() {
     if (outputDeviceDisabled) return;
     deviceDropdownOpen = !deviceDropdownOpen;
@@ -240,9 +244,9 @@
           aria-expanded={deviceDropdownOpen}
           aria-label={$_('settings.outputDevice', { default: 'Output device' })}
         >
-          <span class="device-dropdown-label">
-            {#if $appSettings.outputDevice}
-              {($appSettings.outputDevice.length > 28) ? $appSettings.outputDevice.slice(0, 28) + '...' : $appSettings.outputDevice}
+          <span class="device-dropdown-label" title={$appSettings.outputDevice ?? undefined}>
+            {#if outputDeviceLabel}
+              {(outputDeviceLabel.length > 28) ? outputDeviceLabel.slice(0, 28) + '...' : outputDeviceLabel}
             {:else}
               {$_('settings.defaultDevice', { default: 'System default' })}
             {/if}
