@@ -9,8 +9,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 
 const LASTFM_API_BASE: &str = "https://ws.audioscrobbler.com/2.0/";
-const DEFAULT_LASTFM_API_KEY: &str = "c43224976722ec10b5c00e12ef5e9dc3";
-const DEFAULT_LASTFM_API_SECRET: &str = "9231f13d80d28564b5853f0980f33f67";
+const DEFAULT_LASTFM_API_KEY: &str = "a12a4fd56a0aad267afc582c37612df0";
+const DEFAULT_LASTFM_API_SECRET: &str = "2bdb82a141465ed0b3ffd1abd7ce907b";
 
 // ── Session storage (app-data file) ──────────────────────────────────────────
 
