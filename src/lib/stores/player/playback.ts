@@ -59,6 +59,7 @@ let _currentSessionId = 0;
 let _playStartTime: number = 0;
 let _nativeAudioUsed = false;
 let _nativeErrCount = 0;
+let _autoSkipCount = 0;
 
 let _sleepTimerCheck: (() => boolean) | null = null;
 let _sleepTimerExpire: (() => Promise<void>) | null = null;
@@ -290,6 +291,59 @@ registerPlayerDirectiveHandler((directive: PlayerDirective) => {
 // covers : add/remove/reorder and shuffle/repeat toggles, everywhere in queue.ts that already calls this callback
 registerReorderCallback(() => { _schedulePreload(); syncPlayerQueue(); });
 
+// ─── Catalog → full-stream handoff ────────────────────────────────────────────
+
+const PREVIEW_URL_RE = /apple\.com|itunes|\/preview\//i;
+
+function _looksLikePreviewUrl(p: string | null | undefined): boolean {
+    return !!p && PREVIEW_URL_RE.test(p);
+}
+
+// catalog tracks (iTunes/MusicBrainz preview in `path`, or no direct resolver) may still
+// have a full-length stream from an active StreamProvider
+// reuses the in-memory `stream_url` so play + preload never query twice
+// provider URLs can be signed/expiring => never persisted
+async function _resolveCatalogStream(track: Track, audioPath: string | null | undefined): Promise<string | null> {
+    if (track.local_src) return null;
+
+    const cached = (track as any).stream_url as string | undefined;
+    if (cached) return cached;
+
+    // already a full local/server source: never let a provider query hijack it
+    if (track.source_type === 'server' || track.source_type === 'subsonic' || track.source_type === 'local') {
+        return null;
+    }
+
+    const runtime = pluginStore.getRuntime();
+    const hasDirectResolver = (runtime && track.source_type && runtime.streamResolvers.has(track.source_type)) ||
+        (track.source_type && globalProviders.getStreamProvider(track.source_type));
+
+    const isPreviewOrCatalog = (
+        track.source_type === 'itunes' ||
+        track.source_type === 'metadata' ||
+        track.source_type === 'musicbrainz' ||
+        track.source_type === 'plugin' ||
+        !hasDirectResolver ||
+        _looksLikePreviewUrl(audioPath)
+    );
+
+    if (!isPreviewOrCatalog || globalProviders.getAllStreamProviders().length === 0) return null;
+
+    try {
+        console.log(`[Player] Attempting full stream handoff for catalog track: "${track.title}" by "${track.artist}"`);
+        const fullStream = await globalProviders.resolveTrackStream(track as any);
+        if (fullStream && fullStream.isFullStream && fullStream.url) {
+            const resolved = fullStream.rawBlobUrl || fullStream.url;
+            (track as any).stream_url = resolved;
+            console.log(`[Player] Successfully resolved full-length audio stream (${fullStream.format || 'audio'}, ${fullStream.bitrate || 'adaptive'} bps)`);
+            return resolved;
+        }
+    } catch (handoffErr) {
+        console.warn('[Player] Stream handoff failed, falling back to original preview/path:', handoffErr);
+    }
+    return null;
+}
+
 // ─── Core playback ────────────────────────────────────────────────────────────
 
 export async function playTrack(
@@ -464,33 +518,22 @@ export async function playTrack(
         // Cross-Provider Metadata-to-Stream Handoff:
         // If track is a catalog track (e.g. from metadata provider with a 30s preview URL or without direct audio stream),
         // attempt to resolve a full-length audio stream via active StreamProviders!
-        const runtime = pluginStore.getRuntime();
-        const hasDirectResolver = (runtime && track.source_type && runtime.streamResolvers.has(track.source_type)) ||
-            (track.source_type && globalProviders.getStreamProvider(track.source_type));
+        const fullStreamUrl = await _resolveCatalogStream(track, audioPath);
+        if (fullStreamUrl) audioPath = fullStreamUrl;
 
-        const isPreviewOrCatalog = !track.local_src && (
-            track.source_type === 'itunes' ||
-            track.source_type === 'metadata' ||
-            track.source_type === 'musicbrainz' ||
-            track.source_type === 'plugin' ||
-            !hasDirectResolver ||
-            (audioPath && (audioPath.includes('apple.com') || audioPath.includes('itunes') || audioPath.includes('/preview/')))
-        );
-
-        if (isPreviewOrCatalog && globalProviders.getAllStreamProviders().length > 0) {
-            try {
-                console.log(`[Player] Attempting full stream handoff for catalog track: "${track.title}" by "${track.artist}"`);
-                const fullStream = await globalProviders.resolveTrackStream(track as any);
-                if (fullStream && fullStream.isFullStream && fullStream.url) {
-                    audioPath = fullStream.rawBlobUrl || fullStream.url;
-                    (track as any).stream_url = audioPath;
-                    console.log(`[Player] Successfully resolved full-length audio stream (${fullStream.format || 'audio'}, ${fullStream.bitrate || 'adaptive'} bps)`);
-                }
-            } catch (handoffErr) {
-                console.warn('[Player] Stream handoff failed, falling back to original preview/path:', handoffErr);
+        // never play a catalog preview from the library: full stream or skip
+        if (!track.local_src && _looksLikePreviewUrl(audioPath)) {
+            if (++_autoSkipCount > 5) {
+                addToast('No playable stream found for the queued tracks', 'error');
+                isPlaying.set(false);
+                return;
             }
+            addToast(`No full stream found for "${track.title}" — skipping`, 'warning');
+            nextTrack();
+            return;
         }
 
+        const runtime = pluginStore.getRuntime();
         const streaming = isStreaming(track) || !!(track as any).stream_url || audioPath.startsWith('http://') || audioPath.startsWith('https://') || audioPath.includes('://');
 
         let swapped = false;
@@ -587,6 +630,7 @@ export async function playTrack(
         currentTime.set(startTime);
         duration.set(track.duration || 0);
         isPlaying.set(true);
+        _autoSkipCount = 0;
 
         if (get(activeBackend) === 'native') {
             _startReckoning(startTime);
@@ -1150,7 +1194,8 @@ async function _scheduleHtml5Preload(): Promise<void> {
     const nextTrackObj = q[nextIdx];
     if (!nextTrackObj) return;
 
-    let audioPath = nextTrackObj.local_src || nextTrackObj.path;
+    // prefer a full stream resolved earlier this session over the persisted preview path
+    let audioPath = nextTrackObj.local_src || (nextTrackObj as any).stream_url || nextTrackObj.path;
 
     // Resolve server tracks
     if (nextTrackObj.source_type === 'server' && !nextTrackObj.local_src) {
@@ -1177,6 +1222,16 @@ async function _scheduleHtml5Preload(): Promise<void> {
     }
 
     if (!audioPath) return;
+
+    // same catalog -> full-stream handoff as playTrack, so advance/crossfade promote a full stream
+    const fullStreamUrl = await _resolveCatalogStream(nextTrackObj, audioPath);
+    if (fullStreamUrl) audioPath = fullStreamUrl;
+
+    // never cache a preview: no preload, advance falls back to playTrack which toasts + skips
+    if (!nextTrackObj.local_src && _looksLikePreviewUrl(audioPath)) {
+        console.log('[Player] Skipping preload for catalog track without full stream:', nextTrackObj.title);
+        return;
+    }
 
     const streaming = isStreaming(nextTrackObj) || !!(nextTrackObj as any).stream_url || audioPath.startsWith('http://') || audioPath.startsWith('https://') || audioPath.includes('://');
 

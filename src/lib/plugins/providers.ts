@@ -569,6 +569,11 @@ export class ProviderRegistry {
             console.warn(`[ProviderRegistry] StreamProvider '${providerId}' not found`);
             return null;
         }
+        const cfg = this.config.stream[providerId];
+        if (cfg && cfg.enabled === false) {
+            // disabled providers must not be used by direct source_type lookups either
+            return null;
+        }
         const t0 = performance.now();
         try {
             const res = await provider.getStream(songId, quality);
@@ -949,6 +954,8 @@ export class ProviderRegistry {
             if (type === 'stream') {
                 const sp = this.streamProviders.get(id);
                 if (!sp) return null;
+                const cfg = this.config.stream[id];
+                if (cfg && cfg.enabled === false) return null;
                 if (typeof sp.resolveByQuery === 'function') {
                     await sp.resolveByQuery({ title: 'ping', artist: 'test' });
                 } else {
