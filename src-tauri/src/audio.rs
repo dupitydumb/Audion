@@ -30,7 +30,6 @@ pub use worker::PlaybackStateSync;
 
 use crate::db::Database;
 use crate::sync::SyncState;
-use std::sync::Mutex;
 use tauri::{Manager, State};
 
 use worker::AudioCommand;

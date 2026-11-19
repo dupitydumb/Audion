@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+#[allow(unused_imports)]
 use tauri::Manager;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -26,7 +27,7 @@ pub struct LocalSkinInfo {
 }
 
 /// Resolves and ensures the skins root directory exists.
-pub fn get_skins_root(app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
+pub fn get_skins_root(#[allow(unused_variables)] app_handle: &tauri::AppHandle) -> Result<PathBuf, String> {
     #[cfg(target_os = "linux")]
     {
         let mut dir =

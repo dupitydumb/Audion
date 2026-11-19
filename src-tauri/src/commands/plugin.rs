@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+#[allow(unused_imports)]
 use tauri::Manager;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -598,7 +599,7 @@ pub fn revoke_permissions(
 }
 
 #[tauri::command]
-pub fn get_plugin_dir(app_handle: tauri::AppHandle) -> Result<String, String> {
+pub fn get_plugin_dir(#[allow(unused_variables)] app_handle: tauri::AppHandle) -> Result<String, String> {
     // On Linux use XDG config directory (~/.config/<app>/plugins)
     #[cfg(target_os = "linux")]
     {

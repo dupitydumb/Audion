@@ -1,7 +1,7 @@
 // Play history, top tracks/albums/artists, stats summary
 use rusqlite::{params, Connection, OptionalExtension, Result};
 
-use super::models::{Album, AlbumWithCount, Artist, ArtistWithCount, StatsSummary, Track, TrackWithCount};
+use super::models::{Album, AlbumWithCount, ArtistWithCount, StatsSummary, Track, TrackWithCount};
 use super::artists;
 
 // ============================================================================

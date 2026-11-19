@@ -266,6 +266,7 @@ pub fn set_island_window_bounds(
     }
     #[cfg(not(target_os = "windows"))]
     {
+        let _ = (pill_x, pill_y, pill_w, pill_h);
         let _ = window.set_position(tauri::LogicalPosition::new(x, y));
         let _ = window.set_size(tauri::LogicalSize::new(width, height));
     }

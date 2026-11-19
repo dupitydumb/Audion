@@ -51,7 +51,7 @@ fn pick_exact_config(
         if range.channels() != channels {
             continue;
         }
-        if sample_rate < range.min_sample_rate().0 || sample_rate > range.max_sample_rate().0 {
+        if sample_rate < range.min_sample_rate() || sample_rate > range.max_sample_rate() {
             continue;
         }
         let rank = match range.sample_format() {
@@ -61,7 +61,7 @@ fn pick_exact_config(
             cpal::SampleFormat::U8 => 9,
             _ => 5,
         };
-        let Ok(cfg) = range.try_with_sample_rate(cpal::SampleRate(sample_rate)) else {
+        let Some(cfg) = range.try_with_sample_rate(sample_rate) else {
             continue;
         };
         if best.as_ref().is_none_or(|(r, _)| rank < *r) {
@@ -98,7 +98,7 @@ pub fn open_exclusive(
     let sink = builder
         .with_config(&cpal::StreamConfig {
             channels,
-            sample_rate: cpal::SampleRate(sample_rate),
+            sample_rate,
             buffer_size: cpal::BufferSize::Default,
         })
         .with_sample_format(cfg.sample_format())

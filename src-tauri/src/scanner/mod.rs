@@ -8,4 +8,5 @@ pub mod reconcile;
 
 pub use walker::scan_directory;
 pub use metadata::extract_metadata;
+#[allow(unused_imports)]
 pub use artist_parser::{split_artists, join_artists_for_display};
