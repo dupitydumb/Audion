@@ -30,6 +30,7 @@
   <a href="#-screenshots"><strong>Screenshots</strong></a> ·
   <a href="#-self-hosted-server-docker"><strong>Self-Hosted Server</strong></a> ·
   <a href="#-build-from-source"><strong>Build from Source</strong></a> ·
+  <a href="#-agent-skills"><strong>Agent Skills</strong></a> ·
   <a href="#-contributing"><strong>Contributing</strong></a> ·
   <a href="#-support"><strong>Support</strong></a>
 </p>
@@ -269,6 +270,24 @@ npm run tauri build  # production build
 
 ---
 
+## 🤖 Agent Skills
+
+Audion has a companion repo of agent skills for AI coding assistants. Each skill is a `SKILL.md` in the open Agent Skills format, with the steps, skeletons, and permission rules the runtime actually enforces, so an agent does not have to reverse-engineer the source to build something that loads.
+
+```bash
+npx skills add dupitydumb/Audion-Skills
+```
+
+| Skill | What it covers |
+| --- | --- |
+| `audion-plugin` | `plugin.json`, lifecycle hooks, permission-gated API, events, providers, UI slots |
+| `audion-skin` | `.audionskin` packages, folder skins, color tokens, custom CSS, canvas effects |
+| `audion-registry` | Publishing to the community marketplace, and what the installer actually downloads |
+
+Install a single skill with `npx skills add dupitydumb/Audion-Skills --skill audion-skin`. Sources and full reference pages: [dupitydumb/Audion-Skills](https://github.com/dupitydumb/Audion-Skills).
+
+---
+
 ## ❓ FAQ
 
 **Is Audion free?** Yes — free and open source under GPLv3. Donations are voluntary.
@@ -289,6 +308,7 @@ Contributions are welcome — translations, bug reports, plugins, and code.
 
 - [Issues](https://github.com/dupitydumb/Audion/issues) — bugs and feature requests
 - [PLUGINS.md](./PLUGINS.md) — build plugins
+- [Audion-Skills](https://github.com/dupitydumb/Audion-Skills) — agent skills for building plugins and skins
 - [developerguide.md](./developerguide.md) — architecture and development setup
 - [Discord](https://discord.gg/27XRVQsBd9) — discuss ideas
 
