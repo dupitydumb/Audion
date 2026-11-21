@@ -8,7 +8,6 @@
 import { AppleMusic } from './applemusic';
 import { Genius } from './genius';
 import { LRCLib } from './lrclib';
-import { Musixmatch } from './musixmatch';
 import { FILTER_WORDS } from './constants';
 
 // ---------------------------------------------------------------------------
@@ -152,7 +151,6 @@ export interface LyricsSource {
 const _applemusic = new AppleMusic();
 const _genius     = new Genius();
 const _lrclib     = new LRCLib();
-const _musixmatch = new Musixmatch(null, true); // enhanced = word-by-word
 
 // ---------------------------------------------------------------------------
 // Source registry
@@ -191,24 +189,6 @@ export const LYRICS_SOURCES: LyricsSource[] = [
         },
     },
     
-    {
-        id:     'musixmatch',
-        label:  'Musixmatch',
-        format: 'lrc',
-
-        async fetch(title, artist) {
-            const result = await _musixmatch.getLrc(`${title} ${artist}`);
-            if (!result?.synced) return null;
-            return this.parse(result.synced);
-        },
-
-        parse(raw) {
-            const lines       = lyricsManager.parseLRC(raw);
-            const hasWordSync = lines.some(l => l.words && l.words.length > 0);
-            return { lines, source: 'musixmatch', format: 'lrc', hasWordSync, raw };
-        },
-    },
-
     {
         id:     'lrclib',
         label:  'LRCLIB',
@@ -659,4 +639,3 @@ export const lyricsManager = new LyricsManager();
 
 // Re-export providers for direct use if needed
 export { LRCLib }     from './lrclib';
-export { Musixmatch } from './musixmatch';

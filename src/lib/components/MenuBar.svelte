@@ -211,10 +211,6 @@
     if (!confirmed) return;
 
     try {
-      // Clear lyrics cache from localStorage
-      localStorage.removeItem("musixmatch_token");
-      localStorage.removeItem("musixmatch_expiration");
-
       // Clear the current track's LRC file cache
       await lyricsStore.clearCurrentTrackCache();
 

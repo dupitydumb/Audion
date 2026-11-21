@@ -77,7 +77,7 @@ fn resolve_user_lyrics_path(app: &AppHandle, music_path: &str, format: &str) -> 
 
 /// Path for a source-fetched lyrics file: song.<source_id>.<format>.
 ///
-/// `source_id` lowercase  "musixmatch", "lrclib", "applettml".
+/// `source_id` lowercase  "lrclib", "applettml".
 /// `format` file format  "lrc", "ttml".
 ///
 /// Adding a new provider requires a call with a new id/format.
@@ -148,7 +148,6 @@ fn sanitise_format(format: &str) -> &str {
 const KNOWN_FORMATS: &[&str] = &["lrc", "ttml", "xml", "srt", "json"];
 const KNOWN_SOURCES: &[&str] = &[
     "lrclib",
-    "musixmatch",
     "kugou",
     "qq",
     "netease",
@@ -583,52 +582,6 @@ pub fn delete_lyrics_by_token(
 }
 
 // ---------------------------------------------------------------------------
-// Musixmatch proxy
-// ---------------------------------------------------------------------------
-
-#[tauri::command]
-pub async fn musixmatch_request(
-    action: String,
-    params: Vec<(String, String)>,
-) -> Result<String, String> {
-    // Build a client with cookie store and proper redirect policy
-    let client = reqwest::Client::builder()
-        .cookie_store(true)
-        .redirect(reqwest::redirect::Policy::limited(10))
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| format!("Failed to create client: {}", e))?;
-
-    let url = format!("https://apic-desktop.musixmatch.com/ws/1.1/{}", action);
-
-    // Build query string
-    let mut query_params: Vec<(String, String)> = params;
-    query_params.push(("app_id".to_string(), "web-desktop-app-v1.0".to_string()));
-    query_params.push((
-        "t".to_string(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis()
-            .to_string(),
-    ));
-
-    let response = client
-        .get(&url)
-        .query(&query_params)
-        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        .header("Accept", "application/json, text/plain, */*")
-        .header("Accept-Language", "en-US,en;q=0.9")
-        .header("Origin", "https://www.musixmatch.com")
-        .header("Referer", "https://www.musixmatch.com/")
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
-
-    response.text().await.map_err(|e| format!("Failed to read response: {}", e))
-}
-
-// ---------------------------------------------------------------------------
 // LRC parsing os used only by get_lyrics / get_current_lyric.
 // TTML parsing happens entirely on the frontend via DOMParser.
 // ---------------------------------------------------------------------------
@@ -819,7 +772,7 @@ fn resolve_best_lrc_path(app: &AppHandle, music_path: &str, source_priority: &[&
 /// Get all parsed lyric lines (LRC only , TTML is parsed client-side).
 #[tauri::command]
 pub fn get_lyrics(app: AppHandle, music_path: String) -> Result<Option<Vec<LyricLineJson>>, String> {
-    let prio = ["musixmatch", "lrclib"];
+    let prio = ["lrclib"];
     let path = match resolve_best_lrc_path(&app, &music_path, &prio) {
         Some(p) => p,
         None => return Ok(None),
@@ -838,7 +791,7 @@ pub fn get_current_lyric(
     music_path: String,
     current_time: f64,
 ) -> Result<Option<CurrentLyricJson>, String> {
-    let prio = ["musixmatch", "lrclib"];
+    let prio = ["lrclib"];
     let path = match resolve_best_lrc_path(&app, &music_path, &prio) {
         Some(p) => p,
         None => return Ok(None),

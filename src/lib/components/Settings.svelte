@@ -359,7 +359,6 @@
         "genius",
         "apple music",
         "lrclib",
-        "musixmatch",
         "source order",
       ],
     },

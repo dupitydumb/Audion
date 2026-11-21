@@ -28,7 +28,6 @@
     user: 'Local .lrc files imported or added manually',
     embedded: 'Lyrics embedded in audio file metadata tags',
     applejson: 'Apple Music synchronized syllables (requires Paxsenix API key)',
-    musixmatch: 'Synchronized lyrics from Musixmatch catalog',
     lrclib: 'Community synchronized and plain LRC lyrics',
     genius: 'Plain text lyrics and annotations from Genius',
   };
@@ -37,8 +36,10 @@
   // Reorderable list state
   // ---------------------------------------------------------------------
   function parseItemsFromRaw(raw: string): ReorderItem[] {
-    const tokens = raw ? raw.split('/').filter(Boolean) : [];
     const known = PRIORITY_TOKENS;
+    // drop ids that are no longer registered
+    const tokens = (raw ? raw.split('/').filter(Boolean) : [])
+      .filter((t) => known.some((k) => k.id === t));
     const items: ReorderItem[] = [];
 
     if (tokens.length === 0) {
