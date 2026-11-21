@@ -79,7 +79,7 @@ Audion is a desktop and mobile player for the music you already own. Index your 
     <td width="50%" valign="top">
 
 #### Lyrics
-- **Synced lyrics** from LRCLIB and Musixmatch.
+- **Synced lyrics** from LRCLIB.
 - **Karaoke-style word highlighting** in full screen and the lyric card.
 - **Cached offline** — lyrics you've loaded stay available without a connection.
 - **Export and share** lyric cards from desktop and mobile.
