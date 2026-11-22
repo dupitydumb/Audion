@@ -54,3 +54,4 @@
 * **Linux Compatibility**:
   * Added automated Linux smoke-test verification and status reporting after release build across supported distributions.
 
+Thanks to @SmileofHaven and @hunty-97 for helping me with the release.
