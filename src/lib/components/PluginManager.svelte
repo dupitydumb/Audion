@@ -413,6 +413,28 @@
       }
     }
 
+    // 4. For marketplace plugins with relative icon, resolve via manifest_url or repo
+    if (manifest.icon && ("manifest_url" in plugin || "repo" in plugin)) {
+      const mp = plugin as MarketplacePlugin;
+      if (mp.manifest_url) {
+        try {
+          const baseUrl = mp.manifest_url.substring(0, mp.manifest_url.lastIndexOf("/") + 1);
+          return new URL(manifest.icon, baseUrl).href;
+        } catch {}
+      }
+      if (mp.repo) {
+        const match =
+          mp.repo.match(/github\.com\/([^/]+)\/([^/]+)/) ||
+          mp.repo.match(/^([^/]+)\/([^/]+)$/);
+        if (match) {
+          const [, owner, repo] = match;
+          const cleanRepo = repo.replace(/\.git$/, "").replace(/\/$/, "");
+          const cleanIcon = manifest.icon.replace(/^\.?\//, "");
+          return `https://raw.githubusercontent.com/${owner}/${cleanRepo}/main/${cleanIcon}`;
+        }
+      }
+    }
+
     return null;
   }
 </script>

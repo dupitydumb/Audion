@@ -206,6 +206,42 @@ function isValidUrl(url: string): boolean {
   }
 }
 
+// Resolve icon URL if relative using manifest_url or repository path
+export function resolvePluginIconUrl(plugin: { manifest?: AudionPluginManifest; manifest_url?: string; repo?: string }): string | undefined {
+  const manifest = plugin.manifest;
+  if (!manifest || !manifest.icon) return undefined;
+  if (
+    manifest.icon.startsWith('http') ||
+    manifest.icon.startsWith('data:') ||
+    manifest.icon.trim().startsWith('<svg')
+  ) {
+    return undefined;
+  }
+
+  // 1. If manifest_url is available, resolve relative to it
+  if (plugin.manifest_url && isValidUrl(plugin.manifest_url)) {
+    try {
+      const baseUrl = plugin.manifest_url.substring(0, plugin.manifest_url.lastIndexOf('/') + 1);
+      return new URL(manifest.icon, baseUrl).href;
+    } catch {}
+  }
+
+  // 2. If repo URL or owner/repo is available, resolve to raw GitHub URL
+  if (plugin.repo) {
+    const match =
+      plugin.repo.match(/github\.com\/([^/]+)\/([^/]+)/) ||
+      plugin.repo.match(/^([^/]+)\/([^/]+)$/);
+    if (match) {
+      const [, owner, repo] = match;
+      const cleanRepo = repo.replace(/\.git$/, '').replace(/\/$/, '');
+      const cleanIcon = manifest.icon.replace(/^\.?\//, '');
+      return `https://raw.githubusercontent.com/${owner}/${cleanRepo}/main/${cleanIcon}`;
+    }
+  }
+
+  return undefined;
+}
+
 // Fetch with proxy
 async function fetchWithProxy<T>(url: string): Promise<T> {
   return proxyFetch<T>(url);
@@ -227,11 +263,16 @@ export async function fetchRegistry(registry: CommunityRegistry): Promise<Market
     const validManifests = validateManifests(data.plugins.map((p) => p.manifest));
     return data.plugins
       .filter((p) => validManifests.includes(p.manifest as AudionPluginManifest))
-      .map((p) => ({
-        ...p,
-        curated: !!registry.isDefault,
-        registryName: registry.name,
-      }));
+      .map((p) => {
+        const iconUrl = resolvePluginIconUrl(p);
+        const manifest = iconUrl && !p.manifest.icon_url ? { ...p.manifest, icon_url: iconUrl } : p.manifest;
+        return {
+          ...p,
+          manifest,
+          curated: !!registry.isDefault,
+          registryName: registry.name,
+        };
+      });
   } catch (err) {
     console.warn(`[Marketplace] Failed to fetch registry '${registry.name}' from ${registry.url}:`, err);
     return [];
@@ -275,7 +316,11 @@ export async function fetchCuratedRegistry(): Promise<MarketplacePlugin[]> {
         // Map back to plugins
         return data.plugins
           .filter(p => validManifests.includes(p.manifest as AudionPluginManifest))
-          .map(p => ({ ...p, curated: true }));
+          .map(p => {
+            const iconUrl = resolvePluginIconUrl(p);
+            const manifest = iconUrl && !p.manifest.icon_url ? { ...p.manifest, icon_url: iconUrl } : p.manifest;
+            return { ...p, manifest, curated: true };
+          });
     } catch (err) {
       console.warn('[Marketplace] Local registry failed:', err);
     }
@@ -294,7 +339,11 @@ export async function fetchCuratedRegistry(): Promise<MarketplacePlugin[]> {
       // Map back to plugins
       const validPlugins = data.plugins
         .filter(p => validManifests.includes(p.manifest as AudionPluginManifest))
-        .map(p => ({ ...p, curated: true }));
+        .map(p => {
+          const iconUrl = resolvePluginIconUrl(p);
+          const manifest = iconUrl && !p.manifest.icon_url ? { ...p.manifest, icon_url: iconUrl } : p.manifest;
+          return { ...p, manifest, curated: true };
+        });
 
       if (validPlugins.length < data.plugins.length) {
         console.warn(

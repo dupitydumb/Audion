@@ -181,13 +181,21 @@
                 barHeights[3] = 4 + Math.cos(t * 1.1 + 2.0) * 4 + 5;
             }
         } else {
-            // Flatten to 2px dots when paused
+            // Flatten to 2px dots when paused and halt animation loop
             barHeights[0] = 2;
             barHeights[1] = 2;
             barHeights[2] = 2;
             barHeights[3] = 2;
+            barHeights = [...barHeights];
+            animFrame = 0;
+            return;
         }
         barHeights = [...barHeights];
+        animFrame = requestAnimationFrame(updateVisualizer);
+    }
+
+    // Resume visualizer loop on playback start
+    $: if ($isPlaying && !animFrame) {
         animFrame = requestAnimationFrame(updateVisualizer);
     }
 

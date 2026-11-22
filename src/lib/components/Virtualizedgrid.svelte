@@ -62,11 +62,14 @@
     $: autoColumns = Math.max(1, Math.floor((containerWidth + gridGap) / (cardWidth + gridGap)));
     $: columns = (columnsBreakpoint > 0 && containerWidth < columnsBreakpoint) ? columnsBelow : autoColumns;
 
-    // Each row is cardHeight + gridGap
-    $: ROW_HEIGHT = cardHeight > 0 ? cardHeight + gridGap : 1;
-
     // Dynamic width of cards to fit exactly 1fr stretching
     $: dynamicCardWidth = columns > 0 ? (containerWidth - (columns - 1) * gridGap) / columns : cardWidth;
+
+    // Dynamically scale card height so 1:1 square cover + meta labels stay proportional
+    $: dynamicCardHeight = Math.max(cardHeight, Math.round(dynamicCardWidth + (isMobileView ? 60 : 76)));
+
+    // Each row is dynamicCardHeight + gridGap
+    $: ROW_HEIGHT = dynamicCardHeight > 0 ? dynamicCardHeight + gridGap : 1;
 
     // Group items into rows
     type ItemRow = {
@@ -256,7 +259,7 @@
                             top: 0;
                             left: 0;
                             width: {dynamicCardWidth}px;
-                            height: {cardHeight}px;
+                            height: {dynamicCardHeight}px;
                             transform: translate3d({left}px, {top}px, 0);
                         "
                     >

@@ -23,7 +23,7 @@
         "decorations": false,
         "resizable": true,
         "maximized": false,
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,HardwareMediaKeyHandling,MediaSessionService"
+        "additionalBrowserArgs": "--enable-gpu-rasterization --enable-zero-copy --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,HardwareMediaKeyHandling,MediaSessionService"
       }
     ],
     "security": {

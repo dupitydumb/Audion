@@ -57,9 +57,20 @@
       if (!initialized) return;
       worker.postMessage({ type: "playback", playing });
     });
+
+    handleVisibility = () => {
+      if (!initialized || !worker) return;
+      worker.postMessage({ type: "visibility", visible: !document.hidden });
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
   });
 
+  let handleVisibility: (() => void) | null = null;
+
   onDestroy(() => {
+    if (handleVisibility) {
+      document.removeEventListener("visibilitychange", handleVisibility);
+    }
     unsubColors?.();
     unsubSettings?.();
     unsubPlaying?.();

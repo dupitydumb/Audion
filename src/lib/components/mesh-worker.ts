@@ -14,6 +14,8 @@ let baseSpeed = 1;
 let elapsed = 0; // accumulated virtual time, decoupled from speed changes
 let lastRaf = 0;
 let paused = false;
+let isVisible = true;
+let isPlaying = false;
 let rafHandle = 0;
 let spread = 0.22; // orbit radius: how far each blob wanders from its anchor corner
 let sharpness = 3.5; // blob edge falloff exponent (lower => softer/blurrier blend, higher => crisper blobs)
@@ -76,7 +78,11 @@ function draw(time: number) {
   }
 
   ctx.putImageData(imageData, 0, 0);
-  if (!paused) rafHandle = requestAnimationFrame(draw);
+  if (!paused && isVisible && isPlaying) {
+    rafHandle = requestAnimationFrame(draw);
+  } else {
+    rafHandle = 0;
+  }
 }
 
 self.onmessage = (e: MessageEvent) => {
@@ -94,13 +100,27 @@ self.onmessage = (e: MessageEvent) => {
       targetColors = currentColors.map((c) => [...c]);
     }
     paused = e.data.enabled === false;
-    if (!paused) {
+    lastRaf = 0;
+    if (!paused && isVisible && isPlaying) {
+      rafHandle = requestAnimationFrame(draw);
+    } else if (!paused && isVisible) {
+      draw(performance.now());
+    }
+  } else if (e.data.type === "visibility") {
+    isVisible = e.data.visible !== false;
+    if (isVisible && !paused && isPlaying && !rafHandle) {
       lastRaf = 0;
       rafHandle = requestAnimationFrame(draw);
+    } else if (!isVisible && rafHandle) {
+      cancelAnimationFrame(rafHandle);
+      rafHandle = 0;
     }
   } else if (e.data.type === "colors") {
     targetColors = (e.data.colors as string[]).map(hexToRgb);
     transitionStart = performance.now();
+    if (!paused && isVisible && !isPlaying && !rafHandle) {
+      draw(performance.now());
+    }
   } else if (e.data.type === "settings") {
     if (typeof e.data.speed === "number") {
       baseSpeed = e.data.speed;
@@ -115,17 +135,29 @@ self.onmessage = (e: MessageEvent) => {
     }
     if (typeof e.data.enabled === "boolean" && e.data.enabled !== !paused) {
       paused = !e.data.enabled;
-      if (!paused) {
+      if (!paused && isVisible && isPlaying) {
         lastRaf = 0;
         cancelAnimationFrame(rafHandle);
         rafHandle = requestAnimationFrame(draw);
       } else {
         cancelAnimationFrame(rafHandle);
+        rafHandle = 0;
+        if (!paused && isVisible) {
+          draw(performance.now());
+        }
       }
     }
   } else if (e.data.type === "playback") {
     if (typeof e.data.playing === "boolean") {
-      speed = e.data.playing ? baseSpeed : baseSpeed * 0.15;
+      isPlaying = e.data.playing;
+      speed = isPlaying ? baseSpeed : baseSpeed * 0.15;
+      if (isPlaying && !paused && isVisible && !rafHandle) {
+        lastRaf = 0;
+        rafHandle = requestAnimationFrame(draw);
+      } else if (!isPlaying && rafHandle) {
+        cancelAnimationFrame(rafHandle);
+        rafHandle = 0;
+      }
     }
   }
 };
