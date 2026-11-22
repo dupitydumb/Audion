@@ -187,8 +187,9 @@ fn open_exclusive(
             .ok_or("No default output endpoint")?,
     };
     // ponytail: cpal cannot open WASAPI exclusive, go straight to the endpoint
+    let raw_endpoint = endpoint.strip_prefix("wasapi:").unwrap_or(&endpoint);
     let sink =
-        output::wasapi::WasapiExclusiveSink::open(Some(endpoint.clone()), sample_rate, channels)?;
+        output::wasapi::WasapiExclusiveSink::open(Some(raw_endpoint.to_string()), sample_rate, channels)?;
     let label = format_label(
         sink.format().sample_rate,
         sink.format().channels,
@@ -1049,8 +1050,9 @@ impl AudioEngine {
         // for a plain shared switch the old stream is kept until the new one is up,
         // so a failed open never leaves the app silent.
         let mut old_output = Some(std::mem::replace(&mut self.output, OutputSink::Closed));
+        let is_currently_exclusive = matches!(old_output.as_ref(), Some(OutputSink::Wasapi(_)));
         let requested_exclusive = matches!(mode, OutputMode::Exclusive { .. });
-        if requested_exclusive {
+        if is_currently_exclusive || requested_exclusive {
             old_output.take();
         }
 
@@ -1066,8 +1068,15 @@ impl AudioEngine {
                         e
                     );
                     let (mut engine, evt, gated, dl) =
-                        AudioEngine::build(&eq_settings, None, OutputMode::Shared)
-                            .map_err(|e2| format!("{} (shared fallback failed: {})", e, e2))?;
+                        match AudioEngine::build(&eq_settings, None, OutputMode::Shared) {
+                            Ok(res) => res,
+                            Err(e2) => {
+                                if let Some(prev) = old_output.take() {
+                                    self.output = prev;
+                                }
+                                return Err(format!("{} (shared fallback failed: {})", e, e2));
+                            }
+                        };
                     // keep the preference: the next play/resume retries. `suspended` is
                     // what the UI shows, telemetry never claims `active`
                     engine.exclusive_requested = true;

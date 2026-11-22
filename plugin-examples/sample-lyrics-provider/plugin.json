@@ -1,0 +1,23 @@
+{
+  "name": "Sample Lyrics Provider",
+  "safe_name": "sample-lyrics-provider",
+  "version": "1.0.0",
+  "author": "Audion Community",
+  "description": "Reference LyricsProvider supporting timestamped line-synced LRC, syllable/word-by-word karaoke timing, and tap-to-seek.",
+  "type": "js",
+  "entry": "index.js",
+  "permissions": [
+    "network:fetch",
+    "storage:local"
+  ],
+  "category": "lyrics",
+  "tags": [
+    "lyrics",
+    "lrc",
+    "synced-lyrics",
+    "karaoke",
+    "sample",
+    "example"
+  ],
+  "license": "MIT"
+}

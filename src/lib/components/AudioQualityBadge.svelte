@@ -19,6 +19,8 @@
   let lastTrackId: number | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
+  let wasPlaying = false;
+
   $: activeTrack = track || $currentTrack;
 
   $: if (activeTrack && activeTrack.id !== lastTrackId) {
@@ -27,13 +29,14 @@
     triggerTelemetryFetch();
   }
 
-  // Also re-query telemetry when playback begins if telemetry was previously unready
-  $: if (
-    $isPlaying &&
-    activeTrack &&
-    (!telemetry || isBlankCodec(telemetry?.codec))
-  ) {
-    triggerTelemetryFetch();
+  // Query telemetry on track transition or when playback starts (paused -> playing)
+  $: if ($isPlaying && !wasPlaying && activeTrack) {
+    wasPlaying = true;
+    if (!telemetry || isBlankCodec(telemetry?.codec)) {
+      triggerTelemetryFetch();
+    }
+  } else if (!$isPlaying) {
+    wasPlaying = false;
   }
 
   function triggerTelemetryFetch() {

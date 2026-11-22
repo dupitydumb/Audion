@@ -131,16 +131,32 @@ fn clamp_sample(x: f32) -> f32 {
 }
 
 fn f32_to_i16(x: f32) -> i16 {
-    (clamp_sample(x) * i16::MAX as f32) as i16
+    let s = clamp_sample(x);
+    if s < 0.0 {
+        (s * -(i16::MIN as f32)) as i16
+    } else {
+        (s * i16::MAX as f32) as i16
+    }
 }
 
 fn f32_to_i32(x: f32) -> i32 {
-    (clamp_sample(x) as f64 * i32::MAX as f64) as i32
+    let s = clamp_sample(x) as f64;
+    if s < 0.0 {
+        (s * -(i32::MIN as f64)) as i32
+    } else {
+        (s * i32::MAX as f64) as i32
+    }
 }
 
 /// 24 valid bits left-justified in a 32-bit container
 fn f32_to_i24_in_i32(x: f32) -> i32 {
-    ((clamp_sample(x) as f64 * 8_388_607.0) as i32) << 8
+    let s = clamp_sample(x) as f64;
+    let v = if s < 0.0 {
+        (s * 8_388_608.0) as i32
+    } else {
+        (s * 8_388_607.0) as i32
+    };
+    v << 8
 }
 
 fn write_samples(buf: &mut [u8], samples: &[f32], kind: SampleKind) {
@@ -428,19 +444,7 @@ fn render_thread(
             break;
         }
 
-        let padding = match unsafe { client.GetCurrentPadding() } {
-            Ok(p) => p,
-            Err(e) => {
-                health.fail(format!("Exclusive stream lost: {}", e));
-                break;
-            }
-        };
-        let avail = buffer_size.saturating_sub(padding);
-        if avail == 0 {
-            continue;
-        }
-        // cap so a long stall never asks for a huge buffer
-        let frames = avail.min(2048);
+        let frames = buffer_size;
         let buffer_ptr = match unsafe { render.GetBuffer(frames) } {
             Ok(p) => p,
             Err(e) => {
@@ -575,22 +579,29 @@ unsafe fn negotiate_and_init(
                         // initialize straight from the plain header
                         let event = CreateEventW(None, false, false, PCWSTR::null())
                             .map_err(|e| format!("Failed to create render event: {}", e))?;
-                        client
-                            .SetEventHandle(event)
-                            .map_err(|e| format!("Failed to bind render event: {}", e))?;
-                        client
-                            .Initialize(
-                                AUDCLNT_SHAREMODE_EXCLUSIVE,
-                                AUDCLNT_STREAMFLAGS_EVENTCALLBACK as u32,
-                                buffer_duration,
-                                0,
-                                &plain as *const WAVEFORMATEX,
-                                None,
-                            )
-                            .map_err(|e| format!("Exclusive Initialize failed: {}", e))?;
-                        let size = client
-                            .GetBufferSize()
-                            .map_err(|e| format!("Failed to read buffer size: {}", e))?;
+                        let init = client.Initialize(
+                            AUDCLNT_SHAREMODE_EXCLUSIVE,
+                            AUDCLNT_STREAMFLAGS_EVENTCALLBACK as u32,
+                            buffer_duration,
+                            buffer_duration,
+                            &plain as *const WAVEFORMATEX,
+                            None,
+                        );
+                        if let Err(e) = init {
+                            let _ = CloseHandle(event);
+                            return Err(format!("Exclusive Initialize failed: {}", e));
+                        }
+                        if let Err(e) = client.SetEventHandle(event) {
+                            let _ = CloseHandle(event);
+                            return Err(format!("Failed to bind render event: {}", e));
+                        }
+                        let size = match client.GetBufferSize() {
+                            Ok(s) => s,
+                            Err(e) => {
+                                let _ = CloseHandle(event);
+                                return Err(format!("Failed to read buffer size: {}", e));
+                            }
+                        };
                         return Ok((SampleKind::S16, size, event));
                     }
                     return Err(format!(
@@ -613,7 +624,7 @@ unsafe fn negotiate_and_init(
             AUDCLNT_SHAREMODE_EXCLUSIVE,
             AUDCLNT_STREAMFLAGS_EVENTCALLBACK as u32,
             buffer_duration,
-            0,
+            buffer_duration,
             &wf.Format as *const WAVEFORMATEX,
             None,
         );

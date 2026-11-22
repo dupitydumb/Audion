@@ -217,38 +217,63 @@ export class MusicBrainzMetadataProvider implements MetadataProvider {
     async search(query: string, type: 'all' | 'track' | 'album' | 'artist' = 'all', page: number = 1): Promise<MetadataSearchResult> {
         const limit = 20;
         const result: MetadataSearchResult = { tracks: [], albums: [], artists: [] };
-        try {
-            if (type === 'all' || type === 'artist') {
-                const artists = await searchArtistsMb(query, limit);
-                result.artists = artists.map(a => ({
-                    id: a.mbid,
-                    name: a.name,
-                    country: a.country || undefined,
-                    active_years: a.active_years || undefined,
-                    genres: a.genres || [],
-                    disambiguation: a.disambiguation || undefined,
-                    source_type: 'musicbrainz',
-                    provider_id: 'musicbrainz'
-                }));
-            }
-            if (type === 'all' || type === 'album') {
-                const releases = await searchReleasesMb(query, limit);
-                result.albums = releases.map(r => ({
-                    id: r.mbid,
-                    title: r.title,
-                    artist: r.artist_name,
-                    artist_id: r.artist_mbid || undefined,
-                    year: r.year ? parseInt(r.year, 10) : undefined,
-                    cover_url: `https://coverartarchive.org/release-group/${r.mbid}/front-250`,
-                    release_type: r.release_type,
-                    genres: r.genres || [],
-                    source_type: 'musicbrainz',
-                    provider_id: 'musicbrainz'
-                }));
-            }
-        } catch (e) {
-            console.warn('[MusicBrainzMetadataProvider] search failed:', e);
+        const tasks: Promise<void>[] = [];
+        let artistError: any = null;
+        let albumError: any = null;
+
+        if (type === 'all' || type === 'artist') {
+            tasks.push(
+                searchArtistsMb(query, limit)
+                    .then(artists => {
+                        result.artists = artists.map(a => ({
+                            id: a.mbid,
+                            name: a.name,
+                            country: a.country || undefined,
+                            active_years: a.active_years || undefined,
+                            genres: a.genres || [],
+                            disambiguation: a.disambiguation || undefined,
+                            source_type: 'musicbrainz',
+                            provider_id: 'musicbrainz'
+                        }));
+                    })
+                    .catch(e => {
+                        artistError = e;
+                        console.warn('[MusicBrainzMetadataProvider] searchArtists failed:', e);
+                    })
+            );
         }
+        if (type === 'all' || type === 'album') {
+            tasks.push(
+                searchReleasesMb(query, limit)
+                    .then(releases => {
+                        result.albums = releases.map(r => ({
+                            id: r.mbid,
+                            title: r.title,
+                            artist: r.artist_name,
+                            artist_id: r.artist_mbid || undefined,
+                            year: r.year ? parseInt(r.year, 10) : undefined,
+                            cover_url: `https://coverartarchive.org/release-group/${r.mbid}/front-250`,
+                            release_type: r.release_type,
+                            genres: r.genres || [],
+                            source_type: 'musicbrainz',
+                            provider_id: 'musicbrainz'
+                        }));
+                    })
+                    .catch(e => {
+                        albumError = e;
+                        console.warn('[MusicBrainzMetadataProvider] searchReleases failed:', e);
+                    })
+            );
+        }
+
+        await Promise.all(tasks);
+
+        const requestedCount = (type === 'all' ? 2 : 1);
+        const errorCount = (artistError ? 1 : 0) + (albumError ? 1 : 0);
+        if (requestedCount > 0 && errorCount === requestedCount) {
+            throw new Error(`MusicBrainz search failed for all requested categories: ${artistError || albumError}`);
+        }
+
         return result;
     }
 
@@ -325,6 +350,24 @@ export class MusicBrainzMetadataProvider implements MetadataProvider {
             return null;
         }
     }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, desc: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => {
+            reject(new Error(`Timeout of ${ms}ms exceeded for ${desc}`));
+        }, ms);
+        promise.then(
+            (val) => {
+                clearTimeout(timer);
+                resolve(val);
+            },
+            (err) => {
+                clearTimeout(timer);
+                reject(err);
+            }
+        );
+    });
 }
 
 export class ProviderRegistry {
@@ -537,6 +580,11 @@ export class ProviderRegistry {
 
     // ── Stream Providers ──
     registerStreamProvider(provider: StreamProvider, ownerPlugin: string = 'system'): void {
+        const currentOwner = this.streamOwners.get(provider.id);
+        if (currentOwner && currentOwner !== ownerPlugin && ownerPlugin !== 'system') {
+            console.warn(`[ProviderRegistry] Cannot overwrite StreamProvider '${provider.id}' owned by '${currentOwner}'`);
+            return;
+        }
         this.streamProviders.set(provider.id, provider);
         this.streamOwners.set(provider.id, ownerPlugin);
 
@@ -551,7 +599,12 @@ export class ProviderRegistry {
         this.notifyStore();
     }
 
-    unregisterStreamProvider(id: string): void {
+    unregisterStreamProvider(id: string, callerPlugin: string = 'system'): void {
+        const currentOwner = this.streamOwners.get(id);
+        if (callerPlugin !== 'system' && currentOwner && currentOwner !== callerPlugin) {
+            console.warn(`[ProviderRegistry] Plugin '${callerPlugin}' cannot unregister StreamProvider '${id}' owned by '${currentOwner}'`);
+            return;
+        }
         this.streamProviders.delete(id);
         this.streamOwners.delete(id);
         this.notifyStore();
@@ -586,7 +639,7 @@ export class ProviderRegistry {
         }
         const t0 = performance.now();
         try {
-            const res = await provider.getStream(songId, quality);
+            const res = await withTimeout(Promise.resolve(provider.getStream(songId, quality)), 5000, `StreamProvider ${providerId}`);
             this.recordTelemetry(providerId, Math.round(performance.now() - t0), !!res);
             if (!res) return null;
             if (typeof res === 'string') {
@@ -630,12 +683,12 @@ export class ProviderRegistry {
             const t0 = performance.now();
             try {
                 if (typeof sp.resolveByQuery === 'function') {
-                    const full = await sp.resolveByQuery({
+                    const full = await withTimeout(Promise.resolve(sp.resolveByQuery({
                         title: track.title,
                         artist: track.artist || undefined,
                         album: track.album || undefined,
                         duration: track.duration || undefined
-                    }, quality);
+                    }, quality)), 5000, `StreamProvider ${sp.id} resolveByQuery`);
                     this.recordTelemetry(sp.id, Math.round(performance.now() - t0), !!full);
                     if (full) {
                         const formatted = typeof full === 'string' ? { url: full } : full;
@@ -643,7 +696,7 @@ export class ProviderRegistry {
                     }
                 } else {
                     const queryStr = `query:${track.title} ${track.artist || ''}`.trim();
-                    const full = await sp.getStream(queryStr, quality);
+                    const full = await withTimeout(Promise.resolve(sp.getStream(queryStr, quality)), 5000, `StreamProvider ${sp.id} getStream`);
                     this.recordTelemetry(sp.id, Math.round(performance.now() - t0), !!full);
                     if (full) {
                         const formatted = typeof full === 'string' ? { url: full } : full;
@@ -667,6 +720,11 @@ export class ProviderRegistry {
 
     // ── Metadata Providers ──
     registerMetadataProvider(provider: MetadataProvider, ownerPlugin: string = 'system'): void {
+        const currentOwner = this.metadataOwners.get(provider.id);
+        if (currentOwner && currentOwner !== ownerPlugin && ownerPlugin !== 'system') {
+            console.warn(`[ProviderRegistry] Cannot overwrite MetadataProvider '${provider.id}' owned by '${currentOwner}'`);
+            return;
+        }
         this.metadataProviders.set(provider.id, provider);
         this.metadataOwners.set(provider.id, ownerPlugin);
 
@@ -681,7 +739,12 @@ export class ProviderRegistry {
         this.notifyStore();
     }
 
-    unregisterMetadataProvider(id: string): void {
+    unregisterMetadataProvider(id: string, callerPlugin: string = 'system'): void {
+        const currentOwner = this.metadataOwners.get(id);
+        if (callerPlugin !== 'system' && currentOwner && currentOwner !== callerPlugin) {
+            console.warn(`[ProviderRegistry] Plugin '${callerPlugin}' cannot unregister MetadataProvider '${id}' owned by '${currentOwner}'`);
+            return;
+        }
         this.metadataProviders.delete(id);
         this.metadataOwners.delete(id);
         this.notifyStore();
@@ -689,6 +752,14 @@ export class ProviderRegistry {
 
     getMetadataProvider(id: string): MetadataProvider | undefined {
         return this.metadataProviders.get(id);
+    }
+
+    getEnabledMetadataProvider(id: string): MetadataProvider | undefined {
+        const provider = this.metadataProviders.get(id);
+        if (!provider) return undefined;
+        const cfg = this.config.metadata[id];
+        if (cfg && cfg.enabled === false) return undefined;
+        return provider;
     }
 
     getAllMetadataProviders(): MetadataProvider[] {
@@ -710,12 +781,30 @@ export class ProviderRegistry {
         const promises = providers.map(async (p) => {
             const t0 = performance.now();
             try {
-                const res = await p.search(query, type, page);
+                const res = await withTimeout(Promise.resolve(p.search(query, type, page)), 7000, `MetadataProvider ${p.id} search`);
                 const hasResults = !!((res.tracks && res.tracks.length > 0) || (res.albums && res.albums.length > 0) || (res.artists && res.artists.length > 0));
                 this.recordTelemetry(p.id, Math.round(performance.now() - t0), true);
-                if (res.tracks) combined.tracks!.push(...res.tracks);
-                if (res.albums) combined.albums!.push(...res.albums);
-                if (res.artists) combined.artists!.push(...res.artists);
+                if (res.tracks) {
+                    for (const t of res.tracks) {
+                        if (!t.provider_id) t.provider_id = p.id;
+                        if (!t.source_type) t.source_type = p.id;
+                        combined.tracks!.push(t);
+                    }
+                }
+                if (res.albums) {
+                    for (const a of res.albums) {
+                        if (!a.provider_id) a.provider_id = p.id;
+                        if (!a.source_type) a.source_type = p.id;
+                        combined.albums!.push(a);
+                    }
+                }
+                if (res.artists) {
+                    for (const ar of res.artists) {
+                        if (!ar.provider_id) ar.provider_id = p.id;
+                        if (!ar.source_type) ar.source_type = p.id;
+                        combined.artists!.push(ar);
+                    }
+                }
             } catch (err) {
                 this.recordTelemetry(p.id, Math.round(performance.now() - t0), false);
                 console.warn(`[ProviderRegistry] MetadataProvider '${p.id}' search failed:`, err);
@@ -735,20 +824,31 @@ export class ProviderRegistry {
         if (!providerId || providerId === 'all') {
             return await this.searchAllMetadata(query, type, page);
         }
-        const provider = this.getMetadataProvider(providerId);
+        const provider = this.getEnabledMetadataProvider(providerId);
         if (!provider) {
-            console.warn(`[ProviderRegistry] MetadataProvider '${providerId}' not found, falling back to all`);
+            console.warn(`[ProviderRegistry] Enabled MetadataProvider '${providerId}' not found, falling back to all`);
             return await this.searchAllMetadata(query, type, page);
         }
         const t0 = performance.now();
         try {
-            const res = await provider.search(query, type, page);
+            const res = await withTimeout(Promise.resolve(provider.search(query, type, page)), 7000, `MetadataProvider ${providerId} search`);
             this.recordTelemetry(provider.id, Math.round(performance.now() - t0), true);
-            return {
-                tracks: res.tracks || [],
-                albums: res.albums || [],
-                artists: res.artists || []
-            };
+            const tracks = (res.tracks || []).map(t => ({
+                ...t,
+                provider_id: t.provider_id || provider.id,
+                source_type: t.source_type || provider.id
+            }));
+            const albums = (res.albums || []).map(a => ({
+                ...a,
+                provider_id: a.provider_id || provider.id,
+                source_type: a.source_type || provider.id
+            }));
+            const artists = (res.artists || []).map(ar => ({
+                ...ar,
+                provider_id: ar.provider_id || provider.id,
+                source_type: ar.source_type || provider.id
+            }));
+            return { tracks, albums, artists };
         } catch (err) {
             this.recordTelemetry(provider.id, Math.round(performance.now() - t0), false);
             console.warn(`[ProviderRegistry] MetadataProvider '${providerId}' search failed:`, err);
@@ -759,20 +859,19 @@ export class ProviderRegistry {
     async getAlbum(id: string, providerId?: string, albumTitle?: string, artistName?: string): Promise<any> {
         let res: any = null;
         if (providerId) {
-            const provider = this.getMetadataProvider(providerId);
+            const provider = this.getEnabledMetadataProvider(providerId);
             if (provider && typeof provider.getAlbum === 'function') {
                 try {
-                    res = await provider.getAlbum(id);
+                    res = await withTimeout(Promise.resolve(provider.getAlbum(id)), 7000, `MetadataProvider ${providerId} getAlbum`);
                 } catch (e) {
                     console.warn(`[ProviderRegistry] Provider '${providerId}' getAlbum failed:`, e);
                 }
             }
-        }
-        if (!res) {
+        } else {
             for (const provider of this.getAllMetadataProviders()) {
                 if (typeof provider.getAlbum === 'function') {
                     try {
-                        res = await provider.getAlbum(id);
+                        res = await withTimeout(Promise.resolve(provider.getAlbum(id)), 7000, `MetadataProvider ${provider.id} getAlbum`);
                         if (res) break;
                     } catch (_) {}
                 }
@@ -788,16 +887,24 @@ export class ProviderRegistry {
                         ? await this.searchProviderMetadata(providerId, searchTarget, 'track')
                         : await this.searchAllMetadata(searchTarget, 'track');
                     if (searchRes && searchRes.tracks && searchRes.tracks.length > 0) {
-                        res = {
-                            ...(res || {}),
-                            id: res?.id || id,
-                            title: res?.title || albumTitle || query,
-                            artist: res?.artist || artistName || searchRes.tracks[0]?.artist || 'Unknown Artist',
-                            cover_url: res?.cover_url || searchRes.tracks[0]?.cover_url,
-                            source_type: res?.source_type || providerId,
-                            provider_id: res?.provider_id || providerId,
-                            tracks: searchRes.tracks
-                        };
+                        const targetAlbumLower = query.toLowerCase();
+                        const verifiedTracks = searchRes.tracks.filter(t => {
+                            if (!t.album) return false;
+                            const aLower = t.album.toLowerCase();
+                            return aLower === targetAlbumLower || aLower.includes(targetAlbumLower) || targetAlbumLower.includes(aLower);
+                        });
+                        if (verifiedTracks.length > 0) {
+                            res = {
+                                ...(res || {}),
+                                id: res?.id || id,
+                                title: res?.title || albumTitle || query,
+                                artist: res?.artist || artistName || verifiedTracks[0]?.artist || 'Unknown Artist',
+                                cover_url: res?.cover_url || verifiedTracks[0]?.cover_url,
+                                source_type: res?.source_type || providerId,
+                                provider_id: res?.provider_id || providerId,
+                                tracks: verifiedTracks
+                            };
+                        }
                     }
                 } catch (e) {
                     console.warn(`[ProviderRegistry] Fallback album search failed:`, e);
@@ -810,32 +917,31 @@ export class ProviderRegistry {
     async getArtist(id: string, providerId?: string, artistName?: string): Promise<any> {
         let res: any = null;
         if (providerId) {
-            const provider = this.getMetadataProvider(providerId);
+            const provider = this.getEnabledMetadataProvider(providerId);
             if (provider && typeof provider.getArtist === 'function') {
                 try {
-                    res = await provider.getArtist(id);
+                    res = await withTimeout(Promise.resolve(provider.getArtist(id)), 7000, `MetadataProvider ${providerId} getArtist`);
                 } catch (e) {
                     console.warn(`[ProviderRegistry] Provider '${providerId}' getArtist failed:`, e);
                 }
             }
-        }
-        if (!res) {
+        } else {
             for (const provider of this.getAllMetadataProviders()) {
                 if (typeof provider.getArtist === 'function') {
                     try {
-                        res = await provider.getArtist(id);
+                        res = await withTimeout(Promise.resolve(provider.getArtist(id)), 7000, `MetadataProvider ${provider.id} getArtist`);
                         if (res) break;
                     } catch (_) {}
                 }
             }
-        }
-        if (!res && artistName && artistName !== id) {
-            for (const provider of this.getAllMetadataProviders()) {
-                if (typeof provider.getArtist === 'function') {
-                    try {
-                        res = await provider.getArtist(artistName);
-                        if (res) break;
-                    } catch (_) {}
+            if (!res && artistName && artistName !== id) {
+                for (const provider of this.getAllMetadataProviders()) {
+                    if (typeof provider.getArtist === 'function') {
+                        try {
+                            res = await withTimeout(Promise.resolve(provider.getArtist(artistName)), 7000, `MetadataProvider ${provider.id} getArtist`);
+                            if (res) break;
+                        } catch (_) {}
+                    }
                 }
             }
         }
@@ -876,19 +982,20 @@ export class ProviderRegistry {
 
     async getTrack(id: string, providerId?: string): Promise<MetadataTrackItem | null> {
         if (providerId) {
-            const provider = this.getMetadataProvider(providerId);
+            const provider = this.getEnabledMetadataProvider(providerId);
             if (provider && typeof provider.getTrack === 'function') {
                 try {
-                    return await provider.getTrack(id);
+                    return await withTimeout(Promise.resolve(provider.getTrack(id)), 7000, `MetadataProvider ${providerId} getTrack`);
                 } catch (e) {
                     console.warn(`[ProviderRegistry] Provider '${providerId}' getTrack failed:`, e);
                 }
             }
+            return null;
         }
         for (const provider of this.getAllMetadataProviders()) {
             if (typeof provider.getTrack === 'function') {
                 try {
-                    const res = await provider.getTrack(id);
+                    const res = await withTimeout(Promise.resolve(provider.getTrack(id)), 7000, `MetadataProvider ${provider.id} getTrack`);
                     if (res) return res;
                 } catch (_) {}
             }
@@ -898,6 +1005,11 @@ export class ProviderRegistry {
 
     // ── Lyrics Providers ──
     registerLyricsProvider(provider: LyricsProvider, ownerPlugin: string = 'system'): void {
+        const currentOwner = this.lyricsOwners.get(provider.id);
+        if (currentOwner && currentOwner !== ownerPlugin && ownerPlugin !== 'system') {
+            console.warn(`[ProviderRegistry] Cannot overwrite LyricsProvider '${provider.id}' owned by '${currentOwner}'`);
+            return;
+        }
         this.lyricsProviders.set(provider.id, provider);
         this.lyricsOwners.set(provider.id, ownerPlugin);
 
@@ -912,7 +1024,12 @@ export class ProviderRegistry {
         this.notifyStore();
     }
 
-    unregisterLyricsProvider(id: string): void {
+    unregisterLyricsProvider(id: string, callerPlugin: string = 'system'): void {
+        const currentOwner = this.lyricsOwners.get(id);
+        if (callerPlugin !== 'system' && currentOwner && currentOwner !== callerPlugin) {
+            console.warn(`[ProviderRegistry] Plugin '${callerPlugin}' cannot unregister LyricsProvider '${id}' owned by '${currentOwner}'`);
+            return;
+        }
         this.lyricsProviders.delete(id);
         this.lyricsOwners.delete(id);
         this.notifyStore();
@@ -944,7 +1061,7 @@ export class ProviderRegistry {
         for (const provider of providers) {
             const t0 = performance.now();
             try {
-                const res = await provider.getLyrics(track);
+                const res = await withTimeout(Promise.resolve(provider.getLyrics(track)), 6000, `LyricsProvider ${provider.id}`);
                 const hasLyrics = !!(res && res.lines && res.lines.length > 0);
                 this.recordTelemetry(provider.id, Math.round(performance.now() - t0), hasLyrics);
                 if (hasLyrics) {

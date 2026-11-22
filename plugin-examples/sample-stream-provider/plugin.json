@@ -1,0 +1,22 @@
+{
+  "name": "Sample Stream Provider",
+  "safe_name": "sample-stream-provider",
+  "version": "1.0.0",
+  "author": "Audion Community",
+  "description": "Reference StreamProvider demonstrating InnerTube & Piped stream resolution with multi-quality audio switching, headers, and CORS handling.",
+  "type": "js",
+  "entry": "index.js",
+  "permissions": [
+    "network:fetch",
+    "storage:local"
+  ],
+  "category": "streaming",
+  "tags": [
+    "streaming",
+    "stream-provider",
+    "innertube",
+    "sample",
+    "example"
+  ],
+  "license": "MIT"
+}

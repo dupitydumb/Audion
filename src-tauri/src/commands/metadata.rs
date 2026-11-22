@@ -26,6 +26,7 @@ pub struct DownloadAudioInput {
     pub disc_number: Option<i32>,
     pub duration: Option<i32>,
     pub cover_url: Option<String>,
+    pub headers: Option<std::collections::HashMap<String, String>>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -67,7 +68,7 @@ pub async fn download_and_save_audio(
 
     // Download the audio file from URL with progress
     println!("[Metadata] Downloading audio from URL...");
-    download_file_with_progress(&app, &input.url, &input.path).await?;
+    download_file_with_progress(&app, &input.url, &input.path, input.headers.as_ref()).await?;
 
     // Probe the actual file type
     let actual_file_type = Probe::open(path)
@@ -216,8 +217,28 @@ async fn download_file_with_progress(
     app: &AppHandle,
     url: &str,
     file_path: &str,
+    headers: Option<&std::collections::HashMap<String, String>>,
 ) -> Result<(), String> {
-    let response = reqwest::get(url)
+    let mut client_builder = reqwest::Client::builder();
+    if let Some(hdrs) = headers {
+        let mut header_map = reqwest::header::HeaderMap::new();
+        for (k, v) in hdrs {
+            if let (Ok(name), Ok(val)) = (
+                reqwest::header::HeaderName::from_bytes(k.as_bytes()),
+                reqwest::header::HeaderValue::from_str(v),
+            ) {
+                header_map.insert(name, val);
+            }
+        }
+        client_builder = client_builder.default_headers(header_map);
+    }
+    let client = client_builder
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+
+    let response = client
+        .get(url)
+        .send()
         .await
         .map_err(|e| format!("Failed to download audio: {}", e))?;
 

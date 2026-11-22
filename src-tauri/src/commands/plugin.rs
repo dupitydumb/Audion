@@ -372,18 +372,7 @@ pub async fn install_plugin(
     let plugin_root = get_plugins_root(&plugin_dir);
     let plugin_path = plugin_root.join(&safe_name);
 
-    // When installing new, we enforce the standard naming convention
-    // validate_safe_name(&manifest, &safe_name)?;
-
-    fs::create_dir_all(&plugin_path).map_err(|e| format!("Failed to create plugin dir: {}", e))?;
-
-    // Save plugin.json (with repo URL included)
-    let manifest_json = serde_json::to_string_pretty(&manifest)
-        .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
-    fs::write(plugin_path.join("plugin.json"), &manifest_json)
-        .map_err(|e| format!("Failed to save plugin.json: {}", e))?;
-
-    // Fetch the entry file (index.js or plugin.wasm)
+    // Fetch the entry file (index.js or plugin.wasm) and verify integrity BEFORE touching disk
     let entry_url = format!(
         "https://raw.githubusercontent.com/{}/{}/{}/{}",
         owner, repo, default_branch, manifest.entry
@@ -433,6 +422,15 @@ pub async fn install_plugin(
         }
         println!("[PluginInstall] SHA-256 verified successfully for plugin {}: {}", manifest.name, actual_hash);
     }
+
+    // Now that verification passed, safely write manifest and entry to plugin_path
+    fs::create_dir_all(&plugin_path).map_err(|e| format!("Failed to create plugin dir: {}", e))?;
+
+    // Save plugin.json (with repo URL included)
+    let manifest_json = serde_json::to_string_pretty(&manifest)
+        .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
+    fs::write(plugin_path.join("plugin.json"), &manifest_json)
+        .map_err(|e| format!("Failed to save plugin.json: {}", e))?;
 
     fs::write(plugin_path.join(&manifest.entry), &entry_bytes)
         .map_err(|e| format!("Failed to save entry file: {}", e))?;

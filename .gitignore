@@ -45,7 +45,10 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
 # Plugin examples
-plugin-examples/
+plugin-examples/*
+!plugin-examples/sample-stream-provider/
+!plugin-examples/sample-metadata-provider/
+!plugin-examples/sample-lyrics-provider/
 
 miniplayer.md
 

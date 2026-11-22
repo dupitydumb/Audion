@@ -803,7 +803,8 @@ export class PluginRuntime {
             artist: options.metadata?.artist || null,
             album: options.metadata?.album || null,
             track_number: options.metadata?.trackNumber || null,
-            cover_url: options.metadata?.coverUrl || null
+            cover_url: options.metadata?.coverUrl || null,
+            headers: options.headers || null
           }
         }).then(async (savedPath) => {
           // Auto-rescan library for the directory actually used
@@ -1087,32 +1088,44 @@ export class PluginRuntime {
         // Register a resolver function for a source type (e.g., 'tidal')
         // Resolver: (externalId: string, options?: {quality?: string}) => Promise<string | null>
         registerResolver: (sourceType: string, resolver: (externalId: string, options?: any) => Promise<string | null>) => {
+          const currentOwner = this.streamResolverOwners.get(sourceType);
+          if (currentOwner && currentOwner !== pluginName) {
+            console.warn(`[PluginRuntime] Cannot overwrite stream resolver '${sourceType}' owned by '${currentOwner}'`);
+            return;
+          }
           this.streamResolvers.set(sourceType, resolver);
           this.streamResolverOwners.set(sourceType, pluginName);
           console.log(`[PluginRuntime] Registered stream resolver for '${sourceType}' from plugin '${pluginName}'`);
 
           // Bridge into globalProviders so resolveTrackStream and v1.5.0 providers know about it
-          if (!globalProviders.getStreamProvider(sourceType)) {
-            globalProviders.registerStreamProvider({
-              id: sourceType,
-              name: `${pluginName} (${sourceType})`,
-              getStream: async (extId: string, quality?: string) => {
-                const url = await resolver(extId, { quality });
-                return url ? { url } : null;
-              }
-            }, pluginName);
-          }
+          // Always register/update the wrapper in globalProviders so new callbacks take effect immediately
+          globalProviders.registerStreamProvider({
+            id: sourceType,
+            name: `${pluginName} (${sourceType})`,
+            getStream: async (extId: string, quality?: string) => {
+              const current = this.streamResolvers.get(sourceType);
+              const url = current ? await current(extId, { quality }) : null;
+              return url ? { url } : null;
+            }
+          }, pluginName);
         },
         unregisterResolver: (sourceType: string) => {
           const owner = this.streamResolverOwners.get(sourceType);
           if (owner === pluginName) {
             this.streamResolvers.delete(sourceType);
             this.streamResolverOwners.delete(sourceType);
-            globalProviders.unregisterStreamProvider(sourceType);
+            globalProviders.unregisterStreamProvider(sourceType, pluginName);
+          } else {
+            console.warn(`[PluginRuntime] Plugin '${pluginName}' cannot unregister resolver '${sourceType}' owned by '${owner}'`);
           }
         },
         // Register a full StreamProvider
         registerProvider: (provider: StreamProvider) => {
+          const currentOwner = this.streamResolverOwners.get(provider.id);
+          if (currentOwner && currentOwner !== pluginName) {
+            console.warn(`[PluginRuntime] Cannot overwrite stream provider '${provider.id}' owned by '${currentOwner}'`);
+            return;
+          }
           globalProviders.registerStreamProvider(provider, pluginName);
           // Also link to this.streamResolvers so legacy callers work seamlessly
           this.streamResolvers.set(provider.id, async (extId, opts) => {
@@ -1122,9 +1135,14 @@ export class PluginRuntime {
           this.streamResolverOwners.set(provider.id, pluginName);
         },
         unregisterProvider: (id: string) => {
-          globalProviders.unregisterStreamProvider(id);
-          this.streamResolvers.delete(id);
-          this.streamResolverOwners.delete(id);
+          const owner = this.streamResolverOwners.get(id);
+          if (owner === pluginName) {
+            globalProviders.unregisterStreamProvider(id, pluginName);
+            this.streamResolvers.delete(id);
+            this.streamResolverOwners.delete(id);
+          } else {
+            console.warn(`[PluginRuntime] Plugin '${pluginName}' cannot unregister provider '${id}' owned by '${owner}'`);
+          }
         },
         resolveStream: async (providerId: string, songId: string, quality?: string) => {
           return await globalProviders.resolveStream(providerId, songId, quality);
@@ -1138,7 +1156,7 @@ export class PluginRuntime {
         globalProviders.registerMetadataProvider(provider, pluginName);
       },
       unregisterProvider: (id: string) => {
-        globalProviders.unregisterMetadataProvider(id);
+        globalProviders.unregisterMetadataProvider(id, pluginName);
       },
       search: async (query: string, type: 'all' | 'track' | 'album' | 'artist' = 'all', page: number = 1) => {
         return await globalProviders.searchAllMetadata(query, type, page);
@@ -1490,7 +1508,7 @@ export class PluginRuntime {
         globalProviders.registerLyricsProvider(provider, pluginName);
       },
       unregisterProvider: (id: string) => {
-        globalProviders.unregisterLyricsProvider(id);
+        globalProviders.unregisterLyricsProvider(id, pluginName);
       },
       fetchLyrics: async (track: { title: string; artist: string; album?: string; duration?: number }) => {
         return await globalProviders.fetchLyricsFromProviders(track);
@@ -1831,50 +1849,60 @@ export class PluginRuntime {
   // Resolve stream URL for external tracks
   // Called by player.ts before playing a track with source_type != 'local'
   async resolveStreamUrl(sourceType: string, externalId: string, options?: any): Promise<string | null> {
+    const info = await this.resolveStreamInfo(sourceType, externalId, options);
+    return info ? info.url : null;
+  }
+
+  // Resolve stream URL and any required request headers for downloads / playback
+  async resolveStreamInfo(sourceType: string, externalId: string, options?: any): Promise<{ url: string; headers?: Record<string, string> } | null> {
     let resolver = this.streamResolvers.get(sourceType);
-    if (!resolver) {
-      const provider = globalProviders.getStreamProvider(sourceType);
-      if (provider) {
-        resolver = async (extId, opts) => {
-          const res = await provider.getStream(extId, opts?.quality);
-          return typeof res === 'string' ? res : (res?.url || null);
-        };
-      }
-    }
+    const provider = globalProviders.getStreamProvider(sourceType);
 
-    if (!resolver) {
-      console.warn(`[PluginRuntime] No stream resolver registered for source type '${sourceType}'`);
-      return null;
-    }
+    let rawResult: { url: string; headers?: Record<string, string> } | null = null;
 
-    try {
-      console.log(`[PluginRuntime] Resolving stream URL for ${sourceType}://${externalId}`);
-      const url = await resolver(externalId, options);
-      if (!url) return null;
-      console.log(`[PluginRuntime] Resolved stream URL:`, url.substring(0, 60) + '...');
-
-      // If the resolved URL is an external HTTP(S) URL (not already blob: or asset:),
-      // proxy it through Rust → blob: URL to bypass CORS restrictions.
-      // googlevideo.com and similar CDNs don't send Access-Control-Allow-Origin headers,
-      // so the browser blocks direct <audio src> playback from tauri.localhost.
-      if (url.startsWith('http://') || url.startsWith('https://')) {
-        try {
-          const mime = url.includes('webm') ? 'audio/webm' : 'audio/mp4';
-          const blobUrl = await this.proxyToBlobUrl(url, mime);
-          if (blobUrl) {
-            console.log(`[PluginRuntime] Stream proxied to blob URL for CORS bypass`);
-            return blobUrl;
-          }
-        } catch (proxyErr) {
-          console.warn(`[PluginRuntime] Blob proxy failed, returning raw URL (may hit CORS):`, proxyErr);
+    if (provider) {
+      try {
+        const res = await provider.getStream(externalId, options?.quality);
+        if (res) {
+          rawResult = typeof res === 'string' ? { url: res } : { url: res.url, headers: res.headers };
         }
+      } catch (e) {
+        console.warn(`[PluginRuntime] Provider '${sourceType}' getStream failed:`, e);
       }
+    }
 
-      return url;
-    } catch (error) {
-      console.error(`[PluginRuntime] Failed to resolve stream URL:`, error);
+    if (!rawResult && resolver) {
+      try {
+        const res: any = await resolver(externalId, options);
+        if (res) {
+          rawResult = typeof res === 'string' ? { url: res } : (res.url ? { url: res.url, headers: res.headers } : null);
+        }
+      } catch (error) {
+        console.error(`[PluginRuntime] Failed to resolve stream for ${sourceType}:`, error);
+      }
+    }
+
+    if (!rawResult || !rawResult.url) {
+      console.warn(`[PluginRuntime] No stream resolver registered or stream resolved for source type '${sourceType}'`);
       return null;
     }
+
+    const url = rawResult.url;
+    // If the resolved URL is an external HTTP(S) URL (not already blob: or asset:),
+    // proxy it through Rust → blob: URL to bypass CORS restrictions for browser playback (unless downloading)
+    if ((url.startsWith('http://') || url.startsWith('https://')) && !options?.forDownload) {
+      try {
+        const mime = url.includes('webm') ? 'audio/webm' : 'audio/mp4';
+        const blobUrl = await this.proxyToBlobUrl(url, mime);
+        if (blobUrl) {
+          return { url: blobUrl, headers: rawResult.headers };
+        }
+      } catch (proxyErr) {
+        console.warn(`[PluginRuntime] Blob proxy failed, returning raw URL (may hit CORS):`, proxyErr);
+      }
+    }
+
+    return rawResult;
   }
 
   // Fetch a remote URL via Rust backend and return a same-origin blob: URL.

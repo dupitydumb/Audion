@@ -54,10 +54,9 @@ on:
 permissions:
   contents: write
 
-# push runs share one group => queued one after another, so assets from different commits never interleave
-# manual runs get their own group and behave as before
+# Runs for the same ref/version share one concurrency group so push and manual runs never interleave asset uploads
 concurrency:
-  group: release-${{ github.event_name == 'push' && 'push' || github.run_id }}
+  group: release-${{ github.ref_name || github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -920,8 +919,22 @@ jobs:
           # signing material stays inside this step; passwords reach apksigner through env, not argv
           echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$WORK/release.keystore"
           printf '%s\n' "$ANDROID_KEY_PROPERTIES" | tr -d '\r' > "$WORK/key.properties"
-          # same key forms gradle accepts: "key=value", "key = value", "key: value"
-          prop() { sed -n -E "s/^[[:space:]]*$1[[:space:]]*[=:][[:space:]]*//p" "$WORK/key.properties" | head -1; }
+          # Parse Java properties following java.util.Properties specification (accepts whitespace, =, or : separators)
+          prop() {
+            python3 -c '
+import re, sys
+key = sys.argv[1]
+with open(sys.argv[2], "r", encoding="utf-8") as f:
+    for line in f:
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("!"):
+            continue
+        m = re.match(r"^([^\s:=]+)[\s:=]+(.*)$", line)
+        if m and m.group(1).strip() == key:
+            print(m.group(2).strip())
+            break
+' "$1" "$WORK/key.properties"
+          }
           KS_ALIAS="$(prop keyAlias || true)"
           KS_PASS="$(prop storePassword || true)"
           KEY_PASS="$(prop keyPassword || true)"
@@ -993,29 +1006,64 @@ jobs:
           INPUT_OVERWRITE: ${{ inputs.overwrite }}
         run: |
           TAG="${{ needs.create-release.outputs.tag_name }}"
-          # inputs.* is empty on push runs, so overwrite must be decided from the event:
-          # push runs rebuild the same versioned assets and replace them, manual runs follow the overwrite input
-          CLOBBER=""
-          if [ "$GH_EVENT_NAME" = "push" ] || [ "$INPUT_OVERWRITE" = "true" ]; then CLOBBER="--clobber"; fi
+          OVERWRITE="false"
+          if [ "$GH_EVENT_NAME" = "push" ] || [ "$INPUT_OVERWRITE" = "true" ]; then
+            OVERWRITE="true"
+          fi
+
           maxAttempts=3
-          # one asset at a time => a retry only sends what is still missing
-          # without --clobber an already published name would fail the whole upload
           for f in release-assets/*.apk; do
             name="$(basename "$f")"
             for attempt in $(seq 1 $maxAttempts); do
-              if [ -z "$CLOBBER" ] && gh release view "$TAG" --repo "${{ github.repository }}" --json assets -q '.assets[].name' | grep -qxF "$name"; then
-                echo "$name is already on the release, skipping"
-                break
+              # Check existing asset state
+              ASSET_INFO="$(gh release view "$TAG" --repo "${{ github.repository }}" --json assets -q '.assets[] | select(.name == "'"$name"'") | "\(.state):\(.id)"' | head -1 || true)"
+              ASSET_STATE="${ASSET_INFO%%:*}"
+
+              if [ "$ASSET_STATE" = "uploaded" ]; then
+                if [ "$OVERWRITE" != "true" ]; then
+                  echo "$name is already complete on the release (uploaded), skipping"
+                  break
+                fi
+                # When overwriting, do NOT remove the published asset until replacement is uploaded and verified
+                echo "Staging replacement for $name (attempt $attempt of $maxAttempts)"
+                TMP_NAME="${name}.tmp"
+                gh release delete-asset "$TAG" "$TMP_NAME" -y --repo "${{ github.repository }}" 2>/dev/null || true
+                cp "$f" "release-assets/$TMP_NAME"
+                if gh release upload "$TAG" "release-assets/$TMP_NAME" --repo "${{ github.repository }}"; then
+                  STAGED_STATE="$(gh release view "$TAG" --repo "${{ github.repository }}" --json assets -q '.assets[] | select(.name == "'"$TMP_NAME"'") | .state' | head -1 || true)"
+                  if [ "$STAGED_STATE" = "uploaded" ]; then
+                    echo "Replacement verified. Replacing published $name..."
+                    gh release delete-asset "$TAG" "$name" -y --repo "${{ github.repository }}"
+                    gh release upload "$TAG" "$f" --repo "${{ github.repository }}"
+                    gh release delete-asset "$TAG" "$TMP_NAME" -y --repo "${{ github.repository }}" 2>/dev/null || true
+                    rm -f "release-assets/$TMP_NAME"
+                    break
+                  fi
+                fi
+                rm -f "release-assets/$TMP_NAME"
+              else
+                # Incomplete starter asset left by failed upload: delete before retrying
+                if [ -n "$ASSET_STATE" ]; then
+                  echo "Found incomplete starter asset $name (state: $ASSET_STATE); deleting before retry"
+                  gh release delete-asset "$TAG" "$name" -y --repo "${{ github.repository }}" 2>/dev/null || true
+                fi
+
+                echo "Uploading $name (attempt $attempt of $maxAttempts)"
+                if gh release upload "$TAG" "$f" --repo "${{ github.repository }}"; then
+                  VERIFIED_STATE="$(gh release view "$TAG" --repo "${{ github.repository }}" --json assets -q '.assets[] | select(.name == "'"$name"'") | .state' | head -1 || true)"
+                  if [ "$VERIFIED_STATE" = "uploaded" ]; then
+                    echo "$name successfully uploaded and verified"
+                    break
+                  fi
+                  echo "Upload finished but asset state is $VERIFIED_STATE"
+                fi
               fi
-              echo "Uploading $name (attempt $attempt of $maxAttempts)"
-              if gh release upload "$TAG" "$f" --repo "${{ github.repository }}" $CLOBBER; then
-                break
-              fi
+
               if [ "$attempt" -eq "$maxAttempts" ]; then
                 echo "::error::Upload of $name failed after $maxAttempts attempts"
                 exit 1
               fi
-              echo "Upload failed (likely a transient GitHub API error), retrying in 15s..."
+              echo "Upload failed, retrying in 15s..."
               sleep 15
             done
           done

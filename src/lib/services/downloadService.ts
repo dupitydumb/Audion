@@ -143,6 +143,7 @@ export async function downloadTrack(
     }
 
     let streamUrl: string | null = null;
+    let streamHeaders: Record<string, string> | undefined = undefined;
     if (track.source_type === 'server') {
         streamUrl = await audioGetStreamUrl(track.path, track.id);
     } else {
@@ -151,8 +152,12 @@ export async function downloadTrack(
             throw new Error('Plugin runtime not available.');
         }
 
-        // Resolve the stream URL
-        streamUrl = await runtime.resolveStreamUrl(track.source_type!, track.external_id!);
+        // Resolve the stream URL and headers (with forDownload flag)
+        const streamInfo = await runtime.resolveStreamInfo(track.source_type!, track.external_id!, { forDownload: true });
+        if (streamInfo) {
+            streamUrl = streamInfo.url;
+            streamHeaders = streamInfo.headers;
+        }
     }
 
     if (!streamUrl) {
@@ -187,7 +192,8 @@ export async function downloadTrack(
                 album: track.album || null,
                 track_number: track.track_number || null,
                 disc_number: track.disc_number || null,
-                cover_url: track.cover_url || null
+                cover_url: track.cover_url || null,
+                headers: streamHeaders || null
             }
         });
 

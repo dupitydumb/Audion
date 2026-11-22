@@ -11,6 +11,7 @@ export const isStatsForNerdsOpen = writable(false);
 
 // Prevent overlapping PiP transitions that can cause inconsistent window state.
 let miniPlayerTransitionInFlight = false;
+let miniPlayerExiting = false;
 
 // Store original window state for restoring after PIP mode
 let originalWindowState: {
@@ -51,7 +52,7 @@ export async function resizeIslandWindow(
     state: IslandWindowState,
     displayMode: IslandDisplayMode = 'floating',
 ): Promise<void> {
-    if (!get(isMiniPlayer)) return;
+    if (!get(isMiniPlayer) || miniPlayerExiting) return;
     try {
         const target = ISLAND_WINDOW_SIZES[state] || ISLAND_WINDOW_SIZES.compact;
         const pill = ISLAND_PILL_SIZES[state] || ISLAND_PILL_SIZES.compact;
@@ -294,6 +295,7 @@ export async function setMiniPlayer(enable: boolean) {
                 }
             } else {
                 // Exiting PIP mode
+                miniPlayerExiting = true;
                 if (typeof document !== 'undefined') {
                     document.documentElement.classList.remove('pip');
                     document.body.classList.remove('pip');
@@ -359,6 +361,7 @@ export async function setMiniPlayer(enable: boolean) {
             return;
         } finally {
             miniPlayerTransitionInFlight = false;
+            miniPlayerExiting = false;
         }
     } else {
         // Non-Tauri: just toggle the store
