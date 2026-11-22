@@ -623,7 +623,7 @@ pub async fn install_plugin_package(
                 continue;
             }
 
-            let outpath = dest_dir.join(rel_path);
+            let outpath = validate_archive_rel_path(&dest_dir, rel_path)?;
             if let Some(parent) = outpath.parent() {
                 let _ = fs::create_dir_all(parent);
             }
@@ -1330,4 +1330,61 @@ pub async fn plugin_clear_data(plugin_name: String, plugin_dir: String) -> Resul
     fs::create_dir_all(&storage_dir).map_err(|e| e.to_string())?;
 
     Ok(count)
+}
+
+fn validate_archive_rel_path(dest_dir: &std::path::Path, rel_path: &str) -> Result<PathBuf, String> {
+    let rel_path_obj = std::path::Path::new(rel_path);
+    for comp in rel_path_obj.components() {
+        if !matches!(comp, std::path::Component::Normal(_)) {
+            return Err(format!(
+                "Invalid archive entry {:?}: contains illegal component {:?}",
+                rel_path, comp
+            ));
+        }
+    }
+
+    let outpath = dest_dir.join(rel_path_obj);
+    if !outpath.starts_with(dest_dir) {
+        return Err(format!(
+            "Invalid archive entry {:?}: path escapes destination directory",
+            rel_path
+        ));
+    }
+
+    Ok(outpath)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_validate_archive_rel_path_valid() {
+        let dest = Path::new("/sandbox/plugin_dir");
+        let valid_paths = ["index.js", "lib/a.js", "assets/sub/icon.png"];
+        for p in valid_paths {
+            let res = validate_archive_rel_path(dest, p);
+            assert!(res.is_ok(), "Expected {:?} to be valid", p);
+            assert_eq!(res.unwrap(), dest.join(p));
+        }
+    }
+
+    #[test]
+    fn test_validate_archive_rel_path_traversal() {
+        let dest = Path::new("/sandbox/plugin_dir");
+        let invalid_paths = [
+            "../outside.txt",
+            "../../outside.txt",
+            "../x",
+            "lib/../../x",
+            "/home/user/.bashrc",
+            "\\absolute\\path",
+            "/etc/passwd",
+        ];
+        for p in invalid_paths {
+            let res = validate_archive_rel_path(dest, p);
+            assert!(res.is_err(), "Expected {:?} to be rejected", p);
+        }
+    }
 }

@@ -922,18 +922,18 @@ jobs:
           # Parse Java properties following java.util.Properties specification (accepts whitespace, =, or : separators)
           prop() {
             python3 -c '
-import re, sys
-key = sys.argv[1]
-with open(sys.argv[2], "r", encoding="utf-8") as f:
-    for line in f:
-        line = line.strip()
-        if not line or line.startswith("#") or line.startswith("!"):
-            continue
-        m = re.match(r"^([^\s:=]+)[\s:=]+(.*)$", line)
-        if m and m.group(1).strip() == key:
-            print(m.group(2).strip())
-            break
-' "$1" "$WORK/key.properties"
+          import re, sys
+          key = sys.argv[1]
+          with open(sys.argv[2], "r", encoding="utf-8") as f:
+              for line in f:
+                  line = line.strip()
+                  if not line or line.startswith("#") or line.startswith("!"):
+                      continue
+                  m = re.match(r"^([^\s:=]+)[\s:=]+(.*)$", line)
+                  if m and m.group(1).strip() == key:
+                      print(m.group(2).strip())
+                      break
+          ' "$1" "$WORK/key.properties"
           }
           KS_ALIAS="$(prop keyAlias || true)"
           KS_PASS="$(prop storePassword || true)"

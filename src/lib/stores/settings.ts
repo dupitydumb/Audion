@@ -439,7 +439,7 @@ function createSettingsStore() {
                 await nativeAudioSetOutputDevice(state.outputDevice).catch(() => {});
             }
 
-            if (state.exclusiveMode && state.playbackBackend !== 'html5') {
+            if (state.exclusiveMode && state.audioBackend !== 'html5') {
                 const { nativeAudioSetExclusiveMode } = await import('$lib/services/native-audio');
                 await nativeAudioSetExclusiveMode(true).catch(() => {});
             }
