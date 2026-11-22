@@ -1817,18 +1817,8 @@
         text-align: right;
     }
 
-    @container (max-width: 1050px) {
+    @container (max-width: 1486px) {
         .desktop-view-controls {
-            display: none !important;
-        }
-        .volume-bar {
-            display: none !important;
-        }
-    }
-
-    @container (max-width: 900px) {
-        .utility-controls-desktop,
-        .desktop-device-picker {
             display: none !important;
         }
         .overflow-more-wrapper {
@@ -1836,7 +1826,20 @@
         }
     }
 
-    @container (max-width: 700px) {
+    @container (max-width: 1300px) {
+        .volume-bar {
+            display: none !important;
+        }
+    }
+
+    @container (max-width: 1050px) {
+        .utility-controls-desktop,
+        .desktop-device-picker {
+            display: none !important;
+        }
+    }
+
+    @container (max-width: 750px) {
         .player-bar :global(.audio-quality-badge),
         .progress-container .time {
             display: none !important;
