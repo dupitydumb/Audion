@@ -87,6 +87,29 @@ export function createSflxExtensionAdapter(
         fetchFn?: (url: string, opts?: any) => Promise<any>;
     }
 ): SflxAdapterResult {
+    let codeToRun = scriptContent.trim();
+    if (codeToRun.startsWith('{') && codeToRun.endsWith('}')) {
+        try {
+            const parsed = JSON.parse(codeToRun);
+            if (parsed.code || parsed.script || parsed.entry_code) {
+                codeToRun = parsed.code || parsed.script || parsed.entry_code;
+            }
+            if (parsed.manifest) {
+                Object.assign(rawManifest, parsed.manifest);
+            }
+            if (parsed.name) rawManifest.name = parsed.name;
+            if (parsed.id) rawManifest.id = parsed.id;
+            if (parsed.version) rawManifest.version = parsed.version;
+            if (parsed.author) rawManifest.author = parsed.author;
+            if (parsed.description) rawManifest.description = parsed.description;
+        } catch {
+            // Not valid JSON, continue with text
+        }
+    }
+
+    // Convert standard ES export default to CommonJS module.exports if present
+    codeToRun = codeToRun.replace(/^\s*export\s+default\s+/m, 'module.exports = ');
+
     const manifest: SflxManifest = {
         id: rawManifest.id || `sflx-${Date.now()}`,
         name: rawManifest.name || 'Community Extension',
@@ -124,10 +147,27 @@ export function createSflxExtensionAdapter(
     const moduleExports: Record<string, any> = {};
     const moduleObj = { exports: moduleExports };
 
+    const audionShim = {
+        register: (plugin: any) => {
+            if (plugin && typeof plugin === 'object') {
+                Object.assign(moduleExports, plugin);
+            }
+        }
+    };
+
+    const windowShim: any = {
+        Audion: audionShim,
+        get AudionPlugin() { return moduleExports; },
+        set AudionPlugin(val) { if (val && typeof val === 'object') Object.assign(moduleExports, val); }
+    };
+
     // Sandbox execution context
     const sandboxScope = {
         module: moduleObj,
         exports: moduleExports,
+        Audion: audionShim,
+        window: windowShim,
+        globalThis: windowShim,
         $fetch: fetchShim,
         fetch: fetchShim,
         storage: storageShim,
@@ -141,13 +181,13 @@ export function createSflxExtensionAdapter(
     try {
         const paramNames = Object.keys(sandboxScope);
         const paramValues = Object.values(sandboxScope);
-        const runner = new Function(...paramNames, `${scriptContent}\n;return module.exports;`);
+        const runner = new Function(...paramNames, `${codeToRun}\n;return module.exports;`);
         const executedExports = runner(...paramValues) || moduleExports;
 
         const result: SflxAdapterResult = { manifest };
 
         // 1. Check for Stream capability
-        const getStreamFn = executedExports.getMediaSource || executedExports.getStream || executedExports.resolveStream;
+        const getStreamFn = executedExports.getMediaSource || executedExports.getStream || executedExports.resolveStream || executedExports.getStreamUrl || executedExports.getAudioUrl || executedExports.play;
         if (typeof getStreamFn === 'function') {
             result.streamProvider = {
                 id: manifest.id,
@@ -155,7 +195,20 @@ export function createSflxExtensionAdapter(
                 version: manifest.version,
                 description: manifest.description,
                 getStream: async (songId: string, quality?: string): Promise<StreamSourceResult | string | null> => {
-                    const res = await getStreamFn(songId, quality);
+                    const musicItem = { id: songId, songId, title: songId };
+                    let res: any = null;
+                    try {
+                        res = await getStreamFn(songId, quality);
+                    } catch {
+                        res = await getStreamFn(musicItem, quality);
+                    }
+                    if (!res) {
+                        try {
+                            res = await getStreamFn(musicItem, quality);
+                        } catch {
+                            return null;
+                        }
+                    }
                     if (!res) return null;
                     if (typeof res === 'string') return { url: res };
                     return {
@@ -237,7 +290,25 @@ export function createSflxExtensionAdapter(
                 version: manifest.version,
                 description: manifest.description,
                 getLyrics: async (track): Promise<LyricsProviderResult | null> => {
-                    const raw = await getLyricFn(track.title, track.artist, track.duration);
+                    const musicItem = {
+                        id: (track as any).id || (track as any).external_id,
+                        title: track.title,
+                        artist: track.artist,
+                        duration: track.duration,
+                    };
+                    let raw: any = null;
+                    try {
+                        raw = await getLyricFn(track.title, track.artist, track.duration);
+                    } catch {
+                        raw = await getLyricFn(musicItem);
+                    }
+                    if (!raw) {
+                        try {
+                            raw = await getLyricFn(musicItem);
+                        } catch {
+                            return null;
+                        }
+                    }
                     if (!raw) return null;
 
                     // String => assume standard LRC format

@@ -1365,6 +1365,7 @@ pub fn run() {
                     // Plugin commands
                     commands::list_plugins,
                     commands::install_plugin,
+                    commands::install_plugin_package,
                     commands::uninstall_plugin,
                     commands::enable_plugin,
                     commands::disable_plugin,
@@ -1640,6 +1641,7 @@ pub fn run() {
                     // Plugin commands
                     commands::list_plugins,
                     commands::install_plugin,
+                    commands::install_plugin_package,
                     commands::uninstall_plugin,
                     commands::enable_plugin,
                     commands::disable_plugin,

@@ -488,6 +488,285 @@ pub async fn install_plugin(
     })
 }
 
+fn generate_default_manifest(stem: &str) -> PluginManifest {
+    let display_name = stem
+        .replace('-', " ")
+        .replace('_', " ")
+        .split_whitespace()
+        .map(|w| {
+            let mut c = w.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    PluginManifest {
+        name: if display_name.is_empty() {
+            "Imported Plugin".to_string()
+        } else {
+            display_name
+        },
+        safe_name: Some(to_safe_name(stem)),
+        version: "1.0.0".to_string(),
+        author: "Community".to_string(),
+        description: Some("Imported community extension package".to_string()),
+        repo: None,
+        manifest_url: None,
+        plugin_type: "js".to_string(),
+        entry: "index.js".to_string(),
+        permissions: vec![
+            "player:control".to_string(),
+            "player:read".to_string(),
+            "library:read".to_string(),
+            "ui:inject".to_string(),
+            "network:fetch".to_string(),
+            "storage:local".to_string(),
+            "lyrics:read".to_string(),
+            "lyrics:write".to_string(),
+            "system:notify".to_string(),
+        ],
+        cross_plugin_access: vec![],
+        ui_slots: None,
+        icon: None,
+        icon_url: None,
+        category: Some("utility".to_string()),
+        tags: None,
+        provides: None,
+        license: None,
+        integrity: None,
+        sha256: None,
+    }
+}
+
+#[tauri::command]
+pub async fn install_plugin_package(
+    file_path: String,
+    plugin_dir: String,
+) -> Result<PluginInfo, String> {
+    let path = PathBuf::from(&file_path);
+    if !path.exists() {
+        return Err(format!("File does not exist: {}", file_path));
+    }
+
+    let plugin_root = get_plugins_root(&plugin_dir);
+    fs::create_dir_all(&plugin_root)
+        .map_err(|e| format!("Failed to create plugins root: {}", e))?;
+
+    let file_bytes = fs::read(&path)
+        .map_err(|e| format!("Failed to read plugin file: {}", e))?;
+
+    let file_stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("plugin");
+    let clean_stem = file_stem
+        .trim_end_matches(".audion")
+        .trim_end_matches("-audion");
+
+    // Case 1: ZIP Archive (.zip, .ext, .audion-ext containing plugin.json / index.js)
+    if file_bytes.starts_with(b"PK\x03\x04") {
+        let cursor = std::io::Cursor::new(&file_bytes);
+        let mut archive = zip::ZipArchive::new(cursor)
+            .map_err(|e| format!("Failed to parse zip archive: {}", e))?;
+
+        let mut manifest_path_in_zip: Option<String> = None;
+        let mut manifest_content: Option<String> = None;
+
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
+            let name = file.name().to_string();
+            let norm_name = name.replace('\\', "/");
+            let norm_lower = norm_name.to_lowercase();
+
+            if norm_lower == "plugin.json" || norm_lower.ends_with("/plugin.json") {
+                let mut buf = String::new();
+                std::io::Read::read_to_string(&mut file, &mut buf).map_err(|e| e.to_string())?;
+                manifest_path_in_zip = Some(norm_name);
+                manifest_content = Some(buf);
+                break;
+            }
+        }
+
+        let manifest: PluginManifest = if let Some(content) = manifest_content {
+            serde_json::from_str(&content)
+                .map_err(|e| format!("Invalid plugin.json in archive: {}", e))?
+        } else {
+            generate_default_manifest(clean_stem)
+        };
+
+        let safe_name = get_safe_name_from_manifest(&manifest);
+        let dest_dir = plugin_root.join(&safe_name);
+        fs::create_dir_all(&dest_dir)
+            .map_err(|e| format!("Failed to create destination dir: {}", e))?;
+
+        let prefix = if let Some(ref m_path) = manifest_path_in_zip {
+            if let Some(pos) = m_path.rfind('/') {
+                format!("{}/", &m_path[..pos])
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        };
+
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
+            let raw_name = file.name().replace('\\', "/");
+            let rel_path = if !prefix.is_empty() && raw_name.starts_with(&prefix) {
+                &raw_name[prefix.len()..]
+            } else {
+                &raw_name
+            };
+
+            if rel_path.is_empty() || rel_path.ends_with('/') {
+                continue;
+            }
+
+            let outpath = dest_dir.join(rel_path);
+            if let Some(parent) = outpath.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+
+            let mut outfile = fs::File::create(&outpath)
+                .map_err(|e| format!("Failed to create file {:?}: {}", outpath, e))?;
+            std::io::copy(&mut file, &mut outfile)
+                .map_err(|e| format!("Failed to extract file {:?}: {}", outpath, e))?;
+        }
+
+        let manifest_json = serde_json::to_string_pretty(&manifest)
+            .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
+        fs::write(dest_dir.join("plugin.json"), manifest_json)
+            .map_err(|e| format!("Failed to save plugin.json: {}", e))?;
+
+        let mut states = load_plugin_states(plugin_root.to_string_lossy().as_ref());
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        states.plugins.insert(
+            manifest.name.clone(),
+            PluginState {
+                name: manifest.name.clone(),
+                enabled: false,
+                granted_permissions: manifest.permissions.clone(),
+                version: manifest.version.clone(),
+                plugin_type: manifest.plugin_type.clone(),
+                installed_at: now,
+            },
+        );
+        save_plugin_states(plugin_root.to_string_lossy().as_ref(), &states)?;
+
+        return Ok(PluginInfo {
+            name: manifest.name.clone(),
+            enabled: false,
+            manifest,
+            granted_permissions: vec![],
+            folder_name: safe_name,
+        });
+    }
+
+    // Case 2: Plain text file (.ext, .audion-ext, .js, .sflx, .json)
+    let content = String::from_utf8(file_bytes)
+        .map_err(|_| "Unsupported binary file format. Expected zip archive or JavaScript/JSON text.".to_string())?;
+
+    let trimmed = content.trim();
+    let (mut manifest, js_code) = if trimmed.starts_with('{') && trimmed.ends_with('}') {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(trimmed) {
+            let code_str = val.get("code")
+                .or_else(|| val.get("script"))
+                .or_else(|| val.get("entry_code"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+
+            if let Some(code) = code_str {
+                let m: PluginManifest = if let Some(m_val) = val.get("manifest") {
+                    serde_json::from_value(m_val.clone()).unwrap_or_else(|_| generate_default_manifest(clean_stem))
+                } else {
+                    serde_json::from_value(val.clone()).unwrap_or_else(|_| generate_default_manifest(clean_stem))
+                };
+                (m, code)
+            } else {
+                (generate_default_manifest(clean_stem), content.clone())
+            }
+        } else {
+            (generate_default_manifest(clean_stem), content.clone())
+        }
+    } else {
+        let mut m = generate_default_manifest(clean_stem);
+        for line in content.lines() {
+            let line_trim = line.trim();
+            if !line_trim.starts_with("//") {
+                if !line_trim.is_empty() && !line_trim.starts_with("/*") && !line_trim.starts_with("*") {
+                    break;
+                }
+                continue;
+            }
+            let comment = line_trim.trim_start_matches("//").trim();
+            if let Some(rest) = comment.strip_prefix("@name") {
+                let val = rest.trim();
+                if !val.is_empty() { m.name = val.to_string(); }
+            } else if let Some(rest) = comment.strip_prefix("@version") {
+                let val = rest.trim();
+                if !val.is_empty() { m.version = val.to_string(); }
+            } else if let Some(rest) = comment.strip_prefix("@author") {
+                let val = rest.trim();
+                if !val.is_empty() { m.author = val.to_string(); }
+            } else if let Some(rest) = comment.strip_prefix("@description") {
+                let val = rest.trim();
+                if !val.is_empty() { m.description = Some(val.to_string()); }
+            }
+        }
+        (m, content.clone())
+    };
+
+    let safe_name = get_safe_name_from_manifest(&manifest);
+    let dest_dir = plugin_root.join(&safe_name);
+    fs::create_dir_all(&dest_dir)
+        .map_err(|e| format!("Failed to create destination dir: {}", e))?;
+
+    let entry_filename = if manifest.entry.is_empty() { "index.js".to_string() } else { manifest.entry.clone() };
+    manifest.entry = entry_filename.clone();
+
+    fs::write(dest_dir.join(&entry_filename), js_code)
+        .map_err(|e| format!("Failed to save entry file: {}", e))?;
+
+    let manifest_json = serde_json::to_string_pretty(&manifest)
+        .map_err(|e| format!("Failed to serialize manifest: {}", e))?;
+    fs::write(dest_dir.join("plugin.json"), manifest_json)
+        .map_err(|e| format!("Failed to save plugin.json: {}", e))?;
+
+    let mut states = load_plugin_states(plugin_root.to_string_lossy().as_ref());
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+
+    states.plugins.insert(
+        manifest.name.clone(),
+        PluginState {
+            name: manifest.name.clone(),
+            enabled: false,
+            granted_permissions: manifest.permissions.clone(),
+            version: manifest.version.clone(),
+            plugin_type: manifest.plugin_type.clone(),
+            installed_at: now,
+        },
+    );
+    save_plugin_states(plugin_root.to_string_lossy().as_ref(), &states)?;
+
+    Ok(PluginInfo {
+        name: manifest.name.clone(),
+        enabled: false,
+        manifest,
+        granted_permissions: vec![],
+        folder_name: safe_name,
+    })
+}
+
 #[tauri::command]
 pub fn uninstall_plugin(name: String, plugin_dir: String) -> Result<bool, String> {
     // Resolve path using our robust helper

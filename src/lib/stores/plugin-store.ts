@@ -533,6 +533,40 @@ function createPluginStore() {
             }
         },
 
+        // Install a plugin from a local package (.ext, .audion-ext, .sflx, .js, .zip)
+        async installPluginFromFile(filePath: string): Promise<PluginInfo | null> {
+            update(s => ({ ...s, loading: true, error: null }));
+
+            try {
+                const info = await invoke<PluginInfo>('install_plugin_package', {
+                    filePath,
+                    pluginDir
+                });
+
+                update(s => ({
+                    ...s,
+                    installed: [...s.installed.filter(p => p.name !== info.name), info],
+                    loading: false
+                }));
+
+                // Auto-enable newly installed plugin
+                try {
+                    await this.enablePlugin(info.name);
+                    clearPluginFailure(info.name);
+                } catch (err) {
+                    recordPluginFailure(info.name, err);
+                    console.error(`[PluginStore] Failed to auto-enable ${info.name}:`, err);
+                }
+
+                return info;
+            } catch (err: any) {
+                const errorMsg = `Failed to install plugin from file: ${err instanceof Error ? err.message : String(err)}`;
+                console.error(`[PluginStore] ${errorMsg}:`, err);
+                setCriticalError(errorMsg, err);
+                return null;
+            }
+        },
+
         // Uninstall a plugin
         async uninstallPlugin(name: string): Promise<boolean> {
             update(s => ({ ...s, loading: true, error: null }));

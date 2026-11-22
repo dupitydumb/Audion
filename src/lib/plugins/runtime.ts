@@ -334,18 +334,34 @@ export class PluginRuntime {
         }
       };
 
-      // Wrap the plugin code to provide Audion.register in scope
+      // Wrap the plugin code to provide Audion.register in scope and CommonJS module/exports support
       // This creates a closure that doesn't require eval
       const wrappedCode = `
 (function() {
+  const module = { exports: {} };
+  const exports = module.exports;
   const Audion = {
     register: function(instance) {
       if (window["${callbackId}"]) {
+        window["${callbackId}_handled"] = true;
         window["${callbackId}"](instance);
       }
     }
   };
-  ${code}
+  try {
+    ${code}
+  } catch (err) {
+    console.error("[PluginRuntime] Script error in ${manifest.name}:", err);
+    throw err;
+  }
+  if (!window["${callbackId}_handled"]) {
+    const exp = (module.exports && (module.exports.default || module.exports)) || exports;
+    if (exp && typeof exp === 'object' && Object.keys(exp).length > 0) {
+      if (window["${callbackId}"]) {
+        window["${callbackId}"](exp);
+      }
+    }
+  }
 })();
 `;
 
@@ -354,6 +370,7 @@ export class PluginRuntime {
 
       // Clean up callback
       delete (window as any)[callbackId];
+      delete (window as any)[`${callbackId}_handled`];
 
       // Check for instance via handoff or legacy global patterns
       let instance = this.handoffInstance;
@@ -367,6 +384,81 @@ export class PluginRuntime {
 
       if (!instance) {
         throw new Error(`Plugin ${manifest.name} did not register an instance`);
+      }
+
+      // If instance is an SFLX or provider object without standard lifecycle methods, wrap it
+      if (typeof instance === 'object' && !instance.init && (instance.getMediaSource || instance.getStream || instance.resolveStream || instance.search || instance.getLyric || instance.getLyrics)) {
+        const raw = instance;
+        instance = {
+          name: manifest.name,
+          init: () => {
+            const getStreamFn = raw.getMediaSource || raw.getStream || raw.resolveStream || raw.getStreamUrl || raw.getAudioUrl || raw.play;
+            if (typeof getStreamFn === 'function') {
+              const streamProvider: StreamProvider = {
+                id: manifest.safe_name || manifest.name,
+                name: manifest.name,
+                version: manifest.version,
+                getStream: async (songId: string, quality?: string) => {
+                  const item = { id: songId, songId, title: songId };
+                  let res: any = null;
+                  try { res = await getStreamFn(songId, quality); } catch { res = await getStreamFn(item, quality); }
+                  if (!res) { try { res = await getStreamFn(item, quality); } catch { return null; } }
+                  if (!res) return null;
+                  if (typeof res === 'string') return { url: res };
+                  return res;
+                }
+              };
+              globalProviders.registerStreamProvider(streamProvider, manifest.name);
+            }
+            if (typeof raw.search === 'function') {
+              const metaProvider: MetadataProvider = {
+                id: manifest.safe_name || manifest.name,
+                name: manifest.name,
+                version: manifest.version,
+                search: async (query: string, type: any = 'all', page: number = 1) => {
+                  const res = await raw.search(query, page, type);
+                  const list = Array.isArray(res) ? res : res?.tracks || res?.songs || res?.data || [];
+                  const tracks = list.map((item: any) => ({
+                    id: String(item.id || item.songId || item.mid || ''),
+                    title: String(item.title || item.name || 'Unknown'),
+                    artist: typeof item.artist === 'string' ? item.artist : (Array.isArray(item.artists) ? item.artists.map((a: any) => typeof a === 'string' ? a : a.name).join(', ') : 'Unknown'),
+                    album: typeof item.album === 'string' ? item.album : item.album?.name,
+                    duration: item.duration || item.interval,
+                    cover_url: item.cover_url || item.pic || item.cover,
+                    source_type: manifest.safe_name || manifest.name,
+                  }));
+                  return { tracks };
+                }
+              };
+              globalProviders.registerMetadataProvider(metaProvider, manifest.name);
+            }
+            const getLyricFn = raw.getLyric || raw.getLyrics;
+            if (typeof getLyricFn === 'function') {
+              const lyricProvider: LyricsProvider = {
+                id: manifest.safe_name || manifest.name,
+                name: manifest.name,
+                version: manifest.version,
+                getLyrics: async (track: any) => {
+                  const item = { id: track.id || track.external_id, title: track.title, artist: track.artist, duration: track.duration };
+                  let res: any = null;
+                  try { res = await getLyricFn(track.title, track.artist, track.duration); } catch { res = await getLyricFn(item); }
+                  if (!res) { try { res = await getLyricFn(item); } catch { return null; } }
+                  if (!res) return null;
+                  if (typeof res === 'string') {
+                    return { lines: [{ time: 0, text: res }], source: manifest.name, format: 'lrc' };
+                  }
+                  return res;
+                }
+              };
+              globalProviders.registerLyricsProvider(lyricProvider, manifest.name);
+            }
+          },
+          start: () => {},
+          stop: () => {},
+          destroy: () => {
+            globalProviders.unregisterPluginProviders(manifest.name);
+          }
+        };
       }
 
       // Cleanup global if it was used

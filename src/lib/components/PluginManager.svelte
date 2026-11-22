@@ -1,4 +1,4 @@
-﻿<script lang="ts">
+<script lang="ts">
   import { onMount } from "svelte";
   import { _ } from "svelte-i18n";
   import {
@@ -76,34 +76,57 @@
       const { open } = await import('@tauri-apps/plugin-dialog');
       const selected = await open({
         multiple: false,
-        filters: [{
-          name: 'Extension Packages',
-          extensions: ['sflx', 'audion-ext', 'js']
-        }]
+        filters: [
+          {
+            name: 'Audion Plugins & Extensions (*.ext, *.audion-ext, *.sflx, *.js, *.zip)',
+            extensions: ['ext', 'audion-ext', 'sflx', 'js', 'zip']
+          },
+          {
+            name: 'All Files (*.*)',
+            extensions: ['*']
+          }
+        ]
       });
       if (!selected || typeof selected !== 'string') return;
 
+      // 1. Install as a permanent Audion plugin via backend
+      const installedInfo = await pluginStore.installPluginFromFile(selected);
+      if (installedInfo) {
+        addToast(`Successfully installed plugin: ${installedInfo.name}`, 'success');
+        activeTab = 'installed';
+        return;
+      }
+
+      // 2. Fallback: in-memory adapter load if backend install wasn't successful
       const { readTextFile } = await import('@tauri-apps/plugin-fs');
       const content = await readTextFile(selected);
       const fileName = selected.split(/[\/\\]/).pop() || 'community-package';
 
       const adapter = createSflxExtensionAdapter(content, {
-        id: fileName.replace(/\.(sflx|js|audion-ext)$/, ''),
-        name: fileName.replace(/\.(sflx|js|audion-ext)$/, ''),
+        id: fileName.replace(/\.(?:sflx|audion-ext|ext|js|zip)$/i, ''),
+        name: fileName.replace(/\.(?:sflx|audion-ext|ext|js|zip)$/i, ''),
         version: '1.0.0'
       });
 
+      let loadedAny = false;
       if (adapter.streamProvider) {
         globalProviders.registerStreamProvider(adapter.streamProvider, fileName);
+        loadedAny = true;
       }
       if (adapter.metadataProvider) {
         globalProviders.registerMetadataProvider(adapter.metadataProvider, fileName);
+        loadedAny = true;
       }
       if (adapter.lyricsProvider) {
         globalProviders.registerLyricsProvider(adapter.lyricsProvider, fileName);
+        loadedAny = true;
       }
 
-      addToast(`Successfully loaded package: ${adapter.manifest.name}`, 'success');
+      if (loadedAny) {
+        addToast(`Successfully loaded package: ${adapter.manifest.name}`, 'success');
+      } else {
+        addToast(`Plugin imported, but no providers or entry hooks were found`, 'warning');
+      }
     } catch (err) {
       console.error('[PluginManager] Failed to import package:', err);
       addToast(`Failed to import package: ${err instanceof Error ? err.message : String(err)}`, 'error');
@@ -412,10 +435,10 @@
       <button
         class="btn-secondary"
         on:click={handleImportPackage}
-        title="Import community .sflx or extension package"
+        title="Import .ext, .sflx or Audion plugin package"
       >
         <Icon name="file" size={16} />
-        Import Package (.sflx)
+        Import Plugin (.ext)
       </button>
 
       <button
