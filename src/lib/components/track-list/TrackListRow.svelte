@@ -6,6 +6,7 @@
   import { formatDuration } from "$lib/api/tauri";
   import { isMobile } from "$lib/stores/mobile";
   import { multiSelect } from "$lib/stores/multiselect";
+  import { trackSelectionStore } from "$lib/stores/trackSelectionStore";
   import { goToArtistDetail, goToAlbumDetail } from "$lib/stores/view";
 
   export let track: Track;
@@ -13,6 +14,7 @@
   export let unavailable = false;
   export let actualIndex: number;
   export let isSelected = false;
+  export let isFocused = false;
   export let showAlbum = true;
   export let playlistId: number | null = null;
   export let multiSelectMode = false;
@@ -45,6 +47,27 @@
       goToAlbumDetail(track.album_id);
     }
   }
+
+  function handleDragStart(e: DragEvent) {
+    // If dragging the reorder drag handle, let pointerdown handle it
+    if ((e.target as HTMLElement)?.closest(".drag-handle")) {
+      e.preventDefault();
+      return;
+    }
+    if (!e.dataTransfer) return;
+    let trackIds: number[];
+    if (multiSelectMode && $multiSelect.selectedTrackIds.has(track.id)) {
+      trackIds = Array.from($multiSelect.selectedTrackIds);
+    } else if ($trackSelectionStore.selectedTrackIds.has(track.id)) {
+      trackIds = Array.from($trackSelectionStore.selectedTrackIds);
+    } else {
+      trackIds = [track.id];
+    }
+    const payload = JSON.stringify({ trackIds });
+    e.dataTransfer.setData("application/json", payload);
+    e.dataTransfer.setData("text/plain", JSON.stringify(trackIds));
+    e.dataTransfer.effectAllowed = "copy";
+  }
 </script>
 
 <div
@@ -53,12 +76,16 @@
   class:unavailable
   class:dragging={isDragging}
   class:drag-over={isDragOver}
-  class:selected={multiSelectMode && isSelected}
+  class:selected={isSelected}
+  class:focused={isFocused}
   data-track-id={track.id}
   data-track-index={actualIndex}
   role="button"
-  tabindex="0"
+  aria-selected={isSelected}
+  tabindex={isFocused ? 0 : (actualIndex === 0 ? 0 : -1)}
   style={dragShift !== 0 ? `transform: translateY(${dragShift}px)` : undefined}
+  draggable="true"
+  on:dragstart={handleDragStart}
   on:mouseenter={() => (rowHovered = true)}
   on:mouseleave={() => (rowHovered = false)}
 >

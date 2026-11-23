@@ -9,12 +9,15 @@
         getTrackCoverSrc,
         formatDuration,
         getReleaseMbInfo,
+        convertFileSrc,
         type MbReleaseInfo,
     } from "$lib/api/tauri";
-    import { playTracks, currentTrack, isPlaying } from "$lib/stores/player";
+    import { playTracks, currentTrack, isPlaying, togglePlay } from "$lib/stores/player";
     import { goToAlbums, goToArtistDetail } from "$lib/stores/view";
     import ArtistLinks from "$lib/components/ArtistLinks.svelte";
     import { getAlbumCoverFromTracks } from "$lib/stores/library";
+    import { extractPalette } from "$lib/stores/palette";
+    import { likedTrackIds, toggleLikeTrack } from "$lib/stores/liked";
     import TrackList from "./track-list/TrackList.svelte";
     import {
         downloadTracks,
@@ -217,19 +220,132 @@
             }),
         });
     }
+
+    // Dynamic Ambient Hero Banner Palette
+    let heroAccentColor: string | null = null;
+    let heroIsLight = false;
+    let heroPaletteRequestId = 0;
+
+    function checkIsLight(hex: string, lum?: number): boolean {
+        if (typeof lum === "number") {
+            return lum > 0.45;
+        }
+        const clean = hex.replace("#", "");
+        if (clean.length !== 6) return false;
+        const r = parseInt(clean.slice(0, 2), 16) / 255;
+        const g = parseInt(clean.slice(2, 4), 16) / 255;
+        const b = parseInt(clean.slice(4, 6), 16) / 255;
+        const toLinear = (c: number) => c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+        const l = 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+        return l > 0.45;
+    }
+
+    $: albumCoverUrl = album
+        ? getAlbumCoverFromTracks(album.id) ||
+          (album.cover_art_path ? convertFileSrc(album.cover_art_path) : null)
+        : null;
+
+    async function updateHeroPalette(coverUrl: string | null) {
+        const thisRequestId = ++heroPaletteRequestId;
+        if (!coverUrl) {
+            heroAccentColor = null;
+            heroIsLight = false;
+            return;
+        }
+        try {
+            const palette = await extractPalette(coverUrl);
+            if (thisRequestId !== heroPaletteRequestId) return;
+            if (palette && palette.length > 0) {
+                heroAccentColor = palette[0].hex;
+                heroIsLight = checkIsLight(palette[0].hex, palette[0].luminance) || !palette[0].isDark;
+            } else {
+                heroAccentColor = null;
+                heroIsLight = false;
+            }
+        } catch (e) {
+            if (thisRequestId !== heroPaletteRequestId) return;
+            console.warn("[AlbumDetail] extractPalette failed:", e);
+            heroAccentColor = null;
+            heroIsLight = false;
+        }
+    }
+
+    $: updateHeroPalette(albumCoverUrl);
+
+    // Sticky Action Toolbar on Scroll
+    let headerElement: HTMLElement | undefined = undefined;
+    let isScrolledPastHero = false;
+
+    function handleScroll(e: Event) {
+        const target = (e.currentTarget || e.target) as HTMLElement;
+        if (target && typeof target.scrollTop === "number") {
+            const heroHeight = headerElement ? headerElement.offsetHeight : 232;
+            isScrolledPastHero = target.scrollTop >= heroHeight;
+        }
+    }
+
+    $: isThisAlbumPlaying =
+        $isPlaying && tracks.some((t) => t.id === $currentTrack?.id);
+
+    function handlePlayPause() {
+        if (isThisAlbumPlaying) {
+            togglePlay();
+        } else {
+            handlePlayAll();
+        }
+    }
+
+    $: isAlbumLiked =
+        tracks.length > 0 && tracks.every((t) => $likedTrackIds.has(t.id));
+
+    async function handleToggleLike() {
+        if (tracks.length === 0) return;
+        const shouldLike = !isAlbumLiked;
+        for (const t of tracks) {
+            if ($likedTrackIds.has(t.id) !== shouldLike) {
+                await toggleLikeTrack(t);
+            }
+        }
+    }
 </script>
 
-<div class="album-detail">
+<div class="album-detail" on:scroll|capture={handleScroll}>
     {#if loading}
-        <div class="loading">
-            <div class="spinner"></div>
-            <span>{$_("album.loading")}</span>
+        <div class="album-skeleton" aria-busy="true" aria-label={$_("album.loading")}>
+            <header class="album-header skeleton-hero">
+                <div class="skeleton-cover-box">
+                    <div class="shimmer-wave"></div>
+                </div>
+                <div class="skeleton-hero-info">
+                    <div class="skeleton-badge shimmer-box"></div>
+                    <div class="skeleton-title shimmer-box"></div>
+                    <div class="skeleton-meta shimmer-box"></div>
+                    <div class="skeleton-actions">
+                        <div class="skeleton-btn shimmer-box"></div>
+                    </div>
+                </div>
+            </header>
+            <div class="skeleton-track-list">
+                {#each Array(8) as _}
+                    <div class="skeleton-track-row">
+                        <div class="skeleton-num shimmer-box"></div>
+                        <div class="skeleton-track-main">
+                            <div class="skeleton-track-title shimmer-box"></div>
+                            <div class="skeleton-track-sub shimmer-box"></div>
+                        </div>
+                        <div class="skeleton-dur shimmer-box"></div>
+                    </div>
+                {/each}
+            </div>
         </div>
     {:else if album && shouldShowAlbum}
         <header
             class="album-header"
+            class:light-hero={heroIsLight}
+            style="--hero-accent-color: {heroAccentColor || 'var(--bg-surface)'};"
             on:contextmenu={handleContextMenu}
             aria-label="Album Header"
+            bind:this={headerElement}
         >
             <button
                 class="back-btn"
@@ -339,6 +455,48 @@
         {/if}
 
         <section class="track-list-section">
+            <!-- Compact Sticky Action Bar anchored at the top of the track list -->
+            <div
+                class="sticky-action-bar"
+                class:visible={isScrolledPastHero}
+                aria-label="Compact action bar"
+            >
+                <div class="sticky-left">
+                    <button
+                        class="sticky-play-btn"
+                        on:click={handlePlayPause}
+                        aria-label={isThisAlbumPlaying ? $_("common.pause") : $_("album.play")}
+                        title={isThisAlbumPlaying ? $_("common.pause") : $_("album.play")}
+                    >
+                        <Icon name={isThisAlbumPlaying ? "pause" : "play"} size={18} />
+                    </button>
+                    <div class="sticky-meta">
+                        <span class="sticky-title">{album.name}</span>
+                        <span class="sticky-sep">•</span>
+                        <span class="sticky-artist">{album.artist || $_("common.unknownArtist")}</span>
+                    </div>
+                </div>
+                <div class="sticky-right">
+                    <button
+                        class="sticky-action-btn"
+                        class:liked={isAlbumLiked}
+                        on:click={handleToggleLike}
+                        aria-label={isAlbumLiked ? $_("liked.unlike") : $_("liked.like")}
+                        title={isAlbumLiked ? $_("liked.unlike") : $_("liked.like")}
+                    >
+                        <Icon name={isAlbumLiked ? "heart-filled" : "heart"} size={18} />
+                    </button>
+                    <button
+                        class="sticky-action-btn"
+                        on:click={handleContextMenu}
+                        aria-label={$_("common.more")}
+                        title={$_("common.more")}
+                    >
+                        <Icon name="more-horizontal" size={18} />
+                    </button>
+                </div>
+            </div>
+
             {#if groupedTracks.length > 1}
                 {#each groupedTracks as group}
                     <div class="disc-group">
@@ -421,14 +579,316 @@
     }
 
     .album-header {
+        position: relative;
         display: flex;
         gap: var(--spacing-lg);
         padding: var(--spacing-lg);
         background: linear-gradient(
             180deg,
-            var(--bg-surface) 0%,
+            color-mix(in srgb, var(--hero-accent-color, var(--bg-surface)) 45%, var(--bg-surface) 55%) 0%,
             var(--bg-base) 100%
         );
+        overflow: hidden;
+        transition: background 0.4s ease;
+    }
+
+    .album-header > * {
+        position: relative;
+        z-index: 2;
+    }
+
+    .album-header::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: radial-gradient(
+            circle at 20% 30%,
+            color-mix(in srgb, var(--hero-accent-color, transparent) 35%, transparent) 0%,
+            transparent 70%
+        );
+        opacity: 0.85;
+        transition: opacity 0.4s ease;
+    }
+
+    .album-header::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background: linear-gradient(
+            180deg,
+            rgba(0, 0, 0, 0.45) 0%,
+            rgba(0, 0, 0, 0.65) 100%
+        );
+        opacity: 0;
+        transition: opacity 0.4s ease;
+        z-index: 1;
+    }
+
+    .album-header.light-hero::after {
+        opacity: 1;
+    }
+
+    /* ── Sticky Action Toolbar on Scroll ── */
+    .sticky-action-bar {
+        position: sticky;
+        top: 0;
+        z-index: 25;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 var(--spacing-lg);
+        height: 0;
+        max-height: 0;
+        opacity: 0;
+        overflow: hidden;
+        pointer-events: none;
+        background: rgba(18, 18, 18, 0.88);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        border-bottom: 1px solid transparent;
+        transition: height 0.22s cubic-bezier(0.2, 0, 0, 1),
+                    max-height 0.22s cubic-bezier(0.2, 0, 0, 1),
+                    opacity 0.22s cubic-bezier(0.2, 0, 0, 1),
+                    border-color 0.22s ease;
+        flex-shrink: 0;
+    }
+
+    .sticky-action-bar.visible {
+        height: 52px;
+        max-height: 52px;
+        opacity: 1;
+        pointer-events: auto;
+        border-bottom-color: var(--border-color);
+    }
+
+    .sticky-left,
+    .sticky-right {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+    }
+
+    .sticky-left {
+        min-width: 0;
+        flex: 1;
+    }
+
+    .sticky-play-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: var(--radius-full);
+        background: var(--accent-primary);
+        color: var(--text-on-accent, #000);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: transform var(--transition-fast), background var(--transition-fast);
+    }
+
+    .sticky-play-btn:hover {
+        transform: scale(1.06);
+        filter: brightness(1.1);
+    }
+
+    .sticky-meta {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    .sticky-title {
+        font-size: var(--font-size-base);
+        font-weight: var(--font-weight-bold);
+        color: var(--text-primary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .sticky-sep {
+        color: var(--text-subdued);
+        font-size: var(--font-size-xs);
+    }
+
+    .sticky-artist {
+        font-size: var(--font-size-sm);
+        color: var(--text-secondary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .sticky-action-btn {
+        width: 36px;
+        height: 36px;
+        border-radius: var(--radius-full);
+        background: transparent;
+        color: var(--text-secondary);
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: color var(--transition-fast), transform var(--transition-fast);
+    }
+
+    .sticky-action-btn:hover {
+        color: var(--text-primary);
+        transform: scale(1.1);
+    }
+
+    .sticky-action-btn.liked {
+        color: var(--accent-primary);
+    }
+
+    /* ── Skeleton Shimmer Loader ── */
+    .album-skeleton {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        width: 100%;
+        overflow: hidden;
+    }
+
+    .skeleton-hero {
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.04) 0%, var(--bg-base) 100%);
+        pointer-events: none;
+    }
+
+    .skeleton-cover-box {
+        width: 232px;
+        height: 232px;
+        border-radius: var(--radius-sm);
+        background: rgba(255, 255, 255, 0.05);
+        position: relative;
+        overflow: hidden;
+        flex-shrink: 0;
+    }
+
+    .skeleton-hero-info {
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        gap: var(--spacing-md);
+        flex: 1;
+        min-width: 0;
+    }
+
+    .skeleton-badge {
+        width: 60px;
+        height: 14px;
+        border-radius: var(--radius-sm);
+    }
+
+    .skeleton-title {
+        width: 55%;
+        max-width: 380px;
+        height: 40px;
+        border-radius: var(--radius-sm);
+    }
+
+    .skeleton-meta {
+        width: 35%;
+        max-width: 240px;
+        height: 18px;
+        border-radius: var(--radius-sm);
+    }
+
+    .skeleton-actions {
+        display: flex;
+        gap: var(--spacing-md);
+        margin-top: var(--spacing-sm);
+    }
+
+    .skeleton-btn {
+        width: 110px;
+        height: 40px;
+        border-radius: var(--radius-full);
+    }
+
+    .skeleton-track-list {
+        display: flex;
+        flex-direction: column;
+        padding: var(--spacing-md) var(--spacing-lg);
+        gap: 8px;
+    }
+
+    .skeleton-track-row {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+        padding: 8px var(--spacing-sm);
+        border-radius: var(--radius-sm);
+    }
+
+    .skeleton-num {
+        width: 20px;
+        height: 16px;
+        border-radius: var(--radius-sm);
+        flex-shrink: 0;
+    }
+
+    .skeleton-track-main {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        flex: 1;
+    }
+
+    .skeleton-track-title {
+        width: 40%;
+        max-width: 260px;
+        height: 15px;
+        border-radius: var(--radius-sm);
+    }
+
+    .skeleton-track-sub {
+        width: 25%;
+        max-width: 160px;
+        height: 12px;
+        border-radius: var(--radius-sm);
+    }
+
+    .skeleton-dur {
+        width: 36px;
+        height: 14px;
+        border-radius: var(--radius-sm);
+        flex-shrink: 0;
+    }
+
+    .shimmer-box {
+        position: relative;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.05);
+    }
+
+    .shimmer-box::after,
+    .skeleton-cover-box .shimmer-wave {
+        content: "";
+        position: absolute;
+        inset: 0;
+        transform: translateX(-100%);
+        background: linear-gradient(
+            90deg,
+            transparent 0%,
+            rgba(255, 255, 255, 0.04) 30%,
+            rgba(255, 255, 255, 0.12) 50%,
+            rgba(255, 255, 255, 0.04) 70%,
+            transparent 100%
+        );
+        animation: skeleton-shimmer 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    }
+
+    @keyframes skeleton-shimmer {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(100%); }
     }
 
     .back-btn {

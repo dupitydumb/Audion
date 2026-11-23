@@ -1,4 +1,5 @@
 import java.util.Properties
+import java.io.FileInputStream
 
 plugins {
     id("com.android.application")
@@ -26,12 +27,17 @@ android {
 
     signingConfigs {
         create("release") {
-            val storePath = keystoreProperties.getProperty("storeFile")
-            if (!storePath.isNullOrBlank()) {
-                keyAlias = keystoreProperties.getProperty("keyAlias")
-                keyPassword = keystoreProperties.getProperty("keyPassword")
-                storeFile = rootProject.file(storePath)
-                storePassword = keystoreProperties.getProperty("storePassword")
+            val keystorePropertiesFile = rootProject.file("keystore.properties")
+            val keystoreProperties = Properties()
+            if (keystorePropertiesFile.exists()) {
+                keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+                keyAlias = keystoreProperties["keyAlias"] as? String ?: (keystoreProperties.getProperty("keyAlias") ?: "")
+                keyPassword = (keystoreProperties["password"] ?: keystoreProperties["keyPassword"] ?: keystoreProperties.getProperty("keyPassword")) as? String ?: ""
+                val storePath = (keystoreProperties["storeFile"] ?: keystoreProperties.getProperty("storeFile")) as? String
+                if (!storePath.isNullOrBlank()) {
+                    storeFile = file(storePath)
+                }
+                storePassword = (keystoreProperties["password"] ?: keystoreProperties["storePassword"] ?: keystoreProperties.getProperty("storePassword")) as? String ?: ""
             }
         }
     }

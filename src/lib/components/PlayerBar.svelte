@@ -29,6 +29,11 @@
         toggleQueue,
         toggleMiniPlayer,
     } from "$lib/stores/ui";
+    import {
+        isInspectorOpen,
+        activeInspectorTab,
+        toggleInspectorTab,
+    } from "$lib/stores/inspector";
     import { formatDuration, getAlbum, getIsLinux } from "$lib/api/tauri";
     import { resolveTrackCover } from "$lib/stores/library";
     import { customArtworks } from "$lib/stores/customArtwork";
@@ -82,10 +87,14 @@
     let seekBarElement: HTMLDivElement;
     let volumeBarElement: HTMLDivElement;
     let isSeeking = false;
+    let isDraggingSeek = false;
     let seekStartSecs = 0;
     let seekPos = 0;
     let isScrubberHovered = false;
     let hoverRatio = 0;
+
+    $: displayProgress = isSeeking ? seekPos : $progress;
+    $: displayCurrentTime = isSeeking ? (seekPos * $duration) : $currentTime;
 
     let isVolumeChanging = false;
     let isVolumeHovered = false;
@@ -93,16 +102,18 @@
     let volumeWheelTimeout: ReturnType<typeof setTimeout> | null = null;
     let lastNonZeroVolume = 0.7;
 
-    $: if ($volume > 0) {
+    $: if ($volume >= 0.05) {
         lastNonZeroVolume = $volume;
     }
 
     function toggleMute() {
         if ($volume > 0) {
-            lastNonZeroVolume = $volume;
+            if ($volume >= 0.05) {
+                lastNonZeroVolume = $volume;
+            }
             setVolume(0);
         } else {
-            setVolume(lastNonZeroVolume > 0 ? lastNonZeroVolume : 0.7);
+            setVolume(lastNonZeroVolume >= 0.05 ? lastNonZeroVolume : 0.7);
         }
     }
 
@@ -242,28 +253,46 @@
         }
     }
 
-    function handleSeekStart(e: MouseEvent) {
+    function handleSeekStart(e: MouseEvent | PointerEvent) {
         if (!seekBarElement) return;
+        if (!$currentTrack || !$duration || $duration <= 0) return;
+        if (isDraggingSeek) return;
         isSeeking = true;
+        isDraggingSeek = true;
         seekStartSecs = get(currentTime);
+        if ('setPointerCapture' in e && 'pointerId' in e) {
+            try {
+                (e.currentTarget as HTMLElement)?.setPointerCapture(e.pointerId);
+            } catch {}
+        }
         handleSeek(e);
     }
 
-    function handleSeek(e: MouseEvent) {
-        if (!seekBarElement) return;
+    function handleSeek(e: MouseEvent | PointerEvent) {
+        if (!seekBarElement || !isDraggingSeek) return;
         const rect = seekBarElement.getBoundingClientRect();
         seekPos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        const dur = get(duration);
-        currentTime.set(seekPos * dur);
     }
 
-    function handleSeekEnd() {
-        if (!isSeeking) return;
-        isSeeking = false;
-        seek(seekPos, seekStartSecs);
+    async function handleSeekEnd(e?: MouseEvent | PointerEvent) {
+        if (!isDraggingSeek) return;
+        if (e && 'releasePointerCapture' in e && 'pointerId' in e) {
+            try {
+                (e.currentTarget as HTMLElement)?.releasePointerCapture(e.pointerId);
+            } catch {}
+        }
+        isDraggingSeek = false;
+        const targetPos = seekPos;
+        const startSecs = seekStartSecs;
+        currentTime.set(targetPos * $duration);
+        try {
+            await seek(targetPos, startSecs);
+        } finally {
+            isSeeking = false;
+        }
     }
 
-    function handleScrubberMouseMove(e: MouseEvent) {
+    function handleScrubberMouseMove(e: MouseEvent | PointerEvent) {
         if (!seekBarElement) return;
         const rect = seekBarElement.getBoundingClientRect();
         hoverRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
@@ -274,16 +303,32 @@
         isScrubberHovered = false;
     }
 
-    function handleVolumeStart(e: MouseEvent) {
+    function handleVolumeStart(e: MouseEvent | PointerEvent) {
+        if (isVolumeChanging) return;
         isVolumeChanging = true;
+        if ('setPointerCapture' in e && 'pointerId' in e) {
+            try {
+                (e.currentTarget as HTMLElement)?.setPointerCapture(e.pointerId);
+            } catch {}
+        }
         handleVolumeChange(e);
     }
 
-    function handleVolumeChange(e: MouseEvent) {
+    function handleVolumeChange(e: MouseEvent | PointerEvent) {
         if (!volumeBarElement) return;
         const rect = volumeBarElement.getBoundingClientRect();
         const pos = (e.clientX - rect.left) / rect.width;
         setVolume(Math.max(0, Math.min(1, pos)));
+    }
+
+    function handleVolumeEnd(e?: MouseEvent | PointerEvent) {
+        if (!isVolumeChanging) return;
+        if (e && 'releasePointerCapture' in e && 'pointerId' in e) {
+            try {
+                (e.currentTarget as HTMLElement)?.releasePointerCapture(e.pointerId);
+            } catch {}
+        }
+        isVolumeChanging = false;
     }
 
     function handleVolumeKey(e: KeyboardEvent) {
@@ -352,15 +397,15 @@
     onMount(() => {
         // Global mouse events for seeking and volume
         const handleGlobalMouseMove = (e: MouseEvent) => {
-            if (isSeeking) {
+            if (isDraggingSeek) {
                 handleSeek(e);
                 hoverRatio = seekPos;
             }
             if (isVolumeChanging) handleVolumeChange(e);
         };
-        const handleGlobalMouseUp = () => {
-            if (isSeeking) handleSeekEnd();
-            isVolumeChanging = false;
+        const handleGlobalMouseUp = (e: MouseEvent) => {
+            if (isDraggingSeek) handleSeekEnd(e);
+            if (isVolumeChanging) handleVolumeEnd(e);
         };
         const handleDocumentMouseDown = (e: MouseEvent) => {
             if (
@@ -552,17 +597,21 @@
                         >{formatDuration($currentTime)}</span
                     >
                 {:else}
-                    <span class="time">{formatDuration($currentTime)}</span>
+                    <span class="time">{formatDuration(displayCurrentTime)}</span>
                     <div
                         class="progress-bar"
                         class:seeking={isSeeking}
                         bind:this={seekBarElement}
+                        on:pointerdown={handleSeekStart}
+                        on:pointermove={(e) => { if (isDraggingSeek) { handleSeek(e); hoverRatio = seekPos; } }}
+                        on:pointerup={handleSeekEnd}
+                        on:pointercancel={handleSeekEnd}
                         on:mousedown={handleSeekStart}
                         on:mousemove={handleScrubberMouseMove}
                         on:mouseleave={handleScrubberMouseLeave}
                         role="slider"
                         aria-label="Seek"
-                        aria-valuenow={Math.round($progress * 100)}
+                        aria-valuenow={Math.round(displayProgress * 100)}
                         aria-valuemin="0"
                         aria-valuemax="100"
                         tabindex="0"
@@ -570,7 +619,7 @@
                         {#if showScrubberTooltip}
                             <div
                                 class="scrubber-tooltip"
-                                style="left: clamp(24px, {displayHoverRatio * 100}%, calc(100% - 24px));"
+                                style="left: clamp(36px, {displayHoverRatio * 100}%, calc(100% - 36px));"
                             >
                                 {formatDuration(hoverTime)}
                             </div>
@@ -578,7 +627,7 @@
                         <div class="progress-track">
                             <div
                                 class="progress-fill"
-                                style="width: {$progress * 100}%"
+                                style="width: {displayProgress * 100}%"
                             ></div>
                             {#if $duration > 15 && $appSettings?.crossfadeSeconds > 0}
                                 {@const automixPct = Math.min(30, ($appSettings.crossfadeSeconds / $duration) * 100)}
@@ -591,7 +640,7 @@
                         </div>
                         <div
                             class="progress-thumb"
-                            style="left: {$progress * 100}%"
+                            style="left: {displayProgress * 100}%"
                         ></div>
                     </div>
                     <span class="time">{formatDuration($duration)}</span>
@@ -705,16 +754,16 @@
 
                 <button
                     class="icon-btn"
-                    class:active={$isQueueVisible}
-                    on:click={toggleQueue}
+                    class:active={$isInspectorOpen && $activeInspectorTab === 'queue'}
+                    on:click={() => toggleInspectorTab('queue')}
                     title={$_('player.queueShortcut')}
                 >
                     <Icon name="queue" size={18} />
                 </button>
                 <button
                     class="icon-btn"
-                    class:active={$lyricsVisible}
-                    on:click={toggleLyrics}
+                    class:active={$isInspectorOpen && $activeInspectorTab === 'lyrics'}
+                    on:click={() => toggleInspectorTab('lyrics')}
                     title={$_('player.lyricsShortcut')}
                 >
                     <Icon name="lyrics" size={18} />
@@ -740,11 +789,15 @@
                 <div
                     class="volume-bar"
                     bind:this={volumeBarElement}
+                    on:pointerdown={handleVolumeStart}
+                    on:pointermove={(e) => { if (isVolumeChanging) handleVolumeChange(e); }}
+                    on:pointerup={handleVolumeEnd}
+                    on:pointercancel={handleVolumeEnd}
                     on:mousedown={handleVolumeStart}
                     on:mouseenter={() => (isVolumeHovered = true)}
                     on:mouseleave={() => (isVolumeHovered = false)}
                     on:keydown={handleVolumeKey}
-                    on:wheel={handleVolumeScroll}
+                    on:wheel|nonpassive={handleVolumeScroll}
                     role="slider"
                     aria-label="Volume"
                     aria-valuenow={Math.round($volume * 100)}
@@ -877,8 +930,8 @@
 
                         <button
                             class="overflow-menu-item"
-                            class:active={$isQueueVisible}
-                            on:click={() => { toggleQueue(); showOverflowMenu = false; }}
+                            class:active={$isInspectorOpen && $activeInspectorTab === 'queue'}
+                            on:click={() => { toggleInspectorTab('queue'); showOverflowMenu = false; }}
                         >
                             <Icon name="queue" size={16} />
                             <span>{$_('player.queueShortcut')}</span>
@@ -886,8 +939,8 @@
 
                         <button
                             class="overflow-menu-item"
-                            class:active={$lyricsVisible}
-                            on:click={() => { toggleLyrics(); showOverflowMenu = false; }}
+                            class:active={$isInspectorOpen && $activeInspectorTab === 'lyrics'}
+                            on:click={() => { toggleInspectorTab('lyrics'); showOverflowMenu = false; }}
                         >
                             <Icon name="lyrics" size={16} />
                             <span>{$_('player.lyricsShortcut')}</span>
@@ -1397,6 +1450,11 @@
 
     .progress-bar:not(.seeking) .progress-fill {
         transition: background-color var(--transition-fast), width 100ms linear;
+    }
+
+    .progress-bar.seeking .progress-fill,
+    .progress-bar.seeking .progress-thumb {
+        transition: none !important;
     }
 
     .progress-bar:hover .progress-fill,

@@ -42,6 +42,11 @@ export function isLiked(trackId: number): boolean {
     return get(likedTrackIds).has(trackId);
 }
 
+// Toggle like for a track object
+export async function toggleLikeTrack(track: { id: number }): Promise<void> {
+    await toggleLike(track.id);
+}
+
 // Toggle like/unlike a track
 export async function toggleLike(trackId: number): Promise<void> {
     const playing = get(currentTrack);

@@ -1036,8 +1036,10 @@ export function toggleLyrics(): void {
 // ---------------------------------------------------------------------------
 
 let _unsubscribe: (() => void) | null = null;
+let _lyricsSyncRefCount = 0;
 
 export function initLyricsSync(): void {
+    _lyricsSyncRefCount++;
     if (_unsubscribe) return;
 
     _unsubscribe = currentTrack.subscribe(track => {
@@ -1064,7 +1066,13 @@ export function initLyricsSync(): void {
 }
 
 export function destroyLyricsSync(): void {
-    if (_unsubscribe) { _unsubscribe(); _unsubscribe = null; }
+    if (_lyricsSyncRefCount > 0) {
+        _lyricsSyncRefCount--;
+    }
+    if (_lyricsSyncRefCount === 0 && _unsubscribe) {
+        _unsubscribe();
+        _unsubscribe = null;
+    }
 }
 
 // ---------------------------------------------------------------------------

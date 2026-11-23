@@ -173,6 +173,14 @@ export async function prewarmPalette(coverUrl: string): Promise<PaletteColor[] |
   return await promise;
 }
 
+/**
+ * Extracts palette from a cover URL or file path.
+ * Returns an array of PaletteColor objects, or null if extraction fails.
+ */
+export async function extractPalette(coverUrl: string): Promise<PaletteColor[] | null> {
+  return await prewarmPalette(coverUrl);
+}
+
 let currentGen = 0;
 
 // re-extract when the track changes or the user changes its artwork

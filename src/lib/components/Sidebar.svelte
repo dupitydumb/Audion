@@ -131,6 +131,195 @@
     let slotBottom: HTMLDivElement;
 
     import { addToast } from "$lib/stores/toast";
+    import { addTracksToPlaylist } from "$lib/services/playlistHelpers";
+
+    // Sidebar draggable resizing constants & state
+    const DEFAULT_WIDTH = 280;
+    const MIN_WIDTH = 180;
+    const MAX_WIDTH = 460;
+    const COLLAPSE_THRESHOLD = 120;
+    const COLLAPSED_WIDTH = 64;
+    const STORAGE_KEY = "audion_sidebar_width";
+
+    let sidebarWidth = DEFAULT_WIDTH;
+    let isResizing = false;
+    let isCollapsed = false;
+    let dragOverPlaylistId: number | null = null;
+
+    function applyWidth(width: number, save = false) {
+        if (width < COLLAPSE_THRESHOLD) {
+            sidebarWidth = COLLAPSED_WIDTH;
+            isCollapsed = true;
+        } else {
+            sidebarWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, width));
+            isCollapsed = false;
+        }
+
+        if (typeof document !== "undefined") {
+            document.documentElement.style.setProperty("--sidebar-width", `${sidebarWidth}px`);
+        }
+
+        if (save && typeof localStorage !== "undefined") {
+            try {
+                localStorage.setItem(STORAGE_KEY, sidebarWidth.toString());
+            } catch (e) {
+                console.warn("Failed to persist audion_sidebar_width:", e);
+            }
+        }
+    }
+
+    function resetWidth() {
+        applyWidth(DEFAULT_WIDTH, true);
+    }
+
+    function startResize(e: MouseEvent) {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        isResizing = true;
+        if (typeof document !== "undefined") {
+            document.body.classList.add("resizing-sidebar");
+        }
+
+        function onMouseMove(ev: MouseEvent) {
+            applyWidth(ev.clientX, false);
+        }
+
+        function onMouseUp() {
+            isResizing = false;
+            if (typeof document !== "undefined") {
+                document.body.classList.remove("resizing-sidebar");
+            }
+            window.removeEventListener("mousemove", onMouseMove);
+            window.removeEventListener("mouseup", onMouseUp);
+            applyWidth(sidebarWidth, true);
+        }
+
+        window.addEventListener("mousemove", onMouseMove);
+        window.addEventListener("mouseup", onMouseUp);
+    }
+
+    function handleSplitterKeydown(e: KeyboardEvent) {
+        if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            resetWidth();
+        } else if (e.key === "ArrowLeft") {
+            e.preventDefault();
+            if (isCollapsed) return;
+            const target = sidebarWidth - 20;
+            applyWidth(target < MIN_WIDTH ? COLLAPSED_WIDTH : target, true);
+        } else if (e.key === "ArrowRight") {
+            e.preventDefault();
+            if (isCollapsed) {
+                applyWidth(MIN_WIDTH, true);
+            } else {
+                applyWidth(Math.min(MAX_WIDTH, sidebarWidth + 20), true);
+            }
+        }
+    }
+
+    function handlePlaylistDragOver(e: DragEvent, playlist: Playlist) {
+        if (!e.dataTransfer) return;
+        if (!e.dataTransfer.types.includes("application/json")) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        if (dragOverPlaylistId !== playlist.id) {
+            dragOverPlaylistId = playlist.id;
+        }
+    }
+
+    function handlePlaylistDragLeave(e: DragEvent, playlist: Playlist) {
+        const currentTarget = e.currentTarget as HTMLElement | null;
+        const relatedTarget = e.relatedTarget as HTMLElement | null;
+        if (!currentTarget || !relatedTarget || !currentTarget.contains(relatedTarget)) {
+            if (dragOverPlaylistId === playlist.id) {
+                dragOverPlaylistId = null;
+            }
+        }
+    }
+
+    async function handlePlaylistDrop(e: DragEvent, playlist: Playlist) {
+        e.preventDefault();
+        dragOverPlaylistId = null;
+        if (!e.dataTransfer) return;
+
+        let trackIds: number[] = [];
+
+        // 1. Try application/json
+        try {
+            const jsonStr = e.dataTransfer.getData("application/json");
+            if (jsonStr) {
+                const parsed = JSON.parse(jsonStr);
+                if (Array.isArray(parsed)) {
+                    trackIds = parsed.map(Number).filter((n) => !isNaN(n));
+                } else if (parsed && Array.isArray(parsed.trackIds)) {
+                    trackIds = parsed.trackIds.map(Number).filter((n: any) => !isNaN(n));
+                } else if (parsed && typeof parsed.trackId === "number") {
+                    trackIds = [parsed.trackId];
+                } else if (parsed && typeof parsed.id === "number") {
+                    trackIds = [parsed.id];
+                }
+            }
+        } catch (err) {
+            console.warn("Could not parse application/json drop data:", err);
+        }
+
+        // 2. Fallback to text/plain
+        if (trackIds.length === 0) {
+            try {
+                const textStr = e.dataTransfer.getData("text/plain");
+                if (textStr) {
+                    const parsed = JSON.parse(textStr);
+                    if (Array.isArray(parsed)) {
+                        trackIds = parsed.map(Number).filter((n) => !isNaN(n));
+                    } else if (parsed && Array.isArray(parsed.trackIds)) {
+                        trackIds = parsed.trackIds.map(Number).filter((n: any) => !isNaN(n));
+                    } else if (typeof parsed === "number" && !isNaN(parsed)) {
+                        trackIds = [parsed];
+                    }
+                }
+            } catch {
+                const textStr = e.dataTransfer.getData("text/plain");
+                if (textStr) {
+                    const parts = textStr.split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n));
+                    if (parts.length > 0) {
+                        trackIds = parts;
+                    }
+                }
+            }
+        }
+
+        if (trackIds.length === 0) return;
+
+        try {
+            const result = await addTracksToPlaylist(playlist.id, trackIds);
+            if (result.success > 0) {
+                addToast(
+                    $_("playlist.addedTracks", { values: { count: result.success } }),
+                    "success"
+                );
+                await loadPlaylists();
+                if (typeof window !== "undefined") {
+                    window.dispatchEvent(
+                        new CustomEvent("audion:playlist-updated", {
+                            detail: { playlistId: playlist.id },
+                        })
+                    );
+                }
+            }
+            if (result.failed > 0) {
+                addToast(
+                    $_("playlist.failedTracks", { values: { count: result.failed } }),
+                    "error"
+                );
+            }
+        } catch (err) {
+            console.error("Failed to add dropped tracks to playlist:", err);
+            addToast(
+                $_("playlist.addTracksFailed"),
+                "error"
+            );
+        }
+    }
 
     // Extract store values at top level for reactivity
     $: currentPlaylistIdValue = $currentPlaylistId;
@@ -371,6 +560,20 @@
         }
         loadPlaylists();
 
+        try {
+            const savedWidth = localStorage.getItem(STORAGE_KEY);
+            if (savedWidth !== null) {
+                const parsed = parseInt(savedWidth, 10);
+                if (!isNaN(parsed)) {
+                    applyWidth(parsed, false);
+                }
+            } else {
+                applyWidth(DEFAULT_WIDTH, false);
+            }
+        } catch (e) {
+            console.warn("Failed to load audion_sidebar_width:", e);
+        }
+
         // listen for the OS close-request
         // install to app-close
         // refer otaupdates.ts for details
@@ -424,7 +627,12 @@
     }
 </script>
 
-<aside class="sidebar">
+<aside
+    class="sidebar"
+    class:collapsed={isCollapsed}
+    class:resizing={isResizing}
+    style="--sidebar-width: {sidebarWidth}px; width: {sidebarWidth}px;"
+>
     <div class="sidebar-header">
         <div class="logo">
             <img src="/logo.png" alt="Audion Logo" width="32" height="32" style="view-transition-name: {(getIsLinux() || !$appBootTransitionActive) ? 'none' : 'app-logo-icon'};" />
@@ -491,6 +699,7 @@
                     <button
                         class="nav-item"
                         class:active={isActive("home")}
+                        title={$_('sidebar.home')}
                         on:click={() => navigateAndClose(goToHome)}
                     >
                         <Icon name="home" size={24} />
@@ -501,6 +710,7 @@
                     <button
                         class="nav-item"
                         class:active={isActive("liked-songs")}
+                        title={$_('sidebar.likedSongs')}
                         on:click={() => navigateAndClose(goToLikedSongs)}
                     >
                         <Icon name="heart" size={24} />
@@ -512,6 +722,7 @@
                     <button
                         class="nav-item"
                         class:active={isActive("discover")}
+                        title={$_('sidebar.discover')}
                         on:click={() => navigateAndClose(goToDiscover)}
                     >
                         <Icon name="compass" size={24} />
@@ -523,6 +734,7 @@
                         <button
                             class="nav-item"
                             class:active={isActive("listenbrainz")}
+                            title={$_('sidebar.recommendations')}
                             on:click={() => navigateAndClose(goToListenBrainz)}
                         >
                             <Icon name="sparkles" size={24} />
@@ -535,6 +747,7 @@
                         <button
                             class="nav-item"
                             class:active={isActive("subsonic")}
+                            title={$_('sidebar.subsonic', { default: 'Subsonic' })}
                             on:click={() => navigateAndClose(goToSubsonic)}
                         >
                             <Icon name="radio" size={24} />
@@ -546,6 +759,7 @@
                     <button
                         class="nav-item"
                         class:active={isActive("tracks")}
+                        title={$_('sidebar.allTracks')}
                         on:click={() => navigateAndClose(goToTracks)}
                     >
                         <Icon name="music" size={24} />
@@ -557,6 +771,7 @@
                     <button
                         class="nav-item"
                         class:active={isActive("albums")}
+                        title={$_('sidebar.albums')}
                         on:click={() => navigateAndClose(goToAlbums)}
                     >
                         <Icon name="disc-3" size={24} />
@@ -568,6 +783,7 @@
                     <button
                         class="nav-item"
                         class:active={isActive("artists")}
+                        title={$_('sidebar.artists')}
                         on:click={() => navigateAndClose(goToArtists)}
                     >
                         <Icon name="user" size={24} />
@@ -587,6 +803,7 @@
                     <button
                         class="nav-item"
                         class:active={isActive("playlists")}
+                        title={$_('sidebar.allPlaylists')}
                         on:click={() => navigateAndClose(goToPlaylists)}
                     >
                         <Icon name="list-music" size={24} />
@@ -608,12 +825,20 @@
                                 currentPlaylistIdValue,
                                 isPlayingValue,
                             )}
+                            class:drag-over={dragOverPlaylistId === playlist.id}
+                            title={playlist.name}
                             on:click={() =>
                                 navigateAndClose(() =>
                                     goToPlaylistDetail(playlist.id, playlist.name),
                                 )}
                             on:contextmenu={(e) =>
                                 handlePlaylistContextMenu(e, playlist)}
+                            on:dragover={(e) =>
+                                handlePlaylistDragOver(e, playlist)}
+                            on:dragleave={(e) =>
+                                handlePlaylistDragLeave(e, playlist)}
+                            on:drop={(e) =>
+                                handlePlaylistDrop(e, playlist)}
                         >
                             {#if isPlaylistPlaying(playlist.id, currentPlaylistIdValue, isPlayingValue)}
                                 <div class="playing-indicator">
@@ -675,6 +900,7 @@
                     <button
                         class="nav-item"
                         class:active={isActive("plugins")}
+                        title={$_('sidebar.plugins')}
                         on:click={() => navigateAndClose(goToPlugins)}
                     >
                         <Icon name="plugin" size={24} />
@@ -685,6 +911,7 @@
                     <button
                         class="nav-item"
                         class:active={isActive("settings")}
+                        title={$_('sidebar.settings')}
                         on:click={() => navigateAndClose(goToSettings)}
                     >
                         <Icon name="settings" size={24} />
@@ -704,6 +931,7 @@
                             href="https://discord.gg/27XRVQsBd9"
                             target="_blank"
                             class="nav-item discord-item"
+                            title={$_('sidebar.joinDiscord')}
                         >
                             <svg
                                 viewBox="0 0 24 24"
@@ -725,6 +953,7 @@
                             href="https://resonate.audionplayer.com?ref=audion"
                             target="_blank"
                             class="nav-item resonate-item"
+                            title={$_('sidebar.resonate')}
                         >
                             <img src="/resonate.png" alt="Resonate" class="resonate-icon" />
                             <span>{$_('sidebar.resonate')}</span>
@@ -737,6 +966,7 @@
                             href="https://ko-fi.com/N4N5UMNR1"
                             target="_blank"
                             class="nav-item kofi-item"
+                            title={$_('sidebar.kofi', { default: 'Ko-fi' })}
                         >
                             <img src="/kofi.avif" alt="Ko-fi" class="kofi-icon" />
                             <span>{$_('sidebar.kofi', { default: 'Ko-fi' })}</span>
@@ -749,6 +979,7 @@
                             href="https://www.patreon.com/AudionPlayer"
                             target="_blank"
                             class="nav-item patreon-item"
+                            title={$_('sidebar.patreon', { default: 'Patreon' })}
                         >
                             <svg
                                 viewBox="0 0 24 24"
@@ -778,6 +1009,7 @@
             class="add-folder-btn"
             on:click={handleAddFolder}
             disabled={isScanning}
+            title={$_('sidebar.addMusicFolder')}
         >
             {#if isScanning}
                 <Icon name="loader" size={20} />
@@ -791,6 +1023,19 @@
             <p class="scan-error">{scanError}</p>
         {/if}
     </div>
+
+    <div
+        class="sidebar-splitter"
+        on:mousedown={startResize}
+        on:dblclick={resetWidth}
+        on:keydown={handleSplitterKeydown}
+        role="separator"
+        aria-orientation="vertical"
+        aria-valuenow={sidebarWidth}
+        aria-valuemin={64}
+        aria-valuemax={460}
+        tabindex="0"
+    ></div>
 </aside>
 
 {#if showUpdatePopup && popupRelease}
@@ -812,11 +1057,110 @@
 <style>
     .sidebar {
         width: var(--sidebar-width);
+        min-width: var(--sidebar-width);
+        max-width: var(--sidebar-width);
         height: 100%;
         background-color: var(--sidebar-bg, var(--bg-base));
         display: flex;
         flex-direction: column;
         border-right: 1px solid var(--border-color);
+        position: relative;
+        flex-shrink: 0;
+        box-sizing: border-box;
+    }
+
+    .sidebar:not(.resizing) {
+        transition: width var(--transition-fast) ease-out;
+    }
+
+    .sidebar.resizing {
+        transition: none !important;
+        user-select: none;
+    }
+
+    .sidebar-splitter {
+        position: absolute;
+        top: 0;
+        right: -3px;
+        width: 6px;
+        height: 100%;
+        cursor: col-resize;
+        z-index: 50;
+        background: transparent;
+        transition: background-color var(--transition-fast);
+        outline: none;
+    }
+
+    .sidebar-splitter:hover,
+    .sidebar-splitter:focus-visible,
+    :global(body.resizing-sidebar) .sidebar-splitter {
+        background-color: var(--accent-primary);
+    }
+
+    :global(html.layout-mobile) .sidebar-splitter {
+        display: none !important;
+    }
+
+    /* Collapsed rail (64px) */
+    .sidebar.collapsed {
+        width: 64px !important;
+        min-width: 64px !important;
+        max-width: 64px !important;
+    }
+
+    .sidebar.collapsed .sidebar-header {
+        padding: var(--spacing-sm);
+        padding-top: var(--spacing-md);
+        justify-content: center;
+    }
+
+    .sidebar.collapsed .logo {
+        justify-content: center;
+        gap: 0;
+    }
+
+    .sidebar.collapsed .logo-text,
+    .sidebar.collapsed .update-badge,
+    .sidebar.collapsed .nav-section-title,
+    .sidebar.collapsed .nav-item > span:not(.playlist-icon-container):not(.playing-indicator),
+    .sidebar.collapsed .playlist-name,
+    .sidebar.collapsed .pinned-indicator-sidebar,
+    .sidebar.collapsed .nav-count,
+    .sidebar.collapsed .add-folder-btn > span,
+    .sidebar.collapsed .scan-error {
+        display: none !important;
+    }
+
+    .sidebar.collapsed .sidebar-nav {
+        padding: var(--spacing-xs);
+    }
+
+    .sidebar.collapsed .nav-section {
+        margin-bottom: var(--spacing-md);
+    }
+
+    .sidebar.collapsed .nav-item {
+        justify-content: center;
+        padding: 10px 0;
+        gap: 0;
+    }
+
+    .sidebar.collapsed .sidebar-footer {
+        padding: var(--spacing-xs);
+    }
+
+    .sidebar.collapsed .add-folder-btn {
+        padding: 10px 0;
+        justify-content: center;
+    }
+
+    /* Playlist drag-over visual highlight */
+    .playlist-item.drag-over {
+        background-color: var(--accent-subtle) !important;
+        outline: 2px dashed var(--accent-primary);
+        outline-offset: -2px;
+        color: var(--accent-primary) !important;
+        box-shadow: 0 0 8px var(--accent-subtle);
     }
 
     .sidebar-header {
@@ -1120,7 +1464,9 @@
 
     /* Mobile: sidebar fills its container (the drawer) */
     :global(html.layout-mobile) .sidebar {
-        width: 100%;
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
         border-right: none;
         height: 100%;
     }

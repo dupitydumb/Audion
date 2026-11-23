@@ -681,3 +681,14 @@ a:hover {
     --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.16);
   }
 }
+
+/* Sidebar Drag Resizing & Splitter Ergonomics */
+body.resizing-sidebar {
+  cursor: col-resize !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+body.resizing-sidebar * {
+  cursor: col-resize !important;
+}

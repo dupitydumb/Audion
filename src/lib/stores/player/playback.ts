@@ -912,6 +912,8 @@ export async function seek(position: number, previousPositionOverride?: number):
             html5Seek(position);
             didSeek = true;
         } else if (get(activeBackend) === 'native') {
+            _stopReckoning(targetSecs);
+            currentTime.set(targetSecs);
             await nativeAudioSeek(position);
             if (get(isPlaying)) {
                 _startReckoning(targetSecs);
@@ -937,16 +939,17 @@ export async function seek(position: number, previousPositionOverride?: number):
 }
 
 export async function setVolume(sliderValue: number): Promise<void> {
+    const clamped = Math.max(0, Math.min(1, Number.isFinite(sliderValue) ? sliderValue : 0.7));
     if (get(activeBackend) === 'remote') {
         const targetId = get(activeRemoteDevice);
         if (targetId) {
-            throttledRemoteCommand(targetId, 'volume', { volume: sliderValue }, 100);
+            throttledRemoteCommand(targetId, 'volume', { volume: clamped }, 100);
         }
         return;
     }
 
-    volume.set(sliderValue);
-    const vol = sliderToAudioVolume(sliderValue);
+    volume.set(clamped);
+    const vol = sliderToAudioVolume(clamped);
 
     try {
         html5SetVolume(vol);

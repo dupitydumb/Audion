@@ -1,3 +1,7 @@
+<script context="module" lang="ts">
+  let activeTrackListCount = 0;
+</script>
+
 <script lang="ts">
   import type { Track } from "$lib/api/tauri";
   import {
@@ -7,6 +11,7 @@
   } from "$lib/api/tauri";
   import {
     playTracks,
+    togglePlay,
     currentTrack,
     isPlaying,
     addToQueue,
@@ -32,6 +37,7 @@
   import { onDestroy, onMount, tick } from "svelte";
   import { fade } from "svelte/transition";
   import { multiSelect } from "$lib/stores/multiselect";
+  import { trackSelectionStore } from "$lib/stores/trackSelectionStore";
   import { isMobile } from "$lib/stores/mobile";
   import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
   import MetadataModal from "$lib/components/MetadataModal.svelte";
@@ -70,6 +76,7 @@
   let scrollTop = 0;
   let scrollbarWidth = 0;
   let containerElement: HTMLDivElement;
+  let rootElement: HTMLDivElement;
   let resizeObserver: ResizeObserver | undefined;
 
   // Cache structures
@@ -172,6 +179,7 @@
       // For date_added, default to descending (Recently added)
       sortDirection = field === "date_added" ? "desc" : "asc";
     }
+    trackSelectionStore.resetAnchor();
   }
 
   // Optimized sorting with memoization
@@ -187,6 +195,9 @@
       sortDirection !== lastSortDirection ||
       filteredTracks !== lastFilteredTracks
     ) {
+      if (sortField !== lastSortField || sortDirection !== lastSortDirection) {
+        trackSelectionStore.resetAnchor();
+      }
       if (!sortField) {
         cachedSortedTracks = filteredTracks;
       } else {
@@ -324,6 +335,8 @@
 
   // Measure container height on mount
   onMount(() => {
+    activeTrackListCount++;
+
     // 5: Load playlists once on mount to avoid race conditions
     if ($playlists.length === 0) {
       loadPlaylists();
@@ -361,6 +374,10 @@
 
   // Cleanup on destroy
   onDestroy(() => {
+    activeTrackListCount = Math.max(0, activeTrackListCount - 1);
+    if (activeTrackListCount === 0) {
+      trackSelectionStore.clearSelections();
+    }
     if (scrollKey) saveScroll(scrollKey, scrollTop);
     failedImages.clear();
     trackAlbumArtCache.clear();
@@ -423,8 +440,13 @@
 
   // Event delegation
   function handleBodyClick(e: MouseEvent) {
-    const row = (e.target as HTMLElement).closest(".track-row");
-    if (!row) return;
+    const row = (e.target as HTMLElement).closest(".track-row") as HTMLElement | null;
+    if (!row) {
+      if (!multiSelectMode) {
+        trackSelectionStore.clearSelections();
+      }
+      return;
+    }
 
     const trackId = parseInt(row.getAttribute("data-track-id") || "0");
 
@@ -435,23 +457,38 @@
     }
 
     const trackIndex = trackIndexMap.get(trackId);
-
     if (trackIndex === undefined) return;
 
     const track = sortedTracks[trackIndex];
-    if (!track || getCachedUnavailable(track)) return;
+    if (!track) return;
 
-    // Use unified queueTracks if available, otherwise fallback to local sortedTracks
-    if (queueTracks) {
-      // Find index of this track in the global/unified queue
-      const globalIndex = queueTracks.findIndex((t) => t.id === trackId);
-      if (globalIndex !== -1) {
-        playTracks(queueTracks, globalIndex, playbackContext);
-        return;
+    // Check if clicked directly on play icon / hover play / cover play overlay
+    const isPlayAction = !!(e.target as HTMLElement).closest(".hover-play, .cover-play-overlay");
+    if (isPlayAction) {
+      trackSelectionStore.selectSingle(trackId, trackIndex);
+      if (getCachedUnavailable(track)) return;
+
+      if (queueTracks) {
+        const globalIndex = queueTracks.findIndex((t) => t.id === trackId);
+        if (globalIndex !== -1) {
+          playTracks(queueTracks, globalIndex, playbackContext);
+          return;
+        }
       }
+      playTracks(sortedTracks, trackIndex, playbackContext);
+      return;
     }
 
-    playTracks(sortedTracks, trackIndex, playbackContext);
+    // Desktop OS table selection
+    if (e.shiftKey) {
+      trackSelectionStore.selectRange(trackIndex, sortedTracks, e.ctrlKey || e.metaKey);
+    } else if (e.ctrlKey || e.metaKey) {
+      trackSelectionStore.toggleTrack(trackId, trackIndex);
+    } else {
+      trackSelectionStore.selectSingle(trackId, trackIndex);
+    }
+
+    row.focus();
   }
 
   function handleBodyDoubleClick(e: MouseEvent) {
@@ -465,6 +502,9 @@
 
     const track = sortedTracks[trackIndex];
     if (!track || getCachedUnavailable(track)) return;
+
+    // Double click ensures track is focused & selected
+    trackSelectionStore.selectSingle(trackId, trackIndex);
 
     // Use unified queueTracks if available
     if (queueTracks) {
@@ -492,13 +532,17 @@
     const track = sortedTracks[trackIndex];
     if (!track) return;
 
-    // bulk mode only triggers when the right-clicked row is itself part of an active multi-selection of more than one track
-    // right-clicking a row outside the selection always acts on just that row
-    const selectedIds = $multiSelect.selectedTrackIds;
-    const selectedTracks =
-      multiSelectMode && selectedIds.has(trackId) && selectedIds.size > 1
-        ? sortedTracks.filter((t) => selectedIds.has(t.id))
-        : undefined;
+    const selectedIds = multiSelectMode ? $multiSelect.selectedTrackIds : $trackSelectionStore.selectedTrackIds;
+    const isTargetSelected = selectedIds.has(trackId);
+
+    let selectedTracks: Track[] | undefined;
+    if (isTargetSelected && selectedIds.size > 1) {
+      // Right-click on already-selected row preserves active selection and passes bulk tracks
+      selectedTracks = sortedTracks.filter((t) => selectedIds.has(t.id));
+    } else if (!isTargetSelected && !multiSelectMode) {
+      // Right-click on unselected row selects only that row
+      trackSelectionStore.selectSingle(trackId, trackIndex);
+    }
 
     contextMenu.set({
       visible: true,
@@ -519,7 +563,10 @@
         onMetadataOpen: (t) => { metadataModalTrack = t; },
         onArtworkCacheInvalidate: (id) => { trackAlbumArtCache.delete(id); },
         onAvailabilityCacheInvalidate: (id) => { availabilityCache.delete(id); },
-        onTracksUpdated: (updated) => { tracks = updated; },
+        onTracksUpdated: (updated) => {
+          tracks = updated;
+          trackSelectionStore.clearSelections();
+        },
       }),
     });
   }
@@ -927,6 +974,7 @@
 
       if (index !== -1) {
         scrollToIndex(index);
+        trackSelectionStore.setFocusedIndex(index);
       } else if (jumpLetter === char.toUpperCase()) {
         jumpMatched = false; // nothing starts with this letter: show it dimmed
       }
@@ -934,9 +982,149 @@
       jumpInFlight = false;
     }
   }
+
+  function ensureIndexVisible(index: number) {
+    if (!containerElement) return;
+    const itemTop = index * rowHeight;
+    const itemBottom = itemTop + rowHeight;
+    const viewTop = containerElement.scrollTop;
+    const viewBottom = viewTop + containerHeight;
+
+    if (itemTop < viewTop) {
+      containerElement.scrollTop = itemTop;
+    } else if (itemBottom > viewBottom) {
+      containerElement.scrollTop = itemBottom - containerHeight;
+    }
+  }
+
+  async function focusRowByIndex(index: number) {
+    ensureIndexVisible(index);
+    await tick();
+    if (!containerElement) return;
+    const rowEl = containerElement.querySelector(`[data-track-index="${index}"]`) as HTMLElement | null;
+    if (rowEl) {
+      rowEl.focus();
+    }
+  }
+
+  async function handleTableKeydown(e: KeyboardEvent) {
+    if (isInputElement(e.target)) return;
+    if (get(isShortcutsHelpVisible) || get(isFullScreen) || metadataModalTrack) return;
+    if (!containerElement || containerElement.getClientRects().length === 0) return;
+
+    const isInsideList = !!rootElement && (rootElement.contains(document.activeElement) || rootElement.contains(e.target as Node));
+    if (!isInsideList) return;
+
+    // Ctrl / Cmd + A: Select all currently loaded/displayed tracks
+    if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
+      e.preventDefault();
+      if (multiSelectMode) {
+        multiSelect.selectAll(sortedTracks.map((t) => t.id));
+      } else {
+        trackSelectionStore.selectAll(sortedTracks.map((t) => t.id));
+      }
+      return;
+    }
+
+    const currentState = trackSelectionStore.getState();
+    const currentFocused = currentState.focusedIndex;
+
+    // Spacebar: Play/Pause or toggle
+    if (e.key === " " || e.code === "Space") {
+      if (isInsideList) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (currentFocused !== null && currentFocused >= 0 && currentFocused < sortedTracks.length) {
+          const focusedTrack = sortedTracks[currentFocused];
+          if (focusedTrack) {
+            if ($currentTrack?.id === focusedTrack.id) {
+              togglePlay();
+            } else {
+              if (queueTracks) {
+                const globalIndex = queueTracks.findIndex((t) => t.id === focusedTrack.id);
+                if (globalIndex !== -1) {
+                  playTracks(queueTracks, globalIndex, playbackContext);
+                  return;
+                }
+              }
+              playTracks(sortedTracks, currentFocused, playbackContext);
+            }
+            return;
+          }
+        }
+        togglePlay();
+        return;
+      }
+    }
+
+    // Enter: Start playback of selected/focused track in queue context
+    if (e.key === "Enter") {
+      if (isInsideList && currentFocused !== null && currentFocused >= 0 && currentFocused < sortedTracks.length) {
+        const focusedTrack = sortedTracks[currentFocused];
+        if (focusedTrack && !getCachedUnavailable(focusedTrack)) {
+          e.preventDefault();
+          if (queueTracks) {
+            const globalIndex = queueTracks.findIndex((t) => t.id === focusedTrack.id);
+            if (globalIndex !== -1) {
+              playTracks(queueTracks, globalIndex, playbackContext);
+              return;
+            }
+          }
+          playTracks(sortedTracks, currentFocused, playbackContext);
+          return;
+        }
+      }
+    }
+
+    // Escape: Clear selection
+    if (e.key === "Escape") {
+      if (currentState.selectedTrackIds.size > 0) {
+        e.preventDefault();
+        trackSelectionStore.clearSelections();
+        return;
+      }
+    }
+
+    // Arrow navigation & page navigation
+    if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End" || e.key === "PageDown" || e.key === "PageUp") {
+      if (!isInsideList) return;
+      if (sortedTracks.length === 0) return;
+
+      e.preventDefault();
+      let nextIndex = currentFocused ?? 0;
+      const pageSize = Math.max(1, Math.floor(containerHeight / rowHeight));
+
+      if (e.key === "ArrowDown") {
+        nextIndex = currentFocused === null ? 0 : Math.min(sortedTracks.length - 1, currentFocused + 1);
+      } else if (e.key === "ArrowUp") {
+        nextIndex = currentFocused === null ? 0 : Math.max(0, currentFocused - 1);
+      } else if (e.key === "Home") {
+        nextIndex = 0;
+      } else if (e.key === "End") {
+        nextIndex = sortedTracks.length - 1;
+      } else if (e.key === "PageDown") {
+        nextIndex = Math.min(sortedTracks.length - 1, (currentFocused ?? 0) + pageSize);
+      } else if (e.key === "PageUp") {
+        nextIndex = Math.max(0, (currentFocused ?? 0) - pageSize);
+      }
+
+      if (e.shiftKey) {
+        trackSelectionStore.selectRange(nextIndex, sortedTracks, e.ctrlKey || e.metaKey);
+      } else if (e.ctrlKey || e.metaKey) {
+        trackSelectionStore.setFocusedIndex(nextIndex);
+      } else {
+        trackSelectionStore.selectSingle(sortedTracks[nextIndex].id, nextIndex);
+      }
+
+      await focusRowByIndex(nextIndex);
+      return;
+    }
+
+    await handleAlphabeticalJump(e);
+  }
 </script>
 
-<svelte:window on:keydown={handleAlphabeticalJump} />
+<svelte:window on:keydown={handleTableKeydown} />
 
 {#if metadataModalTrack}
   <MetadataModal
@@ -947,7 +1135,7 @@
   />
 {/if}
 
-<div class="track-list">
+<div class="track-list" bind:this={rootElement}>
   {#if !$isMobile}
     <div class="list-toolbar">
       <span class="toolbar-hint"
@@ -1012,14 +1200,16 @@
         >
           {#each visibleTracksWithMetadata as { track, albumArt, unavailable, formattedDate }, index (track.id)}
             {@const actualIndex = virtualScrollState.startIndex + index}
-            {@const isSelected = $multiSelect.selectedTrackIds.has(track.id)}
-<TrackListRow
+            {@const isSelected = multiSelectMode ? $multiSelect.selectedTrackIds.has(track.id) : $trackSelectionStore.selectedTrackIds.has(track.id)}
+            {@const isFocused = $trackSelectionStore.focusedIndex === actualIndex}
+            <TrackListRow
               {track}
               {albumArt}
               {unavailable}
               {formattedDate}
               {actualIndex}
               {isSelected}
+              {isFocused}
               {showAlbum}
               {playlistId}
               {multiSelectMode}
@@ -1262,8 +1452,14 @@
   .list-body.multiselect :global(.track-row) { grid-template-columns: 40px 40px 1fr 1fr 80px 140px; }
   .list-body.multiselect.no-album :global(.track-row) { grid-template-columns: 40px 40px 1fr 80px 140px; }
 
-  :global(.track-row.selected) { background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.12); }
-  :global(.track-row.selected:hover) { background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.18); }
+  :global(.track-row.selected) { background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.16); }
+  :global(.track-row.selected:hover) { background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.22); }
+  :global(.track-row.selected.playing) { background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.26); }
+  :global(.track-row.focused),
+  :global(.track-row:focus-visible) {
+    outline: 1px solid var(--accent-primary, #1db954);
+    outline-offset: -1px;
+  }
   :global(.track-row:hover) { background-color: rgba(255, 255, 255, 0.1); cursor: pointer; }
   :global(.track-row.playing) { background-color: var(--bg-surface); }
   :global(.track-row.playing .track-name) { color: var(--accent-primary); }

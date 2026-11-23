@@ -205,9 +205,6 @@
             <div
                 class="drag-region"
                 data-tauri-drag-region
-                on:mousedown={(e) => {
-                    if (e.button === 0 && e.detail === 1) appWindow.startDragging();
-                }}
                 on:dblclick={toggleMaximize}
             ></div>
         {/if}
@@ -315,9 +312,6 @@
             <div
                 class="drag-region"
                 data-tauri-drag-region
-                on:mousedown={(e) => {
-                    if (e.button === 0 && e.detail === 1) appWindow.startDragging();
-                }}
                 on:dblclick={toggleMaximize}
             ></div>
             <div class="window-controls">
@@ -515,12 +509,7 @@
     }
 
     /* Drag Regions */
-    /* Drag Regions */
-    /* Use startDragging() on mousedown so Tauri's global drag interceptor
-       never fires — that interceptor causes WM_NCLBUTTONDOWN which steals
-       focus from child inputs on Windows WebView2. */
     .drag-region {
-        -webkit-app-region: no-drag;
         flex-grow: 1;
         height: 100%;
         min-width: 16px;

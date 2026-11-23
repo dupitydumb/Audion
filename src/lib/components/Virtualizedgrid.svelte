@@ -1,12 +1,16 @@
 <script lang="ts" generics="T">
     import { onMount, onDestroy } from 'svelte';
     import Icon from '$lib/components/Icon.svelte';
+    import SkeletonCard from '$lib/components/common/SkeletonCard.svelte';
 
     // Generic type T
     type Item = T;
 
     // Props
     export let items: Item[] = [];
+    export let loading: boolean = false;
+    export let skeletonCount: number = 12;
+    export let skeletonVariant: 'square' | 'round' = 'square';
     export let getItemKey: (item: Item) => string | number = (item: any) => item.id;
     export let onItemClick: ((item: Item, event: MouseEvent) => void) | undefined = undefined;
     export let onItemContextMenu: ((item: Item, event: MouseEvent) => void) | undefined = undefined;
@@ -232,7 +236,28 @@
     });
 </script>
 
-{#if items.length > 0}
+{#if loading}
+    <div
+        class="virtualized-grid-container skeleton-grid-container"
+        style="padding: {padding};"
+    >
+        <div
+            class="skeleton-grid-layout"
+            style="
+                display: grid;
+                grid-template-columns: repeat({columns}, 1fr);
+                gap: {gridGap}px;
+                width: 100%;
+            "
+        >
+            {#each Array(skeletonCount) as _}
+                <div style="height: {dynamicCardHeight}px;">
+                    <SkeletonCard variant={skeletonVariant} />
+                </div>
+            {/each}
+        </div>
+    </div>
+{:else if items.length > 0}
     <div
         class="virtualized-grid-container"
         style="padding: {padding}; visibility: {scrollRestored || initialScrollTop === 0 ? 'visible' : 'hidden'};"
@@ -292,6 +317,10 @@
         overscroll-behavior-y: contain;
     }
 
+    .skeleton-grid-container {
+        overflow: hidden;
+    }
+
     .virtual-spacer {
         position: relative;
         width: 100%;
@@ -311,8 +340,7 @@
         overflow: hidden;
         display: flex;
         flex-direction: column;
-        transition: transform 0.3s cubic-bezier(0.25, 0.1, 0.25, 1),
-                    width 0.3s cubic-bezier(0.25, 0.1, 0.25, 1),
+        transition: width 0.3s cubic-bezier(0.25, 0.1, 0.25, 1),
                     height 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
         will-change: transform, width, height;
     }
