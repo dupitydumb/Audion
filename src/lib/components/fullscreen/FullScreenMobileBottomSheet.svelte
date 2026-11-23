@@ -3,7 +3,7 @@
   import { fade, fly } from "svelte/transition";
   import { get } from "svelte/store";
   import { currentTrack, addToQueue } from "$lib/stores/player";
-  import { contextMenu, toggleFullScreen } from "$lib/stores/ui";
+  import { contextMenu, toggleFullScreen, isStatsForNerdsOpen } from "$lib/stores/ui";
   import { likedTrackIds } from "$lib/stores/liked";
   import { playlists, loadLibrary } from "$lib/stores/library";
   import { confirm } from "$lib/stores/dialogs";
@@ -12,11 +12,14 @@
   import { goToArtistDetail, goToAlbumDetail } from "$lib/stores/view";
   import { formatArtists } from "$lib/utils/artists";
   import Icon from "$lib/components/Icon.svelte";
+  import AudioQualityBadge from "$lib/components/AudioQualityBadge.svelte";
   import {
     sleepTimerActive,
     sleepTimerRemainingMs,
+    sleepTimerMode,
     SLEEP_TIMER_PRESETS,
     startSleepTimer,
+    startSleepTimerEndOfTrack,
     stopSleepTimer,
   } from "$lib/stores/sleepTimer";
   import {
@@ -156,7 +159,10 @@
           {/if}
         {/key}
         <div class="sheet-track-details">
-          <span class="sheet-track-title">{$currentTrack.title || $_('player.unknownTitle')}</span>
+          <div class="sheet-track-title-row">
+            <span class="sheet-track-title">{$currentTrack.title || $_('player.unknownTitle')}</span>
+            <AudioQualityBadge variant="compact" />
+          </div>
           <span class="sheet-track-artist">{formatArtists($currentTrack.artists) || $currentTrack.artist || $_('common.unknownArtist')}</span>
         </div>
       </div>
@@ -223,11 +229,19 @@
         {#each SLEEP_TIMER_PRESETS as minutes}
           <button
             class="sheet-timer-btn"
+            class:active={$sleepTimerMode === 'duration' && Math.ceil($sleepTimerRemainingMs / 60000) === minutes}
             on:click={() => { startSleepTimer(minutes); showMobileMenu = false; }}
           >
             {minutes}m
           </button>
         {/each}
+        <button
+          class="sheet-timer-btn end-track-btn"
+          class:active={$sleepTimerMode === 'end_of_track'}
+          on:click={() => { startSleepTimerEndOfTrack(); showMobileMenu = false; }}
+        >
+          {$_('player.endOfTrack')}
+        </button>
         {#if $sleepTimerActive}
           <button
             class="sheet-timer-btn cancel"
@@ -259,6 +273,15 @@
       <Icon name="list-music" size={22} />
       <span>{$_('contextMenu.addToPlaylist')}</span>
     </button>
+
+    <!-- Stats for Nerds (Audio Telemetry HUD) -->
+    <button
+      class="sheet-item"
+      on:click={() => { showMobileMenu = false; isStatsForNerdsOpen.set(true); }}
+    >
+      <Icon name="info" size={22} />
+      <span>{$_('player.statsForNerds') || "Audio Pipeline (Stats for Nerds)"}</span>
+    </button>
   </div>
 </div>
 
@@ -276,8 +299,12 @@
   .mobile-menu-sheet {
     width: 100%;
     max-width: 480px;
-    background: var(--bg-elevated);
-    border-radius: 16px 16px 0 0;
+    background: color-mix(in srgb, var(--bg-elevated) 84%, transparent);
+    backdrop-filter: blur(32px) saturate(190%);
+    -webkit-backdrop-filter: blur(32px) saturate(190%);
+    border-radius: 24px 24px 0 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.65);
     padding: 8px 0 calc(20px + env(safe-area-inset-bottom));
     max-height: 75vh;
     overflow-y: auto;
@@ -326,6 +353,13 @@
   .sheet-track-details {
     display: flex;
     flex-direction: column;
+    min-width: 0;
+  }
+
+  .sheet-track-title-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     min-width: 0;
   }
 

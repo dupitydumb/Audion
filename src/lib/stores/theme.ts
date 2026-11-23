@@ -137,9 +137,9 @@ export const presetAccents = [
 
 const THEME_STORAGE_KEY = 'rlist_theme';
 
-// Default theme state
+// Default theme state — new users follow the OS appearance setting
 const defaultTheme: ThemeState = {
-    mode: 'dark',
+    mode: 'system',
     accentColor: '#1DB954',
     customAccentColors: [],
     customColors: defaultCustomColors,
@@ -189,6 +189,17 @@ function saveTheme(state: ThemeState): void {
     } catch (error) {
         console.error('[Theme] Failed to save:', error);
     }
+}
+
+// Re-apply when the OS appearance changes and the user follows it
+let systemThemeBound = false;
+function bindSystemThemeListener(): void {
+    if (systemThemeBound || typeof window === 'undefined' || !window.matchMedia) return;
+    systemThemeBound = true;
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        const state = get(theme);
+        if (state.mode === 'system') applyTheme(state);
+    });
 }
 
 // Create theme store
@@ -357,6 +368,7 @@ function createThemeStore() {
             const state = loadTheme();
             set(state);
             applyTheme(state);
+            bindSystemThemeListener();
         }
     };
 }

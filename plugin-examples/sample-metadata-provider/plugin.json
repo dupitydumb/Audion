@@ -1,0 +1,22 @@
+{
+  "name": "Sample Metadata Provider",
+  "safe_name": "sample-metadata-provider",
+  "version": "1.0.0",
+  "author": "Audion Community",
+  "description": "Reference MetadataProvider searching global catalogs, fetching high-res covers, and providing rich track, album, and artist metadata.",
+  "type": "js",
+  "entry": "index.js",
+  "permissions": [
+    "network:fetch",
+    "storage:local"
+  ],
+  "category": "metadata",
+  "tags": [
+    "metadata",
+    "catalog",
+    "search",
+    "sample",
+    "cover-art"
+  ],
+  "license": "MIT"
+}

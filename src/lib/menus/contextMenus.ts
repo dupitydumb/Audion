@@ -38,6 +38,7 @@ import { canDownload, downloadTrack, needsDownloadLocation } from '$lib/services
 import { pluginStore } from '$lib/stores/plugin-store';
 import { likedTrackIds, isLiked, toggleLike, unlikeAll } from '$lib/stores/liked';
 import { multiSelect } from '$lib/stores/multiselect';
+import { globalProviders } from '$lib/plugins/providers';
 
 // shared availability helper ===========================================================================
 
@@ -61,6 +62,18 @@ export function isTrackUnavailable(track: Track): boolean {
     }
     // downloaded copy: always playable regardless of plugin state
     if (track.local_src) {
+        return false;
+    }
+    // direct preview/stream HTTP(S) URL in path: always playable
+    if (track.path && (track.path.startsWith('http://') || track.path.startsWith('https://'))) {
+        return false;
+    }
+    // if active stream providers exist in globalProviders, any catalog track can be resolved via query
+    if (globalProviders.getAllStreamProviders().length > 0) {
+        return false;
+    }
+    // direct stream provider registered in globalProviders
+    if (globalProviders.getStreamProvider(track.source_type)) {
         return false;
     }
     // streaming track: unavailable only when no plugin can resolve it

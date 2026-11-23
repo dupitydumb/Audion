@@ -2,17 +2,19 @@
   <img width="850" height="230" alt="AudionBanner" src="https://github.com/user-attachments/assets/8649842c-118a-4b24-a987-6bb4be6a9036" />
 </p>
 
+<h1 align="center">Audion</h1>
+
 <p align="center">
-  <strong>A modern, local music player with a Spotify-inspired interface</strong>
+  <strong>A local-first music player for your own library</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/dupitydumb/Audion/releases"><img src="https://img.shields.io/github/v/release/dupitydumb/Audion?color=blue&label=version" alt="Version"></a>
-  <a href="https://github.com/dupitydumb/Audion/releases"><img src="https://img.shields.io/github/downloads/dupitydumb/Audion/total?color=success&logo=github&label=downloads" alt="Total Downloads"></a>
-  <a href="https://github.com/dupitydumb/Audion/stargazers"><img src="https://img.shields.io/github/stars/dupitydumb/Audion?style=flat&logo=github" alt="GitHub Stars"></a>
-  <a href="https://aur.archlinux.org/packages/audion-bin"><img src="https://img.shields.io/aur/version/audion-bin?logo=arch-linux&label=AUR" alt="AUR version"></a>
-  <a href="https://github.com/dupitydumb/Audion/blob/master/LICENSE"><img src="https://img.shields.io/github/license/dupitydumb/Audion" alt="License"></a>
-  <a href="https://discord.gg/27XRVQsBd9"><img src="https://img.shields.io/discord/1234567890?color=5865F2&label=Discord&logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://github.com/dupitydumb/Audion/releases/latest"><img src="https://img.shields.io/github/v/release/dupitydumb/Audion?style=for-the-badge&labelColor=0d1117" alt="Version"></a>
+  <a href="https://github.com/dupitydumb/Audion/releases"><img src="https://img.shields.io/github/downloads/dupitydumb/Audion/total?style=for-the-badge&logo=github&labelColor=0d1117" alt="Downloads"></a>
+  <a href="https://github.com/dupitydumb/Audion/stargazers"><img src="https://img.shields.io/github/stars/dupitydumb/Audion?style=for-the-badge&logo=github&labelColor=0d1117" alt="Stars"></a>
+  <a href="https://github.com/dupitydumb/Audion/blob/master/LICENSE"><img src="https://img.shields.io/github/license/dupitydumb/Audion?style=for-the-badge&labelColor=0d1117" alt="License"></a>
+  <a href="https://aur.archlinux.org/packages/audion-bin"><img src="https://img.shields.io/aur/version/audion-bin?style=for-the-badge&logo=arch-linux&labelColor=0d1117" alt="AUR"></a>
+  <a href="https://discord.gg/27XRVQsBd9"><img src="https://img.shields.io/discord/1234567890?style=for-the-badge&color=5865F2&labelColor=0d1117&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
 <p align="center">
@@ -22,17 +24,101 @@
   <img src="https://img.shields.io/badge/platform-Android-brightgreen.svg" alt="Android">
 </p>
 
+<p align="center">
+  <a href="#-download"><strong>Download</strong></a> ·
+  <a href="#-features"><strong>Features</strong></a> ·
+  <a href="#-screenshots"><strong>Screenshots</strong></a> ·
+  <a href="#-self-hosted-server-docker"><strong>Self-Hosted Server</strong></a> ·
+  <a href="#-build-from-source"><strong>Build from Source</strong></a> ·
+  <a href="#-agent-skills"><strong>Agent Skills</strong></a> ·
+  <a href="#-contributing"><strong>Contributing</strong></a> ·
+  <a href="#-support"><strong>Support</strong></a>
+</p>
+
+<p align="center">
+  <a href="https://fmhy.net/audio#audio-players" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/available/fmhy/cozy.svg" alt="Featured on FMHY" height="55"/></a>
+</p>
+
 ---
 
 ## 🎵 What is Audion?
 
-Audion is a privacy-focused music player that brings the Spotify experience to your local music library. No internet required, no tracking—just your music, beautifully organized.
+Audion is a desktop and mobile player for the music you already own. Index your folders once, then get synced lyrics, smart queues, custom themes, plugins, and streaming to any device — all without an account, tracking, or a permanent internet connection.
 
-**Key highlights:**
-- Synced lyrics with karaoke-style word highlighting
-- Extensible plugin system
-- Gorgeous, customizable interface
-- Fully offline
+**In short:** your files, beautiful interface, nothing phoning home.
+
+---
+
+## ✨ Features
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+
+#### Playback & Output
+- **Rock-solid playback** for FLAC, MP3, AAC, ALAC, Opus (native decoder) and more.
+- **Exclusive DAC output** on Windows (WASAPI) and Linux (ALSA) for bit-perfect audio, bypassing the OS mixer.
+- **Exclusive-mode & audiophile telemetry** — codec, bit depth, and sample rate in Stats for Nerds.
+- **Queue management** with shuffle, repeat, next-up reordering, and queue persistence.
+- **Cross-provider streaming handoff** — play from your library or a configured provider without changing apps.
+- **Android Auto** — browse, control, and queue from the car display, including cold start.
+
+    </td>
+    <td width="50%" valign="top">
+
+#### Library & Organization
+- **Automatic library scanning** with metadata extraction and incremental rescans.
+- **Smart playlists** and custom playlist management.
+- **Duplicate detection & merging**, with background audio-hash migration.
+- **Folder & format aware** organisation that scales to large libraries.
+- **Tracklist virtualization** for fast browsing on desktop and mobile.
+
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+
+#### Lyrics
+- **Synced lyrics** from LRCLIB.
+- **Karaoke-style word highlighting** in full screen and the lyric card.
+- **Cached offline** — lyrics you've loaded stay available without a connection.
+- **Export and share** lyric cards from desktop and mobile.
+
+    </td>
+    <td width="50%" valign="top">
+
+#### Customization
+- **Light, dark, or follow the system** — themes switch live with your OS appearance.
+- **Custom accent colors** and per-element color overrides.
+- **Skin Studio** with built-in and custom local skins.
+- **Artwork-driven theming** with a player bar matched to album art.
+- **Island mini-player** with a Dynamic Island-inspired floating or notch layout.
+- **Keyboard shortcuts** and full-screen mode.
+
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+
+#### Plugins & Providers
+- **JavaScript/WASM plugin system** with a built-in marketplace. [Learn more →](./PLUGINS.md)
+- **Human-readable plugin catalog** with categories (Streaming, Metadata, Lyrics, Library, Integration, Appearance, Utility) and capability badges.
+- **Provider management** in Settings with priority ordering and per-provider toggles.
+- **Stream, metadata, and lyrics providers** that bridge into the player.
+
+    </td>
+    <td width="50%" valign="top">
+
+#### Everywhere
+- **Windows, macOS, Linux (AppImage, Flatpak, AUR), and Android**.
+- **Per-ABI Android APKs** — `arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64` — plus a universal build.
+- **Self-hosted streaming** from your own Docker server.
+- **Scrobbling** to Last.fm and ListenBrainz, with an offline queue.
+- **Localized UI** in English, Russian, French, and Spanish.
+
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -74,24 +160,30 @@ Audion is a privacy-focused music player that brings the Spotify experience to y
 
 <p><em>Click any screenshot to view full size</em></p>
 </div>
+
 ---
 
-## ⚡ Quick Start
+## ⚡ Download
 
-### Download
 Get the latest builds from [Releases](https://github.com/dupitydumb/Audion/releases/latest).
 
-- **Windows:** Audion_x64-setup.exe
-- **macOS (dmg):** Audion.dmg
-- **Linux (AppImage):** Audion-x86_64.AppImage
-- **Linux (Flatpak):** audion_<version>_linux.flatpak
-- **Android (APK):** Audion.apk
-- **Arch Linux (AUR):** `yay -S audion-bin` (Community maintained, auto-updating binary)
+| Platform | Asset |
+| --- | --- |
+| Windows | `Audion_x64-setup.exe` |
+| macOS | `Audion.dmg` |
+| Linux (AppImage) | `Audion-x86_64.AppImage` |
+| Linux (Flatpak) | `audion_<version>_linux.flatpak` |
+| Arch Linux (AUR, community maintained) | `yay -S audion-bin` |
+| Android | `Audion.apk` (per-ABI builds and universal APK also published) |
 
-### Installation Notes
+### First Run
 
-#### Arch Linux / Arch-based Distros
-You can install Audion directly from the Arch User Repository (AUR) using your preferred AUR helper:
+1. Launch Audion
+2. Click **Add Music Folder** and select your music directory
+3. Wait for the scan to complete
+4. Press play
+
+### Arch Linux / Arch-based Distros
 
 ```bash
 # Using yay
@@ -101,33 +193,27 @@ yay -S audion-bin
 paru -S audion-bin
 ```
 
-#### Linux Troubleshooting & Flags
+### Linux Troubleshooting & Flags
+
 Audion uses GPU hardware acceleration on Linux by default. If you encounter driver crashes, blank windows, or run inside a VM:
-- **Force Software Rendering (Safe Mode):**
-  ```bash
-  AUDION_SAFE_MODE=1 audion
-  # or
-  AUDION_SOFTWARE_RENDERING=1 audion
-  ```
-- **Disable WebKit Sandbox (for restricted container environments):**
-  ```bash
-  AUDION_DISABLE_SANDBOX=1 audion
-  ```
-*(Note: Virtual machines such as VirtualBox, VMware, and QEMU, as well as Flatpak/AppImage sandbox restrictions, are detected automatically.)*
 
-If you prefer, download the platform-specific asset from the Releases page for your OS.
+```bash
+AUDION_SAFE_MODE=1 audion            # force software rendering
+AUDION_SOFTWARE_RENDERING=1 audion   # same, explicit flag
+AUDION_DISABLE_SANDBOX=1 audion      # for restricted container environments
+```
 
-### First Run
-1. Launch Audion
-2. Click "Add Music Folder" and select your music directory
-3. Wait for the scan to complete
-4. Enjoy!
+Virtual machines (VirtualBox, VMware, QEMU) and Flatpak/AppImage sandbox restrictions are detected automatically.
+
+### Android Notes
+
+Install builds only from the official Releases page, and enable "Install unknown apps" for whichever app you download the APK with. Individual per-ABI APKs are smaller; use the `universal` APK if you are unsure of your device architecture.
 
 ---
 
 ## 🐳 Self-Hosted Server (Docker)
 
-Audion now supports a self-hosted streaming server (`audion-server-docker`) written in Rust with a responsive Svelte frontend. This allows you to host your library on a home server or VPS and stream to your Audion clients anywhere.
+Audion supports a self-hosted streaming server (`audion-server-docker`) written in Rust with a responsive Svelte frontend, so you can host your library on a home server or VPS and stream to Audion clients from anywhere.
 
 ### Running Audion Server
 
@@ -157,73 +243,95 @@ A preconfigured `docker-compose.yml` is available in the `audion-server-docker` 
    docker compose up --build -d
    ```
 
-3. **Access the Web Interface**: Navigate to `http://localhost` (or port `8080` for backend API access directly) to manage files, playlists, and users.
+3. **Access the web interface** at `http://localhost` to manage files, playlists, and users.
 
 ### Connecting the Client
 
-To connect your Audion desktop or mobile application to your self-hosted server:
 1. Open Audion settings.
 2. Under **Server Connection**, select **Custom Server**.
-3. Input your server URL (e.g., `http://your-server-ip:8080`) and your credentials.
-4. Enjoy streaming playback, library sync, and remote access!
-
----
-
-## ✨ Features
-
-### Music Management
-- Auto-scan local music folders with metadata extraction
-- Smart playlists and queue management
-- Support for all major audio formats (FLAC, MP3, AAC, ALAC etc.)
-- Opus codec support (native decoder)
-
-### Lyrics
-- Real-time synced lyrics from LRCLIB and Musixmatch
-- Word-by-word karaoke highlighting
-- Cached locally for offline use
-
-### Android Auto
-- Browse library, control playback, and queue tracks from your car display
-- Full shuffle, repeat, and cold-start support
-
-### Customization
-- Dark/light themes with custom accent colors
-- Full-screen mode
-- Mini player
-- Keyboard shortcuts
-
-### Plugins
-Extend Audion with JavaScript/WASM plugins. [Learn more →](./PLUGINS.md)
+3. Enter your server URL (e.g. `http://your-server-ip:8080`) and credentials.
+4. Stream your library, sync it, and control it remotely.
 
 ---
 
 ## 🛠️ Build from Source
 
 **Requirements:** Node.js 18+, Rust (latest), Tauri CLI
+
 ```bash
 git clone https://github.com/dupitydumb/Audion.git
-cd audion
+cd Audion
 npm install
-npm run tauri dev    # Development
-npm run tauri build  # Production build
+npm run tauri dev    # development
+npm run tauri build  # production build
 ```
 
 **Tech stack:** Tauri 2.0, SvelteKit, Rust, SQLite
 
 ---
 
+## 🤖 Agent Skills
+
+Audion has a companion repo of agent skills for AI coding assistants. Each skill is a `SKILL.md` in the open Agent Skills format, with the steps, skeletons, and permission rules the runtime actually enforces, so an agent does not have to reverse-engineer the source to build something that loads.
+
+```bash
+npx skills add dupitydumb/Audion-Skills
+```
+
+| Skill | What it covers |
+| --- | --- |
+| `audion-plugin` | `plugin.json`, lifecycle hooks, permission-gated API, events, providers, UI slots |
+| `audion-skin` | `.audionskin` packages, folder skins, color tokens, custom CSS, canvas effects |
+| `audion-registry` | Publishing to the community marketplace, and what the installer actually downloads |
+
+Install a single skill with `npx skills add dupitydumb/Audion-Skills --skill audion-skin`. Sources and full reference pages: [dupitydumb/Audion-Skills](https://github.com/dupitydumb/Audion-Skills).
+
+---
+
+## ❓ FAQ
+
+**Is Audion free?** Yes — free and open source under GPLv3. Donations are voluntary.
+
+**Does it need an internet connection?** No. Playback, lyrics caching, and library management work fully offline. Network access is only needed for optional features such as online lyric sources, scrobbling, provider streaming, and updates.
+
+**Where is my music stored?** Wherever it already lives. Audion indexes your folders in place and never moves or re-encodes your files.
+
+**Does it phone home?** No telemetry or tracking. Cloud sync and scrobbling are opt-in.
+
+**How do I request a feature or report a bug?** Open an [issue](https://github.com/dupitydumb/Audion/issues) or join the [Discord](https://discord.gg/27XRVQsBd9).
+
+---
+
 ## 🤝 Contributing
 
-Contributions are welcome! Check out:
-- [Issues](https://github.com/dupitydumb/Audion/issues) for bugs and feature requests
-- [PLUGINS.md](./PLUGINS.md) to create plugins
-- [Discord](https://discord.gg/27XRVQsBd9) to discuss ideas
+Contributions are welcome — translations, bug reports, plugins, and code.
+
+- [Issues](https://github.com/dupitydumb/Audion/issues) — bugs and feature requests
+- [PLUGINS.md](./PLUGINS.md) — build plugins
+- [Audion-Skills](https://github.com/dupitydumb/Audion-Skills) — agent skills for building plugins and skins
+- [developerguide.md](./developerguide.md) — architecture and development setup
+- [Discord](https://discord.gg/27XRVQsBd9) — discuss ideas
+
+---
+
+## 💙 Support
+
+Audion is free and stays free. If it has earned a spot in your rotation:
+
+<p>
+  <a href="https://ko-fi.com/N4N5UMNR1"><img src="https://img.shields.io/badge/Ko--fi-Support-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support on Ko-fi"></a>
+  <a href="https://www.patreon.com/AudionPlayer"><img src="https://img.shields.io/badge/Patreon-Support-F96854?style=for-the-badge&logo=patreon&logoColor=white" alt="Support on Patreon"></a>
+</p>
+
+Support pays for hosting, development time, and code-signing certificates — nothing else.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later) - see the [LICENSE](./LICENSE) file for details.
+Licensed under the **GNU General Public License v3.0 or later** (GPL-3.0-or-later). See [LICENSE](./LICENSE).
+
+Audion is an independent project: it hosts no media and is not affiliated with any streaming service it may integrate with through plugins.
 
 ---
 

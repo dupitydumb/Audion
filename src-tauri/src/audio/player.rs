@@ -71,6 +71,8 @@ pub enum PlayerDirective {
         reason: AdvanceReason,
         track: TrackRef,
         queue_index: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        shuffled_index: Option<usize>,
     },
     /// nothing left to advance to (end of queue, repeat off)
     /// player.ts decides what to do with this
@@ -317,6 +319,7 @@ impl PlayerStateSync {
                             reason,
                             track,
                             queue_index: idx,
+                            shuffled_index: if state.shuffle { Some(state.shuffled_index) } else { None },
                         });
                     }
                     None => {
@@ -389,6 +392,7 @@ impl PlayerStateSync {
                                         reason: AdvanceReason::UserDirectSelect,
                                         track,
                                         queue_index: index,
+                                        shuffled_index: if state.shuffle { Some(state.shuffled_index) } else { None },
                                     });
                                 }
                             }

@@ -438,6 +438,84 @@ export function addTrackToLibrary(track: Track): void {
     }
 }
 
+/**
+ * Add a single external/discovered track to all in-memory stores.
+ * Updates tracks, albums, artists stores, caches cover art, and maintains relations.
+ */
+export function addExternalTrackToLibrary(track: Track): void {
+    // 1. Add track to tracks store and caches
+    addTrackToLibrary(track);
+
+    // 2. Cache cover for track and album if available
+    if (track.cover_url) {
+        trackCoverCache.set(track.id, track.cover_url);
+        if (track.album_id) {
+            albumArtCache.set(track.album_id, track.cover_url);
+        }
+    }
+
+    // 3. Upsert album if we have an album_id and album name
+    if (track.album_id && track.album) {
+        let isNewAlbum = false;
+        albums.update(current => {
+            const exists = current.some(a => a.id === track.album_id);
+            if (exists) return current;
+            isNewAlbum = true;
+            const newAlbum: Album = {
+                id: track.album_id!,
+                name: track.album!,
+                artist: track.artist || null,
+                art_data: null,
+                art_path: null,
+                artists: track.artists ?? (track.artist ? [track.artist] : []),
+            };
+            const meta = stripAlbumHeavyData(newAlbum);
+            albumMetadataCache.set(track.album_id!, meta);
+            return [...current, newAlbum];
+        });
+        if (isNewAlbum) {
+            albumCount.update(n => n + 1);
+        }
+
+        // Keep bidirectional maps in sync
+        trackToAlbumMap.set(track.id, track.album_id);
+        if (!albumToTracksMap.has(track.album_id)) {
+            albumToTracksMap.set(track.album_id, []);
+        }
+        const tList = albumToTracksMap.get(track.album_id)!;
+        if (!tList.includes(track.id)) {
+            tList.push(track.id);
+        }
+    }
+
+    // 4. Upsert artist in artists store
+    if (track.artist) {
+        artists.update(current => {
+            const idx = current.findIndex(
+                a => a.name.toLowerCase() === track.artist!.toLowerCase()
+            );
+            if (idx >= 0) {
+                const updated = [...current];
+                const existing = updated[idx];
+                updated[idx] = {
+                    ...existing,
+                    track_count: existing.track_count + 1,
+                    album_count: track.album_id
+                        ? Math.max(existing.album_count, 1)
+                        : existing.album_count,
+                };
+                return updated;
+            }
+            artistCount.update(n => n + 1);
+            return [...current, {
+                name: track.artist!,
+                track_count: 1,
+                album_count: track.album_id ? 1 : 0,
+            }];
+        });
+    }
+}
+
 
 /**
  * Update a track's cover URL in the library (metadata, cache, and store)
@@ -471,6 +549,34 @@ export function updateTrackCover(trackId: number, coverUrl: string): void {
     });
 
     // 4. Clear full track cache to force reconstruction
+    fullTrackCache.delete(trackId);
+}
+
+/**
+ * Update a track's local cover file path in the library (metadata, cache, and store)
+ */
+export function updateTrackCoverPath(trackId: number, coverPath: string): void {
+    const metadata = trackMetadataCache.get(trackId);
+    if (metadata) {
+        trackMetadataCache.set(trackId, {
+            ...metadata,
+            track_cover_path: coverPath
+        });
+    }
+
+    tracks.update(current => {
+        const index = current.findIndex(t => t.id === trackId);
+        if (index >= 0) {
+            const updated = [...current];
+            updated[index] = {
+                ...updated[index],
+                track_cover_path: coverPath
+            } as Track;
+            return updated;
+        }
+        return current;
+    });
+
     fullTrackCache.delete(trackId);
 }
 

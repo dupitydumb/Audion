@@ -123,7 +123,7 @@
     onItemContextMenu={handleAlbumContextMenu}
     onLoadMore={handleLoadMore}
     emptyStateConfig={emptyState}
-    columnsBreakpoint={924}
+    columnsBreakpoint={480}
     columnsBelow={2}
     let:item={album}
 >

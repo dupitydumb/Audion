@@ -87,6 +87,9 @@ pub struct GatedSource<S: Source<Item = f32>> {
     /// length, in frames, of the fade-out ramp starting at fade_out_at
     /// only meaningful once fade_out_at != UNSCHEDULED
     fade_out_frames: Arc<AtomicU64>,
+    automix_enabled: Arc<AtomicBool>,
+    bass_filters: Vec<crate::audio::dsp::BiquadFilter>,
+    channel_index: usize,
 }
 
 /// sentinel written into target_frame meaning "not scheduled => stay silent forever"
@@ -98,6 +101,12 @@ impl<S: Source<Item = f32>> GatedSource<S> {
     /// so callers can hand a clone to the decision thread and keep writing new target frames after registration with the mixer
     pub fn new(inner: S, clock: Arc<SharedClock>, target: Arc<AtomicU64>) -> Self {
         let channels = inner.channels();
+        let sample_rate = inner.sample_rate();
+        let ch_count = channels.get() as usize;
+        let bass_filters = (0..ch_count)
+            .map(|_| crate::audio::dsp::BiquadFilter::new_low_pass(150.0, 0.707, sample_rate))
+            .collect();
+
         Self {
             inner,
             clock,
@@ -108,7 +117,15 @@ impl<S: Source<Item = f32>> GatedSource<S> {
             fade_in_frames: Arc::new(AtomicU64::new(0)),
             fade_out_at: Arc::new(AtomicU64::new(UNSCHEDULED)),
             fade_out_frames: Arc::new(AtomicU64::new(0)),
+            automix_enabled: Arc::new(AtomicBool::new(false)),
+            bass_filters,
+            channel_index: 0,
         }
+    }
+
+    pub fn with_automix(mut self, automix: Arc<AtomicBool>) -> Self {
+        self.automix_enabled = automix;
+        self
     }
 
     /// convenience constructor when the caller doesn't need the target handle separately
@@ -214,9 +231,38 @@ impl<S: Source<Item = f32>> Iterator for GatedSource<S> {
         // reached (or past) the target => pull real audio
         // once inner is exhausted keep emitting silence rather than None: 
         // per rodio::mixer::MixerSource::next, a source returning None is dropped from the mixer entirely
-        match self.inner.next() {
-            Some(s) => Some(s * gain),
-            None => Some(0.0),
+        let s = match self.inner.next() {
+            Some(s) => s,
+            None => return Some(0.0),
+        };
+
+        let ch_idx = self.channel_index;
+        self.channel_index = (self.channel_index + 1) % ch;
+
+        let is_fading_in = fade_in_frames > 0 && now >= target && (now - target) < fade_in_frames;
+        let is_fading_out = fade_out_at != UNSCHEDULED && now >= fade_out_at && (now - fade_out_at) < fade_out_frames.max(1);
+
+        if (is_fading_in || is_fading_out) && self.automix_enabled.load(Ordering::Relaxed) {
+            let s_low = if ch_idx < self.bass_filters.len() {
+                self.bass_filters[ch_idx].process(s)
+            } else {
+                0.0
+            };
+            let s_high = s - s_low;
+
+            let mut bass_mult = 1.0f32;
+            if is_fading_out {
+                let prog = (now - fade_out_at) as f32 / fade_out_frames.max(1) as f32;
+                bass_mult *= (1.0 - prog * 2.0).clamp(0.0, 1.0);
+            }
+            if is_fading_in {
+                let prog = (now - target) as f32 / fade_in_frames as f32;
+                bass_mult *= ((prog - 0.5) * 2.0).clamp(0.0, 1.0);
+            }
+
+            Some(s_high * gain + s_low * gain * bass_mult)
+        } else {
+            Some(s * gain)
         }
     }
 }

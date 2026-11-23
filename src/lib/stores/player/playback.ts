@@ -15,7 +15,7 @@ import { hasCustomArtworkForTrack } from '$lib/stores/customArtwork';
 import { tracks as libraryTracks, getFullTrack, updateTrackCover } from '$lib/stores/library';
 import { fetchTrackCover } from '$lib/services/cover-fetcher';
 import { recordTrackPlay } from '$lib/stores/activity';
-import { submitListenbrainzListen } from '$lib/api/tauri';
+import { submitListenbrainzListen, submitLastfmNowPlaying, submitLastfmScrobble } from '$lib/api/tauri';
 import { activeRemoteDevice } from '$lib/stores/websocket';
 import { pluginStore } from '$lib/stores/plugin-store';
 import {
@@ -47,6 +47,7 @@ import {
 import { _advanceQueueIndex, shuffleArray, registerReorderCallback } from './queue';
 import { sendRemoteCommand, throttledRemoteCommand } from './remote';
 import { wsStore } from '$lib/stores/websocket';
+import { globalProviders } from '$lib/plugins/providers';
 import {
     registerPlayerDirectiveHandler, playerSyncQueue, playerAdvance,
     playerNativeStarted, playerHtml5CrossfadeCommitted, playerHtml5Ended,
@@ -58,6 +59,15 @@ let _currentSessionId = 0;
 let _playStartTime: number = 0;
 let _nativeAudioUsed = false;
 let _nativeErrCount = 0;
+let _autoSkipCount = 0;
+
+let _sleepTimerCheck: (() => boolean) | null = null;
+let _sleepTimerExpire: (() => Promise<void>) | null = null;
+
+export function registerSleepTimerHooks(check: () => boolean, expire: () => Promise<void>): void {
+    _sleepTimerCheck = check;
+    _sleepTimerExpire = expire;
+}
 
 // ─── Broadcast ────────────────────────────────────────────────────────────────
 
@@ -185,6 +195,9 @@ export function syncPlayerQueue(): void {
 
 registerPlayerDirectiveHandler((directive: PlayerDirective) => {
     if (directive.type === 'QueueExhausted') {
+        const lastTrack = get(currentTrack);
+        pluginEvents.emit('queueExhausted', { lastTrack });
+
         // player.rs has no library/DB access
         // so autoplay from library fallback stays here
         const settings = get(appSettings);
@@ -196,7 +209,7 @@ registerPlayerDirectiveHandler((directive: PlayerDirective) => {
         return;
     }
 
-    const { reason, track: trackRef, queue_index, generation } = directive.data;
+    const { reason, track: trackRef, queue_index, generation, shuffled_index } = directive.data;
     const q = get(queue);
     const track = q[queue_index]?.id === trackRef.id ? q[queue_index] : q.find(t => t.id === trackRef.id);
     if (!track) {
@@ -207,7 +220,37 @@ registerPlayerDirectiveHandler((directive: PlayerDirective) => {
         return;
     }
 
+    const oldIdx = get(queueIndex);
+    const userCount = get(userQueueCount);
+
+    if (userCount > 0 && reason !== 'user_previous') {
+        if (get(shuffle)) {
+            userQueueCount.update(c => Math.max(0, c - 1));
+        } else {
+            const userQueueEnd = oldIdx + 1 + userCount;
+            if (queue_index > oldIdx && queue_index <= userQueueEnd) {
+                const skipped = queue_index - oldIdx;
+                userQueueCount.update(c => Math.max(0, c - skipped));
+            } else if (queue_index > userQueueEnd || queue_index < oldIdx) {
+                userQueueCount.set(0);
+            }
+        }
+    }
+
     queueIndex.set(queue_index);
+
+    if (get(shuffle)) {
+        if (typeof shuffled_index === 'number') {
+            shuffledIndex.set(shuffled_index);
+        } else {
+            const ptr = get(shuffledIndices).indexOf(queue_index);
+            if (ptr !== -1) {
+                shuffledIndex.set(ptr);
+            }
+        }
+    }
+
+    pluginEvents.emit('queueChange', { queue: q, index: queue_index });
 
     if (reason === 'user_next' || reason === 'user_previous' || reason === 'user_direct_select') {
         // nothing is playing this track yet => actually start it
@@ -219,23 +262,27 @@ registerPlayerDirectiveHandler((directive: PlayerDirective) => {
             })
             .catch(console.error);
     } else {
+        // Sleep timer check on natural transition
+        if (_sleepTimerCheck && _sleepTimerCheck()) {
+            _sleepTimerExpire?.().catch(console.error);
+            return;
+        }
+
         // native (via engine self trigger) or HTML5 (via the report in _triggerHtml5Crossfade / html5's onEnded)
         // already committed this transition on its own
         // this is metadata/store sync only
         // dont call playTrack here => would restart audio that's already playing
-        _advanceUiToTrack(track);
-
-        // html5_natural_end: track ended normally, preload may have errored → nothing is playing.
-        // Try swap first (happy path: preload ready), fall back to playTrack if not.
-        // html5_auto_advance: crossfade already committed audio — don't touch it.
         if (get(activeBackend) === 'html5' && reason === 'html5_natural_end') {
             const vol = sliderToAudioVolume(get(volume));
             html5SwapPreload(track.id, vol).then(swapped => {
+                _advanceUiToTrack(track);
                 if (!swapped) {
                     console.log('[Player] Preload swap failed/missing on natural end, falling back to playTrack');
                     playTrack(track).catch(console.error);
                 }
             });
+        } else {
+            _advanceUiToTrack(track);
         }
     }
 });
@@ -243,6 +290,61 @@ registerPlayerDirectiveHandler((directive: PlayerDirective) => {
 // Wire up reorder → reschedule preload + keep player.rs's queue mirror current
 // covers : add/remove/reorder and shuffle/repeat toggles, everywhere in queue.ts that already calls this callback
 registerReorderCallback(() => { _schedulePreload(); syncPlayerQueue(); });
+
+// ─── Catalog → full-stream handoff ────────────────────────────────────────────
+
+const PREVIEW_URL_RE = /apple\.com|itunes|\/preview\//i;
+
+function _looksLikePreviewUrl(p: string | null | undefined): boolean {
+    return !!p && PREVIEW_URL_RE.test(p);
+}
+
+// catalog tracks (iTunes/MusicBrainz preview in `path`, or no direct resolver) may still
+// have a full-length stream from an active StreamProvider
+// reuses the in-memory `stream_url` so play + preload never query twice
+// provider URLs can be signed/expiring => never persisted
+async function _resolveCatalogStream(track: Track, audioPath: string | null | undefined): Promise<string | null> {
+    // Local files and offline caches MUST ALWAYS take priority: never hijack local audio
+    if (track.local_src) return null;
+    if (!track.source_type || track.source_type === 'local') return null;
+    if (track.source_type === 'server' || track.source_type === 'subsonic') return null;
+    if (!isStreaming(track)) return null;
+    if (audioPath && classifyAudioPath(audioPath) === 'local') return null;
+
+    const cached = (track as any).stream_url as string | undefined;
+    if (cached) return cached;
+
+    const runtime = pluginStore.getRuntime();
+    const hasDirectResolver = !!(
+        (runtime && track.source_type && runtime.streamResolvers.has(track.source_type)) ||
+        (track.source_type && globalProviders.getStreamProvider(track.source_type))
+    );
+
+    const isPreviewOrCatalog = (
+        track.source_type === 'itunes' ||
+        track.source_type === 'metadata' ||
+        track.source_type === 'musicbrainz' ||
+        track.source_type === 'plugin' ||
+        !hasDirectResolver ||
+        _looksLikePreviewUrl(audioPath)
+    );
+
+    if (!isPreviewOrCatalog || globalProviders.getAllStreamProviders().length === 0) return null;
+
+    try {
+        console.log(`[Player] Attempting full stream handoff for catalog track: "${track.title}" by "${track.artist}"`);
+        const fullStream = await globalProviders.resolveTrackStream(track as any);
+        if (fullStream && fullStream.isFullStream && fullStream.url) {
+            const resolved = fullStream.rawBlobUrl || fullStream.url;
+            (track as any).stream_url = resolved;
+            console.log(`[Player] Successfully resolved full-length audio stream (${fullStream.format || 'audio'}, ${fullStream.bitrate || 'adaptive'} bps)`);
+            return resolved;
+        }
+    } catch (handoffErr) {
+        console.warn('[Player] Stream handoff failed, falling back to original preview/path:', handoffErr);
+    }
+    return null;
+}
 
 // ─── Core playback ────────────────────────────────────────────────────────────
 
@@ -274,6 +376,17 @@ export async function playTrack(
                     ).catch(e => console.warn('[ListenBrainz] Scrobble failed:', e));
                 }
             }
+            if (get(appSettings).lastFmEnabled && trackDuration > 0) {
+                const threshold = Math.min(Math.floor(trackDuration / 2), 240);
+                if (durationPlayed >= threshold) {
+                    submitLastfmScrobble(
+                        previousTrackObj.artist ?? 'Unknown Artist',
+                        previousTrackObj.title ?? 'Unknown',
+                        previousTrackObj.album,
+                        previousTrackObj.duration,
+                    ).catch(e => console.warn('[Last.fm] Scrobble failed:', e));
+                }
+            }
         }
     }
     _playStartTime = Date.now();
@@ -287,11 +400,27 @@ export async function playTrack(
             true,
         ).catch(e => console.warn('[ListenBrainz] Now-playing failed:', e));
     }
+    if (get(appSettings).lastFmEnabled) {
+        submitLastfmNowPlaying(
+            track.artist ?? 'Unknown Artist',
+            track.title ?? 'Unknown',
+            track.album,
+            track.duration,
+        ).catch(e => console.warn('[Last.fm] Now-playing failed:', e));
+    }
+    if (get(appSettings).lastFmEnabled) {
+        submitLastfmNowPlaying(
+            track.artist ?? 'Unknown Artist',
+            track.title ?? 'Unknown',
+            track.album,
+            track.duration,
+        ).catch(e => console.warn('[Last.fm] Now-playing failed:', e));
+    }
 
     // Scrobble to Subsonic on play start
     if (track.source_type === 'subsonic' && track.external_id) {
         import('$lib/stores/subsonic').then(({ subsonicScrobble }) => {
-            subsonicScrobble(track.external_id!, false).catch(() => {});
+            subsonicScrobble(track.external_id!, false).catch(() => { });
         });
     }
 
@@ -388,6 +517,25 @@ export async function playTrack(
             audioPath = `${track.source_type}://${track.external_id}`;
         }
 
+        // Cross-Provider Metadata-to-Stream Handoff:
+        // If track is a catalog track (e.g. from metadata provider with a 30s preview URL or without direct audio stream),
+        // attempt to resolve a full-length audio stream via active StreamProviders!
+        const fullStreamUrl = await _resolveCatalogStream(track, audioPath);
+        if (fullStreamUrl) audioPath = fullStreamUrl;
+
+        // never play a catalog preview from the library: full stream or skip
+        if (!track.local_src && _looksLikePreviewUrl(audioPath)) {
+            if (++_autoSkipCount > 5) {
+                addToast('No playable stream found for the queued tracks', 'error');
+                isPlaying.set(false);
+                return;
+            }
+            addToast(`No full stream found for "${track.title}" — skipping`, 'warning');
+            nextTrack();
+            return;
+        }
+
+        const runtime = pluginStore.getRuntime();
         const streaming = isStreaming(track) || !!(track as any).stream_url || audioPath.startsWith('http://') || audioPath.startsWith('https://') || audioPath.includes('://');
 
         let swapped = false;
@@ -408,19 +556,31 @@ export async function playTrack(
                 await nativeAudioStop().catch(() => { });
 
                 if (classifyAudioPath(audioPath) === 'custom-scheme') {
-                    const runtime = pluginStore.getRuntime();
-                    if (runtime) {
-                        const sourceType = track.source_type;
-                        const externalId = track.external_id;
-                        if (sourceType && externalId) {
-                            console.log(`[Player] Resolving custom scheme: ${audioPath}`);
-                            const resolved = await runtime.resolveStreamUrl(sourceType, externalId, { track: trackForPlugins });
-                            if (resolved) {
-                                audioPath = resolved;
-                            } else {
-                                throw new Error(`Failed to resolve stream URL for ${sourceType}`);
-                            }
+                    const sourceType = track.source_type;
+                    const externalId = track.external_id;
+                    let resolved: string | null = null;
+                    if (runtime && sourceType && externalId) {
+                        console.log(`[Player] Resolving custom scheme via runtime: ${audioPath}`);
+                        resolved = await runtime.resolveStreamUrl(sourceType, externalId, { track: trackForPlugins });
+                    }
+                    if (!resolved && sourceType && externalId) {
+                        console.log(`[Player] Resolving custom scheme via globalProviders: ${audioPath}`);
+                        const streamRes = await globalProviders.resolveStream(sourceType, externalId);
+                        if (streamRes) {
+                            resolved = typeof streamRes === 'string' ? streamRes : (streamRes.rawBlobUrl || streamRes.url);
                         }
+                    }
+                    if (!resolved && globalProviders.getAllStreamProviders().length > 0) {
+                        console.log(`[Player] Resolving custom scheme via query handoff: ${audioPath}`);
+                        const queryStream = await globalProviders.resolveTrackStream(track as any);
+                        if (queryStream && queryStream.url) {
+                            resolved = queryStream.rawBlobUrl || queryStream.url;
+                        }
+                    }
+                    if (resolved) {
+                        audioPath = resolved;
+                    } else {
+                        throw new Error(`Failed to resolve stream URL for ${sourceType}`);
                     }
                 }
 
@@ -472,6 +632,7 @@ export async function playTrack(
         currentTime.set(startTime);
         duration.set(track.duration || 0);
         isPlaying.set(true);
+        _autoSkipCount = 0;
 
         if (get(activeBackend) === 'native') {
             _startReckoning(startTime);
@@ -765,7 +926,7 @@ export async function seek(position: number, previousPositionOverride?: number):
             updateMediaSessionPosition();
             const seekDirection = targetSecs > previousSecs ? 'forward'
                 : targetSecs < previousSecs ? 'backward'
-                : undefined;
+                    : undefined;
             updateSmtcPlaybackState(get(isPlaying) ? 'playing' : 'paused', { seekDirection });
             broadcastState(true);
             pluginEvents.emit('seeked', { currentTime: targetSecs, duration: dur });
@@ -900,6 +1061,17 @@ function _scrobblePrev(track: Track, durationPlayed: number): void {
             ).catch(e => console.warn('[ListenBrainz] Scrobble failed:', e));
         }
     }
+    if (get(appSettings).lastFmEnabled && trackDuration > 0) {
+        const threshold = Math.min(Math.floor(trackDuration / 2), 240);
+        if (durationPlayed >= threshold) {
+            submitLastfmScrobble(
+                track.artist ?? 'Unknown Artist',
+                track.title ?? 'Unknown',
+                track.album,
+                track.duration,
+            ).catch(e => console.warn('[Last.fm] Scrobble failed:', e));
+        }
+    }
     // Subsonic scrobble — fire-and-forget on listen completion
     if (track.source_type === 'subsonic' && track.external_id) {
         import('$lib/stores/subsonic').then(({ subsonicScrobble }) => {
@@ -926,6 +1098,11 @@ export function handleTrackEnd(): void {
     if (get(repeat) === 'one' && track) {
         console.log('[Player] Repeat one: restarting current track');
         playTrack(track).catch(console.error);
+        return;
+    }
+
+    if (_sleepTimerCheck && _sleepTimerCheck()) {
+        _sleepTimerExpire?.().catch(console.error);
         return;
     }
 
@@ -973,6 +1150,14 @@ async function _advanceUiToTrack(track: Track): Promise<void> {
             true,
         ).catch(e => console.warn('[ListenBrainz] Now-playing failed:', e));
     }
+    if (get(appSettings).lastFmEnabled) {
+        submitLastfmNowPlaying(
+            track.artist ?? 'Unknown Artist',
+            track.title ?? 'Unknown',
+            track.album,
+            track.duration,
+        ).catch(e => console.warn('[Last.fm] Now-playing failed:', e));
+    }
 }
 
 // ─── Gapless preload ──────────────────────────────────────────────────────────
@@ -1011,7 +1196,8 @@ async function _scheduleHtml5Preload(): Promise<void> {
     const nextTrackObj = q[nextIdx];
     if (!nextTrackObj) return;
 
-    let audioPath = nextTrackObj.local_src || nextTrackObj.path;
+    // prefer a full stream resolved earlier this session over the persisted preview path
+    let audioPath = nextTrackObj.local_src || (nextTrackObj as any).stream_url || nextTrackObj.path;
 
     // Resolve server tracks
     if (nextTrackObj.source_type === 'server' && !nextTrackObj.local_src) {
@@ -1039,6 +1225,16 @@ async function _scheduleHtml5Preload(): Promise<void> {
 
     if (!audioPath) return;
 
+    // same catalog -> full-stream handoff as playTrack, so advance/crossfade promote a full stream
+    const fullStreamUrl = await _resolveCatalogStream(nextTrackObj, audioPath);
+    if (fullStreamUrl) audioPath = fullStreamUrl;
+
+    // never cache a preview: no preload, advance falls back to playTrack which toasts + skips
+    if (!nextTrackObj.local_src && _looksLikePreviewUrl(audioPath)) {
+        console.log('[Player] Skipping preload for catalog track without full stream:', nextTrackObj.title);
+        return;
+    }
+
     const streaming = isStreaming(nextTrackObj) || !!(nextTrackObj as any).stream_url || audioPath.startsWith('http://') || audioPath.startsWith('https://') || audioPath.includes('://');
 
     if (!streaming) {
@@ -1050,20 +1246,33 @@ async function _scheduleHtml5Preload(): Promise<void> {
 
     if (isCustomScheme) {
         const runtime = pluginStore.getRuntime();
-        if (runtime) {
-            const sourceType = nextTrackObj.source_type;
-            const externalId = nextTrackObj.external_id;
-            if (sourceType && externalId) {
-                try {
-                    const fullTrack = await getFullTrack(nextTrackObj.id, true);
-                    const trackForPlugins = fullTrack || nextTrackObj;
-                    const resolved = await runtime.resolveStreamUrl(sourceType, externalId, { track: trackForPlugins });
-                    if (resolved) {
-                        audioPath = resolved;
-                    }
-                } catch (e) {
-                    console.error('[Player] Failed to resolve custom scheme for preload:', e);
+        const sourceType = nextTrackObj.source_type;
+        const externalId = nextTrackObj.external_id;
+        if (sourceType && externalId) {
+            try {
+                const fullTrack = await getFullTrack(nextTrackObj.id, true);
+                const trackForPlugins = fullTrack || nextTrackObj;
+                let resolved: string | null = null;
+                if (runtime) {
+                    resolved = await runtime.resolveStreamUrl(sourceType, externalId, { track: trackForPlugins });
                 }
+                if (!resolved) {
+                    const streamRes = await globalProviders.resolveStream(sourceType, externalId);
+                    if (streamRes) {
+                        resolved = typeof streamRes === 'string' ? streamRes : (streamRes.rawBlobUrl || streamRes.url);
+                    }
+                }
+                if (!resolved && globalProviders.getAllStreamProviders().length > 0) {
+                    const fullStream = await globalProviders.resolveTrackStream(nextTrackObj as any);
+                    if (fullStream && fullStream.url) {
+                        resolved = fullStream.rawBlobUrl || fullStream.url;
+                    }
+                }
+                if (resolved) {
+                    audioPath = resolved;
+                }
+            } catch (e) {
+                console.error('[Player] Failed to resolve custom scheme for preload:', e);
             }
         }
     }

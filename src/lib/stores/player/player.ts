@@ -34,7 +34,7 @@ export type AdvanceReason =
     | 'html5_natural_end';
 
 export type PlayerDirective =
-    | { type: 'Advance'; data: { generation: number; reason: AdvanceReason; track: PlayerTrackRef; queue_index: number } }
+    | { type: 'Advance'; data: { generation: number; reason: AdvanceReason; track: PlayerTrackRef; queue_index: number; shuffled_index?: number | null } }
     | { type: 'QueueExhausted'; data: { generation: number } };
 
 // =============================================================================

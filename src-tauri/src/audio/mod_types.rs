@@ -8,6 +8,92 @@ use super::opus::OpusSource;
 use super::resampler::RubatoResampler;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AudioTelemetry {
+    pub path: Option<String>,
+    pub codec: String,
+    pub bit_depth: Option<u16>,
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub device_sample_rate: u32,
+    pub device_channels: u16,
+    pub resampler_active: bool,
+    pub output_device: String,
+    pub replay_gain_db: Option<f32>,
+    pub limiter_enabled: bool,
+    /// user preference, persisted setting echo only
+    pub exclusive_requested: bool,
+    /// verified: the negotiated stream is genuinely exclusive
+    pub exclusive_active: bool,
+    pub exclusive_supported: bool,
+    pub exclusive_suspended: bool,
+    pub exclusive_backend: Option<String>,
+    pub exclusive_format: Option<String>,
+    pub exclusive_error: Option<String>,
+}
+
+impl Default for AudioTelemetry {
+    fn default() -> Self {
+        Self {
+            path: None,
+            codec: "None".to_string(),
+            bit_depth: None,
+            sample_rate: 44100,
+            channels: 2,
+            device_sample_rate: 44100,
+            device_channels: 2,
+            resampler_active: false,
+            output_device: "Default".to_string(),
+            replay_gain_db: None,
+            limiter_enabled: true,
+            exclusive_requested: false,
+            exclusive_active: false,
+            exclusive_supported: false,
+            exclusive_suspended: false,
+            exclusive_backend: None,
+            exclusive_format: None,
+            exclusive_error: None,
+        }
+    }
+}
+
+/// verified exclusive state, returned by the exclusive commands
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExclusiveStatus {
+    pub requested: bool,
+    pub active: bool,
+    pub supported: bool,
+    pub suspended: bool,
+    pub backend: Option<String>,
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub format: Option<String>,
+    pub reason: Option<String>,
+}
+
+impl Default for ExclusiveStatus {
+    fn default() -> Self {
+        Self {
+            requested: false,
+            active: false,
+            supported: false,
+            suspended: false,
+            backend: None,
+            sample_rate: 44100,
+            channels: 2,
+            format: None,
+            reason: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExclusiveCapability {
+    pub supported: bool,
+    pub backend: Option<String>,
+    pub reason: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioDeviceInfo {
     pub id: String,
     pub name: String,
@@ -32,6 +118,7 @@ pub enum AudioEvent {
     TrackAdvanced { generation: u64, new_path: String, duration: Option<Duration> },
     StateChanged { position: f64 },
     DeviceListChanged { devices: DeviceList },
+    ExclusiveStateChanged { status: ExclusiveStatus },
     Error { message: String },
 }
 
@@ -59,6 +146,20 @@ impl DecodedSource {
         match self {
             Self::Symphonia(s) => s.duration,
             Self::Opus(o) => o.duration,
+        }
+    }
+
+    pub fn codec_name(&self) -> String {
+        match self {
+            Self::Symphonia(s) => s.codec_name.clone(),
+            Self::Opus(_) => "Opus".to_string(),
+        }
+    }
+
+    pub fn bits_per_sample(&self) -> Option<u16> {
+        match self {
+            Self::Symphonia(s) => s.bits_per_sample,
+            Self::Opus(_) => Some(16),
         }
     }
 }

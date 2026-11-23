@@ -21,7 +21,7 @@ const svelteFiles = findSvelteFiles(path.resolve('src'));
 const violations = [];
 
 for (const file of svelteFiles) {
-  if (path.basename(file) === 'Icon.svelte') continue;
+  if (path.basename(file) === 'Icon.svelte' || file.includes(path.join('components', 'icons'))) continue;
   const content = fs.readFileSync(file, 'utf8');
   // Look for inline svg tags that are not part of known exempt third-party brand icons or internal helpers
   if (/<svg\b/i.test(content)) {

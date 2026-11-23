@@ -9,10 +9,6 @@ export const API = {
     RETRY_DELAY: 1000
 };
 
-export const MUSIXMATCH_API = {
-    ROOT_URL: 'https://apic-desktop.musixmatch.com/ws/1.1/'
-};
-
 export const CACHE_CONFIG = {
     EXPIRY_TIME: 24 * 60 * 60 * 1000, // 24 hours
     MAX_SIZE: 100

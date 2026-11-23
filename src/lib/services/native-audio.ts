@@ -15,7 +15,7 @@
 // =============================================================================
 
 import { invoke } from '@tauri-apps/api/core';
-import { isTauri } from '$lib/api/tauri';
+import { isTauri, type AudioTelemetry, type ExclusiveStatus } from '$lib/api/tauri';
 
 // Check if we're running on Linux
 let isLinuxPlatform: boolean | null = null;
@@ -169,6 +169,7 @@ export type AudioEventType =
     | { type: 'TrackAdvanced'; data: { generation: number; new_path: string; duration: { secs: number; nanos: number } | null } }
     | { type: 'StateChanged'; data: { position: number } }
     | { type: 'DeviceListChanged'; data: { devices: DeviceList } }
+    | { type: 'ExclusiveStateChanged'; data: ExclusiveStatus }
     | { type: 'Error'; data: { message: string } };
 
 /**
@@ -251,6 +252,35 @@ export async function nativeAudioGetDeviceInfo(): Promise<DeviceList> {
  */
 export async function nativeAudioSetOutputDevice(deviceId: string | null): Promise<void> {
     await invoke('audio_set_output_device', { deviceId });
+}
+
+/**
+ * toggle skip silence dead-air trimming (-60 dBFS RMS intro/outro)
+ */
+export async function nativeAudioSetSkipSilence(enabled: boolean): Promise<void> {
+    await invoke('audio_set_skip_silence', { enabled });
+}
+
+/**
+ * toggle automix frequency-selective bass handoff crossfading
+ */
+export async function nativeAudioSetAutomix(enabled: boolean): Promise<void> {
+    await invoke('audio_set_automix', { enabled });
+}
+
+/**
+ * toggle exclusive device access (WASAPI exclusive / ALSA hw).
+ * resolves with the verified state; rejects when the device refuses.
+ */
+export async function nativeAudioSetExclusiveMode(enabled: boolean): Promise<ExclusiveStatus> {
+    return await invoke('audio_set_exclusive_mode', { enabled });
+}
+
+/**
+ * get live audio engine telemetry (codec, bit depth, native/device sample rate, resampler status)
+ */
+export async function nativeAudioGetTelemetry(): Promise<AudioTelemetry> {
+    return await invoke('audio_get_telemetry');
 }
 
 // =============================================================================

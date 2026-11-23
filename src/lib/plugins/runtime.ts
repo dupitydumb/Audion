@@ -34,6 +34,12 @@ import { appSettings } from '$lib/stores/settings';
 import { theme } from '$lib/stores/theme';
 import { invoke } from '@tauri-apps/api/core';
 import { html5RegisterRawBlobUrl, html5ClearPreload } from '$lib/services/html5-audio';
+import {
+  globalProviders,
+  type StreamProvider,
+  type MetadataProvider,
+  type LyricsProvider,
+} from './providers';
 
 // Cross-Plugin Permission Manager
 class PluginPermissionManager {
@@ -328,18 +334,34 @@ export class PluginRuntime {
         }
       };
 
-      // Wrap the plugin code to provide Audion.register in scope
+      // Wrap the plugin code to provide Audion.register in scope and CommonJS module/exports support
       // This creates a closure that doesn't require eval
       const wrappedCode = `
 (function() {
+  const module = { exports: {} };
+  const exports = module.exports;
   const Audion = {
     register: function(instance) {
       if (window["${callbackId}"]) {
+        window["${callbackId}_handled"] = true;
         window["${callbackId}"](instance);
       }
     }
   };
-  ${code}
+  try {
+    ${code}
+  } catch (err) {
+    console.error("[PluginRuntime] Script error in ${manifest.name}:", err);
+    throw err;
+  }
+  if (!window["${callbackId}_handled"]) {
+    const exp = (module.exports && (module.exports.default || module.exports)) || exports;
+    if (exp && typeof exp === 'object' && Object.keys(exp).length > 0) {
+      if (window["${callbackId}"]) {
+        window["${callbackId}"](exp);
+      }
+    }
+  }
 })();
 `;
 
@@ -348,6 +370,7 @@ export class PluginRuntime {
 
       // Clean up callback
       delete (window as any)[callbackId];
+      delete (window as any)[`${callbackId}_handled`];
 
       // Check for instance via handoff or legacy global patterns
       let instance = this.handoffInstance;
@@ -361,6 +384,81 @@ export class PluginRuntime {
 
       if (!instance) {
         throw new Error(`Plugin ${manifest.name} did not register an instance`);
+      }
+
+      // If instance is an SFLX or provider object without standard lifecycle methods, wrap it
+      if (typeof instance === 'object' && !instance.init && (instance.getMediaSource || instance.getStream || instance.resolveStream || instance.search || instance.getLyric || instance.getLyrics)) {
+        const raw = instance;
+        instance = {
+          name: manifest.name,
+          init: () => {
+            const getStreamFn = raw.getMediaSource || raw.getStream || raw.resolveStream || raw.getStreamUrl || raw.getAudioUrl || raw.play;
+            if (typeof getStreamFn === 'function') {
+              const streamProvider: StreamProvider = {
+                id: manifest.safe_name || manifest.name,
+                name: manifest.name,
+                version: manifest.version,
+                getStream: async (songId: string, quality?: string) => {
+                  const item = { id: songId, songId, title: songId };
+                  let res: any = null;
+                  try { res = await getStreamFn(songId, quality); } catch { res = await getStreamFn(item, quality); }
+                  if (!res) { try { res = await getStreamFn(item, quality); } catch { return null; } }
+                  if (!res) return null;
+                  if (typeof res === 'string') return { url: res };
+                  return res;
+                }
+              };
+              globalProviders.registerStreamProvider(streamProvider, manifest.name);
+            }
+            if (typeof raw.search === 'function') {
+              const metaProvider: MetadataProvider = {
+                id: manifest.safe_name || manifest.name,
+                name: manifest.name,
+                version: manifest.version,
+                search: async (query: string, type: any = 'all', page: number = 1) => {
+                  const res = await raw.search(query, page, type);
+                  const list = Array.isArray(res) ? res : res?.tracks || res?.songs || res?.data || [];
+                  const tracks = list.map((item: any) => ({
+                    id: String(item.id || item.songId || item.mid || ''),
+                    title: String(item.title || item.name || 'Unknown'),
+                    artist: typeof item.artist === 'string' ? item.artist : (Array.isArray(item.artists) ? item.artists.map((a: any) => typeof a === 'string' ? a : a.name).join(', ') : 'Unknown'),
+                    album: typeof item.album === 'string' ? item.album : item.album?.name,
+                    duration: item.duration || item.interval,
+                    cover_url: item.cover_url || item.pic || item.cover,
+                    source_type: manifest.safe_name || manifest.name,
+                  }));
+                  return { tracks };
+                }
+              };
+              globalProviders.registerMetadataProvider(metaProvider, manifest.name);
+            }
+            const getLyricFn = raw.getLyric || raw.getLyrics;
+            if (typeof getLyricFn === 'function') {
+              const lyricProvider: LyricsProvider = {
+                id: manifest.safe_name || manifest.name,
+                name: manifest.name,
+                version: manifest.version,
+                getLyrics: async (track: any) => {
+                  const item = { id: track.id || track.external_id, title: track.title, artist: track.artist, duration: track.duration };
+                  let res: any = null;
+                  try { res = await getLyricFn(track.title, track.artist, track.duration); } catch { res = await getLyricFn(item); }
+                  if (!res) { try { res = await getLyricFn(item); } catch { return null; } }
+                  if (!res) return null;
+                  if (typeof res === 'string') {
+                    return { lines: [{ time: 0, text: res }], source: manifest.name, format: 'lrc' };
+                  }
+                  return res;
+                }
+              };
+              globalProviders.registerLyricsProvider(lyricProvider, manifest.name);
+            }
+          },
+          start: () => {},
+          stop: () => {},
+          destroy: () => {
+            globalProviders.unregisterPluginProviders(manifest.name);
+          }
+        };
       }
 
       // Cleanup global if it was used
@@ -705,7 +803,8 @@ export class PluginRuntime {
             artist: options.metadata?.artist || null,
             album: options.metadata?.album || null,
             track_number: options.metadata?.trackNumber || null,
-            cover_url: options.metadata?.coverUrl || null
+            cover_url: options.metadata?.coverUrl || null,
+            headers: options.headers || null
           }
         }).then(async (savedPath) => {
           // Auto-rescan library for the directory actually used
@@ -982,26 +1081,87 @@ export class PluginRuntime {
       };
     }
 
-    // Stream resolver registration (for external tracks like Tidal)
-    // Plugins with player:control permission can register resolvers
+    // Stream resolver and provider registration (for external tracks like Tidal / YouTube Music / community providers)
+    // Plugins with player:control permission can register resolvers or stream providers
     if (this.hasPermission(pluginName, 'player:control')) {
       api.stream = {
         // Register a resolver function for a source type (e.g., 'tidal')
         // Resolver: (externalId: string, options?: {quality?: string}) => Promise<string | null>
         registerResolver: (sourceType: string, resolver: (externalId: string, options?: any) => Promise<string | null>) => {
+          const currentOwner = this.streamResolverOwners.get(sourceType);
+          if (currentOwner && currentOwner !== pluginName) {
+            console.warn(`[PluginRuntime] Cannot overwrite stream resolver '${sourceType}' owned by '${currentOwner}'`);
+            return;
+          }
           this.streamResolvers.set(sourceType, resolver);
           this.streamResolverOwners.set(sourceType, pluginName);
           console.log(`[PluginRuntime] Registered stream resolver for '${sourceType}' from plugin '${pluginName}'`);
+
+          // Bridge into globalProviders so resolveTrackStream and v1.5.0 providers know about it
+          // Always register/update the wrapper in globalProviders so new callbacks take effect immediately
+          globalProviders.registerStreamProvider({
+            id: sourceType,
+            name: `${pluginName} (${sourceType})`,
+            getStream: async (extId: string, quality?: string) => {
+              const current = this.streamResolvers.get(sourceType);
+              const url = current ? await current(extId, { quality }) : null;
+              return url ? { url } : null;
+            }
+          }, pluginName);
         },
         unregisterResolver: (sourceType: string) => {
           const owner = this.streamResolverOwners.get(sourceType);
           if (owner === pluginName) {
             this.streamResolvers.delete(sourceType);
             this.streamResolverOwners.delete(sourceType);
+            globalProviders.unregisterStreamProvider(sourceType, pluginName);
+          } else {
+            console.warn(`[PluginRuntime] Plugin '${pluginName}' cannot unregister resolver '${sourceType}' owned by '${owner}'`);
           }
+        },
+        // Register a full StreamProvider
+        registerProvider: (provider: StreamProvider) => {
+          const currentOwner = this.streamResolverOwners.get(provider.id);
+          if (currentOwner && currentOwner !== pluginName) {
+            console.warn(`[PluginRuntime] Cannot overwrite stream provider '${provider.id}' owned by '${currentOwner}'`);
+            return;
+          }
+          globalProviders.registerStreamProvider(provider, pluginName);
+          // Also link to this.streamResolvers so legacy callers work seamlessly
+          this.streamResolvers.set(provider.id, async (extId, opts) => {
+            const res = await provider.getStream(extId, opts?.quality);
+            return typeof res === 'string' ? res : (res?.url || null);
+          });
+          this.streamResolverOwners.set(provider.id, pluginName);
+        },
+        unregisterProvider: (id: string) => {
+          const owner = this.streamResolverOwners.get(id);
+          if (owner === pluginName) {
+            globalProviders.unregisterStreamProvider(id, pluginName);
+            this.streamResolvers.delete(id);
+            this.streamResolverOwners.delete(id);
+          } else {
+            console.warn(`[PluginRuntime] Plugin '${pluginName}' cannot unregister provider '${id}' owned by '${owner}'`);
+          }
+        },
+        resolveStream: async (providerId: string, songId: string, quality?: string) => {
+          return await globalProviders.resolveStream(providerId, songId, quality);
         }
       };
     }
+
+    // Metadata provider registration
+    api.metadata = {
+      registerProvider: (provider: MetadataProvider) => {
+        globalProviders.registerMetadataProvider(provider, pluginName);
+      },
+      unregisterProvider: (id: string) => {
+        globalProviders.unregisterMetadataProvider(id, pluginName);
+      },
+      search: async (query: string, type: 'all' | 'track' | 'album' | 'artist' = 'all', page: number = 1) => {
+        return await globalProviders.searchAllMetadata(query, type, page);
+      }
+    };
 
     // search registry
     // sources register themselves; consumers query all sources at once and receive
@@ -1342,6 +1502,16 @@ export class PluginRuntime {
           console.error('[PluginRuntime] Failed to get current lyric:', error);
           return null;
         }
+      },
+      // Register custom LyricsProvider
+      registerProvider: (provider: LyricsProvider) => {
+        globalProviders.registerLyricsProvider(provider, pluginName);
+      },
+      unregisterProvider: (id: string) => {
+        globalProviders.unregisterLyricsProvider(id, pluginName);
+      },
+      fetchLyrics: async (track: { title: string; artist: string; album?: string; duration?: number }) => {
+        return await globalProviders.fetchLyricsFromProviders(track);
       }
     };
 
@@ -1449,7 +1619,8 @@ export class PluginRuntime {
         console.error(`[PluginRuntime] Error clearing storage:`, err);
       }
 
-      // 5. Unregister stream resolvers owned by this plugin
+      // 5. Unregister stream resolvers and modular providers owned by this plugin
+      globalProviders.unregisterPluginProviders(name);
       const streamSourceTypesToRemove: string[] = [];
       this.streamResolverOwners.forEach((owner, sourceType) => {
         if (owner === name) {
@@ -1678,40 +1849,60 @@ export class PluginRuntime {
   // Resolve stream URL for external tracks
   // Called by player.ts before playing a track with source_type != 'local'
   async resolveStreamUrl(sourceType: string, externalId: string, options?: any): Promise<string | null> {
-    const resolver = this.streamResolvers.get(sourceType);
-    if (!resolver) {
-      console.warn(`[PluginRuntime] No stream resolver registered for source type '${sourceType}'`);
-      return null;
-    }
+    const info = await this.resolveStreamInfo(sourceType, externalId, options);
+    return info ? info.url : null;
+  }
 
-    try {
-      console.log(`[PluginRuntime] Resolving stream URL for ${sourceType}://${externalId}`);
-      const url = await resolver(externalId, options);
-      if (!url) return null;
-      console.log(`[PluginRuntime] Resolved stream URL:`, url.substring(0, 60) + '...');
+  // Resolve stream URL and any required request headers for downloads / playback
+  async resolveStreamInfo(sourceType: string, externalId: string, options?: any): Promise<{ url: string; headers?: Record<string, string> } | null> {
+    let resolver = this.streamResolvers.get(sourceType);
+    const provider = globalProviders.getStreamProvider(sourceType);
 
-      // If the resolved URL is an external HTTP(S) URL (not already blob: or asset:),
-      // proxy it through Rust → blob: URL to bypass CORS restrictions.
-      // googlevideo.com and similar CDNs don't send Access-Control-Allow-Origin headers,
-      // so the browser blocks direct <audio src> playback from tauri.localhost.
-      if (url.startsWith('http://') || url.startsWith('https://')) {
-        try {
-          const mime = url.includes('webm') ? 'audio/webm' : 'audio/mp4';
-          const blobUrl = await this.proxyToBlobUrl(url, mime);
-          if (blobUrl) {
-            console.log(`[PluginRuntime] Stream proxied to blob URL for CORS bypass`);
-            return blobUrl;
-          }
-        } catch (proxyErr) {
-          console.warn(`[PluginRuntime] Blob proxy failed, returning raw URL (may hit CORS):`, proxyErr);
+    let rawResult: { url: string; headers?: Record<string, string> } | null = null;
+
+    if (provider) {
+      try {
+        const res = await provider.getStream(externalId, options?.quality);
+        if (res) {
+          rawResult = typeof res === 'string' ? { url: res } : { url: res.url, headers: res.headers };
         }
+      } catch (e) {
+        console.warn(`[PluginRuntime] Provider '${sourceType}' getStream failed:`, e);
       }
+    }
 
-      return url;
-    } catch (error) {
-      console.error(`[PluginRuntime] Failed to resolve stream URL:`, error);
+    if (!rawResult && resolver) {
+      try {
+        const res: any = await resolver(externalId, options);
+        if (res) {
+          rawResult = typeof res === 'string' ? { url: res } : (res.url ? { url: res.url, headers: res.headers } : null);
+        }
+      } catch (error) {
+        console.error(`[PluginRuntime] Failed to resolve stream for ${sourceType}:`, error);
+      }
+    }
+
+    if (!rawResult || !rawResult.url) {
+      console.warn(`[PluginRuntime] No stream resolver registered or stream resolved for source type '${sourceType}'`);
       return null;
     }
+
+    const url = rawResult.url;
+    // If the resolved URL is an external HTTP(S) URL (not already blob: or asset:),
+    // proxy it through Rust → blob: URL to bypass CORS restrictions for browser playback (unless downloading)
+    if ((url.startsWith('http://') || url.startsWith('https://')) && !options?.forDownload) {
+      try {
+        const mime = url.includes('webm') ? 'audio/webm' : 'audio/mp4';
+        const blobUrl = await this.proxyToBlobUrl(url, mime);
+        if (blobUrl) {
+          return { url: blobUrl, headers: rawResult.headers };
+        }
+      } catch (proxyErr) {
+        console.warn(`[PluginRuntime] Blob proxy failed, returning raw URL (may hit CORS):`, proxyErr);
+      }
+    }
+
+    return rawResult;
   }
 
   // Fetch a remote URL via Rust backend and return a same-origin blob: URL.

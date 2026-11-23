@@ -94,8 +94,17 @@ export function classifyAudioPath(path: string): AudioPathKind {
  * Detect if a track needs HTML5 streaming or native local playback
  */
 export function isStreaming(track: Track): boolean {
-    // 1. Explicitly local sources (by type or path)
-    if (track.source_type === 'local' || track.source_type === 'server' || track.local_src) return false;
+    // 1. Explicitly local sources (by type, local_src, or server cache)
+    if (track.local_src) return false;
+    if (track.source_type === 'server') return false;
+
+    // Local library tracks: source_type is null/undefined or 'local'
+    if (!track.source_type || track.source_type === 'local') {
+        if (track.path && (track.path.startsWith('http://') || track.path.startsWith('https://'))) {
+            return true;
+        }
+        return false;
+    }
 
     if (track.path) {
         // Tauri local protocols are always local
@@ -108,8 +117,8 @@ export function isStreaming(track: Track): boolean {
         }
     }
 
-    // 3. Known external source types (Tidal, etc.)
-    if (track.source_type && track.source_type !== 'local') return true;
+    // 3. Known external source types (Tidal, plugins, etc.)
+    if (track.source_type) return true;
 
     // 4. Default to local for anything else (safer for absolute paths)
     return false;

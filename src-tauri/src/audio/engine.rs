@@ -2,12 +2,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering, AtomicU32};
 use std::time::{Duration, Instant};
 use std::num::NonZero;
-use std::str::FromStr;
-use cpal::DeviceId;
 use crossbeam::channel::{unbounded, Receiver, Sender};
 
 use super::dsp::{EqSettings, LIMITER_ENABLED_DEFAULT};
-use super::mod_types::{AudioEvent, DeviceList, AudioDeviceInfo};
+use super::mod_types::{AudioEvent, AudioTelemetry, DeviceList, AudioDeviceInfo, ExclusiveStatus};
+use super::output::{self, OutputSink};
 use super::sources::{ClockAdvancingSource, EqSource, LimiterSource};
 
 // gated dual source pipeline
@@ -72,6 +71,18 @@ pub struct AudioEngine {
     pub device_channels: NonZero<u16>,
     pub replay_gain_enabled: Arc<AtomicBool>,
     pub limiter_enabled: Arc<AtomicBool>,
+    pub skip_silence_enabled: Arc<AtomicBool>,
+    pub automix_enabled: Arc<AtomicBool>,
+    /// user preference; `exclusive_active` is the verified state
+    pub exclusive_requested: bool,
+    pub exclusive_active: bool,
+    pub exclusive_suspended: bool,
+    pub exclusive_backend: Option<String>,
+    pub exclusive_format: Option<String>,
+    pub exclusive_error: Option<String>,
+    /// set on pause/stop while exclusive; the worker releases the DAC when due
+    pub exclusive_idle_deadline: Option<Instant>,
+    pub user_crossfade_seconds: u32,
     pub repeat_one: bool,
     pub current_info: Option<TrackInfo>,
     pub generation_counter: u64,
@@ -87,8 +98,8 @@ pub struct AudioEngine {
 
     // dual source gated pipeline
     // gated_mixer is the input side (.add() gated sources onto it)
-    // its output is wrapped in EqSource/LimiterSource and registered directly with _stream
-    // in AudioEngine::new, so there's no separate output field to hold here afterward
+    // its output is wrapped in EqSource/LimiterSource and registered with the sink
+    // in AudioEngine::build (or attached bare in exclusive mode), held here as `output`
     pub gated_clock: Arc<SharedClock>,
     pub gated_mixer: rodio::mixer::Mixer,
     pub decision: DecisionThread,
@@ -114,127 +125,127 @@ pub struct AudioEngine {
     /// 'none' when not currently paused
     pub paused_at: Option<u64>,
 
-    pub _stream: rodio::MixerDeviceSink,
+    /// what samples are rendered through
+    pub output: OutputSink,
+    /// human-readable name of the opened device, for telemetry
+    pub output_label: String,
+    /// id of the opened device, reused by every rebuild
+    pub selected_device_id: Option<String>,
 }
 
-/// rank for fallback output devices, lower is tried first
-/// 'None' means never try it
-/// on Linux the ALSA "default" pcm often routes to dmix,
-/// which fails with "unable to open slave" when PipeWire/PulseAudio owns the card and the ALSA bridge plugin isn't installed
-fn fallback_rank(id: &str) -> Option<u8> {
-    let l = id.to_lowercase();
-    if l.contains("null") {
-        None
-    } else if l.contains("pipewire") {
-        Some(0)
-    } else if l.contains("pulse") {
-        Some(1)
-    } else if l.contains("sysdefault") {
-        Some(2)
-    } else if l.contains("default") {
-        Some(3)
-    } else if l.contains("plughw") {
-        Some(5)
-    } else if l.contains("hw:") {
-        Some(6)
-    } else {
-        Some(4)
+/// what the engine is asked to open
+#[derive(Debug, Clone)]
+pub enum OutputMode {
+    Shared,
+    Exclusive { sample_rate: u32, channels: u16 },
+}
+
+/// hands the finished chain to whichever sink owns output
+fn attach_chain(
+    output: &OutputSink,
+    source: impl rodio::Source<Item = f32> + Send + 'static,
+) -> Result<(), String> {
+    match output {
+        OutputSink::Shared(sink) => {
+            sink.mixer().add(source);
+            Ok(())
+        }
+        #[cfg(target_os = "windows")]
+        OutputSink::Wasapi(sink) => sink.attach(Box::new(source)),
+        OutputSink::Closed => Err("Audio output is closed".to_string()),
     }
 }
 
-/// opens an output stream on the first device that works: the requested device, 
-/// then the system default, then every other output device
-/// only fails when none of them can be opened
-fn open_output_stream(
+fn friendly_name(devices: &DeviceList, id: &str) -> String {
+    devices
+        .devices
+        .iter()
+        .find(|d| d.id == id)
+        .map(|d| d.name.clone())
+        .unwrap_or_else(|| id.to_string())
+}
+
+fn format_label(sample_rate: u32, channels: u16, sample_format: &str) -> String {
+    format!("{} Hz / {} ch / {}", sample_rate, channels, sample_format)
+}
+
+#[cfg(target_os = "windows")]
+fn open_exclusive(
     host: &cpal::Host,
     preferred_device_id: Option<&str>,
-    all_devices: &[cpal::Device],
-) -> Result<(rodio::MixerDeviceSink, cpal::SupportedStreamConfig), String> {
+    sample_rate: u32,
+    channels: u16,
+) -> Result<(OutputSink, String, &'static str, String), String> {
     use cpal::traits::{DeviceTrait, HostTrait};
 
-    let mut candidates: Vec<(String, cpal::Device)> = Vec::new();
+    let endpoint = match preferred_device_id {
+        Some(id) => id.to_string(),
+        None => host
+            .default_output_device()
+            .and_then(|d| d.id().ok())
+            .map(|id| id.to_string())
+            .ok_or("No default output endpoint")?,
+    };
+    // ponytail: cpal cannot open WASAPI exclusive, go straight to the endpoint
+    let raw_endpoint = endpoint.strip_prefix("wasapi:").unwrap_or(&endpoint);
+    let sink =
+        output::wasapi::WasapiExclusiveSink::open(Some(raw_endpoint.to_string()), sample_rate, channels)?;
+    let label = format_label(
+        sink.format().sample_rate,
+        sink.format().channels,
+        &sink.format().sample_format,
+    );
+    Ok((OutputSink::Wasapi(sink), endpoint, "wasapi-exclusive", label))
+}
 
-    if let Some(id_str) = preferred_device_id {
-        match DeviceId::from_str(id_str) {
-            Ok(id) => match host.device_by_id(&id) {
-                Some(d) => candidates.push((id_str.to_string(), d)),
-                None => tracing::warn!("[AUDIO] Device id '{}' not found, using default", id_str),
-            },
-            Err(_) => tracing::warn!("[AUDIO] Invalid device id '{}', using default", id_str),
-        }
-    }
+#[cfg(target_os = "linux")]
+fn open_exclusive(
+    host: &cpal::Host,
+    preferred_device_id: Option<&str>,
+    sample_rate: u32,
+    channels: u16,
+) -> Result<(OutputSink, String, &'static str, String), String> {
+    use cpal::traits::{DeviceTrait, HostTrait};
 
-    if let Some(d) = host.default_output_device() {
-        let label = d.id().map(|i| i.to_string()).unwrap_or_else(|_| "default".to_string());
-        if !candidates.iter().any(|(l, _)| *l == label) {
-            candidates.push((label, d));
-        }
-    }
+    let device_id = match preferred_device_id {
+        Some(id) => id.to_string(),
+        None => host
+            .default_output_device()
+            .and_then(|d| d.id().ok())
+            .map(|id| id.to_string())
+            .ok_or("No default output device")?,
+    };
+    let hw = output::alsa::to_hw_pcm_id(&device_id).ok_or_else(|| {
+        "Select a hardware (hw:) ALSA output device for exclusive mode".to_string()
+    })?;
+    let cpal_id = format!("alsa:{}", hw);
+    let (sink, fmt) = output::alsa::open_exclusive(host, &cpal_id, sample_rate, channels)?;
+    let label = format_label(fmt.sample_rate, fmt.channels, &fmt.sample_format);
+    Ok((OutputSink::Shared(sink), cpal_id, "alsa-hw", label))
+}
 
-    let mut rest: Vec<(u8, String, cpal::Device)> = all_devices
-        .iter()
-        .filter_map(|d| {
-            let label = d.id().ok()?.to_string();
-            let rank = fallback_rank(&label)?;
-            Some((rank, label, d.clone()))
-        })
-        .collect();
-    rest.sort_by_key(|(rank, _, _)| *rank);
-    for (_, label, d) in rest {
-        if !candidates.iter().any(|(l, _)| *l == label) {
-            candidates.push((label, d));
-        }
-    }
-
-    if candidates.is_empty() {
-        return Err("No audio output device found".to_string());
-    }
-
-    let total = candidates.len();
-    let mut errors: Vec<String> = Vec::new();
-    for (label, device) in candidates {
-        let config = match device.default_output_config() {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::warn!("[AUDIO] '{}': failed to get output config: {}", label, e);
-                errors.push(format!("{}: failed to get output config: {}", label, e));
-                continue;
-            }
-        };
-        let builder = match rodio::DeviceSinkBuilder::from_device(device) {
-            Ok(b) => b,
-            Err(e) => {
-                tracing::warn!("[AUDIO] '{}': failed to open audio output: {}", label, e);
-                errors.push(format!("{}: failed to open audio output: {}", label, e));
-                continue;
-            }
-        };
-        match builder.with_supported_config(&config).open_stream() {
-            Ok(stream) => {
-                if !errors.is_empty() {
-                    tracing::warn!(
-                        "[AUDIO] Using fallback output device '{}' after {} failed attempt(s)",
-                        label, errors.len()
-                    );
-                }
-                return Ok((stream, config));
-            }
-            Err(e) => {
-                tracing::warn!("[AUDIO] '{}': failed to open audio output: {}", label, e);
-                errors.push(format!("{}: failed to open audio output: {}", label, e));
-            }
-        }
-    }
-
-    // keep the message short, toast has less space
-    let first = errors.first().cloned().unwrap_or_default();
-    Err(format!("No usable audio output device (tried {}). First error: {}", total, first))
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
+fn open_exclusive(
+    _host: &cpal::Host,
+    _preferred_device_id: Option<&str>,
+    _sample_rate: u32,
+    _channels: u16,
+) -> Result<(OutputSink, String, &'static str, String), String> {
+    Err("Exclusive output is not supported on this platform".to_string())
 }
 
 impl AudioEngine {
     pub fn new(
         eq_settings: &EqSettings,
         preferred_device_id: Option<String>,
+    ) -> Result<(Self, Receiver<AudioEvent>, Receiver<GatedOpenResult>, DeviceList), String> {
+        Self::build(eq_settings, preferred_device_id, OutputMode::Shared)
+    }
+
+    fn build(
+        eq_settings: &EqSettings,
+        preferred_device_id: Option<String>,
+        mode: OutputMode,
     ) -> Result<(Self, Receiver<AudioEvent>, Receiver<GatedOpenResult>, DeviceList), String> {
         use cpal::traits::{DeviceTrait, HostTrait};
 
@@ -270,23 +281,77 @@ impl AudioEngine {
             DeviceList { devices: infos }
         };
 
-        let (stream, config) =
-            open_output_stream(&host, preferred_device_id.as_deref(), &all_devices)?;
+        let mut exclusive_requested = false;
+        let mut exclusive_active = false;
+        let mut exclusive_error = None;
+        let mut exclusive_backend = None;
+        let mut exclusive_format = None;
 
-        let device_sample_rate = NonZero::new(config.sample_rate())
-            .ok_or("Device reported sample rate of 0")?;
-        let device_channels = NonZero::new(config.channels())
-            .ok_or("Device reported channel count of 0")?;
+        let (output, device_sample_rate, device_channels, selected_device_id) =
+            match mode {
+                OutputMode::Shared => {
+                    let (sink, config, id) = output::shared::open_output_stream(
+                        &host,
+                        preferred_device_id.as_deref(),
+                        &all_devices,
+                    )?;
+                    (
+                        OutputSink::Shared(sink),
+                        NonZero::new(config.sample_rate()).ok_or("Device reported sample rate of 0")?,
+                        NonZero::new(config.channels()).ok_or("Device reported channel count of 0")?,
+                        Some(id),
+                    )
+                }
+                OutputMode::Exclusive { sample_rate, channels } => {
+                    match open_exclusive(&host, preferred_device_id.as_deref(), sample_rate, channels) {
+                        Ok((sink, id, backend, format)) => {
+                            exclusive_requested = true;
+                            exclusive_active = true;
+                            exclusive_backend = Some(backend.to_string());
+                            exclusive_format = Some(format);
+                            (
+                                sink,
+                                NonZero::new(sample_rate).ok_or("Sample rate is 0")?,
+                                NonZero::new(channels).ok_or("Channel count is 0")?,
+                                Some(id),
+                            )
+                        }
+                        Err(e) => {
+                            tracing::warn!("[AUDIO] Exclusive open failed, falling back to shared: {}", e);
+                            exclusive_requested = false;
+                            exclusive_error = Some(e);
+                            let (sink, config, id) = output::shared::open_output_stream(
+                                &host,
+                                preferred_device_id.as_deref(),
+                                &all_devices,
+                            )?;
+                            (
+                                OutputSink::Shared(sink),
+                                NonZero::new(config.sample_rate()).ok_or("Device reported sample rate of 0")?,
+                                NonZero::new(config.channels()).ok_or("Device reported channel count of 0")?,
+                                Some(id),
+                            )
+                        }
+                    }
+                }
+            };
+
+        let output_label = selected_device_id
+            .as_deref()
+            .map(|id| friendly_name(&cached_device_list, id))
+            .unwrap_or_else(|| "Default".to_string());
 
         tracing::info!(
-            "[AUDIO] Output stream opened ({}Hz {}ch)",
-            device_sample_rate, device_channels
+            "[AUDIO] Output opened: {} ({}Hz {}ch, exclusive={})",
+            output_label, device_sample_rate, device_channels, exclusive_active
         );
 
         let paused_flag = Arc::new(AtomicBool::new(false));
         let volume_atomic = Arc::new(AtomicU32::new(1.0f32.to_bits()));
         let replay_gain_enabled = Arc::new(AtomicBool::new(true));
         let limiter_enabled = Arc::new(AtomicBool::new(LIMITER_ENABLED_DEFAULT));
+        let skip_silence_enabled = Arc::new(AtomicBool::new(false));
+        let automix_enabled = Arc::new(AtomicBool::new(false));
 
         let (eq_tx, eq_rx) = unbounded::<EqSettings>();
         let (event_tx, event_rx) = unbounded::<AudioEvent>();
@@ -326,9 +391,14 @@ impl AudioEngine {
         // one place every real interleaved sample from every gated track passes through
         // exactly once per pull
         let clocked_src = ClockAdvancingSource::new(gated_mixer_output, Arc::clone(&gated_clock));
-        let eq_src = EqSource::new(clocked_src, eq_settings, eq_rx);
-        let limited_src = LimiterSource::new(eq_src, Arc::clone(&limiter_enabled));
-        stream.mixer().add(limited_src);
+        if exclusive_active {
+            // no EQ, no limiter, no resampling: the chain goes straight to the sink
+            attach_chain(&output, clocked_src)?;
+        } else {
+            let eq_src = EqSource::new(clocked_src, eq_settings, eq_rx);
+            let limited_src = LimiterSource::new(eq_src, Arc::clone(&limiter_enabled));
+            attach_chain(&output, limited_src)?;
+        }
 
         Ok((
             Self {
@@ -342,6 +412,16 @@ impl AudioEngine {
                 device_channels,
                 replay_gain_enabled,
                 limiter_enabled,
+                skip_silence_enabled,
+                automix_enabled,
+                exclusive_requested,
+                exclusive_active,
+                exclusive_suspended: false,
+                exclusive_backend,
+                exclusive_format,
+                exclusive_error,
+                exclusive_idle_deadline: None,
+                user_crossfade_seconds: 0,
                 repeat_one: false,
                 current_info: None,
                 generation_counter: 0,
@@ -360,7 +440,9 @@ impl AudioEngine {
                 fading_out: None,
                 pending_fade_resume: None,
                 paused_at: None,
-                _stream: stream,
+                output,
+                output_label,
+                selected_device_id,
             },
             event_rx,
             gated_worker_rx,
@@ -383,12 +465,29 @@ impl AudioEngine {
         self.generation_counter += 1;
         let generation = self.generation_counter;
 
+        // exclusive output is pure: no ReplayGain, no automix (crossfade is already 0)
+        let exclusive = self.exclusive_active;
+        let replay_gain_db = if exclusive { None } else { replay_gain_db };
+        let replay_gain_enabled = if exclusive {
+            Arc::new(AtomicBool::new(false))
+        } else {
+            Arc::clone(&self.replay_gain_enabled)
+        };
+        let automix_enabled = if exclusive {
+            Arc::new(AtomicBool::new(false))
+        } else {
+            Arc::clone(&self.automix_enabled)
+        };
+
         let _ = self.gated_worker_tx.send(GatedOpenTask {
             path: path.to_string(),
             replay_gain_db,
             generation,
             volume: Arc::clone(&self.volume_atomic),
-            replay_gain_enabled: Arc::clone(&self.replay_gain_enabled),
+            replay_gain_enabled,
+            skip_silence_enabled: Arc::clone(&self.skip_silence_enabled),
+            automix_enabled,
+            exclusive,
             device_sample_rate: self.device_sample_rate,
             device_channels: self.device_channels,
             initial_seek,
@@ -551,6 +650,9 @@ impl AudioEngine {
         }
         self.paused_flag.store(true, Ordering::Relaxed);
         self.paused_at = Some(self.gated_clock.now());
+        if self.exclusive_active {
+            self.exclusive_idle_deadline = Some(Instant::now() + Duration::from_secs(5));
+        }
 
         if let Some(slot) = self.decision.current() {
             slot.handle.set_paused(true);
@@ -575,6 +677,7 @@ impl AudioEngine {
             info.started = Instant::now();
         }
         self.paused_flag.store(false, Ordering::Relaxed);
+        self.exclusive_idle_deadline = None;
 
         if let Some(paused_at) = self.paused_at.take() {
             let elapsed = self.gated_clock.now().saturating_sub(paused_at);
@@ -605,6 +708,9 @@ impl AudioEngine {
         self.current_info = None;
         self.paused_flag.store(false, Ordering::Relaxed);
         self.paused_at = None;
+        if self.exclusive_active {
+            self.exclusive_idle_deadline = Some(Instant::now());
+        }
 
         let (old_current, old_next) = self.decision.clear();
         for slot in old_current.into_iter().chain(old_next) {
@@ -651,6 +757,154 @@ impl AudioEngine {
         tracing::info!("[AUDIO] Limiter enabled: {}", enabled);
     }
 
+    pub fn set_skip_silence_enabled(&mut self, enabled: bool) {
+        self.skip_silence_enabled.store(enabled, Ordering::Relaxed);
+        tracing::info!("[AUDIO] Skip silence enabled: {}", enabled);
+    }
+
+    pub fn set_automix_enabled(&mut self, enabled: bool) {
+        self.automix_enabled.store(enabled, Ordering::Relaxed);
+        tracing::info!("[AUDIO] Automix enabled: {}", enabled);
+    }
+
+    pub fn exclusive_status(&self) -> ExclusiveStatus {
+        ExclusiveStatus {
+            requested: self.exclusive_requested,
+            active: self.exclusive_active,
+            supported: output::exclusive_capability().supported,
+            suspended: self.exclusive_suspended,
+            backend: self.exclusive_backend.clone(),
+            sample_rate: self.device_sample_rate.get(),
+            channels: self.device_channels.get(),
+            format: self.exclusive_format.clone(),
+            reason: self.exclusive_error.clone(),
+        }
+    }
+
+    /// stamps engine-owned fields onto the telemetry snapshot built elsewhere
+    pub fn apply_telemetry(&self, t: &mut AudioTelemetry) {
+        t.device_sample_rate = self.device_sample_rate.get();
+        t.device_channels = self.device_channels.get();
+        t.output_device = self.output_label.clone();
+        t.resampler_active = t.sample_rate != t.device_sample_rate;
+        t.limiter_enabled = self.limiter_enabled.load(Ordering::Relaxed) && !self.exclusive_active;
+        t.exclusive_requested = self.exclusive_requested;
+        t.exclusive_active = self.exclusive_active;
+        t.exclusive_supported = output::exclusive_capability().supported;
+        t.exclusive_suspended = self.exclusive_suspended;
+        t.exclusive_backend = self.exclusive_backend.clone();
+        t.exclusive_format = self.exclusive_format.clone();
+        t.exclusive_error = self.exclusive_error.clone();
+    }
+
+    /// nothing is playing; schedule the exclusive stream for release
+    pub fn mark_idle(&mut self) {
+        if self.exclusive_active {
+            self.exclusive_idle_deadline = Some(Instant::now());
+        }
+    }
+
+    /// the DAC should be handed back now
+    pub fn exclusive_release_due(&self) -> bool {
+        self.exclusive_active
+            && self
+                .exclusive_idle_deadline
+                .is_some_and(|d| Instant::now() >= d)
+    }
+
+    /// the exclusive stream died under us (device removed, reclaimed, format lost)
+    pub fn exclusive_health_failure(&self) -> Option<String> {
+        match &self.output {
+            #[cfg(target_os = "windows")]
+            OutputSink::Wasapi(sink) => {
+                if sink.health().is_active() {
+                    None
+                } else {
+                    Some(
+                        sink.health()
+                            .reason()
+                            .unwrap_or_else(|| "Exclusive stream stopped".to_string()),
+                    )
+                }
+            }
+            _ => None,
+        }
+    }
+
+    pub fn requested_mode(&self) -> OutputMode {
+        if self.exclusive_active {
+            OutputMode::Exclusive {
+                sample_rate: self.device_sample_rate.get(),
+                channels: self.device_channels.get(),
+            }
+        } else {
+            OutputMode::Shared
+        }
+    }
+
+    /// enables exclusive output at the given native format, or returns to shared.
+    /// Fails when the exclusive stream could not be opened; the engine then stays
+    /// on shared output on the same device.
+    pub fn apply_exclusive(
+        &mut self,
+        enabled: bool,
+        sample_rate: u32,
+        channels: u16,
+        event_rx_slot: &mut Receiver<AudioEvent>,
+        gated_open_result_rx_slot: &mut Receiver<GatedOpenResult>,
+    ) -> Result<(), String> {
+        let device = self.selected_device_id.clone();
+        let mode = if enabled {
+            OutputMode::Exclusive { sample_rate, channels }
+        } else {
+            OutputMode::Shared
+        };
+        self.switch_output(device, mode, event_rx_slot, gated_open_result_rx_slot)?;
+        if enabled {
+            if !self.exclusive_active {
+                return Err(self
+                    .exclusive_error
+                    .clone()
+                    .unwrap_or_else(|| "Exclusive output unavailable".to_string()));
+            }
+        } else {
+            // user turned it off: no preference left to reacquire on resume
+            self.exclusive_requested = false;
+            self.exclusive_suspended = false;
+            self.exclusive_error = None;
+        }
+        Ok(())
+    }
+
+    /// forget the exclusive preference without touching the current stream.
+    /// used when the user's own enable attempt failed and the UI reverts to off.
+    pub fn clear_exclusive_preference(&mut self) {
+        self.exclusive_requested = false;
+        self.exclusive_suspended = false;
+        self.exclusive_error = None;
+    }
+
+    /// hands the DAC back but keeps the preference, so resume can reacquire.
+    /// Position and pause state survive because switch_output snapshots them.
+    pub fn suspend_exclusive(
+        &mut self,
+        reason: Option<String>,
+        event_rx_slot: &mut Receiver<AudioEvent>,
+        gated_open_result_rx_slot: &mut Receiver<GatedOpenResult>,
+    ) -> Result<(), String> {
+        let device = self.selected_device_id.clone();
+        self.switch_output(
+            device,
+            OutputMode::Shared,
+            event_rx_slot,
+            gated_open_result_rx_slot,
+        )?;
+        self.exclusive_requested = true;
+        self.exclusive_suspended = true;
+        self.exclusive_error = reason;
+        Ok(())
+    }
+
     /// re-enters the gated pipeline (dispatch_gated_open + decision), the
     /// highest-blast-radius method since it rebuilds the whole engine, so it's landed last,
     /// after every other path (play/preload/skip/crossfade/seek/pause) was already proven
@@ -662,6 +916,17 @@ impl AudioEngine {
     pub fn set_output_device(
         &mut self,
         device_name: Option<String>,
+        event_rx_slot: &mut Receiver<AudioEvent>,
+        gated_open_result_rx_slot: &mut Receiver<GatedOpenResult>,
+    ) -> Result<DeviceList, String> {
+        let mode = self.requested_mode();
+        self.switch_output(device_name, mode, event_rx_slot, gated_open_result_rx_slot)
+    }
+
+    fn switch_output(
+        &mut self,
+        device_name: Option<String>,
+        mode: OutputMode,
         event_rx_slot: &mut Receiver<AudioEvent>,
         gated_open_result_rx_slot: &mut Receiver<GatedOpenResult>,
     ) -> Result<DeviceList, String> {
@@ -780,8 +1045,52 @@ impl AudioEngine {
             let _ = slot.handle.seek_tx.send(Duration::MAX);
         }
 
+        // the old sink has to go before an exclusive open: WASAPI returns
+        // AUDCLNT_E_DEVICE_IN_USE while the previous client is still alive.
+        // for a plain shared switch the old stream is kept until the new one is up,
+        // so a failed open never leaves the app silent.
+        let mut old_output = Some(std::mem::replace(&mut self.output, OutputSink::Closed));
+        let is_currently_exclusive = old_output.as_ref().is_some_and(|s| s.is_exclusive());
+        let requested_exclusive = matches!(mode, OutputMode::Exclusive { .. });
+        if is_currently_exclusive || requested_exclusive {
+            old_output.take();
+        }
+
         let (mut new_engine, new_event_rx, new_gated_open_result_rx, new_device_list) =
-            AudioEngine::new(&eq_settings, device_name)?;
+            match AudioEngine::build(&eq_settings, device_name.clone(), mode.clone()) {
+                Ok(v) => {
+                    old_output.take();
+                    v
+                }
+                Err(e) if requested_exclusive => {
+                    tracing::warn!(
+                        "[AUDIO] Exclusive rebuild failed, retrying shared: {}",
+                        e
+                    );
+                    let (mut engine, evt, gated, dl) =
+                        match AudioEngine::build(&eq_settings, None, OutputMode::Shared) {
+                            Ok(res) => res,
+                            Err(e2) => {
+                                if let Some(prev) = old_output.take() {
+                                    self.output = prev;
+                                }
+                                return Err(format!("{} (shared fallback failed: {})", e, e2));
+                            }
+                        };
+                    // keep the preference: the next play/resume retries. `suspended` is
+                    // what the UI shows, telemetry never claims `active`
+                    engine.exclusive_requested = true;
+                    engine.exclusive_suspended = true;
+                    engine.exclusive_error = Some(e);
+                    (engine, evt, gated, dl)
+                }
+                Err(e) => {
+                    if let Some(prev) = old_output.take() {
+                        self.output = prev;
+                    }
+                    return Err(e);
+                }
+            };
 
         tracing::info!(
             "[AUDIO] set_output_device: new engine built — new_sample_rate={}, old_sample_rate={}, \
@@ -793,8 +1102,28 @@ impl AudioEngine {
         new_engine.set_volume(volume);
         new_engine.replay_gain_enabled.store(replay_gain_enabled, Ordering::Relaxed);
         new_engine.limiter_enabled.store(limiter_enabled, Ordering::Relaxed);
+        new_engine.skip_silence_enabled.store(self.skip_silence_enabled.load(Ordering::Relaxed), Ordering::Relaxed);
+        new_engine.automix_enabled.store(self.automix_enabled.load(Ordering::Relaxed), Ordering::Relaxed);
         new_engine.repeat_one = repeat_one;
-        new_engine.set_crossfade_seconds(crossfade_seconds);
+        new_engine.user_crossfade_seconds = crossfade_seconds;
+        if new_engine.exclusive_active {
+            // purity: crossfade stays off while the exclusive stream is live
+            new_engine.set_crossfade_seconds(0);
+        } else {
+            new_engine.set_crossfade_seconds(crossfade_seconds);
+            if let OutputMode::Shared = mode {
+                // a shared rebuild off an exclusive session keeps the preference so
+                // resume can reacquire; `suspended` is what the UI shows meanwhile
+                new_engine.exclusive_requested = self.exclusive_requested;
+                new_engine.exclusive_suspended =
+                    self.exclusive_requested && !self.exclusive_active;
+                if new_engine.exclusive_suspended {
+                    new_engine.exclusive_error = None;
+                }
+                new_engine.exclusive_backend = self.exclusive_backend.clone();
+                new_engine.exclusive_format = self.exclusive_format.clone();
+            }
+        }
 
         if let Some((out_path, out_pos_frames, in_path, in_pos_frames, fade_elapsed_frames, fade_total_frames)) = mid_crossfade {
             new_engine.pending_track_advanced = false;

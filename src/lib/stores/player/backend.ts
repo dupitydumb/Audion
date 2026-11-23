@@ -21,7 +21,7 @@ import {
     html5SetCallbacks, html5Stop, html5Cleanup, html5SetVolume,
 } from '$lib/services/html5-audio';
 import { listen } from '$lib/api/tauri';
-import { updateWindowsThumbarState, updateTrackDuration } from '$lib/api/tauri';
+import { updateWindowsThumbarState, updateTrackDuration, replayCachedScrobbles } from '$lib/api/tauri';
 import { updateTrackDurationInMemory } from '$lib/stores/library';
 import type { Track } from '$lib/api/tauri';
 import {
@@ -157,6 +157,12 @@ export async function initAudioBackend(): Promise<void> {
                 }
             } else if (event.type === 'DeviceListChanged') {
                 console.log('[Player] Device list updated');
+            } else if (event.type === 'ExclusiveStateChanged') {
+                const s = event.data;
+                console.log('[Player] Exclusive state:', s);
+                if (s.reason && !s.active && !s.suspended) {
+                    addToast(`Exclusive output unavailable: ${s.reason}`, 'warning');
+                }
             } else if (event.type === 'Error') {
                 console.error('[Player] Backend error event:', JSON.stringify(event));
                 console.error('[Player] Backend error:', event.data.message);
@@ -302,6 +308,18 @@ export async function initAudioBackend(): Promise<void> {
 
     await initWindowsThumbarIntegration();
     await initSmtcIntegration();
+
+    // Auto-replay offline cached scrobbles
+    if (typeof window !== 'undefined') {
+        const handleOnline = () => {
+            replayCachedScrobbles().then(count => {
+                if (count > 0) console.log(`[ScrobbleCache] Replayed ${count} offline scrobbles`);
+            }).catch(() => {});
+        };
+        window.addEventListener('online', handleOnline);
+        audioBackendUnsubscribers.push(() => window.removeEventListener('online', handleOnline));
+        replayCachedScrobbles().catch(() => {});
+    }
 
     let jumpListDisabledToastShown = false;
     const JUMP_LIST_DISABLED_MARKER = 'JUMPLIST_DISABLED_BY_SETTINGS';

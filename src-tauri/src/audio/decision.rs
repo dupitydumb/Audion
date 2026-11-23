@@ -18,6 +18,7 @@ use std::sync::Arc;
 
 use super::dual_track::GatedTrackHandle;
 use super::gated::{SharedClock, UNSCHEDULED};
+use super::mod_types::AudioTelemetry;
 
 /// a loaded track plus everything the decision thread needs to reason about its timing
 pub struct TrackSlot {
@@ -83,6 +84,10 @@ impl DecisionThread {
 
     pub fn set_crossfade_seconds(&self, secs: u32) {
         self.crossfade_seconds.store(secs, Ordering::Release);
+    }
+
+    pub fn current_telemetry(&self) -> Option<AudioTelemetry> {
+        self.current.as_ref().map(|s| s.handle.telemetry.clone())
     }
 
     /// replaces the currently playing slot
@@ -284,6 +289,9 @@ mod tests {
             generation,
             volume,
             rg,
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+            false,
             NonZero::new(sample_rate).unwrap(),
             NonZero::new(1).unwrap(),
             None,

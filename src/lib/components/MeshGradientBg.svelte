@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import { meshColors } from "$lib/stores/palette";
   import { meshSettings } from "$lib/stores/meshSettings";
+  import { isPlaying } from "$lib/stores/player";
 
   export let lite = false; // pass true for android-lite path
 
@@ -9,6 +10,7 @@
   let worker: Worker;
   let unsubColors: () => void;
   let unsubSettings: () => void;
+  let unsubPlaying: () => void;
   let initialized = false;
 
   onMount(() => {
@@ -50,11 +52,28 @@
         sharpness: settings.sharpness,
       });
     });
+
+    unsubPlaying = isPlaying.subscribe((playing) => {
+      if (!initialized) return;
+      worker.postMessage({ type: "playback", playing });
+    });
+
+    handleVisibility = () => {
+      if (!initialized || !worker) return;
+      worker.postMessage({ type: "visibility", visible: !document.hidden });
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
   });
 
+  let handleVisibility: (() => void) | null = null;
+
   onDestroy(() => {
+    if (handleVisibility) {
+      document.removeEventListener("visibilitychange", handleVisibility);
+    }
     unsubColors?.();
     unsubSettings?.();
+    unsubPlaying?.();
     worker?.terminate();
   });
 

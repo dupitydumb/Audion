@@ -264,6 +264,29 @@ fn handle_deep_link_url(app_handle: &tauri::AppHandle, url_str: &str) {
         return;
     }
 
+    // audion://lastfm-callback?token=... or audion://lastfm/callback?token=...
+    if url.host_str() == Some("lastfm-callback")
+        || (url.host_str() == Some("lastfm") && url.path().trim_matches('/') == "callback")
+    {
+        let mut token_opt = None;
+        for (key, value) in url.query_pairs() {
+            if key == "token" {
+                token_opt = Some(value.into_owned());
+            }
+        }
+        if let Some(token) = token_opt {
+            tracing::info!("Deep link: Last.fm auth token received");
+            let _ = app_handle.emit("lastfm://auth-callback", token);
+            #[cfg(not(target_os = "android"))]
+            if let Some(window) = app_handle.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }
+        return;
+    }
+
     // audion://play/<track_id> => emitted by jump list entries
     if url.host_str() == Some("play") {
         let track_id = url.path().trim_start_matches('/');
@@ -962,6 +985,31 @@ pub fn run() {
             {
                 let window_config = integrations::window::load_window_config(app.handle());
                 if let Some(window) = app.get_webview_window("main") {
+                    // PiP leftovers: closing the app while the mini player was active makes
+                    // tauri-plugin-window-state persist the island frame (as small as 396x56).
+                    // On the next launch that restores a sliver-sized window rendering the
+                    // normal layout. Reset to a usable size when the restored frame is smaller
+                    // than the normal window minimum.
+                    if let Ok(size) = window.inner_size() {
+                        let scale = window.scale_factor().unwrap_or(1.0);
+                        let logical_w = size.width as f64 / scale;
+                        let logical_h = size.height as f64 / scale;
+                        if logical_w < 320.0 || logical_h < 200.0 {
+                            tracing::warn!(
+                                width = logical_w,
+                                height = logical_h,
+                                "Restored window matches PiP island size; resetting to default window size"
+                            );
+                            window
+                                .set_min_size(Some(tauri::LogicalSize::new(320.0, 480.0)))
+                                .ok();
+                            window
+                                .set_size(tauri::LogicalSize::new(1280.0, 800.0))
+                                .ok();
+                            window.center().ok();
+                        }
+                    }
+
                     // On Linux, only force software rendering if a VM, container, or safe mode is detected.
                     // Physical hardware with a working GPU keeps hardware acceleration enabled.
                     #[cfg(target_os = "linux")]
@@ -1239,6 +1287,7 @@ pub fn run() {
                     commands::get_tracks_by_artist,
                     commands::get_album,
                     commands::get_albums_by_artist,
+                    commands::get_track_by_id,
                     commands::add_external_track,
                     commands::open_or_import_track_by_path,
                     commands::import_audio_file,
@@ -1299,7 +1348,6 @@ pub fn run() {
                     commands::load_user_lyrics_file,
                     commands::delete_user_lyrics_file,
                     commands::delete_lyrics_by_token,
-                    commands::musixmatch_request,
                     commands::get_lyrics,
                     commands::get_current_lyric,
                     commands::get_embedded_lyrics,
@@ -1317,6 +1365,7 @@ pub fn run() {
                     // Plugin commands
                     commands::list_plugins,
                     commands::install_plugin,
+                    commands::install_plugin_package,
                     commands::uninstall_plugin,
                     commands::enable_plugin,
                     commands::disable_plugin,
@@ -1334,6 +1383,12 @@ pub fn run() {
                     commands::plugin_get_data,
                     commands::plugin_list_keys,
                     commands::plugin_clear_data,
+                    // Skin commands
+                    commands::get_skins_dir,
+                    commands::open_skins_dir,
+                    commands::list_local_skins,
+                    commands::delete_local_skin,
+                    commands::save_local_skin,
                     // Network commands
                     commands::proxy_fetch,
                     // ListenBrainz commands
@@ -1344,6 +1399,14 @@ pub fn run() {
                     commands::verify_listenbrainz_token,
                     commands::submit_listenbrainz_listen,
                     commands::fetch_listenbrainz_recommendations,
+                    // Last.fm commands
+                    commands::get_lastfm_auth_url,
+                    commands::complete_lastfm_auth,
+                    commands::get_lastfm_status,
+                    commands::disconnect_lastfm,
+                    commands::submit_lastfm_now_playing,
+                    commands::submit_lastfm_scrobble,
+                    commands::replay_cached_scrobbles,
                     // Subsonic commands
                     commands::subsonic_save_config,
                     commands::subsonic_get_config,
@@ -1435,6 +1498,11 @@ pub fn run() {
                     audio::audio_list_output_devices,
                     audio::audio_set_output_device,
                     audio::audio_get_device_info,
+                    audio::audio_get_telemetry,
+                    audio::audio_set_skip_silence,
+                    audio::audio_set_automix,
+                    audio::audio_set_exclusive_mode,
+                    audio::audio_exclusive_capability,
                     audio::native_audio_available,
                     audio::audio_resolve_path,
                     audio::audio_get_stream_url,
@@ -1464,6 +1532,7 @@ pub fn run() {
                     integrations::window::set_autostart_enabled,
                     // last visited view (startup page = last-visited)
                     integrations::window::confirm_close,
+                    integrations::window::set_island_window_bounds,
                     get_pending_plugin_install,
                     get_pending_play_track,
                     get_pending_open_file,
@@ -1494,6 +1563,7 @@ pub fn run() {
                     commands::get_tracks_by_artist,
                     commands::get_album,
                     commands::get_albums_by_artist,
+                    commands::get_track_by_id,
                     commands::add_external_track,
                     commands::open_or_import_track_by_path,
                     commands::import_audio_file,
@@ -1554,7 +1624,6 @@ pub fn run() {
                     commands::delete_user_lyrics_file,
                     commands::delete_lyrics_by_token,
                     commands::delete_source_lyrics_file,
-                    commands::musixmatch_request,
                     commands::get_lyrics,
                     commands::get_current_lyric,
                     commands::get_embedded_lyrics,
@@ -1572,6 +1641,7 @@ pub fn run() {
                     // Plugin commands
                     commands::list_plugins,
                     commands::install_plugin,
+                    commands::install_plugin_package,
                     commands::uninstall_plugin,
                     commands::enable_plugin,
                     commands::disable_plugin,
@@ -1588,6 +1658,12 @@ pub fn run() {
                     commands::plugin_get_data,
                     commands::plugin_list_keys,
                     commands::plugin_clear_data,
+                    // Skin commands
+                    commands::get_skins_dir,
+                    commands::open_skins_dir,
+                    commands::list_local_skins,
+                    commands::delete_local_skin,
+                    commands::save_local_skin,
                     // Network commands
                     commands::proxy_fetch,
                     // ListenBrainz commands
@@ -1598,6 +1674,14 @@ pub fn run() {
                     commands::verify_listenbrainz_token,
                     commands::submit_listenbrainz_listen,
                     commands::fetch_listenbrainz_recommendations,
+                    // Last.fm commands
+                    commands::get_lastfm_auth_url,
+                    commands::complete_lastfm_auth,
+                    commands::get_lastfm_status,
+                    commands::disconnect_lastfm,
+                    commands::submit_lastfm_now_playing,
+                    commands::submit_lastfm_scrobble,
+                    commands::replay_cached_scrobbles,
                     // Subsonic commands
                     commands::subsonic_save_config,
                     commands::subsonic_get_config,
@@ -1675,6 +1759,11 @@ pub fn run() {
                     audio::audio_list_output_devices,
                     audio::audio_set_output_device,
                     audio::audio_get_device_info,
+                    audio::audio_get_telemetry,
+                    audio::audio_set_skip_silence,
+                    audio::audio_set_automix,
+                    audio::audio_set_exclusive_mode,
+                    audio::audio_exclusive_capability,
                     audio::native_audio_available,
                     audio::audio_resolve_path,
                     audio::audio_get_stream_url,

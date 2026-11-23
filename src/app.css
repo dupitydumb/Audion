@@ -132,6 +132,34 @@ body {
   -webkit-user-select: none;
 }
 
+/* Island MiniPlayer transparency (miniplayer.md §14.2) */
+html.pip,
+body.pip,
+html:has(.stage),
+body:has(.stage) {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border: none !important;
+  outline: none !important;
+  overflow: hidden !important;
+}
+
+html.pip #audion-bg-layer,
+body.pip #audion-bg-layer,
+html.pip #audion-effect-layer,
+body.pip #audion-effect-layer,
+html:has(.stage) #audion-bg-layer,
+body:has(.stage) #audion-bg-layer,
+html:has(.stage) #audion-effect-layer,
+body:has(.stage) #audion-effect-layer {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
 /* Re-enable text selection in all input fields — WebView2 on Windows
    does not focus inputs correctly when any ancestor has user-select:none */
 input,
@@ -538,7 +566,7 @@ a:hover {
 }
 
 @media (max-width: 768px) {
-  :root {
+  :root:not(.layout-desktop) {
     --sidebar-width: 0px;
     --player-height: 64px;
     --header-height: 48px;
@@ -546,8 +574,12 @@ a:hover {
     /* 60px nav + 64px player + 6px margin */
   }
 
-  .show-mobile {
+  :root:not(.layout-desktop) .show-mobile {
     display: initial !important;
+  }
+
+  :root.layout-desktop .show-mobile {
+    display: none !important;
   }
 
   /* Enforce minimum touch targets (44x44px per Apple/Google guidelines) */
@@ -556,6 +588,36 @@ a:hover {
   [role="button"] {
     min-height: 44px;
     min-width: 44px;
+  }
+
+  /* Inline chips/pills hug their label; the 44px box turns them into squares */
+  :is(
+    .scheme-pill,
+    .source-pill,
+    .genre-pill,
+    .mb-chip,
+    .type-chip,
+    .theme-chip,
+    .snippet-chip,
+    .trial-pill-tag,
+    .artist-chip,
+    .artist-pill-btn,
+    .section-pill,
+    .pill-active,
+    .pill-inactive,
+    .category-chip,
+    .device-info-pill,
+    .latency-pill,
+    .stat-pill,
+    .sync-pill,
+    .recap-pill,
+    .sleep-fade-pill,
+    .btn-reset-skin,
+    .card-repo-btn,
+    .badge
+  ) {
+    min-width: 0;
+    min-height: 32px;
   }
 
   /* Smaller icon buttons are OK as long as they have padding */

@@ -44,15 +44,26 @@
         sleepTimerActive,
         sleepTimerLastDurationMinutes,
         sleepTimerRemainingMs,
+        sleepTimerMode,
+        sleepTimerFadeEnabled,
         SLEEP_TIMER_PRESETS,
         startSleepTimer,
+        startSleepTimerEndOfTrack,
         stopSleepTimer,
+        toggleSleepTimerFade,
     } from "$lib/stores/sleepTimer";
     import ConnectPanel from "./ConnectPanel.svelte";
     import Icon from "$lib/components/Icon.svelte";
+    import AudioQualityBadge from "$lib/components/AudioQualityBadge.svelte";
     import AudioVisualizer from "$lib/components/AudioVisualizer.svelte";
     import { theme } from "$lib/stores/theme";
     import { wsStore } from "$lib/stores/websocket";
+    import { appSettings } from "$lib/stores/settings";
+    import {
+        nativeAudioListDevices,
+        nativeAudioSetOutputDevice,
+        type AudioDeviceInfo,
+    } from "$lib/services/native-audio";
 
     $: isCurrentLiked = $currentTrack
         ? $likedTrackIds.has($currentTrack.id)
@@ -77,6 +88,43 @@
     let showConnectPanel = false;
     let showSleepTimerMenu = false;
     let sleepTimerElement: HTMLDivElement;
+
+    // Audio Output Device Picker
+    let showDevicePicker = false;
+    let devicePickerRef: HTMLDivElement | null = null;
+    let audioDevices: AudioDeviceInfo[] = [];
+
+    // Overflow "⋯" menu when playerbar is compressed
+    let showOverflowMenu = false;
+    let overflowMenuRef: HTMLDivElement | null = null;
+
+    function toggleOverflowMenu(e: MouseEvent) {
+        e.stopPropagation();
+        showOverflowMenu = !showOverflowMenu;
+    }
+
+    async function toggleDevicePicker(e: MouseEvent) {
+        e.stopPropagation();
+        showDevicePicker = !showDevicePicker;
+        if (showDevicePicker) {
+            try {
+                const res = await nativeAudioListDevices();
+                audioDevices = res.devices || [];
+            } catch (err) {
+                console.warn("[PlayerBar] Failed to enumerate audio devices:", err);
+            }
+        }
+    }
+
+    async function selectDevice(deviceId: string | null) {
+        try {
+            await nativeAudioSetOutputDevice(deviceId);
+            appSettings.setOutputDevice(deviceId);
+        } catch (err) {
+            console.warn("[PlayerBar] Failed to switch output device:", err);
+        }
+        showDevicePicker = false;
+    }
 
     $: connectedDevices = $wsStore.devices.length;
 
@@ -241,6 +289,11 @@
         showSleepTimerMenu = false;
     }
 
+    function setEndOfTrackTimer() {
+        startSleepTimerEndOfTrack();
+        showSleepTimerMenu = false;
+    }
+
     function cancelSleepTimer() {
         stopSleepTimer();
         showSleepTimerMenu = false;
@@ -263,6 +316,20 @@
                 !sleepTimerElement.contains(e.target as Node)
             ) {
                 showSleepTimerMenu = false;
+            }
+            if (
+                showDevicePicker &&
+                devicePickerRef &&
+                !devicePickerRef.contains(e.target as Node)
+            ) {
+                showDevicePicker = false;
+            }
+            if (
+                showOverflowMenu &&
+                overflowMenuRef &&
+                !overflowMenuRef.contains(e.target as Node)
+            ) {
+                showOverflowMenu = false;
             }
         };
 
@@ -296,7 +363,7 @@
     <!-- Native audio backend handles playback in Rust -->
 
     <!-- Track info -->
-    <div class="track-info desktop-track-info">
+    <div class="track-info desktop-track-info player-left">
             {#if $currentTrack}
                 <button
                     type="button"
@@ -330,9 +397,12 @@
                     {/if}
                 </button>
                 <div class="track-details">
-                    <span class="track-title truncate"
-                        >{$currentTrack.title || $_('player.unknownTitle')}</span
-                    >
+                    <div class="track-title-row">
+                        <span class="track-title truncate"
+                            >{$currentTrack.title || $_('player.unknownTitle')}</span
+                        >
+                        <AudioQualityBadge variant="compact" />
+                    </div>
                     <ArtistLinks
                         artist={$currentTrack.artist || $_('common.unknownArtist')}
                         artists={$currentTrack.artists}
@@ -366,10 +436,10 @@
         </div>
 
         <!-- Playback controls -->
-        <div class="playback-controls">
+        <div class="playback-controls player-center">
             <div class="controls-buttons">
                 <button
-                    class="icon-btn"
+                    class="icon-btn btn-shuffle"
                     class:active={$shuffle}
                     on:click={toggleShuffle}
                     title={$_('player.shuffle')}
@@ -394,7 +464,7 @@
                     <Icon name="skip-forward" size={24} />
                 </button>
                 <button
-                    class="icon-btn"
+                    class="icon-btn btn-repeat"
                     class:active={$repeat !== "none"}
                     on:click={cycleRepeat}
                     title={$_('player.repeatMode', {
@@ -446,6 +516,14 @@
                                 class="progress-fill"
                                 style="width: {$progress * 100}%"
                             ></div>
+                            {#if $duration > 15 && $appSettings?.crossfadeSeconds > 0}
+                                {@const automixPct = Math.min(30, ($appSettings.crossfadeSeconds / $duration) * 100)}
+                                <div
+                                    class="automix-cue-zone"
+                                    style="width: {automixPct}%;"
+                                    title="Automix Handoff Zone ({$appSettings.crossfadeSeconds}s)"
+                                ></div>
+                            {/if}
                         </div>
                         <div
                             class="progress-thumb"
@@ -465,11 +543,11 @@
         </div>
 
         <!-- Volume controls -->
-        <div class="volume-controls">
+        <div class="volume-controls player-right">
             <!-- Plugin slot: Right -->
             <div class="plugin-slot" bind:this={slotEnd}></div>
 
-            <div class="utility-controls">
+            <div class="utility-controls utility-controls-desktop">
                 <!-- Backend indicator -->
                 {#if $activeBackend === 'native'}
                     <span class="backend-badge native" title={$_('player.nativeAudioBackend')}>N</span>
@@ -518,6 +596,7 @@
                                     <button
                                         class="sleep-preset-btn"
                                         class:active={
+                                            $sleepTimerMode === 'duration' &&
                                             $sleepTimerLastDurationMinutes ===
                                             minutes
                                         }
@@ -527,6 +606,26 @@
                                     </button>
                                 {/each}
                             </div>
+
+                            <button
+                                class="sleep-preset-btn sleep-end-track-btn"
+                                class:active={$sleepTimerMode === 'end_of_track'}
+                                on:click={setEndOfTrackTimer}
+                            >
+                                <Icon name="music" size={13} />
+                                <span>{$_('player.endOfTrack')}</span>
+                            </button>
+
+                            <button
+                                type="button"
+                                class="sleep-fade-toggle-row"
+                                class:active={$sleepTimerFadeEnabled}
+                                on:click={() => toggleSleepTimerFade()}
+                            >
+                                <Icon name="volume-2" size={13} />
+                                <span class="sleep-fade-label">{$_('player.sleepTimerFade')}</span>
+                                <span class="sleep-fade-pill">{$sleepTimerFadeEnabled ? 'ON' : 'OFF'}</span>
+                            </button>
 
                             {#if $sleepTimerActive}
                                 <button
@@ -597,7 +696,54 @@
                 </div>
             </div>
 
-            <div class="view-controls">
+            <!-- Audio Output Device Selector Pill -->
+            <div class="device-picker-wrapper desktop-device-picker" bind:this={devicePickerRef}>
+                <button
+                    class="icon-btn device-picker-btn"
+                    class:active={showDevicePicker || !!$appSettings.outputDevice}
+                    on:click={toggleDevicePicker}
+                    title="Audio Output Device"
+                    aria-label="Audio Output Device"
+                >
+                    <Icon name="headphones" size={18} />
+                </button>
+
+                {#if showDevicePicker}
+                    <div class="device-picker-menu" on:click|stopPropagation>
+                        <div class="device-menu-header">Output Device</div>
+                        <button
+                            class="device-option"
+                            class:active={!$appSettings.outputDevice}
+                            on:click={() => selectDevice(null)}
+                        >
+                            <span class="device-option-name">System Default</span>
+                            {#if !$appSettings.outputDevice}
+                                <Icon name="check" size={14} />
+                            {/if}
+                        </button>
+                        <div class="device-divider"></div>
+                        {#each audioDevices as dev}
+                            <button
+                                class="device-option"
+                                class:active={$appSettings.outputDevice === dev.id}
+                                on:click={() => selectDevice(dev.id)}
+                            >
+                                <div class="device-option-text">
+                                    <span class="device-option-name truncate" title={dev.name}>{dev.name}</span>
+                                    {#if dev.is_default}
+                                        <span class="device-badge">Default</span>
+                                    {/if}
+                                </div>
+                                {#if $appSettings.outputDevice === dev.id}
+                                    <Icon name="check" size={14} />
+                                {/if}
+                            </button>
+                        {/each}
+                    </div>
+                {/if}
+            </div>
+
+            <div class="view-controls desktop-view-controls">
                 <button
                     class="icon-btn"
                     class:active={$isFullScreen}
@@ -614,6 +760,146 @@
                     <Icon name="monitor" size={18} />
                 </button>
             </div>
+
+            <!-- Overflow "⋯" menu when playerbar is compressed -->
+            <div class="overflow-more-wrapper" bind:this={overflowMenuRef}>
+                <button
+                    class="icon-btn overflow-more-btn"
+                    class:active={showOverflowMenu}
+                    on:click={toggleOverflowMenu}
+                    title="More actions"
+                    aria-label="More actions"
+                >
+                    <Icon name="more-horizontal" size={18} />
+                </button>
+
+                {#if showOverflowMenu}
+                    <div class="overflow-menu-popover" on:click|stopPropagation>
+                        <div class="overflow-menu-header">Quick Actions</div>
+
+                        <button
+                            class="overflow-menu-item"
+                            class:active={$shuffle}
+                            on:click={() => { toggleShuffle(); }}
+                        >
+                            <Icon name="shuffle" size={16} />
+                            <span>{$_('player.shuffle')}</span>
+                            {#if $shuffle}
+                                <span class="overflow-badge">ON</span>
+                            {/if}
+                        </button>
+
+                        <button
+                            class="overflow-menu-item"
+                            class:active={$repeat !== "none"}
+                            on:click={() => { cycleRepeat(); }}
+                        >
+                            <Icon name={$repeat === "one" ? "repeat-1" : "repeat"} size={16} />
+                            <span>{$_('player.repeatMode', { values: { mode: $repeat === 'one' ? $_('player.repeatOne') : $repeat === 'all' ? $_('player.repeatAll') : $_('player.repeatOff') } })}</span>
+                            {#if $repeat !== "none"}
+                                <span class="overflow-badge">{$repeat === 'one' ? '1' : 'ALL'}</span>
+                            {/if}
+                        </button>
+
+                        <button
+                            class="overflow-menu-item"
+                            class:active={$isQueueVisible}
+                            on:click={() => { toggleQueue(); showOverflowMenu = false; }}
+                        >
+                            <Icon name="queue" size={16} />
+                            <span>{$_('player.queueShortcut')}</span>
+                        </button>
+
+                        <button
+                            class="overflow-menu-item"
+                            class:active={$lyricsVisible}
+                            on:click={() => { toggleLyrics(); showOverflowMenu = false; }}
+                        >
+                            <Icon name="lyrics" size={16} />
+                            <span>{$_('player.lyricsShortcut')}</span>
+                        </button>
+
+                        <button
+                            class="overflow-menu-item"
+                            class:active={connectedDevices > 0}
+                            on:click={() => { showConnectPanel = !showConnectPanel; showOverflowMenu = false; }}
+                        >
+                            <Icon name="cast" size={16} />
+                            <span>{$_('connect.title')}</span>
+                        </button>
+
+                        <button
+                            class="overflow-menu-item"
+                            class:active={$sleepTimerActive}
+                            on:click={() => { toggleSleepTimerMenu(); showOverflowMenu = false; }}
+                        >
+                            <Icon name="moon" size={16} />
+                            <span>{$_('player.sleepTimer')}</span>
+                            {#if $sleepTimerActive}
+                                <span class="overflow-badge">{formatSleepTimerRemaining($sleepTimerRemainingMs)}</span>
+                            {/if}
+                        </button>
+
+                        <button
+                            class="overflow-menu-item"
+                            class:active={$pluginDrawerOpen}
+                            on:click={() => { pluginDrawerOpen.set(true); showOverflowMenu = false; }}
+                        >
+                            <Icon name="plugin" size={16} />
+                            <span>{$_('player.pluginActions')}</span>
+                        </button>
+
+                        <button
+                            class="overflow-menu-item"
+                            class:active={showDevicePicker || !!$appSettings.outputDevice}
+                            on:click={(e) => { toggleDevicePicker(e); showOverflowMenu = false; }}
+                        >
+                            <Icon name="headphones" size={16} />
+                            <span>Audio Device</span>
+                        </button>
+
+                        <button
+                            class="overflow-menu-item"
+                            on:click={() => { toggleMiniPlayer(); showOverflowMenu = false; }}
+                        >
+                            <Icon name="monitor" size={16} />
+                            <span>{$_('player.miniPlayer')}</span>
+                        </button>
+
+                        <button
+                            class="overflow-menu-item"
+                            class:active={$isFullScreen}
+                            on:click={() => { toggleFullScreen(); showOverflowMenu = false; }}
+                        >
+                            <Icon name={$isFullScreen ? "minimize" : "fullscreen"} size={16} />
+                            <span>{$_('player.fullscreen')}</span>
+                        </button>
+
+                        <div class="overflow-divider"></div>
+
+                        <!-- Mini volume control inside overflow menu -->
+                        <div class="overflow-volume-row">
+                            <button
+                                class="icon-btn mini"
+                                on:click={() => setVolume($volume > 0 ? 0 : 1)}
+                                title={$volume > 0 ? $_('player.mute') : $_('player.unmute')}
+                            >
+                                <Icon name={$volume === 0 ? "volume-x" : $volume < 0.5 ? "volume-1" : "volume-2"} size={16} />
+                            </button>
+                            <input
+                                type="range"
+                                min="0"
+                                max="1"
+                                step="0.01"
+                                value={$volume}
+                                on:input={(e) => setVolume(parseFloat(e.currentTarget.value))}
+                                class="overflow-volume-slider"
+                            />
+                            <span class="overflow-volume-pct">{Math.round($volume * 100)}%</span>
+                        </div>
+                    </div>
+                {/if}
+            </div>
         </div>
 </footer>
 {/if}
@@ -626,15 +912,49 @@
     .player-bar {
         height: var(--player-height);
         background-color: var(--player-bg, var(--bg-elevated));
+        background: color-mix(in srgb, var(--player-bg, var(--bg-elevated)) 85%, transparent);
+        backdrop-filter: blur(24px) saturate(180%);
+        -webkit-backdrop-filter: blur(24px) saturate(180%);
         transition: background-color var(--transition-slow, 400ms ease), color var(--transition-slow, 400ms ease);
         border-top: 1px solid var(--border-color);
+        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.25);
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
         align-items: center;
         padding: 0 calc(var(--spacing-md) + 2px);
-        gap: clamp(20px, 2.2vw, 36px);
+        gap: 12px;
+        container-type: inline-size;
         color: var(--text-on-player, var(--text-primary));
         /* overflow: hidden; - Removed to allow menus to popup */
+    }
+
+    .player-left {
+        min-width: 0;
+        display: flex;
+        gap: 10px;
+        align-items: center;
+    }
+
+    .player-left .track-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .player-center {
+        min-width: 0;
+    }
+
+    .player-right {
+        min-width: 0;
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .player-right button {
+        flex-shrink: 0;
     }
 
     .player-bar.hidden {
@@ -712,6 +1032,13 @@
     .track-details {
         display: flex;
         flex-direction: column;
+        min-width: 0;
+    }
+
+    .track-title-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
         min-width: 0;
     }
 
@@ -965,6 +1292,17 @@
         background-color: var(--bg-highlight);
         border-radius: var(--radius-full);
         overflow: hidden;
+        position: relative;
+    }
+
+    .automix-cue-zone {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        background: linear-gradient(to right, transparent, rgba(29, 185, 84, 0.4));
+        pointer-events: none;
+        border-radius: 0 var(--radius-full) var(--radius-full) 0;
     }
 
     .volume-track {
@@ -1208,6 +1546,59 @@
         color: var(--accent-color, #1db954);
     }
 
+    .sleep-end-track-btn {
+        width: 100%;
+        margin-top: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+    }
+
+    .sleep-fade-toggle-row {
+        width: 100%;
+        margin-top: 6px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: transparent;
+        border: none;
+        padding: 4px 6px;
+        border-radius: var(--radius-sm);
+        color: var(--text-subdued);
+        font-size: 0.7rem;
+        cursor: pointer;
+        transition: all var(--transition-fast);
+    }
+
+    .sleep-fade-toggle-row:hover {
+        background: var(--bg-surface);
+        color: var(--text-primary);
+    }
+
+    .sleep-fade-toggle-row.active {
+        color: var(--text-secondary);
+    }
+
+    .sleep-fade-label {
+        flex: 1;
+        text-align: left;
+    }
+
+    .sleep-fade-pill {
+        font-size: 0.62rem;
+        font-weight: var(--font-weight-bold);
+        padding: 1px 4px;
+        border-radius: 4px;
+        background: var(--bg-surface);
+        color: var(--text-subdued);
+    }
+
+    .sleep-fade-toggle-row.active .sleep-fade-pill {
+        background: rgba(29, 185, 84, 0.15);
+        color: var(--accent-color, #1db954);
+    }
+
     .sleep-cancel-btn {
         width: 100%;
         margin-top: 8px;
@@ -1236,10 +1627,234 @@
         min-width: 60px;
     }
 
+    /* Output Device Picker */
+    .device-picker-wrapper {
+        position: relative;
+        display: flex;
+        align-items: center;
+    }
+
+    .device-picker-menu {
+        position: absolute;
+        right: 0;
+        bottom: calc(100% + 10px);
+        width: 240px;
+        max-height: 280px;
+        overflow-y: auto;
+        padding: 8px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-color);
+        background: var(--bg-elevated);
+        box-shadow: var(--shadow-lg);
+        z-index: 60;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .device-menu-header {
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-semibold);
+        color: var(--text-subdued);
+        padding: 4px 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .device-divider {
+        height: 1px;
+        background: var(--border-color);
+        margin: 4px 0;
+    }
+
+    .device-option {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px 10px;
+        background: transparent;
+        border: none;
+        border-radius: var(--radius-sm);
+        color: var(--text-secondary);
+        font-size: var(--font-size-xs);
+        cursor: pointer;
+        transition: all var(--transition-fast);
+        text-align: left;
+        width: 100%;
+        gap: 8px;
+    }
+
+    .device-option:hover {
+        background: var(--bg-surface);
+        color: var(--text-primary);
+    }
+
+    .device-option.active {
+        background: var(--bg-surface);
+        color: var(--accent-primary, #1ed760);
+        font-weight: var(--font-weight-medium);
+    }
+
+    .device-option-text {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-width: 0;
+        flex: 1;
+    }
+
+    .device-option-name {
+        flex: 1;
+    }
+
+    .device-badge {
+        font-size: 9px;
+        padding: 1px 4px;
+        border-radius: 4px;
+        background: var(--bg-card);
+        color: var(--text-subdued);
+        border: 1px solid var(--border-color);
+    }
+
     .plugin-slot {
         display: flex;
         align-items: center;
         gap: var(--spacing-sm);
+    }
+
+    /* Overflow "⋯" menu when compressed */
+    .overflow-more-wrapper {
+        position: relative;
+        display: none;
+        align-items: center;
+    }
+
+    .overflow-menu-popover {
+        position: absolute;
+        right: 0;
+        bottom: calc(100% + 10px);
+        width: 220px;
+        padding: 8px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-color);
+        background: var(--bg-elevated);
+        box-shadow: var(--shadow-lg);
+        z-index: 70;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    .overflow-menu-header {
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-semibold);
+        color: var(--text-subdued);
+        padding: 4px 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .overflow-menu-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        background: transparent;
+        border: none;
+        border-radius: var(--radius-sm);
+        color: var(--text-secondary);
+        font-size: var(--font-size-xs);
+        cursor: pointer;
+        transition: all var(--transition-fast);
+        text-align: left;
+        width: 100%;
+    }
+
+    .overflow-menu-item:hover {
+        background: var(--bg-surface);
+        color: var(--text-primary);
+    }
+
+    .overflow-menu-item.active {
+        background: var(--bg-surface);
+        color: var(--accent-primary, #1ed760);
+        font-weight: var(--font-weight-medium);
+    }
+
+    .overflow-badge {
+        margin-left: auto;
+        font-size: 10px;
+        padding: 1px 5px;
+        border-radius: 4px;
+        background: var(--accent-subtle, rgba(29, 185, 84, 0.15));
+        color: var(--accent-primary, #1ed760);
+    }
+
+    .overflow-divider {
+        height: 1px;
+        background: var(--border-color);
+        margin: 4px 0;
+    }
+
+    .overflow-volume-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+    }
+
+    .overflow-volume-slider {
+        flex: 1;
+        height: 4px;
+        accent-color: var(--accent-primary);
+        cursor: pointer;
+    }
+
+    .overflow-volume-pct {
+        font-size: 11px;
+        color: var(--text-subdued);
+        min-width: 28px;
+        text-align: right;
+    }
+
+    @container (max-width: 1524px) {
+        .desktop-view-controls {
+            display: none !important;
+        }
+        .overflow-more-wrapper {
+            display: flex !important;
+        }
+    }
+
+    @container (max-width: 1350px) {
+        .volume-bar {
+            display: none !important;
+        }
+    }
+
+    @container (max-width: 1050px) {
+        .utility-controls-desktop,
+        .desktop-device-picker {
+            display: none !important;
+        }
+    }
+
+    @container (max-width: 750px) {
+        .player-bar :global(.audio-quality-badge),
+        .progress-container .time {
+            display: none !important;
+        }
+        .controls-buttons .btn-shuffle,
+        .controls-buttons .btn-repeat {
+            display: none !important;
+        }
+    }
+
+    @container (max-width: 550px) {
+        .player-left .track-details,
+        .player-left .like-btn {
+            display: none !important;
+        }
     }
 
     /* =========================================

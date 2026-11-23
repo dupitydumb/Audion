@@ -126,6 +126,9 @@
         art_data?: string | null;
     }): string | null => {
         void $customArtworks;
+        if (album.art_path && (album.art_path.startsWith('http://') || album.art_path.startsWith('https://'))) {
+            return album.art_path;
+        }
         return getAlbumCoverFromTracks(album.id);
     };
 

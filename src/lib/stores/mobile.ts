@@ -21,18 +21,25 @@ export const isMobileViewport = writable(false);
 // Is the sidebar drawer open on mobile?
 export const isMobileSidebarOpen = writable(false);
 
-// Platform detection (set once on init)
-export const isMobilePlatform = writable(false);
+export function detectIsMobileSync(): boolean {
+    if (typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent.toLowerCase();
+    return /android|iphone|ipad|ipod|mobile/i.test(ua);
+}
+
+// Platform detection (initialized synchronously via UA, refined via Tauri plugin-os)
+export const isMobilePlatform = writable(detectIsMobileSync());
 
 function loadLayoutOverride(): LayoutOverride {
-    if (typeof window === 'undefined') return 'auto';
+    if (typeof window === 'undefined') return 'desktop';
     try {
         const raw = localStorage.getItem(LAYOUT_OVERRIDE_STORAGE_KEY);
-        if (raw === 'auto' || raw === 'mobile' || raw === 'desktop' || raw === 'hybrid') return raw;
+        if (raw === 'mobile' || raw === 'desktop' || raw === 'hybrid') return raw;
     } catch {
         // ignore read failures
     }
-    return 'auto';
+    // Default to desktop when opened on desktop, mobile when opened on mobile
+    return detectIsMobileSync() ? 'mobile' : 'desktop';
 }
 
 function createLayoutOverrideStore() {
@@ -52,7 +59,7 @@ function createLayoutOverrideStore() {
     return {
         subscribe,
         set,
-        reset: () => set('auto'),
+        reset: () => set(detectIsMobileSync() ? 'mobile' : 'desktop'),
     };
 }
 
@@ -112,6 +119,49 @@ if (typeof document !== 'undefined') {
     });
 }
 
+export const DESKTOP_MIN_WIDTH = 800;
+export const DESKTOP_MIN_HEIGHT = 500;
+export const MOBILE_MIN_WIDTH = 320;
+export const MOBILE_MIN_HEIGHT = 480;
+
+export async function applyWindowSizeLimits(override: LayoutOverride) {
+    if (typeof window === 'undefined') return;
+    try {
+        const { isTauri } = await import('$lib/api/tauri');
+        if (!isTauri()) return;
+        const { isMiniPlayer } = await import('$lib/stores/ui');
+        if (get(isMiniPlayer)) return; // Never override PIP window limits
+
+        const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
+        const appWindow = getCurrentWindow();
+
+        if (override === 'desktop') {
+            await appWindow.setMinSize(new LogicalSize(DESKTOP_MIN_WIDTH, DESKTOP_MIN_HEIGHT));
+
+            const size = await appWindow.innerSize();
+            const factor = await appWindow.scaleFactor();
+            const currentW = size.width / factor;
+            const currentH = size.height / factor;
+
+            if (currentW < DESKTOP_MIN_WIDTH || currentH < DESKTOP_MIN_HEIGHT) {
+                await appWindow.setSize(new LogicalSize(
+                    Math.max(currentW, DESKTOP_MIN_WIDTH),
+                    Math.max(currentH, DESKTOP_MIN_HEIGHT)
+                ));
+            }
+        } else {
+            await appWindow.setMinSize(new LogicalSize(MOBILE_MIN_WIDTH, MOBILE_MIN_HEIGHT));
+        }
+    } catch {
+        // Ignored outside Tauri / unsupported platforms
+    }
+}
+
+// enforce desktop min-size when desktop override is active
+layoutOverride.subscribe((val) => {
+    void applyWindowSizeLimits(val);
+});
+
 let mediaQuery: MediaQueryList | null = null;
 
 export function initMobileDetection() {
@@ -129,22 +179,38 @@ export function initMobileDetection() {
 
     // 2. Tauri platform detection
     detectMobilePlatform();
+
+    // 3. Enforce window size limits for layout override
+    void applyWindowSizeLimits(get(layoutOverride));
 }
 
 async function detectMobilePlatform() {
+    let isMob = detectIsMobileSync();
     try {
         // Check if we're on Android/iOS via Tauri
-        const { type, arch } = await import('@tauri-apps/plugin-os');
+        const { type } = await import('@tauri-apps/plugin-os');
         const osType = type();
         if (osType === 'android' || osType === 'ios') {
-            isMobilePlatform.set(true);
+            isMob = true;
+        } else {
+            isMob = false;
         }
     } catch {
         // plugin-os not available, fall back to user agent
-        if (typeof navigator !== 'undefined') {
-            const ua = navigator.userAgent.toLowerCase();
-            const isMobileUA = /android|iphone|ipad|ipod|mobile/i.test(ua);
-            isMobilePlatform.set(isMobileUA);
+    }
+
+    isMobilePlatform.set(isMob);
+
+    // If no explicit user override was saved in localStorage, default to OS platform layout
+    if (typeof window !== 'undefined') {
+        try {
+            const raw = localStorage.getItem(LAYOUT_OVERRIDE_STORAGE_KEY);
+            if (!raw || raw === 'auto') {
+                const targetLayout: LayoutOverride = isMob ? 'mobile' : 'desktop';
+                layoutOverride.set(targetLayout);
+            }
+        } catch {
+            // ignore localStorage failures
         }
     }
 }

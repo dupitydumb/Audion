@@ -8,15 +8,15 @@
 //! there is only ever one instance of this track's audio, played exactly once
 
 use std::num::NonZero;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use crossbeam::channel::{Receiver, Sender};
 use rodio::Source;
 
 use super::gated::{GatedSource, SharedClock, UNSCHEDULED};
-use super::mod_types::{AudioEvent, DecodedSource, ReadySource};
+use super::mod_types::{AudioEvent, AudioTelemetry, DecodedSource, ReadySource};
 use super::opus::OpusSource;
 use super::resampler::RubatoResampler;
 use super::symphonia::SymphoniaSource;
@@ -27,11 +27,11 @@ use super::symphonia::SymphoniaSource;
 /// symphonia's probe only tells us the container,
 /// and for a .ogg file that could be Vorbis or Opus
 /// telling those apart without decoding requires:
-/// reading into the stream far enough to see the first packet's codec identification header, 
+/// reading into the stream far enough to see the first packet's codec identification header,
 /// which SymphoniaSource's own open() already does internally as part of building its decoder
 ///
 /// so: try Symphonia first (handles Vorbis-in-Ogg, and everything else,
-/// and only fall back to OpusSource if 
+/// and only fall back to OpusSource if
 /// Symphonia's decoder construction fails specifically because there's no registered decoder for the codec found
 fn open_decoded_source(
     path: &str,
@@ -42,6 +42,7 @@ fn open_decoded_source(
     generation: u64,
     volume: Arc<std::sync::atomic::AtomicU32>,
     replay_gain_enabled: Arc<AtomicBool>,
+    skip_silence_enabled: Arc<AtomicBool>,
     device_channels: NonZero<u16>,
 ) -> Result<DecodedSource, String> {
     let ext = std::path::Path::new(path)
@@ -75,6 +76,7 @@ fn open_decoded_source(
         generation,
         Arc::clone(&volume),
         Arc::clone(&replay_gain_enabled),
+        skip_silence_enabled,
         device_channels,
     ) {
         Ok(src) => Ok(DecodedSource::Symphonia(src)),
@@ -112,15 +114,15 @@ pub struct GatedTrackHandle {
     /// kept so a discarded preload can be re-dispatched with the same value on a device switch
     /// (see replay_gain_db below)
     replay_gain_db: Option<f32>,
-    /// write a real frame number here to schedule playback start 
+    /// write a real frame number here to schedule playback start
     /// (crossfade timing, instant skip => same primitive either way), starts at UNSCHEDULED
     pub target_frame: Arc<AtomicU64>,
     pub paused: Arc<AtomicBool>,
     /// fade envelope handles
-    /// same 'Arc's the GatedSource this handle controls was built with 
+    /// same 'Arc's the GatedSource this handle controls was built with
     /// (see GatedSource::fade_handles)
     /// '0'/UNSCHEDULED by default, meaning no fade
-    /// schedule_at/schedule_now (hard cut) leave them untouched, 
+    /// schedule_at/schedule_now (hard cut) leave them untouched,
     /// schedule_fade_in_at/schedule_fade_out are the only writers
     fade_in_frames: Arc<AtomicU64>,
     fade_out_at: Arc<AtomicU64>,
@@ -131,6 +133,7 @@ pub struct GatedTrackHandle {
     /// since the whole point of preloading ahead of time is that transport commands (seek included) can still reach it before it's actually audible
     pub seek_tx: Sender<Duration>,
     pub repeat_one_tx: Sender<bool>,
+    pub telemetry: AudioTelemetry,
 }
 
 impl GatedTrackHandle {
@@ -138,6 +141,25 @@ impl GatedTrackHandle {
     /// preload()'s caller normally sources this from library metadata, which isn't available from inside a device switch, so it has to come from the discarded handle instead
     pub fn replay_gain_db(&self) -> Option<f32> {
         self.replay_gain_db
+    }
+}
+
+/// how a decoded source reaches the device
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourcePlan {
+    Raw,
+    Resampled,
+    /// exclusive output never resamples: the open is refused instead
+    RateMismatch,
+}
+
+pub fn plan_source_output(source_rate: u32, device_rate: u32, exclusive: bool) -> SourcePlan {
+    if source_rate == device_rate {
+        SourcePlan::Raw
+    } else if exclusive {
+        SourcePlan::RateMismatch
+    } else {
+        SourcePlan::Resampled
     }
 }
 
@@ -151,6 +173,9 @@ pub fn open_gated_track(
     generation: u64,
     volume: Arc<std::sync::atomic::AtomicU32>,
     replay_gain_enabled: Arc<AtomicBool>,
+    skip_silence_enabled: Arc<AtomicBool>,
+    automix_enabled: Arc<AtomicBool>,
+    exclusive: bool,
     device_sample_rate: NonZero<u32>,
     device_channels: NonZero<u16>,
     initial_seek: Option<Duration>,
@@ -169,6 +194,7 @@ pub fn open_gated_track(
         generation,
         volume,
         replay_gain_enabled,
+        skip_silence_enabled,
         device_channels,
     )?;
 
@@ -177,19 +203,49 @@ pub fn open_gated_track(
     }
 
     let duration = src.duration();
-    let needs_resample = src.sample_rate() != device_sample_rate;
+    let codec = src.codec_name();
+    let bit_depth = src.bits_per_sample();
+    let source_sample_rate = src.sample_rate().get();
+    let source_channels = src.channels().get();
+    let plan = plan_source_output(source_sample_rate, device_sample_rate.get(), exclusive);
+    let needs_resample = plan == SourcePlan::Resampled;
 
-    let ready = if needs_resample {
-        RubatoResampler::new(src, device_sample_rate).map(ReadySource::Resampled)?
-    } else {
-        ReadySource::Raw(src)
+    let telemetry = AudioTelemetry {
+        path: Some(path.to_string()),
+        codec,
+        bit_depth,
+        sample_rate: source_sample_rate,
+        channels: source_channels,
+        // engine.apply_telemetry overwrites the device/output/exclusive fields
+        device_sample_rate: device_sample_rate.get(),
+        device_channels: device_channels.get(),
+        resampler_active: needs_resample,
+        output_device: "Default".to_string(),
+        replay_gain_db,
+        limiter_enabled: true,
+        ..AudioTelemetry::default()
+    };
+
+    let ready = match plan {
+        SourcePlan::Raw => ReadySource::Raw(src),
+        SourcePlan::Resampled => {
+            RubatoResampler::new(src, device_sample_rate).map(ReadySource::Resampled)?
+        }
+        SourcePlan::RateMismatch => {
+            return Err(format!(
+                "Exclusive output cannot resample {} Hz to {} Hz",
+                source_sample_rate,
+                device_sample_rate.get()
+            ));
+        }
     };
 
     let target_frame = Arc::new(AtomicU64::new(UNSCHEDULED));
     let paused = Arc::new(AtomicBool::new(false));
 
     let gated = GatedSource::new(ready, clock, Arc::clone(&target_frame))
-        .with_pause(Arc::clone(&paused));
+        .with_pause(Arc::clone(&paused))
+        .with_automix(automix_enabled);
     let (fade_in_frames, fade_out_at, fade_out_frames) = gated.fade_handles();
 
     let handle = GatedTrackHandle {
@@ -204,6 +260,7 @@ pub fn open_gated_track(
         fade_out_frames,
         seek_tx,
         repeat_one_tx,
+        telemetry,
     };
 
     Ok((gated, handle))
@@ -239,7 +296,8 @@ impl GatedTrackHandle {
     /// schedule this (already-live/"current") track to start fading out to silence at 'frame', over 'fade_frames'
     /// mirrors schedule_fade_in_at's write ordering for the same reason
     pub fn schedule_fade_out(&self, frame: u64, fade_frames: u64) {
-        self.fade_out_frames.store(fade_frames.max(1), Ordering::Release);
+        self.fade_out_frames
+            .store(fade_frames.max(1), Ordering::Release);
         self.fade_out_at.store(frame, Ordering::Release);
     }
 
@@ -282,7 +340,8 @@ impl GatedTrackHandle {
         }
         let fade_out_at = self.fade_out_at.load(Ordering::Acquire);
         if fade_out_at != UNSCHEDULED {
-            self.fade_out_at.store(fade_out_at + frames, Ordering::Release);
+            self.fade_out_at
+                .store(fade_out_at + frames, Ordering::Release);
         }
     }
 
@@ -343,11 +402,49 @@ mod tests {
         path
     }
 
-    fn dummy_deps() -> (Arc<std::sync::atomic::AtomicU32>, Arc<AtomicBool>, Sender<AudioEvent>) {
+    fn dummy_deps() -> (
+        Arc<std::sync::atomic::AtomicU32>,
+        Arc<AtomicBool>,
+        Sender<AudioEvent>,
+    ) {
         let volume = Arc::new(std::sync::atomic::AtomicU32::new(1.0f32.to_bits()));
         let replay_gain_enabled = Arc::new(AtomicBool::new(false));
         let (event_tx, _event_rx) = crossbeam::channel::unbounded::<AudioEvent>();
         (volume, replay_gain_enabled, event_tx)
+    }
+
+    #[test]
+    fn plan_refuses_resampling_in_exclusive() {
+        assert_eq!(plan_source_output(44100, 44100, true), SourcePlan::Raw);
+        assert_eq!(plan_source_output(44100, 48000, true), SourcePlan::RateMismatch);
+        assert_eq!(plan_source_output(44100, 48000, false), SourcePlan::Resampled);
+    }
+
+    #[test]
+    fn exclusive_open_with_rate_mismatch_fails() {
+        let path = write_test_wav(0.5, 2000, 44100);
+        let (volume, rg, event_tx) = dummy_deps();
+        let result = open_gated_track(
+            path.to_str().unwrap(),
+            None,
+            1,
+            volume,
+            rg,
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+            true,
+            NonZero::new(48000).unwrap(),
+            NonZero::new(1).unwrap(),
+            None,
+            event_tx,
+            Arc::clone(&SharedClock::new()),
+        );
+        let err = match result {
+            Ok(_) => panic!("exclusive must refuse to resample"),
+            Err(e) => e,
+        };
+        assert!(err.contains("cannot resample"), "unexpected error: {err}");
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
@@ -362,12 +459,16 @@ mod tests {
             1,
             volume,
             rg,
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+            false,
             NonZero::new(44100).unwrap(), // matches file rate => no resample needed
             NonZero::new(1).unwrap(),
             None,
             event_tx,
             Arc::clone(&clock),
-        ).expect("open_gated_track should succeed on a valid WAV");
+        )
+        .expect("open_gated_track should succeed on a valid WAV");
 
         assert_eq!(handle.duration.is_some(), true);
 
@@ -392,12 +493,16 @@ mod tests {
             1,
             volume,
             rg,
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+            false,
             NonZero::new(44100).unwrap(),
             NonZero::new(1).unwrap(),
             None,
             event_tx,
             Arc::clone(&clock),
-        ).unwrap();
+        )
+        .unwrap();
 
         // schedule to start immediately
         handle.schedule_at(0);
@@ -405,7 +510,11 @@ mod tests {
         // first pulled sample should be real decoded audio, not silence, and roughly match the 0.5 full-scale value we wrote
         // (allow decode/normalization slack rather than asserting bit-exact equality against a hand-picked i16 round trip)
         let first = gated.next().expect("gated source must yield Some");
-        assert!(first.abs() > 0.05, "expected real non-silent decoded audio, got {}", first);
+        assert!(
+            first.abs() > 0.05,
+            "expected real non-silent decoded audio, got {}",
+            first
+        );
 
         let _ = std::fs::remove_file(&path);
     }
@@ -421,24 +530,26 @@ mod tests {
         let (volume_a, rg_a, event_tx_a) = dummy_deps();
         let (gated_a, handle_a) = open_gated_track(
             path_a.to_str().unwrap(), None, 1, volume_a, rg_a,
+            Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)), false,
             NonZero::new(44100).unwrap(), NonZero::new(1).unwrap(), None, event_tx_a,
             Arc::clone(&clock),
-        ).unwrap();
+        )
+        .unwrap();
 
         let (volume_b, rg_b, event_tx_b) = dummy_deps();
         let (gated_b, handle_b) = open_gated_track(
             path_b.to_str().unwrap(), None, 2, volume_b, rg_b,
+            Arc::new(AtomicBool::new(false)), Arc::new(AtomicBool::new(false)), false,
             NonZero::new(44100).unwrap(), NonZero::new(1).unwrap(), None, event_tx_b,
             Arc::clone(&clock),
-        ).unwrap();
+        )
+        .unwrap();
 
         handle_a.schedule_at(0);
         handle_b.schedule_at(5_000); // B comes in 5000 frames into a => the "crossfade point"
 
-        let (mixer_in, mut mixer_out) = rodio::mixer::mixer(
-            NonZero::new(1).unwrap(),
-            NonZero::new(44100).unwrap(),
-        );
+        let (mixer_in, mut mixer_out) =
+            rodio::mixer::mixer(NonZero::new(1).unwrap(), NonZero::new(44100).unwrap());
         mixer_in.add(gated_a);
         mixer_in.add(gated_b);
 
@@ -455,7 +566,11 @@ mod tests {
         // since both wavs are constant-positive), not just one of them
         let mixed = mixer_out.next().unwrap();
         clock.advance(1);
-        assert!(mixed.abs() > 0.5, "expected sum of both tracks' amplitude, got {}", mixed);
+        assert!(
+            mixed.abs() > 0.5,
+            "expected sum of both tracks' amplitude, got {}",
+            mixed
+        );
 
         let _ = std::fs::remove_file(&path_a);
         let _ = std::fs::remove_file(&path_b);
@@ -480,12 +595,16 @@ mod tests {
             1,
             volume,
             rg,
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(false)),
+            false,
             NonZero::new(sample_rate).unwrap(),
             NonZero::new(1).unwrap(),
             None,
             event_tx_probe,
             Arc::clone(&clock),
-        ).unwrap();
+        )
+        .unwrap();
         let _ = event_tx; // unused half of dummy_deps' tuple, kept for symmetry with other tests
 
         handle.schedule_at(0);
@@ -493,11 +612,13 @@ mod tests {
 
         // pull well past the track's own 1000-sample length
         // under repeat-one this must produce real audio the whole way through
-        // (never silence, never None) and must never report TrackFinished 
+        // (never silence, never None) and must never report TrackFinished
         // only StateChanged{position: 0.0} each time it wraps
         let mut non_silent_count = 0usize;
         for i in 0..2500u32 {
-            let sample = gated.next().expect("repeat-one must never let the source end (None)");
+            let sample = gated
+                .next()
+                .expect("repeat-one must never let the source end (None)");
             if sample.abs() > 0.05 {
                 non_silent_count += 1;
             }
@@ -520,8 +641,14 @@ mod tests {
                 _ => {}
             }
         }
-        assert!(saw_loop_reset, "expected at least one StateChanged{{position: 0.0}} from the internal loop-back seek");
-        assert!(!saw_track_finished, "repeat-one must never emit TrackFinished — that's exactly what would let DecisionThread treat this as a natural end");
+        assert!(
+            saw_loop_reset,
+            "expected at least one StateChanged{{position: 0.0}} from the internal loop-back seek"
+        );
+        assert!(
+            !saw_track_finished,
+            "repeat-one must never emit TrackFinished — that's exactly what would let DecisionThread treat this as a natural end"
+        );
 
         let _ = std::fs::remove_file(&path);
     }

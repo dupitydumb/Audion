@@ -18,6 +18,7 @@ export {
     seek, setVolume,
     toggleShuffle, cycleRepeat,
     stripFetchedCoversFromPlayer,
+    registerSleepTimerHooks,
 } from './playback';
 
 // Queue management

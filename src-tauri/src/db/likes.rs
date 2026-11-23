@@ -1,5 +1,5 @@
 // Liked tracks management
-use rusqlite::{params, Connection, OptionalExtension, Result};
+use rusqlite::{params, Connection, Result};
 
 use super::models::Track;
 use super::artists;

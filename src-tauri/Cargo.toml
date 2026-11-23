@@ -1,6 +1,6 @@
 [package]
 name = "audion"
-version = "1.4.3"
+version = "1.5.0"
 description = "A local Spotify-style music player"
 authors = ["AvKov"]
 edition = "2024"
@@ -73,7 +73,7 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 base64 = "0.22"
 
 # compression
-zip = { version = "8.6.0", default-features = false }
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 
 # HTTP client for API requests (rustls = pure-Rust TLS, no OpenSSL needed, works on Android)
 reqwest = { version = "0.12", default-features = false, features = ["json", "cookies", "stream", "rustls-tls", "gzip", "brotli", "multipart"] }
@@ -194,7 +194,13 @@ windows = { version = "0.61.3", features = [
     "Win32_Storage_EnhancedStorage",
     "Win32_Storage_FileSystem",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
     "Win32_System_Registry",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_Media_Audio",
     "Win32_Security",
 ] }
 raw-window-handle = "0.6"

@@ -22,6 +22,7 @@
   import { initAndroidNotification } from "$lib/services/android-notification";
   import { initConsoleCapture } from "$lib/services/console-capture";
   import { loadLikedTracks } from "$lib/stores/liked";
+  import { updateTrackCoverPath } from "$lib/stores/library";
   import {
     goBack,
     goToArtistDetail,
@@ -35,10 +36,13 @@
     isQueueVisible,
     contextMenu,
     isMiniPlayer,
+    setMiniPlayer,
+    isStatsForNerdsOpen,
   } from "$lib/stores/ui";
   import { pluginStore } from "$lib/stores/plugin-store";
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
   import PromptDialog from "$lib/components/PromptDialog.svelte";
+  import StatsForNerdsModal from "$lib/components/StatsForNerdsModal.svelte";
   import TitleBar from "$lib/components/TitleBar.svelte";
   import LinuxResizeHandles from "$lib/components/LinuxResizeHandles.svelte";
   import ProgressiveScanStatus from "$lib/components/ProgressiveScanStatus.svelte";
@@ -70,6 +74,7 @@
   let migrationAlbums = 0;
   let migrationErrorCount = 0;
   let unlistenGoToArtist: (() => void) | null = null;
+  let unlistenCoverCached: (() => void) | null = null;
   let migrationStatus = "";
   let showMigrationBanner = false;
   let showPermissionBanner = false;
@@ -185,6 +190,22 @@
       })
       .catch(() => { });
 
+    // listen for background cover caching events and update cover paths reactively
+    listen<{ trackId: number; coverPath: string }>("track:cover_cached", (event) => {
+      if (event.payload?.trackId && event.payload?.coverPath) {
+        updateTrackCoverPath(event.payload.trackId, event.payload.coverPath);
+        currentTrack.update((t) =>
+          t && t.id === event.payload.trackId
+            ? { ...t, track_cover_path: event.payload.coverPath }
+            : t
+        );
+      }
+    })
+      .then((unlisten) => {
+        unlistenCoverCached = unlisten;
+      })
+      .catch(() => { });
+
     // backend asks the frontend to react right before it actually closes the window
     // see CloseRequested in lib.rs
     // cache the current view to localStorage
@@ -192,6 +213,12 @@
     // once we are done, we call confirm_close to let the close actually go through
     listen("app://request-last-view", async () => {
       try {
+        // Leave PiP before closing: the window-state plugin persists the
+        // current geometry on exit, and a saved island-sized window would
+        // reopen as the normal layout squeezed into a 396x56 frame.
+        if (get(isMiniPlayer)) {
+          await setMiniPlayer(false);
+        }
         const view = get(currentView);
         cacheLastViewForNextLaunch(view);
         await invoke("confirm_close");
@@ -351,6 +378,10 @@
       unlistenGoToArtist();
     }
 
+    if (unlistenCoverCached) {
+      unlistenCoverCached();
+    }
+
     // Cleanup Android back handler
     cleanupAndroidBackHandler();
 
@@ -375,6 +406,26 @@
     });
   }
 </script>
+
+<svelte:head>
+  {#if $isMiniPlayer}
+    <style>
+      html, body, #audion-bg-layer, #audion-effect-layer, .app-content {
+        background: transparent !important;
+        background-color: transparent !important;
+        box-shadow: none !important;
+        border: none !important;
+        outline: none !important;
+        overflow: hidden !important;
+      }
+      #audion-bg-layer, #audion-effect-layer {
+        display: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+      }
+    </style>
+  {/if}
+</svelte:head>
 
 <!-- Persistent background and effect layers - unconditionally mounted so theme works regardless of i18n load timing -->
 <div
@@ -445,6 +496,8 @@
 {#if $isMobile && $currentTrack && !$isFullScreen}
   <MobileMiniPlayer />
 {/if}
+
+<StatsForNerdsModal open={$isStatsForNerdsOpen} onClose={() => isStatsForNerdsOpen.set(false)} />
 {/if}
 
 <style>
@@ -554,9 +607,11 @@
     padding-bottom: calc(var(--mobile-nav-height, 60px) + 72px + var(--safe-area-bottom, 0px));
   }
 
-  /* PIP mode: no title bar, no padding */
+  /* PIP mode: no title bar, no padding, fully transparent */
   .app-content.pip {
     padding-top: 0;
+    background: transparent !important;
+    background-color: transparent !important;
   }
 
   /* Permission Banner Styles */

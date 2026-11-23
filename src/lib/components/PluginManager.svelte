@@ -14,11 +14,31 @@
   } from "$lib/plugins/schema";
   import { addToast } from "$lib/stores/toast";
   import { confirm } from "$lib/stores/dialogs";
-  import { revealItemInDir } from "@tauri-apps/plugin-opener";
+  import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
   import { invoke, convertFileSrc } from "@tauri-apps/api/core";
   import { onDestroy } from "svelte";
   import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
   import Icon from "$lib/components/Icon.svelte";
+  import { createSflxExtensionAdapter } from "$lib/plugins/sflx-adapter";
+  import { globalProviders } from "$lib/plugins/providers";
+  import { goToSettings } from "$lib/stores/view";
+  import {
+    CATEGORIES,
+    getCategoryLabel,
+    getDisplayCapabilities,
+    getCapabilityLabel,
+    getCapabilityIcon,
+    type Translate,
+  } from "$lib/plugins/categories";
+
+  const tr: Translate = (key, fallback) => $_(key, { default: fallback });
+
+  function openProviderSettings() {
+    try {
+      localStorage.setItem("audion_settings_open_tab", "extensions");
+    } catch {}
+    goToSettings();
+  }
 
   let pluginContentEl: HTMLDivElement;
   let scrollRestored = false;
@@ -30,13 +50,88 @@
 
   // Local state
   let newCommunityUrl = "";
+  let newRegistryName = "";
+  let newRegistryUrl = "";
   let showPermissionModal = false;
   let selectedPlugin: MarketplacePlugin | null = null;
   let pendingPermissions: string[] = [];
   let searchQuery = "";
-  let activeTab: "curated" | "community" | "installed" = "curated";
+  let activeTab: "curated" | "community" | "registries" | "installed" = "curated";
   let sortBy: 'stars' | 'downloads' | 'name' | 'updated' = $pluginStore.sortBy;
   let sortOpen = false;
+
+  function handleAddRegistry() {
+    if (!newRegistryUrl.trim()) {
+      addToast("Please provide a valid registry URL", "error");
+      return;
+    }
+    pluginStore.addRegistry(newRegistryName.trim() || "Community Registry", newRegistryUrl.trim());
+    addToast("Custom registry added", "success");
+    newRegistryName = "";
+    newRegistryUrl = "";
+  }
+
+  async function handleImportPackage() {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog');
+      const selected = await open({
+        multiple: false,
+        filters: [
+          {
+            name: 'Audion Plugins & Extensions (*.ext, *.audion-ext, *.sflx, *.js, *.zip)',
+            extensions: ['ext', 'audion-ext', 'sflx', 'js', 'zip']
+          },
+          {
+            name: 'All Files (*.*)',
+            extensions: ['*']
+          }
+        ]
+      });
+      if (!selected || typeof selected !== 'string') return;
+
+      // 1. Install as a permanent Audion plugin via backend
+      const installedInfo = await pluginStore.installPluginFromFile(selected);
+      if (installedInfo) {
+        addToast(`Successfully installed plugin: ${installedInfo.name}`, 'success');
+        activeTab = 'installed';
+        return;
+      }
+
+      // 2. Fallback: in-memory adapter load if backend install wasn't successful
+      const { readTextFile } = await import('@tauri-apps/plugin-fs');
+      const content = await readTextFile(selected);
+      const fileName = selected.split(/[\/\\]/).pop() || 'community-package';
+
+      const adapter = createSflxExtensionAdapter(content, {
+        id: fileName.replace(/\.(?:sflx|audion-ext|ext|js|zip)$/i, ''),
+        name: fileName.replace(/\.(?:sflx|audion-ext|ext|js|zip)$/i, ''),
+        version: '1.0.0'
+      });
+
+      let loadedAny = false;
+      if (adapter.streamProvider) {
+        globalProviders.registerStreamProvider(adapter.streamProvider, fileName);
+        loadedAny = true;
+      }
+      if (adapter.metadataProvider) {
+        globalProviders.registerMetadataProvider(adapter.metadataProvider, fileName);
+        loadedAny = true;
+      }
+      if (adapter.lyricsProvider) {
+        globalProviders.registerLyricsProvider(adapter.lyricsProvider, fileName);
+        loadedAny = true;
+      }
+
+      if (loadedAny) {
+        addToast(`Successfully loaded package: ${adapter.manifest.name}`, 'success');
+      } else {
+        addToast(`Plugin imported, but no providers or entry hooks were found`, 'warning');
+      }
+    } catch (err) {
+      console.error('[PluginManager] Failed to import package:', err);
+      addToast(`Failed to import package: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    }
+  }
 
   function handleSortOutside(e: MouseEvent) {
     const target = e.target as HTMLElement;
@@ -55,15 +150,12 @@
 
   // Categories for filtering
   const categories = [
-    { id: "all", key: "pluginManager.categoryAll" },
-    { id: "audio", key: "pluginManager.categoryAudio" },
-    { id: "ui", key: "pluginManager.categoryUi" },
-    { id: "lyrics", key: "pluginManager.categoryLyrics" },
-    { id: "library", key: "pluginManager.categoryLibrary" },
-    { id: "utility", key: "pluginManager.categoryUtility" },
-    { id: "appearance", key: "pluginManager.categoryAppearance" },
-    { id: "social", key: "pluginManager.categorySocial" },
-    { id: "sync", key: "pluginManager.categorySync" },
+    { id: "all", key: "pluginManager.categoryAll", label: "All" },
+    ...CATEGORIES.map((id) => ({
+      id,
+      key: `pluginManager.category${id[0].toUpperCase()}${id.slice(1)}`,
+      label: getCategoryLabel(id),
+    })),
   ];
 
   let confettiParticles: {
@@ -93,6 +185,47 @@
     } catch (err) {
       console.error("Failed to open plugins folder:", err);
       addToast(`Failed to open folder: ${err}`, "error");
+    }
+  }
+
+  async function handleOpenRepo(url: string) {
+    try {
+      await openUrl(url);
+    } catch (err) {
+      console.error("Failed to open URL:", err);
+      window.open(url, "_blank");
+    }
+  }
+
+  function getPluginRepoUrl(plugin: MarketplacePlugin | PluginInfo | null): string | null {
+    if (!plugin) return null;
+    const rawUrl =
+      ('repo' in plugin && plugin.repo) ||
+      plugin.manifest?.repo ||
+      plugin.manifest?.homepage;
+    if (!rawUrl) return null;
+
+    const rawMatch = rawUrl.match(/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)/);
+    if (rawMatch) {
+      return `https://github.com/${rawMatch[1]}/${rawMatch[2]}`;
+    }
+
+    return rawUrl;
+  }
+
+  function formatRepoDisplay(url: string): string {
+    try {
+      const parsed = new URL(url);
+      if (parsed.hostname.includes('github.com')) {
+        const parts = parsed.pathname.split('/').filter(Boolean);
+        if (parts.length >= 2) {
+          return `${parts[0]}/${parts[1]}`;
+        }
+        return 'GitHub';
+      }
+      return parsed.hostname;
+    } catch {
+      return url;
     }
   }
 
@@ -162,19 +295,9 @@
   }
 
   async function handleInstallClick(plugin: MarketplacePlugin) {
-    // Combine regular permissions and cross-plugin access
-    const hasPermissions = plugin.manifest.permissions.length > 0;
-    const hasCrossPluginAccess =
-      plugin.manifest.cross_plugin_access &&
-      plugin.manifest.cross_plugin_access.length > 0;
-
-    if (hasPermissions || hasCrossPluginAccess) {
-      selectedPlugin = plugin;
-      pendingPermissions = plugin.manifest.permissions;
-      showPermissionModal = true;
-    } else {
-      await pluginStore.installPlugin(plugin);
-    }
+    selectedPlugin = plugin;
+    pendingPermissions = plugin.manifest.permissions || [];
+    showPermissionModal = true;
   }
 
   async function handleConfirmInstall() {
@@ -290,6 +413,28 @@
       }
     }
 
+    // 4. For marketplace plugins with relative icon, resolve via manifest_url or repo
+    if (manifest.icon && ("manifest_url" in plugin || "repo" in plugin)) {
+      const mp = plugin as MarketplacePlugin;
+      if (mp.manifest_url) {
+        try {
+          const baseUrl = mp.manifest_url.substring(0, mp.manifest_url.lastIndexOf("/") + 1);
+          return new URL(manifest.icon, baseUrl).href;
+        } catch {}
+      }
+      if (mp.repo) {
+        const match =
+          mp.repo.match(/github\.com\/([^/]+)\/([^/]+)/) ||
+          mp.repo.match(/^([^/]+)\/([^/]+)$/);
+        if (match) {
+          const [, owner, repo] = match;
+          const cleanRepo = repo.replace(/\.git$/, "").replace(/\/$/, "");
+          const cleanIcon = manifest.icon.replace(/^\.?\//, "");
+          return `https://raw.githubusercontent.com/${owner}/${cleanRepo}/main/${cleanIcon}`;
+        }
+      }
+    }
+
     return null;
   }
 </script>
@@ -311,6 +456,15 @@
 
       <button
         class="btn-secondary"
+        on:click={handleImportPackage}
+        title="Import .ext, .sflx or Audion plugin package"
+      >
+        <Icon name="file" size={16} />
+        Import Plugin (.ext)
+      </button>
+
+      <button
+        class="btn-secondary"
         on:click={() => pluginStore.refreshMarketplace()}
         disabled={$pluginStore.loading}
         title="Force update from GitHub registry"
@@ -324,7 +478,16 @@
         {/if}
       </button>
 
-      {#if activeTab !== "installed"}
+      <button
+        class="btn-secondary providers-link"
+        on:click={openProviderSettings}
+        title="Configure stream, metadata and lyrics providers"
+      >
+        <Icon name="sliders" size={16} />
+        Providers
+      </button>
+
+      {#if activeTab !== "installed" && activeTab !== "registries"}
         <div class="sort-selector">
           <button
             class="sort-btn"
@@ -376,6 +539,13 @@
     </button>
     <button
       class="tab"
+      class:active={activeTab === "registries"}
+      on:click={() => (activeTab = "registries")}
+    >
+      Registries ({$pluginStore.registries?.length || 1})
+    </button>
+    <button
+      class="tab"
       class:active={activeTab === "installed"}
       on:click={() => (activeTab = "installed")}
     >
@@ -397,7 +567,7 @@
     </div>
   {/if}
 
-  {#if activeTab !== "installed"}
+  {#if activeTab !== "installed" && activeTab !== "registries"}
     <div class="category-filters">
       {#each categories as category}
         <button
@@ -405,7 +575,7 @@
           class:active={$pluginStore.categoryFilter === category.id}
           on:click={() => pluginStore.setCategoryFilter(category.id)}
         >
-          {$_(category.key)}
+          {$_(category.key, { default: category.label })}
         </button>
       {/each}
     </div>
@@ -441,20 +611,41 @@
               <Icon name="plugin" size={32} className="fallback-icon" />
             </div>
             <div class="plugin-info">
-              <span class="plugin-name truncate">{plugin.manifest.name}</span>
+              <span class="plugin-name truncate" title={plugin.manifest.name}>{plugin.manifest.name}</span>
               <span class="plugin-author truncate"
-                >{plugin.manifest.author} · v{plugin.manifest.version}</span
+                >{plugin.manifest.author} Â· v{plugin.manifest.version}</span
               >
-              <span class="plugin-desc truncate"
-                >{plugin.manifest.description || "No description"}</span
+              <span class="plugin-desc truncate" title={plugin.manifest.description || $_('pluginManager.noDescription')}
+                >{plugin.manifest.description || $_('pluginManager.noDescription')}</span
               >
               <div class="plugin-badges">
-                <span class="badge">{plugin.manifest.type.toUpperCase()}</span>
                 {#if plugin.manifest.category}
-                  <span class="badge">{plugin.manifest.category}</span>
+                  <span class="badge" title={plugin.manifest.category}
+                    >{getCategoryLabel(plugin.manifest.category, tr)}</span
+                  >
                 {/if}
+                {#each getDisplayCapabilities(plugin.manifest) as cap}
+                  <span class="badge badge-capability" title={cap}>
+                    <Icon name={getCapabilityIcon(cap)} size={11} />
+                    {getCapabilityLabel(cap, tr)}
+                  </span>
+                {/each}
                 {#if plugin.verified}
                   <span class="badge badge-verified">{$_('pluginManager.verified')}</span>
+                {/if}
+                {#if getPluginRepoUrl(plugin)}
+                  {@const cardRepoUrl = getPluginRepoUrl(plugin)}
+                  {#if cardRepoUrl}
+                    <button
+                      class="card-repo-btn"
+                      on:click|stopPropagation={() => handleOpenRepo(cardRepoUrl)}
+                      title={cardRepoUrl}
+                      aria-label="Open repository"
+                    >
+                      <Icon name="external-link" size={11} />
+                      <span class="truncate">{formatRepoDisplay(cardRepoUrl)}</span>
+                    </button>
+                  {/if}
                 {/if}
               </div>
               <div class="plugin-stats">
@@ -470,13 +661,13 @@
             </div>
             <div class="plugin-actions">
               {#if isInstalled(plugin.manifest.name)}
-                <button class="btn-secondary" disabled> Installed </button>
+                <button class="btn-secondary" disabled> {$_('pluginManager.installedBtn')} </button>
               {:else}
                 <button
                   class="btn-primary"
                   on:click={() => handleInstallClick(plugin)}
                 >
-                  Install
+                  {$_('pluginManager.installBtn')}
                 </button>
               {/if}
             </div>
@@ -512,17 +703,38 @@
               <Icon name="plugin" size={32} className="fallback-icon" />
             </div>
             <div class="plugin-info">
-              <span class="plugin-name truncate">{plugin.manifest.name}</span>
+              <span class="plugin-name truncate" title={plugin.manifest.name}>{plugin.manifest.name}</span>
               <span class="plugin-author truncate"
-                >{plugin.manifest.author} · v{plugin.manifest.version}</span
+                >{plugin.manifest.author} Â· v{plugin.manifest.version}</span
               >
-              <span class="plugin-desc truncate"
+              <span class="plugin-desc truncate" title={plugin.manifest.description || $_('pluginManager.noDescription')}
                 >{plugin.manifest.description || $_('pluginManager.noDescription')}</span
               >
               <div class="plugin-badges">
-                <span class="badge">{plugin.manifest.type.toUpperCase()}</span>
                 {#if plugin.manifest.category}
-                  <span class="badge">{plugin.manifest.category}</span>
+                  <span class="badge" title={plugin.manifest.category}
+                    >{getCategoryLabel(plugin.manifest.category, tr)}</span
+                  >
+                {/if}
+                {#each getDisplayCapabilities(plugin.manifest) as cap}
+                  <span class="badge badge-capability" title={cap}>
+                    <Icon name={getCapabilityIcon(cap)} size={11} />
+                    {getCapabilityLabel(cap, tr)}
+                  </span>
+                {/each}
+                {#if getPluginRepoUrl(plugin)}
+                  {@const cardRepoUrl = getPluginRepoUrl(plugin)}
+                  {#if cardRepoUrl}
+                    <button
+                      class="card-repo-btn"
+                      on:click|stopPropagation={() => handleOpenRepo(cardRepoUrl)}
+                      title={cardRepoUrl}
+                      aria-label="Open repository"
+                    >
+                      <Icon name="external-link" size={11} />
+                      <span class="truncate">{formatRepoDisplay(cardRepoUrl)}</span>
+                    </button>
+                  {/if}
                 {/if}
               </div>
               <div class="plugin-stats">
@@ -557,6 +769,66 @@
           </div>
         {/each}
       </div>
+    {:else if activeTab === "registries"}
+      <div class="registries-container">
+        <div class="registry-add-card">
+          <div class="registry-add-header">
+            <h4>Add Community Registry</h4>
+            <span class="registry-subtitle">Add custom repository catalogs (registry.json) with SHA-256 validation</span>
+          </div>
+          <div class="registry-form">
+            <input
+              type="text"
+              placeholder="Registry Name (e.g. Community Registry)"
+              bind:value={newRegistryName}
+            />
+            <input
+              type="text"
+              placeholder="https://example.com/registry.json"
+              bind:value={newRegistryUrl}
+              on:keydown={(e) => e.key === "Enter" && handleAddRegistry()}
+            />
+            <button class="btn-primary" on:click={handleAddRegistry}>
+              Add Registry
+            </button>
+          </div>
+        </div>
+
+        <div class="registries-list">
+          {#each ($pluginStore.registries || []) as reg (reg.id)}
+            <div class="registry-card">
+              <div class="registry-header">
+                <div class="registry-title-row">
+                  <span class="registry-name">{reg.name}</span>
+                  {#if reg.isDefault}
+                    <span class="badge badge-active">Official</span>
+                  {:else}
+                    <span class="badge badge-community">Community</span>
+                  {/if}
+                </div>
+                <span class="registry-url truncate" title={reg.url}>{reg.url}</span>
+              </div>
+              <div class="registry-actions">
+                <button
+                  class="btn-secondary"
+                  class:btn-active-status={reg.enabled}
+                  on:click={() => pluginStore.toggleRegistry(reg.id)}
+                >
+                  {reg.enabled ? 'Active' : 'Disabled'}
+                </button>
+                {#if !reg.isDefault}
+                  <button
+                    class="btn-danger"
+                    on:click={() => pluginStore.removeRegistry(reg.id)}
+                  >
+                    Remove
+                  </button>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        </div>
+      </div>
     {:else if activeTab === "installed"}
       <div class="plugin-grid">
         {#each $pluginStore.installed as plugin}
@@ -572,17 +844,41 @@
               <Icon name="plugin" size={32} className="fallback-icon" />
             </div>
             <div class="plugin-info">
-              <span class="plugin-name truncate">{plugin.name}</span>
+              <span class="plugin-name truncate" title={plugin.name}>{plugin.name}</span>
               <span class="plugin-author truncate"
                 >v{plugin.manifest.version}</span
               >
-              <span class="plugin-desc truncate"
+              <span class="plugin-desc truncate" title={plugin.manifest.description || $_('pluginManager.noDescription')}
                 >{plugin.manifest.description || $_('pluginManager.noDescription')}</span
               >
               <div class="plugin-badges">
-                <span class="badge">{plugin.manifest.type.toUpperCase()}</span>
+                {#if plugin.manifest.category}
+                  <span class="badge" title={plugin.manifest.category}
+                    >{getCategoryLabel(plugin.manifest.category, tr)}</span
+                  >
+                {/if}
+                {#each getDisplayCapabilities(plugin.manifest) as cap}
+                  <span class="badge badge-capability" title={cap}>
+                    <Icon name={getCapabilityIcon(cap)} size={11} />
+                    {getCapabilityLabel(cap, tr)}
+                  </span>
+                {/each}
                 {#if plugin.enabled}
                   <span class="badge badge-active">{$_('pluginManager.active')}</span>
+                {/if}
+                {#if getPluginRepoUrl(plugin)}
+                  {@const cardRepoUrl = getPluginRepoUrl(plugin)}
+                  {#if cardRepoUrl}
+                    <button
+                      class="card-repo-btn"
+                      on:click|stopPropagation={() => handleOpenRepo(cardRepoUrl)}
+                      title={cardRepoUrl}
+                      aria-label="Open repository"
+                    >
+                      <Icon name="external-link" size={11} />
+                      <span class="truncate">{formatRepoDisplay(cardRepoUrl)}</span>
+                    </button>
+                  {/if}
                 {/if}
               </div>
             </div>
@@ -642,53 +938,141 @@
     aria-modal="true"
   >
     <div class="modal" on:click|stopPropagation role="document">
-      <h2>{$_('pluginManager.permissionReview')}</h2>
-      <p class="modal-desc">
-        <strong>{selectedPlugin.manifest.name}</strong> {$_('pluginManager.requestsPermissions')}
-      </p>
+      <div class="modal-header">
+        <h2>
+          {pendingPermissions.length > 0 || (selectedPlugin.manifest.cross_plugin_access && selectedPlugin.manifest.cross_plugin_access.length > 0)
+            ? $_('pluginManager.permissionReview')
+            : $_('pluginManager.installPlugin')}
+        </h2>
+        <button
+          class="modal-close-btn"
+          on:click={closePermissionModal}
+          disabled={installState === "loading"}
+          aria-label="Close"
+        >
+          <Icon name="x" size={18} />
+        </button>
+      </div>
 
-      <!-- Regular Permissions -->
-      {#if pendingPermissions.length > 0}
-        <div class="permission-section">
-          <h3 class="section-title">
-            <Icon name="shield" size={16} />
-            {$_('pluginManager.systemPermissions')}
-          </h3>
-          <div class="permission-list">
-            {#each pendingPermissions as permission}
-              <div class="permission-item">
-                <span class="permission-name">{permission}</span>
-                <span class="permission-desc"
-                  >{getPermissionDescription(permission)}</span
-                >
-              </div>
+      <div class="modal-plugin-header">
+        <div class="modal-plugin-icon">
+          {#if getIconUrl(selectedPlugin)}
+            <img
+              src={getIconUrl(selectedPlugin)}
+              alt={selectedPlugin.manifest.name}
+              on:error={(e) => ((e.currentTarget as HTMLElement).style.display = "none")}
+            />
+          {/if}
+          <Icon name="plugin" size={32} className="fallback-icon" />
+        </div>
+        <div class="modal-plugin-meta">
+          <h3 class="modal-plugin-name">{selectedPlugin.manifest.name}</h3>
+          <div class="modal-plugin-sub">
+            <span class="modal-plugin-author">{selectedPlugin.manifest.author}</span>
+            <span class="modal-dot">Â·</span>
+            <span class="modal-plugin-version">v{selectedPlugin.manifest.version}</span>
+          </div>
+          <div class="plugin-badges">
+            <span class="badge">{selectedPlugin.manifest.type.toUpperCase()}</span>
+            {#if selectedPlugin.manifest.category}
+              <span class="badge" title={selectedPlugin.manifest.category}
+                >{getCategoryLabel(selectedPlugin.manifest.category, tr)}</span
+              >
+            {/if}
+            {#each getDisplayCapabilities(selectedPlugin.manifest) as cap}
+              <span class="badge badge-capability" title={cap}>
+                <Icon name={getCapabilityIcon(cap)} size={11} />
+                {getCapabilityLabel(cap, tr)}
+              </span>
             {/each}
+            {#if selectedPlugin.verified}
+              <span class="badge badge-verified">{$_('pluginManager.verified')}</span>
+            {/if}
           </div>
         </div>
+      </div>
+
+      {#if getPluginRepoUrl(selectedPlugin)}
+        {@const repoUrl = getPluginRepoUrl(selectedPlugin)}
+        {#if repoUrl}
+          <div class="modal-repo-row">
+            <span class="modal-repo-label">{$_('pluginManager.hostedAt')}:</span>
+            <button
+              class="modal-repo-link"
+              on:click={() => handleOpenRepo(repoUrl)}
+              title={repoUrl}
+            >
+              <Icon name="external-link" size={14} />
+              <span class="truncate">{formatRepoDisplay(repoUrl)}</span>
+            </button>
+          </div>
+        {/if}
       {/if}
 
-      <!-- Cross-Plugin Access Permissions -->
-      {#if selectedPlugin.manifest.cross_plugin_access && selectedPlugin.manifest.cross_plugin_access.length > 0}
-        <div class="permission-section">
-          <h3 class="section-title">
-            <Icon name="plus" size={16} />
-            {$_('pluginManager.pluginIntegration')}
-          </h3>
-          <div class="cross-plugin-list">
-            {#each selectedPlugin.manifest.cross_plugin_access as access}
-              <div class="cross-plugin-item">
-                <div class="cross-plugin-header">
-                  <Icon name="zap" size={14} />
-                  <span class="target-plugin">{access.plugin}</span>
+      <div class="modal-desc-section">
+        <h4 class="section-title">
+          <Icon name="file-text" size={15} />
+          {$_('pluginManager.about')}
+        </h4>
+        <div class="modal-full-desc">
+          {selectedPlugin.manifest.description || $_('pluginManager.noDescription')}
+        </div>
+      </div>
+
+      <!-- Regular Permissions -->
+      {#if pendingPermissions.length > 0 || (selectedPlugin.manifest.cross_plugin_access && selectedPlugin.manifest.cross_plugin_access.length > 0)}
+        <p class="modal-desc">
+          <strong>{selectedPlugin.manifest.name}</strong> {$_('pluginManager.requestsPermissions')}
+        </p>
+
+        <!-- Regular Permissions -->
+        {#if pendingPermissions.length > 0}
+          <div class="permission-section">
+            <h4 class="section-title">
+              <Icon name="shield" size={15} />
+              {$_('pluginManager.systemPermissions')}
+            </h4>
+            <div class="permission-list">
+              {#each pendingPermissions as permission}
+                <div class="permission-item">
+                  <span class="permission-name">{permission}</span>
+                  <span class="permission-desc"
+                    >{getPermissionDescription(permission)}</span
+                  >
                 </div>
-                <div class="method-list">
-                  {#each access.methods as method}
-                    <span class="method-badge">{method}</span>
-                  {/each}
-                </div>
-              </div>
-            {/each}
+              {/each}
+            </div>
           </div>
+        {/if}
+
+        <!-- Cross-Plugin Access Permissions -->
+        {#if selectedPlugin.manifest.cross_plugin_access && selectedPlugin.manifest.cross_plugin_access.length > 0}
+          <div class="permission-section">
+            <h4 class="section-title">
+              <Icon name="plus" size={15} />
+              {$_('pluginManager.pluginIntegration')}
+            </h4>
+            <div class="cross-plugin-list">
+              {#each selectedPlugin.manifest.cross_plugin_access as access}
+                <div class="cross-plugin-item">
+                  <div class="cross-plugin-header">
+                    <Icon name="zap" size={14} />
+                    <span class="target-plugin">{access.plugin}</span>
+                  </div>
+                  <div class="method-list">
+                    {#each access.methods as method}
+                      <span class="method-badge">{method}</span>
+                    {/each}
+                  </div>
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      {:else}
+        <div class="modal-no-permissions">
+          <Icon name="check-circle" size={16} />
+          <span>{$_('pluginManager.noPermissionsRequired')}</span>
         </div>
       {/if}
 
@@ -718,8 +1102,10 @@
           {:else if installState === "error"}
             <Icon name="x" size={18} />
             {$_('pluginManager.failed')}
-          {:else}
+          {:else if pendingPermissions.length > 0}
             {$_('pluginManager.grantAndInstall')}
+          {:else}
+            {$_('pluginManager.installBtn')}
           {/if}
         </button>
       </div>
@@ -748,8 +1134,7 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    padding: var(--spacing-md) var(--spacing-md)
-      var(--spacing-md);
+    padding: var(--spacing-lg) var(--spacing-xl);
     overflow-x: hidden; /* Prevent horizontal overflow */
     box-sizing: border-box;
   }
@@ -764,7 +1149,7 @@
   }
 
   .view-header h1 {
-    font-size: 1.5rem; /* Reduced from 2rem */
+    font-size: var(--font-size-3xl);
     font-weight: var(--font-weight-bold);
     margin: 0;
   }
@@ -998,6 +1383,27 @@
     margin-top: 4px;
   }
 
+  .card-repo-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-subdued);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.6875rem;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm);
+    transition: color var(--transition-fast), border-color var(--transition-fast), background-color var(--transition-fast);
+    max-width: 150px;
+  }
+
+  .card-repo-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--accent-primary);
+    background-color: var(--bg-surface);
+  }
+
   .plugin-stats {
     display: flex;
     gap: var(--spacing-md);
@@ -1024,6 +1430,9 @@
   }
 
   .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     padding: var(--spacing-xs) var(--spacing-sm);
     border-radius: var(--radius-full);
     font-size: 0.6875rem;
@@ -1031,6 +1440,12 @@
     text-transform: uppercase;
     background-color: var(--bg-surface);
     color: var(--text-secondary);
+    white-space: nowrap;
+  }
+
+  .badge-capability {
+    background-color: rgba(99, 102, 241, 0.12);
+    color: var(--accent-primary);
   }
 
   .badge-verified {
@@ -1054,6 +1469,12 @@
     display: flex;
     align-items: center;
     gap: var(--spacing-sm);
+    flex-wrap: wrap;
+  }
+
+  .header-actions .btn-secondary {
+    white-space: nowrap;
+    flex-shrink: 0;
   }
 
   .btn-primary {
@@ -1304,7 +1725,7 @@
     background-color: var(--bg-elevated);
     border-radius: var(--radius-lg);
     padding: var(--spacing-lg);
-    max-width: 500px;
+    max-width: 520px;
     width: 90%;
     max-height: 80vh;
     overflow-y: auto;
@@ -1312,8 +1733,169 @@
     border: 1px solid var(--border-color);
   }
 
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--spacing-md);
+  }
+
+  .modal-header h2 {
+    font-size: 1.25rem;
+    font-weight: var(--font-weight-bold);
+    margin: 0;
+  }
+
+  .modal-close-btn {
+    background: none;
+    border: none;
+    color: var(--text-subdued);
+    cursor: pointer;
+    padding: var(--spacing-xs);
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color var(--transition-fast), background-color var(--transition-fast);
+  }
+
+  .modal-close-btn:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-surface);
+  }
+
+  .modal-plugin-header {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+    background-color: var(--bg-surface);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-color);
+    margin-bottom: var(--spacing-md);
+  }
+
+  .modal-plugin-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-md);
+    background-color: var(--bg-elevated);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid var(--border-color);
+  }
+
+  .modal-plugin-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    z-index: 1;
+  }
+
+  .modal-plugin-meta {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .modal-plugin-name {
+    font-size: 1.125rem;
+    font-weight: var(--font-weight-bold);
+    color: var(--text-primary);
+    margin: 0;
+    word-break: break-word;
+    line-height: 1.3;
+  }
+
+  .modal-plugin-sub {
+    font-size: var(--font-size-sm);
+    color: var(--text-subdued);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .modal-dot {
+    opacity: 0.6;
+  }
+
+  .modal-repo-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    margin-bottom: var(--spacing-md);
+    font-size: var(--font-size-sm);
+    color: var(--text-subdued);
+    background-color: var(--bg-surface);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+  }
+
+  .modal-repo-label {
+    font-weight: var(--font-weight-medium);
+  }
+
+  .modal-repo-link {
+    background: none;
+    border: none;
+    color: var(--accent-primary);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--font-size-sm);
+    padding: 2px 4px;
+    border-radius: var(--radius-sm);
+    transition: background-color var(--transition-fast), opacity var(--transition-fast);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .modal-repo-link:hover {
+    opacity: 0.85;
+  }
+
+  .modal-desc-section {
+    margin-bottom: var(--spacing-md);
+  }
+
+  .modal-full-desc {
+    background-color: var(--bg-surface);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    font-size: var(--font-size-sm);
+    line-height: 1.6;
+    color: var(--text-secondary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 180px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+  }
+
+  .modal-no-permissions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background-color: rgba(30, 215, 96, 0.08);
+    border: 1px solid rgba(30, 215, 96, 0.25);
+    border-radius: var(--radius-md);
+    color: #1ed760;
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
+    margin-bottom: var(--spacing-md);
+  }
+
   .view-header h1 {
-    font-size: 1.5rem;
+    font-size: var(--font-size-3xl);
     font-weight: var(--font-weight-bold);
     margin: 0;
   }
@@ -1323,7 +1905,7 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    padding: var(--spacing-md);
+    padding: var(--spacing-lg) var(--spacing-xl);
     overflow-x: hidden; /* Prevent horizontal overflow */
     box-sizing: border-box;
   }
@@ -1340,6 +1922,13 @@
     font-weight: var(--font-weight-semibold);
     color: var(--text-primary);
     margin-bottom: var(--spacing-sm);
+  }
+
+  .modal-desc {
+    margin: 0 0 var(--spacing-md);
+    font-size: var(--font-size-base);
+    line-height: var(--line-height-normal);
+    color: var(--text-secondary);
   }
 
   .permission-list {
@@ -1450,27 +2039,43 @@
     white-space: nowrap;
   }
 
-  /* ── Mobile ── */
+  /* â”€â”€ Mobile â”€â”€ */
+  :global(html.layout-mobile) .plugin-view {
+    padding: var(--spacing-md);
+  }
+
   :global(html.layout-mobile) .view-header {
     flex-direction: column;
-    align-items: flex-start;
-    gap: var(--spacing-md);
+    align-items: stretch;
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
   }
 
   :global(html.layout-mobile) .view-header h1 {
-    font-size: 1.25rem;
+    font-size: var(--font-size-xl);
   }
 
   :global(html.layout-mobile) .header-actions {
-    width: 100%;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--spacing-sm);
+    width: 100%;
   }
 
-  :global(html.layout-mobile) .header-actions button,
+  :global(html.layout-mobile) .header-actions > button {
+    min-width: 0;
+    min-height: 40px;
+    padding: 0 var(--spacing-sm);
+    font-size: var(--font-size-xs);
+    justify-content: flex-start;
+    white-space: normal;
+    text-align: left;
+  }
+
   :global(html.layout-mobile) .sort-selector {
-    flex: 1;
-    min-width: 140px;
+    grid-column: 1 / -1;
+    min-width: 0;
+    width: 100%;
   }
 
   :global(html.layout-mobile) .sort-btn {
@@ -1485,18 +2090,55 @@
 
   :global(html.layout-mobile) .remove-btn {
     opacity: 1;
+    width: 28px;
+    height: 28px;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  :global(html.layout-mobile) .plugin-badges {
+    gap: 4px;
+  }
+
+  :global(html.layout-mobile) .badge {
+    padding: 2px 6px;
+    font-size: 0.625rem;
+  }
+
+  :global(html.layout-mobile) .card-repo-btn {
+    max-width: 100%;
   }
 
   :global(html.layout-mobile) .tabs {
-    overflow-x: auto;
-    padding-bottom: 4px;
-    gap: var(--spacing-xs);
+    flex-wrap: wrap;
+    overflow-x: visible;
+    border-bottom: none;
+    padding-bottom: 0;
+    margin-bottom: var(--spacing-md);
+    gap: 6px;
   }
 
   :global(html.layout-mobile) .tab {
-    padding: var(--spacing-xs) var(--spacing-sm);
-    font-size: var(--font-size-sm);
+    min-width: 0;
+    min-height: 36px;
+    padding: 6px 12px;
+    border-radius: var(--radius-full);
+    background-color: var(--bg-elevated);
+    border: 1px solid transparent;
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
     white-space: nowrap;
+  }
+
+  :global(html.layout-mobile) .tab:hover {
+    background-color: var(--bg-highlight);
+    color: var(--text-primary);
+  }
+
+  :global(html.layout-mobile) .tab.active {
+    background-color: var(--accent-subtle);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
   }
 
   :global(html.layout-mobile) .category-filters {
@@ -1510,4 +2152,197 @@
     padding: 6px var(--spacing-sm);
     font-size: var(--font-size-xs);
   }
+
+  :global(html.layout-mobile) .plugin-actions button {
+    min-height: 44px;
+    flex: 1;
+    min-width: 100px;
+  }
+
+  :global(html.layout-mobile) .registry-card {
+    padding: var(--spacing-md);
+  }
+
+  :global(html.layout-mobile) .registries-container {
+    padding: 0 var(--spacing-sm);
+  }
+
+  :global(html.layout-mobile) .create-form {
+    flex-direction: column;
+  }
+
+  :global(html.layout-mobile) .create-form input {
+    width: 100%;
+  }
+
+  /* Permission / install modal â€” bottom sheet above nav + player */
+  :global(html.layout-mobile) .modal-overlay {
+    align-items: flex-end;
+    padding: 0 0 var(--mobile-bottom-inset, 130px);
+  }
+
+  :global(html.layout-mobile) .modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    padding: var(--spacing-md);
+    border-radius: 20px;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  :global(html.layout-mobile) .modal-header {
+    margin-bottom: var(--spacing-sm);
+  }
+
+  :global(html.layout-mobile) .modal-header h2 {
+    font-size: var(--font-size-lg);
+  }
+
+  :global(html.layout-mobile) .modal-plugin-header {
+    padding: var(--spacing-sm);
+    gap: var(--spacing-sm);
+  }
+
+  :global(html.layout-mobile) .modal-desc-section {
+    margin-bottom: var(--spacing-md);
+  }
+
+  :global(html.layout-mobile) .modal-desc {
+    margin-bottom: var(--spacing-md);
+  }
+
+  :global(html.layout-mobile) .modal-full-desc {
+    max-height: 30vh;
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+
+  :global(html.layout-mobile) .method-badge {
+    padding: 2px 6px;
+    font-size: 0.625rem;
+  }
+
+  /* Sticky footer keeps Cancel/Install reachable while permissions scroll */
+  :global(html.layout-mobile) .modal-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    margin: var(--spacing-md) calc(-1 * var(--spacing-md)) calc(-1 * var(--spacing-md));
+    padding: var(--spacing-sm) var(--spacing-md);
+    background-color: var(--bg-elevated);
+    border-top: 1px solid var(--border-color);
+    justify-content: stretch;
+  }
+
+  :global(html.layout-mobile) .modal-actions > button {
+    flex: 1;
+    min-width: 0;
+    min-height: 46px;
+  }
+
+  /* Registries Manager Styling */
+  .registries-container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-lg);
+    padding: var(--spacing-sm) 0;
+  }
+
+  .registry-add-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-lg);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+
+  .registry-add-header h4 {
+    margin: 0;
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  .registry-subtitle {
+    font-size: var(--font-size-xs);
+    color: var(--text-subdued);
+  }
+
+  .registry-form {
+    display: flex;
+    gap: var(--spacing-sm);
+    flex-wrap: wrap;
+  }
+
+  .registry-form input {
+    flex: 1;
+    min-width: 220px;
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+  }
+
+  .registries-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+  }
+
+  .registry-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-md);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--spacing-md);
+  }
+
+  .registry-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .registry-title-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+  }
+
+  .registry-name {
+    font-weight: var(--font-weight-semibold);
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+  }
+
+  .registry-url {
+    font-size: var(--font-size-xs);
+    color: var(--text-subdued);
+    font-family: monospace;
+  }
+
+  .registry-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    flex-shrink: 0;
+  }
+
+  .btn-active-status {
+    border-color: rgba(30, 215, 96, 0.4);
+    color: #1ed760;
+  }
+
+  .badge-community {
+    background: rgba(138, 43, 226, 0.15);
+    color: #b070ff;
+    border: 1px solid rgba(138, 43, 226, 0.3);
+  }
+
 </style>

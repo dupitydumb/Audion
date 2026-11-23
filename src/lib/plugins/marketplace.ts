@@ -1,6 +1,13 @@
 // Plugin registry and marketplace client
 import type { AudionPluginManifest } from './schema';
 import { validateManifest, validateManifests } from './schema';
+import {
+  CATEGORY_TO_CAPABILITY,
+  getCapabilities,
+  getCapabilityLabel,
+  getCategoryLabel,
+  normalizeCategory,
+} from './categories';
 import { proxyFetch } from '../network';
 
 export interface MarketplacePlugin {
@@ -12,7 +19,27 @@ export interface MarketplacePlugin {
   downloads?: number;
   verified?: boolean;
   lastUpdated?: string;
+  sha256?: string;
+  registryName?: string;
 }
+
+export interface CommunityRegistry {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  isDefault?: boolean;
+}
+
+export const DEFAULT_REGISTRIES: CommunityRegistry[] = [
+  {
+    id: 'official',
+    name: 'Official Audion Registry',
+    url: 'https://raw.githubusercontent.com/dupitydumb/audion-plugins/main/registry/main/registry.json',
+    enabled: true,
+    isDefault: true,
+  },
+];
 
 export interface RegistryData {
   version: string;
@@ -179,9 +206,101 @@ function isValidUrl(url: string): boolean {
   }
 }
 
+// Resolve icon URL if relative using manifest_url or repository path
+export function resolvePluginIconUrl(plugin: { manifest?: AudionPluginManifest; manifest_url?: string; repo?: string }): string | undefined {
+  const manifest = plugin.manifest;
+  if (!manifest || !manifest.icon) return undefined;
+  if (
+    manifest.icon.startsWith('http') ||
+    manifest.icon.startsWith('data:') ||
+    manifest.icon.trim().startsWith('<svg')
+  ) {
+    return undefined;
+  }
+
+  // 1. If manifest_url is available, resolve relative to it
+  if (plugin.manifest_url && isValidUrl(plugin.manifest_url)) {
+    try {
+      const baseUrl = plugin.manifest_url.substring(0, plugin.manifest_url.lastIndexOf('/') + 1);
+      return new URL(manifest.icon, baseUrl).href;
+    } catch {}
+  }
+
+  // 2. If repo URL or owner/repo is available, resolve to raw GitHub URL
+  if (plugin.repo) {
+    const match =
+      plugin.repo.match(/github\.com\/([^/]+)\/([^/]+)/) ||
+      plugin.repo.match(/^([^/]+)\/([^/]+)$/);
+    if (match) {
+      const [, owner, repo] = match;
+      const cleanRepo = repo.replace(/\.git$/, '').replace(/\/$/, '');
+      const cleanIcon = manifest.icon.replace(/^\.?\//, '');
+      return `https://raw.githubusercontent.com/${owner}/${cleanRepo}/main/${cleanIcon}`;
+    }
+  }
+
+  return undefined;
+}
+
 // Fetch with proxy
 async function fetchWithProxy<T>(url: string): Promise<T> {
   return proxyFetch<T>(url);
+}
+
+// Fetch plugins from a single registry endpoint
+export async function fetchRegistry(registry: CommunityRegistry): Promise<MarketplacePlugin[]> {
+  if (!registry.enabled || !isValidUrl(registry.url)) return [];
+
+  try {
+    const noCacheUrl = `${registry.url}?t=${Date.now()}`;
+    const data: RegistryData = await fetchWithProxy<RegistryData>(noCacheUrl);
+
+    if (!data || !Array.isArray(data.plugins)) {
+      console.warn(`[Marketplace] Registry ${registry.name} returned invalid format`);
+      return [];
+    }
+
+    const validManifests = validateManifests(data.plugins.map((p) => p.manifest));
+    return data.plugins
+      .filter((p) => validManifests.includes(p.manifest as AudionPluginManifest))
+      .map((p) => {
+        const iconUrl = resolvePluginIconUrl(p);
+        const manifest = iconUrl && !p.manifest.icon_url ? { ...p.manifest, icon_url: iconUrl } : p.manifest;
+        return {
+          ...p,
+          manifest,
+          curated: !!registry.isDefault,
+          registryName: registry.name,
+        };
+      });
+  } catch (err) {
+    console.warn(`[Marketplace] Failed to fetch registry '${registry.name}' from ${registry.url}:`, err);
+    return [];
+  }
+}
+
+// Fetch and merge plugins from multiple registries
+export async function fetchAllRegistries(registries: CommunityRegistry[]): Promise<MarketplacePlugin[]> {
+  const active = registries.filter((r) => r.enabled);
+  if (active.length === 0) return [];
+
+  const results = await Promise.allSettled(active.map((reg) => fetchRegistry(reg)));
+  const merged: MarketplacePlugin[] = [];
+  const seenRepos = new Set<string>();
+
+  for (const res of results) {
+    if (res.status === 'fulfilled') {
+      for (const plugin of res.value) {
+        const key = plugin.manifest.name || plugin.repo;
+        if (!seenRepos.has(key)) {
+          seenRepos.add(key);
+          merged.push(plugin);
+        }
+      }
+    }
+  }
+
+  return merged;
 }
 
 // Fetch curated registry
@@ -197,7 +316,11 @@ export async function fetchCuratedRegistry(): Promise<MarketplacePlugin[]> {
         // Map back to plugins
         return data.plugins
           .filter(p => validManifests.includes(p.manifest as AudionPluginManifest))
-          .map(p => ({ ...p, curated: true }));
+          .map(p => {
+            const iconUrl = resolvePluginIconUrl(p);
+            const manifest = iconUrl && !p.manifest.icon_url ? { ...p.manifest, icon_url: iconUrl } : p.manifest;
+            return { ...p, manifest, curated: true };
+          });
     } catch (err) {
       console.warn('[Marketplace] Local registry failed:', err);
     }
@@ -216,7 +339,11 @@ export async function fetchCuratedRegistry(): Promise<MarketplacePlugin[]> {
       // Map back to plugins
       const validPlugins = data.plugins
         .filter(p => validManifests.includes(p.manifest as AudionPluginManifest))
-        .map(p => ({ ...p, curated: true }));
+        .map(p => {
+          const iconUrl = resolvePluginIconUrl(p);
+          const manifest = iconUrl && !p.manifest.icon_url ? { ...p.manifest, icon_url: iconUrl } : p.manifest;
+          return { ...p, manifest, curated: true };
+        });
 
       if (validPlugins.length < data.plugins.length) {
         console.warn(
@@ -308,15 +435,23 @@ export async function fetchCommunityPlugin(url: string): Promise<MarketplacePlug
 }
 
 // Fetch all marketplace plugins
-export async function fetchMarketplacePlugins(communityUrls: string[] = []): Promise<MarketplacePlugin[]> {
+export async function fetchMarketplacePlugins(
+  communityUrls: string[] = [],
+  registries?: CommunityRegistry[]
+): Promise<MarketplacePlugin[]> {
   const results: MarketplacePlugin[] = [];
 
-  // Fetch curated plugins
-  const curated = await fetchCuratedRegistry();
-  results.push(...curated);
+  // Fetch plugins from all configured registries or default curated
+  if (registries && registries.length > 0) {
+    const registryPlugins = await fetchAllRegistries(registries);
+    results.push(...registryPlugins);
+  } else {
+    const curated = await fetchCuratedRegistry();
+    results.push(...curated);
+  }
 
   // Fetch community plugins in parallel
-  const communityPromises = communityUrls.map(url => fetchCommunityPlugin(url));
+  const communityPromises = communityUrls.map((url) => fetchCommunityPlugin(url));
   const communityResults = await Promise.all(communityPromises);
 
   for (const plugin of communityResults) {
@@ -340,15 +475,23 @@ export function searchPlugins(plugins: MarketplacePlugin[], query: string): Mark
       m.description?.toLowerCase().includes(q) ||
       m.author.toLowerCase().includes(q) ||
       m.tags?.some(t => t.toLowerCase().includes(q)) ||
-      m.category?.toLowerCase().includes(q)
+      m.category?.toLowerCase().includes(q) ||
+      getCategoryLabel(m.category).toLowerCase().includes(q) ||
+      getCapabilities(m).some(cap => getCapabilityLabel(cap).toLowerCase().includes(q))
     );
   });
 }
 
-// Filter plugins by category
+// Filter plugins by category (canonical category or derived capability)
 export function filterByCategory(plugins: MarketplacePlugin[], category: string): MarketplacePlugin[] {
   if (!category || category === 'all') return plugins;
-  return plugins.filter(p => p.manifest.category === category);
+  const target = normalizeCategory(category);
+  const targetCap = target ? CATEGORY_TO_CAPABILITY[target] : undefined;
+  return plugins.filter(p => {
+    const canonical = normalizeCategory(p.manifest.category) ?? p.manifest.category;
+    if (canonical === (target ?? category)) return true;
+    return targetCap ? getCapabilities(p.manifest).includes(targetCap) : false;
+  });
 }
 
 // Clear plugin cache

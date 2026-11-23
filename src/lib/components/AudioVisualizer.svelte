@@ -171,12 +171,24 @@
     if (ctx2d) ctx2d.scale(dpr, dpr);
   }
 
+  function handleVisibilityChange() {
+    if (document.hidden) {
+      stopLoop();
+    } else if ($isPlaying && $theme.animation.playerVisualization !== 'none' && !$theme.animation.reducedMotion) {
+      startLoop();
+    }
+  }
+
   onMount(() => {
     ctx2d = canvas.getContext('2d');
     accentColor = getAccent();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
   });
 
-  onDestroy(stopLoop);
+  onDestroy(() => {
+    stopLoop();
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+  });
 </script>
 
 <canvas

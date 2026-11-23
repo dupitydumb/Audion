@@ -47,7 +47,9 @@ The manifest defines your plugin's metadata, entry point, and requested permissi
     "network:fetch"
   ],
   "repo": "https://github.com/username/my-plugin.git",
-  "repository": "https://github.com/username/my-plugin.git"
+  "repository": "https://github.com/username/my-plugin.git",
+  "category": "utility",
+  "provides": ["stream"]
 }
 ```
 
@@ -59,6 +61,9 @@ The manifest defines your plugin's metadata, entry point, and requested permissi
 - `permissions`: Array of permissions your plugin requires.
 - `repo`: The repository URL used for schema validation.
 - `repository`: The repository URL used by the `npm run sync-plugins` script.
+- `category` *(Optional)*: Marketplace category. Canonical values: `streaming`, `metadata`, `lyrics`, `library`, `integration`, `appearance`, `utility`. Other strings are shown Title Cased.
+- `tags` *(Optional)*: Search keywords.
+- `provides` *(Optional)*: Capabilities this plugin adds: `"stream"`, `"metadata"`, and/or `"lyrics"`. Drives capability badges and the matching marketplace filters; inferred from `tags`, then `category`, when omitted.
 
 
 ### 2. Entry Point (`index.js`)

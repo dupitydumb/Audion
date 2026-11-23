@@ -391,6 +391,10 @@ export async function addExternalTrack(track: ExternalTrackInput): Promise<numbe
     return await invoke('add_external_track', { track });
 }
 
+export async function getTrackById(trackId: number): Promise<Track | null> {
+    return await invoke('get_track_by_id', { trackId });
+}
+
 export async function updateTrackDuration(trackId: number, duration: number): Promise<void> {
     if (!isTauri()) return;
     await invoke('update_track_duration', { trackId, duration: Math.round(duration) });
@@ -1277,6 +1281,132 @@ export async function fetchListenbrainzRecommendations(limit = 50): Promise<LbRe
 }
 
 // =============================================================================
+// LAST.FM
+// =============================================================================
+
+export interface LastFmStatus {
+    connected: boolean;
+    username: string | null;
+}
+
+/** Get the browser authorization URL for Last.fm web authentication. */
+export async function getLastfmAuthUrl(): Promise<string> {
+    return await invoke('get_lastfm_auth_url');
+}
+
+/** Complete authorization by exchanging auth token for session key. Returns username. */
+export async function completeLastfmAuth(token: string): Promise<string> {
+    return await invoke('complete_lastfm_auth', { token });
+}
+
+/** Get current Last.fm connection status. */
+export async function getLastfmStatus(): Promise<LastFmStatus> {
+    return await invoke('get_lastfm_status');
+}
+
+/** Disconnect Last.fm session. */
+export async function disconnectLastfm(): Promise<void> {
+    return await invoke('disconnect_lastfm');
+}
+
+/** Submit currently playing track to Last.fm. */
+export async function submitLastfmNowPlaying(
+    artist: string,
+    title: string,
+    album?: string | null,
+    durationSecs?: number | null,
+): Promise<void> {
+    return await invoke('submit_lastfm_now_playing', {
+        artist,
+        title,
+        album: album ?? null,
+        durationSecs: durationSecs ?? null,
+    });
+}
+
+/** Submit a scrobble to Last.fm. */
+export async function submitLastfmScrobble(
+    artist: string,
+    title: string,
+    album?: string | null,
+    durationSecs?: number | null,
+    timestamp?: number | null,
+): Promise<void> {
+    return await invoke('submit_lastfm_scrobble', {
+        artist,
+        title,
+        album: album ?? null,
+        durationSecs: durationSecs ?? null,
+        timestamp: timestamp ?? null,
+    });
+}
+
+/** Replay any offline cached scrobbles when connection is restored. Returns replayed count. */
+export async function replayCachedScrobbles(): Promise<number> {
+    return await invoke('replay_cached_scrobbles');
+}
+
+// =============================================================================
+// AUDIO TELEMETRY ("Stats for Nerds")
+// =============================================================================
+
+export interface AudioTelemetry {
+    path: string | null;
+    codec: string;
+    bit_depth: number | null;
+    sample_rate: number;
+    channels: number;
+    device_sample_rate: number;
+    device_channels: number;
+    resampler_active: boolean;
+    output_device: string;
+    replay_gain_db: number | null;
+    limiter_enabled: boolean;
+    /** user preference only; never proof that the stream is exclusive */
+    exclusive_requested: boolean;
+    /** verified: the negotiated stream is genuinely exclusive */
+    exclusive_active: boolean;
+    exclusive_supported: boolean;
+    /** was exclusive, DAC handed back after pause */
+    exclusive_suspended: boolean;
+    exclusive_backend: string | null;
+    exclusive_format: string | null;
+    exclusive_error: string | null;
+}
+
+/** Get live audio engine telemetry. */
+export async function getAudioTelemetry(): Promise<AudioTelemetry> {
+    return await invoke('audio_get_telemetry');
+}
+
+export interface ExclusiveStatus {
+    requested: boolean;
+    active: boolean;
+    supported: boolean;
+    suspended: boolean;
+    backend: string | null;
+    sample_rate: number;
+    channels: number;
+    format: string | null;
+    reason: string | null;
+}
+
+export interface ExclusiveCapability {
+    supported: boolean;
+    backend: string | null;
+    reason: string | null;
+}
+
+/** Enable/disable exclusive output. Rejects when the device refuses the stream. */
+export async function setAudioExclusiveMode(enabled: boolean): Promise<ExclusiveStatus> {
+    return await invoke('audio_set_exclusive_mode', { enabled });
+}
+
+export async function getAudioExclusiveCapability(): Promise<ExclusiveCapability> {
+    return await invoke('audio_exclusive_capability');
+}
+
+// =============================================================================
 // MUSICBRAINZ
 // =============================================================================
 
@@ -1507,4 +1637,50 @@ export async function getAutostartEnabled(): Promise<boolean> {
 export async function setAutostartEnabled(enabled: boolean): Promise<void> {
     if (isAndroid()) return;
     return await invoke('set_autostart_enabled', { enabled });
+}
+
+// ====================================================================
+// Skins & Theme Management (AppData/skins)
+// ====================================================================
+
+export interface LocalSkinInfo {
+    id: string;
+    name: string;
+    author?: string;
+    description?: string;
+    version: number;
+    path: string;
+    is_folder: boolean;
+    accent_color: string;
+    preview_colors: string[];
+    has_css: boolean;
+    has_effect: boolean;
+    schemes_count: number;
+    schemes: string[];
+    raw_package: string;
+}
+
+export async function getSkinsDir(): Promise<string> {
+    if (!isTauri()) return 'Local AppData/skins';
+    return await invoke<string>('get_skins_dir');
+}
+
+export async function openSkinsDir(): Promise<void> {
+    if (!isTauri()) return;
+    return await invoke<void>('open_skins_dir');
+}
+
+export async function listLocalSkins(): Promise<LocalSkinInfo[]> {
+    if (!isTauri()) return [];
+    return await invoke<LocalSkinInfo[]>('list_local_skins');
+}
+
+export async function deleteLocalSkin(path: string): Promise<boolean> {
+    if (!isTauri()) return false;
+    return await invoke<boolean>('delete_local_skin', { path });
+}
+
+export async function saveLocalSkin(filename: string, content: string): Promise<string> {
+    if (!isTauri()) return '';
+    return await invoke<string>('save_local_skin', { filename, content });
 }

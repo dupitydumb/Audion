@@ -45,7 +45,12 @@ vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
 # Plugin examples
-plugin-examples/
+plugin-examples/*
+!plugin-examples/sample-stream-provider/
+!plugin-examples/sample-metadata-provider/
+!plugin-examples/sample-lyrics-provider/
+
+miniplayer.md
 
 #Skills
 .agents/
@@ -70,6 +75,8 @@ tauri-signing.key.pub
 src-tauri/target_check
 src-tauri/target_validate
 src-tauri/gen/android/release.keystore
+*.keystore
+release.keystore
 
 
 

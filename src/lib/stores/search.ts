@@ -40,34 +40,40 @@ export const searchResults = writable<SearchResults>(emptyResults());
 // shared by both the query-typed debounce and the watcher-triggered re-run below
 // only one search should ever be in flight/pending at a time
 let debounceTimer: ReturnType<typeof setTimeout>;
+let currentQueryId = 0;
 
 async function runSearch(q: string): Promise<void> {
+    const queryId = ++currentQueryId;
     try {
-        const results = await searchLibrary(q, 100, 0);
+        const results = await searchLibrary(q, 100, 0).catch(err => {
+            console.error("[Search] searchLibrary failed:", err);
+            return { tracks: [], albums: [], artists: [], playlists: [] };
+        });
+
+        if (queryId !== currentQueryId) return;
+
         const playlists = results.playlists ?? [];
+        const tracks = results.tracks ?? [];
+        const albums = results.albums ?? [];
+        const artists = results.artists ?? [];
+
         searchResults.set({
-            tracks: results.tracks,
-            albums: results.albums,
-            artists: results.artists,
-            playlists: playlists,
+            tracks,
+            albums,
+            artists,
+            playlists,
             hasResults:
-                results.tracks.length > 0 ||
-                results.albums.length > 0 ||
-                results.artists.length > 0 ||
+                tracks.length > 0 ||
+                albums.length > 0 ||
+                artists.length > 0 ||
                 playlists.length > 0,
             query: q,
         });
     } catch (err) {
-        console.error("[Search] searchLibrary failed:", err);
+        if (queryId !== currentQueryId) return;
+        console.error("[Search] runSearch failed:", err);
         // Show error state so user knows it's broken, not empty
-        searchResults.set({
-            tracks: [],
-            albums: [],
-            artists: [],
-            playlists: [],
-            hasResults: false,
-            query: q,
-        });
+        searchResults.set(emptyResults());
     }
 }
 

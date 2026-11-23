@@ -12,6 +12,7 @@
     type DeviceList,
     type AudioDeviceInfo,
   } from "$lib/services/native-audio";
+  import { getAudioExclusiveCapability, type ExclusiveCapability } from "$lib/api/tauri";
   import { html5SetReplayGainEnabled } from "$lib/services/html5-audio";
   import Icon from "$lib/components/Icon.svelte";
   import { onMount } from "svelte";
@@ -28,11 +29,36 @@
   $: showRefreshNotice = $appSettings.audioBackend !== initialAudioBackend;
   $: outputDeviceDisabled = $appSettings.audioBackend === 'html5';
 
+  // Exclusive DAC mode
+  let exclusiveCapability: ExclusiveCapability | null = null;
+  let exclusiveBusy = false;
+  let exclusiveError: string | null = null;
+  $: exclusiveUnsupported = exclusiveCapability !== null && !exclusiveCapability.supported;
+  $: exclusiveDisabled = outputDeviceDisabled || exclusiveUnsupported || exclusiveBusy;
+  $: exclusiveDescription = exclusiveUnsupported
+    ? (exclusiveCapability?.reason ?? 'Not supported on this platform.')
+    : 'Exclusive device access, no DSP, no resample. Disables EQ, limiter, ReplayGain, crossfade and automix while active; software volume still applies. Other apps cannot use the device.';
+
+  async function handleToggleExclusive(enabled: boolean) {
+    if (exclusiveBusy) return;
+    exclusiveBusy = true;
+    exclusiveError = null;
+    const ok = await appSettings.setExclusiveMode(enabled);
+    if (!ok) {
+      exclusiveError = 'The output device refused exclusive access. Output stays shared.';
+    }
+    exclusiveBusy = false;
+  }
+
   let deviceList: DeviceList | null = null;
   let isLoadingDevices = false;
   let deviceDropdownOpen = false;
   let deviceDropdownRef: HTMLDivElement | null = null;
   let infoPopoverDevice: AudioDeviceInfo | null = null;
+
+  // Stored preference is a device id (e.g. "wasapi:{0.0.0.00000000}.{...}") — show its name
+  $: selectedDevice = deviceList?.devices.find((d) => d.id === $appSettings.outputDevice) ?? null;
+  $: outputDeviceLabel = selectedDevice?.extended[0] ?? selectedDevice?.name ?? $appSettings.outputDevice;
 
   function handleDeviceDropdownToggle() {
     if (outputDeviceDisabled) return;
@@ -142,6 +168,11 @@
         console.warn('[AudioSection] Failed to load cached device info:', e);
       }
     }
+    try {
+      exclusiveCapability = await getAudioExclusiveCapability();
+    } catch (e) {
+      console.warn('[AudioSection] Failed to read exclusive capability:', e);
+    }
   });
 </script>
 
@@ -213,9 +244,9 @@
           aria-expanded={deviceDropdownOpen}
           aria-label={$_('settings.outputDevice', { default: 'Output device' })}
         >
-          <span class="device-dropdown-label">
-            {#if $appSettings.outputDevice}
-              {($appSettings.outputDevice.length > 28) ? $appSettings.outputDevice.slice(0, 28) + '...' : $appSettings.outputDevice}
+          <span class="device-dropdown-label" title={$appSettings.outputDevice ?? undefined}>
+            {#if outputDeviceLabel}
+              {(outputDeviceLabel.length > 28) ? outputDeviceLabel.slice(0, 28) + '...' : outputDeviceLabel}
             {:else}
               {$_('settings.defaultDevice', { default: 'System default' })}
             {/if}
@@ -286,6 +317,27 @@
       </div>
     </SettingRow>
 
+    <!-- 2b. Exclusive DAC Mode -->
+    <SettingRow
+      id="setting-exclusive-mode"
+      label="Exclusive DAC Mode"
+      description={exclusiveDescription}
+      disabled={exclusiveDisabled}
+      disabledReason={outputDeviceDisabled ? 'Requires Native or Rodio driver' : exclusiveCapability?.reason ?? undefined}
+    >
+      <div class="exclusive-control">
+        <SettingToggle
+          checked={$appSettings.exclusiveMode}
+          label="Toggle Exclusive DAC Mode"
+          disabled={exclusiveDisabled}
+          on:change={(e) => handleToggleExclusive(e.detail)}
+        />
+        {#if exclusiveError}
+          <span class="exclusive-error">{exclusiveError}</span>
+        {/if}
+      </div>
+    </SettingRow>
+
     <!-- 3. Crossfade -->
     <SettingRow
       id="setting-crossfade"
@@ -336,6 +388,32 @@
           checked={$appSettings.limiterEnabled}
           label={$_('settings.toggleLimiter', { default: 'Toggle Safety Limiter' })}
           on:change={(e) => handleToggleLimiter(e.detail)}
+        />
+      </SettingRow>
+
+      <!-- 5b. Skip Silence (Intro/Outro RMS Dead-Air Trimming) -->
+      <SettingRow
+        id="setting-skip-silence"
+        label="Skip Silence"
+        description="Automatically trims dead-air intro and outro silence (< -60 dBFS RMS) preserving artistic mid-song pauses."
+      >
+        <SettingToggle
+          checked={$appSettings.skipSilence}
+          label="Toggle Skip Silence"
+          on:change={(e) => appSettings.setSkipSilence(e.detail)}
+        />
+      </SettingRow>
+
+      <!-- 5c. Automix (Frequency-Selective Bass Handoff) -->
+      <SettingRow
+        id="setting-automix"
+        label="Automix (Smart Bass Handoff)"
+        description="Frequency-selective transition that swaps sub-bass (< 150 Hz) at midpoint to eliminate muddy low-end clash during crossfades."
+      >
+        <SettingToggle
+          checked={$appSettings.automixEnabled}
+          label="Toggle Automix Bass Handoff"
+          on:change={(e) => appSettings.setAutomix(e.detail)}
         />
       </SettingRow>
     {/if}
@@ -442,6 +520,18 @@
   .device-dropdown-wrap {
     position: relative;
     width: 220px;
+  }
+
+  .exclusive-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .exclusive-error {
+    color: var(--danger-text, #e5484d);
+    font-size: 11px;
+    max-width: 220px;
   }
 
   .device-dropdown-trigger {

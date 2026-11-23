@@ -29,6 +29,7 @@
     } from "$lib/stores/pinned";
     import VirtualizedGrid from "./Virtualizedgrid.svelte";
     import MediaCard from "./MediaCard.svelte";
+    import PlaylistImportModal from "./PlaylistImportModal.svelte";
     import { onDestroy } from "svelte";
     import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
     import { progressiveScan } from "$lib/stores/progressiveScan";
@@ -277,6 +278,13 @@
         }
     }
 
+    let showImportModal = false;
+
+    function handlePlaylistImported(e: CustomEvent<{ playlistId: number; name: string; trackCount: number }>) {
+        loadPlaylists();
+        goToPlaylistDetail(e.detail.playlistId, e.detail.name);
+    }
+
     // Sorting
     $: sortedPlaylists = [...$playlists].sort((a, b) => {
         const aPinned = isPinned("playlist", a.id, $pinnedItems);
@@ -297,6 +305,14 @@
     <header class="view-header">
         <h1>{$_("sidebar.playlists")}</h1>
         <div class="header-actions">
+            <button
+                class="btn-secondary"
+                on:click={() => (showImportModal = true)}
+                title="Import .m3u, .m3u8, JSON or text playlist with 3-tier matching"
+            >
+                <Icon name="upload" size={20} />
+                Import Playlist
+            </button>
             <button
                 class="btn-secondary"
                 on:click={handleImportFolder}
@@ -419,6 +435,8 @@
             </svelte:fragment>
         </MediaCard>
     </VirtualizedGrid>
+
+    <PlaylistImportModal bind:open={showImportModal} on:imported={handlePlaylistImported} />
 </div>
 
 <style>
@@ -447,6 +465,12 @@
         display: flex;
         align-items: center;
         gap: var(--spacing-sm);
+        flex-wrap: wrap;
+    }
+
+    .header-actions .btn-secondary {
+        white-space: nowrap;
+        flex-shrink: 0;
     }
 
     /* Mobile: hide the big heading => the pill tabs above already show

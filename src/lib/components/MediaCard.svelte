@@ -238,7 +238,6 @@
     box-shadow: var(--shadow-md);
     flex-shrink: 0;
     isolation: isolate;
-    max-height: calc(100% - 60px);
   }
 
   .cover.round {

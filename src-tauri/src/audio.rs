@@ -1,35 +1,36 @@
-pub mod dsp;
-pub mod mod_types;
-pub mod sources;
-pub mod symphonia;
-pub mod opus;
-pub mod resampler;
-pub mod engine;
-pub mod worker;
-pub mod player;
-pub mod gated;
-pub mod dual_track;
-pub mod gated_worker;
 pub mod decision;
 pub mod directive;
+pub mod dsp;
+pub mod dual_track;
+pub mod engine;
 pub mod event_bridge;
+pub mod gated;
+pub mod gated_worker;
+pub mod mod_types;
+pub mod opus;
+pub mod output;
+pub mod player;
+pub mod probe;
+pub mod resampler;
+pub mod sources;
+pub mod symphonia;
+pub mod worker;
 
 #[cfg(test)]
 mod tests_native_playback;
 
 // Re-export key types that lib.rs / other modules use
-pub use dsp::{EqSettings};
-pub use mod_types::{AudioDeviceInfo, DeviceList, AudioEvent};
-pub use worker::PlaybackStateSync;
+pub use dsp::EqSettings;
+pub use mod_types::{AudioDeviceInfo, AudioEvent, AudioTelemetry, DeviceList};
 pub use player::PlayerStateSync;
+pub use worker::PlaybackStateSync;
 
 // Tauri Commands + resolve_audio_path helper defined directly here
 // so that Tauri's generate_handler! macro can resolve the cmd helpers properly.
 
-use std::sync::Mutex;
-use tauri::{State, Manager};
 use crate::db::Database;
 use crate::sync::SyncState;
+use tauri::{Manager, State};
 
 use worker::AudioCommand;
 
@@ -74,9 +75,7 @@ async fn resolve_audio_path(
         Some((db_id, db_path, _, db_local_src, db_format)) => {
             (Some(db_id), db_path, db_local_src, db_format)
         }
-        None => {
-            (None, path.to_string(), None, None)
-        }
+        None => (None, path.to_string(), None, None),
     };
 
     if let Some(ref local_path) = local_src {
@@ -85,12 +84,16 @@ async fn resolve_audio_path(
         }
     }
 
-    let app_handle = sync_state.app_handle.as_ref()
+    let app_handle = sync_state
+        .app_handle
+        .as_ref()
         .ok_or_else(|| "App handle not found in SyncState".to_string())?;
-    
-    let app_dir = app_handle.path().app_data_dir()
+
+    let app_dir = app_handle
+        .path()
+        .app_data_dir()
         .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-    
+
     let cache_dir = app_dir.join("cache");
     if !cache_dir.exists() {
         std::fs::create_dir_all(&cache_dir)
@@ -117,8 +120,12 @@ async fn resolve_audio_path(
     let cache_path = cache_dir.join(format!("{}.{}", cache_id, ext));
 
     if !cache_path.exists() {
-        tracing::info!("Downloading track {} from server to {:?}", cache_id, cache_path);
-        
+        tracing::info!(
+            "Downloading track {} from server to {:?}",
+            cache_id,
+            cache_path
+        );
+
         let server_url = sync_state.server_url.lock().unwrap().clone();
         let token = crate::sync::auth::get_access_token(db)?
             .ok_or_else(|| "Not logged in to server".to_string())?;
@@ -126,14 +133,22 @@ async fn resolve_audio_path(
         let server_track_id = match tid {
             Some(local_id) => {
                 let conn = db.conn.lock().map_err(|e| e.to_string())?;
-                crate::db::queries::get_server_id(&conn, &format!("lib_{}", local_id), "library_track")
-                    .map_err(|e| e.to_string())?
-                    .or_else(|| {
-                        crate::db::queries::get_server_id(&conn, &format!("liked_{}", local_id), "liked_track")
-                            .ok()
-                            .flatten()
-                    })
-                    .unwrap_or_else(|| local_id.to_string())
+                crate::db::queries::get_server_id(
+                    &conn,
+                    &format!("lib_{}", local_id),
+                    "library_track",
+                )
+                .map_err(|e| e.to_string())?
+                .or_else(|| {
+                    crate::db::queries::get_server_id(
+                        &conn,
+                        &format!("liked_{}", local_id),
+                        "liked_track",
+                    )
+                    .ok()
+                    .flatten()
+                })
+                .unwrap_or_else(|| local_id.to_string())
             }
             None => {
                 if let Some(id) = track_id {
@@ -146,25 +161,39 @@ async fn resolve_audio_path(
 
         let client = reqwest::Client::new();
         let stream_url = format!("{}/api/tracks/{}/stream", server_url, server_track_id);
-        
-        let mut resp = client.get(&stream_url)
+
+        let mut resp = client
+            .get(&stream_url)
             .header("Authorization", format!("Bearer {}", token))
             .send()
             .await
             .map_err(|e| format!("Failed to connect to server: {}", e))?;
 
         if !resp.status().is_success() {
-            return Err(format!("Server returned error playing track ({}): {}", resp.status(), resp.status().canonical_reason().unwrap_or("Unknown")));
+            return Err(format!(
+                "Server returned error playing track ({}): {}",
+                resp.status(),
+                resp.status().canonical_reason().unwrap_or("Unknown")
+            ));
         }
 
         use tokio::io::AsyncWriteExt;
-        let mut file: tokio::fs::File = tokio::fs::File::create(&cache_path).await
+        let mut file: tokio::fs::File = tokio::fs::File::create(&cache_path)
+            .await
             .map_err(|e: std::io::Error| format!("Failed to create cache file: {}", e))?;
 
-        while let Some(chunk) = resp.chunk().await.map_err(|e: reqwest::Error| e.to_string())? {
-            file.write_all(&chunk).await.map_err(|e: std::io::Error| e.to_string())?;
+        while let Some(chunk) = resp
+            .chunk()
+            .await
+            .map_err(|e: reqwest::Error| e.to_string())?
+        {
+            file.write_all(&chunk)
+                .await
+                .map_err(|e: std::io::Error| e.to_string())?;
         }
-        file.flush().await.map_err(|e: std::io::Error| e.to_string())?;
+        file.flush()
+            .await
+            .map_err(|e: std::io::Error| e.to_string())?;
 
         if let Some(local_id) = tid {
             let cache_path_str = cache_path.to_string_lossy().to_string();
@@ -172,7 +201,8 @@ async fn resolve_audio_path(
             conn.execute(
                 "UPDATE tracks SET local_src = ?1 WHERE id = ?2",
                 rusqlite::params![cache_path_str, local_id],
-            ).ok();
+            )
+            .ok();
         }
     }
 
@@ -202,10 +232,18 @@ pub async fn audio_preload(
     db: State<'_, Database>,
     sync_state: State<'_, SyncState>,
 ) -> Result<(), String> {
-    tracing::info!("[AUDIO] Preload requested: {} (crossfade: {}s)", path, crossfade_seconds);
+    tracing::info!(
+        "[AUDIO] Preload requested: {} (crossfade: {}s)",
+        path,
+        crossfade_seconds
+    );
 
     let resolved_path = resolve_audio_path(&path, track_id, &db, &sync_state).await?;
-    state.send(AudioCommand::Preload(resolved_path, replay_gain_db, crossfade_seconds))
+    state.send(AudioCommand::Preload(
+        resolved_path,
+        replay_gain_db,
+        crossfade_seconds,
+    ))
 }
 
 #[tauri::command]
@@ -229,10 +267,7 @@ pub fn audio_seek(position: f64, state: State<'_, PlaybackStateSync>) -> Result<
 }
 
 #[tauri::command]
-pub fn audio_set_volume(
-    volume: f32,
-    state: State<'_, PlaybackStateSync>,
-) -> Result<(), String> {
+pub fn audio_set_volume(volume: f32, state: State<'_, PlaybackStateSync>) -> Result<(), String> {
     state.send(AudioCommand::SetVolume(volume))
 }
 
@@ -283,9 +318,7 @@ pub fn audio_set_crossfade_seconds(
 }
 
 #[tauri::command]
-pub fn audio_trigger_crossfade(
-    state: State<'_, PlaybackStateSync>,
-) -> Result<(), String> {
+pub fn audio_trigger_crossfade(state: State<'_, PlaybackStateSync>) -> Result<(), String> {
     state.send(AudioCommand::TriggerCrossfade)
 }
 
@@ -301,29 +334,30 @@ pub fn audio_list_output_devices() -> Result<DeviceList, String> {
         .default_output_device()
         .and_then(|d| d.id().ok())
         .map(|id| id.to_string());
-    let devices = all_devices.iter().filter_map(|d| {
-        let id = d.id().ok()?.to_string();
-        let desc = d.description().ok()?;
-        let is_default = Some(&id) == default_device_id.as_ref();
-        Some(AudioDeviceInfo {
-            id,
-            name: desc.name().to_string(),
-            manufacturer: desc.manufacturer().map(|s| s.to_string()),
-            driver: desc.driver().map(|s| s.to_string()),
-            device_type: desc.device_type().to_string(),
-            interface_type: desc.interface_type().to_string(),
-            address: desc.address().map(|s| s.to_string()),
-            extended: desc.extended().to_vec(),
-            is_default,
+    let devices = all_devices
+        .iter()
+        .filter_map(|d| {
+            let id = d.id().ok()?.to_string();
+            let desc = d.description().ok()?;
+            let is_default = Some(&id) == default_device_id.as_ref();
+            Some(AudioDeviceInfo {
+                id,
+                name: desc.name().to_string(),
+                manufacturer: desc.manufacturer().map(|s| s.to_string()),
+                driver: desc.driver().map(|s| s.to_string()),
+                device_type: desc.device_type().to_string(),
+                interface_type: desc.interface_type().to_string(),
+                address: desc.address().map(|s| s.to_string()),
+                extended: desc.extended().to_vec(),
+                is_default,
+            })
         })
-    }).collect();
+        .collect();
     Ok(DeviceList { devices })
 }
 
 #[tauri::command]
-pub fn audio_get_device_info(
-    state: State<'_, PlaybackStateSync>,
-) -> Result<DeviceList, String> {
+pub fn audio_get_device_info(state: State<'_, PlaybackStateSync>) -> Result<DeviceList, String> {
     state
         .device_list
         .lock()
@@ -332,11 +366,53 @@ pub fn audio_get_device_info(
 }
 
 #[tauri::command]
+pub fn audio_get_telemetry(state: State<'_, PlaybackStateSync>) -> Result<AudioTelemetry, String> {
+    state
+        .telemetry
+        .lock()
+        .map(|t| t.clone())
+        .map_err(|_| "Telemetry lock poisoned".into())
+}
+
+#[tauri::command]
 pub fn audio_set_output_device(
     device_id: Option<String>,
     state: State<'_, PlaybackStateSync>,
 ) -> Result<(), String> {
     state.send(AudioCommand::SetOutputDevice(device_id))
+}
+
+#[tauri::command]
+pub fn audio_set_skip_silence(
+    enabled: bool,
+    state: State<'_, PlaybackStateSync>,
+) -> Result<(), String> {
+    state.send(AudioCommand::SetSkipSilence(enabled))
+}
+
+#[tauri::command]
+pub fn audio_set_automix(enabled: bool, state: State<'_, PlaybackStateSync>) -> Result<(), String> {
+    state.send(AudioCommand::SetAutomix(enabled))
+}
+
+/// returns the verified state; a rejected enable leaves output on shared
+#[tauri::command]
+pub async fn audio_set_exclusive_mode(
+    enabled: bool,
+    state: State<'_, PlaybackStateSync>,
+) -> Result<mod_types::ExclusiveStatus, String> {
+    let (tx, rx) = crossbeam::channel::bounded(1);
+    state.send(AudioCommand::SetExclusiveMode {
+        enabled,
+        reply: Some(tx),
+    })?;
+    rx.recv_timeout(std::time::Duration::from_secs(10))
+        .map_err(|_| "Audio engine did not answer the exclusive request".to_string())?
+}
+
+#[tauri::command]
+pub fn audio_exclusive_capability() -> mod_types::ExclusiveCapability {
+    output::exclusive_capability()
 }
 
 #[tauri::command]
@@ -390,9 +466,13 @@ pub async fn audio_get_stream_url(
             crate::db::queries::get_server_id(&conn, &format!("lib_{}", local_id), "library_track")
                 .map_err(|e| e.to_string())?
                 .or_else(|| {
-                    crate::db::queries::get_server_id(&conn, &format!("liked_{}", local_id), "liked_track")
-                        .ok()
-                        .flatten()
+                    crate::db::queries::get_server_id(
+                        &conn,
+                        &format!("liked_{}", local_id),
+                        "liked_track",
+                    )
+                    .ok()
+                    .flatten()
                 })
                 .unwrap_or_else(|| local_id.to_string())
         }
@@ -405,5 +485,8 @@ pub async fn audio_get_stream_url(
         }
     };
 
-    Ok(format!("{}/api/tracks/{}/stream?token={}", server_url, server_track_id, token))
+    Ok(format!(
+        "{}/api/tracks/{}/stream?token={}",
+        server_url, server_track_id, token
+    ))
 }

@@ -8,3 +8,7 @@
 
 /target_check
 
+# Keystores
+*.keystore
+release.keystore
+

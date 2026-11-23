@@ -404,7 +404,9 @@
 <style>
     .titlebar {
         height: 48px;
-        background: var(--bg-base);
+        background: color-mix(in srgb, var(--bg-base) 82%, transparent);
+        backdrop-filter: blur(28px) saturate(180%);
+        -webkit-backdrop-filter: blur(28px) saturate(180%);
         display: grid;
         grid-template-columns: 1fr auto 1fr;
         align-items: center;
@@ -413,7 +415,7 @@
         left: 0;
         right: 0;
         z-index: 50;
-        border-bottom: 1px solid var(--border-color);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         user-select: none;
         -webkit-user-select: none;
     }

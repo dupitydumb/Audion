@@ -1102,3 +1102,53 @@ pub fn extract_palette_from_path(file_path: String) -> Result<Vec<PaletteColor>,
 pub fn extract_palette(image_bytes: Vec<u8>) -> Result<Vec<PaletteColor>, String> {
     palette_from_bytes(&image_bytes)
 }
+
+static COVER_DOWNLOAD_SEMAPHORE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
+
+pub fn spawn_track_cover_cache(
+    app: tauri::AppHandle,
+    db: crate::db::Database,
+    track_id: i64,
+    cover_url: String,
+) {
+    tokio::spawn(async move {
+        // Fast pre-check: if track already has a valid track_cover_path on disk, skip
+        {
+            if let Ok(conn) = db.conn.lock() {
+                if let Ok(Some(existing)) = crate::db::queries::get_track_cover_path(&conn, track_id) {
+                    if !existing.is_empty() && std::path::Path::new(&existing).exists() {
+                        return;
+                    }
+                }
+            }
+        }
+
+        let _permit = match COVER_DOWNLOAD_SEMAPHORE.acquire().await {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+
+        match crate::commands::metadata::download_cover(&cover_url).await {
+            Ok(bytes) => {
+                match crate::scanner::cover_storage::save_track_cover(track_id, &bytes) {
+                    Ok(cover_path) => {
+                        if let Ok(conn) = db.conn.lock() {
+                            let _ = crate::db::queries::update_track_cover_path(&conn, track_id, Some(&cover_path));
+                            println!("[CoverCache] Successfully cached cover locally for track {}: {}", track_id, cover_path);
+                        }
+                        let _ = app.emit("track:cover_cached", serde_json::json!({
+                            "trackId": track_id,
+                            "coverPath": cover_path
+                        }));
+                    }
+                    Err(e) => {
+                        eprintln!("[CoverCache] Failed to save track cover {}: {}", track_id, e);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("[CoverCache] Failed to download cover for track {} ({}): {}", track_id, cover_url, e);
+            }
+        }
+    });
+}

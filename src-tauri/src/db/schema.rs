@@ -88,6 +88,20 @@ pub fn init_schema(conn: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_play_history_album ON play_history(album_id);
         CREATE INDEX IF NOT EXISTS idx_play_history_time ON play_history(played_at);
 
+        -- Offline scrobble cache (Last.fm & ListenBrainz)
+        CREATE TABLE IF NOT EXISTS scrobble_cache (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            service TEXT NOT NULL,
+            artist TEXT NOT NULL,
+            title TEXT NOT NULL,
+            album TEXT,
+            duration INTEGER,
+            timestamp INTEGER NOT NULL,
+            retry_count INTEGER DEFAULT 0,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_scrobble_cache_service ON scrobble_cache(service);
+
         -- Composite index
         -- This single index covers: ORDER BY artist, album, track_number, title
         CREATE INDEX IF NOT EXISTS idx_tracks_sort ON tracks(artist, album, track_number, title);

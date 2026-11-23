@@ -168,6 +168,14 @@
         if (dur && dur > 0) seek(Math.max(0, Math.min(1, lineTime / dur)));
     }
 
+    function handleWordClick(e: MouseEvent | KeyboardEvent, targetTime: number) {
+        e.stopPropagation();
+        const dur = $duration;
+        if (dur && dur > 0 && typeof targetTime === "number" && !isNaN(targetTime)) {
+            seek(Math.max(0, Math.min(1, targetTime / dur)));
+        }
+    }
+
     // -------------------------------------------------------------------------
     // section labels
     // -------------------------------------------------------------------------
@@ -260,17 +268,27 @@
                                     <span class="lyric-word split-word"
                                         >{#each word.syllables as syl, sIdx
                                             }<span
-                                                class="lyric-syllable"
+                                                class="lyric-syllable interactive-seek"
                                                 class:past={wState === 'past' || (wState === 'highlighted' && sIdx < ws.activeSyllableIdx)}
                                                 class:highlighted={wState === 'highlighted' && sIdx === ws.activeSyllableIdx}
                                                 style={wState === 'highlighted' && sIdx === ws.activeSyllableIdx ? `--syl-progress: ${ws.syllableProgress}%` : ''}
+                                                on:click={(e) => handleWordClick(e, syl.time)}
+                                                role="button"
+                                                tabindex="0"
+                                                on:keydown={(e) => e.key === "Enter" && handleWordClick(e, syl.time)}
+                                                title="{syl.text}"
                                             >{syl.text}</span
                                             >{/each}</span
                                     >{#if wIdx < line.words.length - 1}{" "}{/if}
                                 {:else}
                                     <span
-                                        class="lyric-word {wState}"
+                                        class="lyric-word interactive-seek {wState}"
                                         style={wState === 'highlighted' ? `--word-progress: ${ws.wordProgress}%` : ''}
+                                        on:click={(e) => handleWordClick(e, word.time)}
+                                        role="button"
+                                        tabindex="0"
+                                        on:keydown={(e) => e.key === "Enter" && handleWordClick(e, word.time)}
+                                        title="{word.word}"
                                     >{word.word}</span>{#if wIdx < line.words.length - 1}{" "}{/if}
                                 {/if}
                             {/each}
@@ -294,17 +312,27 @@
                                         <span class="lyric-word split-word"
                                             >{#each bgWord.syllables as syl, sIdx
                                                 }<span
-                                                    class="lyric-syllable"
+                                                    class="lyric-syllable interactive-seek"
                                                     class:past={bgState === 'past' || (bgState === 'highlighted' && sIdx < ws.bgActiveSyllableIdx)}
                                                     class:highlighted={bgState === 'highlighted' && sIdx === ws.bgActiveSyllableIdx}
                                                     style={bgState === 'highlighted' && sIdx === ws.bgActiveSyllableIdx ? `--syl-progress: ${ws.bgSyllableProgress}%` : ''}
+                                                    on:click={(e) => handleWordClick(e, syl.time)}
+                                                    role="button"
+                                                    tabindex="0"
+                                                    on:keydown={(e) => e.key === "Enter" && handleWordClick(e, syl.time)}
+                                                    title="{syl.text}"
                                                 >{syl.text}</span
                                                 >{/each}</span
                                         >{#if bgIdx < line.background_words.length - 1}{" "}{/if}
                                     {:else}
                                         <span
-                                            class="lyric-word {bgState}"
+                                            class="lyric-word interactive-seek {bgState}"
                                             style={bgState === 'highlighted' ? `--word-progress: ${ws.bgWordProgress}%` : ''}
+                                            on:click={(e) => handleWordClick(e, bgWord.time)}
+                                            role="button"
+                                            tabindex="0"
+                                            on:keydown={(e) => e.key === "Enter" && handleWordClick(e, bgWord.time)}
+                                            title="{bgWord.word}"
                                         >{bgWord.word}</span>{#if bgIdx < line.background_words.length - 1}{" "}{/if}
                                     {/if}
                                 {/each}
@@ -336,12 +364,12 @@
         mask-image: linear-gradient(
             to bottom,
             transparent 0%,
-            black 8%,
-            black 90%,
+            black 14%,
+            black 86%,
             transparent 100%
         );
         -webkit-mask-image: linear-gradient(
-            to bottom, transparent 0%, black 8%, black 90%, transparent 100%
+            to bottom, transparent 0%, black 14%, black 86%, transparent 100%
         );
     }
 
@@ -547,13 +575,13 @@
         font-weight: 800;
         filter: blur(0px);
         opacity: 1;
-        transform: scale(1) translateY(0);
+        transform: scale(1.02) translateY(0);
     }
 
     :global([data-theme="dark"]) .lyric-line.active {
         text-shadow:
-            0 0 20px rgba(255, 255, 255, 0.15),
-            0 0 40px rgba(255, 255, 255, 0.06);
+            0 0 16px rgba(255, 255, 255, 0.25),
+            0 0 32px rgba(255, 255, 255, 0.1);
     }
 
     :global([data-theme="dark"]) .reduced-motion .lyric-line.active {
@@ -624,6 +652,17 @@
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         transition: text-shadow 0.2s ease;
+    }
+
+    .interactive-seek {
+        cursor: pointer;
+        outline: none;
+        user-select: text;
+    }
+
+    .interactive-seek:hover {
+        filter: brightness(1.25);
+        text-shadow: 0 0 10px rgba(255, 255, 255, 0.4);
     }
 
     /* italic overhang fix => italic ink slants past and gets clipped without this */
