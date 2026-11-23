@@ -10,6 +10,7 @@
     nextTrack,
     previousTrack,
     progress,
+    seek,
   } from "$lib/stores/player";
   import { isFullScreen, openFullScreen } from "$lib/stores/ui";
   import { getAlbum } from "$lib/api/tauri";
@@ -57,6 +58,39 @@
   function handleNext(e: Event) {
     e.stopPropagation();
     nextTrack();
+  }
+
+  // Reactive hairline progress bar seeking
+  let isMiniSeeking = false;
+  let miniProgressBarEl: HTMLDivElement | null = null;
+
+  function handleMiniSeekStart(e: PointerEvent) {
+    if (e.button !== 0 && e.pointerType === 'mouse') return;
+    e.stopPropagation();
+    isMiniSeeking = true;
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    handleMiniSeekUpdate(e);
+  }
+
+  function handleMiniSeekUpdate(e: PointerEvent) {
+    if (!isMiniSeeking || !miniProgressBarEl) return;
+    e.stopPropagation();
+    const rect = miniProgressBarEl.getBoundingClientRect();
+    if (rect.width > 0) {
+      const pos = (e.clientX - rect.left) / rect.width;
+      seek(Math.max(0, Math.min(1, pos)));
+    }
+  }
+
+  function handleMiniSeekEnd(e: PointerEvent) {
+    if (!isMiniSeeking) return;
+    e.stopPropagation();
+    isMiniSeeking = false;
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // ignore
+    }
   }
 
   // Touch gesture tracking (Swipe up to expand, swipe left/right to skip)
@@ -134,9 +168,25 @@
     aria-label={$_('player.openFullPlayer')}
     transition:fly={{ y: 50, duration: 250 }}
   >
-    <!-- Extremely thin progress bar at the top -->
-    <div class="mini-progress-bar">
-      <div class="mini-progress-fill" style="width: {$progress * 100}%"></div>
+    <!-- Hairline reactive progress scrubber at the top -->
+    <div
+      class="mini-progress-bar"
+      class:seeking={isMiniSeeking}
+      bind:this={miniProgressBarEl}
+      on:pointerdown={handleMiniSeekStart}
+      on:pointermove={handleMiniSeekUpdate}
+      on:pointerup={handleMiniSeekEnd}
+      on:pointercancel={handleMiniSeekEnd}
+      role="slider"
+      aria-label="Progress"
+      aria-valuenow={Math.round($progress * 100)}
+      aria-valuemin="0"
+      aria-valuemax="100"
+      tabindex="-1"
+    >
+      <div class="mini-progress-fill" style="width: {$progress * 100}%">
+        <div class="mini-progress-glow"></div>
+      </div>
     </div>
 
     <div class="mini-player-content">
@@ -235,15 +285,56 @@
     top: 0;
     left: 0;
     right: 0;
-    height: 2px;
-    background: rgba(255, 255, 255, 0.1);
+    height: 3px;
+    background: rgba(255, 255, 255, 0.12);
+    cursor: pointer;
+    touch-action: none;
+    z-index: 10;
+    transition: height 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .mini-progress-bar:hover,
+  .mini-progress-bar.seeking {
+    height: 5px;
   }
 
   .mini-progress-fill {
     height: 100%;
-    background: var(--accent-primary);
-    box-shadow: 0 0 6px var(--accent-primary);
+    background: linear-gradient(
+      90deg,
+      var(--accent-primary) 0%,
+      color-mix(in srgb, var(--accent-primary) 75%, white) 50%,
+      var(--accent-primary) 100%
+    );
+    background-size: 200% 100%;
+    box-shadow: 0 0 8px color-mix(in srgb, var(--accent-primary) 60%, transparent);
     transition: width 100ms linear;
+    position: relative;
+    border-radius: 0 2px 2px 0;
+  }
+
+  .mini-progress-bar.seeking .mini-progress-fill {
+    transition: none;
+  }
+
+  .mini-progress-glow {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 0 6px var(--accent-primary);
+    opacity: 0;
+    transition: opacity 160ms ease, transform 160ms ease;
+  }
+
+  .mini-progress-bar:hover .mini-progress-glow,
+  .mini-progress-bar.seeking .mini-progress-glow {
+    opacity: 1;
+    transform: translateY(-50%) scale(1.2);
   }
 
   .mini-player-content {

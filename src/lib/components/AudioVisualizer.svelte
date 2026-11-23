@@ -3,6 +3,7 @@
   import { theme } from '$lib/stores/theme';
   import { isPlaying } from '$lib/stores/player';
   import { getHtml5Analyser } from '$lib/stores/player';
+  import { isBackgroundFrozen } from '$lib/stores/offstage';
 
   /** Width of the canvas in CSS px — parent should constrain this */
   export let width = 120;
@@ -154,8 +155,8 @@
     }
   }
 
-  // React to play state and mode changes
-  $: if ($isPlaying && $theme.animation.playerVisualization !== 'none' && !$theme.animation.reducedMotion) {
+  // React to play state, mode changes, and offstage freeze
+  $: if (!$isBackgroundFrozen && $isPlaying && $theme.animation.playerVisualization !== 'none' && !$theme.animation.reducedMotion) {
     startLoop();
   } else {
     stopLoop();

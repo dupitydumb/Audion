@@ -38,7 +38,8 @@
         lyricsAlignment,
         type LineSyncState,
     } from "$lib/stores/lyrics";
-    import { currentTime, duration, seek } from "$lib/stores/player";
+    import type { WordTiming, SyllableTiming } from "$lib/lyrics";
+    import { currentTime, duration, seek, isPlaying } from "$lib/stores/player";
 
     export let transparent = false;
     export let reducedMotion = false;
@@ -59,13 +60,17 @@
     );
 
     // -------------------------------------------------------------------------
-    // smooth scroll
+    // smooth scroll & auto-scroll grace period (3.5s suspension on user touch/scroll)
     // -------------------------------------------------------------------------
 
     let lyricsContainer: HTMLDivElement;
     let lineElements: HTMLDivElement[] = [];
     let scrollAnimationId: number | null = null;
     let prevActiveLine = -1;
+
+    const AUTO_SCROLL_GRACE_MS = 3500;
+    let gracePeriodTimeout: ReturnType<typeof setTimeout> | null = null;
+    let isAutoScrollSuspended = false;
 
     function easeOutExpo(t: number): number {
         return t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
@@ -79,16 +84,20 @@
         $activeLine !== prevActiveLine
     ) {
         prevActiveLine = $activeLine;
-        smoothScrollToActive();
+        if (!isAutoScrollSuspended) {
+            smoothScrollToActive();
+        }
     }
 
     function smoothScrollToActive() {
         if (!lyricsContainer) return;
-        const element = lineElements[prevActiveLine];
+        const targetLine = prevActiveLine >= 0 ? prevActiveLine : $activeLine;
+        const element = lineElements[targetLine];
         if (!element) return;
 
         if (scrollAnimationId) {
             cancelAnimationFrame(scrollAnimationId);
+            scrollAnimationId = null;
         }
 
         const containerHeight = lyricsContainer.clientHeight;
@@ -112,6 +121,218 @@
         }
 
         scrollAnimationId = requestAnimationFrame(step);
+    }
+
+    function handleUserScrollOrTouch() {
+        if (scrollAnimationId) {
+            cancelAnimationFrame(scrollAnimationId);
+            scrollAnimationId = null;
+        }
+        isAutoScrollSuspended = true;
+        if (gracePeriodTimeout) {
+            clearTimeout(gracePeriodTimeout);
+        }
+        gracePeriodTimeout = setTimeout(() => {
+            isAutoScrollSuspended = false;
+            gracePeriodTimeout = null;
+            // Resume auto-scroll smoothly without jumping
+            if (!isUnsynced && $activeLine >= 0 && lineElements[$activeLine] && lyricsContainer) {
+                smoothScrollToActive();
+            }
+        }, AUTO_SCROLL_GRACE_MS);
+    }
+
+    // -------------------------------------------------------------------------
+    // Drift-compensating catch-up clock for word-synced lyrics sweep
+    // (measures delta between audio time and lyric timestamp to smoothly
+    // compensate for timer jitter)
+    // -------------------------------------------------------------------------
+
+    let catchUpClockTime = 0;
+    let lastClockRafTime: number | null = null;
+    let clockRafId: number | null = null;
+    let activeLineElement: HTMLDivElement | null = null;
+
+    $: hasWordOrSyllableSync = !!$lyricsData && ($lyricsData.hasWordSync || $lyricsData.hasSyllableSync);
+
+    // Audio time update handler: detect major jumps vs small timer jitter
+    $: onAudioTimeChange($currentTime, $isPlaying);
+
+    function onAudioTimeChange(audioTime: number, playing: boolean) {
+        if (!playing) {
+            catchUpClockTime = audioTime;
+            lastClockRafTime = null;
+            return;
+        }
+        // If drift is substantial (> 250ms, e.g. seek or track switch), hard snap
+        const drift = Math.abs(audioTime - catchUpClockTime);
+        if (drift > 0.25 || lastClockRafTime === null) {
+            catchUpClockTime = audioTime;
+        }
+    }
+
+    $: if (hasWordOrSyllableSync && $isPlaying && !reducedMotion) {
+        startCatchUpClock();
+    } else {
+        stopCatchUpClock();
+    }
+
+    function startCatchUpClock() {
+        if (clockRafId !== null) return;
+        lastClockRafTime = null;
+        clockRafId = requestAnimationFrame(tickCatchUpClock);
+    }
+
+    function stopCatchUpClock() {
+        if (clockRafId !== null) {
+            cancelAnimationFrame(clockRafId);
+            clockRafId = null;
+        }
+        lastClockRafTime = null;
+        if (activeLineElement) {
+            activeLineElement.style.removeProperty('--smooth-word-progress');
+            activeLineElement.style.removeProperty('--smooth-syl-progress');
+            activeLineElement.style.removeProperty('--smooth-bg-word-progress');
+            activeLineElement.style.removeProperty('--smooth-bg-syl-progress');
+        }
+    }
+
+    function tickCatchUpClock(now: number) {
+        clockRafId = null;
+        if (!$isPlaying || !hasWordOrSyllableSync) return;
+
+        if (lastClockRafTime !== null) {
+            // Delta time since last frame in seconds (clamped to 100ms max to prevent jumps)
+            const dt = Math.min((now - lastClockRafTime) / 1000, 0.1);
+
+            // Advance local playhead clock
+            catchUpClockTime += dt;
+
+            // Measure drift between player audio time and internal sweep clock
+            const audioTime = $currentTime;
+            const delta = audioTime - catchUpClockTime;
+
+            // Drift compensation: gently steer clock towards audio time
+            if (Math.abs(delta) > 0.3) {
+                catchUpClockTime = audioTime;
+            } else {
+                catchUpClockTime += delta * Math.min(1, dt * 5.0);
+            }
+        }
+        lastClockRafTime = now;
+
+        applyWordSweep(catchUpClockTime);
+
+        clockRafId = requestAnimationFrame(tickCatchUpClock);
+    }
+
+    function applyWordSweep(time: number) {
+        const curActive = $activeLine;
+        if (curActive < 0 || !lineElements[curActive] || !$lyricsData) return;
+
+        const line = $lyricsData.lines[curActive];
+        if (!line) return;
+
+        const lineEl = lineElements[curActive];
+        if (activeLineElement && activeLineElement !== lineEl) {
+            activeLineElement.style.removeProperty('--smooth-word-progress');
+            activeLineElement.style.removeProperty('--smooth-syl-progress');
+            activeLineElement.style.removeProperty('--smooth-bg-word-progress');
+            activeLineElement.style.removeProperty('--smooth-bg-syl-progress');
+        }
+        activeLineElement = lineEl;
+
+        // Primary words sweep
+        if (line.words && line.words.length > 0) {
+            let activeWord: WordTiming | null = null;
+            for (let i = 0; i < line.words.length; i++) {
+                const w = line.words[i];
+                if (time >= w.time && time <= w.endTime) {
+                    activeWord = w;
+                    break;
+                }
+                if (time >= w.time) {
+                    const next = line.words[i + 1];
+                    if (!next || time < next.time) activeWord = w;
+                }
+            }
+
+            if (activeWord) {
+                const wordDur = activeWord.endTime - activeWord.time;
+                const wordProg = wordDur > 0
+                    ? Math.min(100, Math.max(0, ((time - activeWord.time) / wordDur) * 100))
+                    : 100;
+                lineEl.style.setProperty('--smooth-word-progress', `${wordProg.toFixed(2)}%`);
+
+                if (activeWord.is_split && activeWord.syllables && activeWord.syllables.length > 0) {
+                    let activeSyl: SyllableTiming | null = null;
+                    for (let s = 0; s < activeWord.syllables.length; s++) {
+                        const syl = activeWord.syllables[s];
+                        if (time >= syl.time && time <= syl.end_time) {
+                            activeSyl = syl;
+                            break;
+                        }
+                        if (time >= syl.time) {
+                            const next = activeWord.syllables[s + 1];
+                            if (!next || time < next.time) activeSyl = syl;
+                        }
+                    }
+                    if (activeSyl) {
+                        const sylDur = activeSyl.end_time - activeSyl.time;
+                        const sylProg = sylDur > 0
+                            ? Math.min(100, Math.max(0, ((time - activeSyl.time) / sylDur) * 100))
+                            : 100;
+                        lineEl.style.setProperty('--smooth-syl-progress', `${sylProg.toFixed(2)}%`);
+                    }
+                }
+            }
+        }
+
+        // Background words sweep
+        if (line.background_words && line.background_words.length > 0) {
+            let bgWord: WordTiming | null = null;
+            for (let i = 0; i < line.background_words.length; i++) {
+                const bw = line.background_words[i];
+                if (time >= bw.time && time <= bw.endTime) {
+                    bgWord = bw;
+                    break;
+                }
+                if (time >= bw.time) {
+                    const next = line.background_words[i + 1];
+                    if (!next || time < next.time) bgWord = bw;
+                }
+            }
+
+            if (bgWord) {
+                const bgDur = bgWord.endTime - bgWord.time;
+                const bgProg = bgDur > 0
+                    ? Math.min(100, Math.max(0, ((time - bgWord.time) / bgDur) * 100))
+                    : 100;
+                lineEl.style.setProperty('--smooth-bg-word-progress', `${bgProg.toFixed(2)}%`);
+
+                if (bgWord.is_split && bgWord.syllables && bgWord.syllables.length > 0) {
+                    let bgSyl: SyllableTiming | null = null;
+                    for (let s = 0; s < bgWord.syllables.length; s++) {
+                        const bsyl = bgWord.syllables[s];
+                        if (time >= bsyl.time && time <= bsyl.end_time) {
+                            bgSyl = bsyl;
+                            break;
+                        }
+                        if (time >= bsyl.time) {
+                            const next = bgWord.syllables[s + 1];
+                            if (!next || time < next.time) bgSyl = bsyl;
+                        }
+                    }
+                    if (bgSyl) {
+                        const bsylDur = bgSyl.end_time - bgSyl.time;
+                        const bsylProg = bsylDur > 0
+                            ? Math.min(100, Math.max(0, ((time - bgSyl.time) / bsylDur) * 100))
+                            : 100;
+                        lineEl.style.setProperty('--smooth-bg-syl-progress', `${bsylProg.toFixed(2)}%`);
+                    }
+                }
+            }
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -139,6 +360,9 @@
 
     onDestroy(() => {
         if (switchModeTimeout) clearTimeout(switchModeTimeout);
+        if (gracePeriodTimeout) clearTimeout(gracePeriodTimeout);
+        if (scrollAnimationId) cancelAnimationFrame(scrollAnimationId);
+        stopCatchUpClock();
     });
 
     // -------------------------------------------------------------------------
@@ -164,12 +388,23 @@
     // -------------------------------------------------------------------------
 
     function handleLineClick(lineTime: number) {
+        // User explicitly tapped to jump: end grace suspension immediately
+        if (gracePeriodTimeout) {
+            clearTimeout(gracePeriodTimeout);
+            gracePeriodTimeout = null;
+        }
+        isAutoScrollSuspended = false;
         const dur = $duration;
         if (dur && dur > 0) seek(Math.max(0, Math.min(1, lineTime / dur)));
     }
 
     function handleWordClick(e: MouseEvent | KeyboardEvent, targetTime: number) {
         e.stopPropagation();
+        if (gracePeriodTimeout) {
+            clearTimeout(gracePeriodTimeout);
+            gracePeriodTimeout = null;
+        }
+        isAutoScrollSuspended = false;
         const dur = $duration;
         if (dur && dur > 0 && typeof targetTime === "number" && !isNaN(targetTime)) {
             seek(Math.max(0, Math.min(1, targetTime / dur)));
@@ -203,6 +438,10 @@
         class:unsynced={isUnsynced}
         class:reduced-motion={reducedMotion}
         bind:this={lyricsContainer}
+        on:wheel={handleUserScrollOrTouch}
+        on:touchstart={handleUserScrollOrTouch}
+        on:touchmove={handleUserScrollOrTouch}
+        on:pointerdown={handleUserScrollOrTouch}
         {style}
     >
         <div class="lyrics-lines" class:unsynced={isUnsynced} class:mode-dynamic={$lyricsRenderMode === 'dynamic'} class:switching-mode={isSwitchingMode}>
@@ -677,13 +916,23 @@
         background-image: linear-gradient(
             to right,
             var(--text-primary)     0%,
-            var(--text-primary)     calc(var(--word-progress, 0%) - 4%),
-            var(--lyrics-inactive)  calc(var(--word-progress, 0%) + 4%),
+            var(--text-primary)     calc(var(--smooth-word-progress, var(--word-progress, 0%)) - 4%),
+            var(--lyrics-inactive)  calc(var(--smooth-word-progress, var(--word-progress, 0%)) + 4%),
             var(--lyrics-inactive)  100%
         );
     }
     :global([data-theme="dark"]) .lyric-line.word-sync .lyric-word.highlighted {
         text-shadow: 0 0 12px rgba(255, 255, 255, 0.15);
+    }
+
+    .lyric-line.word-sync .bg-vocal .lyric-word.highlighted {
+        background-image: linear-gradient(
+            to right,
+            var(--text-primary)     0%,
+            var(--text-primary)     calc(var(--smooth-bg-word-progress, var(--word-progress, 0%)) - 4%),
+            var(--lyrics-inactive)  calc(var(--smooth-bg-word-progress, var(--word-progress, 0%)) + 4%),
+            var(--lyrics-inactive)  100%
+        );
     }
 
     .lyric-line.word-sync .lyric-word.past {
@@ -728,11 +977,20 @@
         background-image: linear-gradient(
             to right,
             var(--text-primary)     0%,
-            var(--text-primary)     calc(var(--syl-progress, 0%) - 4%),
-            var(--lyrics-inactive)  calc(var(--syl-progress, 0%) + 4%),
+            var(--text-primary)     calc(var(--smooth-syl-progress, var(--syl-progress, 0%)) - 4%),
+            var(--lyrics-inactive)  calc(var(--smooth-syl-progress, var(--syl-progress, 0%)) + 4%),
             var(--lyrics-inactive)  100%
         );
-        transition: background-image 0.08s linear;
+    }
+
+    .lyric-line.word-sync .bg-vocal .lyric-syllable.highlighted {
+        background-image: linear-gradient(
+            to right,
+            var(--text-primary)     0%,
+            var(--text-primary)     calc(var(--smooth-bg-syl-progress, var(--syl-progress, 0%)) - 4%),
+            var(--lyrics-inactive)  calc(var(--smooth-bg-syl-progress, var(--syl-progress, 0%)) + 4%),
+            var(--lyrics-inactive)  100%
+        );
     }
 
     :global([data-theme="dark"]) .lyric-line.word-sync .lyric-syllable.highlighted {

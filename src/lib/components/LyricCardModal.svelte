@@ -1,8 +1,9 @@
 <script lang="ts">
   import { tick } from "svelte";
   import { fade, scale } from "svelte/transition";
-  import { currentTrack } from "$lib/stores/player";
+  import { currentTrack, currentTime } from "$lib/stores/player";
   import { lyricsData, activeLine } from "$lib/stores/lyrics";
+  import { albumPalette, meshColors } from "$lib/stores/palette";
   import { resolveTrackCover } from "$lib/stores/library";
   import { proxyFetchBytes, saveImageToGallery } from "$lib/api/tauri";
   import { addToast } from "$lib/stores/toast";
@@ -26,10 +27,20 @@
   let theme: CardTheme = "frosted";
   let selectedIndices: number[] = [];
   let canvas: HTMLCanvasElement;
+  let linesListEl: HTMLDivElement | null = null;
   let isCopying = false;
   let isSaving = false;
+  let wasOpen = false;
 
   $: lines = $lyricsData?.lines?.filter(l => l.text && l.text.trim().length > 0) || [];
+
+  $: if (open && !wasOpen) {
+    wasOpen = true;
+    initSelection();
+  } else if (!open && wasOpen) {
+    wasOpen = false;
+    selectedIndices = [];
+  }
 
   $: if (open && lines.length > 0 && selectedIndices.length === 0) {
     initSelection();
@@ -37,16 +48,52 @@
 
   function initSelection() {
     if (lines.length === 0) return;
-    let target = 0;
+    let target = -1;
+
+    // 1. Explicit initialLineIndex passed as prop
     if (initialLineIndex >= 0 && initialLineIndex < lines.length) {
       target = initialLineIndex;
-    } else if ($activeLine >= 0 && $activeLine < lines.length) {
-      target = $activeLine;
     }
-    // Select up to 3 lines starting from target
-    const count = Math.min(3, lines.length - target);
+    // 2. Active sung line from lyrics store
+    else if ($activeLine >= 0 && $lyricsData?.lines) {
+      const activeRaw = $lyricsData.lines[$activeLine];
+      if (activeRaw) {
+        const found = lines.findIndex(l => l === activeRaw || (l.time === activeRaw.time && l.text === activeRaw.text));
+        if (found >= 0) {
+          target = found;
+        }
+      }
+    }
+
+    // 3. Fallback based on current audio playback position
+    if (target < 0) {
+      const now = $currentTime;
+      for (let i = lines.length - 1; i >= 0; i--) {
+        if (lines[i].time <= now) {
+          target = i;
+          break;
+        }
+      }
+    }
+
+    if (target < 0 || target >= lines.length) {
+      target = 0;
+    }
+
+    // Auto-select the currently active sung lyric line (and up to 2 subsequent lines if space permits)
+    const count = Math.min(2, lines.length - target);
     selectedIndices = Array.from({ length: Math.max(1, count) }, (_, i) => target + i);
     renderCard();
+
+    // Auto-scroll the lines selector to center the active sung line
+    tick().then(() => {
+      if (linesListEl) {
+        const activeBtn = linesListEl.querySelector('.line-item.selected') as HTMLElement | null;
+        if (activeBtn) {
+          activeBtn.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        }
+      }
+    });
   }
 
   function toggleLine(index: number) {
@@ -176,6 +223,55 @@
     return currentY + lineHeight;
   }
 
+  function hexToRgba(hex: string, alpha: number): string {
+    if (!hex) return `rgba(124, 58, 237, ${alpha})`;
+    if (hex.startsWith("rgb")) {
+      return hex.replace("rgb(", "rgba(").replace(")", `, ${alpha})`);
+    }
+    const clean = hex.replace("#", "");
+    if (clean.length === 6) {
+      const r = parseInt(clean.substring(0, 2), 16);
+      const g = parseInt(clean.substring(2, 4), 16);
+      const b = parseInt(clean.substring(4, 6), 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+    return `rgba(124, 58, 237, ${alpha})`;
+  }
+
+  function extractColorsFromCover(img: HTMLImageElement): string[] {
+    try {
+      const off = document.createElement("canvas");
+      off.width = 4;
+      off.height = 4;
+      const octx = off.getContext("2d");
+      if (!octx) return [];
+      octx.drawImage(img, 0, 0, 4, 4);
+      const data = octx.getImageData(0, 0, 4, 4).data;
+      const hexes: string[] = [];
+      for (let i = 0; i < data.length; i += 16) {
+        const r = data[i], g = data[i + 1], b = data[i + 2];
+        hexes.push(`rgb(${r}, ${g}, ${b})`);
+      }
+      return hexes;
+    } catch {
+      return [];
+    }
+  }
+
+  function getDynamicPalette(coverImg: HTMLImageElement | null): string[] {
+    if ($meshColors && $meshColors.some(c => c && c !== "#0a0a0a")) {
+      return $meshColors;
+    }
+    if ($albumPalette && $albumPalette.length > 0) {
+      return $albumPalette.map(p => p.hex);
+    }
+    if (coverImg) {
+      const sampled = extractColorsFromCover(coverImg);
+      if (sampled.length > 0) return sampled;
+    }
+    return ["#7c3aed", "#10b981", "#3b82f6", "#f43f5e"];
+  }
+
   let renderToken = 0;
 
   async function renderCard() {
@@ -184,6 +280,11 @@
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
+
+    // High-DPI canvas smoothing & rendering quality
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+
     // Canvas cannot use a webfont until it is loaded; without this the first
     // render after opening can fall back to a system font.
     try {
@@ -298,17 +399,46 @@
     height: number,
     coverImg: HTMLImageElement | null
   ) {
-    // Base dark indigo
-    ctx.fillStyle = "#0c0d14";
+    const palette = getDynamicPalette(coverImg);
+    const c1 = hexToRgba(palette[0] || "#7c3aed", 0.55);
+    const c2 = hexToRgba(palette[1] || "#10b981", 0.45);
+    const c3 = hexToRgba(palette[2] || "#3b82f6", 0.50);
+    const c4 = hexToRgba(palette[3] || "#f43f5e", 0.40);
+    const c5 = hexToRgba(palette[0] || "#7c3aed", 0.28);
+
+    // Sleek deep base
+    ctx.fillStyle = "#0a0b12";
     ctx.fillRect(0, 0, width, height);
 
-    // Mesh gradient orbs
-    const orbs = [
-      { x: width * 0.2, y: height * 0.25, r: width * 0.5, c: "rgba(124, 58, 237, 0.45)" }, // Violet
-      { x: width * 0.8, y: height * 0.4, r: width * 0.45, c: "rgba(16, 185, 129, 0.35)" }, // Emerald
-      { x: width * 0.3, y: height * 0.75, r: width * 0.55, c: "rgba(59, 130, 246, 0.4)" },  // Blue
-      { x: width * 0.85, y: height * 0.85, r: width * 0.4, c: "rgba(244, 63, 94, 0.3)" },   // Rose
-    ];
+    // Ambient cover art blur underlay
+    if (coverImg) {
+      ctx.save();
+      const scale = Math.max(width / coverImg.width, height / coverImg.height) * 1.15;
+      const sw = coverImg.width * scale;
+      const sh = coverImg.height * scale;
+      const sx = (width - sw) / 2;
+      const sy = (height - sh) / 2;
+      ctx.filter = "blur(80px) brightness(0.28) saturate(1.6)";
+      ctx.drawImage(coverImg, sx, sy, sw, sh);
+      ctx.restore();
+    }
+
+    // Dynamic mesh gradient orbs with responsive layout for 9:16 vertical stories
+    const isStory = height > width;
+    const orbs = isStory
+      ? [
+          { x: width * 0.15, y: height * 0.16, r: width * 0.65, c: c1 },
+          { x: width * 0.85, y: height * 0.32, r: width * 0.60, c: c2 },
+          { x: width * 0.20, y: height * 0.60, r: width * 0.70, c: c3 },
+          { x: width * 0.82, y: height * 0.82, r: width * 0.65, c: c4 },
+          { x: width * 0.50, y: height * 0.46, r: width * 0.50, c: c5 },
+        ]
+      : [
+          { x: width * 0.20, y: height * 0.25, r: width * 0.55, c: c1 },
+          { x: width * 0.80, y: height * 0.35, r: width * 0.50, c: c2 },
+          { x: width * 0.30, y: height * 0.75, r: width * 0.60, c: c3 },
+          { x: width * 0.85, y: height * 0.80, r: width * 0.45, c: c4 },
+        ];
 
     for (const orb of orbs) {
       const g = ctx.createRadialGradient(orb.x, orb.y, 0, orb.x, orb.y, orb.r);
@@ -317,6 +447,16 @@
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, width, height);
     }
+
+    // Soft ambient vignette to guarantee lyric readability across themes
+    const vignette = ctx.createRadialGradient(
+      width / 2, height / 2, width * 0.2,
+      width / 2, height / 2, Math.max(width, height) * 0.72
+    );
+    vignette.addColorStop(0, "rgba(5, 6, 10, 0.1)");
+    vignette.addColorStop(1, "rgba(5, 6, 10, 0.75)");
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, width, height);
   }
 
   function drawMinimalBackground(ctx: CanvasRenderingContext2D, width: number, height: number) {
@@ -351,16 +491,29 @@
     // Glass Container Card
     ctx.save();
     roundRect(ctx, cardX, cardY, cardW, cardH, 36);
-    ctx.fillStyle = "rgba(20, 22, 30, 0.72)";
+    if (theme === "mesh") {
+      ctx.fillStyle = "rgba(14, 16, 24, 0.78)";
+    } else {
+      ctx.fillStyle = "rgba(20, 22, 30, 0.72)";
+    }
     ctx.fill();
 
-    // Subtle gradient outline
+    // Dynamic or frosted gradient outline
     const borderGrad = ctx.createLinearGradient(cardX, cardY, cardX + cardW, cardY + cardH);
-    borderGrad.addColorStop(0, "rgba(255, 255, 255, 0.25)");
-    borderGrad.addColorStop(0.5, "rgba(255, 255, 255, 0.06)");
-    borderGrad.addColorStop(1, "rgba(255, 255, 255, 0.18)");
-    ctx.strokeStyle = borderGrad;
-    ctx.lineWidth = 2;
+    if (theme === "mesh") {
+      const palette = getDynamicPalette(coverImg);
+      borderGrad.addColorStop(0, hexToRgba(palette[0] || "#7c3aed", 0.55));
+      borderGrad.addColorStop(0.5, "rgba(255, 255, 255, 0.1)");
+      borderGrad.addColorStop(1, hexToRgba(palette[1] || "#3b82f6", 0.45));
+      ctx.strokeStyle = borderGrad;
+      ctx.lineWidth = 2.5;
+    } else {
+      borderGrad.addColorStop(0, "rgba(255, 255, 255, 0.25)");
+      borderGrad.addColorStop(0.5, "rgba(255, 255, 255, 0.06)");
+      borderGrad.addColorStop(1, "rgba(255, 255, 255, 0.18)");
+      ctx.strokeStyle = borderGrad;
+      ctx.lineWidth = 2;
+    }
     ctx.stroke();
     ctx.restore();
 
@@ -724,7 +877,7 @@
               <span class="control-label">Choose lines</span>
               <span class="lines-count">{selectedIndices.length}/5</span>
             </div>
-            <div class="lines-list">
+            <div class="lines-list" bind:this={linesListEl}>
               {#each lines as line, idx}
                 <button
                   type="button"

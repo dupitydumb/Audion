@@ -1013,6 +1013,95 @@ fn luminance(r: u8, g: u8, b: u8) -> f32 {
     (0.2126 * r as f32 + 0.7152 * g as f32 + 0.0722 * b as f32) / 255.0
 }
 
+fn hex_to_rgb(hex: &str) -> Option<(u8, u8, u8)> {
+    let clean = hex.trim_start_matches('#');
+    if clean.len() != 6 {
+        return None;
+    }
+    let r = u8::from_str_radix(&clean[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&clean[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&clean[4..6], 16).ok()?;
+    Some((r, g, b))
+}
+
+/// Checks whether an individual RGB color is low-chroma (near-grayscale)
+/// Chroma <= 12 (0-255 range) or Saturation <= 0.08
+pub fn is_color_near_grayscale(r: u8, g: u8, b: u8) -> bool {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let chroma = max - min;
+    let sat_v = if max == 0 {
+        0.0
+    } else {
+        chroma as f32 / max as f32
+    };
+    let sat_l = if max == min {
+        0.0
+    } else {
+        let l = (max as f32 + min as f32) / 510.0;
+        if l > 0.5 {
+            chroma as f32 / (510.0 - (max as f32 + min as f32))
+        } else {
+            chroma as f32 / (max as f32 + min as f32)
+        }
+    };
+    chroma <= 12 || sat_v <= 0.08 || sat_l <= 0.08
+}
+
+/// Grayscale Chroma Guard:
+/// When album art has low chroma (chroma <= 12 or saturation <= 0.08 across dominant swatches),
+/// treat it as near-grayscale and return clean neutral slate/monochrome palettes
+/// (#121212, #1e1e1e, #2d2d2d, #ffffff) so black & white album covers never receive
+/// sickly/muddy tinted accents.
+pub fn is_near_grayscale(colors: &[PaletteColor]) -> bool {
+    if colors.is_empty() {
+        return false;
+    }
+
+    let dominant: Vec<&PaletteColor> = colors.iter().filter(|c| c.weight >= 0.08).collect();
+    let swatches_to_check: Vec<&PaletteColor> = if !dominant.is_empty() {
+        dominant
+    } else {
+        colors.iter().take(3).collect()
+    };
+
+    swatches_to_check.iter().all(|c| {
+        match hex_to_rgb(&c.hex) {
+            Some((r, g, b)) => is_color_near_grayscale(r, g, b),
+            None => true,
+        }
+    })
+}
+
+pub fn neutral_grayscale_palette() -> Vec<PaletteColor> {
+    vec![
+        PaletteColor {
+            hex: "#121212".to_string(),
+            luminance: luminance(0x12, 0x12, 0x12),
+            is_dark: true,
+            weight: 0.40,
+        },
+        PaletteColor {
+            hex: "#1e1e1e".to_string(),
+            luminance: luminance(0x1e, 0x1e, 0x1e),
+            is_dark: true,
+            weight: 0.30,
+        },
+        PaletteColor {
+            hex: "#2d2d2d".to_string(),
+            luminance: luminance(0x2d, 0x2d, 0x2d),
+            is_dark: true,
+            weight: 0.20,
+        },
+        PaletteColor {
+            hex: "#ffffff".to_string(),
+            luminance: luminance(0xff, 0xff, 0xff),
+            is_dark: false,
+            weight: 0.10,
+        },
+    ]
+}
+
 /// core extraction logic, shared by both entry points below
 /// takes raw encoded image bytes and downsamples to a 100x100 thumbnail
 /// to keep the color extraction cheap
@@ -1081,6 +1170,11 @@ fn palette_from_bytes(image_bytes: &[u8]) -> Result<Vec<PaletteColor>, String> {
 
     // most dominant (largest share of the image) first
     colors.sort_by(|a, b| b.weight.partial_cmp(&a.weight).unwrap());
+
+    // Grayscale Chroma Guard: return clean neutral slate/monochrome palette if near-grayscale
+    if is_near_grayscale(&colors) {
+        return Ok(neutral_grayscale_palette());
+    }
 
     Ok(colors)
 }

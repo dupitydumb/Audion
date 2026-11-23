@@ -13,6 +13,7 @@
   import { formatArtists } from "$lib/utils/artists";
   import Icon from "$lib/components/Icon.svelte";
   import AudioQualityBadge from "$lib/components/AudioQualityBadge.svelte";
+  import { gestureGuard } from "$lib/utils/gestureGuard";
   import {
     sleepTimerActive,
     sleepTimerRemainingMs,
@@ -140,6 +141,7 @@
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <div
     class="mobile-menu-sheet"
+    use:gestureGuard={{ direction: 'vertical', bubbleAtEdges: true }}
     on:click|stopPropagation
     transition:fly={{ y: 300, duration: 300 }}
     role="dialog"

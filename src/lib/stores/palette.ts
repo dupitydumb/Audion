@@ -16,16 +16,161 @@ export interface PaletteColor {
 // ranked by true dominance (most of the image first), light and dark alike
 export const albumPalette = writable<PaletteColor[]>([]);
 const cache = new Map<string, PaletteColor[]>();
+const inFlightPrewarms = new Map<string, Promise<PaletteColor[] | null>>();
+
+/**
+ * Clean neutral slate/monochrome palette for grayscale or near-grayscale covers.
+ */
+export const NEUTRAL_GRAYSCALE_PALETTE: PaletteColor[] = [
+  { hex: "#121212", luminance: 0x12 / 255, isDark: true, weight: 0.4 },
+  { hex: "#1e1e1e", luminance: 0x1e / 255, isDark: true, weight: 0.3 },
+  { hex: "#2d2d2d", luminance: 0x2d / 255, isDark: true, weight: 0.2 },
+  { hex: "#ffffff", luminance: 1.0, isDark: false, weight: 0.1 },
+];
+
+/**
+ * Calculates chroma and saturation (HSV & HSL) for a given hex color string.
+ */
+export function getChromaAndSaturation(hex: string): {
+  chroma: number;
+  saturation: number;
+  saturationHsl: number;
+} {
+  const clean = hex.replace("#", "");
+  if (clean.length !== 6) return { chroma: 0, saturation: 0, saturationHsl: 0 };
+
+  const r = parseInt(clean.slice(0, 2), 16);
+  const g = parseInt(clean.slice(2, 4), 16);
+  const b = parseInt(clean.slice(4, 6), 16);
+
+  if (isNaN(r) || isNaN(g) || isNaN(b)) return { chroma: 0, saturation: 0, saturationHsl: 0 };
+
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const chroma = max - min;
+  const saturation = max === 0 ? 0 : chroma / max;
+
+  const l = (max + min) / 510;
+  const saturationHsl =
+    max === min ? 0 : l > 0.5 ? chroma / (510 - (max + min)) : chroma / (max + min);
+
+  return { chroma, saturation, saturationHsl };
+}
+
+/**
+ * Grayscale Chroma Guard:
+ * When album art has low chroma (chroma <= 12 or saturation <= 0.08 across dominant swatches),
+ * treat it as near-grayscale to avoid sickly/muddy tinted accents.
+ */
+export function isNearGrayscale(palette: PaletteColor[]): boolean {
+  if (!palette || palette.length === 0) return false;
+
+  const dominant = palette.filter((c) => c.weight >= 0.08);
+  const swatchesToCheck = dominant.length > 0 ? dominant : palette.slice(0, 3);
+
+  return swatchesToCheck.every((c) => {
+    const { chroma, saturation, saturationHsl } = getChromaAndSaturation(c.hex);
+    return chroma <= 12 || saturation <= 0.08 || saturationHsl <= 0.08;
+  });
+}
+
+/**
+ * Applies the Grayscale Chroma Guard to a palette, replacing it with the clean
+ * neutral slate/monochrome palette if near-grayscale.
+ */
+export function applyGrayscaleChromaGuard(palette: PaletteColor[]): PaletteColor[] {
+  if (palette.length > 0 && isNearGrayscale(palette)) {
+    return NEUTRAL_GRAYSCALE_PALETTE.map((c) => ({ ...c }));
+  }
+  return palette;
+}
 
 function normalizePalette(
   raw: { hex: string; luminance: number; is_dark: boolean; weight: number }[]
 ): PaletteColor[] {
-  return raw.map((c) => ({
+  const colors = raw.map((c) => ({
     hex: c.hex,
     luminance: c.luminance,
     isDark: c.is_dark,
     weight: c.weight,
   }));
+  return applyGrayscaleChromaGuard(colors);
+}
+
+/**
+ * Pre-warms the cover art and palette extraction for a given cover URL or file path.
+ * Caches the resulting PaletteColor array so subsequent palette lookups resolve instantly.
+ */
+export async function prewarmPalette(coverUrl: string): Promise<PaletteColor[] | null> {
+  if (!coverUrl) return null;
+
+  if (cache.has(coverUrl)) {
+    return cache.get(coverUrl)!;
+  }
+
+  if (inFlightPrewarms.has(coverUrl)) {
+    return await inFlightPrewarms.get(coverUrl)!;
+  }
+
+  const promise = (async (): Promise<PaletteColor[] | null> => {
+    try {
+      let raw: { hex: string; luminance: number; is_dark: boolean; weight: number }[] | null = null;
+
+      const isHttp = coverUrl.startsWith("http://") || coverUrl.startsWith("https://");
+      const isData = coverUrl.startsWith("data:");
+      const isAsset = coverUrl.startsWith("asset://") || coverUrl.startsWith("tauri://");
+
+      // If it looks like a local file path, try direct IPC extraction first
+      if (!isHttp && !isData && !isAsset) {
+        try {
+          raw = await invoke("extract_palette_from_path", {
+            filePath: coverUrl,
+          });
+        } catch {
+          // Fall through to fetch
+        }
+      }
+
+      if (!raw) {
+        const res = await fetch(coverUrl).catch(() => null);
+        if (res && res.ok) {
+          const bytes = await res.arrayBuffer();
+          raw = await invoke("extract_palette", {
+            imageBytes: Array.from(new Uint8Array(bytes)),
+          });
+        }
+      }
+
+      if (raw && raw.length > 0) {
+        const palette = normalizePalette(raw);
+        cache.set(coverUrl, palette);
+
+        // Also map converted asset URL if coverUrl was a file path
+        if (!isHttp && !isData && !isAsset) {
+          try {
+            const converted = convertFileSrc(coverUrl);
+            if (converted && converted !== coverUrl) {
+              cache.set(converted, palette);
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        return palette;
+      }
+
+      return null;
+    } catch (e) {
+      console.warn("prewarmPalette failed for:", coverUrl, e);
+      return null;
+    } finally {
+      inFlightPrewarms.delete(coverUrl);
+    }
+  })();
+
+  inFlightPrewarms.set(coverUrl, promise);
+  return await promise;
 }
 
 let currentGen = 0;
@@ -63,6 +208,15 @@ paletteSource.subscribe(async (track) => {
   if (cache.has(coverSrc)) {
     albumPalette.set(cache.get(coverSrc)!);
     return;
+  }
+
+  if (inFlightPrewarms.has(coverSrc)) {
+    const prewarmed = await inFlightPrewarms.get(coverSrc);
+    if (gen !== currentGen) return;
+    if (prewarmed) {
+      albumPalette.set(prewarmed);
+      return;
+    }
   }
 
   try {

@@ -44,7 +44,9 @@
   import { formatDuration, getIsLinux } from "$lib/api/tauri";
   import { resolveTrackCover } from "$lib/stores/library";
   import { customArtworks } from "$lib/stores/customArtwork";
-  import { onMount, tick } from "svelte";
+  import { onMount, onDestroy, tick } from "svelte";
+  import { gestureGuard } from "$lib/utils/gestureGuard";
+  import { isBackgroundFrozen } from "$lib/stores/offstage";
   import { likedTrackIds, toggleLike } from "$lib/stores/liked";
   import { buildTrackContextMenu } from "$lib/menus/contextMenus";
   import { addToast } from "$lib/stores/toast";
@@ -281,38 +283,162 @@
     return () => {};
   });
 
-  // Touch swipe-down to dismiss on mobile
-  let mobileTouchStartY = 0;
-  let mobileTouchStartX = 0;
-  let mobileDragY = 0;
-  let isMobileDragging = false;
+  // --- Interactive Drag-to-Dismiss with Velocity Tracking & Spring Physics ---
+  let sheetTranslateY = 0;
+  let isDismissDragging = false;
+  let isDismissAnimating = false;
+  let dismissTouchStartY = 0;
+  let dismissTouchStartX = 0;
+  let touchHistory: Array<{ y: number; time: number }> = [];
+  let springRafId: number | null = null;
+
+  function cancelSpringAnimation() {
+    if (springRafId !== null) {
+      cancelAnimationFrame(springRafId);
+      springRafId = null;
+    }
+    isDismissAnimating = false;
+  }
 
   function handleMobileTouchStart(e: TouchEvent) {
-    if (e.touches.length !== 1) return;
-    mobileTouchStartY = e.touches[0].clientY;
-    mobileTouchStartX = e.touches[0].clientX;
-    mobileDragY = 0;
-    isMobileDragging = true;
+    if (e.touches.length !== 1 || isDismissAnimating) return;
+    cancelSpringAnimation();
+    dismissTouchStartY = e.touches[0].clientY;
+    dismissTouchStartX = e.touches[0].clientX;
+    touchHistory = [{ y: dismissTouchStartY, time: performance.now() }];
+    isDismissDragging = true;
   }
 
   function handleMobileTouchMove(e: TouchEvent) {
-    if (!isMobileDragging || e.touches.length !== 1) return;
-    const dy = e.touches[0].clientY - mobileTouchStartY;
-    const dx = e.touches[0].clientX - mobileTouchStartX;
-    if (dy > 0 && Math.abs(dy) > Math.abs(dx)) {
-      mobileDragY = dy * 0.45;
+    if (!isDismissDragging || e.touches.length !== 1) return;
+    const currentY = e.touches[0].clientY;
+    const currentX = e.touches[0].clientX;
+    const dy = currentY - dismissTouchStartY;
+    const dx = currentX - dismissTouchStartX;
+
+    // If gesture direction is primarily horizontal, don't hijack
+    if (Math.abs(dx) > Math.abs(dy) && sheetTranslateY === 0) {
+      return;
+    }
+
+    // Track touch velocity history (keep samples within ~120ms)
+    const now = performance.now();
+    touchHistory.push({ y: currentY, time: now });
+    if (touchHistory.length > 8) touchHistory.shift();
+
+    if (dy > 0) {
+      // 1:1 direct downward tracking for responsive modal dismiss
+      sheetTranslateY = dy;
+    } else {
+      // Rubber-banding upward resistance
+      sheetTranslateY = dy * 0.22;
     }
   }
 
   function handleMobileTouchEnd() {
-    if (!isMobileDragging) return;
-    isMobileDragging = false;
-    const finalDy = mobileDragY / 0.45;
-    mobileDragY = 0;
-    if (finalDy > 65) {
-      toggleFullScreen();
+    if (!isDismissDragging) return;
+    isDismissDragging = false;
+
+    // Calculate exit velocity in px/ms
+    const now = performance.now();
+    const recentTouches = touchHistory.filter((t) => now - t.time < 120);
+    let velocityY = 0;
+    if (recentTouches.length >= 2) {
+      const first = recentTouches[0];
+      const last = recentTouches[recentTouches.length - 1];
+      const dt = last.time - first.time;
+      if (dt > 8) {
+        velocityY = (last.y - first.y) / dt; // px per ms
+      }
+    }
+
+    const thresholdDist =
+      typeof window !== "undefined"
+        ? Math.min(180, window.innerHeight * 0.22)
+        : 140;
+    const thresholdVel = 0.55; // px/ms (~550px/s flick)
+
+    // Dismiss condition: pulled past threshold distance OR flicked downwards with speed
+    if (
+      sheetTranslateY > thresholdDist ||
+      (velocityY > thresholdVel && sheetTranslateY > 25)
+    ) {
+      animateDismiss(velocityY);
+    } else {
+      runSpringSnapBack(sheetTranslateY, velocityY);
     }
   }
+
+  function animateDismiss(initialVelocity: number) {
+    cancelSpringAnimation();
+    isDismissAnimating = true;
+    const targetY =
+      typeof window !== "undefined" ? window.innerHeight + 60 : 900;
+    let pos = sheetTranslateY;
+    let speed = Math.max(900, Math.min(3000, initialVelocity * 1000));
+    const gravity = 3400; // px/s^2 acceleration downwards
+    let lastTime = performance.now();
+
+    function step(now: number) {
+      const dt = Math.min((now - lastTime) / 1000, 0.032);
+      lastTime = now;
+      speed += gravity * dt;
+      pos += speed * dt;
+      sheetTranslateY = pos;
+
+      if (pos >= targetY) {
+        sheetTranslateY = 0;
+        isDismissAnimating = false;
+        springRafId = null;
+        toggleFullScreen();
+        return;
+      }
+
+      springRafId = requestAnimationFrame(step);
+    }
+
+    springRafId = requestAnimationFrame(step);
+  }
+
+  function runSpringSnapBack(initialPos: number, initialVelocity: number) {
+    cancelSpringAnimation();
+    isDismissAnimating = true;
+    let pos = initialPos;
+    let vel = initialVelocity * 1000; // px/s
+    const stiffness = 280; // spring constant
+    const damping = 26; // damping factor
+    const mass = 1;
+    let lastTime = performance.now();
+
+    function step(now: number) {
+      const dt = Math.min((now - lastTime) / 1000, 0.032);
+      lastTime = now;
+
+      const springForce = -stiffness * pos;
+      const dampingForce = -damping * vel;
+      const totalForce = springForce + dampingForce;
+      const acc = totalForce / mass;
+
+      vel += acc * dt;
+      pos += vel * dt;
+      sheetTranslateY = pos;
+
+      if (Math.abs(pos) < 0.5 && Math.abs(vel) < 8) {
+        sheetTranslateY = 0;
+        isDismissAnimating = false;
+        springRafId = null;
+        return;
+      }
+
+      springRafId = requestAnimationFrame(step);
+    }
+
+    springRafId = requestAnimationFrame(step);
+  }
+
+  onDestroy(() => {
+    cancelSpringAnimation();
+  });
 
   $: if (!$isFullScreen && showMeshSettings) showMeshSettings = false;
 </script>
@@ -344,14 +470,19 @@
     {/if}
 
     {#if $isMobile}
-      <!-- Mobile header zone with drag pill and pull-to-dismiss gesture -->
+      <!-- Mobile interactive player sheet container with spring-dismiss physics -->
       <div
-        class="mobile-header-zone"
-        on:touchstart={handleMobileTouchStart}
-        on:touchmove={handleMobileTouchMove}
-        on:touchend={handleMobileTouchEnd}
-        style="transform: translate3d(0, {mobileDragY}px, 0);"
+        class="mobile-player-container"
+        style="transform: translate3d(0, {sheetTranslateY}px, 0);"
       >
+        <!-- Mobile header zone with drag pill and pull-to-dismiss gesture -->
+        <div
+          class="mobile-header-zone"
+          on:touchstart={handleMobileTouchStart}
+          on:touchmove={handleMobileTouchMove}
+          on:touchend={handleMobileTouchEnd}
+          on:touchcancel={handleMobileTouchEnd}
+        >
         <div class="mobile-drag-pill" aria-hidden="true"></div>
         <div class="mobile-header">
           <button
@@ -488,9 +619,10 @@
             {/if}
           </div>
         {:else}
-          <!-- In-place Lyrics for Mobile -->
+          <!-- In-place Lyrics for Mobile with nested gesture guard -->
           <div
             class="mobile-lyrics-wrapper"
+            use:gestureGuard={{ direction: 'vertical', bubbleAtEdges: true }}
             in:fade={{ duration: isAndroid ? 140 : 300 }}
           >
             {#if $lyricsData?.lines && $lyricsData.lines.length > 0}
@@ -513,7 +645,8 @@
             <div class="progress-bar-container">
               <span class="time">{formatDuration($currentTime)}</span>
               <div
-                class="progress-bar"
+                class="progress-bar hairline-scrubber"
+                class:active-seeking={isSeeking}
                 on:pointerdown={handleSeekPointerDown}
                 on:pointermove={handleSeekPointerMove}
                 on:pointerup={handleSeekPointerUp}
@@ -530,7 +663,9 @@
                   <div
                     class="progress-fill"
                     style="width: {$progress * 100}%"
-                  ></div>
+                  >
+                    <div class="progress-shimmer"></div>
+                  </div>
                 </div>
                 <div
                   class="progress-thumb"
@@ -699,6 +834,7 @@
           </div>
         {/if}
       </div>
+    </div>
     {:else}
       <!-- Desktop layout (enhanced 2-column) -->
       <div class="desktop-container">
@@ -1314,10 +1450,20 @@
   }
 
   /* Mobile View Fixes */
+  .mobile-player-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    z-index: 10;
+    will-change: transform;
+    touch-action: pan-y;
+  }
+
   .mobile-header-zone {
     width: 100%;
     z-index: 100;
-    transition: transform 120ms cubic-bezier(0.2, 0.8, 0.2, 1);
     touch-action: pan-y;
   }
 
@@ -1432,52 +1578,110 @@
   .mobile-view .progress-bar-container {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
+    gap: 0.85rem;
+    margin-bottom: 1.25rem;
   }
 
   .mobile-view .progress-bar {
     flex: 1;
-    height: 28px; /* tall touch hit area */
+    height: 36px; /* tall touch hit area for effortless scrubbing */
     background: transparent;
-    border-radius: 2px;
+    border-radius: 9999px;
     position: relative;
     display: flex;
     align-items: center;
     cursor: pointer;
+    touch-action: none;
   }
 
   .mobile-view .progress-track {
     width: 100%;
-    height: 4px;
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 2px;
-    overflow: visible; /* don't clip thumb */
+    height: 4px; /* hairline minimalist rest state */
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 9999px;
+    overflow: hidden;
     position: relative;
+    transition: height 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .mobile-view .progress-bar:hover .progress-track,
+  .mobile-view .progress-bar.active-seeking .progress-track {
+    height: 8px; /* reactive expansion on touch/scrub */
   }
 
   .mobile-view .progress-fill {
     height: 100%;
-    background: var(--accent-primary);
-    border-radius: 2px;
+    background: linear-gradient(
+      90deg,
+      var(--accent-primary) 0%,
+      color-mix(in srgb, var(--accent-primary) 70%, #ffffff) 50%,
+      var(--accent-primary) 100%
+    );
+    background-size: 200% 100%;
+    border-radius: 9999px;
+    position: relative;
+    transition: width 100ms linear;
+  }
+
+  .mobile-view .progress-bar.active-seeking .progress-fill {
+    transition: none;
+  }
+
+  .mobile-view .progress-shimmer {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.28) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: shimmer-sheen 3.2s infinite linear;
+  }
+
+  @keyframes shimmer-sheen {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
   }
 
   .mobile-view .progress-thumb {
     position: absolute;
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
     background: #fff;
     border-radius: 50%;
-    transform: translateX(-50%) scale(1);
+    transform: translateX(-50%) scale(0);
     top: 50%;
-    margin-top: -7px;
-    box-shadow: 0 0 6px rgba(0, 0, 0, 0.5);
+    margin-top: -6px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5), 0 0 8px var(--accent-primary);
+    transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 160ms ease;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .mobile-view .progress-bar:hover .progress-thumb,
+  .mobile-view .progress-bar.active-seeking .progress-thumb {
+    transform: translateX(-50%) scale(1.25);
+    opacity: 1;
   }
 
   .mobile-view .time {
     font-size: var(--font-size-xs);
-    opacity: 0.5;
-    min-width: 35px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+    opacity: 0.65;
+    min-width: 36px;
+    transition: opacity 160ms ease;
+  }
+
+  .mobile-view .progress-bar.active-seeking ~ .time,
+  .mobile-view .progress-bar-container:hover .time {
+    opacity: 1;
   }
 
   .mobile-view .buttons {
