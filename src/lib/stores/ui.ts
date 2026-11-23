@@ -332,12 +332,17 @@ export async function setMiniPlayer(enable: boolean) {
                 await appWindow.setResizable(true);
 
                 // Restore original window state
+                const { layoutOverride, DESKTOP_MIN_WIDTH, DESKTOP_MIN_HEIGHT, MOBILE_MIN_WIDTH, MOBILE_MIN_HEIGHT } = await import('$lib/stores/mobile');
+                const isDesktopOverride = get(layoutOverride) === 'desktop';
+                const targetMinW = isDesktopOverride ? DESKTOP_MIN_WIDTH : MOBILE_MIN_WIDTH;
+                const targetMinH = isDesktopOverride ? DESKTOP_MIN_HEIGHT : MOBILE_MIN_HEIGHT;
+
                 if (originalWindowState) {
                     // Restore min size first
-                    await appWindow.setMinSize(new LogicalSize(320, 480));
+                    await appWindow.setMinSize(new LogicalSize(targetMinW, targetMinH));
                     await appWindow.setSize(new LogicalSize(
-                        originalWindowState.width,
-                        originalWindowState.height
+                        Math.max(originalWindowState.width, targetMinW),
+                        Math.max(originalWindowState.height, targetMinH)
                     ));
                     await appWindow.setPosition(new LogicalPosition(
                         originalWindowState.x,
@@ -346,7 +351,7 @@ export async function setMiniPlayer(enable: boolean) {
                     originalWindowState = null;
                 } else {
                     // Fallback: restore to default size
-                    await appWindow.setMinSize(new LogicalSize(320, 480));
+                    await appWindow.setMinSize(new LogicalSize(targetMinW, targetMinH));
                     await appWindow.setSize(new LogicalSize(1280, 800));
                 }
 

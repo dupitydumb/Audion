@@ -566,7 +566,7 @@ a:hover {
 }
 
 @media (max-width: 768px) {
-  :root {
+  :root:not(.layout-desktop) {
     --sidebar-width: 0px;
     --player-height: 64px;
     --header-height: 48px;
@@ -574,8 +574,12 @@ a:hover {
     /* 60px nav + 64px player + 6px margin */
   }
 
-  .show-mobile {
+  :root:not(.layout-desktop) .show-mobile {
     display: initial !important;
+  }
+
+  :root.layout-desktop .show-mobile {
+    display: none !important;
   }
 
   /* Enforce minimum touch targets (44x44px per Apple/Google guidelines) */

@@ -1817,7 +1817,7 @@
         text-align: right;
     }
 
-    @container (max-width: 1486px) {
+    @container (max-width: 1524px) {
         .desktop-view-controls {
             display: none !important;
         }
@@ -1826,7 +1826,7 @@
         }
     }
 
-    @container (max-width: 1300px) {
+    @container (max-width: 1350px) {
         .volume-bar {
             display: none !important;
         }

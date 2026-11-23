@@ -16,6 +16,7 @@
   import { createEventDispatcher, onMount } from "svelte";
   import { layoutOverride, type LayoutOverride } from "$lib/stores/mobile";
   import { isMobile } from "$lib/stores/mobile";
+  import { appSettings } from "$lib/stores/settings";
   import Icon from "$lib/components/Icon.svelte";
   import { isTauri, convertFileSrc } from "$lib/api/tauri";
 
@@ -294,19 +295,21 @@
   <div class="section-body">
     <div class="settings-card">
 
-        <!-- Layout mode -->
-        <div class="inner-section" id="setting-layout-mode">
-          <span class="setting-title">{$_('settings.layoutMode')}</span>
-          <span class="setting-description">{$_('settings.layoutModeDesc')}</span>
-          <div class="segmented-pill" style="margin-top: 6px;">
-            <button class="segment-btn" class:active={$layoutOverride === 'auto'} on:click={() => handleLayoutOverrideChange('auto')}><Icon name="sliders" size={14} />{$_('settings.layoutAuto')}</button>
-            <button class="segment-btn" class:active={$layoutOverride === 'desktop'} on:click={() => handleLayoutOverrideChange('desktop')}><Icon name="monitor" size={14} />{$_('settings.layoutDesktop')}</button>
-            <button class="segment-btn" class:active={$layoutOverride === 'mobile'} on:click={() => handleLayoutOverrideChange('mobile')}><Icon name="smartphone" size={14} />{$_('settings.layoutMobile')}</button>
-            <button class="segment-btn" class:active={$layoutOverride === 'hybrid'} on:click={() => handleLayoutOverrideChange('hybrid')}>{$_('settings.layoutHybrid')}</button>
+        <!-- Layout mode (Developer Mode only) -->
+        {#if $appSettings.developerMode}
+          <div class="inner-section" id="setting-layout-mode">
+            <span class="setting-title">{$_('settings.layoutMode')}</span>
+            <span class="setting-description">{$_('settings.layoutModeDesc')}</span>
+            <div class="segmented-pill" style="margin-top: 6px;">
+              <button class="segment-btn" class:active={$layoutOverride === 'auto'} on:click={() => handleLayoutOverrideChange('auto')}><Icon name="sliders" size={14} />{$_('settings.layoutAuto')}</button>
+              <button class="segment-btn" class:active={$layoutOverride === 'desktop'} on:click={() => handleLayoutOverrideChange('desktop')}><Icon name="monitor" size={14} />{$_('settings.layoutDesktop')}</button>
+              <button class="segment-btn" class:active={$layoutOverride === 'mobile'} on:click={() => handleLayoutOverrideChange('mobile')}><Icon name="smartphone" size={14} />{$_('settings.layoutMobile')}</button>
+              <button class="segment-btn" class:active={$layoutOverride === 'hybrid'} on:click={() => handleLayoutOverrideChange('hybrid')}>{$_('settings.layoutHybrid')}</button>
+            </div>
           </div>
-        </div>
 
-        <div class="divider"></div>
+          <div class="divider"></div>
+        {/if}
 
         <!-- Theme mode -->
         <div class="inner-section" id="setting-theme-mode">

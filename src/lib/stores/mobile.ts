@@ -112,6 +112,49 @@ if (typeof document !== 'undefined') {
     });
 }
 
+export const DESKTOP_MIN_WIDTH = 800;
+export const DESKTOP_MIN_HEIGHT = 500;
+export const MOBILE_MIN_WIDTH = 320;
+export const MOBILE_MIN_HEIGHT = 480;
+
+export async function applyWindowSizeLimits(override: LayoutOverride) {
+    if (typeof window === 'undefined') return;
+    try {
+        const { isTauri } = await import('$lib/api/tauri');
+        if (!isTauri()) return;
+        const { isMiniPlayer } = await import('$lib/stores/ui');
+        if (get(isMiniPlayer)) return; // Never override PIP window limits
+
+        const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
+        const appWindow = getCurrentWindow();
+
+        if (override === 'desktop') {
+            await appWindow.setMinSize(new LogicalSize(DESKTOP_MIN_WIDTH, DESKTOP_MIN_HEIGHT));
+
+            const size = await appWindow.innerSize();
+            const factor = await appWindow.scaleFactor();
+            const currentW = size.width / factor;
+            const currentH = size.height / factor;
+
+            if (currentW < DESKTOP_MIN_WIDTH || currentH < DESKTOP_MIN_HEIGHT) {
+                await appWindow.setSize(new LogicalSize(
+                    Math.max(currentW, DESKTOP_MIN_WIDTH),
+                    Math.max(currentH, DESKTOP_MIN_HEIGHT)
+                ));
+            }
+        } else {
+            await appWindow.setMinSize(new LogicalSize(MOBILE_MIN_WIDTH, MOBILE_MIN_HEIGHT));
+        }
+    } catch {
+        // Ignored outside Tauri / unsupported platforms
+    }
+}
+
+// enforce desktop min-size when desktop override is active
+layoutOverride.subscribe((val) => {
+    void applyWindowSizeLimits(val);
+});
+
 let mediaQuery: MediaQueryList | null = null;
 
 export function initMobileDetection() {
@@ -129,6 +172,9 @@ export function initMobileDetection() {
 
     // 2. Tauri platform detection
     detectMobilePlatform();
+
+    // 3. Enforce window size limits for layout override
+    void applyWindowSizeLimits(get(layoutOverride));
 }
 
 async function detectMobilePlatform() {
