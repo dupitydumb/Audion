@@ -30,6 +30,7 @@
     destroyLyricsSync,
     switchLyricsSource,
     fetchLyricsForTrack,
+    importLyricsContent,
     lyricsStore,
     type LyricsQueryOverride,
   } from "$lib/stores/lyrics";
@@ -49,6 +50,7 @@
   import ArtistLinks from "$lib/components/ArtistLinks.svelte";
   import AudioQualityBadge from "$lib/components/AudioQualityBadge.svelte";
   import LyricsView from "$lib/components/LyricsView.svelte";
+  import LyricCardModal from "$lib/components/LyricCardModal.svelte";
   import QueuePanel from "$lib/components/QueuePanel.svelte";
 
   // =========================================================================
@@ -228,6 +230,43 @@
     }
   }
 
+  // Lyric Card Modal & Lyrics Import
+  let showLyricCardModal = false;
+  const IMPORT_ACCEPT = ".lrc,.ttml,.xml,.srt,.json";
+
+  async function handleImportLyrics() {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = IMPORT_ACCEPT;
+    input.style.display = "none";
+    document.body.appendChild(input);
+    input.click();
+    await new Promise((resolve) => {
+      input.onchange = resolve;
+    });
+    const file = input.files?.[0];
+    document.body.removeChild(input);
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const content = e.target?.result as string;
+      if (!content) return;
+      const ext = file.name.split(".").pop()?.toLowerCase() ?? "lrc";
+      const format: "lrc" | "ttml" | "srt" | "json" =
+        ext === "ttml" || ext === "xml"
+          ? "ttml"
+          : ext === "srt"
+            ? "srt"
+            : ext === "json"
+              ? "json"
+              : "lrc";
+      await importLyricsContent(content, format);
+      addToast($_("lyrics.importedSuccess", { default: "Lyrics imported successfully" }), "success");
+    };
+    reader.readAsText(file);
+  }
+
   // Custom search query for lyrics
   $: defaultQueryText = $currentTrack
     ? `${$currentTrack.title || "Unknown"} - ${$currentTrack.artist || "Unknown"}`
@@ -358,17 +397,17 @@
       {#if $currentTrack}
         <div class="now-playing-content">
           <!-- Album Cover Art -->
-          <div class="cover-wrapper">
+          <div class="dock-cover-wrapper">
             {#if albumArt}
               <img
                 src={albumArt}
                 alt={$currentTrack.album || "Album artwork"}
-                class="cover-image"
+                class="dock-cover-image"
                 loading="eager"
                 on:error={() => (albumArt = null)}
               />
             {:else}
-              <div class="cover-placeholder">
+              <div class="dock-cover-placeholder">
                 <Icon name="music" size={48} />
               </div>
             {/if}
@@ -501,13 +540,9 @@
   <!-- TAB 2: LYRICS -->
   {#if $activeInspectorTab === "lyrics"}
     <div class="lyrics-tab-container">
-      {#if $lyricsLoading}
-        <div class="inspector-idle">
-          <div class="loading-spinner"></div>
-          <p>{$_("lyrics.searching", { default: "Searching lyrics..." })}</p>
-        </div>
-      {:else if $lyricsData && $lyricsData.lines.length > 0}
-        <div class="lyrics-sub-header">
+      <!-- Persistent Lyrics Action Header: Source Picker, Share, Import -->
+      <div class="lyrics-sub-header">
+        <div class="lyrics-header-left">
           {#if showSourcePicker}
             <div
               class="source-picker"
@@ -574,6 +609,37 @@
           {/if}
         </div>
 
+        <div class="lyrics-header-actions">
+          <!-- Share Lyric Card Button -->
+          {#if $lyricsData?.lines && $lyricsData.lines.length > 0}
+            <button
+              class="lyrics-action-btn"
+              title={$_("lyrics.shareCard", { default: "Share Lyric Card" })}
+              aria-label="Share Lyric Card"
+              on:click={() => (showLyricCardModal = true)}
+            >
+              <Icon name="share" size={16} />
+            </button>
+          {/if}
+
+          <!-- Import Lyrics File Button -->
+          <button
+            class="lyrics-action-btn"
+            title={$_("lyrics.importTooltip", { default: "Import lyrics file (.lrc, .ttml, .srt, .json)" })}
+            aria-label="Import lyrics file"
+            on:click={handleImportLyrics}
+          >
+            <Icon name="download" size={16} />
+          </button>
+        </div>
+      </div>
+
+      {#if $lyricsLoading}
+        <div class="inspector-idle">
+          <div class="loading-spinner"></div>
+          <p>{$_("lyrics.searching", { default: "Searching lyrics..." })}</p>
+        </div>
+      {:else if $lyricsData && $lyricsData.lines.length > 0}
         <div class="lyrics-view-embed">
           <LyricsView style="--lyrics-font-size: 1.15rem; --lyrics-active-font-size: 1.3rem;" />
         </div>
@@ -629,6 +695,13 @@
                 </button>
               {/if}
             </div>
+
+            <div class="empty-import-action">
+              <button class="empty-import-btn" on:click={handleImportLyrics}>
+                <Icon name="download" size={14} />
+                <span>Import Lyrics File (.lrc, .ttml)</span>
+              </button>
+            </div>
           {/if}
 
           {#if showSourcePicker}
@@ -651,6 +724,12 @@
         <div class="inspector-idle">
           <Icon name="lyrics" size={40} />
           <p>{$_("lyrics.idle", { default: "Play a track to view lyrics" })}</p>
+          {#if $currentTrack}
+            <button class="empty-import-btn" on:click={handleImportLyrics} style="margin-top: 12px;">
+              <Icon name="download" size={14} />
+              <span>Import Lyrics File</span>
+            </button>
+          {/if}
         </div>
       {/if}
     </div>
@@ -682,6 +761,11 @@
     </div>
   {/if}
 </aside>
+
+<LyricCardModal
+  bind:open={showLyricCardModal}
+  onClose={() => (showLyricCardModal = false)}
+/>
 
 <style>
   .right-inspector-dock {
@@ -820,32 +904,42 @@
   }
 
   /* Album Art */
-  .cover-wrapper {
+  .dock-cover-wrapper {
+    position: relative;
     width: 100%;
-    aspect-ratio: 1 / 1;
     max-width: 320px;
+    aspect-ratio: 1 / 1;
+    min-height: 200px;
     margin: 0 auto;
     border-radius: var(--radius-lg);
     overflow: hidden;
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
     background: var(--bg-surface);
+    flex-shrink: 0;
   }
 
-  .cover-image {
+  .dock-cover-image {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
+    aspect-ratio: 1 / 1;
     object-fit: cover;
     display: block;
     transition: transform 0.3s ease;
   }
 
-  .cover-placeholder {
+  .dock-cover-placeholder {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
+    aspect-ratio: 1 / 1;
     display: flex;
     align-items: center;
     justify-content: center;
     color: var(--text-muted);
+    background: var(--bg-surface);
   }
 
   /* Track Header */
@@ -1038,12 +1132,76 @@
   }
 
   .lyrics-sub-header {
-    padding: var(--spacing-xs) var(--spacing-md);
+    padding: 8px var(--spacing-md);
     display: flex;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
     flex-shrink: 0;
     position: relative;
+    border-bottom: 1px solid var(--border-color);
+    min-height: 44px;
+    box-sizing: border-box;
+  }
+
+  .lyrics-header-left {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    min-width: 0;
+  }
+
+  .lyrics-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .lyrics-action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .lyrics-action-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .empty-import-action {
+    margin-top: 10px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .empty-import-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: var(--radius-full);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .empty-import-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary);
   }
 
   .lyrics-view-embed {

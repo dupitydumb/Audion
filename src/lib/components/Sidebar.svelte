@@ -59,6 +59,7 @@
     import { uiSlotManager } from "$lib/plugins/ui-slots";
 
     import { updates } from "$lib/stores/updates";
+    import { isInspectorOpen } from "$lib/stores/inspector";
     import {
         checkForOtaUpdate,
         consumePendingUpdateNotes,
@@ -133,17 +134,21 @@
     import { addToast } from "$lib/stores/toast";
     import { addTracksToPlaylist } from "$lib/services/playlistHelpers";
 
-    // Sidebar draggable resizing constants & state
+    // Sidebar draggable resizing & responsive breakpoint state
     const DEFAULT_WIDTH = 280;
     const MIN_WIDTH = 180;
     const MAX_WIDTH = 460;
     const COLLAPSE_THRESHOLD = 120;
     const COLLAPSED_WIDTH = 64;
     const STORAGE_KEY = "audion_sidebar_width";
+    const COMPACT_BREAKPOINT = 1024;
+    const INSPECTOR_SAFETY_BREAKPOINT = 1200;
 
     let sidebarWidth = DEFAULT_WIDTH;
+    let lastExpandedWidth = DEFAULT_WIDTH;
     let isResizing = false;
     let isCollapsed = false;
+    let isAutoCollapsed = false;
     let dragOverPlaylistId: number | null = null;
 
     function applyWidth(width: number, save = false) {
@@ -152,6 +157,7 @@
             isCollapsed = true;
         } else {
             sidebarWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, width));
+            lastExpandedWidth = sidebarWidth;
             isCollapsed = false;
         }
 
@@ -159,17 +165,74 @@
             document.documentElement.style.setProperty("--sidebar-width", `${sidebarWidth}px`);
         }
 
-        if (save && typeof localStorage !== "undefined") {
+        if (save && typeof localStorage !== "undefined" && !isAutoCollapsed) {
             try {
-                localStorage.setItem(STORAGE_KEY, sidebarWidth.toString());
+                localStorage.setItem(STORAGE_KEY, (isCollapsed ? lastExpandedWidth : sidebarWidth).toString());
             } catch (e) {
                 console.warn("Failed to persist audion_sidebar_width:", e);
             }
         }
     }
 
+    function toggleCollapse() {
+        if (isCollapsed) {
+            isAutoCollapsed = false;
+            applyWidth(lastExpandedWidth >= MIN_WIDTH ? lastExpandedWidth : DEFAULT_WIDTH, true);
+        } else {
+            if (sidebarWidth >= MIN_WIDTH) {
+                lastExpandedWidth = sidebarWidth;
+            }
+            isAutoCollapsed = false;
+            applyWidth(COLLAPSED_WIDTH, true);
+        }
+    }
+
     function resetWidth() {
-        applyWidth(DEFAULT_WIDTH, true);
+        if (isCollapsed) {
+            isAutoCollapsed = false;
+            applyWidth(lastExpandedWidth >= MIN_WIDTH ? lastExpandedWidth : DEFAULT_WIDTH, true);
+        } else if (sidebarWidth === DEFAULT_WIDTH) {
+            toggleCollapse();
+        } else {
+            applyWidth(DEFAULT_WIDTH, true);
+        }
+    }
+
+    function checkResponsiveCollapse() {
+        if (typeof window === "undefined") return;
+        const currentWidth = window.innerWidth;
+        if (currentWidth <= 768) return; // handled by mobile layout
+
+        const shouldAutoCollapse =
+            currentWidth <= COMPACT_BREAKPOINT ||
+            ($isInspectorOpen && currentWidth <= INSPECTOR_SAFETY_BREAKPOINT);
+
+        if (shouldAutoCollapse) {
+            if (!isCollapsed) {
+                if (sidebarWidth >= MIN_WIDTH) {
+                    lastExpandedWidth = sidebarWidth;
+                }
+                isAutoCollapsed = true;
+                applyWidth(COLLAPSED_WIDTH, false);
+            }
+        } else {
+            if (isAutoCollapsed && isCollapsed) {
+                isAutoCollapsed = false;
+                applyWidth(lastExpandedWidth >= MIN_WIDTH ? lastExpandedWidth : DEFAULT_WIDTH, false);
+            }
+        }
+    }
+
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+    function handleWindowResize() {
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+            checkResponsiveCollapse();
+        }, 50);
+    }
+
+    $: if ($isInspectorOpen !== undefined) {
+        checkResponsiveCollapse();
     }
 
     function startResize(e: MouseEvent) {
@@ -210,7 +273,7 @@
         } else if (e.key === "ArrowRight") {
             e.preventDefault();
             if (isCollapsed) {
-                applyWidth(MIN_WIDTH, true);
+                applyWidth(lastExpandedWidth >= MIN_WIDTH ? lastExpandedWidth : MIN_WIDTH, true);
             } else {
                 applyWidth(Math.min(MAX_WIDTH, sidebarWidth + 20), true);
             }
@@ -564,15 +627,15 @@
             const savedWidth = localStorage.getItem(STORAGE_KEY);
             if (savedWidth !== null) {
                 const parsed = parseInt(savedWidth, 10);
-                if (!isNaN(parsed)) {
-                    applyWidth(parsed, false);
+                if (!isNaN(parsed) && parsed >= MIN_WIDTH) {
+                    lastExpandedWidth = parsed;
+                    sidebarWidth = parsed;
                 }
-            } else {
-                applyWidth(DEFAULT_WIDTH, false);
             }
         } catch (e) {
             console.warn("Failed to load audion_sidebar_width:", e);
         }
+        checkResponsiveCollapse();
 
         // listen for the OS close-request
         // install to app-close
@@ -627,6 +690,8 @@
     }
 </script>
 
+<svelte:window on:resize={handleWindowResize} />
+
 <aside
     class="sidebar"
     class:collapsed={isCollapsed}
@@ -637,8 +702,10 @@
         <div class="logo">
             <img src="/logo.png" alt="Audion Logo" width="32" height="32" style="view-transition-name: {(getIsLinux() || !$appBootTransitionActive) ? 'none' : 'app-logo-icon'};" />
             <span class="logo-text" style="view-transition-name: {(getIsLinux() || !$appBootTransitionActive) ? 'none' : 'app-logo-text'};">Audion</span>
-            <SyncStatus />
-            <LibraryWatcherStatus />
+            <div class="header-status-indicators">
+                <SyncStatus />
+                <LibraryWatcherStatus />
+            </div>
             {#if $otaState.phase === "ready"}
                 <div
                     class="update-badge restart-badge"
@@ -686,6 +753,15 @@
                 </div>
             {/if}
         </div>
+
+        <button
+            class="sidebar-toggle-btn"
+            on:click={toggleCollapse}
+            title={isCollapsed ? $_("sidebar.expand", { default: "Expand sidebar" }) : $_("sidebar.collapse", { default: "Collapse sidebar" })}
+            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+            <Icon name={isCollapsed ? "chevron-right" : "chevron-left"} size={16} />
+        </button>
     </div>
 
     <nav class="sidebar-nav">
@@ -1070,7 +1146,7 @@
     }
 
     .sidebar:not(.resizing) {
-        transition: width var(--transition-fast) ease-out;
+        transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
     .sidebar.resizing {
@@ -1109,14 +1185,34 @@
     }
 
     .sidebar.collapsed .sidebar-header {
-        padding: var(--spacing-sm);
+        padding: var(--spacing-sm) 4px;
         padding-top: var(--spacing-md);
-        justify-content: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 8px;
     }
 
     .sidebar.collapsed .logo {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
         justify-content: center;
-        gap: 0;
+        gap: 6px;
+        width: 100%;
+    }
+
+    .sidebar.collapsed .logo img {
+        display: block;
+        margin: 0 auto;
+    }
+
+    .sidebar.collapsed .header-status-indicators {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
     }
 
     .sidebar.collapsed .logo-text,
@@ -1168,7 +1264,41 @@
         padding-top: var(--spacing-lg);
         display: flex;
         align-items: center;
-        gap: var(--spacing-sm);
+        justify-content: space-between;
+        gap: var(--spacing-xs);
+    }
+
+    .header-status-indicators {
+        display: inline-flex;
+        align-items: center;
+        gap: 2px;
+    }
+
+    .sidebar-toggle-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        transition: all var(--transition-fast);
+        flex-shrink: 0;
+        margin-left: auto;
+    }
+
+    .sidebar-toggle-btn:hover {
+        background: var(--bg-hover);
+        color: var(--text-primary);
+    }
+
+    .sidebar.collapsed .sidebar-toggle-btn {
+        margin-left: 0;
+        width: 28px;
+        height: 28px;
     }
 
     .logo {

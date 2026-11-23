@@ -1491,9 +1491,9 @@
   :global(.track-row.unavailable:hover .hover-play), :global(.track-row.unavailable:hover .track-index) { opacity: 1; }
 
   :global(.col-cover) { display: flex; align-items: center; justify-content: center; }
-  :global(.cover-image) { width: 40px; height: 40px; border-radius: var(--radius-sm); object-fit: cover; }
-  :global(.cover-placeholder) { width: 40px; height: 40px; border-radius: var(--radius-sm); background-color: var(--bg-highlight); display: flex; align-items: center; justify-content: center; color: var(--text-subdued); }
-  :global(.cover-wrapper) { position: relative; width: 40px; height: 40px; }
+  :global(.track-row .cover-image) { width: 40px; height: 40px; border-radius: var(--radius-sm); object-fit: cover; }
+  :global(.track-row .cover-placeholder) { width: 40px; height: 40px; border-radius: var(--radius-sm); background-color: var(--bg-highlight); display: flex; align-items: center; justify-content: center; color: var(--text-subdued); }
+  :global(.track-row .cover-wrapper) { position: relative; width: 40px; height: 40px; }
   :global(.cover-play-overlay) { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background-color: rgba(0,0,0,0.6); border-radius: var(--radius-sm); opacity: 0; transition: opacity var(--transition-fast); color: var(--text-primary); }
   :global(.track-row:hover .cover-play-overlay) { opacity: 1; }
   :global(.track-row.playing .cover-play-overlay) { opacity: 0; }
