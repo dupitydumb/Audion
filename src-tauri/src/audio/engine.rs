@@ -1050,7 +1050,7 @@ impl AudioEngine {
         // for a plain shared switch the old stream is kept until the new one is up,
         // so a failed open never leaves the app silent.
         let mut old_output = Some(std::mem::replace(&mut self.output, OutputSink::Closed));
-        let is_currently_exclusive = matches!(old_output.as_ref(), Some(OutputSink::Wasapi(_)));
+        let is_currently_exclusive = old_output.as_ref().is_some_and(|s| s.is_exclusive());
         let requested_exclusive = matches!(mode, OutputMode::Exclusive { .. });
         if is_currently_exclusive || requested_exclusive {
             old_output.take();

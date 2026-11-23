@@ -21,18 +21,25 @@ export const isMobileViewport = writable(false);
 // Is the sidebar drawer open on mobile?
 export const isMobileSidebarOpen = writable(false);
 
-// Platform detection (set once on init)
-export const isMobilePlatform = writable(false);
+export function detectIsMobileSync(): boolean {
+    if (typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent.toLowerCase();
+    return /android|iphone|ipad|ipod|mobile/i.test(ua);
+}
+
+// Platform detection (initialized synchronously via UA, refined via Tauri plugin-os)
+export const isMobilePlatform = writable(detectIsMobileSync());
 
 function loadLayoutOverride(): LayoutOverride {
-    if (typeof window === 'undefined') return 'auto';
+    if (typeof window === 'undefined') return 'desktop';
     try {
         const raw = localStorage.getItem(LAYOUT_OVERRIDE_STORAGE_KEY);
-        if (raw === 'auto' || raw === 'mobile' || raw === 'desktop' || raw === 'hybrid') return raw;
+        if (raw === 'mobile' || raw === 'desktop' || raw === 'hybrid') return raw;
     } catch {
         // ignore read failures
     }
-    return 'auto';
+    // Default to desktop when opened on desktop, mobile when opened on mobile
+    return detectIsMobileSync() ? 'mobile' : 'desktop';
 }
 
 function createLayoutOverrideStore() {
@@ -52,7 +59,7 @@ function createLayoutOverrideStore() {
     return {
         subscribe,
         set,
-        reset: () => set('auto'),
+        reset: () => set(detectIsMobileSync() ? 'mobile' : 'desktop'),
     };
 }
 
@@ -178,19 +185,32 @@ export function initMobileDetection() {
 }
 
 async function detectMobilePlatform() {
+    let isMob = detectIsMobileSync();
     try {
         // Check if we're on Android/iOS via Tauri
-        const { type, arch } = await import('@tauri-apps/plugin-os');
+        const { type } = await import('@tauri-apps/plugin-os');
         const osType = type();
         if (osType === 'android' || osType === 'ios') {
-            isMobilePlatform.set(true);
+            isMob = true;
+        } else {
+            isMob = false;
         }
     } catch {
         // plugin-os not available, fall back to user agent
-        if (typeof navigator !== 'undefined') {
-            const ua = navigator.userAgent.toLowerCase();
-            const isMobileUA = /android|iphone|ipad|ipod|mobile/i.test(ua);
-            isMobilePlatform.set(isMobileUA);
+    }
+
+    isMobilePlatform.set(isMob);
+
+    // If no explicit user override was saved in localStorage, default to OS platform layout
+    if (typeof window !== 'undefined') {
+        try {
+            const raw = localStorage.getItem(LAYOUT_OVERRIDE_STORAGE_KEY);
+            if (!raw || raw === 'auto') {
+                const targetLayout: LayoutOverride = isMob ? 'mobile' : 'desktop';
+                layoutOverride.set(targetLayout);
+            }
+        } catch {
+            // ignore localStorage failures
         }
     }
 }

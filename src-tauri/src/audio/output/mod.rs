@@ -37,6 +37,16 @@ pub enum OutputSink {
     Closed,
 }
 
+impl OutputSink {
+    pub fn is_exclusive(&self) -> bool {
+        match self {
+            #[cfg(target_os = "windows")]
+            OutputSink::Wasapi(_) => true,
+            _ => false,
+        }
+    }
+}
+
 /// what exclusive output is possible on this build
 pub fn exclusive_capability() -> ExclusiveCapability {
     #[cfg(target_os = "windows")]
