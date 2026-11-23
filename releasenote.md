@@ -1,3 +1,32 @@
+## [v1.5.0] - 2026-11-23
+
+### Highlights: Desktop PlayerBar Responsive Overhaul, WebView2 Performance & Memory Optimization, Album Grid Layout Refinements, Curated Plugin Logos, and Cross-Platform Audio Resilience
+
+### New Features & Improvements
+
+* **Responsive Desktop PlayerBar & Staggered Collapsing**:
+  * Upgraded PlayerBar layout to an inline-size container query grid with shrinkable columns (`minmax(0, ...)`), eliminating overlapping controls when resizing desktop windows.
+  * Staggered collapsing sequence starting at 1525px:
+    * Collapses view controls (fullscreen, mini-player) into a new overflow `"⋯"` menu.
+    * Collapses horizontal volume slider, lossless badge, and time labels progressively.
+    * Centers playback controls down to essential skip/play controls at compact sizes.
+  * Added a dedicated quick-actions overflow popover menu containing lyrics, queue, cast, sleep timer, plugin actions, device selector, shuffle, repeat, and a compact volume slider.
+* **WebView2 Performance & Resource Optimization**:
+  * Dramatic reduction in memory (up to 1GB saved) and CPU overhead (dropped idle background usage from ~20% to ~0%).
+  * Background mesh gradient worker now pauses continuous CPU ray calculation and `requestAnimationFrame` loops when audio is paused or when the application is minimized/hidden (`document.hidden`).
+  * Fixed MiniPlayer visualizer re-allocating state and looping continuously when paused.
+  * Added `--enable-gpu-rasterization --enable-zero-copy` hardware acceleration flags in Tauri configuration.
+* **Album Tab Grid Sizing**:
+  * Replaced the rigid 924px 2-column breakpoint with responsive auto-flowing columns, keeping album covers square (1:1 aspect ratio) without awkward wide rectangular stretching.
+* **Curated Plugin Logos**:
+  * Curated marketplace plugins now automatically resolve raw GitHub asset paths for relative icon references, displaying logos properly prior to installation.
+* **Cross-Platform Audio Engine & Resilience**:
+  * Safe cross-platform `is_exclusive()` capability detection for `OutputSink` across Windows, Linux, macOS, and Android.
+  * Corrected negative full-scale conversions in WASAPI exclusive mode and aligned buffer periods.
+  * Protected against zip-slip path traversal in archive extraction.
+
+---
+
 ## [v1.4.4] - 2026-11-19
 
 ### Highlights: Dynamic Island Mini-Player, Provider Ecosystem, Exclusive DAC Output, Plugin Marketplace Taxonomy, and Per-ABI Android APKs
