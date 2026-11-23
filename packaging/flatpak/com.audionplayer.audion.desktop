@@ -1,0 +1,26 @@
+[Desktop Entry]
+Type=Application
+Name=Audion
+Comment=Local music player
+Exec=audion
+Icon=com.audionplayer.audion
+Terminal=false
+Categories=AudioVideo;Audio;Player;
+StartupNotify=true
+Actions=Play;Pause;Next;Previous;
+
+[Desktop Action Play]
+Name=Play
+Exec=audion --play
+
+[Desktop Action Pause]
+Name=Pause
+Exec=audion --pause
+
+[Desktop Action Next]
+Name=Next
+Exec=audion --next
+
+[Desktop Action Previous]
+Name=Previous
+Exec=audion --previous

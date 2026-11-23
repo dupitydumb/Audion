@@ -699,7 +699,7 @@ pub fn run() {
                 use windows::Win32::UI::Shell::SetCurrentProcessExplicitAppUserModelID;
                 use windows::core::HSTRING;
                 if let Err(e) = unsafe {
-                    SetCurrentProcessExplicitAppUserModelID(&HSTRING::from("com.audion.app"))
+                    SetCurrentProcessExplicitAppUserModelID(&HSTRING::from("com.audionplayer.audion"))
                 } {
                     tracing::warn!("[App] SetCurrentProcessExplicitAppUserModelID failed: {:?}", e);
                 }
@@ -722,6 +722,49 @@ pub fn run() {
             // Ensure directory exists
             if let Err(e) = std::fs::create_dir_all(&app_dir) {
                 tracing::error!(error = %e, "Failed to create app data directory");
+            }
+
+            // Migrate legacy data from com.audion.app if needed
+            #[cfg(desktop)]
+            {
+                let db_path = app_dir.join("rlist.db");
+                if !db_path.exists() {
+                    let app_dir_str = app_dir.to_string_lossy();
+                    let legacy_candidate = if app_dir_str.contains("com.audionplayer.audion") {
+                        Some(PathBuf::from(app_dir_str.replace("com.audionplayer.audion", "com.audion.app")))
+                    } else {
+                        #[cfg(target_os = "windows")]
+                        {
+                            std::env::var("APPDATA").ok().map(|p| PathBuf::from(p).join("com.audion.app"))
+                        }
+                        #[cfg(target_os = "macos")]
+                        {
+                            dirs::data_dir().map(|p| p.join("com.audion.app"))
+                        }
+                        #[cfg(target_os = "linux")]
+                        {
+                            dirs::data_dir().map(|p| p.join("com.audion.app"))
+                        }
+                        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+                        {
+                            None
+                        }
+                    };
+
+                    if let Some(legacy_dir) = legacy_candidate {
+                        let legacy_db = legacy_dir.join("rlist.db");
+                        if legacy_db.exists() {
+                            tracing::info!(from = %legacy_dir.display(), to = %app_dir.display(), "Migrating legacy app data from com.audion.app");
+                            for f in &["rlist.db", "rlist.db-wal", "rlist.db-shm", "app_settings.json"] {
+                                let src = legacy_dir.join(f);
+                                let dst = app_dir.join(f);
+                                if src.exists() && !dst.exists() {
+                                    let _ = std::fs::copy(&src, &dst);
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
             // Initialize cover storage app data directory (cross-platform)

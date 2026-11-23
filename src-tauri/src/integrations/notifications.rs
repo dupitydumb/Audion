@@ -172,7 +172,7 @@ mod desktop_impl {
 
             // must match the AUMID
             // registered via SetCurrentProcessExplicitAppUserModelID in lib.rs
-            let mut toast = Toast::new("com.audion.app")
+            let mut toast = Toast::new("com.audionplayer.audion")
                 .title(&opts.title)
                 .text1(&opts.body);
 

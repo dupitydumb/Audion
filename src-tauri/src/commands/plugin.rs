@@ -1,9 +1,9 @@
 // Tauri backend commands for plugin management
 use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 #[allow(unused_imports)]
 use tauri::Manager;
 
@@ -116,6 +116,14 @@ fn load_plugin_states(plugin_dir: &str) -> PluginStateStore {
     if let Ok(content) = fs::read_to_string(&state_path) {
         serde_json::from_str(&content).unwrap_or_default()
     } else {
+        // Fallback: check legacy plugins directory (com.audion.app)
+        let dir = get_plugins_root(plugin_dir);
+        if let Some(legacy_dir) = get_legacy_plugins_dir(&dir) {
+            let legacy_state = legacy_dir.join("plugin_state.json");
+            if let Ok(content) = fs::read_to_string(&legacy_state) {
+                return serde_json::from_str(&content).unwrap_or_default();
+            }
+        }
         PluginStateStore::default()
     }
 }
@@ -149,47 +157,167 @@ fn get_plugins_root(plugin_dir: &str) -> PathBuf {
     PathBuf::from(plugin_dir)
 }
 
+// Helper to find legacy plugin directory (com.audion.app)
+fn get_legacy_plugins_dir(current_plugins_dir: &Path) -> Option<PathBuf> {
+    let path_str = current_plugins_dir.to_string_lossy();
+    if path_str.contains("com.audionplayer.audion") {
+        let legacy_str = path_str.replace("com.audionplayer.audion", "com.audion.app");
+        let legacy_path = PathBuf::from(legacy_str);
+        if legacy_path.exists() {
+            return Some(legacy_path);
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(app_data) = std::env::var("APPDATA") {
+            let legacy_path = PathBuf::from(app_data).join("com.audion.app").join("plugins");
+            if legacy_path.exists() && &legacy_path != current_plugins_dir {
+                return Some(legacy_path);
+            }
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(data_dir) = dirs::data_dir() {
+            let legacy_path = data_dir.join("com.audion.app").join("plugins");
+            if legacy_path.exists() && &legacy_path != current_plugins_dir {
+                return Some(legacy_path);
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if let Some(config_dir) = dirs::config_dir() {
+            let legacy_path = config_dir.join("com.audion.app").join("plugins");
+            if legacy_path.exists() && &legacy_path != current_plugins_dir {
+                return Some(legacy_path);
+            }
+        }
+        if let Some(data_dir) = dirs::data_dir() {
+            let legacy_path = data_dir.join("com.audion.app").join("plugins");
+            if legacy_path.exists() && &legacy_path != current_plugins_dir {
+                return Some(legacy_path);
+            }
+        }
+    }
+
+    None
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let dest_path = dst.join(entry.file_name());
+        if file_type.is_dir() {
+            copy_dir_recursive(&entry.path(), &dest_path)?;
+        } else if !dest_path.exists() {
+            let _ = fs::copy(entry.path(), dest_path);
+        }
+    }
+    Ok(())
+}
+
+fn is_plugins_dir_empty_or_missing(dir: &Path) -> bool {
+    if !dir.exists() {
+        return true;
+    }
+    match fs::read_dir(dir) {
+        Ok(mut entries) => {
+            !entries.any(|e| {
+                if let Ok(entry) = e {
+                    let p = entry.path();
+                    if p.is_dir() {
+                        return true;
+                    }
+                    if p.file_name().and_then(|n| n.to_str()) == Some("plugin_state.json") {
+                        return true;
+                    }
+                }
+                false
+            })
+        }
+        Err(_) => true,
+    }
+}
+
+fn migrate_legacy_plugins_if_needed(target_dir: &Path) {
+    if is_plugins_dir_empty_or_missing(target_dir) {
+        if let Some(legacy_dir) = get_legacy_plugins_dir(target_dir) {
+            if legacy_dir.exists() && &legacy_dir != target_dir {
+                log::info!(
+                    "[PluginMigration] Migrating legacy plugins from {:?} to {:?}",
+                    legacy_dir,
+                    target_dir
+                );
+                let _ = copy_dir_recursive(&legacy_dir, target_dir);
+            }
+        }
+    }
+}
+
 // Helper to find a plugin's path by its name
 // Tries:
 // 1. Standard safe name
 // 2. Safe name with "-main" suffix
 // 3. Scan all directories for matching manifest name
+// 4. Fallback search in legacy plugins directory (com.audion.app)
 fn resolve_plugin_path(plugin_dir: &str, plugin_name: &str) -> Option<(PathBuf, String)> {
     let dir = get_plugins_root(plugin_dir);
     let safe_name = to_safe_name(plugin_name);
 
-    // 1. Try exact safe name
-    let path1 = dir.join(&safe_name);
-    if let Some(manifest) = read_plugin_manifest(&path1) {
-        if manifest.name == plugin_name {
-            return Some((path1, safe_name));
+    let search_in = |d: &PathBuf| -> Option<(PathBuf, String)> {
+        // 1. Try exact safe name
+        let path1 = d.join(&safe_name);
+        if let Some(manifest) = read_plugin_manifest(&path1) {
+            if manifest.name == plugin_name {
+                return Some((path1, safe_name.clone()));
+            }
         }
-    }
 
-    // 2. Try safe name + "-main" suffix
-    let suffix_name = format!("{}-main", safe_name);
-    let path2 = dir.join(&suffix_name);
-    if let Some(manifest) = read_plugin_manifest(&path2) {
-        if manifest.name == plugin_name {
-            return Some((path2, suffix_name));
+        // 2. Try safe name + "-main" suffix
+        let suffix_name = format!("{}-main", safe_name);
+        let path2 = d.join(&suffix_name);
+        if let Some(manifest) = read_plugin_manifest(&path2) {
+            if manifest.name == plugin_name {
+                return Some((path2, suffix_name));
+            }
         }
-    }
 
-    // 3. Scan all subdirectories
-    if let Ok(entries) = fs::read_dir(&dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                if let Some(manifest) = read_plugin_manifest(&path) {
-                    if manifest.name == plugin_name {
-                        let folder_name = path
-                            .file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or_default()
-                            .to_string();
-                        return Some((path, folder_name));
+        // 3. Scan all subdirectories
+        if let Ok(entries) = fs::read_dir(d) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_dir() {
+                    if let Some(manifest) = read_plugin_manifest(&path) {
+                        if manifest.name == plugin_name {
+                            let folder_name = path
+                                .file_name()
+                                .and_then(|n| n.to_str())
+                                .unwrap_or_default()
+                                .to_string();
+                            return Some((path, folder_name));
+                        }
                     }
                 }
+            }
+        }
+        None
+    };
+
+    if let Some(found) = search_in(&dir) {
+        return Some(found);
+    }
+
+    // Fallback: check legacy directory
+    if let Some(legacy_dir) = get_legacy_plugins_dir(&dir) {
+        if legacy_dir.exists() && legacy_dir != dir {
+            if let Some(found) = search_in(&legacy_dir) {
+                return Some(found);
             }
         }
     }
@@ -201,15 +329,21 @@ fn resolve_plugin_path(plugin_dir: &str, plugin_name: &str) -> Option<(PathBuf, 
 pub fn list_plugins(plugin_dir: String) -> Vec<PluginInfo> {
     let mut plugins = Vec::new();
     let dir = get_plugins_root(&plugin_dir);
-    let states = load_plugin_states(dir.to_string_lossy().as_ref());
 
+    // If current plugins directory is empty or missing, migrate from legacy directory
+    migrate_legacy_plugins_if_needed(&dir);
+
+    let states = load_plugin_states(dir.to_string_lossy().as_ref());
+    let mut seen_plugins = HashSet::new();
+
+    // Scan primary plugin directory
     if let Ok(entries) = fs::read_dir(&dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
                 if let Some(manifest) = read_plugin_manifest(&path) {
-                    // No need to strict validate folder name anymore, just list it.
                     let name = manifest.name.clone();
+                    seen_plugins.insert(name.clone());
                     let state = states.plugins.get(&name);
 
                     plugins.push(PluginInfo {
@@ -225,6 +359,45 @@ pub fn list_plugins(plugin_dir: String) -> Vec<PluginInfo> {
             }
         }
     }
+
+    // Fallback discovery: load any plugins present in legacy directory not yet in primary
+    if let Some(legacy_dir) = get_legacy_plugins_dir(&dir) {
+        if legacy_dir.exists() && legacy_dir != dir {
+            let legacy_states = load_plugin_states(legacy_dir.to_string_lossy().as_ref());
+            if let Ok(entries) = fs::read_dir(&legacy_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        if let Some(manifest) = read_plugin_manifest(&path) {
+                            let name = manifest.name.clone();
+                            if !seen_plugins.contains(&name) {
+                                seen_plugins.insert(name.clone());
+                                let state = states
+                                    .plugins
+                                    .get(&name)
+                                    .or_else(|| legacy_states.plugins.get(&name));
+
+                                plugins.push(PluginInfo {
+                                    name: name.clone(),
+                                    enabled: state.map(|s| s.enabled).unwrap_or(false),
+                                    manifest,
+                                    granted_permissions: state
+                                        .map(|s| s.granted_permissions.clone())
+                                        .unwrap_or_default(),
+                                    folder_name: path
+                                        .file_name()
+                                        .unwrap()
+                                        .to_string_lossy()
+                                        .to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     plugins
 }
 
@@ -886,6 +1059,7 @@ pub fn get_plugin_dir(#[allow(unused_variables)] app_handle: tauri::AppHandle) -
         plugin_dir.push(env!("CARGO_PKG_NAME"));
         plugin_dir.push("plugins");
         fs::create_dir_all(&plugin_dir).map_err(|e| e.to_string())?;
+        migrate_legacy_plugins_if_needed(&plugin_dir);
         return Ok(plugin_dir.to_string_lossy().to_string());
     }
 
@@ -898,6 +1072,7 @@ pub fn get_plugin_dir(#[allow(unused_variables)] app_handle: tauri::AppHandle) -
             .map_err(|e| e.to_string())?;
         let plugin_dir = app_dir.join("plugins");
         fs::create_dir_all(&plugin_dir).map_err(|e| e.to_string())?;
+        migrate_legacy_plugins_if_needed(&plugin_dir);
         Ok(plugin_dir.to_string_lossy().to_string())
     }
 }
@@ -1273,7 +1448,8 @@ pub async fn plugin_get_data(
     plugin_dir: String,
 ) -> Result<Option<String>, String> {
     let safe_name = to_safe_name(&plugin_name);
-    let file_path = get_plugins_root(&plugin_dir)
+    let root = get_plugins_root(&plugin_dir);
+    let file_path = root
         .join(&safe_name)
         .join("storage")
         .join(format!("{}.json", key));
@@ -1282,6 +1458,17 @@ pub async fn plugin_get_data(
         let content = fs::read_to_string(file_path).map_err(|e| e.to_string())?;
         Ok(Some(content))
     } else {
+        // Fallback: check legacy directory
+        if let Some(legacy_dir) = get_legacy_plugins_dir(&root) {
+            let legacy_file = legacy_dir
+                .join(&safe_name)
+                .join("storage")
+                .join(format!("{}.json", key));
+            if legacy_file.exists() {
+                let content = fs::read_to_string(legacy_file).map_err(|e| e.to_string())?;
+                return Ok(Some(content));
+            }
+        }
         Ok(None)
     }
 }

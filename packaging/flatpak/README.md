@@ -4,9 +4,9 @@ This directory contains a first-pass Flatpak setup for Audion.
 
 ## Files
 
-- `com.audion.app.yml` - Flatpak manifest
-- `com.audion.app.desktop` - Desktop launcher metadata
-- `com.audion.app.metainfo.xml` - AppStream metadata
+- `com.audionplayer.audion.yml` - Flatpak manifest
+- `com.audionplayer.audion.desktop` - Desktop launcher metadata
+- `com.audionplayer.audion.metainfo.xml` - AppStream metadata
 
 ## Local build
 
@@ -18,8 +18,8 @@ flatpak install -y flathub \
   org.freedesktop.Sdk.Extension.node20//24.08 \
   org.freedesktop.Sdk.Extension.rust-stable//24.08
 
-flatpak-builder --force-clean --repo=repo build-dir packaging/flatpak/com.audion.app.yml
-flatpak build-bundle repo audion_dev_linux.flatpak com.audion.app
+flatpak-builder --force-clean --repo=repo build-dir packaging/flatpak/com.audionplayer.audion.yml
+flatpak build-bundle repo audion_dev_linux.flatpak com.audionplayer.audion
 ```
 
 ## Notes

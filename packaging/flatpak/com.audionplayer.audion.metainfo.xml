@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.audionplayer.audion</id>
+  <name>Audion</name>
+  <summary>A modern local music player</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="com.audionplayer">
+    <name>Audion Contributors</name>
+  </developer>
+  <description>
+    <p>
+      Audion is a privacy-focused local music player with a modern interface,
+      metadata management, lyrics support, and plugin extensibility.
+    </p>
+  </description>
+  <launchable type="desktop-id">com.audionplayer.audion.desktop</launchable>
+  <url type="homepage">https://github.com/dupitydumb/Audion</url>
+  <url type="bugtracker">https://github.com/dupitydumb/Audion/issues</url>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="1.5.0" date="2026-11-23" />
+    <release version="1.4.4" date="2026-11-16" />
+    <release version="1.4.3" date="2026-10-26" />
+    <release version="1.4.1" date="2026-09-28" />
+  </releases>
+</component>

@@ -466,7 +466,7 @@ jobs:
       - name: Build Flatpak bundle
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
-          manifest-path: packaging/flatpak/com.audion.app.yml
+          manifest-path: packaging/flatpak/com.audionplayer.audion.yml
           repository-name: flathub
           repository-url: https://flathub.org/repo/flathub.flatpakrepo
           bundle: audion_${{ needs.create-release.outputs.version }}_flatpak.flatpak

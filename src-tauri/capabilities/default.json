@@ -52,11 +52,15 @@
       "allow": [
         { "path": "$AUDIO/**" },
         { "path": "$APPDATA/audion/**" },
+        { "path": "$APPDATA/com.audionplayer.audion/**" },
         { "path": "$APPDATA/com.audion.app/**" },
         { "path": "$MUSIC/**" },
         { "path": "$HOME/Music/**" },
         { "path": "$HOME/.config/audion/**" },
+        { "path": "$HOME/.config/com.audionplayer.audion/**" },
         { "path": "$HOME/.config/com.audion.app/**" },
+        { "path": "$HOME/.local/share/com.audionplayer.audion/**" },
+        { "path": "$HOME/.local/share/com.audion.app/**" },
         { "path": "$DOWNLOAD/**" },
         { "path": "$DESKTOP/**" },
         { "path": "$DOCUMENT/**" }
@@ -67,11 +71,15 @@
       "allow": [
         { "path": "$AUDIO/**" },
         { "path": "$APPDATA/audion/**" },
+        { "path": "$APPDATA/com.audionplayer.audion/**" },
         { "path": "$APPDATA/com.audion.app/**" },
         { "path": "$MUSIC/**" },
         { "path": "$HOME/Music/**" },
         { "path": "$HOME/.config/audion/**" },
+        { "path": "$HOME/.config/com.audionplayer.audion/**" },
         { "path": "$HOME/.config/com.audion.app/**" },
+        { "path": "$HOME/.local/share/com.audionplayer.audion/**" },
+        { "path": "$HOME/.local/share/com.audion.app/**" },
         { "path": "$DOWNLOAD/**" },
         { "path": "$DESKTOP/**" },
         { "path": "$DOCUMENT/**" }

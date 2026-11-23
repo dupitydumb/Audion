@@ -71,13 +71,13 @@ pub fn get_covers_directory() -> std::result::Result<PathBuf, String> {
         {
             let app_data = std::env::var("APPDATA")
                 .map_err(|_| "Failed to get APPDATA environment variable".to_string())?;
-            PathBuf::from(app_data).join("com.audion.app")
+            PathBuf::from(app_data).join("com.audionplayer.audion")
         }
         #[cfg(not(target_os = "windows"))]
         {
             dirs::data_dir()
                 .ok_or_else(|| "Failed to get data directory".to_string())?
-                .join("com.audion.app")
+                .join("com.audionplayer.audion")
         }
     };
 
@@ -88,6 +88,39 @@ pub fn get_covers_directory() -> std::result::Result<PathBuf, String> {
         .map_err(|e| format!("Failed to create covers directory: {}", e))?;
 
     Ok(covers_dir)
+}
+
+/// Fallback discovery helper: returns legacy covers directory (com.audion.app/covers) if it exists
+pub fn get_legacy_covers_directory() -> Option<PathBuf> {
+    if let Some(dir) = APP_DATA_DIR.get() {
+        let dir_str = dir.to_string_lossy();
+        if dir_str.contains("com.audionplayer.audion") {
+            let legacy = PathBuf::from(dir_str.replace("com.audionplayer.audion", "com.audion.app")).join("covers");
+            if legacy.exists() {
+                return Some(legacy);
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(app_data) = std::env::var("APPDATA") {
+            let legacy_covers = PathBuf::from(app_data).join("com.audion.app").join("covers");
+            if legacy_covers.exists() {
+                return Some(legacy_covers);
+            }
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if let Some(dir) = dirs::data_dir() {
+            let legacy_covers = dir.join("com.audion.app").join("covers");
+            if legacy_covers.exists() {
+                return Some(legacy_covers);
+            }
+        }
+    }
+    None
 }
 
 /// Get the tracks covers subdirectory
@@ -234,7 +267,7 @@ pub fn persist_track_covers(
     }
 }
 
-/// Get cover file path for a track (verifies file exists)
+/// Get cover file path for a track (verifies file exists, with fallback discovery)
 pub fn get_track_cover_file_path(conn: &Connection, track_id: i64) -> Result<Option<String>> {
     let path: Option<String> = conn
         .query_row(
@@ -250,12 +283,42 @@ pub fn get_track_cover_file_path(conn: &Connection, track_id: i64) -> Result<Opt
         if std::path::Path::new(p).exists() {
             return Ok(Some(p.clone()));
         }
+        // Fallback 1: check com.audion.app if path has com.audionplayer.audion
+        if p.contains("com.audionplayer.audion") {
+            let legacy = p.replace("com.audionplayer.audion", "com.audion.app");
+            if std::path::Path::new(&legacy).exists() {
+                return Ok(Some(legacy));
+            }
+        }
+        // Fallback 2: check com.audionplayer.audion if path has com.audion.app
+        if p.contains("com.audion.app") {
+            let current = p.replace("com.audion.app", "com.audionplayer.audion");
+            if std::path::Path::new(&current).exists() {
+                return Ok(Some(current));
+            }
+        }
+    }
+
+    // Fallback 3: probe disk for {track_id}.{jpg,png,webp} in current and legacy covers directories
+    for ext in &["jpg", "png", "webp"] {
+        if let Ok(tracks_dir) = get_tracks_covers_directory() {
+            let candidate = tracks_dir.join(format!("{}.{}", track_id, ext));
+            if candidate.exists() {
+                return Ok(Some(candidate.to_string_lossy().to_string()));
+            }
+        }
+        if let Some(legacy_covers) = get_legacy_covers_directory() {
+            let candidate = legacy_covers.join("tracks").join(format!("{}.{}", track_id, ext));
+            if candidate.exists() {
+                return Ok(Some(candidate.to_string_lossy().to_string()));
+            }
+        }
     }
 
     Ok(None)
 }
 
-/// Get cover file path for an album (verifies file exists)
+/// Get cover file path for an album (verifies file exists, with fallback discovery)
 pub fn get_album_art_file_path(conn: &Connection, album_id: i64) -> Result<Option<String>> {
     let path: Option<String> = conn
         .query_row(
@@ -271,12 +334,42 @@ pub fn get_album_art_file_path(conn: &Connection, album_id: i64) -> Result<Optio
         if std::path::Path::new(p).exists() {
             return Ok(Some(p.clone()));
         }
+        // Fallback 1: check com.audion.app if path has com.audionplayer.audion
+        if p.contains("com.audionplayer.audion") {
+            let legacy = p.replace("com.audionplayer.audion", "com.audion.app");
+            if std::path::Path::new(&legacy).exists() {
+                return Ok(Some(legacy));
+            }
+        }
+        // Fallback 2: check com.audionplayer.audion if path has com.audion.app
+        if p.contains("com.audion.app") {
+            let current = p.replace("com.audion.app", "com.audionplayer.audion");
+            if std::path::Path::new(&current).exists() {
+                return Ok(Some(current));
+            }
+        }
+    }
+
+    // Fallback 3: probe disk for {album_id}.{jpg,png,webp} in current and legacy covers directories
+    for ext in &["jpg", "png", "webp"] {
+        if let Ok(albums_dir) = get_albums_covers_directory() {
+            let candidate = albums_dir.join(format!("{}.{}", album_id, ext));
+            if candidate.exists() {
+                return Ok(Some(candidate.to_string_lossy().to_string()));
+            }
+        }
+        if let Some(legacy_covers) = get_legacy_covers_directory() {
+            let candidate = legacy_covers.join("albums").join(format!("{}.{}", album_id, ext));
+            if candidate.exists() {
+                return Ok(Some(candidate.to_string_lossy().to_string()));
+            }
+        }
     }
 
     Ok(None)
 }
 
-/// Delete cover file for a track (uses secure deletion with logging)
+/// Delete cover file for a track (uses secure deletion with logging, with legacy fallback)
 pub fn delete_track_cover_file(track_cover_path: Option<&str>) -> Result<(), String> {
     if let Some(path) = track_cover_path {
         let path_obj = std::path::Path::new(path);
@@ -285,12 +378,19 @@ pub fn delete_track_cover_file(track_cover_path: Option<&str>) -> Result<(), Str
             // (secure deletion is for music files in user directories)
             log::debug!("[AUDIT] Deleting track cover file: {:?}", path_obj);
             fs::remove_file(path_obj).map_err(|e| format!("Failed to delete cover file: {}", e))?;
+        } else if path.contains("com.audionplayer.audion") {
+            let legacy = path.replace("com.audionplayer.audion", "com.audion.app");
+            let legacy_obj = std::path::Path::new(&legacy);
+            if legacy_obj.exists() {
+                log::debug!("[AUDIT] Deleting legacy track cover file: {:?}", legacy_obj);
+                let _ = fs::remove_file(legacy_obj);
+            }
         }
     }
     Ok(())
 }
 
-/// Delete album art file (uses logging for audit trail)
+/// Delete album art file (uses logging for audit trail, with legacy fallback)
 pub fn delete_album_art_file(art_path: Option<&str>) -> Result<(), String> {
     if let Some(path) = art_path {
         let path_obj = std::path::Path::new(path);
@@ -299,6 +399,13 @@ pub fn delete_album_art_file(art_path: Option<&str>) -> Result<(), String> {
             log::debug!("[AUDIT] Deleting album art file: {:?}", path_obj);
             fs::remove_file(path_obj)
                 .map_err(|e| format!("Failed to delete album art file: {}", e))?;
+        } else if path.contains("com.audionplayer.audion") {
+            let legacy = path.replace("com.audionplayer.audion", "com.audion.app");
+            let legacy_obj = std::path::Path::new(&legacy);
+            if legacy_obj.exists() {
+                log::debug!("[AUDIT] Deleting legacy album art file: {:?}", legacy_obj);
+                let _ = fs::remove_file(legacy_obj);
+            }
         }
     }
     Ok(())

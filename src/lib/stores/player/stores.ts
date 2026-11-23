@@ -60,11 +60,11 @@ export const shuffledIndex = writable<number>(0);
 export const volume = writable(0.7);
 
 export function sliderToAudioVolume(sliderValue: number): number {
-    return Math.pow(sliderValue, 2);
+    return Math.pow(sliderValue, 3);
 }
 
 export function audioVolumeToSlider(audioVolume: number): number {
-    return Math.sqrt(audioVolume);
+    return Math.cbrt(audioVolume);
 }
 
 // Current time and duration

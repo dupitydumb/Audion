@@ -202,7 +202,14 @@
         </div>
         <!-- Left Drag Region (desktop bar only) -->
         {#if $useDesktopTitleBar}
-            <div class="drag-region" on:mousedown={() => appWindow.startDragging()}></div>
+            <div
+                class="drag-region"
+                data-tauri-drag-region
+                on:mousedown={(e) => {
+                    if (e.button === 0 && e.detail === 1) appWindow.startDragging();
+                }}
+                on:dblclick={toggleMaximize}
+            ></div>
         {/if}
     </div>
 
@@ -305,7 +312,14 @@
     <div class="titlebar-right">
         <!-- Right Drag Region (desktop bar only) -->
         {#if $useDesktopTitleBar}
-            <div class="drag-region" on:mousedown={() => appWindow.startDragging()}></div>
+            <div
+                class="drag-region"
+                data-tauri-drag-region
+                on:mousedown={(e) => {
+                    if (e.button === 0 && e.detail === 1) appWindow.startDragging();
+                }}
+                on:dblclick={toggleMaximize}
+            ></div>
             <div class="window-controls">
                 <button
                     class="win-btn"

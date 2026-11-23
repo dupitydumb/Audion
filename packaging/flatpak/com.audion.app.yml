@@ -1,4 +1,4 @@
-app-id: com.audion.app
+app-id: com.audionplayer.audion
 runtime: org.gnome.Platform
 runtime-version: '49'
 sdk: org.gnome.Sdk

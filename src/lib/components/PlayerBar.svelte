@@ -82,7 +82,43 @@
     let seekBarElement: HTMLDivElement;
     let volumeBarElement: HTMLDivElement;
     let isSeeking = false;
+    let seekStartSecs = 0;
+    let seekPos = 0;
+    let isScrubberHovered = false;
+    let hoverRatio = 0;
+
     let isVolumeChanging = false;
+    let isVolumeHovered = false;
+    let isVolumeWheeling = false;
+    let volumeWheelTimeout: ReturnType<typeof setTimeout> | null = null;
+    let lastNonZeroVolume = 0.7;
+
+    $: if ($volume > 0) {
+        lastNonZeroVolume = $volume;
+    }
+
+    function toggleMute() {
+        if ($volume > 0) {
+            lastNonZeroVolume = $volume;
+            setVolume(0);
+        } else {
+            setVolume(lastNonZeroVolume > 0 ? lastNonZeroVolume : 0.7);
+        }
+    }
+
+    function triggerVolumeBadge() {
+        isVolumeWheeling = true;
+        if (volumeWheelTimeout) clearTimeout(volumeWheelTimeout);
+        volumeWheelTimeout = setTimeout(() => {
+            isVolumeWheeling = false;
+        }, 1200);
+    }
+
+    $: displayHoverRatio = isSeeking ? seekPos : hoverRatio;
+    $: hoverTime = displayHoverRatio * ($duration || 0);
+    $: showScrubberTooltip = (isScrubberHovered || isSeeking) && ($duration > 0);
+    $: showVolumeTooltip = isVolumeHovered || isVolumeChanging || isVolumeWheeling;
+
     let albumArt: string | null = null;
     let imageLoadFailed = false;
     let showConnectPanel = false;
@@ -207,24 +243,35 @@
     }
 
     function handleSeekStart(e: MouseEvent) {
+        if (!seekBarElement) return;
         isSeeking = true;
+        seekStartSecs = get(currentTime);
         handleSeek(e);
     }
 
     function handleSeek(e: MouseEvent) {
         if (!seekBarElement) return;
         const rect = seekBarElement.getBoundingClientRect();
-        const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-        // Update UI immediately for smooth drag — fire-and-forget to backend
-        // i know the drag is buggy. but this is the best we can do
-        // Poller will correct position on next tick if keyframe alignment differs.
-        const previousSecs = get(currentTime);
-        currentTime.set(pos * $duration);
-        seek(pos, previousSecs);
+        seekPos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        const dur = get(duration);
+        currentTime.set(seekPos * dur);
     }
 
     function handleSeekEnd() {
+        if (!isSeeking) return;
         isSeeking = false;
+        seek(seekPos, seekStartSecs);
+    }
+
+    function handleScrubberMouseMove(e: MouseEvent) {
+        if (!seekBarElement) return;
+        const rect = seekBarElement.getBoundingClientRect();
+        hoverRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        isScrubberHovered = true;
+    }
+
+    function handleScrubberMouseLeave() {
+        isScrubberHovered = false;
     }
 
     function handleVolumeStart(e: MouseEvent) {
@@ -243,9 +290,11 @@
         const step = 0.05;
         if (e.key === "ArrowRight" || e.key === "ArrowUp") {
             e.preventDefault();
+            triggerVolumeBadge();
             setVolume(Math.min(1, $volume + step));
         } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
             e.preventDefault();
+            triggerVolumeBadge();
             setVolume(Math.max(0, $volume - step));
         }
     }
@@ -253,6 +302,7 @@
     function handleVolumeScroll(e: WheelEvent) {
         e.preventDefault();
         if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+        triggerVolumeBadge();
         const step = 0.05;
         if (e.deltaY < 0) {
             setVolume(Math.min(1, $volume + step));
@@ -302,11 +352,14 @@
     onMount(() => {
         // Global mouse events for seeking and volume
         const handleGlobalMouseMove = (e: MouseEvent) => {
-            if (isSeeking) handleSeek(e);
+            if (isSeeking) {
+                handleSeek(e);
+                hoverRatio = seekPos;
+            }
             if (isVolumeChanging) handleVolumeChange(e);
         };
         const handleGlobalMouseUp = () => {
-            isSeeking = false;
+            if (isSeeking) handleSeekEnd();
             isVolumeChanging = false;
         };
         const handleDocumentMouseDown = (e: MouseEvent) => {
@@ -347,6 +400,7 @@
             window.removeEventListener("mousemove", handleGlobalMouseMove);
             window.removeEventListener("mouseup", handleGlobalMouseUp);
             document.removeEventListener("mousedown", handleDocumentMouseDown);
+            if (volumeWheelTimeout) clearTimeout(volumeWheelTimeout);
 
             // Unregister slots
             uiSlotManager.unregisterContainer("playerbar:left");
@@ -504,6 +558,8 @@
                         class:seeking={isSeeking}
                         bind:this={seekBarElement}
                         on:mousedown={handleSeekStart}
+                        on:mousemove={handleScrubberMouseMove}
+                        on:mouseleave={handleScrubberMouseLeave}
                         role="slider"
                         aria-label="Seek"
                         aria-valuenow={Math.round($progress * 100)}
@@ -511,6 +567,14 @@
                         aria-valuemax="100"
                         tabindex="0"
                     >
+                        {#if showScrubberTooltip}
+                            <div
+                                class="scrubber-tooltip"
+                                style="left: clamp(24px, {displayHoverRatio * 100}%, calc(100% - 24px));"
+                            >
+                                {formatDuration(hoverTime)}
+                            </div>
+                        {/if}
                         <div class="progress-track">
                             <div
                                 class="progress-fill"
@@ -668,7 +732,7 @@
             <div class="volume-controls-main">
                 <button
                     class="icon-btn"
-                    on:click={() => setVolume($volume > 0 ? 0 : 1)}
+                    on:click={toggleMute}
                     title={$volume > 0 ? $_('player.mute') : $_('player.unmute')}
                 >
                     <Icon name={$volume === 0 ? "volume-x" : $volume < 0.5 ? "volume-1" : "volume-2"} size={20} />
@@ -677,6 +741,8 @@
                     class="volume-bar"
                     bind:this={volumeBarElement}
                     on:mousedown={handleVolumeStart}
+                    on:mouseenter={() => (isVolumeHovered = true)}
+                    on:mouseleave={() => (isVolumeHovered = false)}
                     on:keydown={handleVolumeKey}
                     on:wheel={handleVolumeScroll}
                     role="slider"
@@ -686,6 +752,14 @@
                     aria-valuemax="100"
                     tabindex="0"
                 >
+                    {#if showVolumeTooltip}
+                        <div
+                            class="volume-tooltip"
+                            style="left: clamp(14px, {$volume * 100}%, calc(100% - 14px));"
+                        >
+                            {Math.round($volume * 100)}%
+                        </div>
+                    {/if}
                     <div class="volume-track">
                         <div
                             class="volume-fill"
@@ -881,7 +955,7 @@
                         <div class="overflow-volume-row">
                             <button
                                 class="icon-btn mini"
-                                on:click={() => setVolume($volume > 0 ? 0 : 1)}
+                                on:click={toggleMute}
                                 title={$volume > 0 ? $_('player.mute') : $_('player.unmute')}
                             >
                                 <Icon name={$volume === 0 ? "volume-x" : $volume < 0.5 ? "volume-1" : "volume-2"} size={16} />
@@ -1346,6 +1420,69 @@
     .volume-bar:hover .volume-thumb {
         transform: translateX(-50%) scale(1.25);
         box-shadow: 0 0 12px var(--accent-primary);
+    }
+
+    /* Floating glass pill tooltips */
+    .scrubber-tooltip {
+        position: absolute;
+        bottom: calc(100% + 8px);
+        transform: translateX(-50%);
+        padding: 3px 8px;
+        background: color-mix(in srgb, var(--bg-elevated, #18181b) 80%, transparent);
+        backdrop-filter: blur(16px) saturate(180%);
+        -webkit-backdrop-filter: blur(16px) saturate(180%);
+        border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+        border-radius: 9999px;
+        color: var(--text-primary, #ffffff);
+        font-size: 0.7rem;
+        font-weight: var(--font-weight-medium, 500);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        pointer-events: none;
+        user-select: none;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+        z-index: 50;
+        animation: pill-pop 150ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .volume-tooltip {
+        position: absolute;
+        bottom: calc(100% + 8px);
+        transform: translateX(-50%);
+        padding: 2px 7px;
+        background: color-mix(in srgb, var(--bg-elevated, #18181b) 80%, transparent);
+        backdrop-filter: blur(16px) saturate(180%);
+        -webkit-backdrop-filter: blur(16px) saturate(180%);
+        border: 1px solid var(--border-color, rgba(255, 255, 255, 0.12));
+        border-radius: 9999px;
+        color: var(--text-primary, #ffffff);
+        font-size: 0.68rem;
+        font-weight: var(--font-weight-semibold, 600);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+        pointer-events: none;
+        user-select: none;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+        z-index: 50;
+        animation: pill-pop 150ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    @keyframes pill-pop {
+        from {
+            opacity: 0;
+            transform: translateX(-50%) translateY(4px) scale(0.92);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0) scale(1);
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .scrubber-tooltip,
+        .volume-tooltip {
+            animation: none;
+        }
     }
 
 

@@ -737,7 +737,7 @@ mod windows_impl {
                     .map_err(|e| format!("SetValue PKEY_Title failed: {e}"))?;
 
                 // per-link AppUserModelID must match the process-level's
-                let pv_appid = PROPVARIANT::from("com.audion.app");
+                let pv_appid = PROPVARIANT::from("com.audionplayer.audion");
                 prop_store.SetValue(&PKEY_AppUserModel_ID, &pv_appid)
                     .map_err(|e| format!("SetValue PKEY_AppUserModel_ID failed: {e}"))?;
 
