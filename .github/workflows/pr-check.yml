@@ -91,7 +91,7 @@ jobs:
         run: npm run tauri android init
 
       - name: Verify MainActivity.kt exists
-        run: test -f src-tauri/gen/android/app/src/main/java/com/audion/app/MainActivity.kt
+        run: test -f src-tauri/gen/android/app/src/main/java/com/audionplayer/audion/MainActivity.kt
       - name: Dummy key.properties (no real keystore needed for a Kotlin-only compile check)
         run: |
           cat > src-tauri/gen/android/key.properties << 'EOF'

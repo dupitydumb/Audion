@@ -785,7 +785,7 @@ jobs:
 
       - name: Verify Android project initialized
         run: |
-          test -f src-tauri/gen/android/app/src/main/java/com/audion/app/MainActivity.kt || {
+          test -f src-tauri/gen/android/app/src/main/java/com/audionplayer/audion/MainActivity.kt || {
             echo "::error::MainActivity.kt missing after init — tauri android init may have failed"
             exit 1
           }

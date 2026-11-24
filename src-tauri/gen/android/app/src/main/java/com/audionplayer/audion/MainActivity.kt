@@ -1,4 +1,4 @@
-package com.audion.app
+package com.audionplayer.audion
 
 import android.app.Activity
 import android.content.Intent

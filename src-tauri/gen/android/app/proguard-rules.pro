@@ -22,11 +22,11 @@
 
 # --- native (rust) -> kotlin JNI callback ---
 
--keepclassmembers class com.audion.app.MediaNotificationService {
+-keepclassmembers class com.audionplayer.audion.MediaNotificationService {
     public void onNativeAudioEvent(java.lang.String);
 }
--keepclassmembers interface com.audion.app.AudionLibraryBridge$NativeNotificationCallback {
+-keepclassmembers interface com.audionplayer.audion.AudionLibraryBridge$NativeNotificationCallback {
     *;
 }
 
--keep class com.audion.app.MediaNotificationService implements com.audion.app.AudionLibraryBridge$NativeNotificationCallback
+-keep class com.audionplayer.audion.MediaNotificationService implements com.audionplayer.audion.AudionLibraryBridge$NativeNotificationCallback

@@ -23,7 +23,7 @@ val keystoreProperties = Properties().apply {
 
 android {
     compileSdk = 36
-    namespace = "com.audion.app"
+    namespace = "com.audionplayer.audion"
 
     signingConfigs {
         create("release") {
@@ -44,7 +44,7 @@ android {
 
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
-        applicationId = "com.audion.app"
+        applicationId = "com.audionplayer.audion"
         minSdk = 26
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()

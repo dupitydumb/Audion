@@ -1,4 +1,4 @@
-package com.audion.app
+package com.audionplayer.audion
 
 import android.content.Context
 import android.net.Uri

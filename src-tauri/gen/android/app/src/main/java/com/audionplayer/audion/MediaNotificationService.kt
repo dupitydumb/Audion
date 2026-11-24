@@ -1,4 +1,4 @@
-package com.audion.app
+package com.audionplayer.audion
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -42,11 +42,11 @@ class MediaNotificationService : MediaBrowserServiceCompat(), AudionLibraryBridg
         const val NOTIFICATION_ID = 1001
         private const val TAG = "AudionNotif"
 
-        const val ACTION_PLAY_PAUSE = "com.audion.app.PLAY_PAUSE"
-        const val ACTION_PREVIOUS = "com.audion.app.PREVIOUS"
-        const val ACTION_NEXT = "com.audion.app.NEXT"
-        const val ACTION_LOVE = "com.audion.app.LOVE"
-        const val ACTION_STOP = "com.audion.app.STOP"
+        const val ACTION_PLAY_PAUSE = "com.audionplayer.audion.PLAY_PAUSE"
+        const val ACTION_PREVIOUS = "com.audionplayer.audion.PREVIOUS"
+        const val ACTION_NEXT = "com.audionplayer.audion.NEXT"
+        const val ACTION_LOVE = "com.audionplayer.audion.LOVE"
+        const val ACTION_STOP = "com.audionplayer.audion.STOP"
 
         const val EXTRA_TITLE = "title"
         const val EXTRA_ARTIST = "artist"

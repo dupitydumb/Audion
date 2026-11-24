@@ -80,11 +80,29 @@ static NOTIFICATION_CALLBACK: OnceLock<GlobalRef> = OnceLock::new();
 /// (the service itself implements the callback interface)
 /// see NativeNotificationCallback in AudionLibraryBridge.kt
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_com_audionplayer_audion_AudionLibraryBridge_registerNotificationCallbackNative<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    callback: JObject<'local>,
+) {
+    register_notification_callback_impl(env, callback);
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_registerNotificationCallbackNative<
     'local,
 >(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
+    callback: JObject<'local>,
+) {
+    register_notification_callback_impl(env, callback);
+}
+
+fn register_notification_callback_impl<'local>(
+    env: JNIEnv<'local>,
     callback: JObject<'local>,
 ) {
     match env.get_java_vm() {
@@ -197,11 +215,29 @@ static SAF_DELETE_CALLBACK: OnceLock<GlobalRef> = OnceLock::new();
 /// Java_com_audion_app_AudionLibraryBridge_registerSafDeleteCallbackNative
 /// called once from MainActivity.onCreate with 'this'
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_com_audionplayer_audion_AudionLibraryBridge_registerSafDeleteCallbackNative<
+    'local,
+>(
+    env: JNIEnv<'local>,
+    _class: JClass<'local>,
+    callback: JObject<'local>,
+) {
+    register_saf_delete_callback_impl(env, callback);
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_registerSafDeleteCallbackNative<
     'local,
 >(
     env: JNIEnv<'local>,
     _class: JClass<'local>,
+    callback: JObject<'local>,
+) {
+    register_saf_delete_callback_impl(env, callback);
+}
+
+fn register_saf_delete_callback_impl<'local>(
+    env: JNIEnv<'local>,
     callback: JObject<'local>,
 ) {
     match env.get_java_vm() {
@@ -431,15 +467,24 @@ pub fn init_database_cold_start(app_data_dir: &str) {
     });
 }
 
-/// Java_com_audion_app_AudionLibraryBridge_initDatabaseNative
+/// Java_com_audionplayer_audion_AudionLibraryBridge_initDatabaseNative
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_initDatabaseNative<'local>(
+pub extern "system" fn Java_com_audionplayer_audion_AudionLibraryBridge_initDatabaseNative<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     app_data_dir: JString<'local>,
 ) {
     let path = read_jstring(&mut env, &app_data_dir);
     init_database_cold_start(&path);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_initDatabaseNative<'local>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+    app_data_dir: JString<'local>,
+) {
+    Java_com_audionplayer_audion_AudionLibraryBridge_initDatabaseNative(env, class, app_data_dir);
 }
 
 fn jstring_from(env: &mut JNIEnv, s: &str) -> jstring {
@@ -462,10 +507,10 @@ fn read_jstring(env: &mut JNIEnv, s: &JString) -> String {
     }
 }
 
-/// Java_com_audion_app_AudionLibraryBridge_getChildrenNative
+/// Java_com_audionplayer_audion_AudionLibraryBridge_getChildrenNative
 /// returns a json array of BrowseNode
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_getChildrenNative<'local>(
+pub extern "system" fn Java_com_audionplayer_audion_AudionLibraryBridge_getChildrenNative<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     node_id: JString<'local>,
@@ -495,10 +540,19 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_getChildrenNative
     jstring_from(&mut env, &json)
 }
 
-/// Java_com_audion_app_AudionLibraryBridge_getItemNative
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_getChildrenNative<'local>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+    node_id: JString<'local>,
+) -> jstring {
+    Java_com_audionplayer_audion_AudionLibraryBridge_getChildrenNative(env, class, node_id)
+}
+
+/// Java_com_audionplayer_audion_AudionLibraryBridge_getItemNative
 /// returns a json Track object, or the literal "null" if not found/leaf wasn't a track id
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_getItemNative<'local>(
+pub extern "system" fn Java_com_audionplayer_audion_AudionLibraryBridge_getItemNative<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     node_id: JString<'local>,
@@ -529,11 +583,20 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_getItemNative<'lo
     jstring_from(&mut env, &json)
 }
 
-/// Java_com_audion_app_AudionLibraryBridge_searchNative
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_getItemNative<'local>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+    node_id: JString<'local>,
+) -> jstring {
+    Java_com_audionplayer_audion_AudionLibraryBridge_getItemNative(env, class, node_id)
+}
+
+/// Java_com_audionplayer_audion_AudionLibraryBridge_searchNative
 /// scope is one of "tracks" / "albums" / "artists" / "playlists",
 /// matching the 4 library chips (anything else returns an empty array)
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_searchNative<'local>(
+pub extern "system" fn Java_com_audionplayer_audion_AudionLibraryBridge_searchNative<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     scope: JString<'local>,
@@ -576,6 +639,16 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_searchNative<'loc
     jstring_from(&mut env, &json)
 }
 
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_searchNative<'local>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+    scope: JString<'local>,
+    query: JString<'local>,
+) -> jstring {
+    Java_com_audionplayer_audion_AudionLibraryBridge_searchNative(env, class, scope, query)
+}
+
 // =============================================================================
 // playback control => bypasses evaluateJs/webview entirely
 // audio_play/pause/resume/stop/seek and next/prev
@@ -612,12 +685,12 @@ fn resolve_local_path(track: &crate::db::models::Track) -> String {
     track.path.clone()
 }
 
-/// Java_com_audion_app_AudionLibraryBridge_playTrackNative
+/// Java_com_audionplayer_audion_AudionLibraryBridge_playTrackNative
 /// mediaId is one of our own "track:<id>" node ids
 /// also syncs an album-context queue into PlayerStateSync
 /// (see resolve_playback_context)
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_playTrackNative<'local>(
+pub extern "system" fn Java_com_audionplayer_audion_AudionLibraryBridge_playTrackNative<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     media_id: JString<'local>,
@@ -701,9 +774,18 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_playTrackNative<'
     }
 }
 
-/// Java_com_audion_app_AudionLibraryBridge_resumeNative (MediaSessionCompat.onPlay)
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_resumeNative<'local>(
+pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_playTrackNative<'local>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+    media_id: JString<'local>,
+) {
+    Java_com_audionplayer_audion_AudionLibraryBridge_playTrackNative(env, class, media_id);
+}
+
+/// Java_com_audionplayer_audion_AudionLibraryBridge_resumeNative (MediaSessionCompat.onPlay)
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_audionplayer_audion_AudionLibraryBridge_resumeNative<'local>(
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) {
@@ -715,9 +797,17 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_resumeNative<'loc
     }
 }
 
-/// Java_com_audion_app_AudionLibraryBridge_pauseNative
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_pauseNative<'local>(
+pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_resumeNative<'local>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+) {
+    Java_com_audionplayer_audion_AudionLibraryBridge_resumeNative(env, class);
+}
+
+/// Java_com_audionplayer_audion_AudionLibraryBridge_pauseNative
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_audionplayer_audion_AudionLibraryBridge_pauseNative<'local>(
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) {
@@ -729,9 +819,17 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_pauseNative<'loca
     }
 }
 
-/// Java_com_audion_app_AudionLibraryBridge_stopNative
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_stopNative<'local>(
+pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_pauseNative<'local>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+) {
+    Java_com_audionplayer_audion_AudionLibraryBridge_pauseNative(env, class);
+}
+
+/// Java_com_audionplayer_audion_AudionLibraryBridge_stopNative
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_audionplayer_audion_AudionLibraryBridge_stopNative<'local>(
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) {
@@ -743,12 +841,20 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_stopNative<'local
     }
 }
 
-/// Java_com_audion_app_AudionLibraryBridge_seekNative
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_stopNative<'local>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+) {
+    Java_com_audionplayer_audion_AudionLibraryBridge_stopNative(env, class);
+}
+
+/// Java_com_audionplayer_audion_AudionLibraryBridge_seekNative
 /// positionSeconds is an absolute position, not a 0.0-1.0 fraction => see
 /// AudioCommand::SeekAbsolute / AudioEngine::seek_absolute
 /// for why this needs its own command rather than reusing Seek
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_seekNative<'local>(
+pub extern "system" fn Java_com_audionplayer_audion_AudionLibraryBridge_seekNative<'local>(
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
     position_seconds: jni::sys::jdouble,
@@ -760,9 +866,18 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_seekNative<'local
     }
 }
 
-/// Java_com_audion_app_AudionLibraryBridge_nextNative
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_nextNative<'local>(
+pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_seekNative<'local>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+    position_seconds: jni::sys::jdouble,
+) {
+    Java_com_audionplayer_audion_AudionLibraryBridge_seekNative(env, class, position_seconds);
+}
+
+/// Java_com_audionplayer_audion_AudionLibraryBridge_nextNative
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_audionplayer_audion_AudionLibraryBridge_nextNative<'local>(
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) {
@@ -773,9 +888,17 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_nextNative<'local
     }
 }
 
-/// Java_com_audion_app_AudionLibraryBridge_previousNative
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_previousNative<'local>(
+pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_nextNative<'local>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+) {
+    Java_com_audionplayer_audion_AudionLibraryBridge_nextNative(env, class);
+}
+
+/// Java_com_audionplayer_audion_AudionLibraryBridge_previousNative
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_audionplayer_audion_AudionLibraryBridge_previousNative<'local>(
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
 ) {
@@ -786,9 +909,17 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_previousNative<'l
     }
 }
 
-/// Java_com_audion_app_AudionLibraryBridge_setShuffleNative
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_setShuffleNative<'local>(
+pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_previousNative<'local>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+) {
+    Java_com_audionplayer_audion_AudionLibraryBridge_previousNative(env, class);
+}
+
+/// Java_com_audionplayer_audion_AudionLibraryBridge_setShuffleNative
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_audionplayer_audion_AudionLibraryBridge_setShuffleNative<'local>(
     _env: JNIEnv<'local>,
     _class: JClass<'local>,
     enabled: jni::sys::jboolean,
@@ -804,10 +935,19 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_setShuffleNative<
     }
 }
 
-/// Java_com_audion_app_AudionLibraryBridge_setRepeatNative
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_setShuffleNative<'local>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+    enabled: jni::sys::jboolean,
+) {
+    Java_com_audionplayer_audion_AudionLibraryBridge_setShuffleNative(env, class, enabled);
+}
+
+/// Java_com_audionplayer_audion_AudionLibraryBridge_setRepeatNative
 /// mode is one of "none" / "one" / "all", matching the frontend's repeat store
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_setRepeatNative<'local>(
+pub extern "system" fn Java_com_audionplayer_audion_AudionLibraryBridge_setRepeatNative<'local>(
     mut env: JNIEnv<'local>,
     _class: JClass<'local>,
     mode: JString<'local>,
@@ -827,4 +967,13 @@ pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_setRepeatNative<'
             tracing::error!("[android_auto] failed to send PlayerCommand::SetRepeatMode: {e}");
         }
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_setRepeatNative<'local>(
+    env: JNIEnv<'local>,
+    class: JClass<'local>,
+    mode: JString<'local>,
+) {
+    Java_com_audionplayer_audion_AudionLibraryBridge_setRepeatNative(env, class, mode);
 }
