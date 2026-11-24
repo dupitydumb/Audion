@@ -1,3 +1,28 @@
+## [v1.5.1] - 2026-11-24
+
+### Highlights: Desktop Responsive Sidebar & Rail Breakpoint, Inspector Dock Artwork & Lyrics Action Enhancements, and Audio Streaming Engine Safeguards
+
+### Desktop UI Improvements
+
+* **Responsive Left Sidebar Auto-Collapse & Compact Rail**:
+  * Added responsive breakpoint logic that automatically collapses the left navigation sidebar into an icon-only 64px rail when the window width drops to $\le$1024px (or $\le$1200px when the right inspector dock is active).
+  * Seamlessly preserves the 32px Audion logo, `<SyncStatus />`, and `<LibraryWatcherStatus />` indicators pinned and centered at the top of the 64px rail, maintaining real-time status and tooltip interactivity.
+  * Added a manual header chevron toggle button and double-click splitter shortcut with `lastExpandedWidth` memory so restoring the sidebar restores custom user widths.
+* **Right Inspector Dock Cover Artwork Fix**:
+  * Guaranteed strict 1:1 square aspect ratio (`min-height: 200px; aspect-ratio: 1 / 1; object-fit: cover`) for the now-playing cover artwork, eliminating rectangular flexing and container collapse across window sizes.
+  * Scoped table cover styles in `TrackList.svelte` to isolate track-row styling and prevent global CSS leakage into the inspector dock.
+* **Restored Lyrics Action Bar**:
+  * Restored the dedicated lyrics subheader in the right inspector dock.
+  * Added a **Share Lyric Card** button that opens the visual lyric card generator and sharing modal.
+  * Added an **Import Lyrics File** button supporting `.lrc`, `.ttml`, `.xml`, `.srt`, and `.json` files, with empty-state import actions.
+
+### Audio Playback Hotfix
+
+* **Streaming Playback Safeguards**:
+  * Hardened the playback engine's catalog stream resolution (`_resolveCatalogStream`), explicitly exempting live audio stream sources from being misclassified as catalog preview tracks or hijacked by cross-provider query handoffs.
+
+---
+
 ## [v1.5.0] - 2026-11-23
 
 ### Highlights: Desktop PlayerBar Responsive Overhaul, WebView2 Performance & Memory Optimization, Album Grid Layout Refinements, Curated Plugin Logos, and Cross-Platform Audio Resilience

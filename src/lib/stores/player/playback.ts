@@ -308,6 +308,7 @@ async function _resolveCatalogStream(track: Track, audioPath: string | null | un
     if (track.local_src) return null;
     if (!track.source_type || track.source_type === 'local') return null;
     if (track.source_type === 'server' || track.source_type === 'subsonic') return null;
+    if (track.source_type === 'radio') return null;
     if (!isStreaming(track)) return null;
     if (audioPath && classifyAudioPath(audioPath) === 'local') return null;
 
