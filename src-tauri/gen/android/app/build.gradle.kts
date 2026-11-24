@@ -37,7 +37,9 @@ android {
                 keyPassword = (keystoreProperties["password"] ?: keystoreProperties["keyPassword"] ?: keystoreProperties.getProperty("keyPassword")) as? String ?: ""
                 val storePath = (keystoreProperties["storeFile"] ?: keystoreProperties.getProperty("storeFile")) as? String
                 if (!storePath.isNullOrBlank()) {
-                    storeFile = file(storePath)
+                    val rootKeystore = rootProject.file(storePath)
+                    val appKeystore = file(storePath)
+                    storeFile = if (rootKeystore.exists()) rootKeystore else if (appKeystore.exists()) appKeystore else rootKeystore
                 }
                 storePassword = (keystoreProperties["password"] ?: keystoreProperties["storePassword"] ?: keystoreProperties.getProperty("storePassword")) as? String ?: ""
             }

@@ -779,6 +779,9 @@ jobs:
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > src-tauri/gen/android/release.keystore
           echo "${{ secrets.ANDROID_KEY_PROPERTIES }}" > src-tauri/gen/android/key.properties
+          # Copy to app directory as well so Gradle finds it in either location
+          cp src-tauri/gen/android/release.keystore src-tauri/gen/android/app/release.keystore
+          cp src-tauri/gen/android/key.properties src-tauri/gen/android/app/key.properties
 
       - name: Initialize Android project
         run: npm run tauri android init

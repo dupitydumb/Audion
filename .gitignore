@@ -76,6 +76,7 @@ src-tauri/target_check
 src-tauri/target_validate
 src-tauri/gen/android/release.keystore
 *.keystore
+*.jks
 release.keystore
 keystore.properties
 src-tauri/gen/android/keystore.properties
