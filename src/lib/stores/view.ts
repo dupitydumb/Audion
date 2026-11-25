@@ -30,6 +30,8 @@ export interface ViewState {
     subsonicName?: string; // Display name for subsonic detail views
 }
 
+export const navDirection = writable<'forward' | 'back'>('forward');
+
 const MAX_HISTORY = 50;
 const history: ViewState[] = [];
 // Internal writable to trigger updates for the derived store
@@ -148,6 +150,7 @@ currentView.subscribe(view => {
         return;
     }
 
+    navDirection.set('forward');
     history.push(view);
     if (history.length > MAX_HISTORY) {
         history.shift();
@@ -159,6 +162,7 @@ currentView.subscribe(view => {
 
 export function goBack(): void {
     if (currentIndex > 0) {
+        navDirection.set('back');
         currentIndex--;
         isNavigating = true;
         currentView.set(history[currentIndex]);
@@ -169,6 +173,7 @@ export function goBack(): void {
 
 export function goForward(): void {
     if (currentIndex < history.length - 1) {
+        navDirection.set('forward');
         currentIndex++;
         isNavigating = true;
         currentView.set(history[currentIndex]);

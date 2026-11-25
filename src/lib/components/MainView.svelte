@@ -9,6 +9,7 @@
         goToSettings,
         goBack,
         navigationHistory,
+        navDirection,
         type ViewState,
     } from "$lib/stores/view";
     import {
@@ -53,6 +54,25 @@
 
     import { tick, onMount } from "svelte";
     import { fade, fly } from "svelte/transition";
+    import { cubicOut } from "svelte/easing";
+
+    function pageIn(node: Element) {
+        if (!$isMobile) return fade(node, { duration: 200 });
+        return fly(node, {
+            x: $navDirection === "back" ? -36 : 64,
+            duration: 280,
+            easing: cubicOut,
+        });
+    }
+
+    function pageOut(node: Element) {
+        if (!$isMobile) return fade(node, { duration: 150 });
+        return fly(node, {
+            x: $navDirection === "back" ? 64 : -36,
+            duration: 220,
+            easing: cubicOut,
+        });
+    }
     import { getCurrentWebview } from "@tauri-apps/api/webview";
 
     import { confirm } from "$lib/stores/dialogs";
@@ -876,8 +896,8 @@
         {#key `${$currentView.type}:${$currentView.id ?? ""}:${$currentView.name ?? ""}:${$currentView.subsonicId ?? ""}:${isSearching}`}
             <div
                 class="transition-wrapper"
-                in:fade={{ duration: 200 }}
-                out:fade={{ duration: 150 }}
+                in:pageIn
+                out:pageOut
             >
                 {#if isSearching}
                     <div class="view-container">
@@ -1068,6 +1088,7 @@
         position: relative;
         min-height: 0;
         width: 100%;
+        overflow: hidden;
     }
 
     .transition-wrapper {
