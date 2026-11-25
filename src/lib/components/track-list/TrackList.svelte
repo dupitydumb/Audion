@@ -1931,7 +1931,25 @@
   :global(.custom-checkbox svg) { color: var(--text-on-accent, #fff); }
   :global(.custom-checkbox .indeterminate-dash) { width: 10px; height: 2px; border-radius: 1px; background-color: var(--text-on-accent, #fff); }
 
-  :global(.equalizer-bars) { display: none; }
+  :global(.equalizer-bars) {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 2px;
+    height: 14px;
+    width: 14px;
+    margin: 0 auto;
+  }
+  :global(.eq-bar) {
+    width: 2.5px;
+    background-color: var(--accent-primary);
+    border-radius: 1px;
+    animation: eq-bounce 1.1s ease-in-out infinite;
+  }
+  :global(.eq-bar:nth-child(1)) { height: 60%; animation-delay: 0s; }
+  :global(.eq-bar:nth-child(2)) { height: 100%; animation-delay: 0.2s; }
+  :global(.eq-bar:nth-child(3)) { height: 40%; animation-delay: 0.4s; }
+  :global(.eq-bar:nth-child(4)) { height: 80%; animation-delay: 0.6s; }
 
   :global(html.layout-mobile) .list-toolbar { display: none; }
   :global(html.layout-mobile .list-header) { display: none; }
