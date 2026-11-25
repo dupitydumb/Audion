@@ -13,7 +13,7 @@
         type MbReleaseInfo,
     } from "$lib/api/tauri";
     import { playTracks, currentTrack, isPlaying, togglePlay } from "$lib/stores/player";
-    import { goToAlbums, goToArtistDetail } from "$lib/stores/view";
+    import { goToAlbums, goToArtistDetail, activeHeroKey } from "$lib/stores/view";
     import ArtistLinks from "$lib/components/ArtistLinks.svelte";
     import { getAlbumCoverFromTracks } from "$lib/stores/library";
     import { extractPalette } from "$lib/stores/palette";
@@ -319,7 +319,10 @@
     {#if loading}
         <div class="album-skeleton" aria-busy="true" aria-label={$_("album.loading")}>
             <header class="album-header skeleton-hero">
-                <div class="skeleton-cover-box">
+                <div
+                    class="skeleton-cover-box"
+                    style:view-transition-name={$activeHeroKey === `album:${albumId}` ? "active-hero-art" : "none"}
+                >
                     <div class="shimmer-wave"></div>
                 </div>
                 <div class="skeleton-hero-info">
@@ -405,7 +408,10 @@
             aria-label="Album Header"
             bind:this={headerElement}
         >
-            <div class="album-cover">
+            <div
+                class="album-cover"
+                style:view-transition-name={$activeHeroKey === `album:${album.id}` ? "active-hero-art" : "none"}
+            >
                 {#if getAlbumCoverFromTracks(album.id)}
                     <img
                         src={getAlbumCoverFromTracks(album.id)}

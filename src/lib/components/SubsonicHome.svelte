@@ -14,7 +14,7 @@
     type SubsonicArtist,
   } from '$lib/stores/subsonic';
   import { subsonicSongToTrack } from '$lib/services/subsonic-track-mapper';
-  import { goToSubsonicAlbum, goToSubsonicArtist } from '$lib/stores/view';
+  import { goToSubsonicAlbum, goToSubsonicArtist, activeHeroKey } from '$lib/stores/view';
   import type { Track } from '$lib/api/tauri';
 
   type Tab = 'songs' | 'albums' | 'artists';
@@ -220,7 +220,10 @@
               class="album-card"
               on:click={() => goToSubsonicAlbum(album.id, album.name)}
             >
-              <div class="card-cover">
+              <div
+                class="card-cover"
+                style:view-transition-name={$activeHeroKey === `subsonic-album:${album.id}` ? "active-hero-art" : "none"}
+              >
                 {#if albumCovers.get(album.id)}
                   <img
                     src={albumCovers.get(album.id)}

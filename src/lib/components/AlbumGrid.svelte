@@ -1,7 +1,7 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
     import type { Album } from "$lib/api/tauri";
-    import { goToAlbumDetail, goToArtistDetail } from "$lib/stores/view";
+    import { goToAlbumDetail, goToArtistDetail, activeHeroKey } from "$lib/stores/view";
     import ArtistLinks from "./ArtistLinks.svelte";
     import {
         getAlbumCoverFromTracks,
@@ -135,6 +135,7 @@
         {isNowPlaying}
         {isPaused}
         isPinned={isPinned("album", album.id, $pinnedItems)}
+        coverTransitionName={$activeHeroKey === `album:${album.id}` ? "active-hero-art" : ""}
         playTooltip={$_("common.playAlbum")}
         resumeTooltip={$_("common.resumeAlbum")}
         pauseTooltip={$_("common.pause")}

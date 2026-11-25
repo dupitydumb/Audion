@@ -14,7 +14,7 @@
     import { contextMenu } from "$lib/stores/ui";
     import { buildPlaylistContextMenu } from "$lib/menus/contextMenus";
     import { playTracks, addToQueue, currentPlaylistId, isPlaying, togglePlay } from "$lib/stores/player";
-    import { goToPlaylists, goToTracksMultiSelect } from "$lib/stores/view";
+    import { goToPlaylists, goToTracksMultiSelect, activeHeroKey } from "$lib/stores/view";
     import { isMobile, registerBackHandler } from "$lib/stores/mobile";
     import { loadPlaylists, playlists, playlistPendingTracks, drainPendingTracks } from "$lib/stores/library";
     import { multiSelect } from "$lib/stores/multiselect";
@@ -533,6 +533,7 @@
         >
             <div
                 class="playlist-cover"
+                style:view-transition-name={$activeHeroKey === `playlist:${playlistId}` ? "active-hero-art" : "none"}
                 on:mouseenter={() => (coverHovered = true)}
                 on:mouseleave={() => (coverHovered = false)}
                 on:click={handleCoverTap}

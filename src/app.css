@@ -564,6 +564,21 @@ a:hover {
 [data-page-transition="none"]  ::view-transition-new(root),
 [data-page-transition="none"]  ::view-transition-old(root) { animation: none; }
 
+/* Shared-element hero cover morph (MediaCard <-> AlbumDetail / ArtistDetail) */
+::view-transition-group(active-hero-art) {
+  animation-duration: 340ms;
+  animation-timing-function: var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
+  z-index: 20;
+}
+
+::view-transition-old(active-hero-art),
+::view-transition-new(active-hero-art) {
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+  overflow: hidden;
+}
+
 /* Ultrawide constraint — max readable line length */
 @media (min-width: 1920px) {
   .main-view .view-content {

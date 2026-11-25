@@ -29,6 +29,7 @@
     } from "$lib/stores/search";
     import SearchHistoryDropdown from "./SearchHistoryDropdown.svelte";
     import { isMobile, useDesktopTitleBar, mobileSearchOpen } from "$lib/stores/mobile";
+    import { nativeTransitionActive } from "$lib/stores/ui";
     import MobileHome from "./MobileHome.svelte";
     import DesktopHome from "./DesktopHome.svelte";
     import LikedSongs from "./LikedSongs.svelte";
@@ -57,6 +58,7 @@
     import { cubicOut } from "svelte/easing";
 
     function pageIn(node: Element) {
+        if ($nativeTransitionActive) return { duration: 0 };
         if (!$isMobile) return fade(node, { duration: 200 });
         return fly(node, {
             x: $navDirection === "back" ? -36 : 64,
@@ -66,6 +68,7 @@
     }
 
     function pageOut(node: Element) {
+        if ($nativeTransitionActive) return { duration: 0 };
         if (!$isMobile) return fade(node, { duration: 150 });
         return fly(node, {
             x: $navDirection === "back" ? 64 : -36,

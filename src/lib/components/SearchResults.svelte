@@ -17,6 +17,7 @@
         goToAlbumDetail,
         goToArtistDetail,
         goToPlaylistDetail,
+        activeHeroKey,
     } from "$lib/stores/view";
     import { playTracks, addToQueue } from "$lib/stores/player";
     import ArtistLinks from "$lib/components/ArtistLinks.svelte";
@@ -433,7 +434,10 @@
                                     on:mouseenter={() => (hoveredAlbumId = album.id)}
                                     on:mouseleave={() => (hoveredAlbumId = null)}
                                 >
-                                    <div class="album-art">
+                                    <div
+                                        class="album-art"
+                                        style:view-transition-name={$activeHeroKey === `album:${album.id}` ? "active-hero-art" : "none"}
+                                    >
                                         {#if coverSrc}
                                             <img
                                                 src={coverSrc}
@@ -495,7 +499,10 @@
                                     on:contextmenu={(e) =>
                                         handleArtistContextMenu(e, artist)}
                                 >
-                                    <div class="artist-avatar">
+                                    <div
+                                        class="artist-avatar"
+                                        style:view-transition-name={$activeHeroKey === `artist:${artist.name}` ? "active-hero-art" : "none"}
+                                    >
                                         <span class="artist-initial"
                                             >{getArtistInitial(artist.name)}</span
                                         >
@@ -548,7 +555,10 @@
                                     }}
                                     on:contextmenu={(e) => handlePlaylistContextMenu(e, playlist)}
                                 >
-                                    <div class="playlist-cover">
+                                    <div
+                                        class="playlist-cover"
+                                        style:view-transition-name={$activeHeroKey === `playlist:${playlist.id}` ? "active-hero-art" : "none"}
+                                    >
                                         <img
                                             src={coverSrc}
                                             alt={playlist.name}

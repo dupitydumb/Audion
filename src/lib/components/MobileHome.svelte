@@ -22,6 +22,7 @@
     import {
         goToAlbumDetail,
         goToArtistDetail,
+        activeHeroKey,
         goToSettings,
         goToLikedSongs,
         goToSubsonic,
@@ -394,7 +395,10 @@
                     class="quick-play-card"
                     on:click={() => goToAlbumDetail(album.id)}
                 >
-                    <div class="quick-play-art">
+                    <div
+                        class="quick-play-art"
+                        style:view-transition-name={$activeHeroKey === `album:${album.id}` ? "active-hero-art" : "none"}
+                    >
                         {#if getAlbumArt(album)}
                             <img src={getAlbumArt(album)} alt={album.name} />
                         {:else}
@@ -515,7 +519,10 @@
                             handleKeydown(e, () => handlePlayTopTrack(i))}
                     >
                         <div class="song-rank">{i + 1}</div>
-                        <div class="song-art">
+                        <div
+                            class="song-art"
+                            style:view-transition-name={$activeHeroKey === `album:${album.id}` ? "active-hero-art" : "none"}
+                        >
                             {#if getTrackArt(track)}
                                 <img
                                     src={getTrackArt(track)}
@@ -566,7 +573,10 @@
                             handleKeydown(e, () => goToAlbumDetail(album.id))}
                     >
                         <div class="song-rank">{i + 1}</div>
-                        <div class="song-art">
+                        <div
+                            class="song-art"
+                            style:view-transition-name={$activeHeroKey === `album:${album.id}` ? "active-hero-art" : "none"}
+                        >
                             {#if getAlbumArt(album)}
                                 <img
                                     src={getAlbumArt(album)}

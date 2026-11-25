@@ -1,6 +1,7 @@
 // View store - manages current view/navigation state
 import { writable, get, derived } from 'svelte/store';
 import { appSettings } from './settings';
+import { withViewTransition, nativeTransitionActive } from './ui';
 
 export type ViewType =
     | 'home'
@@ -31,6 +32,23 @@ export interface ViewState {
 }
 
 export const navDirection = writable<'forward' | 'back'>('forward');
+export const activeHeroKey = writable<string | null>(null);
+
+function runHeroTransition(key: string, mutate: () => void, clearKeyAfter = false): void {
+    activeHeroKey.set(key);
+    const transition = withViewTransition(mutate, 'hero-morph');
+    if (transition) {
+        nativeTransitionActive.set(true);
+        transition.finished
+            ?.catch(() => {})
+            .finally(() => {
+                nativeTransitionActive.set(false);
+                if (clearKeyAfter) activeHeroKey.set(null);
+            });
+    } else if (clearKeyAfter) {
+        activeHeroKey.set(null);
+    }
+}
 
 const MAX_HISTORY = 50;
 const history: ViewState[] = [];
@@ -163,9 +181,26 @@ currentView.subscribe(view => {
 export function goBack(): void {
     if (currentIndex > 0) {
         navDirection.set('back');
+        const leaving = history[currentIndex];
         currentIndex--;
         isNavigating = true;
-        currentView.set(history[currentIndex]);
+        const target = history[currentIndex];
+        const heroKey =
+            leaving?.type === 'album-detail' && leaving.id != null
+                ? `album:${leaving.id}`
+                : leaving?.type === 'artist-detail' && leaving.name
+                  ? `artist:${leaving.name}`
+                  : leaving?.type === 'playlist-detail' && leaving.id != null
+                    ? `playlist:${leaving.id}`
+                    : leaving?.type === 'subsonic-album' && leaving.subsonicId
+                      ? `subsonic-album:${leaving.subsonicId}`
+                      : null;
+        if (heroKey && get(activeHeroKey) === heroKey) {
+            runHeroTransition(heroKey, () => currentView.set(target), true);
+        } else {
+            activeHeroKey.set(null);
+            currentView.set(target);
+        }
         isNavigating = false;
         notifyHistoryUpdate();
     }
@@ -200,7 +235,9 @@ export function goToAlbums(): void {
 }
 
 export function goToAlbumDetail(albumId: number): void {
-    currentView.set({ type: 'album-detail', id: albumId });
+    runHeroTransition(`album:${albumId}`, () => {
+        currentView.set({ type: 'album-detail', id: albumId });
+    });
 }
 
 export function goToArtists(): void {
@@ -208,7 +245,9 @@ export function goToArtists(): void {
 }
 
 export function goToArtistDetail(artistName: string): void {
-    currentView.set({ type: 'artist-detail', name: artistName });
+    runHeroTransition(`artist:${artistName}`, () => {
+        currentView.set({ type: 'artist-detail', name: artistName });
+    });
 }
 
 export function goToPlaylists(): void {
@@ -216,7 +255,9 @@ export function goToPlaylists(): void {
 }
 
 export function goToPlaylistDetail(playlistId: number, name: string): void {
-    currentView.set({ type: 'playlist-detail', id: playlistId, name });
+    runHeroTransition(`playlist:${playlistId}`, () => {
+        currentView.set({ type: 'playlist-detail', id: playlistId, name });
+    });
 }
 
 export function goToPlugins(): void {
@@ -248,7 +289,9 @@ export function goToSubsonic(): void {
 }
 
 export function goToSubsonicAlbum(id: string, name?: string): void {
-    currentView.set({ type: 'subsonic-album', subsonicId: id, subsonicName: name });
+    runHeroTransition(`subsonic-album:${id}`, () => {
+        currentView.set({ type: 'subsonic-album', subsonicId: id, subsonicName: name });
+    });
 }
 
 export function goToSubsonicArtist(id: string, name?: string): void {

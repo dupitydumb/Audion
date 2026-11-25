@@ -26,7 +26,7 @@
         statsSummary,
         loadActivityData,
     } from "$lib/stores/activity";
-    import { goToAlbumDetail, goToArtistDetail, goToPlaylistDetail } from "$lib/stores/view";
+    import { goToAlbumDetail, goToArtistDetail, goToPlaylistDetail, activeHeroKey } from "$lib/stores/view";
     import { isStatsWrappedOpen } from "$lib/stores/ui";
     import MediaCard from "./MediaCard.svelte";
     import { onDestroy } from "svelte";
@@ -318,6 +318,7 @@
                                         {isNowPlaying}
                                         {isPaused}
                                         isPinned={true}
+                                        coverTransitionName={$activeHeroKey === (isAlbum ? `album:${item.id}` : `playlist:${item.id}`) ? "active-hero-art" : ""}
                                         playTooltip={isAlbum ? $_('common.playAlbum') : $_('common.playPlaylist')}
                                         resumeTooltip={isAlbum ? $_('common.resumeAlbum') : $_('common.resumePlaylist')}
                                         pauseTooltip={$_('common.pause')}

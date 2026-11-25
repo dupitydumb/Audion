@@ -242,7 +242,12 @@
     // ResizeObserver
     let resizeObserver: ResizeObserver | undefined;
 
+    let allowStagger = true;
+
     onMount(() => {
+        const staggerTimer = setTimeout(() => {
+            allowStagger = false;
+        }, 550);
         if (!containerElement) return;
 
         const update = () => {
@@ -348,9 +353,12 @@
                             width: {dynamicCardWidth}px;
                             height: {dynamicCardHeight}px;
                             transform: translate3d({left}px, {top}px, 0);
+                            --stagger-delay: {Math.min((row + col) * 32, 240)}ms;
                         "
                     >
-                        <slot {item} />
+                        <div class="grid-card-inner" class:stagger-enter={allowStagger && index < 12}>
+                            <slot {item} />
+                        </div>
                     </div>
                 {/each}
             </div>
@@ -410,6 +418,35 @@
         transition: width 0.3s cubic-bezier(0.25, 0.1, 0.25, 1),
                     height 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
         will-change: transform, width, height;
+    }
+
+    .grid-card-inner {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .grid-card-inner.stagger-enter {
+        animation: cardWaveIn 0.36s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1)) both;
+        animation-delay: var(--stagger-delay, 0ms);
+    }
+
+    @keyframes cardWaveIn {
+        from {
+            opacity: 0;
+            transform: translate3d(0, 16px, 0) scale(0.97);
+        }
+        to {
+            opacity: 1;
+            transform: translate3d(0, 0, 0) scale(1);
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .grid-card-inner.stagger-enter {
+            animation: none !important;
+        }
     }
 
     .empty-state {

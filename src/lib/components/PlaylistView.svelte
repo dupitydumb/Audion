@@ -1,7 +1,7 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
     import { playlists, loadPlaylists } from "$lib/stores/library";
-    import { goToPlaylistDetail } from "$lib/stores/view";
+    import { goToPlaylistDetail, activeHeroKey } from "$lib/stores/view";
     import type { Playlist } from "$lib/api/tauri";
     import {
         createPlaylist,
@@ -419,6 +419,7 @@
             {isNowPlaying}
             {isPaused}
             isPinned={isPinned("playlist", playlist.id, $pinnedItems)}
+            coverTransitionName={$activeHeroKey === `playlist:${playlist.id}` ? "active-hero-art" : ""}
             playTooltip={$_("common.playPlaylist")}
             resumeTooltip={$_("common.resumePlaylist")}
             pauseTooltip={$_("common.pause")}

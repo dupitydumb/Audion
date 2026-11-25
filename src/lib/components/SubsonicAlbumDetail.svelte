@@ -10,7 +10,7 @@
   } from '$lib/stores/subsonic';
   import { subsonicSongToTrack } from '$lib/services/subsonic-track-mapper';
   import { playTracks } from '$lib/stores/player';
-  import { goBack } from '$lib/stores/view';
+  import { goBack, activeHeroKey } from '$lib/stores/view';
   import type { Track } from '$lib/api/tauri';
 
   export let id: string | undefined;
@@ -72,7 +72,10 @@
       <Icon name="arrow-left" size={18} />
     </button>
 
-    <div class="header-art">
+    <div
+      class="header-art"
+      style:view-transition-name={$activeHeroKey === `subsonic-album:${id}` ? 'active-hero-art' : 'none'}
+    >
       {#if coverUrl}
         <img src={coverUrl} alt={albumName} class="cover-img" />
       {:else}

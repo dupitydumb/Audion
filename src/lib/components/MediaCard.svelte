@@ -23,6 +23,7 @@
   // If provided, secondary text renders as a clickable button
   export let secondaryAction: (() => void) | null = null;
   export let isPinned = false;
+  export let coverTransitionName = "";
 
   $: isRound = variant === "round";
   $: isCentered = variant === "round";
@@ -100,7 +101,7 @@
   <div
     class="cover"
     class:round={isRound}
-    style={coverBackground ? `--card-cover-bg: ${coverBackground};` : ""}
+    style={`${coverBackground ? `--card-cover-bg: ${coverBackground};` : ""}${coverTransitionName ? ` view-transition-name: ${coverTransitionName};` : ""}`}
   >
     <slot name="cover" />
 

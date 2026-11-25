@@ -1,7 +1,7 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
   import type { Artist } from "$lib/api/tauri";
-  import { goToArtistDetail } from "$lib/stores/view";
+  import { goToArtistDetail, activeHeroKey } from "$lib/stores/view";
   import {
     currentArtistName,
     isPlaying,
@@ -171,6 +171,7 @@
     {isNowPlaying}
     {isPaused}
     isPinned={isPinned("artist", artist.name, $pinnedItems)}
+    coverTransitionName={$activeHeroKey === `artist:${artist.name}` ? "active-hero-art" : ""}
     playTooltip={$_("common.playArtist")}
     resumeTooltip={$_("common.resumeArtist")}
     pauseTooltip={$_("common.pause")}

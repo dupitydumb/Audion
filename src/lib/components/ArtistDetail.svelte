@@ -17,6 +17,7 @@
         goToArtists,
         goToAlbumDetail,
         goToArtistDetail,
+        activeHeroKey,
     } from "$lib/stores/view";
     import AlbumGrid from "./AlbumGrid.svelte";
     import TrackList from "./track-list/TrackList.svelte";
@@ -476,7 +477,10 @@
             role="banner"
             bind:this={headerElement}
         >
-            <div class="artist-avatar">
+            <div
+                class="artist-avatar"
+                style:view-transition-name={$activeHeroKey === `artist:${artistName}` ? "active-hero-art" : "none"}
+            >
                 {#if artistPictureUrl && !failedImage}
                     <img
                         src={artistPictureUrl}
