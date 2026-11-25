@@ -31,15 +31,18 @@ export interface CommunityRegistry {
   isDefault?: boolean;
 }
 
-export const DEFAULT_REGISTRIES: CommunityRegistry[] = [
-  {
-    id: 'official',
-    name: 'Official Audion Registry',
-    url: 'https://raw.githubusercontent.com/dupitydumb/audion-plugins/main/registry/main/registry.json',
-    enabled: true,
-    isDefault: true,
-  },
-];
+export const DEFAULT_REGISTRIES: CommunityRegistry[] =
+  import.meta.env.VITE_PLAYSTORE === 'true'
+    ? [] // Play Store build: no pre-configured registry — user must add their own
+    : [
+        {
+          id: 'official',
+          name: 'Official Audion Registry',
+          url: 'https://raw.githubusercontent.com/dupitydumb/audion-plugins/main/registry/main/registry.json',
+          enabled: true,
+          isDefault: true,
+        },
+      ];
 
 export interface RegistryData {
   version: string;

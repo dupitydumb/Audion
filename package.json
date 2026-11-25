@@ -12,7 +12,8 @@
     "tauri": "tauri",
     "sync-plugins": "node scripts/sync-plugins.js",
     "check:icons": "node scripts/check-icons.js",
-    "tauri:windows:build": "tauri-windows-bundle build"
+    "tauri:windows:build": "tauri-windows-bundle build",
+    "android:build": "node scripts/build-android.js"
   },
   "license": "GPL-3.0-or-later",
   "dependencies": {
