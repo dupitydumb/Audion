@@ -20,6 +20,21 @@
   * Album and Artist detail headers now feature dynamic palette-driven backdrop gradients with contrast scrims.
   * Smooth shimmer skeleton loaders for cards and track rows during data loads.
 
+### ✨ UI Polish & Animations
+
+* **Motion & Depth Transitions**:
+  * Added damped spring transitions across desktop popovers, view depth transitions, tab switches, shared-element hero cover morphs, and staggered grid animations.
+  * Unified mobile drawer, modal, and bottom context menu slide-up transitions with damped spring physics.
+  * Added a spring pop-in animation to the desktop context menu that cleanly re-animates when re-opened at a new position.
+* **PlayerBar & Queue Polish**:
+  * Added track-change transitions for album art and track details, a spring-pop heart animation, and animated responsive collapsing into the overflow menu without overlapping the progress bar or hiding the volume slider on normal desktop widths.
+  * Fixed active player controls (shuffle, repeat, sleep timer, and device indicator) to follow skin and theme `--accent-primary` colors.
+  * Added a floating drag ghost and smooth row-parting animations when reordering tracks in the Queue panel.
+* **Sidebar, Titlebar & TrackList Refinement**:
+  * Polished sidebar and titlebar light-mode contrast, button press feedback, spring rail collapse transitions, and collapsed section dividers.
+  * Fixed titlebar breadcrumbs overlapping the search bar on smaller windows with clean truncation and responsive hiding on narrow widths.
+  * Boosted hero cover backdrop vibrancy, theme-aligned the TrackList jump strip and selected rows, and added an animated equalizer soundwave indicator for the playing track.
+
 ### 🎧 Audio & Playback Polish
 
 * **Streaming Playback Safeguards**:

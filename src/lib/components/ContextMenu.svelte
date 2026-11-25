@@ -1,14 +1,21 @@
 <script lang="ts">
     import { contextMenu, type ContextMenuItem } from "$lib/stores/ui";
-    import { fade, fly } from "svelte/transition";
+    import { fade, fly, scale } from "svelte/transition";
     import { onMount, onDestroy, tick } from "svelte";
     import { isMobile, registerBackHandler, appleSpring } from "$lib/stores/mobile";
 
-    function sheetTransition(node: Element) {
+    function sheetIn(node: Element) {
         if ($isMobile) {
             return fly(node, { y: 340, duration: 380, opacity: 1, easing: appleSpring });
         }
-        return fade(node, { duration: 100 });
+        return scale(node, { start: 0.94, opacity: 0, duration: 160, easing: appleSpring });
+    }
+
+    function sheetOut(node: Element) {
+        if ($isMobile) {
+            return fly(node, { y: 340, duration: 280, opacity: 1, easing: appleSpring });
+        }
+        return fade(node, { duration: 75 });
     }
     import Icon from "$lib/components/Icon.svelte";
 
@@ -45,10 +52,12 @@
     }
 
     async function updatePosition() {
+      const { x, y } = $contextMenu;
+      adjustedX = Math.max(8, x ?? 0);
+      adjustedY = Math.max(8, y ?? 0);
       await tick();
       if (!menuElement) return;
   
-      const { x, y } = $contextMenu;
       const { innerWidth, innerHeight } = window;
       const rect = menuElement.getBoundingClientRect();
   
@@ -152,6 +161,7 @@
         ></div>
     {/if}
 
+    {#key $isMobile ? "mobile" : `${$contextMenu.x}-${$contextMenu.y}`}
     <div
         class="context-menu"
         bind:this={menuElement}
@@ -162,7 +172,8 @@
         on:touchmove={handleSheetTouchMove}
         on:touchend={handleSheetTouchEnd}
         on:touchcancel={handleSheetTouchEnd}
-        transition:sheetTransition
+        in:sheetIn
+        out:sheetOut
     >
         {#if $isMobile}
             <div
@@ -262,6 +273,7 @@
             {/if}
         {/each}
     </div>
+    {/key}
 {/if}
 
 <style>
@@ -276,6 +288,7 @@
         z-index: var(--z-sheet, 3000);
         display: flex;
         flex-direction: column;
+        transform-origin: top left;
     }
 
     .menu-item {
