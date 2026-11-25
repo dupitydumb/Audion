@@ -519,10 +519,7 @@
                             handleKeydown(e, () => handlePlayTopTrack(i))}
                     >
                         <div class="song-rank">{i + 1}</div>
-                        <div
-                            class="song-art"
-                            style:view-transition-name={$activeHeroKey === `album:${album.id}` ? "active-hero-art" : "none"}
-                        >
+                        <div class="song-art">
                             {#if getTrackArt(track)}
                                 <img
                                     src={getTrackArt(track)}
