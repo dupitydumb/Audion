@@ -1288,24 +1288,28 @@
     .recap-card {
         position: relative;
         width: 100%;
-        min-height: 160px;
-        background: linear-gradient(135deg, #fa243c 0%, #bc182d 100%);
+        min-height: 152px;
+        background: linear-gradient(
+            135deg,
+            color-mix(in srgb, var(--accent-primary) 22%, var(--bg-elevated)) 0%,
+            var(--bg-surface) 100%
+        );
         border-radius: var(--radius-lg);
-        padding: 24px;
-        border: none;
+        padding: 20px 22px;
+        border: 1px solid color-mix(in srgb, var(--accent-primary) 32%, var(--border-color));
         overflow: hidden;
         display: flex;
         flex-direction: column;
         justify-content: center;
         text-align: left;
         cursor: pointer;
-        box-shadow: 0 12px 32px rgba(250, 36, 60, 0.3);
+        box-shadow: var(--shadow-md);
+        transition: transform 0.2s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
         -webkit-tap-highlight-color: transparent;
     }
 
     .recap-card:active {
         transform: scale(0.98);
-        opacity: 0.9;
     }
 
     .recap-card-content {
@@ -1314,36 +1318,35 @@
     }
 
     .recap-label {
-        font-size: 0.7rem;
-        font-weight: 800;
-        letter-spacing: 0.1em;
-        color: rgba(255, 255, 255, 0.8);
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-semibold);
+        color: var(--accent-primary);
         margin-bottom: 4px;
         display: block;
     }
 
     .recap-title {
-        font-size: 1.5rem;
-        font-weight: 900;
-        color: white;
+        font-size: 1.375rem;
+        font-weight: var(--font-weight-bold);
+        color: var(--text-primary);
         margin: 0 0 6px 0;
-        line-height: 1.1;
+        line-height: 1.15;
     }
 
     .recap-text {
         font-size: var(--font-size-base);
-        color: rgba(255, 255, 255, 0.9);
-        margin: 0 0 16px 0;
-        max-width: 80%;
+        color: var(--text-secondary);
+        margin: 0 0 14px 0;
+        max-width: 82%;
     }
 
     .recap-pill {
-        background: white;
-        color: #fa243c;
-        padding: 6px 16px;
-        border-radius: 20px;
-        font-size: 0.8rem;
-        font-weight: 800;
+        background: var(--accent-primary);
+        color: var(--text-on-accent, #000000);
+        padding: 7px 16px;
+        border-radius: var(--radius-full);
+        font-size: var(--font-size-xs);
+        font-weight: var(--font-weight-bold);
         width: fit-content;
     }
 
@@ -1351,11 +1354,11 @@
         position: absolute;
         top: -20px;
         right: -20px;
-        width: 150px;
-        height: 150px;
-        opacity: 0.2;
+        width: 140px;
+        height: 140px;
+        opacity: 0.12;
         z-index: 1;
-        color: white;
+        color: var(--accent-primary);
     }
 
     .hero-background {

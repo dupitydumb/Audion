@@ -65,10 +65,50 @@
         }
     }
 
-    // Start fetching genres and artist picture as soon as the wrapped opens
+    // Reset to first slide whenever reopened, and fetch data
+    let wasShown = false;
+    $: {
+        if (show && !wasShown) {
+            currentSlide = 0;
+        }
+        wasShown = show;
+    }
+
     $: if (show && !genresFetched) fetchGenres();
     $: if (show && $topArtists[0])
         fetchArtistPicture($topArtists[0].artist.toString());
+
+    function handleKeydown(e: KeyboardEvent) {
+        if (!show) return;
+        if (e.key === "Escape") {
+            e.preventDefault();
+            onClose();
+        } else if (e.key === "ArrowRight") {
+            e.preventDefault();
+            nextSlide();
+        } else if (e.key === "ArrowLeft") {
+            e.preventDefault();
+            prevSlide();
+        }
+    }
+
+    let swipeStartX = 0;
+    let swipeStartY = 0;
+    function handleSwipeStart(e: TouchEvent) {
+        if (e.touches.length !== 1) return;
+        swipeStartX = e.touches[0].clientX;
+        swipeStartY = e.touches[0].clientY;
+    }
+
+    function handleSwipeEnd(e: TouchEvent) {
+        if (e.changedTouches.length !== 1) return;
+        const dx = e.changedTouches[0].clientX - swipeStartX;
+        const dy = e.changedTouches[0].clientY - swipeStartY;
+        if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.2) {
+            if (dx < 0) nextSlide();
+            else prevSlide();
+        }
+    }
 
     const monthSlug = new Intl.DateTimeFormat("en", { month: "long" })
         .format(new Date())
@@ -201,7 +241,7 @@
             ctx.fillStyle = "#ffffff";
             ctx.font = "900 40px Inter, sans-serif";
             ctx.textAlign = "center";
-            ctx.fillText("AUDION WRAPPED", 540, 120);
+            ctx.fillText("AUDION RECAP", 540, 120);
 
             // Draw content based on slide
             if (currentSlide === 0) await drawIntro(ctx);
@@ -214,7 +254,7 @@
             // Footer
             ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
             ctx.font = "bold 32px Inter, sans-serif";
-            ctx.fillText("LISTEN ON AUDIONPLAYER.COM", 540, 1820);
+            ctx.fillText("AUDION", 540, 1820);
 
             const dataUrl = canvas.toDataURL("image/png");
             const base64Data = dataUrl.split(",")[1];
@@ -480,18 +520,28 @@
     }
 </script>
 
+<svelte:window on:keydown={handleKeydown} />
+
 {#if show}
-    <div class="wrapped-overlay" transition:fade={{ duration: 400 }}>
-        <div class="wrapped-container slide-{currentSlide}">
+    <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+    <div class="wrapped-overlay" on:click={onClose} transition:fade={{ duration: 280 }}>
+        <div
+            class="wrapped-container slide-{currentSlide}"
+            on:click|stopPropagation
+            on:touchstart={handleSwipeStart}
+            on:touchend={handleSwipeEnd}
+        >
             <header class="header">
                 <div class="progress-bars">
                     {#each slides as _, i}
                         <div class="bar" class:active={i <= currentSlide}></div>
                     {/each}
                 </div>
-                <button class="close-btn" on:click={onClose} aria-label="Close">
-                    <Icon name="x" size={24} strokeWidth={2.5} />
-                </button>
+                <div class="header-actions">
+                    <button class="close-btn" on:click={onClose} aria-label="Close">
+                        <Icon name="x" size={22} strokeWidth={2.5} />
+                    </button>
+                </div>
             </header>
 
             <main class="content-view">
@@ -520,57 +570,64 @@
                 {:else if currentSlide === 1}
                     <div
                         class="slide"
-                        in:fly={{ x: 100, duration: 500, easing: cubicOut }}
+                        in:fly={{ x: 60, duration: 360, easing: cubicOut }}
                     >
                         <h2 class="slide-title">{$_('recap.topTracks')}</h2>
-                        <div class="track-stack">
-                            {#each $topTracks.slice(0, 5) as item, i}
-                                <div
-                                    class="premium-track-item"
-                                    in:fly={{ y: 20, delay: i * 100 }}
-                                >
-                                    <div class="track-rank-badge">{i + 1}</div>
-                                    <div class="track-cover-wrapper">
-                                        {#if resolveTrackCover(item.track)}
-                                            <img
-                                                src={resolveTrackCover(
-                                                    item.track,
-                                                )}
-                                                alt=""
-                                            />
-                                        {:else}
-                                            <div class="cover-placeholder">
-                                                ♪
+                        {#if $topTracks.length === 0}
+                            <div class="recap-empty-state">
+                                <Icon name="music" size={32} />
+                                <p>{$_('recap.genreEmptyHint')}</p>
+                            </div>
+                        {:else}
+                            <div class="track-stack">
+                                {#each $topTracks.slice(0, 5) as item, i}
+                                    <div
+                                        class="premium-track-item"
+                                        in:fly={{ y: 16, delay: i * 70 }}
+                                    >
+                                        <div class="track-rank-badge">{i + 1}</div>
+                                        <div class="track-cover-wrapper">
+                                            {#if resolveTrackCover(item.track)}
+                                                <img
+                                                    src={resolveTrackCover(
+                                                        item.track,
+                                                    )}
+                                                    alt=""
+                                                />
+                                            {:else}
+                                                <div class="cover-placeholder">
+                                                    <Icon name="music" size={20} />
+                                                </div>
+                                            {/if}
+                                        </div>
+                                        <div class="track-meta">
+                                            <div class="track-name">
+                                                {item.track.title}
                                             </div>
-                                        {/if}
-                                    </div>
-                                    <div class="track-meta">
-                                        <div class="track-name">
-                                            {item.track.title}
+                                            <div class="track-artist">
+                                                {formatTrackArtists(item.track)}
+                                            </div>
                                         </div>
-                                        <div class="track-artist">
-                                            {formatTrackArtists(item.track)}
+                                        <div class="track-plays">
+                                            {item.play_count} <small>{$_('recap.plays')}</small>
                                         </div>
                                     </div>
-                                    <div class="track-plays">
-                                        {item.play_count} <small>{$_('recap.plays')}</small>
-                                    </div>
-                                </div>
-                            {/each}
-                        </div>
+                                {/each}
+                            </div>
+                        {/if}
                     </div>
                 {:else if currentSlide === 2}
                     <div
                         class="slide artist-slide"
-                        in:scale={{ duration: 600, start: 0.8 }}
+                        in:scale={{ duration: 420, start: 0.92, easing: cubicOut }}
                     >
-                        <span class="personality-label"
-                            >{getArtistLabel(
-                                $topArtists[0]?.play_count || 0,
-                            )}</span
-                        >
-                        <h2 class="slide-title">{$_('recap.mostListened')}</h2>
                         {#if $topArtists[0]}
+                            <span class="personality-label"
+                                >{getArtistLabel(
+                                    $topArtists[0]?.play_count || 0,
+                                )}</span
+                            >
+                            <h2 class="slide-title">{$_('recap.mostListened')}</h2>
                             <div class="artist-hero">
                                 <div class="artist-name-reveal">
                                     {$topArtists[0].artist}
@@ -579,6 +636,12 @@
                                     {$topArtists[0].play_count}
                                     <span>{$_('recap.playsThisMonth')}</span>
                                 </div>
+                            </div>
+                        {:else}
+                            <h2 class="slide-title">{$_('recap.mostListened')}</h2>
+                            <div class="recap-empty-state">
+                                <Icon name="user" size={32} />
+                                <p>{$_('recap.genreEmptyHint')}</p>
                             </div>
                         {/if}
                     </div>
@@ -798,87 +861,65 @@
 <style>
     .wrapped-overlay {
         position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: #000;
-        z-index: 10000;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.88);
+        z-index: var(--z-dialog, 5000);
         display: flex;
         justify-content: center;
         align-items: center;
-        font-family: "Inter", system-ui, sans-serif;
+        font-family: inherit;
     }
 
     .wrapped-container {
         width: 100%;
         max-width: 450px;
-        height: 100%;
-        max-height: 850px;
+        height: 100dvh;
         display: flex;
         flex-direction: column;
-        padding: var(--spacing-lg);
+        padding: var(--spacing-md) var(--spacing-lg);
         position: relative;
         overflow: hidden;
-        color: white;
-        background: #000;
-        transition: background 0.8s ease;
+        color: #ffffff;
+        background: #0a0a0c;
+        transition: background 0.5s ease;
     }
 
-    .slide-0 {
-        background: #000;
+    .slide-0,
+    .slide-5 {
+        background: radial-gradient(circle at 50% 15%, color-mix(in srgb, var(--accent-primary) 18%, #0a0a0c) 0%, #0a0a0c 70%);
     }
     .slide-1 {
-        background: radial-gradient(circle at 0% 0%, #301934, #000);
+        background: radial-gradient(circle at 10% 10%, color-mix(in srgb, var(--accent-primary) 22%, #0a0a0c) 0%, #0a0a0c 68%);
     }
     .slide-2 {
-        background: radial-gradient(circle at 100% 100%, #1a2a6c, #000);
+        background: radial-gradient(circle at 85% 85%, color-mix(in srgb, var(--accent-primary) 24%, #0a0a0c) 0%, #0a0a0c 68%);
     }
     .slide-3 {
-        background: radial-gradient(circle at center, #013220, #000);
+        background: radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--accent-primary) 20%, #0a0a0c) 0%, #0a0a0c 70%);
     }
     .slide-4 {
-        background: radial-gradient(circle at 30% 70%, #2d1b69, #000);
-    }
-    .slide-5 {
-        background: #000;
-    }
-
-    /* Animated orbs for depth */
-    .wrapped-container::after {
-        content: "";
-        position: absolute;
-        width: 300px;
-        height: 300px;
-        background: var(--accent-primary);
-        filter: blur(100px);
-        opacity: 0.2;
-        border-radius: 50%;
-        animation: drift 20s infinite alternate linear;
-        pointer-events: none;
-    }
-
-    @keyframes drift {
-        0% {
-            transform: translate(-20%, -20%) scale(1);
-        }
-        100% {
-            transform: translate(120%, 120%) scale(1.5);
-        }
+        background: radial-gradient(circle at 25% 75%, color-mix(in srgb, var(--accent-primary) 22%, #0a0a0c) 0%, #0a0a0c 68%);
     }
 
     :global(html.layout-desktop) .wrapped-container {
-        border-radius: 40px;
+        border-radius: 32px;
         aspect-ratio: 9/16;
-        height: 90vh;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        box-shadow: 0 50px 100px -20px rgba(0, 0, 0, 0.5);
+        height: min(90dvh, 840px);
+        max-width: min(460px, 92vw);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        box-shadow: 0 32px 80px -16px rgba(0, 0, 0, 0.7);
     }
 
     .header {
         position: relative;
         z-index: 10;
-        padding-top: calc(var(--spacing-sm) + var(--safe-area-top));
+        flex-shrink: 0;
+        padding-top: calc(var(--spacing-xs) + var(--safe-area-top, 0px));
+    }
+
+    .header-actions {
+        display: flex;
+        justify-content: flex-end;
     }
 
     .progress-bars {
@@ -900,10 +941,9 @@
     }
 
     .close-btn {
-        float: right;
-        background: rgba(255, 255, 255, 0.1);
-        border: none;
-        color: white;
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        color: #ffffff;
         width: 44px;
         height: 44px;
         border-radius: 50%;
@@ -912,21 +952,50 @@
         justify-content: center;
         cursor: pointer;
         backdrop-filter: blur(10px);
+        transition: background-color var(--transition-fast), transform 0.16s var(--ease-spring-snappy);
+    }
+
+    .close-btn:active {
+        transform: scale(0.92);
     }
 
     .content-view {
         flex: 1;
+        min-height: 0;
         display: flex;
         flex-direction: column;
         justify-content: center;
         position: relative;
         z-index: 10;
+        padding: var(--spacing-sm) 0;
+    }
+
+    .recap-empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        gap: var(--spacing-md);
+        padding: var(--spacing-xl) var(--spacing-md);
+        color: rgba(255, 255, 255, 0.72);
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: var(--radius-lg);
+    }
+
+    .recap-empty-state p {
+        margin: 0;
+        font-size: var(--font-size-base);
+        line-height: 1.45;
+        max-width: 28ch;
     }
 
     .slide {
         display: flex;
         flex-direction: column;
-        gap: var(--spacing-xl);
+        gap: var(--spacing-lg);
+        max-height: 100%;
     }
 
     .intro-slide {
@@ -936,86 +1005,86 @@
 
     .logo-animation {
         position: relative;
-        width: 140px;
-        height: 140px;
+        width: 120px;
+        height: 120px;
         display: flex;
         align-items: center;
         justify-content: center;
-        margin-bottom: var(--spacing-xl);
+        margin-bottom: var(--spacing-md);
     }
 
     .audion-orb {
         position: absolute;
         width: 100%;
         height: 100%;
-        background: linear-gradient(45deg, var(--accent-primary), #00ffff);
+        background: radial-gradient(circle, color-mix(in srgb, var(--accent-primary) 55%, transparent) 0%, transparent 70%);
         border-radius: 50%;
-        filter: blur(20px);
-        animation: pulse 2s infinite ease-in-out;
-    }
-
-    @keyframes pulse {
-        0%,
-        100% {
-            transform: scale(1);
-            opacity: 0.5;
-        }
-        50% {
-            transform: scale(1.2);
-            opacity: 0.8;
-        }
     }
 
     .hero-logo {
         position: relative;
         z-index: 2;
-        width: 80px;
-        height: 80px;
+        width: 76px;
+        height: 76px;
     }
 
     .intro-text h2 {
-        font-size: 3.5rem;
+        font-size: clamp(2.1rem, 8vw, 3.1rem);
         font-weight: 900;
-        letter-spacing: -2px;
+        letter-spacing: -0.03em;
         margin-bottom: 0.5rem;
+        line-height: 1.05;
     }
 
     .slide-title {
-        font-size: 2.5rem;
+        font-size: clamp(1.65rem, 6vw, 2.25rem);
         font-weight: 900;
-        text-transform: uppercase;
-        letter-spacing: -1px;
+        letter-spacing: -0.02em;
+        line-height: 1.1;
     }
 
     .track-stack {
         display: flex;
         flex-direction: column;
-        gap: var(--spacing-md);
+        gap: var(--spacing-sm);
     }
 
     .premium-track-item {
         display: flex;
         align-items: center;
         gap: var(--spacing-md);
-        background: rgba(255, 255, 255, 0.05);
-        padding: var(--spacing-sm);
+        background: rgba(255, 255, 255, 0.06);
+        padding: var(--spacing-sm) var(--spacing-md);
         border-radius: 12px;
-        backdrop-filter: blur(20px);
-        border: 1px solid rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.08);
     }
 
     .track-rank-badge {
-        font-size: 1.5rem;
+        font-size: 1.25rem;
         font-weight: 900;
-        opacity: 0.2;
-        width: 30px;
+        color: rgba(255, 255, 255, 0.55);
+        width: 24px;
+        text-align: center;
+        flex-shrink: 0;
     }
 
     .track-cover-wrapper {
-        width: 56px;
-        height: 56px;
+        width: 52px;
+        height: 52px;
         border-radius: 6px;
         overflow: hidden;
+        flex-shrink: 0;
+        background: rgba(255, 255, 255, 0.08);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .cover-placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: rgba(255, 255, 255, 0.6);
     }
 
     .track-cover-wrapper img {
@@ -1035,8 +1104,18 @@
         text-overflow: ellipsis;
     }
     .track-artist {
-        font-size: 0.8rem;
-        opacity: 0.6;
+        font-size: var(--font-size-xs);
+        color: rgba(255, 255, 255, 0.72);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .track-plays {
+        font-weight: var(--font-weight-bold);
+        font-size: var(--font-size-sm);
+        color: rgba(255, 255, 255, 0.9);
+        flex-shrink: 0;
     }
 
     .artist-slide {
@@ -1044,81 +1123,81 @@
         text-align: center;
     }
     .personality-label {
-        font-size: 0.9rem;
+        font-size: var(--font-size-xs);
         text-transform: uppercase;
-        letter-spacing: 2px;
+        letter-spacing: 0.08em;
         background: var(--accent-primary);
-        color: black;
-        padding: 4px 12px;
-        border-radius: 20px;
+        color: var(--text-on-accent, #000000);
+        padding: 5px 14px;
+        border-radius: var(--radius-full);
         font-weight: 800;
     }
 
     .artist-name-reveal {
-        font-size: 4rem;
+        font-size: clamp(2.25rem, 9vw, 3.6rem);
         font-weight: 900;
-        line-height: 0.9;
-        margin: var(--spacing-xl) 0;
+        line-height: 0.98;
+        margin: var(--spacing-lg) 0;
+        word-break: break-word;
     }
 
     .stat-card {
-        background: rgba(255, 255, 255, 0.05);
-        padding: var(--spacing-xl);
-        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        padding: var(--spacing-lg);
+        border-radius: 20px;
         display: flex;
         flex-direction: column;
-        gap: 0.5rem;
-        margin-bottom: var(--spacing-lg);
+        gap: 0.35rem;
+        margin-bottom: var(--spacing-md);
     }
 
     .stat-val {
-        font-size: 4rem;
+        font-size: clamp(2.5rem, 10vw, 3.5rem);
         font-weight: 900;
+        line-height: 1.05;
     }
     .stat-label {
         text-transform: uppercase;
-        letter-spacing: 1px;
-        opacity: 0.7;
+        letter-spacing: 0.06em;
+        font-size: var(--font-size-xs);
+        color: rgba(255, 255, 255, 0.72);
     }
 
     .fun-fact {
-        font-size: 1.1rem;
+        font-size: 1rem;
         font-weight: var(--font-weight-semibold);
-        font-style: italic;
         color: var(--accent-primary);
-        margin-top: var(--spacing-md);
-        text-shadow: 0 0 10px rgba(255, 0, 128, 0.3);
+        margin-top: var(--spacing-sm);
+        line-height: 1.4;
+    }
+
+    .final-slide {
+        flex: 1;
+        min-height: 0;
+        justify-content: center;
     }
 
     .premium-recap-container {
-        position: absolute;
-        inset: 0;
-        background: transparent;
-        overflow: hidden;
+        width: 100%;
+        max-height: 100%;
         display: flex;
         justify-content: center;
-        z-index: 1;
-    }
-
-    .apple-style {
-        background: radial-gradient(circle at 0% 0%, #fa243c, transparent 60%),
-            radial-gradient(circle at 100% 100%, #409cff, transparent 60%),
-            #0a0a0a;
+        align-items: center;
     }
 
     .premium-card {
-        width: 85%;
-        height: 70%;
+        width: 100%;
+        max-height: 100%;
+        overflow-y: auto;
         background: #ffffff;
-        border-radius: 32px;
-        color: black;
-        padding: 24px;
+        border-radius: 24px;
+        color: #111111;
+        padding: 18px 20px;
         display: flex;
         flex-direction: column;
-        gap: 12px;
-        position: relative;
-        z-index: 2;
-        box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5);
+        gap: 10px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
     }
 
     .card-logo-row {
@@ -1141,41 +1220,43 @@
     }
 
     .card-image-box {
-        width: 85%;
+        width: min(68%, 220px);
         margin: 0 auto;
         aspect-ratio: 1;
-        background: #f0f0f0;
+        background: #16161a;
         border-radius: 12px;
+        overflow: hidden;
         display: flex;
         align-items: center;
         justify-content: center;
     }
 
     .artist-initials {
-        font-size: 4rem;
+        font-size: 3.25rem;
         font-weight: 900;
-        color: white;
+        color: #ffffff;
         text-transform: uppercase;
     }
 
     .card-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 20px;
-        margin: 10px 0;
+        gap: 16px;
+        margin: 6px 0;
     }
 
     .grid-col {
         display: flex;
         flex-direction: column;
         gap: 4px;
+        min-width: 0;
     }
 
     .grid-label {
-        font-size: 0.65rem;
+        font-size: 0.7rem;
         font-weight: 800;
         text-transform: uppercase;
-        opacity: 0.4;
+        color: rgba(0, 0, 0, 0.65);
         margin-bottom: 4px;
     }
 
@@ -1183,13 +1264,13 @@
         display: flex;
         gap: 6px;
         font-size: var(--font-size-xs);
-        font-weight: 900;
+        font-weight: 800;
         white-space: nowrap;
         overflow: hidden;
     }
 
     .grid-item .num {
-        opacity: 0.3;
+        color: rgba(0, 0, 0, 0.5);
     }
 
     .grid-item .name {
@@ -1201,8 +1282,8 @@
         display: flex;
         justify-content: space-between;
         margin-top: auto;
-        padding-top: 15px;
-        border-top: 1px solid rgba(0, 0, 0, 0.1);
+        padding-top: 12px;
+        border-top: 1px solid rgba(0, 0, 0, 0.12);
     }
 
     .footer-stat {
@@ -1211,10 +1292,10 @@
     }
 
     .footer-stat .stat-label {
-        font-size: 0.6rem;
+        font-size: 0.65rem;
         font-weight: 800;
         text-transform: uppercase;
-        opacity: 0.4;
+        color: rgba(0, 0, 0, 0.65);
     }
 
     .footer-stat .stat-value {
@@ -1243,23 +1324,20 @@
     }
 
     .top-genre-name {
-        font-size: 3.5rem;
+        font-size: clamp(2.25rem, 9vw, 3.25rem);
         font-weight: 900;
-        line-height: 1;
-        background: linear-gradient(135deg, #a78bfa, #60a5fa);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        margin: var(--spacing-lg) 0 var(--spacing-sm);
+        line-height: 1.05;
+        color: var(--accent-primary);
+        margin: var(--spacing-md) 0 var(--spacing-xs);
         text-align: center;
     }
 
     .genre-label {
-        font-size: var(--font-size-md);
-        opacity: 0.7;
+        font-size: var(--font-size-sm);
+        color: rgba(255, 255, 255, 0.72);
         text-transform: uppercase;
-        letter-spacing: 2px;
-        margin: 0 0 var(--spacing-xl);
+        letter-spacing: 0.08em;
+        margin: 0 0 var(--spacing-lg);
     }
 
     .genre-also {
@@ -1272,8 +1350,8 @@
     .also-label {
         font-size: var(--font-size-xs);
         text-transform: uppercase;
-        letter-spacing: 2px;
-        opacity: 0.5;
+        letter-spacing: 0.08em;
+        color: rgba(255, 255, 255, 0.65);
     }
 
     .genre-pill-row {
@@ -1284,12 +1362,12 @@
     }
 
     .genre-pill {
-        background: rgba(167, 139, 250, 0.2);
-        border: 1px solid rgba(167, 139, 250, 0.4);
-        color: #c4b5fd;
-        padding: 4px 14px;
-        border-radius: 20px;
-        font-size: var(--font-size-base);
+        background: color-mix(in srgb, var(--accent-primary) 16%, transparent);
+        border: 1px solid color-mix(in srgb, var(--accent-primary) 40%, transparent);
+        color: #ffffff;
+        padding: 5px 14px;
+        border-radius: var(--radius-full);
+        font-size: var(--font-size-sm);
         font-weight: var(--font-weight-semibold);
     }
 
@@ -1298,7 +1376,7 @@
         flex-direction: column;
         align-items: center;
         gap: var(--spacing-md);
-        opacity: 0.6;
+        color: rgba(255, 255, 255, 0.75);
         margin: var(--spacing-xl) 0;
     }
 
@@ -1306,9 +1384,15 @@
         width: 32px;
         height: 32px;
         border: 3px solid rgba(255, 255, 255, 0.15);
-        border-top-color: #a78bfa;
+        border-top-color: var(--accent-primary);
         border-radius: 50%;
         animation: spin 1s linear infinite;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .genre-spinner {
+            animation: none !important;
+        }
     }
 
     @keyframes spin {
@@ -1318,16 +1402,16 @@
     }
 
     .genre-empty {
-        opacity: 0.5;
+        color: rgba(255, 255, 255, 0.72);
         text-align: center;
         margin: var(--spacing-xl) 0;
     }
 
     .mb-credit {
-        font-size: 0.65rem;
-        opacity: 0.3;
+        font-size: 0.7rem;
+        color: rgba(255, 255, 255, 0.55);
         text-transform: uppercase;
-        letter-spacing: 1px;
+        letter-spacing: 0.06em;
         margin-top: auto;
     }
 
@@ -1340,66 +1424,61 @@
 
     .footer {
         z-index: 100;
+        flex-shrink: 0;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 0 var(--spacing-lg) var(--spacing-xl);
-        position: absolute;
-        bottom: 0;
-        left: 0;
-        right: 0;
-        pointer-events: none;
-    }
-
-    .footer button {
-        pointer-events: auto;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-sm) 0 calc(var(--spacing-sm) + var(--safe-area-bottom, 0px));
     }
 
     .nav-btn {
-        background: rgba(255, 255, 255, 0.15);
+        background: rgba(255, 255, 255, 0.12);
         backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        color: white;
-        width: 60px;
-        height: 60px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        color: #ffffff;
+        width: 52px;
+        height: 52px;
+        min-width: 52px;
         border-radius: 50%;
         display: flex;
         align-items: center;
         justify-content: center;
         cursor: pointer;
-        transition: all 0.2s ease;
+        transition: background-color var(--transition-fast), transform 0.16s var(--ease-spring-snappy);
     }
 
     .nav-btn:hover:not(:disabled) {
-        background: rgba(255, 255, 255, 0.25);
-        transform: scale(1.1);
+        background: rgba(255, 255, 255, 0.22);
+        transform: scale(1.06);
     }
 
     .nav-btn:disabled {
-        opacity: 0.2;
+        opacity: 0.25;
         cursor: not-allowed;
     }
 
     .share-btn {
-        background: white;
-        color: black;
+        background: #ffffff;
+        color: #111111;
         border: none;
-        padding: 0 40px;
-        height: 60px;
-        border-radius: 30px;
-        font-weight: 900;
-        font-size: 1.1rem;
+        padding: 0 24px;
+        height: 52px;
+        border-radius: var(--radius-full);
+        font-weight: 800;
+        font-size: var(--font-size-base);
         display: flex;
         align-items: center;
-        gap: 10px;
+        justify-content: center;
+        gap: 8px;
         cursor: pointer;
-        transition: all 0.2s ease;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+        white-space: nowrap;
+        transition: transform 0.16s var(--ease-spring-snappy), background-color var(--transition-fast);
+        box-shadow: var(--shadow-md);
     }
 
     .share-btn:hover:not(:disabled) {
-        transform: translateY(-4px) scale(1.02);
-        box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4);
+        transform: translateY(-2px);
     }
 
     .share-btn:active {
