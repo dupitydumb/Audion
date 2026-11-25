@@ -196,32 +196,49 @@
     ctx.closePath();
   }
 
-  function wrapText(
-    ctx: CanvasRenderingContext2D,
-    text: string,
-    x: number,
-    y: number,
-    maxWidth: number,
-    lineHeight: number
-  ): number {
-    const words = text.split(" ");
-    let line = "";
-    let currentY = y;
+  const CARD_FONT = '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 
+  function getWrappedLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+    const words = text.split(/\s+/).filter(Boolean);
+    if (words.length === 0) return [""];
+    const result: string[] = [];
+    let current = "";
     for (let n = 0; n < words.length; n++) {
-      const testLine = line + words[n] + " ";
-      const metrics = ctx.measureText(testLine);
-      const testWidth = metrics.width;
-      if (testWidth > maxWidth && n > 0) {
-        ctx.fillText(line.trim(), x, currentY);
-        line = words[n] + " ";
-        currentY += lineHeight;
+      const testLine = current ? `${current} ${words[n]}` : words[n];
+      if (ctx.measureText(testLine).width > maxWidth && current) {
+        result.push(current);
+        current = words[n];
       } else {
-        line = testLine;
+        current = testLine;
       }
     }
-    ctx.fillText(line.trim(), x, currentY);
-    return currentY + lineHeight;
+    if (current) result.push(current);
+    return result;
+  }
+
+  function fitLyricsLayout(
+    ctx: CanvasRenderingContext2D,
+    lyrics: string[],
+    maxWidth: number,
+    initialFontSize: number,
+    maxHeight: number,
+    minFontSize = 24
+  ) {
+    let fontSize = initialFontSize;
+    while (fontSize >= minFontSize) {
+      ctx.font = `700 ${fontSize}px ${CARD_FONT}`;
+      const lineHeight = fontSize * 1.28;
+      const paragraphGap = fontSize * 0.28;
+      const blocks = lyrics.map((line) => getWrappedLines(ctx, line, maxWidth));
+      const totalVisualLines = blocks.reduce((sum, b) => sum + b.length, 0);
+      const totalHeight =
+        totalVisualLines * lineHeight + Math.max(0, blocks.length - 1) * paragraphGap;
+      if (totalHeight <= maxHeight || fontSize === minFontSize) {
+        return { fontSize, lineHeight, paragraphGap, blocks, totalHeight };
+      }
+      fontSize -= 2;
+    }
+    return { fontSize: minFontSize, lineHeight: minFontSize * 1.28, paragraphGap: minFontSize * 0.28, blocks: [lyrics], totalHeight: maxHeight };
   }
 
   function hexToRgba(hex: string, alpha: number): string {
@@ -549,59 +566,54 @@
     // Title and Artist
     ctx.textAlign = "left";
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 38px Inter, -apple-system, sans-serif";
-    ctx.fillText(title, textStartX, headerY + 45, cardW - (thumbSize + 110));
+    ctx.font = `700 38px ${CARD_FONT}`;
+    ctx.fillText(title, textStartX, headerY + 44, cardW - (thumbSize + 115));
 
-    ctx.fillStyle = "rgba(255, 255, 255, 0.65)";
-    ctx.font = "500 28px Inter, -apple-system, sans-serif";
-    const subText = album ? `${artist} • ${album}` : artist;
-    ctx.fillText(subText, textStartX, headerY + 90, cardW - (thumbSize + 110));
+    ctx.fillStyle = "rgba(255, 255, 255, 0.72)";
+    ctx.font = `500 28px ${CARD_FONT}`;
+    const subText = album ? `${artist} · ${album}` : artist;
+    ctx.fillText(subText, textStartX, headerY + 86, cardW - (thumbSize + 115));
 
-    // Divider Line
-    const divY = headerY + thumbSize + 40;
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(cardX + 60, divY);
-    ctx.lineTo(cardX + cardW - 60, divY);
-    ctx.stroke();
-
-    // ── Lyrics Block ──
+    // ── Lyrics Block (vertically centered, Spotify/Apple editorial rhythm) ──
     const selectedLyrics = selectedIndices
       .map(i => lines[i]?.text)
       .filter(Boolean);
 
-    let lyricsStartY = divY + (isSquare ? 90 : 150);
+    const lyricsAreaTop = headerY + thumbSize + 44;
+    const badgeY = cardY + cardH - 52;
+    const lyricsAreaBottom = badgeY - 44;
+    const maxLyricsHeight = Math.max(120, lyricsAreaBottom - lyricsAreaTop);
     const maxLyricsWidth = cardW - 120;
 
-    // Dynamic Font Sizing based on line count and length
     const totalLines = selectedLyrics.length;
-    let fontSize = isSquare
-      ? (totalLines <= 2 ? 46 : totalLines <= 3 ? 38 : 32)
-      : (totalLines <= 2 ? 52 : totalLines <= 3 ? 44 : 36);
-    let lineHeight = fontSize * 1.55;
+    const targetFontSize = isSquare
+      ? (totalLines <= 2 ? 52 : totalLines <= 3 ? 44 : 38)
+      : (totalLines <= 2 ? 60 : totalLines <= 3 ? 50 : 42);
+
+    const layout = fitLyricsLayout(ctx, selectedLyrics, maxLyricsWidth, targetFontSize, maxLyricsHeight, 24);
+    let cursorY =
+      lyricsAreaTop + Math.max(0, (maxLyricsHeight - layout.totalHeight) / 2) + layout.fontSize * 0.85;
 
     ctx.fillStyle = "#ffffff";
-    ctx.font = `600 ${fontSize}px Inter, -apple-system, sans-serif`;
+    ctx.font = `700 ${layout.fontSize}px ${CARD_FONT}`;
+    ctx.textAlign = "left";
 
-    // Quotation Mark decoration
-    ctx.save();
-    ctx.fillStyle = "rgba(255, 255, 255, 0.15)";
-    ctx.font = "bold 90px Georgia, serif";
-    ctx.fillText("“", cardX + 50, lyricsStartY - 10);
-    ctx.restore();
-
-    for (const line of selectedLyrics) {
-      lyricsStartY = wrapText(ctx, line, cardX + 65, lyricsStartY, maxLyricsWidth, lineHeight);
-      lyricsStartY += fontSize * 0.4;
+    for (let b = 0; b < layout.blocks.length; b++) {
+      const block = layout.blocks[b];
+      for (const visualLine of block) {
+        ctx.fillText(visualLine, cardX + 60, cursorY);
+        cursorY += layout.lineHeight;
+      }
+      if (b < layout.blocks.length - 1) {
+        cursorY += layout.paragraphGap;
+      }
     }
 
-    // ── Audion Watermark Badge (Bottom) ──
-    const badgeY = cardY + cardH - 50;
-    ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
-    ctx.font = "600 22px Inter, sans-serif";
+    // ── Audion Wordmark (Bottom) ──
+    ctx.fillStyle = "rgba(255, 255, 255, 0.58)";
+    ctx.font = `700 22px ${CARD_FONT}`;
     ctx.textAlign = "center";
-    ctx.fillText("LISTEN ON AUDION", width / 2, badgeY);
+    ctx.fillText("AUDION", width / 2, badgeY);
   }
 
   function drawVinylCardContent(
@@ -614,17 +626,18 @@
     coverImg: HTMLImageElement | null
   ) {
     const isSquare = height === 1080;
-    const topAreaY = isSquare ? 120 : 280;
+    const topAreaY = isSquare ? 96 : 240;
 
-    // ── Vinyl + Sleeve Assembly ──
-    const jacketSize = isSquare ? 320 : 380;
-    const jacketX = 140;
+    // ── Vinyl + Sleeve Assembly (horizontally centered as a combined silhouette) ──
+    const jacketSize = isSquare ? 300 : 360;
+    const vinylRadius = jacketSize * 0.48;
+    const totalAssemblyWidth = jacketSize * 0.85 + vinylRadius;
+    const jacketX = (width - totalAssemblyWidth) / 2;
     const jacketY = topAreaY;
 
     // Draw Vinyl Record Sliding Out to Right
     const vinylCenterX = jacketX + jacketSize * 0.85;
     const vinylCenterY = jacketY + jacketSize / 2;
-    const vinylRadius = jacketSize * 0.48;
 
     // Outer Vinyl Edge
     ctx.save();
@@ -706,43 +719,55 @@
     ctx.restore();
 
     // Track Meta right below vinyl assembly
-    const metaY = jacketY + jacketSize + 55;
+    const metaY = jacketY + jacketSize + 54;
     ctx.textAlign = "center";
     ctx.fillStyle = "#ffffff";
-    ctx.font = "bold 38px Inter, sans-serif";
-    ctx.fillText(title, width / 2, metaY);
+    ctx.font = `700 38px ${CARD_FONT}`;
+    ctx.fillText(title, width / 2, metaY, width - 140);
 
-    ctx.fillStyle = "rgba(255, 255, 255, 0.65)";
-    ctx.font = "500 26px Inter, sans-serif";
-    ctx.fillText(album ? `${artist} • ${album}` : artist, width / 2, metaY + 45);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.72)";
+    ctx.font = `500 26px ${CARD_FONT}`;
+    ctx.fillText(album ? `${artist} · ${album}` : artist, width / 2, metaY + 42, width - 140);
 
-    // ── Lyrics Section ──
+    // ── Lyrics Section (vertically centered & auto-fitted) ──
     const selectedLyrics = selectedIndices
       .map(i => lines[i]?.text)
       .filter(Boolean);
 
-    let lyricsStartY = metaY + 110;
-    const maxLyricsWidth = width - 240;
+    const lyricsAreaTop = metaY + 86;
+    const watermarkY = height - (isSquare ? 48 : 88);
+    const lyricsAreaBottom = watermarkY - 44;
+    const maxLyricsHeight = Math.max(100, lyricsAreaBottom - lyricsAreaTop);
+    const maxLyricsWidth = width - 200;
     const totalLines = selectedLyrics.length;
-    let fontSize = isSquare
-      ? (totalLines <= 2 ? 40 : totalLines <= 3 ? 34 : 28)
-      : (totalLines <= 2 ? 46 : totalLines <= 3 ? 40 : 32);
-    let lineHeight = fontSize * 1.55;
+    const targetFontSize = isSquare
+      ? (totalLines <= 2 ? 46 : totalLines <= 3 ? 38 : 32)
+      : (totalLines <= 2 ? 54 : totalLines <= 3 ? 46 : 38);
+
+    const layout = fitLyricsLayout(ctx, selectedLyrics, maxLyricsWidth, targetFontSize, maxLyricsHeight, 22);
+    let cursorY =
+      lyricsAreaTop + Math.max(0, (maxLyricsHeight - layout.totalHeight) / 2) + layout.fontSize * 0.85;
 
     ctx.textAlign = "center";
     ctx.fillStyle = "#ffffff";
-    ctx.font = `600 ${fontSize}px Inter, sans-serif`;
+    ctx.font = `700 ${layout.fontSize}px ${CARD_FONT}`;
 
-    for (const line of selectedLyrics) {
-      lyricsStartY = wrapText(ctx, line, width / 2, lyricsStartY, maxLyricsWidth, lineHeight);
-      lyricsStartY += fontSize * 0.4;
+    for (let b = 0; b < layout.blocks.length; b++) {
+      const block = layout.blocks[b];
+      for (const visualLine of block) {
+        ctx.fillText(visualLine, width / 2, cursorY);
+        cursorY += layout.lineHeight;
+      }
+      if (b < layout.blocks.length - 1) {
+        cursorY += layout.paragraphGap;
+      }
     }
 
     // Watermark
-    ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
-    ctx.font = "600 22px Inter, sans-serif";
+    ctx.fillStyle = "rgba(255, 255, 255, 0.58)";
+    ctx.font = `700 22px ${CARD_FONT}`;
     ctx.textAlign = "center";
-    ctx.fillText("AUDION MUSIC", width / 2, height - (isSquare ? 45 : 80));
+    ctx.fillText("AUDION", width / 2, watermarkY);
   }
 
   async function getCanvasBlob(): Promise<Blob | null> {
@@ -1436,11 +1461,11 @@
   }
 
   :global(html.layout-mobile) .canvas-frame {
-    max-width: min(44vw, 190px);
+    max-width: min(54vw, 220px);
   }
 
   :global(html.layout-mobile) .canvas-frame.story {
-    max-width: min(32vw, 140px);
+    max-width: min(38vw, 165px);
   }
 
   :global(html.layout-mobile) .segment,
