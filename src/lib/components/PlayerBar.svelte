@@ -1235,8 +1235,9 @@
         transform: scale(1.15);
     }
 
-    .icon-btn.active {
-        color: var(--accent-color, #1db954);
+    .player-bar .icon-btn.active,
+    .player-bar .icon-btn.active:hover {
+        color: var(--player-accent, var(--accent-primary, #1db954));
     }
 
     .connect-btn {
@@ -1249,9 +1250,9 @@
         right: 4px;
         width: 6px;
         height: 6px;
-        background: var(--accent-color, #1db954);
+        background: var(--accent-primary, #1db954);
         border-radius: 50%;
-        box-shadow: 0 0 5px var(--accent-color, #1db954);
+        box-shadow: 0 0 5px var(--accent-primary, #1db954);
     }
 
     .like-btn.liked {
@@ -1688,7 +1689,7 @@
 
     .sleep-timer-remaining {
         font-size: 0.72rem;
-        color: var(--accent-color, #1db954);
+        color: var(--accent-primary, #1db954);
         font-weight: var(--font-weight-semibold);
     }
 
@@ -1712,13 +1713,13 @@
 
     .sleep-preset-btn:hover,
     .sleep-cancel-btn:hover {
-        border-color: var(--accent-color, #1db954);
+        border-color: var(--accent-primary, #1db954);
         color: var(--text-primary);
     }
 
     .sleep-preset-btn.active {
-        border-color: var(--accent-color, #1db954);
-        color: var(--accent-color, #1db954);
+        border-color: var(--accent-primary, #1db954);
+        color: var(--accent-primary, #1db954);
     }
 
     .sleep-end-track-btn {
@@ -1770,8 +1771,8 @@
     }
 
     .sleep-fade-toggle-row.active .sleep-fade-pill {
-        background: rgba(29, 185, 84, 0.15);
-        color: var(--accent-color, #1db954);
+        background: var(--accent-subtle, rgba(29, 185, 84, 0.15));
+        color: var(--accent-primary, #1db954);
     }
 
     .sleep-cancel-btn {

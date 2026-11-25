@@ -450,9 +450,11 @@
         align-items: center;
         justify-content: center;
         height: 100%;
-        width: min(54vw, 900px);
+        width: clamp(180px, 42vw, 504px);
         max-width: 100%;
         padding: 0 12px;
+        position: relative;
+        z-index: 52;
     }
 
     .left-controls {
@@ -460,7 +462,8 @@
         align-items: center;
         padding-left: 8px;
         height: 100%;
-        flex-shrink: 0;
+        min-width: 0;
+        flex-shrink: 1;
         z-index: 51;
         /* Ensure it sits above drag region if needed, but drag region is separate sibing */
     }
@@ -468,6 +471,7 @@
     .nav-group {
         display: flex;
         align-items: center;
+        flex-shrink: 0;
         margin-left: 4px;
         margin-right: 8px; /* Spacing for breadcrumbs */
     }
@@ -508,15 +512,22 @@
         border-left: 1px solid var(--border-color);
         height: 20px; /* Separator height */
         padding-left: 4px;
+        flex: 1 1 auto;
         min-width: 0;
         overflow: hidden;
     }
 
+    @media (max-width: 780px) {
+        .breadcrumbs-wrapper {
+            display: none;
+        }
+    }
+
     /* Drag Regions */
     .drag-region {
-        flex-grow: 1;
+        flex: 1 1 8px;
         height: 100%;
-        min-width: 16px;
+        min-width: 8px;
         cursor: grab;
     }
 

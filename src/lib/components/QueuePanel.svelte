@@ -244,15 +244,79 @@
     let cleanupDragListeners: (() => void) | null = null;
     let hoveredCurrentTrack = false;
     let hoveredQueueKey: string | null = null;
+    let dragGhost: HTMLElement | null = null;
+    let dragGrabOffsetY = 0;
+    let dragRowHeight = TRACK_ROW_HEIGHT;
+    let dragShifts: Record<number, number> = {};
+
+    function computeShifts(dragged: number, over: number | null): Record<number, number> {
+        if (over === null) return {};
+        const dragPos = upcomingTracks.findIndex((t) => t.index === dragged);
+        const overPos = upcomingTracks.findIndex((t) => t.index === over);
+        if (dragPos === -1 || overPos === -1 || dragPos === overPos) return {};
+        const shifts: Record<number, number> = {};
+        const dir = overPos > dragPos ? 1 : -1;
+        const lo = Math.min(dragPos, overPos);
+        const hi = Math.max(dragPos, overPos);
+        for (let pos = lo; pos <= hi; pos++) {
+            if (pos === dragPos) continue;
+            shifts[upcomingTracks[pos].index] = dir > 0 ? -dragRowHeight : dragRowHeight;
+        }
+        return shifts;
+    }
+
+    function createGhost(sourceRow: HTMLElement, clientY: number): HTMLElement {
+        const rect = sourceRow.getBoundingClientRect();
+        dragRowHeight = rect.height + 4; // include --spacing-xs gap
+        dragGrabOffsetY = clientY - rect.top;
+
+        const ghost = sourceRow.cloneNode(true) as HTMLElement;
+        ghost.classList.remove("dragging", "drag-over", "current");
+        ghost.style.cssText = [
+            `position: fixed`,
+            `top: ${rect.top}px`,
+            `left: ${rect.left}px`,
+            `width: ${rect.width}px`,
+            `height: ${rect.height}px`,
+            `pointer-events: none`,
+            `z-index: 9999`,
+            `opacity: 0.95`,
+            `border-radius: var(--radius-md, 8px)`,
+            `box-shadow: 0 8px 32px rgba(0,0,0,0.45), 0 2px 8px rgba(0,0,0,0.25)`,
+            `transform: rotate(1.5deg) scale(1.02)`,
+            `transform-origin: center center`,
+            `background: var(--bg-highlight)`,
+            `transition: none`,
+            `will-change: top`,
+        ].join("; ");
+        document.body.appendChild(ghost);
+        return ghost;
+    }
+
+    function removeGhost() {
+        if (!dragGhost) return;
+        dragGhost.style.transition = "opacity 120ms ease, transform 120ms ease";
+        dragGhost.style.opacity = "0";
+        dragGhost.style.transform = "scale(0.96)";
+        const g = dragGhost;
+        setTimeout(() => g.remove(), 130);
+        dragGhost = null;
+    }
 
     function handlePointerDown(e: PointerEvent, actualIndex: number) {
         e.preventDefault();
         e.stopPropagation();
+
+        const target = e.currentTarget as HTMLElement;
+        const row = target.closest(".queue-track") as HTMLElement | null;
+        if (row) dragGhost = createGhost(row, e.clientY);
+
         isDragging = true;
         draggedIndex = actualIndex;
+        dragOverIndex = null;
+        dragShifts = {};
 
         // Capture pointer events
-        const target = e.currentTarget as HTMLElement;
         try {
             target.setPointerCapture(e.pointerId);
         } catch {}
@@ -278,34 +342,36 @@
     function handlePointerMove(e: PointerEvent) {
         if (!isDragging || draggedIndex === null) return;
 
-        // Find element under pointer
-        const elementsUnderPointer = document.elementsFromPoint(
-            e.clientX,
-            e.clientY,
-        );
-        const queueTrack = elementsUnderPointer.find((el) =>
-            el.classList.contains("queue-track"),
-        );
+        if (dragGhost) {
+            dragGhost.style.top = `${e.clientY - dragGrabOffsetY}px`;
+        }
 
-        if (queueTrack) {
-            const indexAttr = queueTrack.getAttribute("data-index");
-            if (indexAttr !== null) {
-                const overIndex = parseInt(indexAttr, 10);
-                if (overIndex !== draggedIndex) {
-                    dragOverIndex = overIndex;
-                } else {
-                    dragOverIndex = null;
-                }
+        let newOver: number | null = null;
+        if (upcomingContainerElement && upcomingTracks.length > 0) {
+            const rect = upcomingContainerElement.getBoundingClientRect();
+            const relY = useUnifiedMobileScroll
+                ? e.clientY - rect.top
+                : e.clientY - rect.top + upcomingContainerElement.scrollTop;
+            const idx = Math.floor(relY / TRACK_ROW_HEIGHT);
+            const clamped = Math.max(0, Math.min(upcomingTracks.length - 1, idx));
+            const targetItem = upcomingTracks[clamped];
+            if (targetItem && targetItem.index !== draggedIndex) {
+                newOver = targetItem.index;
             }
-        } else {
-            dragOverIndex = null;
+        }
+
+        if (newOver !== dragOverIndex) {
+            dragOverIndex = newOver;
+            dragShifts = computeShifts(draggedIndex, dragOverIndex);
         }
     }
 
     function resetDragState() {
+        removeGhost();
         isDragging = false;
         draggedIndex = null;
         dragOverIndex = null;
+        dragShifts = {};
 
         if (cleanupDragListeners) {
             cleanupDragListeners();
@@ -454,7 +520,7 @@
                                         class:priority={item.isPriority}
                                         data-index={item.index}
                                         role="listitem"
-                                        style="height: {TRACK_ROW_HEIGHT}px;"
+                                        style="height: {TRACK_ROW_HEIGHT}px;{dragShifts[item.index] ? ` transform: translateY(${dragShifts[item.index]}px);` : ''}"
                                         on:mouseenter={() =>
                                             (hoveredQueueKey = item.track.id + "-next-" + item.index)}
                                         on:mouseleave={() => (hoveredQueueKey = null)}
@@ -790,7 +856,10 @@
         gap: var(--spacing-sm);
         padding: var(--spacing-xs);
         border-radius: var(--radius-md);
-        transition: background-color var(--transition-fast);
+        transition:
+            background-color var(--transition-fast),
+            transform 180ms cubic-bezier(0.2, 0, 0, 1),
+            opacity 150ms ease;
         box-sizing: border-box;
     }
 
@@ -812,13 +881,8 @@
     }
 
     .queue-track.dragging {
-        opacity: 0.5;
+        opacity: 0.25;
         background-color: var(--bg-highlight);
-    }
-
-    .queue-track.drag-over {
-        border-top: 2px solid var(--accent-primary);
-        margin-top: -2px;
     }
 
     .drag-handle {
