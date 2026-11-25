@@ -225,7 +225,7 @@
   }
 
   function hexToRgba(hex: string, alpha: number): string {
-    if (!hex) return `rgba(124, 58, 237, ${alpha})`;
+    if (!hex) return `rgba(63, 63, 70, ${alpha})`;
     if (hex.startsWith("rgb")) {
       return hex.replace("rgb(", "rgba(").replace(")", `, ${alpha})`);
     }
@@ -236,7 +236,7 @@
       const b = parseInt(clean.substring(4, 6), 16);
       return `rgba(${r}, ${g}, ${b}, ${alpha})`;
     }
-    return `rgba(124, 58, 237, ${alpha})`;
+    return `rgba(63, 63, 70, ${alpha})`;
   }
 
   function extractColorsFromCover(img: HTMLImageElement): string[] {
@@ -270,7 +270,7 @@
       const sampled = extractColorsFromCover(coverImg);
       if (sampled.length > 0) return sampled;
     }
-    return ["#7c3aed", "#10b981", "#3b82f6", "#f43f5e"];
+    return ["#27272a", "#3f3f46", "#52525b", "#18181b"];
   }
 
   let renderToken = 0;
@@ -854,7 +854,16 @@
       unregisterBackHandler = null;
     }
   });
+
+  function handleWindowKeydown(e: KeyboardEvent) {
+    if (open && e.key === "Escape") {
+      e.preventDefault();
+      onClose();
+    }
+  }
 </script>
+
+<svelte:window on:keydown={handleWindowKeydown} />
 
 {#if open}
   <div
@@ -900,21 +909,25 @@
               <span class="lines-count">{selectedIndices.length}/5</span>
             </div>
             <div class="lines-list" bind:this={linesListEl}>
-              {#each lines as line, idx}
-                <button
-                  type="button"
-                  class="line-item"
-                  class:selected={selectedIndices.includes(idx)}
-                  on:click={() => toggleLine(idx)}
-                >
-                  <span class="line-check">
-                    {#if selectedIndices.includes(idx)}
-                      <Icon name="check" size={12} />
-                    {/if}
-                  </span>
-                  <span class="line-text">{line.text}</span>
-                </button>
-              {/each}
+              {#if lines.length === 0}
+                <div class="lines-empty">No synced or plain lyric lines available for this track.</div>
+              {:else}
+                {#each lines as line, idx}
+                  <button
+                    type="button"
+                    class="line-item"
+                    class:selected={selectedIndices.includes(idx)}
+                    on:click={() => toggleLine(idx)}
+                  >
+                    <span class="line-check">
+                      {#if selectedIndices.includes(idx)}
+                        <Icon name="check" size={12} />
+                      {/if}
+                    </span>
+                    <span class="line-text">{line.text}</span>
+                  </button>
+                {/each}
+              {/if}
             </div>
           </div>
 
@@ -1039,8 +1052,8 @@
   }
 
   .modal-subtitle {
-    font-size: 0.72rem;
-    color: rgba(255, 255, 255, 0.45);
+    font-size: 0.75rem;
+    color: rgba(255, 255, 255, 0.68);
     line-height: 1.2;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1111,8 +1124,8 @@
   }
 
   .preview-caption {
-    font-size: 0.68rem;
-    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.72rem;
+    color: rgba(255, 255, 255, 0.68);
     letter-spacing: 0.02em;
   }
 
@@ -1131,11 +1144,11 @@
   }
 
   .control-label {
-    font-size: 0.68rem;
+    font-size: 0.7rem;
     font-weight: 650;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: rgba(255, 255, 255, 0.45);
+    letter-spacing: 0.06em;
+    color: rgba(255, 255, 255, 0.68);
   }
 
   /* ── Format segmented control ───────────────────────────── */
@@ -1202,9 +1215,9 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     border-radius: 9px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: rgba(255, 255, 255, 0.03);
-    color: rgba(255, 255, 255, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.04);
+    color: rgba(255, 255, 255, 0.72);
     font: inherit;
     font-size: 0.75rem;
     font-weight: 600;
@@ -1214,13 +1227,13 @@
   }
 
   .theme-chip:hover {
-    background: rgba(255, 255, 255, 0.07);
-    color: rgba(255, 255, 255, 0.85);
+    background: rgba(255, 255, 255, 0.08);
+    color: #ffffff;
   }
 
   .theme-chip.active {
     border-color: var(--accent-primary, #1db954);
-    background: rgba(29, 185, 84, 0.1);
+    background: color-mix(in srgb, var(--accent-primary, #1db954) 14%, transparent);
     color: var(--accent-primary, #1db954);
   }
 
@@ -1237,9 +1250,18 @@
   }
 
   .lines-count {
-    font-size: 0.68rem;
+    font-size: 0.72rem;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.4);
+    color: rgba(255, 255, 255, 0.68);
+  }
+
+  .lines-empty {
+    padding: 20px 12px;
+    text-align: center;
+    font-size: 0.82rem;
+    color: rgba(255, 255, 255, 0.68);
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 9px;
   }
 
   .lines-list {
@@ -1276,8 +1298,8 @@
   }
 
   .line-item.selected {
-    background: rgba(29, 185, 84, 0.1);
-    border-color: rgba(29, 185, 84, 0.3);
+    background: color-mix(in srgb, var(--accent-primary, #1db954) 14%, transparent);
+    border-color: color-mix(in srgb, var(--accent-primary, #1db954) 40%, transparent);
     color: #fff;
   }
 
@@ -1333,7 +1355,7 @@
   .btn-action.primary {
     flex: 1;
     background: var(--accent-primary, #1db954);
-    color: #03140a;
+    color: var(--text-on-accent, #000000);
   }
 
   .btn-action.primary:hover:not(:disabled) {
@@ -1380,10 +1402,24 @@
     max-height: 90dvh;
     border-radius: 20px 20px 0 0;
     border-bottom: none;
+    animation: springSlideUp 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
   }
 
   :global(html.layout-mobile) .modal-header {
-    padding: 12px 16px;
+    position: relative;
+    padding: 16px 16px 12px;
+  }
+
+  :global(html.layout-mobile) .modal-header::before {
+    content: "";
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.22);
   }
 
   :global(html.layout-mobile) .btn-close {
@@ -1408,8 +1444,14 @@
   }
 
   :global(html.layout-mobile) .segment,
+  :global(html.layout-mobile) .theme-chip,
   :global(html.layout-mobile) .line-item {
     min-height: 44px;
+  }
+
+  :global(html.layout-mobile) .btn-action.icon-only {
+    min-width: 46px;
+    padding: 0 14px;
   }
 
   :global(html.layout-mobile) .lines-list {
