@@ -754,9 +754,15 @@ export function applyTheme(state: ThemeState): void {
     root.style.setProperty('--text-primary', c.textPrimary ?? modeDefaults.textPrimary);
     root.style.setProperty('--text-secondary', c.textSecondary ?? modeDefaults.textSecondary);
     root.style.setProperty('--text-subdued', c.textSubdued ?? modeDefaults.textSubdued);
+    root.style.setProperty('--text-tertiary', isDark ? '#6a6a6a' : '#888888');
 
-    // Border
+    // Border & status colors
     root.style.setProperty('--border-color', c.borderColor ?? modeDefaults.borderColor);
+    const errorColor = isDark ? '#f15e6c' : '#d32f2f';
+    root.style.setProperty('--error-color', errorColor);
+    root.style.setProperty('--accent-error', errorColor);
+    root.style.setProperty('--accent-success', state.accentColor);
+    root.style.setProperty('--accent-info', state.accentColor);
 
     // Accent colors
     root.style.setProperty('--accent-primary', state.accentColor);

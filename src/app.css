@@ -30,10 +30,33 @@
   --accent-warning: #ffae42;
   --accent-info: #1DB954;
 
+  /* Theme-aware subtle surfaces & contrast */
+  --text-on-accent: #000000;
+  --surface-subtle: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  --surface-subtle-hover: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  --border-subtle: color-mix(in srgb, var(--text-primary) 10%, transparent);
+
   /* Sizing */
   --sidebar-width: 280px;
   --player-height: 96px;
   --header-height: 64px;
+
+  /* Mobile Chrome Dimensions */
+  --mobile-nav-height: 64px;
+  --mobile-mini-player-height: 64px;
+  --mobile-mini-player-gap: 8px;
+
+  /* Z-index Scale */
+  --z-sticky: 100;
+  --z-mini-player: 900;
+  --z-bottom-nav: 1000;
+  --z-toast: 1100;
+  --z-drawer: 1200;
+  --z-fullscreen: 2000;
+  --z-panel: 2100;
+  --z-sheet: 3000;
+  --z-modal: 4000;
+  --z-dialog: 5000;
 
   /* Spacing */
   --spacing-xs: 4px;
@@ -88,10 +111,16 @@
   --transition-slow: 400ms var(--ease-out-expo);
 
   /* Safe Area Insets (for notches/status bars) */
-  --safe-area-top: env(safe-area-inset-top, 24px);
+  --safe-area-top: env(safe-area-inset-top, 0px);
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
   --safe-area-left: env(safe-area-inset-left, 0px);
   --safe-area-right: env(safe-area-inset-right, 0px);
+  --bottom-chrome-inset: calc(var(--mobile-nav-height) + var(--safe-area-bottom));
+}
+
+body.has-mini-player,
+.has-mini-player {
+  --bottom-chrome-inset: calc(var(--mobile-nav-height) + var(--mobile-mini-player-height) + var(--mobile-mini-player-gap) + var(--safe-area-bottom));
 }
 
 /* Reduced motion — zero out all animations */
@@ -208,67 +237,15 @@ textarea {
   outline-offset: 4px;
 }
 
-/* ============== Card hover lift ============== */
-.card {
-  transition: transform var(--transition-normal), box-shadow var(--transition-normal);
-}
-
-.card:hover {
-  transform: translateY(calc(-2px * var(--hover-scale-enabled, 1)));
-  box-shadow: var(--shadow-lg);
-}
-
-/* ============== Ripple (click feedback) ============== */
-.ripple {
-  position: relative;
-  overflow: hidden;
-}
-
-.ripple::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 10%, transparent 10%);
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: 0%;
-  opacity: 0;
-  transition: none;
-}
-
-.ripple:active::after {
-  background-size: 1000%;
-  opacity: 1;
-  transition: background-size 0.4s, opacity 0.3s;
-}
-
-/* ============== Skeleton shimmer ============== */
-.skeleton {
-  background: linear-gradient(90deg, var(--bg-surface) 25%, var(--bg-highlight) 50%, var(--bg-surface) 75%);
-  background-size: 200% 100%;
-  animation: skeleton-shimmer 1.5s infinite;
-  border-radius: var(--radius-sm);
-}
-
-@keyframes skeleton-shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-
-  100% {
-    background-position: -200% 0;
-  }
-}
-
 /* Skip-to-content link (hidden until focused) */
 .skip-link {
   position: fixed;
   top: -100%;
-  left: 0;
-  z-index: 9999;
+  left: var(--safe-area-left, 0px);
+  z-index: var(--z-dialog, 5000);
   padding: var(--spacing-sm) var(--spacing-md);
   background: var(--accent-primary);
-  color: var(--text-on-accent, #fff);
+  color: var(--text-on-accent, #000000);
   font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-sm);
   border-radius: 0 0 var(--radius-md) 0;
@@ -276,7 +253,7 @@ textarea {
 }
 
 .skip-link:focus {
-  top: 0;
+  top: var(--safe-area-top, 0px);
 }
 
 /* Button base styles */
@@ -355,7 +332,7 @@ a:hover {
 
 .icon-btn:hover {
   color: var(--text-primary);
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--surface-subtle-hover);
   transform: scale(1.1);
 }
 
@@ -446,7 +423,7 @@ a:hover {
   content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.15) 10%, transparent 10%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--text-primary) 18%, transparent) 10%, transparent 10%);
   background-position: center;
   background-repeat: no-repeat;
   opacity: 0;
@@ -565,99 +542,84 @@ a:hover {
   display: none !important;
 }
 
-@media (max-width: 768px) {
-  :root:not(.layout-desktop) {
-    --sidebar-width: 0px;
-    --player-height: 64px;
-    --header-height: 48px;
-    --mobile-bottom-inset: 130px;
-    /* 60px nav + 64px player + 6px margin */
-  }
+html.layout-mobile {
+  --sidebar-width: 0px;
+  --player-height: 64px;
+  --header-height: 48px;
+  --mobile-bottom-inset: var(--bottom-chrome-inset);
+}
 
-  :root:not(.layout-desktop) .show-mobile {
-    display: initial !important;
-  }
+html.layout-mobile .hide-mobile {
+  display: none !important;
+}
 
-  :root.layout-desktop .show-mobile {
-    display: none !important;
-  }
+html.layout-mobile .show-mobile {
+  display: initial !important;
+}
 
-  /* Enforce minimum touch targets (44x44px per Apple/Google guidelines) */
-  button,
-  a,
-  [role="button"] {
-    min-height: 44px;
-    min-width: 44px;
-  }
+html.layout-mobile .icon-btn {
+  width: 44px;
+  height: 44px;
+}
 
-  /* Inline chips/pills hug their label; the 44px box turns them into squares */
-  :is(
-    .scheme-pill,
-    .source-pill,
-    .genre-pill,
-    .mb-chip,
-    .type-chip,
-    .theme-chip,
-    .snippet-chip,
-    .trial-pill-tag,
-    .artist-chip,
-    .artist-pill-btn,
-    .section-pill,
-    .pill-active,
-    .pill-inactive,
-    .category-chip,
-    .device-info-pill,
-    .latency-pill,
-    .stat-pill,
-    .sync-pill,
-    .recap-pill,
-    .sleep-fade-pill,
-    .btn-reset-skin,
-    .card-repo-btn,
-    .badge
-  ) {
-    min-width: 0;
-    min-height: 32px;
-  }
+html.layout-mobile .icon-btn:hover {
+  transform: none;
+}
 
-  /* Smaller icon buttons are OK as long as they have padding */
-  .icon-btn {
-    width: 44px;
-    height: 44px;
-  }
+/* Narrower scrollbars on mobile */
+html.layout-mobile ::-webkit-scrollbar {
+  width: 4px;
+}
 
-  /* Narrower scrollbars on mobile */
-  ::-webkit-scrollbar {
-    width: 4px;
-  }
+/* Cards: no hover lift on touch */
+html.layout-mobile .card:hover {
+  transform: none;
+  box-shadow: none;
+}
 
-  /* Cards: no hover transform on touch */
-  .card:hover {
-    transform: none;
-  }
+/* Prevent accidental text selection on swipeable areas */
+html.layout-mobile .carousel-container,
+html.layout-mobile .quick-play-grid,
+html.layout-mobile .mobile-library-tabs,
+html.layout-mobile .bottom-nav {
+  user-select: none;
+}
 
-  /* Bottom padding for scrollable content (above fixed nav + player) */
-  .main-view .view-content {}
-
-  /* Prevent accidental text selection on swipeable areas */
-  .carousel-container,
-  .quick-play-grid,
-  .mobile-library-tabs,
-  .bottom-nav {
-    user-select: none;
-  }
-
-  /* Hide scrollbars in carousels */
-  .carousel-container::-webkit-scrollbar {
-    display: none;
-  }
+/* Hide scrollbars in carousels */
+html.layout-mobile .carousel-container::-webkit-scrollbar {
+  display: none;
 }
 
 /* ============================================
    LIGHT MODE SUPPORT
    ============================================ */
+:root[data-theme="light"] {
+  --bg-base: #f5f5f5;
+  --bg-elevated: #ffffff;
+  --bg-surface: #e8e8e8;
+  --bg-highlight: #d4d4d4;
+  --bg-press: #c0c0c0;
+
+  --accent-primary: #1DB954;
+  --accent-hover: #17a447;
+  --accent-subtle: rgba(29, 185, 84, 0.12);
+
+  --text-primary: #121212;
+  --text-secondary: #333333;
+  --text-subdued: #555555;
+  --text-tertiary: #888888;
+
+  --border-color: #d0d0d0;
+  --error-color: #d32f2f;
+  --accent-error: #d32f2f;
+
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.16);
+}
+
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]) {
     --bg-base: #f5f5f5;
     --bg-elevated: #ffffff;
     --bg-surface: #e8e8e8;
@@ -675,6 +637,7 @@ a:hover {
 
     --border-color: #d0d0d0;
     --error-color: #d32f2f;
+    --accent-error: #d32f2f;
 
     --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.08);
     --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.12);

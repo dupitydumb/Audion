@@ -61,24 +61,24 @@
         position: fixed;
         bottom: calc(var(--player-height, 96px) + 24px);
         left: 24px;
-        z-index: 9999;
+        z-index: var(--z-toast, 1100);
         pointer-events: none;
     }
 
     .sync-toast.mobile {
-        bottom: calc(var(--player-height, 64px) + 72px);
-        left: 16px;
-        right: 16px;
+        bottom: calc(var(--bottom-chrome-inset, 64px) + 12px);
+        left: calc(16px + var(--safe-area-left, 0px));
+        right: calc(16px + var(--safe-area-right, 0px));
     }
 
     .sync-card {
-        background: rgba(24, 24, 24, 0.8);
+        background: color-mix(in srgb, var(--bg-elevated) 88%, transparent);
         backdrop-filter: blur(16px);
         -webkit-backdrop-filter: blur(16px);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        border: 1px solid var(--border-subtle);
         border-radius: var(--radius-lg, 12px);
         padding: 12px 16px;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        box-shadow: var(--shadow-lg);
         min-width: 240px;
         max-width: 320px;
         pointer-events: auto;
@@ -97,7 +97,7 @@
     .loader {
         width: 24px;
         height: 24px;
-        color: var(--accent-primary, #1DB954);
+        color: var(--accent-primary);
         animation: spin 1s linear infinite;
         flex-shrink: 0;
     }
@@ -117,7 +117,7 @@
     .label {
         font-size: 0.85rem;
         font-weight: var(--font-weight-semibold);
-        color: var(--text-primary, #ffffff);
+        color: var(--text-primary);
         letter-spacing: -0.01em;
     }
 
@@ -130,14 +130,14 @@
     .progress-bar {
         flex: 1;
         height: 4px;
-        background: rgba(255, 255, 255, 0.1);
+        background: var(--surface-subtle-hover);
         border-radius: 2px;
         overflow: hidden;
     }
 
     .fill {
         height: 100%;
-        background: var(--accent-primary, #1DB954);
+        background: var(--accent-primary);
         border-radius: 2px;
         transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
         box-shadow: 0 0 8px var(--accent-subtle);
@@ -146,7 +146,7 @@
     .percent {
         font-size: var(--font-size-xs);
         font-weight: var(--font-weight-bold);
-        color: var(--text-secondary, #b3b3b3);
+        color: var(--text-secondary);
         font-variant-numeric: tabular-nums;
         min-width: 32px;
         text-align: right;

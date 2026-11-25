@@ -54,13 +54,13 @@
     .toast.success {
         background-color: var(--accent-primary);
         border-color: var(--accent-primary);
-        color: var(--text-on-accent, #fff);
+        color: var(--text-on-accent, #000000);
     }
 
     .toast.error {
         background-color: var(--accent-error, var(--error-color));
         border-color: var(--accent-error, var(--error-color));
-        color: #fff;
+        color: #ffffff;
     }
 
     .toast.warning {
@@ -83,25 +83,13 @@
         height: 28px;
         border-radius: var(--radius-full);
         flex-shrink: 0;
-        background-color: rgba(0, 0, 0, 0.15);
+        background-color: color-mix(in srgb, currentColor 14%, transparent);
         color: inherit;
     }
 
     .toast.info .icon-badge {
         background-color: var(--accent-subtle);
         color: var(--accent-primary);
-    }
-
-    .toast.success .icon-badge {
-        background-color: rgba(0, 0, 0, 0.2);
-    }
-
-    .toast.error .icon-badge {
-        background-color: rgba(0, 0, 0, 0.2);
-    }
-
-    .toast.warning .icon-badge {
-        background-color: rgba(0, 0, 0, 0.12);
     }
 
     /* ── Message ── */
@@ -128,7 +116,7 @@
         border-radius: var(--radius-full);
         flex-shrink: 0;
         color: inherit;
-        opacity: 0.6;
+        opacity: 0.72;
         transition: all var(--transition-fast);
         background: transparent;
         border: none;
@@ -138,7 +126,7 @@
 
     .close-btn:hover {
         opacity: 1;
-        background-color: rgba(0, 0, 0, 0.15);
+        background-color: color-mix(in srgb, currentColor 14%, transparent);
     }
 
     .toast.info .close-btn:hover {
@@ -148,15 +136,24 @@
     /* ── Mobile ── */
     :global(html.layout-mobile) .toast {
         min-width: 0;
-        max-width: calc(100vw - 32px);
+        max-width: calc(100vw - 32px - var(--safe-area-left, 0px) - var(--safe-area-right, 0px));
         width: auto;
         padding: 10px 14px;
+        border-radius: var(--radius-lg);
+    }
+
+    :global(html.layout-mobile) .message {
+        white-space: normal;
+        overflow: visible;
+        text-overflow: unset;
+        overflow-wrap: anywhere;
     }
 
     :global(html.layout-mobile) .close-btn {
-        width: 32px;
-        height: 32px;
-        min-width: 32px;
-        min-height: 32px;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+        margin: -6px -6px -6px 0;
     }
 </style>

@@ -3,7 +3,12 @@
   import { onMount, onDestroy } from "svelte";
   import { get } from "svelte/store";
   import { appSettings } from "$lib/stores/settings";
-  import { theme, applyBackground } from "$lib/stores/theme";
+  import {
+    theme,
+    applyBackground,
+    isSkinStudioOpen,
+    closeSkinStudio,
+  } from "$lib/stores/theme";
   import { applyEffect } from "$lib/services/effect-overlay";
   import { applySkinCss } from "$lib/services/skin-css";
   import { cleanupPlayer, initAudioBackend, currentTrack } from "$lib/stores/player";
@@ -17,8 +22,13 @@
     getIsLinux,
     listen,
   } from "$lib/api/tauri";
-  import { initMobileDetection, isMobile, useDesktopTitleBar } from "$lib/stores/mobile";
-  import { mobileSearchOpen } from "$lib/stores/mobile";
+  import {
+    initMobileDetection,
+    isMobile,
+    useDesktopTitleBar,
+    mobileSearchOpen,
+    dispatchBackHandlers,
+  } from "$lib/stores/mobile";
   import { initAndroidNotification } from "$lib/services/android-notification";
   import { initConsoleCapture } from "$lib/services/console-capture";
   import { loadLikedTracks } from "$lib/stores/liked";
@@ -38,7 +48,16 @@
     isMiniPlayer,
     setMiniPlayer,
     isStatsForNerdsOpen,
+    isStatsWrappedOpen,
   } from "$lib/stores/ui";
+  import {
+    confirmDialogStore,
+    closeConfirmDialog,
+    promptDialogStore,
+    closePromptDialog,
+  } from "$lib/stores/dialogs";
+  import { pluginDrawerOpen } from "$lib/stores/plugin-drawer";
+  import { searchQuery, clearSearch } from "$lib/stores/search";
   import { pluginStore } from "$lib/stores/plugin-store";
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
   import PromptDialog from "$lib/components/PromptDialog.svelte";
@@ -87,6 +106,11 @@
     applySkinCss($theme.customCss);
   }
 
+  $: hasMobileMiniPlayer = Boolean($isMobile && $currentTrack && !$isFullScreen);
+  $: if (browser) {
+    document.body.classList.toggle("has-mini-player", hasMobileMiniPlayer);
+  }
+
   // Page transitions via View Transitions API
   // data-page-transition attr on <html> is set by applyAnimationVars
   // CSS keyframes in app.css respond to that attribute
@@ -130,39 +154,78 @@
   // =========================================================================
   function setupAndroidBackHandler() {
     (window as any).__audionHandleBack = (): boolean => {
-      // 1. Close context menu if open
+      // 1. Dismiss highest-priority confirmation / prompt dialogs
+      if (get(confirmDialogStore).visible) {
+        closeConfirmDialog(false);
+        return true;
+      }
+
+      if (get(promptDialogStore).visible) {
+        closePromptDialog(null);
+        return true;
+      }
+
+      // 2. Close context menu if open
       const ctx = get(contextMenu);
       if (ctx.visible) {
         contextMenu.set({ ...ctx, visible: false });
         return true;
       }
 
-      // 2. Close full-screen player
-      if (get(isFullScreen)) {
-        closeFullScreen();
+      // 3. Dispatch component-registered LIFO back handlers (sheets, lyrics, discover stack, modals, etc.)
+      if (dispatchBackHandlers()) {
         return true;
       }
 
-      // 3. Close queue panel
+      // 4. Close global modals / overlays
+      if (get(isStatsForNerdsOpen)) {
+        isStatsForNerdsOpen.set(false);
+        return true;
+      }
+
+      if (get(isSkinStudioOpen)) {
+        closeSkinStudio();
+        return true;
+      }
+
+      if (get(isStatsWrappedOpen)) {
+        isStatsWrappedOpen.set(false);
+        return true;
+      }
+
+      // 5. Close queue panel
       if (get(isQueueVisible)) {
         isQueueVisible.set(false);
         return true;
       }
 
-      // 4. Close mobile search
-      if (get(mobileSearchOpen)) {
-        mobileSearchOpen.set(false);
+      // 6. Close full-screen player
+      if (get(isFullScreen)) {
+        closeFullScreen();
         return true;
       }
 
-      // 5. Navigate back through view history
+      // 7. Close plugin actions drawer
+      if (get(pluginDrawerOpen)) {
+        pluginDrawerOpen.set(false);
+        return true;
+      }
+
+      // 8. Close mobile search / active search query
+      if (get(mobileSearchOpen) || get(searchQuery).trim().length > 0) {
+        mobileSearchOpen.set(false);
+        clearSearch();
+        return true;
+      }
+
+      // 9. Navigate back through view history
       const nav = get(navigationHistory);
       if (nav.canGoBack) {
         goBack();
         return true;
       }
 
-      // 6. At root — return false so native side minimizes the app
+      // 10. At root — return false so native side minimizes the app
       return false;
     };
   }
@@ -382,8 +445,11 @@
       unlistenCoverCached();
     }
 
-    // Cleanup Android back handler
+    // Cleanup Android back handler & body class
     cleanupAndroidBackHandler();
+    if (browser) {
+      document.body.classList.remove("has-mini-player");
+    }
 
     // Cleanup player resources
     cleanupPlayer();
@@ -453,7 +519,7 @@
 <SkinStudioModal />
 
 {#if showMigrationBanner}
-  <div class="migration-banner">
+  <div class="migration-banner" class:with-titlebar={$useDesktopTitleBar && !$isMiniPlayer}>
     <div class="migration-content">
       {#if migrationPhase === "success"}
         <span class="success-icon"></span>
@@ -468,7 +534,7 @@
 {/if}
 
 {#if showPermissionBanner}
-  <div class="permission-banner">
+  <div class="permission-banner" class:with-titlebar={$useDesktopTitleBar && !$isMiniPlayer}>
     <div class="permission-content">
       <span class="permission-icon">🎵</span>
       <span class="permission-text">
@@ -516,28 +582,32 @@
     z-index: 0;
     pointer-events: none;
     width: 100vw;
-    height: 100vh;
+    height: 100dvh;
   }
 
   .app-content {
     padding-top: 48px; /* Height of TitleBar */
-    height: 100vh;
+    height: 100dvh;
     width: 100%;
     overflow: hidden; /* Prevent body scroll if content handles it, otherwise auto */
   }
 
   .migration-banner {
     position: fixed;
-    top: 48px; /* Below TitleBar */
-    left: 0;
-    right: 0;
+    top: var(--safe-area-top, 0px);
+    left: var(--safe-area-left, 0px);
+    right: var(--safe-area-right, 0px);
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     padding: 0.75rem 1rem;
     text-align: center;
-    z-index: 999;
+    z-index: var(--z-toast, 1100);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     animation: slideDown 0.3s ease-out;
+  }
+
+  .migration-banner.with-titlebar {
+    top: calc(48px + var(--safe-area-top, 0px));
   }
 
   @keyframes slideDown {
@@ -590,10 +660,11 @@
   }
 
   .app-content.mobile {
-    padding-top: var(--safe-area-top);
-    /* bottom nav is always present on mobile => reserve its height as the
-       baseline, regardless of whether a track is currently playing */
-    padding-bottom: calc(var(--mobile-nav-height, 60px) + var(--safe-area-bottom, 0px));
+    padding-top: var(--safe-area-top, 0px);
+    padding-right: var(--safe-area-right, 0px);
+    /* single bottom clearance driven by --bottom-chrome-inset (updates when .has-mini-player is active) */
+    padding-bottom: var(--bottom-chrome-inset, calc(var(--mobile-nav-height, 64px) + var(--safe-area-bottom, 0px)));
+    padding-left: var(--safe-area-left, 0px);
   }
 
   /* hybrid: mobile page layout, but the desktop title bar is still mounted
@@ -603,13 +674,9 @@
     padding-top: calc(48px + var(--safe-area-top, 0px));
   }
 
-  .app-content.mobile.has-mini-player {
-    padding-bottom: calc(var(--mobile-nav-height, 60px) + 72px + var(--safe-area-bottom, 0px));
-  }
-
   /* PIP mode: no title bar, no padding, fully transparent */
   .app-content.pip {
-    padding-top: 0;
+    padding: 0;
     background: transparent !important;
     background-color: transparent !important;
   }
@@ -617,16 +684,20 @@
   /* Permission Banner Styles */
   .permission-banner {
     position: fixed;
-    top: 48px;
-    left: 0;
-    right: 0;
+    top: var(--safe-area-top, 0px);
+    left: var(--safe-area-left, 0px);
+    right: var(--safe-area-right, 0px);
     background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
     color: white;
     padding: 0.75rem 1rem;
     text-align: center;
-    z-index: 1000;
+    z-index: var(--z-toast, 1100);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     animation: slideDown 0.3s ease-out;
+  }
+
+  .permission-banner.with-titlebar {
+    top: calc(48px + var(--safe-area-top, 0px));
   }
 
   .permission-content {

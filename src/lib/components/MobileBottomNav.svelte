@@ -40,11 +40,28 @@
     // Derive active tab from current state
     $: activeTab = deriveActiveTab($currentView.type);
 
-    function deriveActiveTab(viewType: string): MobileTab {
+    function deriveActiveTab(viewType: string): MobileTab | null {
         if (viewType === "home") return "home";
         if (viewType === "discover") return "discover";
-        if (viewType === "plugins" || viewType === "settings") return "plugins";
-        return "library";
+        if (viewType === "plugins") return "plugins";
+        if (viewType === "settings" || viewType === "listenbrainz") return null;
+        if (
+            viewType === "tracks" ||
+            viewType === "tracks-multiselect" ||
+            viewType === "albums" ||
+            viewType === "album-detail" ||
+            viewType === "artists" ||
+            viewType === "artist-detail" ||
+            viewType === "playlists" ||
+            viewType === "playlist-detail" ||
+            viewType === "liked-songs" ||
+            viewType === "subsonic" ||
+            viewType === "subsonic-album" ||
+            viewType === "subsonic-artist"
+        ) {
+            return "library";
+        }
+        return null;
     }
 
     function handleTabClick(tab: MobileTab) {
@@ -138,44 +155,57 @@
         position: fixed;
         bottom: 0;
         left: 0;
+        right: 0;
         width: 100%;
-        height: calc(60px + env(safe-area-inset-bottom));
+        height: calc(var(--mobile-nav-height, 64px) + var(--safe-area-bottom, 0px));
         background-color: var(--bg-base);
-        background: color-mix(in srgb, var(--bg-base) 82%, transparent);
+        background: color-mix(in srgb, var(--bg-base) 88%, transparent);
         backdrop-filter: blur(28px) saturate(190%);
         -webkit-backdrop-filter: blur(28px) saturate(190%);
-        border-top: 1px solid rgba(255, 255, 255, 0.08);
-        box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.35);
+        border-top: 1px solid var(--border-subtle);
+        box-shadow: var(--shadow-md);
         display: flex;
-        justify-content: space-around;
+        justify-content: stretch;
         align-items: flex-start;
         padding-top: 6px;
-        padding-bottom: env(safe-area-inset-bottom);
-        z-index: 1000;
+        padding-left: var(--safe-area-left, 0px);
+        padding-right: var(--safe-area-right, 0px);
+        padding-bottom: var(--safe-area-bottom, 0px);
+        z-index: var(--z-bottom-nav, 1000);
         -webkit-tap-highlight-color: transparent;
         user-select: none;
     }
 
     .nav-item {
         position: relative;
+        flex: 1 1 0;
+        min-width: 0;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         color: var(--text-subdued);
         text-align: center;
-        font-size: 10px;
+        font-size: var(--font-size-xs, 12px);
         font-weight: var(--font-weight-medium);
         gap: 3px;
-        padding: 4px 12px;
+        padding: 4px 6px;
         border-radius: var(--radius-sm);
         transition: transform 140ms cubic-bezier(0.34, 1.56, 0.64, 1), color 150ms ease;
         background: none;
         border: none;
         cursor: pointer;
-        min-width: 64px;
         min-height: 48px;
         -webkit-tap-highlight-color: transparent;
+    }
+
+    .nav-item span {
+        display: block;
+        max-width: 100%;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        line-height: 1.2;
     }
 
     .nav-item:active {
@@ -193,7 +223,7 @@
         top: 2px;
         width: 48px;
         height: 28px;
-        background: rgba(255, 255, 255, 0.08);
+        background: var(--surface-subtle-hover);
         border-radius: var(--radius-full, 9999px);
         z-index: -1;
     }

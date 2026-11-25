@@ -24,11 +24,14 @@
         goToArtistDetail,
         goToSettings,
         goToLikedSongs,
+        goToSubsonic,
+        goToListenBrainz,
     } from "$lib/stores/view";
     import { isStatsWrappedOpen } from "$lib/stores/ui";
     import { progressiveScan, isScanning } from "$lib/stores/progressiveScan";
     import { addToast } from "$lib/stores/toast";
-    import { isMobile } from "$lib/stores/mobile";
+    import { useDesktopTitleBar } from "$lib/stores/mobile";
+    import { subsonicConnected } from "$lib/stores/subsonic";
     import { customArtworks } from "$lib/stores/customArtwork";
     import { appSettings } from "$lib/stores/settings";
     import { pluginDrawerOpen } from "$lib/stores/plugin-drawer";
@@ -265,18 +268,40 @@
                 class="settings-btn"
                 on:click={() => pluginDrawerOpen.set(true)}
                 title={$_('nav.actions')}
+                aria-label={$_('nav.actions')}
             >
                 <Icon name="zap" size={22} />
             </button>
-            <button
-                class="settings-btn"
-                on:click={goToSettings}
-                title={$_('sidebar.settings')}
-            >
-                <Icon name="settings" size={24} />
-            </button>
+            {#if $useDesktopTitleBar}
+                <button
+                    class="settings-btn"
+                    on:click={goToSettings}
+                    title={$_('sidebar.settings')}
+                    aria-label={$_('sidebar.settings')}
+                >
+                    <Icon name="settings" size={24} />
+                </button>
+            {/if}
         </div>
     </header>
+
+    <!-- Quick access chips for Subsonic & ListenBrainz when configured -->
+    {#if $subsonicConnected || ($appSettings.listenBrainzEnabled && $appSettings.listenBrainzTokenSet)}
+        <div class="quick-access-chips">
+            {#if $subsonicConnected}
+                <button class="quick-chip" on:click={goToSubsonic}>
+                    <Icon name="radio" size={18} />
+                    <span>{$_('sidebar.subsonic', { default: 'Subsonic' })}</span>
+                </button>
+            {/if}
+            {#if $appSettings.listenBrainzEnabled && $appSettings.listenBrainzTokenSet}
+                <button class="quick-chip" on:click={goToListenBrainz}>
+                    <Icon name="sparkles" size={18} />
+                    <span>{$_('sidebar.recommendations')}</span>
+                </button>
+            {/if}
+        </div>
+    {/if}
 
     <!-- Liked Songs Banner -->
     <div class="liked-songs-banner-container">
@@ -398,7 +423,7 @@
                 <p class="recap-text">{$_('home.recapTeaser')}</p>
                 <div class="recap-pill">{$_('home.viewRecap')}</div>
             </div>
-            <div class="recap-card-decor">
+            <div class="recap-card-decor" aria-hidden="true">
                 <svg
                     viewBox="0 0 100 100"
                     fill="none"
@@ -408,15 +433,15 @@
                         cx="80"
                         cy="20"
                         r="40"
-                        fill="#1ed760"
-                        fill-opacity="0.3"
+                        fill="currentColor"
+                        fill-opacity="0.35"
                     />
                     <circle
                         cx="20"
                         cy="80"
                         r="30"
-                        fill="#1ed760"
-                        fill-opacity="0.1"
+                        fill="currentColor"
+                        fill-opacity="0.15"
                     />
                 </svg>
             </div>
@@ -685,9 +710,6 @@
             />
         {/if}
     {/if}
-
-    <!-- Bottom spacer for fixed nav + player -->
-    <div class="bottom-spacer"></div>
 </div>
 
 <style>
@@ -722,8 +744,10 @@
     }
 
     .add-music-btn {
-        width: 40px;
-        height: 40px;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
         border-radius: var(--radius-full);
         display: flex;
         align-items: center;
@@ -738,7 +762,7 @@
 
     .add-music-btn:hover {
         color: var(--text-primary);
-        background-color: rgba(255, 255, 255, 0.1);
+        background-color: var(--surface-subtle-hover);
     }
 
     .add-music-btn:active {
@@ -777,8 +801,10 @@
     }
 
     .settings-btn {
-        width: 40px;
-        height: 40px;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
         border-radius: var(--radius-full);
         display: flex;
         align-items: center;
@@ -793,7 +819,36 @@
 
     .settings-btn:hover {
         color: var(--text-primary);
-        background-color: rgba(255, 255, 255, 0.1);
+        background-color: var(--surface-subtle-hover);
+    }
+
+    /* ===== Quick Access Chips (Subsonic / ListenBrainz) ===== */
+    .quick-access-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        padding: 0 var(--spacing-md) var(--spacing-md);
+    }
+
+    .quick-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 44px;
+        padding: 8px 16px;
+        border-radius: var(--radius-full);
+        background-color: var(--surface-subtle);
+        border: 1px solid var(--border-subtle);
+        color: var(--text-primary);
+        font-size: var(--font-size-sm);
+        font-weight: var(--font-weight-semibold);
+        cursor: pointer;
+        transition: background-color var(--transition-fast);
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .quick-chip:active {
+        background-color: var(--surface-subtle-hover);
     }
 
     /* ===== Liked Songs Banner ===== */
@@ -867,13 +922,13 @@
         display: flex;
         align-items: center;
         gap: 8px;
-        background-color: rgba(255, 255, 255, 0.07);
+        background-color: var(--surface-subtle);
+        border: 1px solid var(--border-subtle);
         border-radius: var(--radius-sm);
         overflow: hidden;
         height: 56px;
         cursor: pointer;
         transition: background-color 0.2s ease;
-        border: none;
         padding: 0;
         text-align: left;
         color: var(--text-primary);
@@ -881,7 +936,7 @@
     }
 
     .quick-play-card:active {
-        background-color: rgba(255, 255, 255, 0.12);
+        background-color: var(--surface-subtle-hover);
     }
 
     .quick-play-art {
@@ -972,18 +1027,18 @@
         position: absolute;
         bottom: 8px;
         right: 8px;
-        width: 40px;
-        height: 40px;
+        width: 44px;
+        height: 44px;
         border-radius: 50%;
         background-color: var(--accent-primary);
-        color: var(--text-on-accent, #fff);
+        color: var(--text-on-accent, #000000);
         display: flex;
         align-items: center;
         justify-content: center;
         opacity: 0;
         transform: translateY(8px);
         transition: all 0.3s ease;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+        box-shadow: var(--shadow-md);
     }
 
     .spotify-card:active .card-play-btn {
@@ -1031,80 +1086,6 @@
         text-overflow: ellipsis;
     }
 
-    /* ===== Recap Card ===== */
-    .recap-card-container {
-        padding: 0 var(--spacing-md);
-        margin-bottom: var(--spacing-lg);
-    }
-
-    .recap-card {
-        width: 100%;
-        background: linear-gradient(135deg, #1a1a1a 0%, #0d0d0d 100%);
-        border: 1px solid color-mix(in srgb, var(--accent-primary), transparent 70%);
-        border-radius: var(--radius-lg);
-        padding: var(--spacing-lg);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        text-align: left;
-        position: relative;
-        overflow: hidden;
-        cursor: pointer;
-        color: white;
-    }
-
-    .recap-card:active {
-        transform: scale(0.98);
-    }
-
-    .recap-card-content {
-        position: relative;
-        z-index: 2;
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-    }
-
-    .recap-label {
-        font-size: 0.7rem;
-        font-weight: 800;
-        color: var(--accent-primary);
-        letter-spacing: 1px;
-    }
-
-    .recap-title {
-        font-size: 1.5rem;
-        font-weight: 800;
-        margin: 0;
-    }
-
-    .recap-text {
-        font-size: 0.85rem;
-        opacity: 0.7;
-        margin: 0 0 12px 0;
-    }
-
-    .recap-pill {
-        display: inline-block;
-        background: var(--accent-primary);
-        color: black;
-        padding: 6px 16px;
-        border-radius: 20px;
-        font-size: 0.85rem;
-        font-weight: var(--font-weight-bold);
-        width: fit-content;
-    }
-
-    .recap-card-decor {
-        position: absolute;
-        top: 0;
-        right: 0;
-        width: 120px;
-        height: 120px;
-        opacity: 0.5;
-        z-index: 1;
-    }
-
     /* ===== Empty State ===== */
     .empty-home {
         display: flex;
@@ -1129,32 +1110,6 @@
         color: var(--text-secondary);
     }
 
-    .empty-cta {
-        display: flex;
-        align-items: center;
-        gap: var(--spacing-sm);
-        margin-top: var(--spacing-md);
-        padding: 14px 28px;
-        background-color: var(--accent-primary);
-        color: var(--text-on-accent, #fff);
-        font-size: var(--font-size-md);
-        font-weight: var(--font-weight-bold);
-        border: none;
-        border-radius: var(--radius-full);
-        cursor: pointer;
-        transition: all var(--transition-fast);
-        -webkit-tap-highlight-color: transparent;
-    }
-
-    .empty-cta:active {
-        transform: scale(0.97);
-        background-color: var(--accent-hover);
-    }
-
-    .empty-cta svg {
-        flex-shrink: 0;
-    }
-
     .empty-scanning {
         display: flex;
         align-items: center;
@@ -1165,10 +1120,6 @@
         font-weight: var(--font-weight-medium);
     }
 
-    /* ===== Bottom Spacer ===== */
-    .bottom-spacer {
-        height: calc(var(--mobile-bottom-inset, 130px) + var(--spacing-md));
-    }
     .link {
         background: none;
         border: none;
@@ -1242,7 +1193,7 @@
     }
 
     .top-song-item:active {
-        background-color: rgba(255, 255, 255, 0.1);
+        background-color: var(--surface-subtle-hover);
     }
 
     .song-rank {
@@ -1516,11 +1467,11 @@
         height: 44px;
         border-radius: 50%;
         background-color: var(--accent-primary);
-        color: black;
+        color: var(--text-on-accent, #000000);
         display: flex;
         align-items: center;
         justify-content: center;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        box-shadow: var(--shadow-sm);
     }
 
     .link:hover {
@@ -1535,14 +1486,14 @@
 
     .chart-card {
         width: 280px;
-        background: rgba(255, 255, 255, 0.05);
+        background: var(--surface-subtle);
         border-radius: 12px;
         padding: 16px;
         flex-shrink: 0;
         display: flex;
         flex-direction: column;
         gap: 12px;
-        border: 1px solid rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--border-subtle);
     }
 
     .chart-card-header h3 {

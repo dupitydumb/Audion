@@ -15,7 +15,7 @@
         bottom: calc(var(--player-height, 96px) + var(--spacing-md));
         left: 50%;
         transform: translateX(-50%);
-        z-index: 9999;
+        z-index: var(--z-toast, 1100);
         display: flex;
         flex-direction: column-reverse;
         align-items: center;
@@ -23,11 +23,10 @@
         pointer-events: none;
     }
 
-    /* Mobile: above mini-player + bottom nav + safe area */
+    /* Mobile: above bottom chrome (nav + mini-player when active) + safe area */
     :global(html.layout-mobile) .toast-container {
-        /* mini-player ~64px + bottom-nav ~60px + safe area + spacing */
-        bottom: calc(64px + 60px + env(safe-area-inset-bottom, 0px) + var(--spacing-sm));
+        bottom: calc(var(--bottom-chrome-inset, 64px) + 12px);
         width: 100%;
-        padding: 0 var(--spacing-md);
+        padding: 0 calc(var(--spacing-md) + var(--safe-area-right, 0px)) 0 calc(var(--spacing-md) + var(--safe-area-left, 0px));
     }
 </style>

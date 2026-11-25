@@ -1,6 +1,6 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
-  import { onMount, tick } from "svelte";
+  import { onMount } from "svelte";
   import { get } from "svelte/store";
   import "../app.css";
   import Sidebar from "$lib/components/Sidebar.svelte";
@@ -30,9 +30,8 @@
   import { isMiniPlayer, withViewTransition, isStatsWrappedOpen, appBootTransitionActive } from "$lib/stores/ui";
   import { pluginStore } from "$lib/stores/plugin-store";
   import { appSettings } from "$lib/stores/settings";
-  import { isMobile, mobileSearchOpen } from "$lib/stores/mobile";
+  import { isMobile } from "$lib/stores/mobile";
   import MobileBottomNav from "$lib/components/MobileBottomNav.svelte";
-  import { searchQuery, clearSearch } from "$lib/stores/search";
   import PluginUpdateDialog from "$lib/components/PluginUpdateDialog.svelte";
   import PluginDrawer from "$lib/components/PluginDrawer.svelte";
 
@@ -43,31 +42,6 @@
     if (!$appSettings.developerMode) {
       e.preventDefault();
     }
-  }
-
-  // Mobile search handling
-  let mobileSearchInput = "";
-  let mobileSearchInputEl: HTMLInputElement | undefined;
-  let mobileSearchTimer: ReturnType<typeof setTimeout>;
-
-  function handleMobileSearchInput(e: Event) {
-    const target = e.target as HTMLInputElement;
-    mobileSearchInput = target.value;
-    clearTimeout(mobileSearchTimer);
-    mobileSearchTimer = setTimeout(() => {
-      searchQuery.set(mobileSearchInput);
-    }, 200);
-  }
-
-  function closeMobileSearch() {
-    mobileSearchOpen.set(false);
-    mobileSearchInput = "";
-    clearSearch();
-  }
-
-  // Auto-focus mobile search input when opened
-  $: if ($mobileSearchOpen && mobileSearchInputEl) {
-    tick().then(() => mobileSearchInputEl?.focus());
   }
 
   // startup page is now resolved synchronously in view.ts's getInitialView
@@ -250,8 +224,6 @@
         </div>
       </div>
 
-      <!-- PlayerBar always rendered for audio element (never hidden on mobile) -->
-      <PlayerBar />
       <MobileBottomNav />
 
       <FullScreenPlayer />

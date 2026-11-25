@@ -31,35 +31,41 @@ export function detectIsMobileSync(): boolean {
 export const isMobilePlatform = writable(detectIsMobileSync());
 
 function loadLayoutOverride(): LayoutOverride {
-    if (typeof window === 'undefined') return 'desktop';
+    if (typeof window === 'undefined') return 'auto';
     try {
         const raw = localStorage.getItem(LAYOUT_OVERRIDE_STORAGE_KEY);
-        if (raw === 'mobile' || raw === 'desktop' || raw === 'hybrid') return raw;
+        if (raw === 'auto' || raw === 'mobile' || raw === 'desktop' || raw === 'hybrid') {
+            return raw;
+        }
     } catch {
         // ignore read failures
     }
-    // Default to desktop when opened on desktop, mobile when opened on mobile
-    return detectIsMobileSync() ? 'mobile' : 'desktop';
+    return 'auto';
 }
 
 function createLayoutOverrideStore() {
     const store = writable<LayoutOverride>(loadLayoutOverride());
     const { subscribe, set } = store;
 
-    if (typeof window !== 'undefined') {
-        subscribe((value) => {
+    function setAndPersist(value: LayoutOverride) {
+        set(value);
+        if (typeof window !== 'undefined') {
             try {
-                localStorage.setItem(LAYOUT_OVERRIDE_STORAGE_KEY, value);
+                if (value === 'auto') {
+                    localStorage.removeItem(LAYOUT_OVERRIDE_STORAGE_KEY);
+                } else {
+                    localStorage.setItem(LAYOUT_OVERRIDE_STORAGE_KEY, value);
+                }
             } catch {
                 // ignore write failures
             }
-        });
+        }
     }
 
     return {
         subscribe,
-        set,
-        reset: () => set(detectIsMobileSync() ? 'mobile' : 'desktop'),
+        set: setAndPersist,
+        reset: () => setAndPersist('auto'),
     };
 }
 
@@ -135,7 +141,10 @@ export async function applyWindowSizeLimits(override: LayoutOverride) {
         const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
         const appWindow = getCurrentWindow();
 
-        if (override === 'desktop') {
+        const effectiveDesktop =
+            override === 'desktop' || (override === 'auto' && !get(isMobilePlatform));
+
+        if (effectiveDesktop) {
             await appWindow.setMinSize(new LogicalSize(DESKTOP_MIN_WIDTH, DESKTOP_MIN_HEIGHT));
 
             const size = await appWindow.innerSize();
@@ -200,19 +209,7 @@ async function detectMobilePlatform() {
     }
 
     isMobilePlatform.set(isMob);
-
-    // If no explicit user override was saved in localStorage, default to OS platform layout
-    if (typeof window !== 'undefined') {
-        try {
-            const raw = localStorage.getItem(LAYOUT_OVERRIDE_STORAGE_KEY);
-            if (!raw || raw === 'auto') {
-                const targetLayout: LayoutOverride = isMob ? 'mobile' : 'desktop';
-                layoutOverride.set(targetLayout);
-            }
-        } catch {
-            // ignore localStorage failures
-        }
-    }
+    void applyWindowSizeLimits(get(layoutOverride));
 }
 
 export function toggleMobileSidebar() {
@@ -227,5 +224,43 @@ export function openMobileSidebar() {
     isMobileSidebarOpen.set(true);
 }
 
-// Mobile search state (for bottom nav Search tab)
+// Mobile search state (for top-bar / unified search)
 export const mobileSearchOpen = writable(false);
+
+export type BackHandler = () => boolean;
+const backHandlers: BackHandler[] = [];
+
+/**
+ * Register a hardware-back handler on a LIFO stack.
+ * Most recently registered handlers execute first; returning `true` consumes the back event.
+ * Returns an unregister function.
+ */
+export function registerBackHandler(handler: BackHandler): () => void {
+    backHandlers.push(handler);
+    return () => {
+        const idx = backHandlers.lastIndexOf(handler);
+        if (idx !== -1) {
+            backHandlers.splice(idx, 1);
+        }
+    };
+}
+
+/**
+ * Run registered back handlers in LIFO order.
+ * Returns `true` if any handler consumed the back press.
+ */
+export function dispatchBackHandlers(): boolean {
+    const snapshot = [...backHandlers];
+    for (let i = snapshot.length - 1; i >= 0; i--) {
+        const handler = snapshot[i];
+        if (!backHandlers.includes(handler)) continue;
+        try {
+            if (handler()) {
+                return true;
+            }
+        } catch (err) {
+            console.error('[Mobile] Back handler threw:', err);
+        }
+    }
+    return false;
+}

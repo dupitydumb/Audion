@@ -6,6 +6,9 @@
         goToAlbums,
         goToArtists,
         goToPlaylists,
+        goToSettings,
+        goBack,
+        navigationHistory,
         type ViewState,
     } from "$lib/stores/view";
     import {
@@ -24,7 +27,7 @@
         searchHistory,
     } from "$lib/stores/search";
     import SearchHistoryDropdown from "./SearchHistoryDropdown.svelte";
-    import { isMobile, useDesktopTitleBar } from "$lib/stores/mobile";
+    import { isMobile, useDesktopTitleBar, mobileSearchOpen } from "$lib/stores/mobile";
     import MobileHome from "./MobileHome.svelte";
     import DesktopHome from "./DesktopHome.svelte";
     import LikedSongs from "./LikedSongs.svelte";
@@ -76,7 +79,53 @@
     $: if ($currentView !== _prevView) {
         _prevView = $currentView;
         if (isSearching) clearSearch();
+        if ($mobileSearchOpen) mobileSearchOpen.set(false);
     }
+
+    $: showMobileBack =
+        $navigationHistory.canGoBack &&
+        ($currentView.type === "settings" ||
+            $currentView.type === "listenbrainz" ||
+            $currentView.type === "subsonic" ||
+            $currentView.type === "subsonic-album" ||
+            $currentView.type === "subsonic-artist");
+
+    $: mobileTopTitle = (() => {
+        if (isSearching) return $_("main.searchResults");
+        switch ($currentView.type) {
+            case "home":
+                return "Audion";
+            case "tracks":
+            case "albums":
+            case "artists":
+            case "playlists":
+                return $_("sidebar.library");
+            case "discover":
+                return $_("sidebar.discover");
+            case "plugins":
+                return $_("sidebar.plugins");
+            case "settings":
+                return $_("sidebar.settings");
+            case "liked-songs":
+                return $_("sidebar.likedSongs");
+            case "listenbrainz":
+                return $_("sidebar.recommendations");
+            case "subsonic":
+            case "subsonic-album":
+            case "subsonic-artist":
+                return $_("sidebar.subsonic", { default: "Subsonic" });
+            case "album-detail":
+                return $_("album.type");
+            case "artist-detail":
+                return $currentView.name || $_("artist.type");
+            case "playlist-detail":
+                return $currentView.name || $_("common.playlist");
+            case "tracks-multiselect":
+                return $_("trackList.selectTracks");
+            default:
+                return "Audion";
+        }
+    })();
     let dropTargetPlaylist: ViewState | null = null;
 
     let sectionLabels: Record<SectionKey, string>;
@@ -115,9 +164,29 @@
         }, 200);
     }
 
-    function closeMobileSearch() {
+    function openMobileSearch() {
+        mobileSearchOpen.set(true);
+        tick().then(() => mobileSearchInputEl?.focus());
+    }
+
+    function clearMobileSearchInput() {
         mobileSearchInput = "";
         clearSearch();
+        tick().then(() => mobileSearchInputEl?.focus());
+    }
+
+    function closeMobileSearch() {
+        mobileSearchOpen.set(false);
+        mobileSearchInput = "";
+        clearSearch();
+    }
+
+    $: if (!$mobileSearchOpen && $searchQuery === "" && mobileSearchInput !== "") {
+        mobileSearchInput = "";
+    }
+
+    $: if ($mobileSearchOpen && mobileSearchInputEl) {
+        tick().then(() => mobileSearchInputEl?.focus());
     }
 
     // Drag & Drop logic
@@ -666,98 +735,145 @@
         </div>
     {/if}
 
-    <!-- Mobile: Search bar + library sub-tabs (Spotify pill style) -->
-    {#if $isMobile && isLibraryView}
-        <!-- search bar hidden in hybrid mode => the desktop title bar already
-             has its own search -->
-        {#if !$useDesktopTitleBar}
-        <div class="mobile-library-header">
-            <div
-                style="position:relative;"
-                on:focusin={() => (mobileSearchFocused = true)}
-                on:focusout={(e) => {
-                    if (!(e.relatedTarget instanceof Node) || !e.currentTarget.contains(e.relatedTarget)) {
-                        mobileSearchFocused = false;
-                    }
-                }}
-            >
-            <div class="mobile-search-bar">
-                <Icon name="search" size={18} className="search-icon" />
-                <input
-                    type="text"
-                    class="search-input"
-                    placeholder={$_("main.searchPlaceholder")}
-                    bind:value={mobileSearchInput}
-                    bind:this={mobileSearchInputEl}
-                    on:input={handleMobileSearchInput}
-                    on:keydown={(e) => {
-                        if (e.key === "Escape") closeMobileSearch();
-                        if (e.key === "Enter" && mobileSearchInput.trim()) addQueryToHistory(mobileSearchInput.trim());
+    <!-- Mobile: Consistent top bar across views (Search toggle + Settings gear) -->
+    {#if $isMobile && !$useDesktopTitleBar}
+        <header class="mobile-top-bar">
+            {#if $mobileSearchOpen || isSearching}
+                <div
+                    class="mobile-search-wrapper"
+                    on:focusin={() => (mobileSearchFocused = true)}
+                    on:focusout={(e) => {
+                        if (!(e.relatedTarget instanceof Node) || !e.currentTarget.contains(e.relatedTarget)) {
+                            mobileSearchFocused = false;
+                        }
                     }}
-                    spellcheck="false"
-                />
-                {#if mobileSearchInput}
+                >
+                    <div class="mobile-search-row">
+                        <button
+                            class="mobile-top-btn"
+                            on:click={closeMobileSearch}
+                            aria-label={$_("nav.closeSearch")}
+                            title={$_("nav.closeSearch")}
+                        >
+                            <Icon name="arrow-left" size={22} />
+                        </button>
+                        <div class="mobile-search-bar">
+                            <Icon name="search" size={18} className="search-icon" />
+                            <input
+                                type="text"
+                                class="search-input"
+                                placeholder={$_("main.searchPlaceholder")}
+                                bind:value={mobileSearchInput}
+                                bind:this={mobileSearchInputEl}
+                                on:input={handleMobileSearchInput}
+                                on:keydown={(e) => {
+                                    if (e.key === "Escape") closeMobileSearch();
+                                    if (e.key === "Enter" && mobileSearchInput.trim()) addQueryToHistory(mobileSearchInput.trim());
+                                }}
+                                spellcheck="false"
+                            />
+                            {#if mobileSearchInput}
+                                <button
+                                    class="search-clear"
+                                    on:click={clearMobileSearchInput}
+                                    aria-label={$_("common.clear")}
+                                >
+                                    <Icon name="x" size={18} />
+                                </button>
+                            {/if}
+                        </div>
+                    </div>
+                    {#if showMobileHistory}
+                        <SearchHistoryDropdown
+                            onSelectQuery={(q) => {
+                                mobileSearchInput = q;
+                                searchQuery.set(q);
+                                mobileSearchFocused = false;
+                            }}
+                            onClose={() => { mobileSearchFocused = false; }}
+                        />
+                    {/if}
+                </div>
+            {:else}
+                <div class="mobile-top-left">
+                    {#if showMobileBack}
+                        <button
+                            class="mobile-top-btn"
+                            on:click={goBack}
+                            aria-label={$_("common.back")}
+                            title={$_("common.back")}
+                        >
+                            <Icon name="arrow-left" size={22} />
+                        </button>
+                    {/if}
+                    <span class="mobile-top-title truncate">{mobileTopTitle}</span>
+                </div>
+                <div class="mobile-top-actions">
                     <button
-                        class="search-clear"
-                        on:click={closeMobileSearch}
-                        aria-label="Clear search"
+                        class="mobile-top-btn"
+                        on:click={openMobileSearch}
+                        aria-label={$_("common.search")}
+                        title={$_("common.search")}
                     >
-                        <Icon name="x" size={18} />
+                        <Icon name="search" size={22} />
                     </button>
-                {/if}
-            </div>
-            {#if showMobileHistory}
-                <SearchHistoryDropdown
-                    onSelectQuery={(q) => {
-                        mobileSearchInput = q;
-                        searchQuery.set(q);
-                        mobileSearchFocused = false;
-                    }}
-                    onClose={() => { mobileSearchFocused = false; }}
-                />
-            {/if}
-            </div>
-        </div>
-        {/if}
-
-        {#if !isSearching}
-            <div class="mobile-library-tabs-wrapper">
-                <div class="mobile-library-tabs">
                     <button
-                        class="lib-tab"
-                        class:active={$currentView.type === "tracks"}
-                        on:click={goToTracks}
+                        class="mobile-top-btn"
+                        class:active={$currentView.type === "settings"}
+                        on:click={() => {
+                            if ($currentView.type !== "settings") {
+                                closeMobileSearch();
+                                goToSettings();
+                            }
+                        }}
+                        aria-label={$_("sidebar.settings")}
+                        title={$_("sidebar.settings")}
                     >
-                        {$_("sidebar.allTracks")}
-                    </button>
-                    <button
-                        class="lib-tab"
-                        class:active={$currentView.type === "albums"}
-                        on:click={goToAlbums}
-                    >
-                        {$_("sidebar.albums")}
-                    </button>
-                    <button
-                        class="lib-tab"
-                        class:active={$currentView.type === "artists"}
-                        on:click={goToArtists}
-                    >
-                        {$_("sidebar.artists")}
-                    </button>
-                    <button
-                        class="lib-tab"
-                        class:active={$currentView.type === "playlists"}
-                        on:click={goToPlaylists}
-                    >
-                        {$_("sidebar.playlists")}
+                        <Icon name="settings" size={22} />
                     </button>
                 </div>
+            {/if}
+        </header>
+    {/if}
+
+    <!-- Mobile: Sticky library sub-tabs -->
+    {#if $isMobile && isLibraryView && !isSearching}
+        <div class="mobile-library-tabs-wrapper">
+            <div class="mobile-library-tabs">
+                <button
+                    class="lib-tab"
+                    class:active={$currentView.type === "tracks"}
+                    on:click={goToTracks}
+                >
+                    {$_("sidebar.allTracks")}
+                </button>
+                <button
+                    class="lib-tab"
+                    class:active={$currentView.type === "albums"}
+                    on:click={goToAlbums}
+                >
+                    {$_("sidebar.albums")}
+                </button>
+                <button
+                    class="lib-tab"
+                    class:active={$currentView.type === "artists"}
+                    on:click={goToArtists}
+                >
+                    {$_("sidebar.artists")}
+                </button>
+                <button
+                    class="lib-tab"
+                    class:active={$currentView.type === "playlists"}
+                    on:click={goToPlaylists}
+                >
+                    {$_("sidebar.playlists")}
+                </button>
             </div>
-        {/if}
+        </div>
     {/if}
 
     <div class="view-transition-container">
-        {#key $currentView.type + ($currentView.id ?? "") + isSearching}
+        {#key `${$currentView.type}:${$currentView.id ?? ""}:${$currentView.name ?? ""}:${$currentView.subsonicId ?? ""}:${isSearching}`}
             <div
                 class="transition-wrapper"
                 in:fade={{ duration: 200 }}
@@ -1048,14 +1164,14 @@
 
     .drop-error {
         position: fixed;
-        top: var(--spacing-lg);
+        top: calc(var(--safe-area-top, 0px) + var(--spacing-lg));
         left: 50%;
         transform: translateX(-50%);
         background: var(--bg-surface);
         color: var(--text-primary);
         padding: var(--spacing-md) var(--spacing-lg);
         border-radius: var(--radius-md);
-        z-index: 2000;
+        z-index: var(--z-toast, 1100);
         display: flex;
         align-items: center;
         gap: var(--spacing-md);
@@ -1090,13 +1206,13 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        min-width: 32px;
-        min-height: 32px;
+        min-width: 44px;
+        min-height: 44px;
     }
 
     .error-close:hover {
         color: var(--text-primary);
-        background: rgba(255, 255, 255, 0.1);
+        background: var(--surface-subtle-hover);
     }
 
     .error-close svg {
@@ -1177,7 +1293,7 @@
         display: flex;
         align-items: center;
         gap: 6px;
-        padding: 6px 4px;
+        padding: 6px 12px;
         border-radius: var(--radius-full);
         border: 1px solid transparent;
         font-size: 0.9375rem;
@@ -1192,7 +1308,7 @@
 
     .pill-active {
         background-color: var(--accent-primary);
-        color: var(--text-primary);
+        color: var(--text-on-accent, #000000);
         border-color: var(--accent-primary);
     }
 
@@ -1212,25 +1328,105 @@
         font-size: var(--font-size-xs);
         opacity: 0.75;
         font-weight: var(--font-weight-normal);
-        padding-right: 6px;
     }
 
-    /* ===== Mobile Library Header (search + tabs) ===== */
-    .mobile-library-header {
+    /* ===== Mobile Top Bar (Search + Settings across views) ===== */
+    .mobile-top-bar {
         flex-shrink: 0;
-        padding: var(--spacing-md)
-            var(--spacing-md) 0;
+        position: sticky;
+        top: 0;
+        z-index: var(--z-sticky, 100);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--spacing-sm);
+        min-height: 52px;
+        padding: 4px var(--spacing-sm) 4px var(--spacing-md);
         background-color: var(--bg-base);
+        border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .mobile-top-left {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        flex: 1;
+        min-width: 0;
+    }
+
+    .mobile-top-left .mobile-top-btn {
+        margin-left: -8px;
+    }
+
+    .mobile-top-title {
+        font-size: var(--font-size-lg);
+        font-weight: var(--font-weight-bold);
+        color: var(--text-primary);
+        min-width: 0;
+    }
+
+    .mobile-top-actions {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        flex-shrink: 0;
+    }
+
+    .mobile-top-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+        border-radius: var(--radius-full);
+        color: var(--text-secondary);
+        background: none;
+        border: none;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: background-color var(--transition-fast), color var(--transition-fast);
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .mobile-top-btn:active,
+    .mobile-top-btn:hover {
+        color: var(--text-primary);
+        background-color: var(--surface-subtle-hover);
+    }
+
+    .mobile-top-btn.active {
+        color: var(--accent-primary);
+    }
+
+    .mobile-search-wrapper {
+        position: relative;
+        flex: 1;
+        min-width: 0;
+    }
+
+    .mobile-search-row {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+    }
+
+    .mobile-search-row .mobile-top-btn {
+        margin-left: -8px;
     }
 
     .mobile-search-bar {
+        flex: 1;
+        min-width: 0;
         display: flex;
         align-items: center;
         gap: var(--spacing-sm);
         background-color: var(--bg-elevated);
+        border: 1px solid var(--border-subtle);
         border-radius: var(--radius-md);
         padding: 0 var(--spacing-md);
-        height: 40px;
+        height: 44px;
     }
 
     .mobile-search-bar .search-icon {
@@ -1260,9 +1456,11 @@
         align-items: center;
         justify-content: center;
         color: var(--text-subdued);
-        padding: 4px;
-        min-height: 28px;
-        min-width: 28px;
+        width: 44px;
+        height: 44px;
+        min-height: 44px;
+        min-width: 44px;
+        margin-right: -8px;
         border-radius: var(--radius-full);
         transition: color var(--transition-fast);
     }
@@ -1271,15 +1469,26 @@
         color: var(--text-primary);
     }
 
+    /* ===== Mobile Sticky 48px Library Tabs ===== */
     .mobile-library-tabs-wrapper {
         flex-shrink: 0;
-        padding: var(--spacing-md) var(--spacing-md) 0;
+        position: sticky;
+        top: 0;
+        z-index: var(--z-sticky, 100);
+        height: 48px;
+        min-height: 48px;
+        display: flex;
+        align-items: center;
+        padding: 0 var(--spacing-md);
         background-color: var(--bg-base);
+        border-bottom: 1px solid var(--border-subtle);
     }
 
     .mobile-library-tabs {
         display: flex;
+        align-items: center;
         gap: 8px;
+        width: 100%;
         overflow-x: auto;
         scrollbar-width: none;
         -webkit-overflow-scrolling: touch;
@@ -1293,12 +1502,17 @@
 
     .lib-tab {
         flex-shrink: 0;
-        padding: 8px 16px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        height: 34px;
+        min-height: 34px;
+        padding: 0 16px;
         border-radius: var(--radius-full);
         font-size: var(--font-size-sm);
         font-weight: var(--font-weight-semibold);
         color: var(--text-primary);
-        background-color: rgba(255, 255, 255, 0.07);
+        background-color: var(--surface-subtle);
         border: none;
         cursor: pointer;
         transition: all var(--transition-fast);
@@ -1308,11 +1522,11 @@
 
     .lib-tab.active {
         background-color: var(--accent-primary);
-        color: var(--text-on-accent, #fff);
+        color: var(--text-on-accent, #000000);
     }
 
     .lib-tab:active:not(.active) {
-        background-color: rgba(255, 255, 255, 0.12);
+        background-color: var(--surface-subtle-hover);
     }
 
     /* Mobile: hide the big heading => the pill tabs above already show
