@@ -1,7 +1,15 @@
 <script lang="ts">
     import { contextMenu, type ContextMenuItem } from "$lib/stores/ui";
-    import { fade } from "svelte/transition";
+    import { fade, fly } from "svelte/transition";
+    import { cubicOut } from "svelte/easing";
     import { onMount, onDestroy, tick } from "svelte";
+
+    function sheetTransition(node: Element) {
+        if ($isMobile) {
+            return fly(node, { y: 260, duration: 300, easing: cubicOut });
+        }
+        return fade(node, { duration: 100 });
+    }
     import { isMobile, registerBackHandler } from "$lib/stores/mobile";
     import Icon from "$lib/components/Icon.svelte";
 
@@ -155,7 +163,7 @@
         on:touchmove={handleSheetTouchMove}
         on:touchend={handleSheetTouchEnd}
         on:touchcancel={handleSheetTouchEnd}
-        transition:fade={{ duration: 100 }}
+        transition:sheetTransition
     >
         {#if $isMobile}
             <div

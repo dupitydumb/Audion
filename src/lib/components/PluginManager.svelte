@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { fade, scale } from "svelte/transition";
   import { _ } from "svelte-i18n";
   import {
     pluginStore,
@@ -956,10 +957,16 @@
   <div
     class="modal-overlay"
     on:click={closePermissionModal}
+    transition:fade={{ duration: 160 }}
     role="dialog"
     aria-modal="true"
   >
-    <div class="modal" on:click|stopPropagation role="document">
+    <div
+      class="modal"
+      on:click|stopPropagation
+      transition:scale={{ duration: 180, start: 0.96 }}
+      role="document"
+    >
       <div class="modal-header">
         <h2>
           {pendingPermissions.length > 0 || (selectedPlugin.manifest.cross_plugin_access && selectedPlugin.manifest.cross_plugin_access.length > 0)
@@ -2224,12 +2231,26 @@
   }
 
   :global(html.layout-mobile) .modal {
+    position: relative;
     width: 100%;
     max-width: 100%;
     max-height: 90dvh;
-    padding: var(--spacing-md);
+    padding: 20px var(--spacing-md) var(--spacing-md);
     border-radius: 20px 20px 0 0;
     border-bottom: none;
+    animation: springSlideUp 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
+  }
+
+  :global(html.layout-mobile) .modal::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--bg-highlight);
   }
 
   :global(html.layout-mobile) .modal-header {

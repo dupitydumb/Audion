@@ -909,6 +909,35 @@
         outline: 2px solid var(--accent-primary);
     }
 
+    :global(html.layout-mobile) .overlay {
+        align-items: flex-end;
+        padding: var(--safe-area-top, 16px) 0 0;
+    }
+
+    :global(html.layout-mobile) .modal {
+        position: relative;
+        max-width: 100%;
+        border-radius: 20px 20px 0 0;
+        border-bottom: none;
+        animation: springSlideUp 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
+    }
+
+    :global(html.layout-mobile) .modal::before {
+        content: "";
+        position: absolute;
+        top: 8px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 36px;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--bg-highlight);
+    }
+
+    :global(html.layout-mobile) .modal-footer {
+        padding-bottom: calc(var(--spacing-md) + var(--safe-area-bottom, 0px));
+    }
+
     :global(html.layout-mobile) .close-btn {
         width: 44px;
         height: 44px;
