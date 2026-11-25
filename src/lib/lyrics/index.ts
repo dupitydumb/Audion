@@ -173,7 +173,7 @@ const _lrclib     = new LRCLib();
 export const LYRICS_SOURCES: LyricsSource[] = [
     {
         id:     'applejson',
-        label:  'Apple Music',
+        label:  'Syllable Sync',
         format: 'json',
     
         async fetch(title, artist, album, duration, isrc) {

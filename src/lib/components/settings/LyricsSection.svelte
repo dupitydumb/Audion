@@ -27,7 +27,7 @@
   const SOURCE_HINTS: Record<string, string> = {
     user: 'Local .lrc files imported or added manually',
     embedded: 'Lyrics embedded in audio file metadata tags',
-    applejson: 'Apple Music synchronized syllables (requires Paxsenix API key)',
+    applejson: 'Syllable-synced lyrics (requires API key)',
     lrclib: 'Community synchronized and plain LRC lyrics',
     genius: 'Plain text lyrics and annotations from Genius',
   };
@@ -87,7 +87,7 @@
       priorityError = '';
     } else if (result === 'missing_api_key') {
       priorityError = $_('settings.lyricsPriorityMissingApiKey', {
-        default: 'Apple Music (applejson) needs a Paxsenix API key configured in Qobuz plugin settings before it can be used.',
+        default: 'Syllable-synced lyrics (applejson) require an API key configured in plugin settings before they can be used.',
       });
       addToast(priorityError, 'error');
     } else {
@@ -152,9 +152,9 @@
       addToast($_('settings.lyricsPrioritySaved', { default: 'Lyrics source priority saved' }), "success");
     } else if (result === 'missing_api_key') {
       priorityError = $_('settings.lyricsPriorityMissingApiKey', {
-        default: 'Apple Music (applejson) needs a Paxsenix API key configured in the Qobuz plugin settings before it can be used in the priority order.',
+        default: 'Syllable-synced lyrics (applejson) require an API key configured in plugin settings before they can be used in the priority order.',
       });
-      addToast($_('settings.lyricsPriorityMissingApiKeyToast', { default: 'Add a Paxsenix API key before using Apple Music in the priority order' }), "error");
+      addToast($_('settings.lyricsPriorityMissingApiKeyToast', { default: 'Add an API key before using syllable-synced lyrics in the priority order' }), "error");
     } else {
       priorityError = $_('settings.lyricsPriorityInvalidFormat', {
         values: { example: 'apple/imported/genius' },

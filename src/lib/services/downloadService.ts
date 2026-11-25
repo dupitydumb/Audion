@@ -139,7 +139,7 @@ export async function downloadTrack(
     }
 
     if (!canDownload(track)) {
-        throw new Error('Track cannot be downloaded. It may be a local track or the streaming plugin is not active.');
+        throw new Error('Track cannot be saved offline. It may already be a local file or no media provider is active.');
     }
 
     let streamUrl: string | null = null;

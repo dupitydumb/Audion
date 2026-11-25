@@ -239,7 +239,7 @@
                   <Icon name="folder" size={36} />
                 </div>
                 <h3>Choose a playlist file or drag & drop</h3>
-                <p>Supports .m3u, .m3u8, Spotify JSON, .sflx exports & plain text</p>
+                <p>Supports .m3u, .m3u8, JSON, .sflx exports & plain text</p>
                 <button type="button" class="btn-browse">Browse Files</button>
               </div>
 

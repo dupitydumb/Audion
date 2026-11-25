@@ -23,7 +23,7 @@
       title: "Audio Stream Providers",
       desc: "Resolves full-length playback streams. Priority #1 is tried first, with automatic fallback.",
       emptyTitle: "No audio stream providers registered",
-      emptyHint: "Install a streaming plugin (e.g. YouTube Music) to play catalog tracks in full.",
+      emptyHint: "Add an audio stream provider plugin or media server to play catalog tracks.",
     },
     {
       type: "metadata",

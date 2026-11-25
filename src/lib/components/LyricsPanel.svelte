@@ -91,7 +91,7 @@
         const key = localStorage.getItem('qobuz_pax_api_key')?.trim() ?? '';
         if (!key && !_appleKeyToastShown) {
             _appleKeyToastShown = true;
-            showPaxKeyToast('It is advised that you install the Qobuz plugin and configure your Paxsenix key in its settings for reliable Apple Music lyrics.');
+            showPaxKeyToast('Configure a lyrics API key in your plugin settings for reliable syllable-synced lyrics.');
         }
     }
 
@@ -102,7 +102,7 @@
         if (sourceId === 'genius') {
             const key = localStorage.getItem('qobuz_pax_api_key')?.trim() ?? '';
             if (!key) {
-                showPaxKeyToast('Genius lyrics require a Paxsenix API key. Add it in the Qobuz plugin settings.');
+                showPaxKeyToast('These lyrics require an API key configured in your plugin settings.');
                 return;
             }
         }
@@ -110,7 +110,7 @@
         if (sourceId === 'applejson') {
             const key = localStorage.getItem('qobuz_pax_api_key')?.trim() ?? '';
             if (!key) {
-                showPaxKeyToast('It is advised that you install the Qobuz plugin and configure your Paxsenix key in its settings for reliable Apple Music lyrics.');
+                showPaxKeyToast('Configure a lyrics API key in your plugin settings for reliable syllable-synced lyrics.');
             }
         }
 

@@ -206,7 +206,7 @@
         <div class="active-meta-col">
           <span class="active-swatch-dot" style="background-color: {$theme.accentColor};"></span>
           <span class="active-label">{$_("settings.activeSkin", { default: "Active" })}:</span>
-          <span class="active-name">{$theme.skinName || "Default Audion (Spotify Dark)"}</span>
+          <span class="active-name">{$theme.skinName || "Default Audion (Dark)"}</span>
           {#if $theme.skinAuthor}
             <span class="active-author">by {$theme.skinAuthor}</span>
           {/if}
