@@ -1,6 +1,8 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
     import { onMount } from "svelte";
+    import { fly } from "svelte/transition";
+    import { cubicOut } from "svelte/easing";
     import { get } from "svelte/store";
     import {
         currentTrack,
@@ -482,36 +484,42 @@
                         : "Album art"}
                     style="view-transition-name: {($isFullScreen || getIsLinux()) ? 'none' : 'player-album-art'};"
                 >
-                    {#if albumArt && !imageLoadFailed}
-                        <img
-                            src={albumArt}
-                            alt={$currentTrack.album || "Album art"}
-                            decoding="async"
-                            on:error={() => (imageLoadFailed = true)}
-                        />
-                    {:else}
-                        <div class="album-art-placeholder">
-                            <Icon name="music" size={24} />
+                    {#key $currentTrack.id}
+                        <div class="album-art-inner" in:fly={{ y: 6, duration: 220, easing: cubicOut }}>
+                            {#if albumArt && !imageLoadFailed}
+                                <img
+                                    src={albumArt}
+                                    alt={$currentTrack.album || "Album art"}
+                                    decoding="async"
+                                    on:error={() => (imageLoadFailed = true)}
+                                />
+                            {:else}
+                                <div class="album-art-placeholder">
+                                    <Icon name="music" size={24} />
+                                </div>
+                            {/if}
                         </div>
-                    {/if}
+                    {/key}
                 </button>
-                <div class="track-details">
-                    <div class="track-title-row">
-                        <span class="track-title truncate"
-                            >{$currentTrack.title || $_('player.unknownTitle')}</span
-                        >
-                        <AudioQualityBadge variant="compact" />
+                {#key $currentTrack.id}
+                    <div class="track-details" in:fly={{ y: 8, duration: 220, easing: cubicOut }}>
+                        <div class="track-title-row">
+                            <span class="track-title truncate"
+                                >{$currentTrack.title || $_('player.unknownTitle')}</span
+                            >
+                            <AudioQualityBadge variant="compact" />
+                        </div>
+                        <ArtistLinks
+                            artist={$currentTrack.artist || $_('common.unknownArtist')}
+                            artists={$currentTrack.artists}
+                            chipClass="track-artist truncate"
+                            marquee
+                            marqueeTrigger="always"
+                            resetKey={$currentTrack.id}
+                            on:select={(e) => goToArtistDetail(e.detail)}
+                        />
                     </div>
-                    <ArtistLinks
-                        artist={$currentTrack.artist || $_('common.unknownArtist')}
-                        artists={$currentTrack.artists}
-                        chipClass="track-artist truncate"
-                        marquee
-                        marqueeTrigger="always"
-                        resetKey={$currentTrack.id}
-                        on:select={(e) => goToArtistDetail(e.detail)}
-                    />
-                </div>
+                {/key}
 
                 <!-- Like button (desktop) -->
                 <button
@@ -1048,10 +1056,10 @@
         border-top: 1px solid var(--border-color);
         box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.25);
         display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr);
+        grid-template-columns: minmax(0, 1.15fr) minmax(0, 1.7fr) minmax(0, 1.15fr);
         align-items: center;
         padding: 0 calc(var(--spacing-md) + 2px);
-        gap: 12px;
+        gap: 16px;
         container-type: inline-size;
         color: var(--text-on-player, var(--text-primary));
         /* overflow: hidden; - Removed to allow menus to popup */
@@ -1072,6 +1080,8 @@
 
     .player-center {
         min-width: 0;
+        position: relative;
+        z-index: 2;
     }
 
     .player-right {
@@ -1141,6 +1151,11 @@
     button.album-art:disabled {
         opacity: 1;
         cursor: default;
+    }
+
+    .album-art-inner {
+        width: 100%;
+        height: 100%;
     }
 
     .album-art img {
@@ -1240,7 +1255,8 @@
     }
 
     .like-btn.liked {
-        color: var(--accent-color, #1db954);
+        color: var(--accent-primary, #1db954);
+        animation: heartPop 0.32s var(--ease-spring-snappy, cubic-bezier(0.34, 1.56, 0.64, 1));
     }
 
     .like-btn.liked:hover {
@@ -1652,6 +1668,8 @@
         background: var(--bg-elevated);
         box-shadow: var(--shadow-lg);
         z-index: 60;
+        transform-origin: bottom right;
+        animation: popoverUpIn 0.2s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
     }
 
     .sleep-timer-header {
@@ -1884,8 +1902,17 @@
     /* Overflow "⋯" menu when compressed */
     .overflow-more-wrapper {
         position: relative;
-        display: none;
+        display: flex;
         align-items: center;
+        max-width: 0;
+        opacity: 0;
+        transform: scale(0.85);
+        pointer-events: none;
+        overflow: hidden;
+        transition:
+            max-width 0.24s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1)),
+            opacity 0.18s ease,
+            transform 0.22s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
     }
 
     .overflow-menu-popover {
@@ -1978,25 +2005,65 @@
         text-align: right;
     }
 
+    .desktop-view-controls,
+    .volume-bar,
+    .utility-controls-desktop,
+    .desktop-device-picker,
+    .controls-buttons .btn-shuffle,
+    .controls-buttons .btn-repeat,
+    .player-left .track-details,
+    .player-left .like-btn {
+        transition:
+            max-width 0.24s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1)),
+            opacity 0.18s ease,
+            transform 0.22s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1)),
+            margin 0.22s ease,
+            padding 0.22s ease;
+        max-width: 480px;
+    }
+
     @container (max-width: 1524px) {
         .desktop-view-controls {
-            display: none !important;
+            max-width: 0 !important;
+            opacity: 0 !important;
+            transform: scale(0.85) !important;
+            pointer-events: none !important;
+            overflow: hidden !important;
+            margin: 0 !important;
+            padding: 0 !important;
         }
         .overflow-more-wrapper {
-            display: flex !important;
+            max-width: 48px !important;
+            opacity: 1 !important;
+            transform: scale(1) !important;
+            pointer-events: auto !important;
+            overflow: visible !important;
         }
     }
 
-    @container (max-width: 1350px) {
-        .volume-bar {
-            display: none !important;
-        }
-    }
-
-    @container (max-width: 1050px) {
+    @container (max-width: 1400px) {
         .utility-controls-desktop,
         .desktop-device-picker {
-            display: none !important;
+            max-width: 0 !important;
+            opacity: 0 !important;
+            transform: scale(0.85) !important;
+            pointer-events: none !important;
+            overflow: hidden !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+    }
+
+    @container (max-width: 860px) {
+        .volume-bar {
+            max-width: 0 !important;
+            min-width: 0 !important;
+            opacity: 0 !important;
+            transform: scale(0.85) !important;
+            pointer-events: none !important;
+            overflow: hidden !important;
+            margin: 0 !important;
+            padding: 0 !important;
         }
     }
 
@@ -2007,14 +2074,26 @@
         }
         .controls-buttons .btn-shuffle,
         .controls-buttons .btn-repeat {
-            display: none !important;
+            max-width: 0 !important;
+            opacity: 0 !important;
+            transform: scale(0.85) !important;
+            pointer-events: none !important;
+            overflow: hidden !important;
+            margin: 0 !important;
+            padding: 0 !important;
         }
     }
 
     @container (max-width: 550px) {
         .player-left .track-details,
         .player-left .like-btn {
-            display: none !important;
+            max-width: 0 !important;
+            opacity: 0 !important;
+            transform: scale(0.85) !important;
+            pointer-events: none !important;
+            overflow: hidden !important;
+            margin: 0 !important;
+            padding: 0 !important;
         }
     }
 </style>

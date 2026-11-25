@@ -1146,7 +1146,10 @@
     }
 
     .sidebar:not(.resizing) {
-        transition: width 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+        transition:
+            width 0.26s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1)),
+            min-width 0.26s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1)),
+            max-width 0.26s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
     }
 
     .sidebar.resizing {
@@ -1232,7 +1235,12 @@
     }
 
     .sidebar.collapsed .nav-section {
-        margin-bottom: var(--spacing-md);
+        margin-bottom: var(--spacing-sm);
+    }
+
+    .sidebar.collapsed .nav-section + .nav-section {
+        padding-top: var(--spacing-sm);
+        border-top: 1px solid var(--border-subtle, var(--border-color));
     }
 
     .sidebar.collapsed .nav-item {
@@ -1293,6 +1301,10 @@
     .sidebar-toggle-btn:hover {
         background: var(--bg-hover);
         color: var(--text-primary);
+    }
+
+    .sidebar-toggle-btn:active {
+        transform: scale(0.9);
     }
 
     .sidebar.collapsed .sidebar-toggle-btn {
@@ -1388,7 +1400,7 @@
         text-transform: uppercase;
         letter-spacing: 0.12em;
         color: var(--text-subdued);
-        margin-bottom: var(--spacing-md);
+        margin-bottom: var(--spacing-sm);
         padding-left: var(--spacing-md);
     }
 
@@ -1407,7 +1419,7 @@
         padding: 12px var(--spacing-md);
         border-radius: var(--radius-md);
         color: var(--text-secondary);
-        transition: all var(--transition-fast);
+        transition: background-color var(--transition-fast), color var(--transition-fast), transform 0.14s var(--ease-spring-snappy, cubic-bezier(0.34, 1.56, 0.64, 1));
         text-align: left;
         font-size: 0.9375rem;
         position: relative;
@@ -1417,7 +1429,11 @@
 
     .nav-item:hover {
         color: var(--text-primary);
-        background-color: rgba(255, 255, 255, 0.1);
+        background-color: var(--surface-subtle-hover, var(--bg-highlight));
+    }
+
+    .nav-item:active {
+        transform: scale(0.985);
     }
 
     .nav-item.active {
