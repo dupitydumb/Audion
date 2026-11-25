@@ -1991,6 +1991,11 @@
     z-index: 1;
     border-radius: var(--radius-md);
     background-color: transparent;
+    transition: transform 0.16s var(--ease-spring-snappy, cubic-bezier(0.34, 1.56, 0.64, 1)),
+                background-color var(--transition-fast);
+  }
+  :global(html.layout-mobile .track-row:active .track-row-inner) {
+    transform: scale(0.985);
   }
   :global(html.layout-mobile .track-row.swiping .track-row-inner),
   :global(html.layout-mobile .track-row.swipe-animating .track-row-inner) {

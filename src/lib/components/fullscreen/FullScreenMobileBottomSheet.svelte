@@ -103,8 +103,11 @@
     touchStartY = e.touches[0].clientY;
     touchStartX = e.touches[0].clientX;
     dragY = 0;
+    touchStartTime = Date.now();
     isDraggingSheet = true;
   }
+
+  let touchStartTime = 0;
 
   function handleSheetTouchMove(e: TouchEvent) {
     if (!isDraggingSheet || e.touches.length !== 1) return;
@@ -123,7 +126,11 @@
   function handleSheetTouchEnd() {
     if (!isDraggingSheet) return;
     isDraggingSheet = false;
-    if (dragY > 80) {
+    const elapsed = Date.now() - touchStartTime;
+    const velocity = dragY / Math.max(1, elapsed);
+
+    // Dismiss if dragged down far or flicked downwards with speed
+    if (dragY > 80 || (dragY > 30 && velocity > 0.45)) {
       dragY = 0;
       showMobileMenu = false;
       return;

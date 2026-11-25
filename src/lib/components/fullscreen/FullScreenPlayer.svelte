@@ -567,6 +567,7 @@
         {#if !$lyricsVisible}
           <div
             class="art-container"
+            class:playing={$isPlaying}
             in:fly={{
               y: isAndroid ? 8 : 20,
               duration: isAndroid ? 180 : 500,
@@ -1673,8 +1674,25 @@
     overflow: hidden;
     margin: 0 auto;
     flex-shrink: 0;
-    box-shadow: 0 20px 48px -12px rgba(0, 0, 0, 0.7);
+    box-shadow: 0 14px 28px -8px rgba(0, 0, 0, 0.45);
     border: 1px solid var(--fs-surface);
+    transform: scale(0.93);
+    transition: transform 0.45s var(--ease-spring-gentle, cubic-bezier(0.25, 1, 0.5, 1)),
+                box-shadow 0.45s ease;
+    will-change: transform, box-shadow;
+  }
+
+  .mobile-view .art-container.playing {
+    transform: scale(1);
+    box-shadow: 0 22px 52px -10px rgba(0, 0, 0, 0.75);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mobile-view .art-container,
+    .mobile-view .art-container.playing {
+      transform: none !important;
+      transition: none !important;
+    }
   }
 
   .mobile-view .art-container img {
@@ -1859,13 +1877,14 @@
     top: 50%;
     margin-top: -7px;
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.5), 0 0 8px var(--accent-primary);
-    transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: transform 180ms var(--ease-spring-snappy, cubic-bezier(0.34, 1.56, 0.64, 1));
     opacity: 1;
     pointer-events: none;
   }
 
   .mobile-view .progress-bar.active-seeking .progress-thumb {
-    transform: translateX(-50%) scale(1.3);
+    transform: translateX(-50%) scale(1.42);
+    box-shadow: 0 0 14px rgba(0, 0, 0, 0.6), 0 0 12px var(--accent-primary);
   }
 
   .mobile-view .time {
@@ -2007,6 +2026,12 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: transform 0.16s var(--ease-spring-snappy, cubic-bezier(0.34, 1.56, 0.64, 1)),
+                background-color var(--transition-fast);
+  }
+
+  .mobile-view .play-btn.large:active {
+    transform: scale(0.90);
   }
 
   .mobile-utility-row {

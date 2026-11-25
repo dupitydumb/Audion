@@ -106,16 +106,27 @@
 
   .mesh-fallback {
     position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
+    inset: -15%;
+    width: 130%;
+    height: 130%;
     opacity: 0.45;
     transition: background 0.6s ease;
+    animation: meshSway 18s ease-in-out infinite alternate;
+    will-change: transform;
     background:
       radial-gradient(circle at 20% 25%, var(--c0, #0a0a0a) 0%, transparent 60%),
       radial-gradient(circle at 80% 25%, var(--c1, #0a0a0a) 0%, transparent 60%),
       radial-gradient(circle at 20% 80%, var(--c2, #0a0a0a) 0%, transparent 60%),
       radial-gradient(circle at 80% 80%, var(--c3, #0a0a0a) 0%, transparent 60%),
       #0a0a0a;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .mesh-fallback {
+      animation: none !important;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
   }
 </style>

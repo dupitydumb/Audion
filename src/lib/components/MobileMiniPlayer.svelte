@@ -260,7 +260,7 @@
     display: flex;
     flex-direction: column;
     justify-content: center;
-    transition: background-color var(--transition-normal), transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    transition: background-color var(--transition-normal), transform 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
     cursor: pointer;
     touch-action: pan-y;
     -webkit-tap-highlight-color: transparent;
@@ -422,11 +422,22 @@
     align-items: center;
     justify-content: center;
     border-radius: var(--radius-full);
-    transition: transform var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast);
+    transition: transform 0.16s var(--ease-spring-snappy, cubic-bezier(0.34, 1.56, 0.64, 1)),
+                background-color var(--transition-fast),
+                color var(--transition-fast);
+  }
+
+  .control-btn:active {
+    transform: scale(0.88);
   }
 
   .control-btn.like-btn {
     color: color-mix(in srgb, var(--player-text, var(--text-on-player, var(--text-secondary))) 75%, transparent);
+  }
+
+  .control-btn.like-btn.liked {
+    color: var(--accent-primary, #e53935);
+    animation: heartPop 0.32s var(--ease-spring-snappy, cubic-bezier(0.34, 1.56, 0.64, 1));
   }
 
   .control-btn.like-btn.liked {

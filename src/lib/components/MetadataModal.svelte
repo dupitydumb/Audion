@@ -382,16 +382,18 @@
     @keyframes modal-in-mobile {
         from {
             opacity: 0;
-            transform: translateY(40px);
+            transform: translateY(40px) scale(0.96);
         }
         to {
             opacity: 1;
-            transform: translateY(0);
+            transform: translateY(0) scale(1);
         }
     }
 
     :global(html.layout-mobile) .modal {
         animation-name: modal-in-mobile;
+        animation-duration: 0.32s;
+        animation-timing-function: var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
     }
 
     :global(html.layout-mobile) .modal-header {

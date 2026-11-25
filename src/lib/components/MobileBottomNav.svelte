@@ -39,6 +39,7 @@
 
     // Derive active tab from current state
     $: activeTab = deriveActiveTab($currentView.type);
+    $: activeTabIndex = activeTab === "home" ? 0 : activeTab === "library" ? 1 : activeTab === "discover" ? 2 : activeTab === "plugins" ? 3 : -1;
 
     function deriveActiveTab(viewType: string): MobileTab | null {
         if (viewType === "home") return "home";
@@ -109,7 +110,10 @@
     });
 </script>
 
-<nav class="bottom-nav" class:has-player={!!$currentTrack}>
+<nav class="bottom-nav" class:has-player={!!$currentTrack} style="--active-tab-idx: {activeTabIndex};">
+    {#if activeTabIndex >= 0}
+        <div class="active-pill-slider" aria-hidden="true"></div>
+    {/if}
     <button
         class="nav-item"
         class:active={activeTab === "home"}
@@ -152,6 +156,7 @@
 
 <style>
     .bottom-nav {
+        position: relative;
         position: fixed;
         bottom: 0;
         left: 0;
@@ -174,6 +179,26 @@
         z-index: var(--z-bottom-nav, 1000);
         -webkit-tap-highlight-color: transparent;
         user-select: none;
+    }
+
+    .active-pill-slider {
+        position: absolute;
+        top: 8px;
+        left: calc(var(--safe-area-left, 0px) + (var(--active-tab-idx, 0) * ((100% - var(--safe-area-left, 0px) - var(--safe-area-right, 0px)) / 4)) + (((100% - var(--safe-area-left, 0px) - var(--safe-area-right, 0px)) / 4) - 52px) / 2);
+        width: 52px;
+        height: 28px;
+        background: var(--surface-subtle-hover);
+        border-radius: var(--radius-full, 9999px);
+        z-index: 0;
+        pointer-events: none;
+        transition: left 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
+        will-change: left;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .active-pill-slider {
+            transition: none !important;
+        }
     }
 
     .nav-item {
@@ -215,17 +240,6 @@
     .nav-item.active {
         color: var(--text-primary);
         font-weight: var(--font-weight-semibold);
-    }
-
-    .nav-item.active::before {
-        content: "";
-        position: absolute;
-        top: 2px;
-        width: 48px;
-        height: 28px;
-        background: var(--surface-subtle-hover);
-        border-radius: var(--radius-full, 9999px);
-        z-index: -1;
     }
 
     .nav-item.active :global(.nav-icon) {

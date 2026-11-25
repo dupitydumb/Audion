@@ -546,6 +546,11 @@
   /* Mobile */
   :global(html.layout-mobile) .media-card {
     padding: var(--spacing-sm);
+    transition: transform 0.22s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1)),
+                background-color var(--transition-normal);
+  }
+  :global(html.layout-mobile) .media-card:active {
+    transform: scale(0.96);
   }
   :global(html.layout-mobile) .media-card:hover {
     background-color: var(--bg-elevated);

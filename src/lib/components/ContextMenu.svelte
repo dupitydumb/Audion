@@ -81,9 +81,12 @@
         touchStartY = e.touches[0].clientY;
         touchStartX = e.touches[0].clientX;
         dragY = 0;
+        touchStartTime = Date.now();
         forceHandleDrag = fromHandle;
         isDraggingSheet = true;
     }
+
+    let touchStartTime = 0;
 
     function handleSheetTouchMove(e: TouchEvent) {
         if (!$isMobile || !isDraggingSheet || e.touches.length !== 1) return;
@@ -103,7 +106,10 @@
         if (!isDraggingSheet) return;
         isDraggingSheet = false;
         forceHandleDrag = false;
-        if (dragY > 70) {
+        const elapsed = Date.now() - touchStartTime;
+        const velocity = dragY / Math.max(1, elapsed);
+
+        if (dragY > 70 || (dragY > 25 && velocity > 0.45)) {
             closeMenu();
             return;
         }
