@@ -736,7 +736,7 @@
     {/if}
 
     <!-- Mobile: Consistent top bar across views (Search toggle + Settings gear) -->
-    {#if $isMobile && !$useDesktopTitleBar}
+    {#if $isMobile && !$useDesktopTitleBar && ($currentView.type !== "settings" || $mobileSearchOpen || isSearching)}
         <header class="mobile-top-bar">
             {#if $mobileSearchOpen || isSearching}
                 <div

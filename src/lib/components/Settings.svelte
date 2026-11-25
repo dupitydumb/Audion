@@ -1,9 +1,12 @@
 <script lang="ts">
   import { onMount, onDestroy, tick } from "svelte";
+  import { fly } from "svelte/transition";
+  import { cubicOut } from "svelte/easing";
   import { _ } from "svelte-i18n";
   import Icon from "$lib/components/Icon.svelte";
   import { isLoggedIn } from "$lib/stores/sync";
   import { isMobile, registerBackHandler } from "$lib/stores/mobile";
+  import { goBack } from "$lib/stores/view";
   import "./settings/styles.css";
 
   // Section components
@@ -1364,6 +1367,14 @@
           </span>
         {:else}
           <div class="mobile-main-title">
+            <button
+              type="button"
+              class="mobile-root-back-btn"
+              on:click={goBack}
+              aria-label={$_("common.back", { default: "Back" })}
+            >
+              <Icon name="arrow-left" size={20} />
+            </button>
             <h1>{$_("settings.title", { default: "Settings" })}</h1>
           </div>
         {/if}
@@ -1443,12 +1454,21 @@
       <!-- Mobile View Body: Drill-Down List vs Detail View -->
       <div class="mobile-body-container">
         {#if showEqEditor}
-          <div class="settings-pane mobile-detail-pane">
+          <div
+            class="settings-pane mobile-detail-pane"
+            in:fly={{ x: 64, duration: 300, easing: cubicOut }}
+            out:fly={{ x: 64, duration: 240, easing: cubicOut }}
+          >
             <EqualizerEditor on:back={() => (showEqEditor = false)} />
           </div>
         {:else if mobileDetailTab === null}
           <!-- Drill-down Category List (Instagram / iOS Settings style) -->
-          <div class="mobile-categories-list" role="list">
+          <div
+            class="mobile-categories-list"
+            role="list"
+            in:fly={{ x: -36, duration: 280, easing: cubicOut }}
+            out:fly={{ x: -36, duration: 220, easing: cubicOut }}
+          >
             {#each TABS as tab}
               <button
                 class="mobile-category-row"
@@ -1477,6 +1497,8 @@
             class="settings-pane mobile-detail-pane"
             id={`panel-${mobileDetailTab}`}
             role="tabpanel"
+            in:fly={{ x: 64, duration: 300, easing: cubicOut }}
+            out:fly={{ x: 64, duration: 240, easing: cubicOut }}
           >
             <div class="category-sections">
               {#if mobileDetailTab === "general"}
@@ -1847,6 +1869,33 @@
     min-height: 52px;
   }
 
+  .mobile-main-title {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .mobile-root-back-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    margin-left: -10px;
+    background: none;
+    border: none;
+    border-radius: var(--radius-full, 9999px);
+    color: var(--text-primary);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .mobile-root-back-btn:active {
+    background: var(--surface-subtle-hover, var(--bg-highlight));
+  }
+
   .mobile-main-title h1 {
     font-size: 1.25rem;
     font-weight: 700;
@@ -1891,7 +1940,22 @@
   .mobile-body-container {
     flex: 1;
     min-height: 0;
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+  }
+
+  .mobile-categories-list,
+  .mobile-detail-pane {
+    grid-area: 1 / 1;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
     overflow-y: auto;
+    background: var(--bg-base);
+    -webkit-overflow-scrolling: touch;
   }
 
   /* Drill-Down Categories List */
@@ -1912,11 +1976,12 @@
     border-radius: var(--radius-md, 8px);
     cursor: pointer;
     text-align: left;
-    transition: background var(--transition-fast);
+    transition: background var(--transition-fast), transform 0.16s var(--ease-spring-snappy, cubic-bezier(0.34, 1.56, 0.64, 1));
   }
 
   .mobile-category-row:active {
     background: var(--bg-highlight);
+    transform: scale(0.985);
   }
 
   .mobile-category-icon-badge {
