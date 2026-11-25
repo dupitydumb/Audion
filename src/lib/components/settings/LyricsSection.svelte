@@ -427,7 +427,7 @@
   .lyrics-advanced-wrap {
     padding: 12px 16px 16px;
     border-top: 1px solid var(--border-color);
-    background: rgba(0, 0, 0, 0.08);
+    background: var(--surface-subtle, rgba(128, 128, 128, 0.08));
   }
 
   .advanced-card {
@@ -479,7 +479,7 @@
 
   .raw-priority-error {
     font-size: 12px;
-    color: var(--color-error, #ef4444);
+    color: var(--error-color, #ef4444);
     margin-top: 2px;
   }
 
@@ -517,7 +517,7 @@
     height: 34px;
     padding: 0 12px;
     background: var(--accent-primary);
-    color: #000;
+    color: var(--text-on-accent, #000);
     font-size: 13px;
     font-weight: 600;
     border: none;
@@ -534,7 +534,7 @@
     height: 34px;
     padding: 0 14px;
     background: rgba(239, 68, 68, 0.15);
-    color: #ef4444;
+    color: var(--error-color, #ef4444);
     font-size: 13px;
     font-weight: 500;
     border: 1px solid rgba(239, 68, 68, 0.3);
@@ -544,8 +544,8 @@
   }
 
   .btn-danger-compact:hover:not(:disabled) {
-    background: #ef4444;
-    color: #fff;
+    background: var(--error-color, #ef4444);
+    color: var(--text-on-accent, #fff);
   }
 
   .btn-danger-compact:disabled {
@@ -567,22 +567,26 @@
     to { transform: rotate(360deg); }
   }
 
-  @media (max-width: 580px) {
-    .raw-priority-row {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 10px;
-    }
+  :global(html.layout-mobile) .raw-priority-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
 
-    .raw-priority-control,
-    .raw-delete-control {
-      width: 100%;
-      justify-content: flex-start;
-    }
+  :global(html.layout-mobile) .raw-priority-control,
+  :global(html.layout-mobile) .raw-delete-control {
+    width: 100%;
+    justify-content: flex-start;
+  }
 
-    .lyrics-text-input {
-      flex: 1;
-      width: auto;
-    }
+  :global(html.layout-mobile) .lyrics-text-input {
+    flex: 1;
+    width: auto;
+    min-height: 44px;
+  }
+
+  :global(html.layout-mobile) .btn-save-compact,
+  :global(html.layout-mobile) .btn-danger-compact {
+    min-height: 44px;
   }
 </style>

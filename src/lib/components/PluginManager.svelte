@@ -18,6 +18,7 @@
   import { invoke, convertFileSrc } from "@tauri-apps/api/core";
   import { onDestroy } from "svelte";
   import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
+  import { isMobile, registerBackHandler } from "$lib/stores/mobile";
   import Icon from "$lib/components/Icon.svelte";
   import { createSflxExtensionAdapter } from "$lib/plugins/sflx-adapter";
   import { globalProviders } from "$lib/plugins/providers";
@@ -43,9 +44,28 @@
   let pluginContentEl: HTMLDivElement;
   let scrollRestored = false;
   let currentScrollTop = 0;
+  let unregisterBackHandler: (() => void) | null = null;
+
+  $: if (showPermissionModal) {
+    if (!unregisterBackHandler) {
+      unregisterBackHandler = registerBackHandler(() => {
+        if (installState !== "loading") {
+          closePermissionModal();
+        }
+        return true;
+      });
+    }
+  } else if (unregisterBackHandler) {
+    unregisterBackHandler();
+    unregisterBackHandler = null;
+  }
 
   onDestroy(() => {
     saveScroll("plugins", currentScrollTop);
+    if (unregisterBackHandler) {
+      unregisterBackHandler();
+      unregisterBackHandler = null;
+    }
   });
 
   // Local state
@@ -445,14 +465,16 @@
   <header class="view-header">
     <h1>{$_('pluginManager.title')}</h1>
     <div class="header-actions">
-      <button
-        class="btn-secondary"
-        on:click={openPluginsFolder}
-        title={$_('pluginManager.openFolderTitle')}
-      >
-        <Icon name="folder" size={16} />
-        {$_('pluginManager.openFolder')}
-      </button>
+      {#if !$isMobile}
+        <button
+          class="btn-secondary"
+          on:click={openPluginsFolder}
+          title={$_('pluginManager.openFolderTitle')}
+        >
+          <Icon name="folder" size={16} />
+          {$_('pluginManager.openFolder')}
+        </button>
+      {/if}
 
       <button
         class="btn-secondary"
@@ -613,7 +635,7 @@
             <div class="plugin-info">
               <span class="plugin-name truncate" title={plugin.manifest.name}>{plugin.manifest.name}</span>
               <span class="plugin-author truncate"
-                >{plugin.manifest.author} Â· v{plugin.manifest.version}</span
+                >{plugin.manifest.author} · v{plugin.manifest.version}</span
               >
               <span class="plugin-desc truncate" title={plugin.manifest.description || $_('pluginManager.noDescription')}
                 >{plugin.manifest.description || $_('pluginManager.noDescription')}</span
@@ -705,7 +727,7 @@
             <div class="plugin-info">
               <span class="plugin-name truncate" title={plugin.manifest.name}>{plugin.manifest.name}</span>
               <span class="plugin-author truncate"
-                >{plugin.manifest.author} Â· v{plugin.manifest.version}</span
+                >{plugin.manifest.author} · v{plugin.manifest.version}</span
               >
               <span class="plugin-desc truncate" title={plugin.manifest.description || $_('pluginManager.noDescription')}
                 >{plugin.manifest.description || $_('pluginManager.noDescription')}</span
@@ -969,7 +991,7 @@
           <h3 class="modal-plugin-name">{selectedPlugin.manifest.name}</h3>
           <div class="modal-plugin-sub">
             <span class="modal-plugin-author">{selectedPlugin.manifest.author}</span>
-            <span class="modal-dot">Â·</span>
+            <span class="modal-dot">·</span>
             <span class="modal-plugin-version">v{selectedPlugin.manifest.version}</span>
           </div>
           <div class="plugin-badges">
@@ -1269,9 +1291,7 @@
   }
 
   :global(html.layout-mobile) .plugin-content {
-    padding-bottom: calc(
-      var(--mobile-bottom-inset, 130px) + var(--spacing-xl)
-    );
+    padding-bottom: var(--spacing-lg);
   }
 
   .plugin-grid {
@@ -1714,11 +1734,12 @@
   .modal-overlay {
     position: fixed;
     inset: 0;
+    padding: calc(16px + var(--safe-area-top, 0px)) 16px calc(16px + var(--safe-area-bottom, 0px));
     background: rgba(0, 0, 0, 0.7);
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: var(--z-modal, 4000);
   }
 
   .modal {
@@ -1726,8 +1747,8 @@
     border-radius: var(--radius-lg);
     padding: var(--spacing-lg);
     max-width: 520px;
-    width: 90%;
-    max-height: 80vh;
+    width: 100%;
+    max-height: 90dvh;
     overflow-y: auto;
     overscroll-behavior-y: contain;
     border: 1px solid var(--border-color);
@@ -2039,7 +2060,7 @@
     white-space: nowrap;
   }
 
-  /* â”€â”€ Mobile â”€â”€ */
+  /* ── Mobile ── */
   :global(html.layout-mobile) .plugin-view {
     padding: var(--spacing-md);
   }
@@ -2056,30 +2077,33 @@
   }
 
   :global(html.layout-mobile) .header-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: flex;
+    flex-wrap: wrap;
     gap: var(--spacing-sm);
     width: 100%;
   }
 
   :global(html.layout-mobile) .header-actions > button {
+    flex: 1 1 auto;
     min-width: 0;
-    min-height: 40px;
-    padding: 0 var(--spacing-sm);
+    min-height: 44px;
+    height: auto;
+    padding: 8px var(--spacing-sm);
     font-size: var(--font-size-xs);
-    justify-content: flex-start;
-    white-space: normal;
-    text-align: left;
+    justify-content: center;
+    white-space: nowrap;
+    text-align: center;
   }
 
   :global(html.layout-mobile) .sort-selector {
-    grid-column: 1 / -1;
+    flex: 1 1 100%;
     min-width: 0;
     width: 100%;
   }
 
   :global(html.layout-mobile) .sort-btn {
     width: 100%;
+    min-height: 44px;
     justify-content: space-between;
   }
 
@@ -2090,10 +2114,10 @@
 
   :global(html.layout-mobile) .remove-btn {
     opacity: 1;
-    width: 28px;
-    height: 28px;
-    min-width: 0;
-    min-height: 0;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
   }
 
   :global(html.layout-mobile) .plugin-badges {
@@ -2120,7 +2144,7 @@
 
   :global(html.layout-mobile) .tab {
     min-width: 0;
-    min-height: 36px;
+    min-height: 44px;
     padding: 6px 12px;
     border-radius: var(--radius-full);
     background-color: var(--bg-elevated);
@@ -2147,7 +2171,7 @@
   }
 
   :global(html.layout-mobile) .category-chip {
-    min-height: unset;
+    min-height: 36px;
     min-width: unset;
     padding: 6px var(--spacing-sm);
     font-size: var(--font-size-xs);
@@ -2160,7 +2184,20 @@
   }
 
   :global(html.layout-mobile) .registry-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--spacing-sm);
     padding: var(--spacing-md);
+  }
+
+  :global(html.layout-mobile) .registry-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  :global(html.layout-mobile) .registry-actions button {
+    min-height: 44px;
+    flex: 1;
   }
 
   :global(html.layout-mobile) .registries-container {
@@ -2173,21 +2210,26 @@
 
   :global(html.layout-mobile) .create-form input {
     width: 100%;
+    min-height: 44px;
   }
 
-  /* Permission / install modal â€” bottom sheet above nav + player */
+  :global(html.layout-mobile) .create-form button {
+    min-height: 44px;
+  }
+
+  /* Permission / install modal — bottom sheet respecting safe areas */
   :global(html.layout-mobile) .modal-overlay {
     align-items: flex-end;
-    padding: 0 0 var(--mobile-bottom-inset, 130px);
+    padding: var(--safe-area-top, 16px) 0 0;
   }
 
   :global(html.layout-mobile) .modal {
     width: 100%;
     max-width: 100%;
-    max-height: 100%;
+    max-height: 90dvh;
     padding: var(--spacing-md);
-    border-radius: 20px;
-    border-bottom: 1px solid var(--border-color);
+    border-radius: 20px 20px 0 0;
+    border-bottom: none;
   }
 
   :global(html.layout-mobile) .modal-header {
@@ -2196,6 +2238,13 @@
 
   :global(html.layout-mobile) .modal-header h2 {
     font-size: var(--font-size-lg);
+  }
+
+  :global(html.layout-mobile) .modal-close-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
   }
 
   :global(html.layout-mobile) .modal-plugin-header {
@@ -2227,7 +2276,7 @@
     bottom: 0;
     z-index: 5;
     margin: var(--spacing-md) calc(-1 * var(--spacing-md)) calc(-1 * var(--spacing-md));
-    padding: var(--spacing-sm) var(--spacing-md);
+    padding: var(--spacing-sm) var(--spacing-md) calc(var(--spacing-sm) + var(--safe-area-bottom, 0px));
     background-color: var(--bg-elevated);
     border-top: 1px solid var(--border-color);
     justify-content: stretch;

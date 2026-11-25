@@ -128,7 +128,7 @@
     flex-direction: column;
     height: 100%;
     overflow: hidden;
-    background: var(--bg-primary);
+    background: var(--bg-base, var(--bg-primary));
     color: var(--text-primary);
   }
 
@@ -138,7 +138,7 @@
     align-items: flex-end;
     gap: 20px;
     padding: 20px 24px 16px;
-    background: linear-gradient(to bottom, var(--bg-elevated), var(--bg-primary));
+    background: linear-gradient(to bottom, var(--bg-elevated), var(--bg-base, var(--bg-primary)));
     flex-shrink: 0;
   }
 
@@ -267,7 +267,56 @@
     align-items: center;
     gap: 8px;
     padding: 16px;
-    color: #ff6b6b;
+    color: var(--error-color, #ff6b6b);
     font-size: 0.875rem;
+  }
+
+  :global(html.layout-mobile) .detail-header {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 12px;
+    padding: 16px 16px 14px;
+    position: relative;
+  }
+
+  :global(html.layout-mobile) .back-btn {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    margin-top: 0;
+  }
+
+  :global(html.layout-mobile) .header-art {
+    width: 148px;
+    height: 148px;
+    margin-top: 8px;
+  }
+
+  :global(html.layout-mobile) .header-meta {
+    width: 100%;
+  }
+
+  :global(html.layout-mobile) .meta-title {
+    font-size: 1.35rem;
+    white-space: normal;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+  }
+
+  :global(html.layout-mobile) .header-actions {
+    justify-content: center;
+    width: 100%;
+  }
+
+  :global(html.layout-mobile) .play-all-btn {
+    min-height: 44px;
+    padding: 10px 24px;
   }
 </style>

@@ -6,6 +6,7 @@
   import { purgeFetchedCovers } from "$lib/stores/library";
   import { stripFetchedCoversFromPlayer } from "$lib/stores/player";
   import { confirm } from "$lib/stores/dialogs";
+  import { addToast } from "$lib/stores/toast";
   import { slide } from "svelte/transition";
   import { createEventDispatcher } from "svelte";
   import Icon from "$lib/components/Icon.svelte";
@@ -63,7 +64,7 @@
       await resetDatabase();
       location.reload();
     } catch (err) {
-      alert(String(err));
+      addToast(String(err), "error");
     }
   }
 
@@ -246,11 +247,15 @@
     border-color: var(--error-color, #ef4444) !important;
   }
 
-  @media (max-width: 640px) {
-    .danger-action-row {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 10px;
-    }
+  :global(html.layout-mobile) .danger-action-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  :global(html.layout-mobile) .danger-btn {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
   }
 </style>

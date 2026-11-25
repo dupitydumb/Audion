@@ -311,7 +311,7 @@
   .provider-id-tag {
     font-size: var(--font-size-xs);
     color: var(--text-subdued);
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--surface-subtle, rgba(255, 255, 255, 0.04));
     padding: 1px 6px;
     border-radius: var(--radius-sm);
   }
@@ -337,8 +337,8 @@
 
   .icon-btn-sm:hover:not(:disabled) {
     color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.2);
+    background: var(--surface-subtle-hover, rgba(255, 255, 255, 0.08));
+    border-color: var(--text-subdued);
   }
 
   .icon-btn-sm:disabled {
@@ -346,13 +346,29 @@
     cursor: not-allowed;
   }
 
+  :global(html.layout-mobile) .category-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+  }
+
+  :global(html.layout-mobile) .btn-reset-order {
+    min-height: 44px;
+  }
+
   :global(html.layout-mobile) .provider-row {
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: stretch;
     gap: var(--spacing-sm);
   }
 
   :global(html.layout-mobile) .provider-actions {
     width: 100%;
     justify-content: space-between;
+  }
+
+  :global(html.layout-mobile) .icon-btn-sm {
+    min-width: 44px;
+    min-height: 44px;
   }
 </style>

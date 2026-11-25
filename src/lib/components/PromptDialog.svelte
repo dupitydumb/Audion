@@ -1,9 +1,30 @@
 <script lang="ts">
     import { promptDialogStore, closePromptDialog } from "$lib/stores/dialogs";
     import { fade, scale } from "svelte/transition";
-    import { onMount, tick } from "svelte";
+    import { onDestroy, tick } from "svelte";
+    import { registerBackHandler } from "$lib/stores/mobile";
 
     let inputElement: HTMLInputElement;
+    let unregisterBackHandler: (() => void) | null = null;
+
+    $: if ($promptDialogStore.visible) {
+        if (!unregisterBackHandler) {
+            unregisterBackHandler = registerBackHandler(() => {
+                closePromptDialog(null);
+                return true;
+            });
+        }
+    } else if (unregisterBackHandler) {
+        unregisterBackHandler();
+        unregisterBackHandler = null;
+    }
+
+    onDestroy(() => {
+        if (unregisterBackHandler) {
+            unregisterBackHandler();
+            unregisterBackHandler = null;
+        }
+    });
 
     $: if ($promptDialogStore.visible) {
         focusInput();
@@ -82,15 +103,13 @@
 <style>
     .dialog-overlay {
         position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
+        inset: 0;
+        padding: calc(16px + var(--safe-area-top, 0px)) 16px calc(16px + var(--safe-area-bottom, 0px));
         background-color: rgba(0, 0, 0, 0.5);
         display: flex;
         align-items: center;
         justify-content: center;
-        z-index: 10001;
+        z-index: var(--z-dialog, 5000);
         backdrop-filter: blur(4px);
     }
 
@@ -101,6 +120,8 @@
         padding: var(--spacing-lg);
         width: 100%;
         max-width: 400px;
+        max-height: 90dvh;
+        overflow-y: auto;
         box-shadow: var(--shadow-lg);
         display: flex;
         flex-direction: column;
@@ -127,7 +148,7 @@
 
     .prompt-input {
         width: 100%;
-        background-color: var(--bg-main);
+        background-color: var(--bg-surface, var(--bg-base));
         border: 1px solid var(--border-color);
         border-radius: var(--radius-sm);
         padding: var(--spacing-sm) var(--spacing-md);
@@ -135,10 +156,11 @@
         font-size: 0.9375rem;
         outline: none;
         transition: border-color 0.2s;
+        box-sizing: border-box;
     }
 
     .prompt-input:focus {
-        border-color: var(--accent-color);
+        border-color: var(--accent-primary);
     }
 
     .dialog-actions {
@@ -146,5 +168,10 @@
         justify-content: flex-end;
         gap: var(--spacing-sm);
         margin-top: var(--spacing-sm);
+    }
+
+    :global(html.layout-mobile) .prompt-input,
+    :global(html.layout-mobile) .dialog-actions button {
+        min-height: 44px;
     }
 </style>

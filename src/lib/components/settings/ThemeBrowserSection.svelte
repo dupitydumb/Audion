@@ -550,7 +550,7 @@
   .tb-tag.active {
     background: var(--accent-primary);
     border-color: var(--accent-primary);
-    color: #ffffff;
+    color: var(--text-on-accent, #ffffff);
     font-weight: 600;
   }
 
@@ -572,7 +572,7 @@
 
   .tb-err-msg {
     font-size: 0.75rem;
-    color: #f87171;
+    color: var(--error-color, #f87171);
     margin-top: 2px;
   }
 
@@ -585,7 +585,7 @@
     border-radius: 6px;
     border: 1px solid transparent;
     background: var(--accent-primary);
-    color: #ffffff;
+    color: var(--text-on-accent, #ffffff);
     font-size: 0.8125rem;
     font-weight: 600;
     cursor: pointer;
@@ -610,23 +610,49 @@
   .spin-sm {
     width: 12px;
     height: 12px;
-    border: 2px solid rgba(255, 255, 255, 0.4);
-    border-top-color: #ffffff;
+    border: 2px solid color-mix(in srgb, currentColor 35%, transparent);
+    border-top-color: currentColor;
     border-radius: 50%;
     animation: spin 0.6s linear infinite;
   }
 
-  @media (max-width: 640px) {
-    .tb-row {
-      gap: 10px;
-    }
-    .tb-palette-swatch {
-      width: 36px;
-      height: 24px;
-    }
-    .btn-install {
-      padding: 4px 8px;
-      font-size: 0.75rem;
-    }
+  :global(html.layout-mobile) .tb-toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  :global(html.layout-mobile) .btn-refresh {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  :global(html.layout-mobile) .btn-submit,
+  :global(html.layout-mobile) .btn-retry {
+    min-height: 44px;
+    padding: 8px 12px;
+  }
+
+  :global(html.layout-mobile) .tb-row {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  :global(html.layout-mobile) .tb-palette-swatch {
+    width: 40px;
+    height: 28px;
+  }
+
+  :global(html.layout-mobile) .tb-meta {
+    flex: 1 1 160px;
+  }
+
+  :global(html.layout-mobile) .btn-install {
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+    padding: 8px 12px;
+    font-size: 0.8125rem;
   }
 </style>

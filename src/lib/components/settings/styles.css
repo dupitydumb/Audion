@@ -36,20 +36,12 @@
   padding-bottom: calc(var(--player-height) + var(--spacing-lg));
 }
 
-@media (max-width: 768px) {
-  .settings-content .settings-pane.settings-container {
-    padding-bottom: calc(var(--mobile-bottom-inset, 130px) + var(--spacing-xl));
-  }
-
-  .view-header h1 {
-    font-size: 1.5rem;
-  }
-}
-
-/* on real mobile layout, app-content (routes/+layout.svelte) already
-  reserves room for the bottom nav + floating mini player */
 html.layout-mobile .settings-content .settings-pane.settings-container {
   padding-bottom: var(--spacing-lg);
+}
+
+html.layout-mobile .view-header h1 {
+  font-size: 1.5rem;
 }
 
 .settings-container {
@@ -428,7 +420,7 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
 }
 
 .eq-band-label-btn:hover {
-  background-color: rgba(255, 255, 255, 0.07);
+  background-color: var(--surface-subtle-hover, rgba(255, 255, 255, 0.07));
   color: var(--text-primary);
 }
 
@@ -743,7 +735,7 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
   border-radius: var(--radius-full);
   transition: all var(--transition-fast);
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
   cursor: pointer;
   min-height: 30px;
   display: flex;
@@ -752,9 +744,9 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
 }
 
 .segment-btn:hover:not(.active) {
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: var(--surface-subtle, rgba(255, 255, 255, 0.05));
   color: var(--text-primary);
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: var(--border-color);
 }
 
 .segment-btn.active {
@@ -794,7 +786,7 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
 
 .btn-primary-compact {
   background-color: var(--accent-primary);
-  color: #000;
+  color: var(--text-on-accent, #000);
   padding: 10px 20px;
   border-radius: var(--radius-md);
   font-size: var(--font-size-base);
@@ -878,8 +870,8 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
   display: flex;
   flex-direction: column;
   padding: var(--spacing-md);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--surface-subtle, rgba(255, 255, 255, 0.05));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
   border-radius: var(--radius-md);
   text-decoration: none;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -888,7 +880,7 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
 }
 
 .support-platform-card:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-subtle-hover, rgba(255, 255, 255, 0.08));
   border-color: var(--accent-primary);
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
@@ -915,113 +907,136 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
   color: #f96854;
 }
 
-@media (max-width: 520px) {
-  .support-grid {
-    grid-template-columns: 1fr;
-  }
+html.layout-mobile .support-grid {
+  grid-template-columns: 1fr;
+}
 
-  .support-content {
-    flex-direction: row;
-    align-items: flex-start;
-  }
+html.layout-mobile .support-content {
+  flex-direction: row;
+  align-items: flex-start;
+}
 
-  /* Theme mode buttons stack vertically */
-  .theme-modes {
-    flex-direction: column;
-  }
+/* Theme mode buttons stack vertically */
+html.layout-mobile .theme-modes {
+  flex-direction: column;
+}
 
-  /* Card header wraps */
-  .card-header-row {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--spacing-sm);
-  }
+/* Card header wraps */
+html.layout-mobile .card-header-row {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+}
 
-  /* Compact settings card on mobile */
-  .settings-card {
-    padding: var(--spacing-md);
-    gap: var(--spacing-md);
-  }
+/* Compact settings card on mobile */
+html.layout-mobile .settings-card {
+  padding: var(--spacing-md);
+  gap: var(--spacing-md);
+}
 
-  /* About row stacks */
-  .about-row {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+/* About row stacks */
+html.layout-mobile .about-row {
+  flex-direction: column;
+  align-items: flex-start;
+}
 
-  /* Restart notice stacks */
-  .restart-notice {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+/* Restart notice stacks */
+html.layout-mobile .restart-notice {
+  flex-direction: column;
+  align-items: flex-start;
+}
 
-  .btn-restart-compact {
-    width: 100%;
-    text-align: center;
-  }
+html.layout-mobile .btn-restart-compact {
+  width: 100%;
+  text-align: center;
+}
 
-  /* Docker guide stacks */
-  .docker-guide-banner {
-    flex-direction: column;
-    align-items: flex-start;
-  }
+/* Docker guide stacks */
+html.layout-mobile .docker-guide-banner {
+  flex-direction: column;
+  align-items: flex-start;
+}
 
-  /* Path selector wraps */
-  .path-selector {
-    flex-wrap: wrap;
-  }
+/* Path selector wraps */
+html.layout-mobile .path-selector {
+  flex-wrap: wrap;
+}
 
-  .path-display {
-    font-size: var(--font-size-xs);
-  }
+html.layout-mobile .path-display {
+  font-size: var(--font-size-xs);
+}
 
-  /* Support links single column */
-  .support-links-row {
-    grid-template-columns: 1fr;
-  }
+/* Support links single column */
+html.layout-mobile .support-links-row {
+  grid-template-columns: 1fr;
+}
 
-  /* EQ controls compact */
-  .eq-band {
-    max-width: 100%;
-  }
+/* EQ controls: horizontally scrollable with ergonomic slider targets on mobile */
+html.layout-mobile .eq-bands-container {
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: var(--spacing-sm);
+}
 
-  .eq-band input[type="range"] {
-    width: 18px;
-    height: 70px;
-  }
+html.layout-mobile .eq-bands {
+  justify-content: flex-start;
+  gap: var(--spacing-sm);
+  min-width: max-content;
+  padding: var(--spacing-md) var(--spacing-xs);
+}
 
-  .eq-band-label,
-  .eq-band-value {
-    font-size: 8px;
-  }
+html.layout-mobile .eq-band {
+  flex: 0 0 auto;
+  min-width: 48px;
+  max-width: none;
+}
 
-  .eq-bands {
-    gap: 1px;
-  }
+html.layout-mobile .eq-band input[type="range"] {
+  width: 44px;
+  height: 140px;
+  touch-action: none;
+}
 
-  /* Preset selector + reset wrap */
-  .preset-selector {
-    flex-wrap: wrap;
-  }
+html.layout-mobile .eq-band input[type="range"]::-webkit-slider-thumb {
+  width: 22px;
+  height: 22px;
+}
 
-  .preset-select {
-    max-width: 100%;
-  }
+html.layout-mobile .eq-band input[type="range"]::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+}
 
-  /* Segmented pill smaller text */
-  .segment-btn {
-    font-size: 0.7rem;
-    padding: 5px 8px;
-  }
+html.layout-mobile .eq-band-label,
+html.layout-mobile .eq-band-value,
+html.layout-mobile .eq-gain,
+html.layout-mobile .eq-label {
+  font-size: 11px;
+}
 
-  /* Accordion touch-friendly */
-  .accordion-trigger {
-    padding: var(--spacing-sm);
-  }
+/* Preset selector + reset wrap */
+html.layout-mobile .preset-selector {
+  flex-wrap: wrap;
+}
 
-  .accordion-title {
-    font-size: 0.85rem;
-  }
+html.layout-mobile .preset-select {
+  max-width: 100%;
+}
+
+/* Segmented pill smaller text */
+html.layout-mobile .segment-btn {
+  font-size: 0.75rem;
+  padding: 6px 8px;
+}
+
+/* Accordion touch-friendly */
+html.layout-mobile .accordion-trigger {
+  padding: var(--spacing-sm);
+}
+
+html.layout-mobile .accordion-title {
+  font-size: 0.85rem;
 }
 
 .btn-outline-compact.danger {
@@ -1092,7 +1107,7 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
 .btn-restart-compact {
   padding: 8px 16px;
   background-color: var(--accent-primary);
-  color: #000;
+  color: var(--text-on-accent, #000);
   border: none;
   border-radius: var(--radius-md);
   font-size: var(--font-size-base);
@@ -1159,7 +1174,7 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
 }
 
 .settings-section {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.05));
   padding-bottom: var(--spacing-sm);
 }
 
@@ -1182,12 +1197,12 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
 
 /* Support / Upgrade Premium Cards */
 .settings-card.support-card-premium {
-  background: linear-gradient(135deg, rgba(140, 20, 40, 0.15) 0%, rgba(20, 20, 20, 0.5) 100%);
+  background: linear-gradient(135deg, rgba(140, 20, 40, 0.15) 0%, color-mix(in srgb, var(--bg-surface), transparent 50%) 100%);
   border-color: rgba(140, 20, 40, 0.3);
 }
 
 .settings-card.upgrade-card {
-  background: linear-gradient(135deg, rgba(80, 20, 140, 0.15) 0%, rgba(20, 20, 20, 0.5) 100%);
+  background: linear-gradient(135deg, rgba(80, 20, 140, 0.15) 0%, color-mix(in srgb, var(--bg-surface), transparent 50%) 100%);
   border-color: rgba(80, 20, 140, 0.3);
 }
 
@@ -1229,15 +1244,15 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
   display: flex;
   flex-direction: column;
   padding: var(--spacing-lg);
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--surface-subtle, rgba(255, 255, 255, 0.02));
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   transition: all 0.2s ease;
 }
 
 .account-option-card:hover {
-  background: rgba(255, 255, 255, 0.04);
-  border-color: rgba(255, 255, 255, 0.15);
+  background: var(--surface-subtle-hover, rgba(255, 255, 255, 0.04));
+  border-color: var(--border-color);
 }
 
 .option-header {
@@ -1254,7 +1269,7 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
   width: 36px;
   height: 36px;
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--surface-subtle, rgba(255, 255, 255, 0.05));
   color: var(--text-secondary);
 }
 
@@ -1320,10 +1335,8 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
   opacity: 0.85;
 }
 
-@media (max-width: 640px) {
-  .account-options-grid {
-    grid-template-columns: 1fr;
-  }
+html.layout-mobile .account-options-grid {
+  grid-template-columns: 1fr;
 }
 
 .upgrade-card {
@@ -1360,9 +1373,9 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
   border-radius: var(--radius-full);
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--surface-subtle, rgba(255, 255, 255, 0.08));
   color: var(--text-secondary);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
 }
 
 .pill-badge.accent {
@@ -1383,7 +1396,7 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
 }
 
 .btn-outline-compact:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--surface-subtle, rgba(255, 255, 255, 0.05));
   border-color: var(--text-secondary);
 }
 
@@ -1687,7 +1700,7 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
 }
 
 .text-error {
-  color: #dc3545;
+  color: var(--error-color, #dc3545);
   font-size: var(--font-size-sm);
 }
 
@@ -1698,11 +1711,12 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
   left: 0;
   right: 0;
   bottom: 0;
+  padding: calc(16px + var(--safe-area-top, 0px)) 16px calc(16px + var(--safe-area-bottom, 0px));
   background-color: rgba(0, 0, 0, 0.7);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
+  z-index: var(--z-modal, 4000);
   backdrop-filter: blur(4px);
 }
 
@@ -1710,9 +1724,9 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
   background-color: var(--bg-elevated);
   border-radius: var(--radius-lg);
   max-width: 480px;
-  width: 90%;
-  max-height: 90vh;
-  overflow: hidden;
+  width: 100%;
+  max-height: 90dvh;
+  overflow-y: auto;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
 }
 
@@ -2025,6 +2039,8 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
   position: relative;
   width: 48px;
   height: 26px;
+  min-width: 48px;
+  min-height: 26px;
   background-color: var(--bg-highlight);
   border-radius: 13px;
   border: 1px solid var(--border-color);
@@ -2053,7 +2069,7 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
 
 .toggle-btn.active .toggle-handle {
   transform: translateX(22px);
-  background-color: #000;
+  background-color: var(--text-on-accent, #000);
 }
 
 /* ─── Shortcut Hint ─── */
@@ -2392,7 +2408,7 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
 
 .refresh-btn {
   background-color: var(--accent-primary);
-  color: #000;
+  color: var(--text-on-accent, #000);
   border: none;
   font-weight: var(--font-weight-semibold);
   padding: var(--spacing-xs) var(--spacing-md);
@@ -2671,189 +2687,218 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
   }
 }
 
-@media (max-width: 768px) {
+/* Mobile Layout Spacing & Ergonomics */
+html.layout-mobile .view-header {
+  padding: var(--spacing-md) 0;
+  margin-bottom: var(--spacing-sm);
+}
 
-  /* Layout Spacing Adjustments */
-  .view-header {
-    padding: var(--spacing-md) 0;
-    margin-bottom: var(--spacing-sm);
-  }
+html.layout-mobile .view-header h1 {
+  padding-left: var(--spacing-md);
+  font-size: 1.75rem;
+}
 
-  .view-header h1 {
-    padding-left: var(--spacing-md);
-    font-size: 1.75rem;
-  }
+html.layout-mobile .settings-container {
+  padding: 0 var(--spacing-sm);
+}
 
-  .settings-container {
-    padding: 0 var(--spacing-sm);
-  }
+html.layout-mobile .settings-section {
+  margin-bottom: var(--spacing-md);
+  margin-left: -4px;
+  margin-right: -4px;
+}
 
-  .settings-section {
-    margin-bottom: var(--spacing-md);
-    margin-left: -4px;
-    margin-right: -4px;
-  }
+html.layout-mobile .section-title {
+  margin-bottom: var(--spacing-md);
+  padding-bottom: var(--spacing-xs);
+  font-size: var(--font-size-xs);
+}
 
-  .section-title {
-    margin-bottom: var(--spacing-md);
-    padding-bottom: var(--spacing-xs);
-    font-size: var(--font-size-xs);
-  }
+html.layout-mobile .setting-item {
+  margin-bottom: var(--spacing-md);
+}
 
-  .setting-item {
-    margin-bottom: var(--spacing-md);
-  }
+/* Scoped touch targets (never target bare button or toggle-btn) */
+html.layout-mobile .mode-btn,
+html.layout-mobile .color-swatch,
+html.layout-mobile .selector-btn,
+html.layout-mobile .add-btn,
+html.layout-mobile .danger-btn,
+html.layout-mobile .reset-btn,
+html.layout-mobile .preset-select,
+html.layout-mobile .btn-outline-compact,
+html.layout-mobile .btn-primary-compact,
+html.layout-mobile .btn-folder-action {
+  min-height: 44px;
+}
 
-  /* Ensure all interactive elements are at least 44x44 */
-  button,
-  .mode-btn,
-  .color-swatch,
-  .selector-btn,
-  .add-btn,
-  .danger-btn,
-  .toggle-btn,
-  .reset-btn,
-  .preset-select {
-    min-height: 48px;
-  }
+/* Mode buttons – allow wrapping and ensure touchable */
+html.layout-mobile .theme-modes {
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
 
-  /* Mode buttons – allow wrapping and ensure touchable */
-  .theme-modes {
-    flex-wrap: wrap;
-    gap: var(--spacing-sm);
-  }
+html.layout-mobile .mode-btn {
+  flex: 1 0 calc(50% - var(--spacing-sm));
+  min-width: 100px;
+  padding: var(--spacing-md) var(--spacing-sm);
+}
 
-  .mode-btn {
-    flex: 1 0 calc(50% - var(--spacing-sm));
-    min-width: 100px;
-    padding: var(--spacing-md) var(--spacing-sm);
-  }
+/* Color grid – adjust columns to maintain touchable swatches */
+html.layout-mobile .color-grid {
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: var(--spacing-md);
+}
 
-  /* Color grid – adjust columns to maintain touchable swatches */
-  .color-grid {
-    grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
-    gap: var(--spacing-md);
-  }
+html.layout-mobile .color-swatch {
+  height: 44px;
+  border-radius: var(--radius-md);
+}
 
-  .color-swatch {
-    height: 44px;
-    border-radius: var(--radius-md);
-  }
+/* Preset selector – stack on small screens */
+html.layout-mobile .preset-selector {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--spacing-md);
+}
 
-  /* Preset selector – stack on small screens */
-  .preset-selector {
-    flex-direction: column;
-    align-items: stretch;
-    gap: var(--spacing-md);
-  }
+html.layout-mobile .preset-select {
+  max-width: none;
+  width: 100%;
+}
 
-  .preset-select {
-    max-width: none;
-    width: 100%;
-  }
+html.layout-mobile .reset-btn {
+  width: 100%;
+}
 
-  .reset-btn {
-    width: 100%;
-  }
+/* Toggle switch – compact pill without vertical stretch */
+html.layout-mobile .toggle-btn {
+  width: 52px;
+  height: 28px;
+  min-width: 52px;
+  min-height: 28px;
+}
 
-  /* Toggle switch – increase hit area */
-  .toggle-btn {
-    width: 56px;
-    height: 32px;
-  }
+html.layout-mobile .toggle-handle {
+  width: 22px;
+  height: 22px;
+  top: 2px;
+  left: 2px;
+}
 
-  .toggle-handle {
-    width: 24px;
-    height: 24px;
-    top: 3px;
-    left: 3px;
-  }
+html.layout-mobile .toggle-btn.active .toggle-handle {
+  transform: translateX(24px);
+}
 
-  .toggle-btn.active .toggle-handle {
-    transform: translateX(26px);
-  }
+html.layout-mobile .toggle-btn-sm {
+  width: 40px;
+  height: 24px;
+  min-width: 40px;
+  min-height: 24px;
+}
 
-  /* Equalizer sliders – more touch-friendly */
-  .eq-slider-container {
-    height: 120px;
-  }
+html.layout-mobile .toggle-btn-sm .toggle-handle {
+  width: 18px;
+  height: 18px;
+}
 
-  .eq-slider {
-    width: 120px;
-  }
+html.layout-mobile .toggle-btn-sm.active .toggle-handle {
+  transform: translateX(16px);
+}
 
-  /* Modal buttons – ensure touchable */
-  .cancel-btn,
-  .confirm-danger-btn {
-    min-height: 52px;
-  }
+/* Equalizer sliders – ergonomic touch targets in scrollable strip */
+html.layout-mobile .eq-slider-container {
+  height: 140px;
+  width: 44px;
+}
 
-  /* Account Section Mobile Fixes */
-  .account-card {
-    padding: var(--spacing-md);
-    gap: var(--spacing-md);
-  }
+html.layout-mobile .eq-slider {
+  width: 140px;
+  touch-action: none;
+}
 
-  .account-profile {
-    align-items: flex-start;
-  }
+html.layout-mobile .eq-slider::-webkit-slider-thumb {
+  width: 22px;
+  height: 22px;
+  margin-top: -8px;
+}
 
-  .avatar {
-    width: 56px;
-    height: 56px;
-  }
+html.layout-mobile .eq-slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+}
 
-  .avatar-placeholder {
-    width: 56px;
-    height: 56px;
-    font-size: 1.5rem;
-  }
+/* Modal buttons – ensure touchable */
+html.layout-mobile .cancel-btn,
+html.layout-mobile .confirm-danger-btn {
+  min-height: 48px;
+}
 
-  .account-info {
-    margin-top: 4px;
-  }
+/* Account Section Mobile Fixes */
+html.layout-mobile .account-card {
+  padding: var(--spacing-md);
+  gap: var(--spacing-md);
+}
 
-  .logout-btn {
-    width: auto;
-    margin-top: 0;
-    align-self: flex-start;
-    margin-left: auto;
-  }
+html.layout-mobile .account-profile {
+  align-items: flex-start;
+}
 
-  .sync-status-area {
-    flex-direction: column;
-    align-items: stretch;
-  }
+html.layout-mobile .avatar {
+  width: 56px;
+  height: 56px;
+}
 
-  .sync-btn {
-    width: 100%;
-    height: 48px;
-  }
+html.layout-mobile .avatar-placeholder {
+  width: 56px;
+  height: 56px;
+  font-size: 1.5rem;
+}
 
-  .tier-limits {
-    padding: var(--spacing-md) 0;
-  }
+html.layout-mobile .account-info {
+  margin-top: 4px;
+}
 
-  .settings-view .progress-bar-container {
-    height: 10px;
-  }
+html.layout-mobile .logout-btn {
+  width: auto;
+  margin-top: 0;
+  align-self: flex-start;
+  margin-left: auto;
+}
 
-  .limit-bar-wrap {
-    height: 10px;
-  }
+html.layout-mobile .sync-status-area {
+  flex-direction: column;
+  align-items: stretch;
+}
 
-  .device-info-button {
-    width: 14px;
-    height: 14px;
-    min-height: unset;
-    min-width: unset;
-    font-size: 0.5625rem;
-  }
+html.layout-mobile .sync-btn {
+  width: 100%;
+  height: 48px;
+}
 
-  .device-item-check,
-  .device-item-badge {
-    display: none;
-  }
+html.layout-mobile .tier-limits {
+  padding: var(--spacing-md) 0;
+}
+
+html.layout-mobile .settings-view .progress-bar-container {
+  height: 10px;
+}
+
+html.layout-mobile .limit-bar-wrap {
+  height: 10px;
+}
+
+html.layout-mobile .device-info-button {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  min-width: 44px;
+  font-size: 0.75rem;
+}
+
+html.layout-mobile .device-item-check,
+html.layout-mobile .device-item-badge {
+  display: none;
 }
 
 /* ─── Output Device Dropdown ─── */
@@ -3076,14 +3121,12 @@ html.layout-mobile .settings-content .settings-pane.settings-container {
   word-break: break-all;
 }
 
-@media (max-width: 768px) {
-  .device-info-popover {
-    left: auto;
-    right: 0;
-    top: calc(100% + 4px);
-    min-width: 200px;
-    max-width: 90vw;
-  }
+html.layout-mobile .device-info-popover {
+  left: auto;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 200px;
+  max-width: 90vw;
 }
 
 .folder-section-header {
@@ -3343,8 +3386,20 @@ margin-right: 4px;
   transition: background-color 0.15s, color 0.15s;
 }
 
+html.layout-mobile .eq-editor-topbar {
+  min-height: 44px;
+  height: auto;
+}
+
+html.layout-mobile .eq-back-btn {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+}
+
 .eq-back-btn:hover {
-  background-color: rgba(255, 255, 255, 0.06);
+  background-color: var(--surface-subtle, rgba(255, 255, 255, 0.06));
   color: var(--text-primary);
 }
 
@@ -3441,11 +3496,12 @@ margin-right: 4px;
 .eq-modal-backdrop {
   position: fixed;
   inset: 0;
+  padding: calc(16px + var(--safe-area-top, 0px)) 16px calc(16px + var(--safe-area-bottom, 0px));
   background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 200;
+  z-index: var(--z-modal, 4000);
 }
 
 .eq-modal {
@@ -3456,7 +3512,9 @@ margin-right: 4px;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
-  width: 280px;
+  width: min(320px, calc(100vw - 32px));
+  max-height: 90dvh;
+  overflow-y: auto;
 }
 
 .eq-preset-name-input {

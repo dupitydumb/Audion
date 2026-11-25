@@ -294,7 +294,7 @@
     flex-direction: column;
     height: 100%;
     overflow: hidden;
-    background: var(--bg-primary);
+    background: var(--bg-base, var(--bg-primary));
     color: var(--text-primary);
   }
 
@@ -364,7 +364,7 @@
     align-items: center;
     gap: 8px;
     padding: 16px;
-    color: #ff6b6b;
+    color: var(--error-color, #ff6b6b);
     font-size: 0.875rem;
   }
 
@@ -509,5 +509,41 @@
     font-size: 0.75rem;
     color: var(--text-secondary);
     flex-shrink: 0;
+  }
+
+  :global(html.layout-mobile) .tab-bar {
+    padding: 8px 12px 0;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  :global(html.layout-mobile) .tab-bar::-webkit-scrollbar {
+    display: none;
+  }
+
+  :global(html.layout-mobile) .tab-btn {
+    min-height: 44px;
+    padding: 8px 12px;
+    white-space: nowrap;
+  }
+
+  :global(html.layout-mobile) .icon-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  :global(html.layout-mobile) .album-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 12px;
+  }
+
+  :global(html.layout-mobile) .artist-row {
+    min-height: 56px;
+    padding: 10px 12px;
   }
 </style>

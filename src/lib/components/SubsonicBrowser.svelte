@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { _ } from 'svelte-i18n';
   import Icon from '$lib/components/Icon.svelte';
+  import { registerBackHandler } from '$lib/stores/mobile';
   import {
     subsonicGetIndexes,
     subsonicGetArtist,
@@ -28,8 +29,26 @@
   let currentAudio: HTMLAudioElement | null = null;
   let playingId = '';
 
-  onMount(fetchArtists);
-  onDestroy(() => { currentAudio?.pause(); currentAudio = null; });
+  let unregisterBackHandler: (() => void) | null = null;
+
+  onMount(() => {
+    fetchArtists();
+    unregisterBackHandler = registerBackHandler(() => {
+      if (panel !== 'artists') {
+        back();
+        return true;
+      }
+      return false;
+    });
+  });
+  onDestroy(() => {
+    currentAudio?.pause();
+    currentAudio = null;
+    if (unregisterBackHandler) {
+      unregisterBackHandler();
+      unregisterBackHandler = null;
+    }
+  });
 
   async function fetchArtists() {
     loading = true;
@@ -202,7 +221,7 @@
     flex-direction: column;
     height: 100%;
     overflow: hidden;
-    background: var(--bg-primary);
+    background: var(--bg-base, var(--bg-primary));
     color: var(--text-primary);
   }
 
@@ -242,8 +261,8 @@
     align-items: center;
     gap: 8px;
     padding: 10px 16px;
-    background: color-mix(in srgb, #ff6b6b 12%, transparent);
-    color: #ff6b6b;
+    background: color-mix(in srgb, var(--error-color, #ff6b6b) 12%, transparent);
+    color: var(--error-color, #ff6b6b);
     font-size: 0.8125rem;
     flex-shrink: 0;
   }
@@ -317,4 +336,26 @@
   .song-row :global(svg) { opacity: 0; transition: opacity 0.1s; }
   .song-row:hover :global(svg),
   .song-row.playing :global(svg) { opacity: 1; }
+
+  :global(html.layout-mobile) .sb-header {
+    padding: 8px 12px;
+    min-height: 52px;
+  }
+
+  :global(html.layout-mobile) .icon-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  :global(html.layout-mobile) .sb-row {
+    min-height: 48px;
+    padding: 10px 12px;
+  }
+
+  :global(html.layout-mobile) .song-row :global(svg) {
+    opacity: 0.7;
+  }
 </style>

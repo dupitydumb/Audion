@@ -3,7 +3,7 @@
   import { _ } from "svelte-i18n";
   import Icon from "$lib/components/Icon.svelte";
   import { isLoggedIn } from "$lib/stores/sync";
-  import { isMobile } from "$lib/stores/mobile";
+  import { isMobile, registerBackHandler } from "$lib/stores/mobile";
   import "./settings/styles.css";
 
   // Section components
@@ -38,13 +38,9 @@
 
   // Mobile drill-down state (null = category list, string = active category detail view)
   let mobileDetailTab: string | null = null;
+  let unregisterBackHandler: (() => void) | null = null;
 
-  // Responsive breakpoint detection (shared 768px breakpoint)
-  const DESKTOP_MEDIA_QUERY = "(min-width: 769px)";
-  let isDesktopViewport = true;
-  let mqlListenerCleanup: (() => void) | null = null;
-
-  $: isDesktopView = isDesktopViewport && !$isMobile;
+  $: isDesktopView = !$isMobile;
 
   // ---------------------------------------------------------------------
   // Category Definitions (User Mental Model: 8 Categories)
@@ -1098,6 +1094,25 @@
   // ---------------------------------------------------------------------
   // Lifecycle & Persistence
   // ---------------------------------------------------------------------
+  $: if (showEqEditor || ($isMobile && mobileDetailTab !== null)) {
+    if (!unregisterBackHandler) {
+      unregisterBackHandler = registerBackHandler(() => {
+        if (showEqEditor) {
+          showEqEditor = false;
+          return true;
+        }
+        if ($isMobile && mobileDetailTab !== null) {
+          mobileDetailTab = null;
+          return true;
+        }
+        return false;
+      });
+    }
+  } else if (unregisterBackHandler) {
+    unregisterBackHandler();
+    unregisterBackHandler = null;
+  }
+
   onMount(() => {
     if (typeof document !== "undefined") {
       document.documentElement.setAttribute("data-settings-open", "true");
@@ -1116,24 +1131,16 @@
         if (TABS.some((t) => t.id === directTab)) switchTab(directTab);
       }
     } catch {}
-
-    // Clean matchMedia setup
-    if (typeof window !== "undefined") {
-      const mql = window.matchMedia(DESKTOP_MEDIA_QUERY);
-      isDesktopViewport = mql.matches;
-      const onChange = (e: MediaQueryListEvent) => {
-        isDesktopViewport = e.matches;
-      };
-      mql.addEventListener("change", onChange);
-      mqlListenerCleanup = () => mql.removeEventListener("change", onChange);
-    }
   });
 
   onDestroy(() => {
     if (typeof document !== "undefined") {
       document.documentElement.removeAttribute("data-settings-open");
     }
-    if (mqlListenerCleanup) mqlListenerCleanup();
+    if (unregisterBackHandler) {
+      unregisterBackHandler();
+      unregisterBackHandler = null;
+    }
   });
 </script>
 
@@ -1362,74 +1369,76 @@
         {/if}
       </header>
 
-      <!-- Mobile Search Bar -->
-      <div class="mobile-search-bar" bind:this={searchWrapperRef}>
-        <div class="settings-search-wrapper">
-          <Icon name="search" size={15} className="search-icon" />
-          <input
-            type="search"
-            class="settings-search-input"
-            placeholder={$_("settings.searchSettings", {
-              default: "Search settings",
-            })}
-            bind:value={searchQuery}
-            bind:this={searchInputEl}
-            on:keydown={onSearchKey}
-            role="combobox"
-            aria-autocomplete="list"
-            aria-expanded={searchResults.length > 0}
-            aria-controls="mobile-search-results"
-          />
-          {#if searchQuery}
-            <button
-              class="search-clear-btn"
-              on:click={() => (searchQuery = "")}
-              aria-label={$_("search.searchHistoryClear", {
-                default: "Clear search",
+      <!-- Mobile Search Bar (only on root category list) -->
+      {#if mobileDetailTab === null && !showEqEditor}
+        <div class="mobile-search-bar" bind:this={searchWrapperRef}>
+          <div class="settings-search-wrapper">
+            <Icon name="search" size={15} className="search-icon" />
+            <input
+              type="search"
+              class="settings-search-input"
+              placeholder={$_("settings.searchSettings", {
+                default: "Search settings",
               })}
-            >
-              <Icon name="x" size={13} />
-            </button>
-          {/if}
+              bind:value={searchQuery}
+              bind:this={searchInputEl}
+              on:keydown={onSearchKey}
+              role="combobox"
+              aria-autocomplete="list"
+              aria-expanded={searchResults.length > 0}
+              aria-controls="mobile-search-results"
+            />
+            {#if searchQuery}
+              <button
+                class="search-clear-btn"
+                on:click={() => (searchQuery = "")}
+                aria-label={$_("search.searchHistoryClear", {
+                  default: "Clear search",
+                })}
+              >
+                <Icon name="x" size={13} />
+              </button>
+            {/if}
 
-          <!-- Search Dropdown -->
-          {#if searchQuery.trim()}
-            <div
-              class="settings-search-results mobile-search-dropdown"
-              id="mobile-search-results"
-              role="listbox"
-            >
-              {#if searchResults.length === 0}
-                <div class="search-no-results">
-                  {$_("settings.noSettingsFound", {
-                    values: { query: searchQuery },
-                    default: `No settings found matching "${searchQuery}"`,
-                  })}
-                </div>
-              {:else}
-                {#each searchResults as res, i}
-                  <button
-                    class="search-result-item"
-                    class:active={i === activeIdx}
-                    role="option"
-                    aria-selected={i === activeIdx}
-                    id={"mobile-opt-" + i}
-                    on:click={() => navigateToSetting(res)}
-                  >
-                    <div class="search-res-text">
-                      <span class="search-res-title">{res.title}</span>
-                      {#if res.subtitle}
-                        <span class="search-res-subtitle">{res.subtitle}</span>
-                      {/if}
-                    </div>
-                    <span class="search-res-tab">{res.tabLabel}</span>
-                  </button>
-                {/each}
-              {/if}
-            </div>
-          {/if}
+            <!-- Search Dropdown -->
+            {#if searchQuery.trim()}
+              <div
+                class="settings-search-results mobile-search-dropdown"
+                id="mobile-search-results"
+                role="listbox"
+              >
+                {#if searchResults.length === 0}
+                  <div class="search-no-results">
+                    {$_("settings.noSettingsFound", {
+                      values: { query: searchQuery },
+                      default: `No settings found matching "${searchQuery}"`,
+                    })}
+                  </div>
+                {:else}
+                  {#each searchResults as res, i}
+                    <button
+                      class="search-result-item"
+                      class:active={i === activeIdx}
+                      role="option"
+                      aria-selected={i === activeIdx}
+                      id={"mobile-opt-" + i}
+                      on:click={() => navigateToSetting(res)}
+                    >
+                      <div class="search-res-text">
+                        <span class="search-res-title">{res.title}</span>
+                        {#if res.subtitle}
+                          <span class="search-res-subtitle">{res.subtitle}</span>
+                        {/if}
+                      </div>
+                      <span class="search-res-tab">{res.tabLabel}</span>
+                    </button>
+                  {/each}
+                {/if}
+              </div>
+            {/if}
+          </div>
         </div>
-      </div>
+      {/if}
 
       <!-- Mobile View Body: Drill-Down List vs Detail View -->
       <div class="mobile-body-container">
@@ -1613,14 +1622,17 @@
 
   .search-clear-btn {
     position: absolute;
-    right: 8px;
+    right: 6px;
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 18px;
-    height: 18px;
+    width: 24px;
+    height: 24px;
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--surface-subtle, rgba(255, 255, 255, 0.1));
     border: none;
     color: var(--text-secondary);
     cursor: pointer;
@@ -1628,7 +1640,7 @@
 
   .search-clear-btn:hover {
     color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--surface-subtle-hover, rgba(255, 255, 255, 0.2));
   }
 
   /* Search Results Dropdown */
@@ -1846,13 +1858,14 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    min-height: 44px;
     background: none;
     border: none;
     color: var(--accent-primary);
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
-    padding: 4px 0;
+    padding: 4px 8px 4px 0;
   }
 
   .mobile-header-title {
@@ -1885,7 +1898,7 @@
   .mobile-categories-list {
     display: flex;
     flex-direction: column;
-    padding: 8px 12px calc(var(--mobile-bottom-inset, 130px) + 30px);
+    padding: 8px 12px var(--spacing-lg, 24px);
     gap: 6px;
   }
 
@@ -1947,7 +1960,7 @@
   }
 
   .mobile-detail-pane {
-    padding: 16px 14px calc(var(--mobile-bottom-inset, 130px) + 30px);
+    padding: 16px 14px var(--spacing-lg, 24px);
   }
 
   /* Glow highlight animation when navigating directly to setting item */

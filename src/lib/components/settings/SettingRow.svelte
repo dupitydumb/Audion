@@ -51,7 +51,7 @@
   }
 
   .setting-row.danger .setting-row-label {
-    color: var(--color-error, #ef4444);
+    color: var(--error-color, #ef4444);
   }
 
   .setting-row-info {
@@ -88,19 +88,18 @@
     min-height: 44px;
   }
 
-  @media (max-width: 480px) {
-    .setting-row {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 10px;
-      padding: 12px 14px;
-    }
+  :global(html.layout-mobile) .setting-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+  }
 
-    .setting-row-control {
-      width: 100%;
-      justify-content: flex-end;
-      min-height: auto;
-    }
+  :global(html.layout-mobile) .setting-row-control {
+    width: 100%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    min-height: auto;
   }
 </style>
 

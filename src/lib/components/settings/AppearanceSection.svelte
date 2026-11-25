@@ -667,7 +667,7 @@
   .btn-add-color {
     padding: 6px 12px;
     background: var(--accent-primary);
-    color: #fff;
+    color: var(--text-on-accent, #fff);
     border-radius: var(--radius-sm);
     font-size: var(--font-size-sm);
     font-weight: 600;
@@ -849,25 +849,42 @@
     margin-top: 2px;
   }
 
-  @media (max-width: 480px) {
-    .color-token-row {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 6px;
-      padding: 8px 0;
-    }
-    .token-controls {
-      width: 100%;
-      justify-content: space-between;
-    }
-    .token-hex {
-      flex: 1;
-      max-width: 80px;
-    }
-    .alpha-track {
-      flex: 1;
-      max-width: 60px;
-    }
+  :global(html.layout-mobile) .segmented-pill {
+    flex-wrap: wrap;
+  }
+  :global(html.layout-mobile) .segment-btn {
+    min-height: 44px;
+    min-width: 72px;
+  }
+  :global(html.layout-mobile) .color-swatch-sm {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+  }
+  :global(html.layout-mobile) .btn-add-color,
+  :global(html.layout-mobile) .btn-pick-file,
+  :global(html.layout-mobile) .btn-goto-skins,
+  :global(html.layout-mobile) .btn-reset-small {
+    min-height: 44px;
+  }
+  :global(html.layout-mobile) .color-token-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    padding: 8px 0;
+  }
+  :global(html.layout-mobile) .token-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+  :global(html.layout-mobile) .token-hex {
+    flex: 1;
+    max-width: 80px;
+  }
+  :global(html.layout-mobile) .alpha-track {
+    flex: 1;
+    max-width: 60px;
   }
 
   /* ── Background controls ── */

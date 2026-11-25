@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { tick } from "svelte";
+  import { tick, onDestroy } from "svelte";
   import { fade, scale } from "svelte/transition";
   import { currentTrack, currentTime } from "$lib/stores/player";
   import { lyricsData, activeLine } from "$lib/stores/lyrics";
@@ -7,6 +7,7 @@
   import { resolveTrackCover } from "$lib/stores/library";
   import { proxyFetchBytes, saveImageToGallery } from "$lib/api/tauri";
   import { addToast } from "$lib/stores/toast";
+  import { registerBackHandler } from "$lib/stores/mobile";
   import Icon from "$lib/components/Icon.svelte";
 
   export let open: boolean = false;
@@ -832,6 +833,27 @@
   $: if (open) {
     tick().then(() => renderCard());
   }
+
+  let unregisterBackHandler: (() => void) | null = null;
+
+  $: if (open) {
+    if (!unregisterBackHandler) {
+      unregisterBackHandler = registerBackHandler(() => {
+        onClose();
+        return true;
+      });
+    }
+  } else if (unregisterBackHandler) {
+    unregisterBackHandler();
+    unregisterBackHandler = null;
+  }
+
+  onDestroy(() => {
+    if (unregisterBackHandler) {
+      unregisterBackHandler();
+      unregisterBackHandler = null;
+    }
+  });
 </script>
 
 {#if open}
@@ -957,11 +979,11 @@
   .lyric-card-overlay {
     position: fixed;
     inset: 0;
-    z-index: 9999;
+    z-index: var(--z-modal, 4000);
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 24px;
+    padding: calc(16px + var(--safe-area-top, 0px)) 16px calc(16px + var(--safe-area-bottom, 0px));
     background: rgba(6, 7, 10, 0.78);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
@@ -973,7 +995,7 @@
     flex-direction: column;
     width: 100%;
     max-width: 860px;
-    max-height: min(92vh, 760px);
+    max-height: min(90dvh, 760px);
     /* the composer is a fixed dark surface in both app themes so the preview
        stays the visual anchor; do not follow --bg-elevated here */
     background: rgba(22, 23, 30, 0.97);
@@ -1287,7 +1309,7 @@
   .action-bar {
     display: flex;
     gap: 8px;
-    padding: 14px 18px calc(14px + env(safe-area-inset-bottom, 0px));
+    padding: 14px 18px calc(14px + var(--safe-area-bottom, 0px));
     border-top: 1px solid rgba(255, 255, 255, 0.07);
     flex: 0 0 auto;
   }
@@ -1348,58 +1370,63 @@
   }
 
   /* ── Phone: bottom sheet ────────────────────────────────── */
-  @media (max-width: 760px) {
-    .lyric-card-overlay {
-      align-items: flex-end;
-      padding: 0;
-    }
+  :global(html.layout-mobile) .lyric-card-overlay {
+    align-items: flex-end;
+    padding: var(--safe-area-top, 16px) 0 0;
+  }
 
-    .lyric-card-modal {
-      max-width: 100%;
-      max-height: 94vh;
-      border-radius: 20px 20px 0 0;
-      border-bottom: none;
-    }
+  :global(html.layout-mobile) .lyric-card-modal {
+    max-width: 100%;
+    max-height: 90dvh;
+    border-radius: 20px 20px 0 0;
+    border-bottom: none;
+  }
 
-    .modal-header {
-      padding: 12px 16px;
-    }
+  :global(html.layout-mobile) .modal-header {
+    padding: 12px 16px;
+  }
 
-    .modal-body {
-      grid-template-columns: minmax(0, 1fr);
-      gap: 18px;
-      padding: 14px 16px;
-    }
+  :global(html.layout-mobile) .btn-close {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
 
-    .canvas-frame {
-      max-width: min(44vw, 190px);
-    }
+  :global(html.layout-mobile) .modal-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 18px;
+    padding: 14px 16px;
+  }
 
-    .canvas-frame.story {
-      max-width: min(32vw, 140px);
-    }
+  :global(html.layout-mobile) .canvas-frame {
+    max-width: min(44vw, 190px);
+  }
 
-    .segment,
-    .line-item {
-      min-height: 44px;
-    }
+  :global(html.layout-mobile) .canvas-frame.story {
+    max-width: min(32vw, 140px);
+  }
 
-    .lines-list {
-      max-height: 34vh;
-    }
+  :global(html.layout-mobile) .segment,
+  :global(html.layout-mobile) .line-item {
+    min-height: 44px;
+  }
 
-    .action-bar {
-      padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
-    }
+  :global(html.layout-mobile) .lines-list {
+    max-height: 34vh;
+  }
 
-    .btn-action {
-      min-height: 46px;
-      font-size: 0.85rem;
-    }
+  :global(html.layout-mobile) .action-bar {
+    padding: 12px 16px calc(12px + var(--safe-area-bottom, 0px));
+  }
 
-    .btn-action.secondary {
-      flex: 0 0 auto;
-    }
+  :global(html.layout-mobile) .btn-action {
+    min-height: 46px;
+    font-size: 0.85rem;
+  }
+
+  :global(html.layout-mobile) .btn-action.secondary {
+    flex: 0 0 auto;
   }
 
   @media (max-width: 380px) {

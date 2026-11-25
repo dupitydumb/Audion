@@ -1,8 +1,31 @@
 <script lang="ts">
+    import { onDestroy } from "svelte";
     import { _ } from "svelte-i18n";
     import { showLoginModal, startLogin, connectCustomServerPassword, testCustomServerConnection, loginModalMode, customServerStatus } from "$lib/stores/sync";
+    import { registerBackHandler } from "$lib/stores/mobile";
     import { fade, scale, slide } from "svelte/transition";
     import Icon from "$lib/components/Icon.svelte";
+
+    let unregisterBackHandler: (() => void) | null = null;
+
+    $: if ($showLoginModal) {
+        if (!unregisterBackHandler) {
+            unregisterBackHandler = registerBackHandler(() => {
+                close();
+                return true;
+            });
+        }
+    } else if (unregisterBackHandler) {
+        unregisterBackHandler();
+        unregisterBackHandler = null;
+    }
+
+    onDestroy(() => {
+        if (unregisterBackHandler) {
+            unregisterBackHandler();
+            unregisterBackHandler = null;
+        }
+    });
 
     let isLoading = false;
     let isTesting = false;
@@ -363,15 +386,13 @@
 <style>
     .overlay {
         position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
+        inset: 0;
+        padding: calc(16px + var(--safe-area-top, 0px)) 16px calc(16px + var(--safe-area-bottom, 0px));
         background: rgba(0, 0, 0, 0.65);
         display: flex;
         align-items: center;
         justify-content: center;
-        z-index: 10000;
+        z-index: var(--z-modal, 4000);
         backdrop-filter: blur(4px);
     }
 
@@ -381,6 +402,7 @@
         border-radius: var(--radius-lg);
         width: 100%;
         max-width: 460px;
+        max-height: 90dvh;
         box-shadow: var(--shadow-lg);
         overflow: hidden;
         display: flex;
@@ -491,7 +513,8 @@
         padding: 0 var(--spacing-lg);
         display: flex;
         flex-direction: column;
-        max-height: 70vh;
+        flex: 1;
+        min-height: 0;
         overflow-y: auto;
     }
 
@@ -833,7 +856,7 @@
 
     .btn-primary {
         background: var(--accent-primary);
-        color: #000;
+        color: var(--text-on-accent, #000);
         border: none;
         padding: 10px;
         border-radius: var(--radius-md);
@@ -884,6 +907,22 @@
 
     .cancel-btn:focus-visible {
         outline: 2px solid var(--accent-primary);
+    }
+
+    :global(html.layout-mobile) .close-btn {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    :global(html.layout-mobile) .tab-btn,
+    :global(html.layout-mobile) .provider-btn,
+    :global(html.layout-mobile) .btn-primary,
+    :global(html.layout-mobile) .btn-secondary,
+    :global(html.layout-mobile) .cancel-btn,
+    :global(html.layout-mobile) .form-group input {
+        min-height: 44px;
     }
 </style>
 

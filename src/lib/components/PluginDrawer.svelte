@@ -4,10 +4,12 @@
     import { fly, fade } from "svelte/transition";
     import { pluginDrawerOpen } from "$lib/stores/plugin-drawer";
     import { uiSlotManager } from "$lib/plugins/ui-slots";
+    import { registerBackHandler } from "$lib/stores/mobile";
     import Icon from "$lib/components/Icon.svelte";
 
     let slotContainer: HTMLDivElement;
     let hasContent = false;
+    let unregisterBackHandler: (() => void) | null = null;
 
     function close() {
         pluginDrawerOpen.set(false);
@@ -36,9 +38,28 @@
         document.body.style.overflow = $pluginDrawerOpen ? "hidden" : "";
     }
 
+    $: if ($pluginDrawerOpen) {
+        if (!unregisterBackHandler) {
+            unregisterBackHandler = registerBackHandler(() => {
+                close();
+                return true;
+            });
+        }
+    } else if (unregisterBackHandler) {
+        unregisterBackHandler();
+        unregisterBackHandler = null;
+    }
+
     onMount(() => {
         window.addEventListener("keydown", handleKeydown);
         return () => window.removeEventListener("keydown", handleKeydown);
+    });
+
+    onDestroy(() => {
+        if (unregisterBackHandler) {
+            unregisterBackHandler();
+            unregisterBackHandler = null;
+        }
     });
 </script>
 
@@ -62,6 +83,7 @@
         aria-label="Plugin Actions"
         transition:fly={{ x: 320, duration: 280, opacity: 1 }}
     >
+        <div class="drawer-drag-handle" aria-hidden="true"></div>
         <div class="drawer-header">
             <div class="drawer-title-row">
                 <Icon name="plugin" size={18} className="drawer-icon" />
@@ -106,7 +128,7 @@
         background: rgba(0, 0, 0, 0.55);
         backdrop-filter: blur(2px);
         -webkit-backdrop-filter: blur(2px);
-        z-index: 1090;
+        z-index: calc(var(--z-drawer, 1200) - 10);
         cursor: pointer;
     }
 
@@ -120,10 +142,14 @@
         background-color: var(--bg-surface);
         border-left: 1px solid var(--border-color);
         box-shadow: -8px 0 32px rgba(0, 0, 0, 0.4);
-        z-index: 1100;
+        z-index: var(--z-drawer, 1200);
         display: flex;
         flex-direction: column;
         overflow: hidden;
+    }
+
+    .drawer-drag-handle {
+        display: none;
     }
 
     .drawer-header {
@@ -236,7 +262,33 @@
         border-left: none;
         border-top: 1px solid var(--border-color);
         border-radius: var(--radius-lg, 12px) var(--radius-lg, 12px) 0 0;
-        max-height: 70vh;
+        max-height: 75dvh;
+        padding-bottom: var(--safe-area-bottom, 0px);
         box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.4);
+    }
+
+    :global(html.layout-mobile) .drawer-drag-handle {
+        display: block;
+        width: 36px;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--bg-highlight);
+        margin: 8px auto 0;
+        flex-shrink: 0;
+    }
+
+    :global(html.layout-mobile) .drawer-header {
+        padding: 10px var(--spacing-md, 16px) 12px;
+    }
+
+    :global(html.layout-mobile) .close-btn {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    :global(html.layout-mobile) .drawer-body {
+        padding-bottom: calc(var(--spacing-md, 12px) + var(--safe-area-bottom, 0px));
     }
 </style>

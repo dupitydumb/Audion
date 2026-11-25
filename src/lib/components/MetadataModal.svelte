@@ -1,9 +1,27 @@
 <script lang="ts">
+    import { onMount, onDestroy } from "svelte";
     import { _ } from "svelte-i18n";
+    import { registerBackHandler } from "$lib/stores/mobile";
     import type { Track } from "$lib/api/tauri";
 
     export let track: Track;
     export let onClose: () => void;
+
+    let unregisterBackHandler: (() => void) | null = null;
+
+    onMount(() => {
+        unregisterBackHandler = registerBackHandler(() => {
+            onClose();
+            return true;
+        });
+    });
+
+    onDestroy(() => {
+        if (unregisterBackHandler) {
+            unregisterBackHandler();
+            unregisterBackHandler = null;
+        }
+    });
 
     // Parse metadata_json into a display-friendly object
     $: metadata = (() => {
@@ -170,8 +188,8 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        z-index: 9999;
-        padding: 1rem;
+        z-index: var(--z-modal, 4000);
+        padding: calc(16px + var(--safe-area-top, 0px)) 16px calc(16px + var(--safe-area-bottom, 0px));
     }
 
     .modal {
@@ -179,7 +197,7 @@
         border: 1px solid var(--border-color);
         border-radius: var(--radius-lg);
         width: min(680px, 100%);
-        max-height: 85vh;
+        max-height: 90dvh;
         display: flex;
         flex-direction: column;
         box-shadow: var(--shadow-lg);
@@ -348,71 +366,78 @@
     }
 
     /* ── Mobile: bottom-sheet style ── */
-    @media (max-width: 600px) {
-        .modal-backdrop {
-            padding: 0;
-            align-items: flex-end;
-        }
+    :global(html.layout-mobile) .modal-backdrop {
+        padding: var(--safe-area-top, 16px) 0 0;
+        align-items: flex-end;
+    }
 
-        .modal {
-            border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-            width: 100%;
-            max-height: 92dvh;
-            /* respect home-indicator / bottom inset */
-            padding-bottom: env(safe-area-inset-bottom, 0px);
-        }
+    :global(html.layout-mobile) .modal {
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+        width: 100%;
+        max-height: 90dvh;
+        border-bottom: none;
+        padding-bottom: var(--safe-area-bottom, 0px);
+    }
 
-        @keyframes modal-in {
-            from {
-                opacity: 0;
-                transform: translateY(40px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+    @keyframes modal-in-mobile {
+        from {
+            opacity: 0;
+            transform: translateY(40px);
         }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
 
-        .modal-header {
-            padding: 1rem 1rem 0.75rem;
-        }
+    :global(html.layout-mobile) .modal {
+        animation-name: modal-in-mobile;
+    }
 
-        /* Drag handle hint */
-        .modal-header::before {
-            content: "";
-            position: absolute;
-            top: 0.45rem;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 36px;
-            height: 4px;
-            border-radius: 2px;
-            background: var(--bg-highlight);
-        }
+    :global(html.layout-mobile) .modal-header {
+        padding: 1.15rem 1rem 0.75rem;
+    }
 
-        .modal-body {
-            padding: 0.75rem 1rem 1rem;
-        }
+    /* Drag handle hint */
+    :global(html.layout-mobile) .modal-header::before {
+        content: "";
+        position: absolute;
+        top: 0.45rem;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 36px;
+        height: 4px;
+        border-radius: 2px;
+        background: var(--bg-highlight);
+    }
 
-        .close-btn {
-            width: 36px;
-            height: 36px;
-            min-width: 36px;
-            min-height: 36px;
-        }
+    :global(html.layout-mobile) .modal-body {
+        padding: 0.75rem 1rem 1rem;
+    }
 
-        .meta-key {
-            min-width: 80px;
-            font-size: var(--font-size-xs);
-        }
+    :global(html.layout-mobile) .close-btn {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+    }
 
-        .meta-value {
-            font-size: 0.8rem;
-        }
+    :global(html.layout-mobile) .lyrics-block {
+        max-height: none;
+        overflow-y: visible;
+    }
 
-        .metadata-row {
-            padding: 0.55rem 0.75rem;
-            gap: 0.5rem;
-        }
+    :global(html.layout-mobile) .meta-key {
+        min-width: 80px;
+        font-size: var(--font-size-xs);
+    }
+
+    :global(html.layout-mobile) .meta-value {
+        font-size: 0.8rem;
+    }
+
+    :global(html.layout-mobile) .metadata-row {
+        padding: 0.55rem 0.75rem;
+        gap: 0.5rem;
     }
 </style>

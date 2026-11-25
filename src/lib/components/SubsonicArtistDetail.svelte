@@ -123,7 +123,7 @@
     flex-direction: column;
     height: 100%;
     overflow: hidden;
-    background: var(--bg-primary);
+    background: var(--bg-base, var(--bg-primary));
     color: var(--text-primary);
   }
 
@@ -133,7 +133,7 @@
     align-items: center;
     gap: 16px;
     padding: 20px 24px 16px;
-    background: linear-gradient(to bottom, var(--bg-elevated), var(--bg-primary));
+    background: linear-gradient(to bottom, var(--bg-elevated), var(--bg-base, var(--bg-primary)));
     flex-shrink: 0;
   }
 
@@ -204,7 +204,7 @@
     align-items: center;
     gap: 8px;
     padding: 16px 0;
-    color: #ff6b6b;
+    color: var(--error-color, #ff6b6b);
     font-size: 0.875rem;
   }
 
@@ -288,5 +288,31 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  :global(html.layout-mobile) .detail-header {
+    padding: 12px 12px 14px;
+    gap: 10px;
+  }
+
+  :global(html.layout-mobile) .back-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  :global(html.layout-mobile) .meta-title {
+    font-size: 1.35rem;
+  }
+
+  :global(html.layout-mobile) .content {
+    padding: 0 12px 16px;
+  }
+
+  :global(html.layout-mobile) .album-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
   }
 </style>

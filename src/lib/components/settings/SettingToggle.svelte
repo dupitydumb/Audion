@@ -43,7 +43,9 @@
     position: relative;
     width: 44px;
     height: 24px;
-    background-color: var(--bg-highlight, rgba(255, 255, 255, 0.15));
+    min-width: 44px;
+    min-height: 24px;
+    background-color: var(--bg-highlight, var(--surface-subtle, rgba(255, 255, 255, 0.15)));
     border-radius: 12px;
     border: 1px solid var(--border-color);
     cursor: pointer;
@@ -83,7 +85,7 @@
 
   .setting-toggle-btn.active .setting-toggle-handle {
     transform: translateX(20px);
-    background-color: #000000;
+    background-color: var(--text-on-accent, #000000);
   }
 </style>
 
