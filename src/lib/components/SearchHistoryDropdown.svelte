@@ -139,6 +139,8 @@
     min-width: 280px;
     max-height: 400px;
     overflow-y: auto;
+    transform-origin: top center;
+    animation: popoverIn 0.18s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
   }
 
   .history-header {

@@ -1262,15 +1262,22 @@
       <!-- Right Main Content Pane -->
       <main class="settings-main-pane">
         {#if showEqEditor}
-          <div class="settings-pane content-column">
+          <div
+            class="settings-pane content-column"
+            in:fly={{ y: 12, duration: 220, easing: cubicOut }}
+            out:fly={{ y: -8, duration: 120, easing: cubicOut }}
+          >
             <EqualizerEditor on:back={() => (showEqEditor = false)} />
           </div>
         {:else}
+          {#key activeTab}
           <div
             class="settings-pane content-column"
             id={`panel-${activeTab}`}
             role="tabpanel"
             aria-labelledby={`tab-${activeTab}`}
+            in:fly={{ y: 12, duration: 220, easing: cubicOut }}
+            out:fly={{ y: -8, duration: 120, easing: cubicOut }}
           >
             <!-- Category Header -->
             {#if currentTabInfo}
@@ -1334,6 +1341,7 @@
               {/if}
             </div>
           </div>
+          {/key}
         {/if}
       </main>
     </div>
@@ -1813,13 +1821,22 @@
     flex: 1;
     min-width: 0;
     height: 100%;
-    overflow-y: auto;
+    overflow: hidden;
     position: relative;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
   }
 
   .content-column {
+    grid-area: 1 / 1;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow-y: auto;
     margin: 0;
     padding: 28px 32px calc(var(--player-height, 80px) + 50px);
+    box-sizing: border-box;
   }
 
   .category-header {

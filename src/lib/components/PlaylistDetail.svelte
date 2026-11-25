@@ -886,6 +886,8 @@
         padding: var(--spacing-xs) 0;
         display: flex;
         flex-direction: column;
+        transform-origin: top right;
+        animation: popoverIn 0.18s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
     }
 
     .dropdown-item {

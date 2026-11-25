@@ -57,9 +57,32 @@
     import { fade, fly } from "svelte/transition";
     import { cubicOut } from "svelte/easing";
 
+    function desktopDepth(
+        _node: Element,
+        { duration, isOut, back }: { duration: number; isOut: boolean; back: boolean }
+    ) {
+        return {
+            duration,
+            easing: cubicOut,
+            css: (t: number) => {
+                // t goes 0 -> 1 on in, 1 -> 0 on out
+                const progress = isOut ? 1 - t : t;
+                const y = isOut
+                    ? (back ? 8 * progress : 0)
+                    : (back ? 0 : 10 * (1 - t));
+                const s = isOut
+                    ? (back ? 1 - 0.015 * progress : 1 - 0.01 * progress)
+                    : (back ? 1 + 0.012 * (1 - t) : 0.985 + 0.015 * t);
+                return `opacity: ${t}; transform: translate3d(0, ${y}px, 0) scale(${s});`;
+            },
+        };
+    }
+
     function pageIn(node: Element) {
         if ($nativeTransitionActive) return { duration: 0 };
-        if (!$isMobile) return fade(node, { duration: 200 });
+        if (!$isMobile) {
+            return desktopDepth(node, { duration: 220, isOut: false, back: $navDirection === "back" });
+        }
         return fly(node, {
             x: $navDirection === "back" ? -36 : 64,
             duration: 280,
@@ -69,7 +92,9 @@
 
     function pageOut(node: Element) {
         if ($nativeTransitionActive) return { duration: 0 };
-        if (!$isMobile) return fade(node, { duration: 150 });
+        if (!$isMobile) {
+            return desktopDepth(node, { duration: 140, isOut: true, back: $navDirection === "back" });
+        }
         return fly(node, {
             x: $navDirection === "back" ? 64 : -36,
             duration: 220,

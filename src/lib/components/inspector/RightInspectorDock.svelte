@@ -1,6 +1,8 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
   import { onMount, onDestroy } from "svelte";
+  import { fly } from "svelte/transition";
+  import { cubicOut } from "svelte/easing";
   import { get } from "svelte/store";
   import {
     isInspectorOpen,
@@ -318,6 +320,25 @@
   }
 
   // =========================================================================
+  // Tab Switch Direction
+  // =========================================================================
+  const TAB_ORDER: Record<InspectorTab, number> = {
+    now_playing: 0,
+    lyrics: 1,
+    queue: 2,
+  };
+  let tabDirection = 1;
+
+  function selectTab(next: InspectorTab) {
+    const prevIdx = TAB_ORDER[$activeInspectorTab] ?? 0;
+    const nextIdx = TAB_ORDER[next] ?? 0;
+    if (nextIdx !== prevIdx) {
+      tabDirection = nextIdx > prevIdx ? 1 : -1;
+      activeInspectorTab.set(next);
+    }
+  }
+
+  // =========================================================================
   // Queue stats
   // =========================================================================
   $: upcomingCount = Math.max(0, $queue.length - $queueIndex - 1);
@@ -349,7 +370,7 @@
         class:active={$activeInspectorTab === "now_playing"}
         role="tab"
         aria-selected={$activeInspectorTab === "now_playing"}
-        on:click={() => activeInspectorTab.set("now_playing")}
+        on:click={() => selectTab("now_playing")}
       >
         <Icon name="music" size={14} />
         <span>Now Playing</span>
@@ -360,7 +381,7 @@
         class:active={$activeInspectorTab === "lyrics"}
         role="tab"
         aria-selected={$activeInspectorTab === "lyrics"}
-        on:click={() => activeInspectorTab.set("lyrics")}
+        on:click={() => selectTab("lyrics")}
       >
         <Icon name="lyrics" size={14} />
         <span>Lyrics</span>
@@ -371,7 +392,7 @@
         class:active={$activeInspectorTab === "queue"}
         role="tab"
         aria-selected={$activeInspectorTab === "queue"}
-        on:click={() => activeInspectorTab.set("queue")}
+        on:click={() => selectTab("queue")}
       >
         <Icon name="queue" size={14} />
         <span>Queue</span>
@@ -391,9 +412,14 @@
     </button>
   </header>
 
+  <div class="inspector-tab-viewport">
   <!-- TAB 1: NOW PLAYING -->
   {#if $activeInspectorTab === "now_playing"}
-    <div class="inspector-scrollable">
+    <div
+      class="inspector-scrollable tab-pane"
+      in:fly={{ x: tabDirection * 32, duration: 220, easing: cubicOut }}
+      out:fly={{ x: tabDirection * -32, duration: 160, easing: cubicOut }}
+    >
       {#if $currentTrack}
         <div class="now-playing-content">
           <!-- Album Cover Art -->
@@ -539,7 +565,11 @@
 
   <!-- TAB 2: LYRICS -->
   {#if $activeInspectorTab === "lyrics"}
-    <div class="lyrics-tab-container">
+    <div
+      class="lyrics-tab-container tab-pane"
+      in:fly={{ x: tabDirection * 32, duration: 220, easing: cubicOut }}
+      out:fly={{ x: tabDirection * -32, duration: 160, easing: cubicOut }}
+    >
       <!-- Persistent Lyrics Action Header: Source Picker, Share, Import -->
       <div class="lyrics-sub-header">
         <div class="lyrics-header-left">
@@ -737,7 +767,11 @@
 
   <!-- TAB 3: QUEUE -->
   {#if $activeInspectorTab === "queue"}
-    <div class="queue-tab-container">
+    <div
+      class="queue-tab-container tab-pane"
+      in:fly={{ x: tabDirection * 32, duration: 220, easing: cubicOut }}
+      out:fly={{ x: tabDirection * -32, duration: 160, easing: cubicOut }}
+    >
       <div class="queue-sub-header">
         <span class="queue-summary-label">
           Next Up <strong>({upcomingCount})</strong>
@@ -760,6 +794,7 @@
       </div>
     </div>
   {/if}
+  </div>
 </aside>
 
 <LyricCardModal
@@ -783,7 +818,7 @@
     display: flex;
     flex-direction: column;
     position: relative;
-    z-index: 15;
+    z-index: 1;
     flex-shrink: 0;
     transition:
       width 0.28s cubic-bezier(0.25, 0.1, 0.25, 1),
@@ -802,6 +837,23 @@
     border-left: none;
     overflow: hidden;
     pointer-events: none;
+  }
+
+  .inspector-tab-viewport {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+  }
+
+  .tab-pane {
+    grid-area: 1 / 1;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
   }
 
   /* Segmented Header */
@@ -1410,8 +1462,9 @@
   .source-menu {
     position: absolute;
     top: calc(100% + 4px);
-    right: 0;
-    min-width: 140px;
+    left: 0;
+    right: auto;
+    min-width: 150px;
     background: var(--bg-elevated);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
@@ -1420,6 +1473,8 @@
     padding: 4px;
     margin: 0;
     z-index: 50;
+    transform-origin: top left;
+    animation: popoverIn 0.18s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
   }
 
   .source-menu-item {

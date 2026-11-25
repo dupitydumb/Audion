@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { fade, scale } from "svelte/transition";
+  import { fade, fly, scale, slide } from "svelte/transition";
+  import { cubicOut } from "svelte/easing";
   import { _ } from "svelte-i18n";
   import {
     pluginStore,
@@ -77,7 +78,24 @@
   let selectedPlugin: MarketplacePlugin | null = null;
   let pendingPermissions: string[] = [];
   let searchQuery = "";
-  let activeTab: "curated" | "community" | "registries" | "installed" = "curated";
+  type PluginTab = "curated" | "community" | "registries" | "installed";
+  const TAB_ORDER: Record<PluginTab, number> = {
+    curated: 0,
+    community: 1,
+    registries: 2,
+    installed: 3,
+  };
+  let activeTab: PluginTab = "curated";
+  let tabDirection = 1;
+
+  function selectTab(next: PluginTab) {
+    const prevIdx = TAB_ORDER[activeTab] ?? 0;
+    const nextIdx = TAB_ORDER[next] ?? 0;
+    if (nextIdx !== prevIdx) {
+      tabDirection = nextIdx > prevIdx ? 1 : -1;
+      activeTab = next;
+    }
+  }
   let sortBy: 'stars' | 'downloads' | 'name' | 'updated' = $pluginStore.sortBy;
   let sortOpen = false;
 
@@ -549,35 +567,35 @@
     <button
       class="tab"
       class:active={activeTab === "curated"}
-      on:click={() => (activeTab = "curated")}
+      on:click={() => selectTab("curated")}
     >
       {$_('pluginManager.curated')}
     </button>
     <button
       class="tab"
       class:active={activeTab === "community"}
-      on:click={() => (activeTab = "community")}
+      on:click={() => selectTab("community")}
     >
       {$_('pluginManager.community')}
     </button>
     <button
       class="tab"
       class:active={activeTab === "registries"}
-      on:click={() => (activeTab = "registries")}
+      on:click={() => selectTab("registries")}
     >
       Registries ({$pluginStore.registries?.length || 1})
     </button>
     <button
       class="tab"
       class:active={activeTab === "installed"}
-      on:click={() => (activeTab = "installed")}
+      on:click={() => selectTab("installed")}
     >
       {$_('pluginManager.installedTab', { values: { count: $pluginStore.installed.length } })}
     </button>
   </div>
 
   {#if activeTab === "community"}
-    <div class="create-form">
+    <div class="create-form" transition:slide={{ duration: 180 }}>
       <input
         type="text"
         placeholder={$_('pluginManager.enterUrl')}
@@ -619,7 +637,14 @@
         <Icon name="loader" size={48} />
         <h3>{$_('pluginManager.loading')}</h3>
       </div>
-    {:else if activeTab === "curated"}
+    {:else}
+      {#key activeTab}
+        <div
+          class="plugin-tab-pane"
+          in:fly={{ x: tabDirection * 36, duration: 240, easing: cubicOut }}
+          out:fly={{ x: tabDirection * -36, duration: 160, easing: cubicOut }}
+        >
+          {#if activeTab === "curated"}
       <div class="plugin-grid">
         {#each $curatedPlugins as plugin}
           <div class="plugin-card">
@@ -948,6 +973,9 @@
           </div>
         {/each}
       </div>
+    {/if}
+        </div>
+      {/key}
     {/if}
   </div>
 </div>
@@ -1291,13 +1319,25 @@
   .plugin-content {
     flex: 1;
     min-height: 0;
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+  }
+
+  .plugin-tab-pane {
+    grid-area: 1 / 1;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
     overflow-y: auto;
     padding-bottom: calc(var(--player-height) + var(--spacing-lg));
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-y: contain;
   }
 
-  :global(html.layout-mobile) .plugin-content {
+  :global(html.layout-mobile) .plugin-tab-pane {
     padding-bottom: var(--spacing-lg);
   }
 
@@ -1676,6 +1716,8 @@
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
     min-width: 100%;
     overflow: hidden;
+    transform-origin: top right;
+    animation: popoverIn 0.18s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
   }
 
   .sort-option {

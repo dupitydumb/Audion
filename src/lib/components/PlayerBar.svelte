@@ -1037,6 +1037,8 @@
 
 <style>
     .player-bar {
+        position: relative;
+        z-index: 100;
         height: var(--player-height);
         background-color: var(--player-bg, var(--bg-elevated));
         background: color-mix(in srgb, var(--player-bg, var(--bg-elevated)) 85%, transparent);
@@ -1805,6 +1807,8 @@
         display: flex;
         flex-direction: column;
         gap: 4px;
+        transform-origin: bottom right;
+        animation: popoverUpIn 0.2s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
     }
 
     .device-menu-header {
@@ -1898,6 +1902,8 @@
         display: flex;
         flex-direction: column;
         gap: 4px;
+        transform-origin: bottom right;
+        animation: popoverUpIn 0.2s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
     }
 
     .overflow-menu-header {

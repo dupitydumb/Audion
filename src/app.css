@@ -183,6 +183,28 @@ body.has-mini-player,
   }
 }
 
+@keyframes popoverIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, -6px, 0) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes popoverUpIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 6px, 0) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
 html.layout-mobile .press-squish:active {
   transform: scale(0.92);
   transition: transform 0.12s var(--ease-spring-snappy);
