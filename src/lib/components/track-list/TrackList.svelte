@@ -1683,16 +1683,16 @@
 
   .jump-glyph {
     display: block;
-    color: #fff;
-    opacity: 0.7;
+    color: var(--text-secondary);
+    opacity: 0.75;
     font-size: 10px;
     line-height: 1;
     font-weight: 500;
-    text-shadow: 0 0 3px rgba(0, 0, 0, 0.7);
-    transition: transform 0.15s ease, opacity 0.15s ease;
+    transition: transform 0.15s ease, opacity 0.15s ease, color 0.15s ease;
   }
 
   .jump-glyph.active {
+    color: var(--accent-primary);
     opacity: 1;
     font-weight: 700;
     transform: scale(1.6);
@@ -2005,10 +2005,10 @@
     background-color: var(--bg-surface);
   }
   :global(html.layout-mobile .track-row.selected .track-row-inner) {
-    background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.16);
+    background-color: color-mix(in srgb, var(--accent-primary) 16%, transparent);
   }
   :global(html.layout-mobile .track-row.selected.playing .track-row-inner) {
-    background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.26);
+    background-color: color-mix(in srgb, var(--accent-primary) 26%, transparent);
   }
 
   :global(html.layout-mobile) .list-body.mobile-album :global(.track-row-inner) { grid-template-columns: 32px 1fr auto 44px; padding-left: var(--spacing-sm); }
