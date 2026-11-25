@@ -608,7 +608,8 @@
         padding: calc(56px + var(--spacing-md)) var(--spacing-lg) var(--spacing-lg);
         background: linear-gradient(
             180deg,
-            color-mix(in srgb, var(--hero-accent-color, var(--bg-surface)) 45%, var(--bg-surface) 55%) 0%,
+            color-mix(in srgb, var(--hero-accent-color, var(--bg-surface)) 74%, var(--bg-surface) 26%) 0%,
+            color-mix(in srgb, var(--hero-accent-color, var(--bg-surface)) 36%, var(--bg-base) 64%) 58%,
             var(--bg-base) 100%
         );
         overflow: hidden;
@@ -627,11 +628,11 @@
         inset: 0;
         pointer-events: none;
         background: radial-gradient(
-            circle at 20% 30%,
-            color-mix(in srgb, var(--hero-accent-color, transparent) 35%, transparent) 0%,
-            transparent 70%
+            circle at 22% 35%,
+            color-mix(in srgb, var(--hero-accent-color, transparent) 60%, transparent) 0%,
+            transparent 72%
         );
-        opacity: 0.85;
+        opacity: 0.95;
         transition: opacity 0.4s ease;
     }
 
@@ -642,8 +643,8 @@
         pointer-events: none;
         background: linear-gradient(
             180deg,
-            rgba(0, 0, 0, 0.45) 0%,
-            rgba(0, 0, 0, 0.65) 100%
+            rgba(0, 0, 0, 0.28) 0%,
+            rgba(0, 0, 0, 0.52) 100%
         );
         opacity: 0;
         transition: opacity 0.4s ease;

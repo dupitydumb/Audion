@@ -79,7 +79,6 @@
     }
 
     function pageIn(node: Element) {
-        if ($nativeTransitionActive) return { duration: 0 };
         if (!$isMobile) {
             return desktopDepth(node, { duration: 220, isOut: false, back: $navDirection === "back" });
         }
@@ -91,7 +90,6 @@
     }
 
     function pageOut(node: Element) {
-        if ($nativeTransitionActive) return { duration: 0 };
         if (!$isMobile) {
             return desktopDepth(node, { duration: 140, isOut: true, back: $navDirection === "back" });
         }
