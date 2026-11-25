@@ -4,12 +4,59 @@
     import { fly, fade } from "svelte/transition";
     import { pluginDrawerOpen } from "$lib/stores/plugin-drawer";
     import { uiSlotManager } from "$lib/plugins/ui-slots";
-    import { registerBackHandler } from "$lib/stores/mobile";
+    import { isMobile, registerBackHandler, appleSpring } from "$lib/stores/mobile";
     import Icon from "$lib/components/Icon.svelte";
 
     let slotContainer: HTMLDivElement;
+    let drawerEl: HTMLDivElement;
     let hasContent = false;
     let unregisterBackHandler: (() => void) | null = null;
+    let dragY = 0;
+    let touchStartY = 0;
+    let touchStartX = 0;
+    let touchStartTime = 0;
+    let isDragging = false;
+
+    function drawerTransition(node: Element) {
+        if ($isMobile) {
+            return fly(node, { y: 340, duration: 380, opacity: 1, easing: appleSpring });
+        }
+        return fly(node, { x: 320, duration: 300, opacity: 1, easing: appleSpring });
+    }
+
+    function handleTouchStart(e: TouchEvent) {
+        if (!$isMobile || e.touches.length !== 1) return;
+        touchStartY = e.touches[0].clientY;
+        touchStartX = e.touches[0].clientX;
+        touchStartTime = Date.now();
+        dragY = 0;
+        isDragging = true;
+    }
+
+    function handleTouchMove(e: TouchEvent) {
+        if (!$isMobile || !isDragging || e.touches.length !== 1) return;
+        const body = drawerEl?.querySelector(".drawer-body");
+        if (body && body.scrollTop > 1) {
+            dragY = 0;
+            return;
+        }
+        const dy = e.touches[0].clientY - touchStartY;
+        const dx = e.touches[0].clientX - touchStartX;
+        if (dragY === 0 && (Math.abs(dx) > Math.abs(dy) || dy < 6)) return;
+        dragY = Math.max(0, dy);
+    }
+
+    function handleTouchEnd() {
+        if (!isDragging) return;
+        isDragging = false;
+        const velocity = dragY / Math.max(1, Date.now() - touchStartTime);
+        if (dragY > 80 || (dragY > 30 && velocity > 0.45)) {
+            dragY = 0;
+            close();
+            return;
+        }
+        dragY = 0;
+    }
 
     function close() {
         pluginDrawerOpen.set(false);
@@ -78,10 +125,16 @@
     <!-- Drawer panel -->
     <div
         class="plugin-drawer"
+        bind:this={drawerEl}
+        style={$isMobile && dragY > 0 ? `transform: translate3d(0, ${dragY}px, 0); transition: none;` : ""}
+        on:touchstart={handleTouchStart}
+        on:touchmove={handleTouchMove}
+        on:touchend={handleTouchEnd}
+        on:touchcancel={handleTouchEnd}
         role="dialog"
         aria-modal="true"
         aria-label="Plugin Actions"
-        transition:fly={{ x: 320, duration: 280, opacity: 1 }}
+        transition:drawerTransition
     >
         <div class="drawer-drag-handle" aria-hidden="true"></div>
         <div class="drawer-header">
@@ -265,7 +318,7 @@
         max-height: 75dvh;
         padding-bottom: var(--safe-area-bottom, 0px);
         box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.4);
-        animation: springSlideUp 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
+        transition: transform 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
     }
 
     :global(html.layout-mobile) .drawer-drag-handle {

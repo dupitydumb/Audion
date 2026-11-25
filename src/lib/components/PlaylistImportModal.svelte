@@ -2,7 +2,7 @@
   import { createEventDispatcher, onDestroy } from "svelte";
   import { fade, scale } from "svelte/transition";
   import Icon from "$lib/components/Icon.svelte";
-  import { isMobile, registerBackHandler } from "$lib/stores/mobile";
+  import { isMobile, registerBackHandler, modalSheetTransition } from "$lib/stores/mobile";
   import { addToast } from "$lib/stores/toast";
   import {
     parsePlaylistFile,
@@ -231,7 +231,7 @@
   <div class="modal-backdrop" transition:fade={{ duration: 150 }}>
     <div
       class="modal-container"
-      transition:scale={{ duration: 180, start: 0.95 }}
+      transition:modalSheetTransition
       role="dialog"
       aria-modal="true"
     >
@@ -1053,7 +1053,6 @@
     max-height: 90dvh;
     border-radius: 20px 20px 0 0;
     border-bottom: none;
-    animation: springSlideUp 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
   }
 
   :global(html.layout-mobile) .modal-header {

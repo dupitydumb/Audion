@@ -1,4 +1,5 @@
 import { writable, derived, get } from 'svelte/store';
+import { fly, scale } from 'svelte/transition';
 import { isMiniPlayer } from '$lib/stores/ui';
 
 /**
@@ -13,6 +14,19 @@ const MOBILE_BREAKPOINT = 768;
 const LAYOUT_OVERRIDE_STORAGE_KEY = 'audion:layout-override';
 
 export type LayoutOverride = 'auto' | 'mobile' | 'desktop' | 'hybrid';
+
+export function appleSpring(t: number): number {
+    if (t <= 0) return 0;
+    if (t >= 1) return 1;
+    return 1 - Math.exp(-8.5 * t) * Math.cos(7.5 * t);
+}
+
+export function modalSheetTransition(node: Element) {
+    if (get(isMobile)) {
+        return fly(node, { y: 340, duration: 380, opacity: 1, easing: appleSpring });
+    }
+    return scale(node, { duration: 220, start: 0.94, easing: appleSpring });
+}
 
 // Core state: is the viewport mobile-sized? Kept for informational/responsive
 // use elsewhere in the UI but doesn't drive mobile/desktop layout

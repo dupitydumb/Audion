@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { fade, scale } from "svelte/transition";
+  import { fade } from "svelte/transition";
+  import { modalSheetTransition } from "$lib/stores/mobile";
   import { getAudioTelemetry, type AudioTelemetry, isTauri } from "$lib/api/tauri";
   import { nativeAudioListDevices, type DeviceList } from "$lib/services/native-audio";
   import { appSettings } from "$lib/stores/settings";
@@ -187,7 +188,7 @@
     <div
       class="stats-hud-card"
       on:click|stopPropagation
-      transition:scale={{ duration: 160, start: 0.96 }}
+      transition:modalSheetTransition
       role="dialog"
       aria-modal="true"
       aria-label="Stats for Nerds Telemetry"
@@ -947,7 +948,6 @@
     max-height: 85dvh;
     border-radius: 20px 20px 0 0;
     border-bottom: none;
-    animation: springSlideUp 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
   }
 
   :global(html.layout-mobile) .hud-header {

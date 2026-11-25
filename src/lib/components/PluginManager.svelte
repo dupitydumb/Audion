@@ -19,7 +19,7 @@
   import { invoke, convertFileSrc } from "@tauri-apps/api/core";
   import { onDestroy } from "svelte";
   import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
-  import { isMobile, registerBackHandler } from "$lib/stores/mobile";
+  import { isMobile, registerBackHandler, modalSheetTransition } from "$lib/stores/mobile";
   import Icon from "$lib/components/Icon.svelte";
   import { createSflxExtensionAdapter } from "$lib/plugins/sflx-adapter";
   import { globalProviders } from "$lib/plugins/providers";
@@ -964,7 +964,7 @@
     <div
       class="modal"
       on:click|stopPropagation
-      transition:scale={{ duration: 180, start: 0.96 }}
+      transition:modalSheetTransition
       role="document"
     >
       <div class="modal-header">
@@ -2238,7 +2238,6 @@
     padding: 20px var(--spacing-md) var(--spacing-md);
     border-radius: 20px 20px 0 0;
     border-bottom: none;
-    animation: springSlideUp 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
   }
 
   :global(html.layout-mobile) .modal::before {

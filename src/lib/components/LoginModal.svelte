@@ -2,8 +2,8 @@
     import { onDestroy } from "svelte";
     import { _ } from "svelte-i18n";
     import { showLoginModal, startLogin, connectCustomServerPassword, testCustomServerConnection, loginModalMode, customServerStatus } from "$lib/stores/sync";
-    import { registerBackHandler } from "$lib/stores/mobile";
-    import { fade, scale, slide } from "svelte/transition";
+    import { registerBackHandler, modalSheetTransition } from "$lib/stores/mobile";
+    import { fade, slide } from "svelte/transition";
     import Icon from "$lib/components/Icon.svelte";
 
     let unregisterBackHandler: (() => void) | null = null;
@@ -129,7 +129,7 @@
     <div class="overlay" transition:fade={{ duration: 150 }} on:click={close}>
         <div
             class="modal"
-            transition:scale={{ duration: 200, start: 0.95 }}
+            transition:modalSheetTransition
             on:click|stopPropagation
             role="dialog"
             aria-modal="true"
@@ -919,7 +919,6 @@
         max-width: 100%;
         border-radius: 20px 20px 0 0;
         border-bottom: none;
-        animation: springSlideUp 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
     }
 
     :global(html.layout-mobile) .modal::before {

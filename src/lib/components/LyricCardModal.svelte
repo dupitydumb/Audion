@@ -1,13 +1,13 @@
 <script lang="ts">
   import { tick, onDestroy } from "svelte";
-  import { fade, scale } from "svelte/transition";
+  import { fade } from "svelte/transition";
   import { currentTrack, currentTime } from "$lib/stores/player";
   import { lyricsData, activeLine } from "$lib/stores/lyrics";
   import { albumPalette, meshColors } from "$lib/stores/palette";
   import { resolveTrackCover } from "$lib/stores/library";
   import { proxyFetchBytes, saveImageToGallery } from "$lib/api/tauri";
   import { addToast } from "$lib/stores/toast";
-  import { registerBackHandler } from "$lib/stores/mobile";
+  import { registerBackHandler, modalSheetTransition } from "$lib/stores/mobile";
   import Icon from "$lib/components/Icon.svelte";
 
   export let open: boolean = false;
@@ -899,7 +899,7 @@
   >
     <div
       class="lyric-card-modal"
-      transition:scale={{ duration: 180, start: 0.96 }}
+      transition:modalSheetTransition
       role="dialog"
       aria-modal="true"
       aria-label="Shareable Lyric Card"
@@ -1427,7 +1427,6 @@
     max-height: 90dvh;
     border-radius: 20px 20px 0 0;
     border-bottom: none;
-    animation: springSlideUp 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
   }
 
   :global(html.layout-mobile) .modal-header {
