@@ -64,8 +64,7 @@
     }
   });
 
-  function resolveAlbumId(): number | null {
-    const track = $currentTrack;
+  function resolveAlbumId(track = $currentTrack): number | null {
     if (!track) return null;
     if (track.album_id != null) return track.album_id;
     if (!track.album) return null;
@@ -83,7 +82,7 @@
     return matched?.id ?? null;
   }
 
-  $: targetAlbumId = ($currentTrack, resolveAlbumId());
+  $: targetAlbumId = resolveAlbumId($currentTrack);
 
   async function handleAddToPlaylist(playlistId: number, playlistName: string) {
     const track = $currentTrack;
