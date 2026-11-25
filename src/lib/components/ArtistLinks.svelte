@@ -21,8 +21,9 @@
   // when tapMenu is set and there's more than one artist
   // tapping the chip opens a popover listing every artist
 
-  import { createEventDispatcher, tick } from "svelte";
+  import { createEventDispatcher, tick, onDestroy } from "svelte";
   import MarqueeText from "$lib/components/MarqueeText.svelte";
+  import { registerBackHandler } from "$lib/stores/mobile";
 
   export let artist: string | null | undefined = null;
   export let artists: string[] | null | undefined = undefined;
@@ -58,6 +59,24 @@
   let menuEl: HTMLDivElement;
   let menuX = 0;
   let menuY = 0;
+
+  let unregisterBack: (() => void) | null = null;
+  $: if (menuOpen && !unregisterBack) {
+    unregisterBack = registerBackHandler(() => {
+      closeTapMenu();
+      return true;
+    });
+  } else if (!menuOpen && unregisterBack) {
+    unregisterBack();
+    unregisterBack = null;
+  }
+
+  onDestroy(() => {
+    if (unregisterBack) {
+      unregisterBack();
+      unregisterBack = null;
+    }
+  });
 
   function handleClick(e: MouseEvent, name: string) {
     e.stopPropagation();
@@ -242,15 +261,15 @@
 
   .artist-tap-menu {
     position: fixed;
-    z-index: 1000;
+    z-index: var(--z-sheet, 3000);
     min-width: 140px;
     max-width: 260px;
     max-height: 60vh;
     overflow-y: auto;
-    background: var(--surface-elevated, #222);
-    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-subtle, var(--border-color));
     border-radius: 8px;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    box-shadow: var(--shadow-lg);
     padding: 4px;
     display: flex;
     flex-direction: column;
@@ -261,10 +280,13 @@
     background: none;
     border: none;
     text-align: left;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
     padding: 8px 10px;
     border-radius: 6px;
     font: inherit;
-    color: inherit;
+    color: var(--text-primary);
     cursor: pointer;
     white-space: nowrap;
     overflow: hidden;
@@ -273,6 +295,6 @@
 
   .artist-tap-menu-item:hover,
   .artist-tap-menu-item:focus-visible {
-    background: var(--surface-hover, rgba(255, 255, 255, 0.08));
+    background: var(--surface-subtle-hover, var(--bg-highlight));
   }
 </style>

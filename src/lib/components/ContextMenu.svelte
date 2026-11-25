@@ -1,16 +1,32 @@
 <script lang="ts">
     import { contextMenu, type ContextMenuItem } from "$lib/stores/ui";
     import { fade } from "svelte/transition";
-    import { onMount } from "svelte";
-    import { isMobile } from "$lib/stores/mobile";
+    import { onMount, onDestroy, tick } from "svelte";
+    import { isMobile, registerBackHandler } from "$lib/stores/mobile";
     import Icon from "$lib/components/Icon.svelte";
-
-    import { tick } from "svelte";
 
     let menuElement: HTMLDivElement;
     let activeSubmenu: string | null = null;
     let adjustedX = 0;
     let adjustedY = 0;
+
+    // Mobile swipe-to-dismiss state
+    let dragY = 0;
+    let isDraggingSheet = false;
+    let touchStartY = 0;
+    let touchStartX = 0;
+    let forceHandleDrag = false;
+
+    let unregisterBack: (() => void) | null = null;
+    $: if ($contextMenu.visible && !unregisterBack) {
+        unregisterBack = registerBackHandler(() => {
+            closeMenu();
+            return true;
+        });
+    } else if (!$contextMenu.visible && unregisterBack) {
+        unregisterBack();
+        unregisterBack = null;
+    }
 
     // Reactively update position when menu becomes visible or coordinates change
     $: if (
@@ -50,6 +66,8 @@
     }
 
     function closeMenu() {
+        dragY = 0;
+        isDraggingSheet = false;
         contextMenu.update((m) => ({ ...m, visible: false }));
         activeSubmenu = null;
     }
@@ -57,10 +75,51 @@
     function handleSubmenuHover(label: string | null) {
         activeSubmenu = label;
     }
+
+    function handleSheetTouchStart(e: TouchEvent, fromHandle = false) {
+        if (!$isMobile || e.touches.length !== 1) return;
+        touchStartY = e.touches[0].clientY;
+        touchStartX = e.touches[0].clientX;
+        dragY = 0;
+        forceHandleDrag = fromHandle;
+        isDraggingSheet = true;
+    }
+
+    function handleSheetTouchMove(e: TouchEvent) {
+        if (!$isMobile || !isDraggingSheet || e.touches.length !== 1) return;
+        if (!forceHandleDrag && menuElement && menuElement.scrollTop > 1) {
+            dragY = 0;
+            return;
+        }
+        const dy = e.touches[0].clientY - touchStartY;
+        const dx = e.touches[0].clientX - touchStartX;
+        if (dragY === 0 && (Math.abs(dx) > Math.abs(dy) || dy < 6)) {
+            return;
+        }
+        dragY = Math.max(0, dy);
+    }
+
+    function handleSheetTouchEnd() {
+        if (!isDraggingSheet) return;
+        isDraggingSheet = false;
+        forceHandleDrag = false;
+        if (dragY > 70) {
+            closeMenu();
+            return;
+        }
+        dragY = 0;
+    }
   
     onMount(() => {
         window.addEventListener("click", handleClickOutside);
         return () => window.removeEventListener("click", handleClickOutside);
+    });
+
+    onDestroy(() => {
+        if (unregisterBack) {
+            unregisterBack();
+            unregisterBack = null;
+        }
     });
   
     function isSeparator(item: ContextMenuItem | { type: "separator" }): item is { type: "separator" } {
@@ -71,21 +130,38 @@
 {#if $contextMenu.visible}
     <!-- Backdrop for mobile -->
     {#if $isMobile}
+        <!-- svelte-ignore a11y-click-events-have-key-events -->
         <div
             class="context-menu-backdrop"
             on:click={closeMenu}
             transition:fade={{ duration: 200 }}
+            role="presentation"
         ></div>
     {/if}
 
     <div
         class="context-menu"
         bind:this={menuElement}
-        style={$isMobile ? "" : `top: ${adjustedY}px; left: ${adjustedX}px;`}
+        style={$isMobile
+            ? (dragY > 0 ? `transform: translate3d(0, ${dragY}px, 0); transition: none;` : "")
+            : `top: ${adjustedY}px; left: ${adjustedX}px;`}
+        on:touchstart={(e) => handleSheetTouchStart(e, false)}
+        on:touchmove={handleSheetTouchMove}
+        on:touchend={handleSheetTouchEnd}
+        on:touchcancel={handleSheetTouchEnd}
         transition:fade={{ duration: 100 }}
     >
         {#if $isMobile}
-            <div class="mobile-handle"></div>
+            <div
+                class="mobile-handle-zone"
+                on:touchstart|stopPropagation={(e) => handleSheetTouchStart(e, true)}
+                on:touchmove|stopPropagation={handleSheetTouchMove}
+                on:touchend|stopPropagation={handleSheetTouchEnd}
+                on:touchcancel|stopPropagation={handleSheetTouchEnd}
+                role="presentation"
+            >
+                <div class="mobile-handle"></div>
+            </div>
         {/if}
 
         {#each $contextMenu.items as item}
@@ -103,6 +179,14 @@
                         handleSubmenuHover(
                             item.label === activeSubmenu ? null : item.label,
                         )}
+                    on:keydown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            handleSubmenuHover(
+                                item.label === activeSubmenu ? null : item.label,
+                            );
+                        }
+                    }}
                     role="menuitem"
                     tabindex="0"
                 >
@@ -112,7 +196,10 @@
                         {/if}
                     </span>
                     <span class="menu-item-label">{item.label}</span>
-                    <Icon name="chevron-right" size={14} />
+                    <Icon
+                        name={$isMobile && activeSubmenu === item.label ? "chevron-down" : "chevron-right"}
+                        size={14}
+                    />
                     {#if activeSubmenu === item.label}
                         <div
                             class="submenu"
@@ -173,7 +260,7 @@
         padding: var(--spacing-xs);
         min-width: 160px;
         box-shadow: var(--shadow-md);
-        z-index: 9999;
+        z-index: var(--z-sheet, 3000);
         display: flex;
         flex-direction: column;
     }
@@ -273,7 +360,7 @@
         inset: 0;
         background-color: rgba(0, 0, 0, 0.6);
         backdrop-filter: blur(2px);
-        z-index: 9998;
+        z-index: var(--z-sheet, 3000);
     }
 
     :global(html.layout-mobile) .context-menu {
@@ -285,17 +372,28 @@
         width: 100%;
         min-width: 100%;
         max-width: 100%;
+        max-height: 75dvh;
+        overflow-y: auto;
+        overscroll-behavior-y: contain;
         border-bottom-left-radius: 0;
         border-bottom-right-radius: 0;
         border-top-left-radius: 16px;
         border-top-right-radius: 16px;
         padding: var(--spacing-sm);
-        padding-bottom: calc(
-            var(--safe-area-bottom, 0px) + var(--spacing-md)
-        );
+        padding-bottom: calc(16px + var(--safe-area-bottom, 0px));
         box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
         border: none;
         border-top: 1px solid var(--border-color);
+        z-index: var(--z-sheet, 3000);
+        transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    :global(html.layout-mobile) .mobile-handle-zone {
+        padding: 8px 0 12px;
+        display: flex;
+        justify-content: center;
+        cursor: grab;
+        flex-shrink: 0;
     }
 
     :global(html.layout-mobile) .mobile-handle {
@@ -303,7 +401,6 @@
         height: 4px;
         background-color: var(--bg-highlight);
         border-radius: var(--radius-full);
-        margin: var(--spacing-xs) auto var(--spacing-md);
     }
 
     :global(html.layout-mobile) .menu-item,
@@ -317,6 +414,10 @@
         border-radius: var(--radius-md);
     }
 
+    :global(html.layout-mobile) .menu-item.has-submenu {
+        flex-wrap: wrap;
+    }
+
     :global(html.layout-mobile) .menu-item-icon {
         width: 18px;
     }
@@ -324,12 +425,13 @@
     :global(html.layout-mobile) .submenu {
         position: static;
         width: 100%;
+        flex-basis: 100%;
         margin-top: var(--spacing-xs);
-        margin-left: var(--spacing-md);
+        margin-left: 0;
+        padding: 0 0 0 var(--spacing-md);
         border: none;
         background-color: transparent;
         box-shadow: none;
-        padding: 0;
         max-height: none;
     }
 </style>

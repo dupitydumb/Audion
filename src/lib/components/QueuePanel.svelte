@@ -1,8 +1,9 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
     import { fade, fly } from "svelte/transition";
-    import { isQueueVisible, toggleQueue } from "$lib/stores/ui";
+    import { isQueueVisible, toggleQueue, isFullScreen, closeFullScreen } from "$lib/stores/ui";
     import { isMobile } from "$lib/stores/mobile";
+    import { get } from "svelte/store";
     import {
         queue,
         queueIndex,
@@ -41,6 +42,11 @@
     let historyContainerHeight = 300;
     let historyScrollTop = 0;
     let historyContainerElement: HTMLDivElement;
+
+    // Unified scroll tracking on mobile (single outer scroll container)
+    let queueContentElement: HTMLDivElement;
+    let mobileContentScrollTop = 0;
+    let mobileContentHeight = 600;
     let isAndroid = false;
 
     // Create album map for art lookup
@@ -118,13 +124,28 @@
         visibleTracks: [] as typeof upcomingTracks,
     };
 
+    $: useUnifiedMobileScroll = $isMobile && !forceVisible;
+
     $: {
         const totalHeight = upcomingTracks.length * TRACK_ROW_HEIGHT;
-        const startIndex = Math.max(0, Math.floor(upcomingScrollTop / TRACK_ROW_HEIGHT) - OVERSCAN);
-        const endIndex = Math.min(
-            upcomingTracks.length,
-            Math.ceil((upcomingScrollTop + upcomingContainerHeight) / TRACK_ROW_HEIGHT) + OVERSCAN
-        );
+        let startIndex: number;
+        let endIndex: number;
+        if (useUnifiedMobileScroll) {
+            const offsetTop = upcomingContainerElement?.offsetTop ?? 0;
+            const relStart = mobileContentScrollTop - offsetTop;
+            const relEnd = relStart + mobileContentHeight;
+            startIndex = Math.max(0, Math.floor(relStart / TRACK_ROW_HEIGHT) - OVERSCAN);
+            endIndex = Math.min(
+                upcomingTracks.length,
+                Math.max(0, Math.ceil(relEnd / TRACK_ROW_HEIGHT) + OVERSCAN)
+            );
+        } else {
+            startIndex = Math.max(0, Math.floor(upcomingScrollTop / TRACK_ROW_HEIGHT) - OVERSCAN);
+            endIndex = Math.min(
+                upcomingTracks.length,
+                Math.ceil((upcomingScrollTop + upcomingContainerHeight) / TRACK_ROW_HEIGHT) + OVERSCAN
+            );
+        }
         const visibleTracks = upcomingTracks.slice(startIndex, endIndex);
         const offsetY = startIndex * TRACK_ROW_HEIGHT;
         upcomingVirtualState = { totalHeight, startIndex, endIndex, offsetY, visibleTracks };
@@ -141,11 +162,24 @@
 
     $: {
         const totalHeight = historyTracks.length * TRACK_ROW_HEIGHT;
-        const startIndex = Math.max(0, Math.floor(historyScrollTop / TRACK_ROW_HEIGHT) - OVERSCAN);
-        const endIndex = Math.min(
-            historyTracks.length,
-            Math.ceil((historyScrollTop + historyContainerHeight) / TRACK_ROW_HEIGHT) + OVERSCAN
-        );
+        let startIndex: number;
+        let endIndex: number;
+        if (useUnifiedMobileScroll) {
+            const offsetTop = historyContainerElement?.offsetTop ?? 0;
+            const relStart = mobileContentScrollTop - offsetTop;
+            const relEnd = relStart + mobileContentHeight;
+            startIndex = Math.max(0, Math.floor(relStart / TRACK_ROW_HEIGHT) - OVERSCAN);
+            endIndex = Math.min(
+                historyTracks.length,
+                Math.max(0, Math.ceil(relEnd / TRACK_ROW_HEIGHT) + OVERSCAN)
+            );
+        } else {
+            startIndex = Math.max(0, Math.floor(historyScrollTop / TRACK_ROW_HEIGHT) - OVERSCAN);
+            endIndex = Math.min(
+                historyTracks.length,
+                Math.ceil((historyScrollTop + historyContainerHeight) / TRACK_ROW_HEIGHT) + OVERSCAN
+            );
+        }
         const visibleTracks = historyTracks.slice(startIndex, endIndex);
         const offsetY = startIndex * TRACK_ROW_HEIGHT;
         historyVirtualState = { totalHeight, startIndex, endIndex, offsetY, visibleTracks };
@@ -157,6 +191,17 @@
 
     function handleHistoryScroll(e: Event) {
         historyScrollTop = (e.target as HTMLElement).scrollTop;
+    }
+
+    function handleMobileContentScroll(e: Event) {
+        if (!useUnifiedMobileScroll) return;
+        mobileContentScrollTop = (e.target as HTMLElement).scrollTop;
+    }
+
+    function handleArtistSelect(artistName: string) {
+        if (get(isQueueVisible)) isQueueVisible.set(false);
+        if (get(isFullScreen)) closeFullScreen();
+        goToArtistDetail(artistName);
     }
 
     function observeHeight(node: HTMLElement, onHeight: (h: number) => void) {
@@ -208,15 +253,25 @@
 
         // Capture pointer events
         const target = e.currentTarget as HTMLElement;
-        target.setPointerCapture(e.pointerId);
+        try {
+            target.setPointerCapture(e.pointerId);
+        } catch {}
+
+        // Clean up any stale listeners before attaching new ones
+        if (cleanupDragListeners) cleanupDragListeners();
 
         // Add global listeners
         window.addEventListener("pointermove", handlePointerMove);
         window.addEventListener("pointerup", handlePointerUp);
+        window.addEventListener("pointercancel", handlePointerCancel);
 
         cleanupDragListeners = () => {
             window.removeEventListener("pointermove", handlePointerMove);
             window.removeEventListener("pointerup", handlePointerUp);
+            window.removeEventListener("pointercancel", handlePointerCancel);
+            try {
+                target.releasePointerCapture(e.pointerId);
+            } catch {}
         };
     }
 
@@ -247,6 +302,17 @@
         }
     }
 
+    function resetDragState() {
+        isDragging = false;
+        draggedIndex = null;
+        dragOverIndex = null;
+
+        if (cleanupDragListeners) {
+            cleanupDragListeners();
+            cleanupDragListeners = null;
+        }
+    }
+
     function handlePointerUp() {
         if (
             isDragging &&
@@ -258,15 +324,11 @@
             reorderQueue(draggedIndex, dragOverIndex);
         }
 
-        // Cleanup
-        isDragging = false;
-        draggedIndex = null;
-        dragOverIndex = null;
-        
-        if (cleanupDragListeners) {
-            cleanupDragListeners();
-            cleanupDragListeners = null;
-        }
+        resetDragState();
+    }
+
+    function handlePointerCancel() {
+        resetDragState();
     }
 </script>
 
@@ -307,7 +369,13 @@
         </header>
     {/if}
 
-        <div class="queue-content">
+        <div
+            class="queue-content"
+            class:unified-mobile={useUnifiedMobileScroll}
+            bind:this={queueContentElement}
+            on:scroll={handleMobileContentScroll}
+            use:observeHeight={(h) => (mobileContentHeight = h)}
+        >
             {#if $currentTrack}
                 <section class="queue-section now-playing-section">
                     <h4 class="section-title">{$_('player.nowPlaying')}</h4>
@@ -350,7 +418,7 @@
                                     marqueeTrigger="external"
                                     marqueeActive={hoveredCurrentTrack}
                                     resetKey={$currentTrack.id}
-                                    on:select={(e) => goToArtistDetail(e.detail)}
+                                    on:select={(e) => handleArtistSelect(e.detail)}
                                 />
                             </div>
                             <span class="track-duration"
@@ -434,7 +502,7 @@
                                                     marqueeTrigger="external"
                                                     marqueeActive={hoveredQueueKey === item.track.id + "-next-" + item.index}
                                                     resetKey={item.track.id}
-                                                    on:select={(e) => goToArtistDetail(e.detail)}
+                                                    on:select={(e) => handleArtistSelect(e.detail)}
                                                 />
                                             </div>
                                         </button>
@@ -512,7 +580,7 @@
                                                     marqueeTrigger="external"
                                                     marqueeActive={hoveredQueueKey === item.track.id + "-history-" + item.index}
                                                     resetKey={item.track.id}
-                                                    on:select={(e) => goToArtistDetail(e.detail)}
+                                                    on:select={(e) => handleArtistSelect(e.detail)}
                                                 />
                                             </div>
                                         </button>
@@ -945,7 +1013,7 @@
         width: 100%;
         max-width: 100%;
         min-width: 0;
-        z-index: 2100;
+        z-index: var(--z-panel, 2100);
         border-left: none;
         border-radius: 0;
     }
@@ -958,21 +1026,50 @@
 
     .queue-panel.mobile .queue-header {
         padding: var(--spacing-md) var(--spacing-md);
-        padding-top: calc(var(--spacing-md) + var(--safe-area-top));
+        padding-top: calc(var(--spacing-md) + var(--safe-area-top, 0px));
     }
 
     .queue-panel.mobile .close-btn {
         width: 44px;
         height: 44px;
+        min-width: 44px;
+        min-height: 44px;
     }
 
-    /* On mobile, always show drag handles since hover dosen't exist */
-    .queue-panel.mobile .drag-handle {
+    .queue-panel.mobile .queue-content.unified-mobile {
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding-bottom: calc(var(--spacing-md) + var(--safe-area-bottom, 0px));
+    }
+
+    .queue-panel.mobile .queue-content.unified-mobile .queue-section.upcoming-section {
+        flex: none;
+    }
+
+    .queue-panel.mobile .queue-content.unified-mobile .queue-section.history {
+        max-height: none;
         opacity: 1;
     }
 
-    /* On mobile virtualized lists use full available height */
-    .queue-panel.mobile .queue-list.virtualized {
+    .queue-panel.mobile .queue-content.unified-mobile .queue-list.virtualized {
+        overflow: visible;
+        flex: none;
+        height: auto;
         max-height: none;
+    }
+
+    /* On mobile, always show drag handles and remove buttons since hover doesn't exist */
+    .queue-panel.mobile .drag-handle {
+        opacity: 1;
+        width: 32px;
+        height: 44px;
+    }
+
+    .queue-panel.mobile .remove-btn {
+        opacity: 1;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
     }
 </style>

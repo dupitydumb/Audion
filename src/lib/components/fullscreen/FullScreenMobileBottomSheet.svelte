@@ -1,19 +1,20 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
+  import { createEventDispatcher, onDestroy } from "svelte";
   import { fade, fly } from "svelte/transition";
   import { get } from "svelte/store";
   import { currentTrack, addToQueue } from "$lib/stores/player";
-  import { contextMenu, toggleFullScreen, isStatsForNerdsOpen } from "$lib/stores/ui";
-  import { likedTrackIds } from "$lib/stores/liked";
-  import { playlists, loadLibrary } from "$lib/stores/library";
-  import { confirm } from "$lib/stores/dialogs";
+  import { toggleFullScreen, isStatsForNerdsOpen } from "$lib/stores/ui";
+  import { likedTrackIds, toggleLike } from "$lib/stores/liked";
+  import { playlists, albums, adjustPlaylistTrackCount } from "$lib/stores/library";
   import { addToast } from "$lib/stores/toast";
   import { wsStore } from "$lib/stores/websocket";
   import { goToArtistDetail, goToAlbumDetail } from "$lib/stores/view";
+  import { registerBackHandler } from "$lib/stores/mobile";
   import { formatArtists } from "$lib/utils/artists";
   import Icon from "$lib/components/Icon.svelte";
   import AudioQualityBadge from "$lib/components/AudioQualityBadge.svelte";
-  import { gestureGuard } from "$lib/utils/gestureGuard";
+  import { gestureGuard, isGestureGuarded } from "$lib/utils/gestureGuard";
   import {
     sleepTimerActive,
     sleepTimerRemainingMs,
@@ -23,111 +24,112 @@
     startSleepTimerEndOfTrack,
     stopSleepTimer,
   } from "$lib/stores/sleepTimer";
-  import {
-    addTrackToPlaylist,
-    deleteTrack,
-  } from "$lib/api/tauri";
+  import { addTrackToPlaylist } from "$lib/api/tauri";
 
   export let showMobileMenu = false;
   export let showConnectPanel = false;
   export let albumArt: string | null = null;
 
-  $: connectedDevices = $wsStore.devices.length;
+  const dispatch = createEventDispatcher<{ trackInfo: void }>();
 
-  async function showTrackMenu(
-    e: MouseEvent | PointerEvent,
-    onlyAddToPlaylist = false,
-  ) {
+  let showPlaylistPicker = false;
+  let sheetEl: HTMLDivElement | null = null;
+  let dragY = 0;
+  let isDraggingSheet = false;
+  let touchStartY = 0;
+  let touchStartX = 0;
+
+  $: connectedDevices = $wsStore.devices.length;
+  $: isCurrentLiked = $currentTrack ? $likedTrackIds.has($currentTrack.id) : false;
+
+  let unregisterBack: (() => void) | null = null;
+  $: if (showMobileMenu && !unregisterBack) {
+    unregisterBack = registerBackHandler(() => {
+      if (showPlaylistPicker) {
+        showPlaylistPicker = false;
+        return true;
+      }
+      showMobileMenu = false;
+      return true;
+    });
+  } else if (!showMobileMenu && unregisterBack) {
+    unregisterBack();
+    unregisterBack = null;
+  }
+
+  onDestroy(() => {
+    if (unregisterBack) {
+      unregisterBack();
+      unregisterBack = null;
+    }
+  });
+
+  function resolveAlbumId(): number | null {
+    const track = $currentTrack;
+    if (!track) return null;
+    if (track.album_id != null) return track.album_id;
+    if (!track.album) return null;
+
+    const albumName = track.album.trim().toLowerCase();
+    const trackArtist = track.artist?.trim().toLowerCase();
+    const allAlbums = get(albums);
+    const matched =
+      allAlbums.find(
+        (a) =>
+          a.name.trim().toLowerCase() === albumName &&
+          trackArtist &&
+          a.artist?.trim().toLowerCase() === trackArtist,
+      ) || allAlbums.find((a) => a.name.trim().toLowerCase() === albumName);
+    return matched?.id ?? null;
+  }
+
+  $: targetAlbumId = ($currentTrack, resolveAlbumId());
+
+  async function handleAddToPlaylist(playlistId: number, playlistName: string) {
     const track = $currentTrack;
     if (!track) return;
+    try {
+      await addTrackToPlaylist(playlistId, track.id);
+      adjustPlaylistTrackCount(playlistId, 1);
+      addToast($_('player.addedToPlaylist', { values: { name: playlistName } }), "success");
+      showMobileMenu = false;
+    } catch (error) {
+      console.error("Failed to add track to playlist:", error);
+      addToast($_('player.addToPlaylistFailed'), "error");
+    }
+  }
 
-    e.preventDefault();
-    e.stopPropagation();
+  function handleSheetTouchStart(e: TouchEvent) {
+    if (e.touches.length !== 1) return;
+    touchStartY = e.touches[0].clientY;
+    touchStartX = e.touches[0].clientX;
+    dragY = 0;
+    isDraggingSheet = true;
+  }
 
-    const playlistItems = $playlists.map((playlist) => ({
-      label: playlist.name,
-      action: async () => {
-        try {
-          await addTrackToPlaylist(playlist.id, track.id);
-          addToast($_('player.addedToPlaylist', { values: { name: playlist.name } }), "success");
-        } catch (error) {
-          console.error("Failed to add track to playlist:", error);
-          addToast($_('player.addToPlaylistFailed'), "error");
-        }
-      },
-    }));
+  function handleSheetTouchMove(e: TouchEvent) {
+    if (!isDraggingSheet || e.touches.length !== 1) return;
+    if (isGestureGuarded(e) || (sheetEl && sheetEl.scrollTop > 1)) {
+      dragY = 0;
+      return;
+    }
+    const dy = e.touches[0].clientY - touchStartY;
+    const dx = e.touches[0].clientX - touchStartX;
+    if (dragY === 0 && (Math.abs(dx) > Math.abs(dy) || dy < 6)) {
+      return;
+    }
+    dragY = Math.max(0, dy);
+  }
 
-    const menuItems: any[] = [
-      {
-        label: $_('contextMenu.addToQueue'),
-        action: () => {
-          addToQueue([track]);
-          addToast($_('player.addedToQueue'), "success");
-        },
-      },
-      { type: "separator" },
-      {
-        label: $_('contextMenu.addToPlaylist'),
-        submenu:
-          playlistItems.length > 0
-            ? playlistItems
-            : [
-                {
-                  label: $_('contextMenu.noPlaylists'),
-                  action: () => {},
-                  disabled: true,
-                },
-              ],
-      },
-      { type: "separator" },
-      {
-        label: $_('contextMenu.deleteFromLibrary'),
-        danger: true,
-        action: async () => {
-          const confirmed = await confirm(
-            $_('player.deleteTrackConfirm', { values: { title: track.title } }),
-            {
-              title: $_('player.deleteTrackTitle'),
-              confirmLabel: $_('player.delete'),
-              danger: true,
-            },
-          );
-
-          if (!confirmed) return;
-
-          try {
-            await deleteTrack(track.id);
-            await loadLibrary();
-            toggleFullScreen(); // Close player if track is deleted
-          } catch (error) {
-            console.error("Failed to delete track:", error);
-          }
-        },
-      },
-    ];
-
-    contextMenu.set({
-      visible: true,
-      x: e.clientX,
-      y: e.clientY,
-      items: onlyAddToPlaylist
-        ? [
-            {
-              label: $_('contextMenu.addToPlaylist'),
-              submenu:
-                playlistItems.length > 0
-                  ? playlistItems
-                  : [
-                      {
-                        label: $_('contextMenu.noPlaylists'),
-                        action: () => {},
-                        disabled: true,
-                      },
-                    ],
-            },
-          ]
-        : menuItems,
-    });
+  function handleSheetTouchEnd() {
+    if (!isDraggingSheet) return;
+    isDraggingSheet = false;
+    if (dragY > 80) {
+      dragY = 0;
+      showMobileMenu = false;
+      return;
+    }
+    dragY = 0;
   }
 </script>
 
@@ -141,13 +143,22 @@
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <div
     class="mobile-menu-sheet"
+    bind:this={sheetEl}
     use:gestureGuard={{ direction: 'vertical', bubbleAtEdges: true }}
+    on:touchstart={handleSheetTouchStart}
+    on:touchmove={handleSheetTouchMove}
+    on:touchend={handleSheetTouchEnd}
+    on:touchcancel={handleSheetTouchEnd}
     on:click|stopPropagation
+    style={dragY > 0 ? `transform: translate3d(0, ${dragY}px, 0); transition: none;` : ""}
     transition:fly={{ y: 300, duration: 300 }}
     role="dialog"
+    aria-modal="true"
     tabindex="-1"
   >
-    <div class="sheet-handle"></div>
+    <div class="sheet-handle-zone">
+      <div class="sheet-handle" aria-hidden="true"></div>
+    </div>
 
     {#if $currentTrack}
       <div class="sheet-track-info">
@@ -172,10 +183,73 @@
 
     <div class="sheet-divider"></div>
 
+    <!-- Inline Like / Unlike -->
+    {#if $currentTrack}
+      <button
+        type="button"
+        class="sheet-item"
+        class:liked={isCurrentLiked}
+        on:click={() => $currentTrack && toggleLike($currentTrack.id)}
+      >
+        <Icon name={isCurrentLiked ? "heart-filled" : "heart"} size={22} />
+        <span>{isCurrentLiked ? $_('contextMenu.unlike') : $_('contextMenu.like')}</span>
+      </button>
+    {/if}
+
+    <!-- Inline Add to Queue -->
+    {#if $currentTrack}
+      <button
+        type="button"
+        class="sheet-item"
+        on:click={() => {
+          if ($currentTrack) {
+            addToQueue([$currentTrack]);
+            addToast($_('player.addedToQueue'), "success");
+            showMobileMenu = false;
+          }
+        }}
+      >
+        <Icon name="queue" size={22} />
+        <span>{$_('contextMenu.addToQueue')}</span>
+      </button>
+    {/if}
+
+    <!-- Inline Add to Playlist -->
+    <button
+      type="button"
+      class="sheet-item"
+      aria-expanded={showPlaylistPicker}
+      on:click={() => (showPlaylistPicker = !showPlaylistPicker)}
+    >
+      <Icon name="list-music" size={22} />
+      <span>{$_('contextMenu.addToPlaylist')}</span>
+      <Icon name={showPlaylistPicker ? "chevron-down" : "chevron-right"} size={18} />
+    </button>
+
+    {#if showPlaylistPicker}
+      <div class="sheet-playlist-list">
+        {#if $playlists.length === 0}
+          <div class="sheet-playlist-empty">{$_('contextMenu.noPlaylists')}</div>
+        {:else}
+          {#each $playlists as playlist (playlist.id)}
+            <button
+              type="button"
+              class="sheet-playlist-item"
+              on:click={() => handleAddToPlaylist(playlist.id, playlist.name)}
+            >
+              <Icon name="plus" size={16} />
+              <span>{playlist.name}</span>
+            </button>
+          {/each}
+        {/if}
+      </div>
+    {/if}
+
     <!-- Go to Artist -->
     {#if $currentTrack?.artists && $currentTrack.artists.length > 1}
       {#each $currentTrack.artists as artistName (artistName)}
         <button
+          type="button"
           class="sheet-item"
           on:click={() => {
             showMobileMenu = false;
@@ -184,11 +258,12 @@
           }}
         >
           <Icon name="user" size={22} />
-          <span>Go to {artistName}</span>
+          <span>{$_('contextMenu.goToArtist')} · {artistName}</span>
         </button>
       {/each}
     {:else if $currentTrack?.artist}
       <button
+        type="button"
         class="sheet-item"
         on:click={() => {
           showMobileMenu = false;
@@ -202,17 +277,30 @@
     {/if}
 
     <!-- Go to Album -->
-    {#if $currentTrack?.album_id}
+    {#if targetAlbumId}
       <button
+        type="button"
         class="sheet-item"
         on:click={() => {
           showMobileMenu = false;
           toggleFullScreen();
-          if ($currentTrack?.album_id) goToAlbumDetail($currentTrack.album_id);
+          if (targetAlbumId) goToAlbumDetail(targetAlbumId);
         }}
       >
         <Icon name="disc" size={22} />
         <span>{$_('contextMenu.goToAlbum')}</span>
+      </button>
+    {/if}
+
+    <!-- Track Info -->
+    {#if $currentTrack}
+      <button
+        type="button"
+        class="sheet-item"
+        on:click={() => dispatch('trackInfo')}
+      >
+        <Icon name="file-text" size={22} />
+        <span>{$_('contextMenu.showMoreInfo')}</span>
       </button>
     {/if}
 
@@ -230,6 +318,7 @@
       <div class="sheet-timer-presets">
         {#each SLEEP_TIMER_PRESETS as minutes}
           <button
+            type="button"
             class="sheet-timer-btn"
             class:active={$sleepTimerMode === 'duration' && Math.ceil($sleepTimerRemainingMs / 60000) === minutes}
             on:click={() => { startSleepTimer(minutes); showMobileMenu = false; }}
@@ -238,6 +327,7 @@
           </button>
         {/each}
         <button
+          type="button"
           class="sheet-timer-btn end-track-btn"
           class:active={$sleepTimerMode === 'end_of_track'}
           on:click={() => { startSleepTimerEndOfTrack(); showMobileMenu = false; }}
@@ -246,6 +336,7 @@
         </button>
         {#if $sleepTimerActive}
           <button
+            type="button"
             class="sheet-timer-btn cancel"
             on:click={() => { stopSleepTimer(); showMobileMenu = false; }}
           >
@@ -257,6 +348,7 @@
 
     <!-- Connect to Device -->
     <button
+      type="button"
       class="sheet-item"
       on:click={() => { showMobileMenu = false; showConnectPanel = true; }}
     >
@@ -267,17 +359,9 @@
       {/if}
     </button>
 
-    <!-- Add to Playlist -->
-    <button
-      class="sheet-item"
-      on:click={(e) => { showMobileMenu = false; showTrackMenu(e, true); }}
-    >
-      <Icon name="list-music" size={22} />
-      <span>{$_('contextMenu.addToPlaylist')}</span>
-    </button>
-
     <!-- Stats for Nerds (Audio Telemetry HUD) -->
     <button
+      type="button"
       class="sheet-item"
       on:click={() => { showMobileMenu = false; isStatsForNerdsOpen.set(true); }}
     >
@@ -292,7 +376,7 @@
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.55);
-    z-index: 200;
+    z-index: var(--z-sheet, 3000);
     display: flex;
     align-items: flex-end;
     justify-content: center;
@@ -300,29 +384,38 @@
 
   .mobile-menu-sheet {
     width: 100%;
-    max-width: 480px;
-    background: color-mix(in srgb, var(--bg-elevated) 84%, transparent);
+    max-width: 560px;
+    background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+    color: var(--text-primary);
     backdrop-filter: blur(32px) saturate(190%);
     -webkit-backdrop-filter: blur(32px) saturate(190%);
     border-radius: 24px 24px 0 0;
-    border-top: 1px solid rgba(255, 255, 255, 0.12);
-    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.65);
-    padding: 8px 0 calc(20px + env(safe-area-inset-bottom));
-    max-height: 75vh;
+    border-top: 1px solid var(--border-subtle, var(--border-color));
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+    padding: 0 0 calc(20px + var(--safe-area-bottom, 0px));
+    max-height: 75dvh;
     overflow-y: auto;
+    overscroll-behavior-y: contain;
     scrollbar-width: none;
+    transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
   .mobile-menu-sheet::-webkit-scrollbar {
     display: none;
   }
 
+  .sheet-handle-zone {
+    padding: 12px 0 8px;
+    display: flex;
+    justify-content: center;
+    cursor: grab;
+  }
+
   .sheet-handle {
     width: 36px;
     height: 4px;
-    background: rgba(255, 255, 255, 0.25);
+    background: var(--text-tertiary, var(--bg-highlight));
     border-radius: 2px;
-    margin: 6px auto 12px;
   }
 
   .sheet-track-info {
@@ -344,8 +437,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #404040;
-    color: rgba(255, 255, 255, 0.4);
+    background: var(--bg-surface);
+    color: var(--text-subdued);
     width: 44px;
     height: 44px;
     border-radius: 6px;
@@ -368,7 +461,7 @@
   .sheet-track-title {
     font-size: 0.95rem;
     font-weight: 600;
-    color: #fff;
+    color: var(--text-primary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -376,7 +469,7 @@
 
   .sheet-track-artist {
     font-size: 0.8rem;
-    color: rgba(255, 255, 255, 0.5);
+    color: var(--text-secondary);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -385,7 +478,7 @@
 
   .sheet-divider {
     height: 1px;
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--border-subtle, var(--border-color));
     margin: 0 20px 4px;
   }
 
@@ -394,10 +487,11 @@
     align-items: center;
     gap: 14px;
     width: 100%;
-    padding: 14px 20px;
+    min-height: 48px;
+    padding: 12px 20px;
     background: none;
     border: none;
-    color: #fff;
+    color: var(--text-primary);
     font-size: 0.95rem;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
@@ -405,12 +499,16 @@
   }
 
   .sheet-item:active {
-    background: rgba(255, 255, 255, 0.08);
+    background: var(--surface-subtle-hover, var(--bg-surface));
   }
 
-  .sheet-item svg {
-    color: rgba(255, 255, 255, 0.6);
+  .sheet-item :global(svg) {
+    color: var(--text-secondary);
     flex-shrink: 0;
+  }
+
+  .sheet-item.liked :global(svg) {
+    color: var(--accent-primary);
   }
 
   .sheet-item span {
@@ -418,9 +516,51 @@
     text-align: left;
   }
 
+  .sheet-playlist-list {
+    display: flex;
+    flex-direction: column;
+    margin: 0 20px 8px 56px;
+    padding: 4px 0;
+    border-left: 2px solid var(--border-subtle, var(--border-color));
+    max-height: 220px;
+    overflow-y: auto;
+  }
+
+  .sheet-playlist-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 14px;
+    background: none;
+    border: none;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    text-align: left;
+    cursor: pointer;
+    border-radius: var(--radius-md);
+  }
+
+  .sheet-playlist-item:active {
+    background: var(--surface-subtle-hover, var(--bg-surface));
+  }
+
+  .sheet-playlist-item span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .sheet-playlist-empty {
+    padding: 10px 14px;
+    font-size: 0.85rem;
+    color: var(--text-subdued);
+  }
+
   .sheet-connected-badge {
-    background: var(--accent-color, #1db954);
-    color: #000;
+    background: var(--accent-primary);
+    color: var(--text-on-accent, #000000);
     font-size: 0.7rem;
     font-weight: 700;
     width: 20px;
@@ -433,20 +573,20 @@
   }
 
   .sheet-item-group {
-    padding: 6px 20px 10px;
+    padding: 8px 20px 12px;
   }
 
   .sheet-item-header {
     display: flex;
     align-items: center;
     gap: 14px;
-    color: #fff;
+    color: var(--text-primary);
     font-size: 0.95rem;
     margin-bottom: 10px;
   }
 
-  .sheet-item-header svg {
-    color: rgba(255, 255, 255, 0.6);
+  .sheet-item-header :global(svg) {
+    color: var(--text-secondary);
     flex-shrink: 0;
   }
 
@@ -454,7 +594,7 @@
     margin-left: auto;
     font-size: 0.75rem;
     font-weight: 600;
-    color: var(--accent-color, #1db954);
+    color: var(--accent-primary);
   }
 
   .sheet-timer-presets {
@@ -465,11 +605,12 @@
   }
 
   .sheet-timer-btn {
+    min-height: 40px;
     padding: 6px 16px;
     border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.8);
+    border: 1px solid var(--border-subtle, var(--border-color));
+    background: var(--surface-subtle, var(--bg-surface));
+    color: var(--text-secondary);
     font-size: 0.82rem;
     font-weight: 500;
     cursor: pointer;
@@ -479,11 +620,18 @@
   }
 
   .sheet-timer-btn:active {
-    background: rgba(255, 255, 255, 0.15);
+    background: var(--surface-subtle-hover, var(--bg-highlight));
+  }
+
+  .sheet-timer-btn.active {
+    background: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: var(--text-on-accent, #000000);
+    font-weight: 600;
   }
 
   .sheet-timer-btn.cancel {
-    border-color: #e53935;
-    color: #e53935;
+    border-color: var(--error-color, #e53935);
+    color: var(--error-color, #e53935);
   }
 </style>

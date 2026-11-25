@@ -10,9 +10,11 @@
     nextTrack,
     previousTrack,
     progress,
-    seek,
+    duration,
+    isStreaming,
   } from "$lib/stores/player";
-  import { isFullScreen, openFullScreen } from "$lib/stores/ui";
+  import { likedTrackIds, toggleLike } from "$lib/stores/liked";
+  import { openFullScreen } from "$lib/stores/ui";
   import { getAlbum } from "$lib/api/tauri";
   import { resolveTrackCover } from "$lib/stores/library";
   import { customArtworks } from "$lib/stores/customArtwork";
@@ -20,6 +22,17 @@
 
   let albumArt: string | null = null;
   let imageLoadFailed = false;
+
+  $: isCurrentLiked = $currentTrack
+    ? $likedTrackIds.has($currentTrack.id)
+    : false;
+
+  $: isLive = $currentTrack
+    ? $currentTrack.source_type === "radio" ||
+      (isStreaming($currentTrack) &&
+        (!$currentTrack.duration || $currentTrack.duration === 0) &&
+        (!$duration || $duration === 0 || !isFinite($duration)))
+    : false;
 
   $: if ($currentTrack) {
     loadTrackCover($currentTrack, $customArtworks);
@@ -50,6 +63,13 @@
     openFullScreen();
   }
 
+  function handleLike(e: Event) {
+    e.stopPropagation();
+    if ($currentTrack) {
+      toggleLike($currentTrack.id);
+    }
+  }
+
   function handlePlayPause(e: Event) {
     e.stopPropagation();
     togglePlay();
@@ -58,39 +78,6 @@
   function handleNext(e: Event) {
     e.stopPropagation();
     nextTrack();
-  }
-
-  // Reactive hairline progress bar seeking
-  let isMiniSeeking = false;
-  let miniProgressBarEl: HTMLDivElement | null = null;
-
-  function handleMiniSeekStart(e: PointerEvent) {
-    if (e.button !== 0 && e.pointerType === 'mouse') return;
-    e.stopPropagation();
-    isMiniSeeking = true;
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    handleMiniSeekUpdate(e);
-  }
-
-  function handleMiniSeekUpdate(e: PointerEvent) {
-    if (!isMiniSeeking || !miniProgressBarEl) return;
-    e.stopPropagation();
-    const rect = miniProgressBarEl.getBoundingClientRect();
-    if (rect.width > 0) {
-      const pos = (e.clientX - rect.left) / rect.width;
-      seek(Math.max(0, Math.min(1, pos)));
-    }
-  }
-
-  function handleMiniSeekEnd(e: PointerEvent) {
-    if (!isMiniSeeking) return;
-    e.stopPropagation();
-    isMiniSeeking = false;
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {
-      // ignore
-    }
   }
 
   // Touch gesture tracking (Swipe up to expand, swipe left/right to skip)
@@ -123,7 +110,7 @@
     dragY = Math.min(0, dy * 0.35); // upwards only
   }
 
-  function handleTouchEnd(e: TouchEvent) {
+  function handleTouchEnd() {
     if (!isDragging) return;
     isDragging = false;
     const elapsed = Date.now() - touchStartTime;
@@ -147,6 +134,12 @@
       }
     }
   }
+
+  function handleTouchCancel() {
+    isDragging = false;
+    dragX = 0;
+    dragY = 0;
+  }
 </script>
 
 {#if $currentTrack}
@@ -156,37 +149,26 @@
     on:touchstart={handleTouchStart}
     on:touchmove={handleTouchMove}
     on:touchend={handleTouchEnd}
+    on:touchcancel={handleTouchCancel}
     on:keydown={(e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         handleOpenPlayer();
       }
     }}
-    style="transform: translate3d({dragX}px, {dragY}px, 0);"
+    style={dragX !== 0 || dragY !== 0 ? `transform: translate3d(${dragX}px, ${dragY}px, 0);` : ""}
     role="button"
     tabindex="0"
     aria-label={$_('player.openFullPlayer')}
     transition:fly={{ y: 50, duration: 250 }}
   >
-    <!-- Hairline reactive progress scrubber at the top -->
-    <div
-      class="mini-progress-bar"
-      class:seeking={isMiniSeeking}
-      bind:this={miniProgressBarEl}
-      on:pointerdown={handleMiniSeekStart}
-      on:pointermove={handleMiniSeekUpdate}
-      on:pointerup={handleMiniSeekEnd}
-      on:pointercancel={handleMiniSeekEnd}
-      role="slider"
-      aria-label="Progress"
-      aria-valuenow={Math.round($progress * 100)}
-      aria-valuemin="0"
-      aria-valuemax="100"
-      tabindex="-1"
-    >
-      <div class="mini-progress-fill" style="width: {$progress * 100}%">
-        <div class="mini-progress-glow"></div>
-      </div>
+    <!-- Display-only 2px hairline progress indicator at the top -->
+    <div class="mini-progress-bar" aria-hidden="true">
+      {#if isLive}
+        <div class="mini-progress-fill live"></div>
+      {:else}
+        <div class="mini-progress-fill" style="width: {$progress * 100}%"></div>
+      {/if}
     </div>
 
     <div class="mini-player-content">
@@ -207,6 +189,9 @@
         <div class="track-text">
           <div class="track-title-row">
             <span class="track-title truncate">{$currentTrack.title || $_('player.unknownTitle')}</span>
+            {#if isLive}
+              <span class="live-badge">{$_('player.live')}</span>
+            {/if}
           </div>
           <ArtistLinks
             artist={$currentTrack.artist}
@@ -221,6 +206,17 @@
 
       <div class="mini-controls">
         <button
+          type="button"
+          class="control-btn like-btn"
+          class:liked={isCurrentLiked}
+          on:click={handleLike}
+          aria-label={isCurrentLiked ? $_('player.removeFromLiked') : $_('player.addToLiked')}
+        >
+          <Icon name={isCurrentLiked ? "heart-filled" : "heart"} size={19} />
+        </button>
+
+        <button
+          type="button"
           class="control-btn play-pause-btn"
           on:click={handlePlayPause}
           aria-label={$isPlaying ? $_('common.pause') : $_('common.play')}
@@ -233,6 +229,7 @@
         </button>
 
         <button
+          type="button"
           class="control-btn next-btn"
           on:click={handleNext}
           aria-label={$_('player.next')}
@@ -247,17 +244,18 @@
 <style>
   .mobile-mini-player {
     position: fixed;
-    bottom: calc(var(--mobile-nav-height, 60px) + var(--spacing-sm) + var(--safe-area-bottom, 0px));
-    left: var(--spacing-sm);
-    right: var(--spacing-sm);
-    height: 64px;
-    background: color-mix(in srgb, var(--bg-elevated, #181818) 82%, transparent);
+    bottom: calc(var(--mobile-nav-height, 64px) + var(--mobile-mini-player-gap, 8px) + var(--safe-area-bottom, 0px));
+    left: calc(var(--spacing-sm) + var(--safe-area-left, 0px));
+    right: calc(var(--spacing-sm) + var(--safe-area-right, 0px));
+    height: var(--mobile-mini-player-height, 64px);
+    background: color-mix(in srgb, var(--player-bg, var(--bg-elevated)) 88%, transparent);
+    color: var(--player-text, var(--text-on-player, var(--text-primary)));
     backdrop-filter: blur(28px) saturate(190%);
     -webkit-backdrop-filter: blur(28px) saturate(190%);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid var(--border-subtle, color-mix(in srgb, var(--text-primary) 10%, transparent));
     border-radius: var(--radius-lg, 14px);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    z-index: 100;
+    box-shadow: var(--shadow-lg);
+    z-index: var(--z-mini-player, 900);
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -265,19 +263,16 @@
     transition: background-color var(--transition-normal), transform 150ms cubic-bezier(0.2, 0.8, 0.2, 1);
     cursor: pointer;
     touch-action: pan-y;
-  }
-
-  .mobile-mini-player:hover {
-    background: color-mix(in srgb, var(--bg-surface, #282828) 88%, transparent);
+    -webkit-tap-highlight-color: transparent;
   }
 
   .mobile-mini-player:focus-visible {
-    outline: 2px solid var(--accent-primary, #1db954);
+    outline: 2px solid var(--accent-primary);
     outline-offset: 2px;
   }
 
   .mobile-mini-player:active {
-    background: color-mix(in srgb, var(--bg-surface, #282828) 90%, black);
+    background: color-mix(in srgb, var(--player-bg, var(--bg-surface)) 94%, transparent);
   }
 
   .mini-progress-bar {
@@ -285,73 +280,58 @@
     top: 0;
     left: 0;
     right: 0;
-    height: 3px;
-    background: rgba(255, 255, 255, 0.12);
-    cursor: pointer;
-    touch-action: none;
-    z-index: 10;
-    transition: height 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
-  }
-
-  .mini-progress-bar:hover,
-  .mini-progress-bar.seeking {
-    height: 5px;
+    height: 2px;
+    background: var(--border-subtle, color-mix(in srgb, var(--text-primary) 10%, transparent));
+    pointer-events: none;
+    z-index: 2;
   }
 
   .mini-progress-fill {
     height: 100%;
-    background: linear-gradient(
-      90deg,
-      var(--accent-primary) 0%,
-      color-mix(in srgb, var(--accent-primary) 75%, white) 50%,
-      var(--accent-primary) 100%
-    );
-    background-size: 200% 100%;
-    box-shadow: 0 0 8px color-mix(in srgb, var(--accent-primary) 60%, transparent);
+    background: var(--accent-primary);
     transition: width 100ms linear;
-    position: relative;
     border-radius: 0 2px 2px 0;
   }
 
-  .mini-progress-bar.seeking .mini-progress-fill {
-    transition: none;
+  .mini-progress-fill.live {
+    width: 100%;
+    background: linear-gradient(
+      90deg,
+      var(--error-color, #e53935),
+      var(--accent-warning, #ff7043),
+      var(--error-color, #e53935)
+    );
+    background-size: 200% 100%;
+    animation: mini-live-shimmer 3s ease-in-out infinite;
   }
 
-  .mini-progress-glow {
-    position: absolute;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #fff;
-    box-shadow: 0 0 6px var(--accent-primary);
-    opacity: 0;
-    transition: opacity 160ms ease, transform 160ms ease;
-  }
-
-  .mini-progress-bar:hover .mini-progress-glow,
-  .mini-progress-bar.seeking .mini-progress-glow {
-    opacity: 1;
-    transform: translateY(-50%) scale(1.2);
+  @keyframes mini-live-shimmer {
+    0% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0% 50%;
+    }
   }
 
   .mini-player-content {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 var(--spacing-md);
+    padding: 0 var(--spacing-sm) 0 var(--spacing-md);
     height: 100%;
+    gap: var(--spacing-xs);
   }
 
   .track-info-group {
     display: flex;
     align-items: center;
-    gap: var(--spacing-md);
+    gap: var(--spacing-sm);
     min-width: 0;
     flex: 1;
-    margin-right: var(--spacing-md);
   }
 
   .mini-cover {
@@ -361,7 +341,7 @@
     overflow: hidden;
     flex-shrink: 0;
     background: var(--bg-surface);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    box-shadow: var(--shadow-sm);
   }
 
   .mini-cover img {
@@ -376,13 +356,14 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--text-subdued, #8e8e8e);
+    color: var(--text-subdued);
   }
 
   .track-text {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    flex: 1;
   }
 
   .track-title-row {
@@ -395,48 +376,81 @@
   .track-title {
     font-size: var(--font-size-base);
     font-weight: var(--font-weight-semibold);
-    color: var(--text-primary);
+    color: var(--player-text, var(--text-on-player, var(--text-primary)));
+    min-width: 0;
+  }
+
+  .live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.6rem;
+    font-weight: var(--font-weight-bold);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 1px 5px;
+    border-radius: var(--radius-sm);
+    background: var(--error-color, #e53935);
+    color: var(--text-on-accent, #ffffff);
+    flex-shrink: 0;
   }
 
   .track-artist {
     font-size: var(--font-size-xs);
-    color: var(--text-secondary);
+    color: color-mix(in srgb, var(--player-text, var(--text-on-player, var(--text-secondary))) 75%, transparent);
     margin-top: 2px;
   }
 
   .mini-controls {
     display: flex;
     align-items: center;
-    gap: var(--spacing-xs);
+    gap: 0;
     flex-shrink: 0;
   }
 
   .control-btn {
     background: none;
     border: none;
-    color: var(--text-primary);
+    color: var(--player-text, var(--text-on-player, var(--text-primary)));
     min-width: 44px;
     min-height: 44px;
+    width: 44px;
+    height: 44px;
     padding: 0;
     cursor: pointer;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     border-radius: var(--radius-full);
-    transition: transform var(--transition-fast), background-color var(--transition-fast);
+    transition: transform var(--transition-fast), background-color var(--transition-fast), color var(--transition-fast);
   }
 
-  .control-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
+  .control-btn.like-btn {
+    color: color-mix(in srgb, var(--player-text, var(--text-on-player, var(--text-secondary))) 75%, transparent);
+  }
+
+  .control-btn.like-btn.liked {
+    color: var(--accent-primary);
   }
 
   .control-btn:focus-visible {
-    outline: 2px solid var(--accent-primary, #1db954);
+    outline: 2px solid var(--accent-primary);
     outline-offset: 1px;
   }
 
   .control-btn:active {
+    background: var(--surface-subtle-hover, color-mix(in srgb, var(--player-text, var(--text-primary)) 12%, transparent));
     transform: scale(0.92);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .mobile-mini-player:hover {
+      background: color-mix(in srgb, var(--player-bg, var(--bg-surface)) 92%, transparent);
+    }
+
+    .control-btn:hover {
+      background: var(--surface-subtle, color-mix(in srgb, var(--player-text, var(--text-primary)) 8%, transparent));
+    }
   }
 
   .truncate {

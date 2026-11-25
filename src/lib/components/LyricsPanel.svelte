@@ -1,6 +1,6 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
-    import { onMount } from "svelte";
+    import { onMount, onDestroy } from "svelte";
     import {
         lyricsData,
         lyricsLoading,
@@ -16,7 +16,8 @@
         type LyricsQueryOverride,
     } from "$lib/stores/lyrics";
     import { currentTrack } from "$lib/stores/player";
-    import { isMobile } from "$lib/stores/mobile";
+    import { isFullScreen } from "$lib/stores/ui";
+    import { isMobile, registerBackHandler } from "$lib/stores/mobile";
     import { addToast } from "$lib/stores/toast";
     import { importLyricsContent } from "$lib/stores/lyrics";
     import { LYRICS_SOURCES, type LyricsSource } from "$lib/lyrics";
@@ -77,7 +78,7 @@
 
     function showPaxKeyToast(message: string) {
         const toast = document.createElement('div');
-        toast.style.cssText = `position:fixed; bottom:100px; left:50%; transform:translateX(-50%); background:#c0392b; color:#fff; padding:10px 20px; border-radius:8px; z-index:10002; font-size:13px; box-shadow:0 4px 12px rgba(0,0,0,0.3); opacity:0; transition:0.3s; display:flex; align-items:center; gap:12px; white-space:nowrap;`;
+        toast.style.cssText = `position:fixed; bottom:calc(var(--bottom-chrome-inset, 136px) + 12px); left:50%; transform:translateX(-50%); max-width:calc(100vw - 32px); background:var(--error-color, #c0392b); color:var(--text-on-accent, #fff); padding:10px 16px; border-radius:8px; z-index:var(--z-modal, 4000); font-size:13px; line-height:1.35; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.3); opacity:0; transition:0.3s; display:flex; align-items:center; justify-content:center; gap:12px; white-space:normal; word-break:break-word;`;
         const text = document.createElement('span');
         text.textContent = message;
         toast.appendChild(text);
@@ -229,9 +230,37 @@
     // Lifecycle
     // -------------------------------------------------------------------------
 
+    $: mobileOverlayOpen = $isMobile && $lyricsVisible && !$isFullScreen;
+
+    let unregisterBack: (() => void) | null = null;
+    $: if (mobileOverlayOpen && !unregisterBack) {
+        unregisterBack = registerBackHandler(() => {
+            if (showLyricCardModal) {
+                showLyricCardModal = false;
+                return true;
+            }
+            if (sourceMenuOpen) {
+                sourceMenuOpen = false;
+                return true;
+            }
+            lyricsVisible.set(false);
+            return true;
+        });
+    } else if (!mobileOverlayOpen && unregisterBack) {
+        unregisterBack();
+        unregisterBack = null;
+    }
+
     onMount(() => {
         initLyricsSync();
         return () => destroyLyricsSync();
+    });
+
+    onDestroy(() => {
+        if (unregisterBack) {
+            unregisterBack();
+            unregisterBack = null;
+        }
     });
 </script>
 
@@ -239,7 +268,7 @@
 <svelte:window on:click={closeSourceMenu} />
 
 {#if true}
-    <aside class="lyrics-panel" class:mobile={$isMobile} class:closed={!$lyricsVisible}>
+    <aside class="lyrics-panel" class:mobile={$isMobile} class:closed={!$lyricsVisible || ($isMobile && $isFullScreen)}>
 
         <!-- Header --------------------------------------------------------- -->
         <header class="lyrics-header">
@@ -928,23 +957,54 @@
         width: 100%;
         max-width: 100%;
         min-width: 0;
-        z-index: 150;
+        z-index: var(--z-panel, 2100);
         border-left: none;
         border-radius: 0;
     }
     .lyrics-panel.mobile .lyrics-header {
         padding: var(--spacing-md);
-        padding-top: calc(var(--spacing-md) + var(--safe-area-top));
+        padding-top: calc(var(--spacing-md) + var(--safe-area-top, 0px));
     }
 
+    .lyrics-panel.mobile .lyrics-content {
+        padding-bottom: calc(var(--spacing-xl) + var(--safe-area-bottom, 0px));
+    }
+
+    .lyrics-panel.mobile .lyrics-footer {
+        opacity: 1;
+        padding-bottom: calc(var(--spacing-sm) + var(--safe-area-bottom, 0px));
+    }
+
+    .lyrics-panel.mobile .icon-btn,
     .lyrics-panel.mobile .close-btn {
         width: 44px;
         height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .lyrics-panel.mobile .source-pill {
+        min-height: 36px;
+    }
+
+    .lyrics-panel.mobile .source-menu-delete {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .lyrics-panel.mobile .custom-query-input {
+        font-size: 1rem;
     }
 
     /* .lyric-line sizing for mobile is handled via
     --lyrics-font-size/--lyrics-active-font-size custom properties passed to LyricsView
      * (see lyricsViewStyle) */
-    .lyrics-panel.mobile .source-menu  { right: auto; left: 0; }
+    .lyrics-panel.mobile .source-menu {
+        right: 0;
+        left: auto;
+        max-width: calc(100vw - 32px);
+    }
 
 </style>

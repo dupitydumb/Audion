@@ -28,10 +28,11 @@
     toggleShuffle,
     cycleRepeat,
     volume,
+    playbackContext,
   } from "$lib/stores/player";
-  import { isMobile } from "$lib/stores/mobile";
+  import { isMobile, registerBackHandler } from "$lib/stores/mobile";
   import { lyricsVisible, toggleLyrics } from "$lib/stores/lyrics";
-  import { goToArtistDetail, goToAlbumDetail } from "$lib/stores/view";
+  import { goToArtistDetail, goToAlbumDetail, goToSettings } from "$lib/stores/view";
   import ArtistLinks from "$lib/components/ArtistLinks.svelte";
   import MarqueeText from "$lib/components/MarqueeText.svelte";
   import {
@@ -45,13 +46,14 @@
   import { resolveTrackCover } from "$lib/stores/library";
   import { customArtworks } from "$lib/stores/customArtwork";
   import { onMount, onDestroy, tick } from "svelte";
-  import { gestureGuard } from "$lib/utils/gestureGuard";
+  import { gestureGuard, isGestureGuarded } from "$lib/utils/gestureGuard";
   import { isBackgroundFrozen } from "$lib/stores/offstage";
   import { likedTrackIds, toggleLike } from "$lib/stores/liked";
   import { buildTrackContextMenu } from "$lib/menus/contextMenus";
   import { addToast } from "$lib/stores/toast";
   import QueuePanel from "../QueuePanel.svelte";
   import ConnectPanel from "../ConnectPanel.svelte";
+  import MetadataModal from "../MetadataModal.svelte";
   import { wsStore } from "$lib/stores/websocket";
   import MeshGradientBg from "../MeshGradientBg.svelte";
   import MeshBackgroundSettings from "./MeshBackgroundSettings.svelte";
@@ -64,16 +66,21 @@
 
   let showMeshSettings = false;
   let showLyricCardModal = false;
+  let showMetadataModal = false;
 
   let showConnectPanel = false;
   let showMobileMenu = false;
   $: connectedDevices = $wsStore.devices.length;
+  $: isCurrentLiked = $currentTrack ? $likedTrackIds.has($currentTrack.id) : false;
+  $: sourceTitle =
+    $playbackContext?.displayName ||
+    $currentTrack?.album ||
+    $_('player.nowPlaying');
 
   let albumArt: string | null = null;
   let isSeeking = false;
   let isAndroid = false;
   let isLinux = false;
-  $: hideAndroidLyricsControls = isAndroid && $isMobile && $lyricsVisible;
 
   // mobile lyrics live inside this view; leaving it must not leave the
   // desktop-style side panel open behind the main layout
@@ -144,7 +151,9 @@
   function handleSeekPointerUp(e: PointerEvent) {
     if (isSeeking) {
       isSeeking = false;
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {}
     }
   }
 
@@ -172,7 +181,9 @@
   function handleVolumePointerUp(e: PointerEvent) {
     if (isVolumeSeeking) {
       isVolumeSeeking = false;
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {}
     }
   }
 
@@ -274,6 +285,25 @@
     toggleQueue();
   }
 
+  function openEqualizerSettings() {
+    try {
+      localStorage.setItem("audion_settings_open_tab", "sound");
+    } catch {}
+    toggleFullScreen();
+    goToSettings();
+  }
+
+  let unregisterConnectBack: (() => void) | null = null;
+  $: if (showConnectPanel && !unregisterConnectBack) {
+    unregisterConnectBack = registerBackHandler(() => {
+      showConnectPanel = false;
+      return true;
+    });
+  } else if (!showConnectPanel && unregisterConnectBack) {
+    unregisterConnectBack();
+    unregisterConnectBack = null;
+  }
+
   onMount(() => {
     isLinux = getIsLinux();
     isAndroid =
@@ -302,6 +332,10 @@
 
   function handleMobileTouchStart(e: TouchEvent) {
     if (e.touches.length !== 1 || isDismissAnimating) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('[role="slider"], .progress-bar, .volume-bar, input, textarea, select')) {
+      return;
+    }
     cancelSpringAnimation();
     dismissTouchStartY = e.touches[0].clientY;
     dismissTouchStartX = e.touches[0].clientX;
@@ -311,13 +345,18 @@
 
   function handleMobileTouchMove(e: TouchEvent) {
     if (!isDismissDragging || e.touches.length !== 1) return;
+    if (isGestureGuarded(e)) {
+      isDismissDragging = false;
+      sheetTranslateY = 0;
+      return;
+    }
     const currentY = e.touches[0].clientY;
     const currentX = e.touches[0].clientX;
     const dy = currentY - dismissTouchStartY;
     const dx = currentX - dismissTouchStartX;
 
-    // If gesture direction is primarily horizontal, don't hijack
-    if (Math.abs(dx) > Math.abs(dy) && sheetTranslateY === 0) {
+    // If gesture direction is primarily horizontal or within touch slop, don't hijack
+    if (sheetTranslateY === 0 && (Math.abs(dx) > Math.abs(dy) || Math.abs(dy) < 6)) {
       return;
     }
 
@@ -438,9 +477,18 @@
 
   onDestroy(() => {
     cancelSpringAnimation();
+    if (unregisterConnectBack) {
+      unregisterConnectBack();
+      unregisterConnectBack = null;
+    }
   });
 
-  $: if (!$isFullScreen && showMeshSettings) showMeshSettings = false;
+  $: if (!$isFullScreen) {
+    if (showMeshSettings) showMeshSettings = false;
+    if (showMobileMenu) showMobileMenu = false;
+    if (showLyricCardModal) showLyricCardModal = false;
+    if (showMetadataModal) showMetadataModal = false;
+  }
 </script>
 
 {#if $isFullScreen}
@@ -473,76 +521,47 @@
       <!-- Mobile interactive player sheet container with spring-dismiss physics -->
       <div
         class="mobile-player-container"
-        style="transform: translate3d(0, {sheetTranslateY}px, 0);"
+        class:is-dragging={isDismissDragging || isDismissAnimating}
+        style={sheetTranslateY !== 0 ? `transform: translate3d(0, ${sheetTranslateY}px, 0);` : ""}
+        on:touchstart={handleMobileTouchStart}
+        on:touchmove={handleMobileTouchMove}
+        on:touchend={handleMobileTouchEnd}
+        on:touchcancel={handleMobileTouchEnd}
       >
-        <!-- Mobile header zone with drag pill and pull-to-dismiss gesture -->
-        <div
-          class="mobile-header-zone"
-          on:touchstart={handleMobileTouchStart}
-          on:touchmove={handleMobileTouchMove}
-          on:touchend={handleMobileTouchEnd}
-          on:touchcancel={handleMobileTouchEnd}
-        >
+        <!-- Mobile header zone with drag pill -->
+        <div class="mobile-header-zone">
         <div class="mobile-drag-pill" aria-hidden="true"></div>
         <div class="mobile-header">
           <button
-            class="chevron-btn"
+            type="button"
+            class="chevron-btn header-back-btn"
             on:click={toggleFullScreen}
-            aria-label="Close"
+            aria-label={$_('common.close')}
           >
-            <Icon name="chevron-down" size={28} />
+            <Icon name="chevron-down" size={26} />
           </button>
-          <span class="now-playing-label">{$_('player.nowPlaying')}</span>
+          <span class="now-playing-label" title={sourceTitle}>{sourceTitle}</span>
           <div class="mobile-header-btns">
-            {#if $lyricsData?.lines?.length}
-              <button
-                class="chevron-btn"
-                on:click={() => (showLyricCardModal = true)}
-                aria-label="Share Lyric Card"
-                title="Share Lyric Card"
-              >
-                <Icon name="share" size={22} />
-              </button>
-            {/if}
             <button
+              type="button"
               class="chevron-btn"
-              class:active={$lyricsVisible}
-              on:click={handleMobileLyricsToggle}
-              aria-label="Lyrics"
-            >
-              <Icon name="lyrics" size={24} />
-            </button>
-            <button
-              class="chevron-btn"
+              class:active={$isQueueVisible}
               on:click={handleMobileQueueToggle}
-              aria-label="Queue"
+              aria-label={$_('player.queue')}
             >
-              <Icon name="queue" size={24} />
+              <Icon name="queue" size={22} />
             </button>
             <button
+              type="button"
               class="chevron-btn"
               on:click={() => (showMobileMenu = !showMobileMenu)}
               aria-label="More options"
             >
-              <Icon name="more-vertical" size={24} />
+              <Icon name="more-vertical" size={22} />
             </button>
           </div>
         </div>
       </div>
-
-      <!-- Mobile three-dot bottom-sheet menu -->
-      {#if showMobileMenu}
-        <FullScreenMobileBottomSheet
-          bind:showMobileMenu
-          bind:showConnectPanel
-          {albumArt}
-        />
-      {/if}
-
-      <LyricCardModal
-        bind:open={showLyricCardModal}
-        onClose={() => (showLyricCardModal = false)}
-      />
 
       <div class="player-content mobile-view">
         {#if !$lyricsVisible}
@@ -582,12 +601,23 @@
 
           <div class="track-info">
             <div class="track-title-row">
-              <h1 class="track-title">
-                {$currentTrack?.title || $_('player.unknownTitle')}
-              </h1>
-              <div class="quality-badge-wrapper mobile-quality-badge">
-                <AudioQualityBadge variant="compact" />
+              <div class="track-title-meta">
+                <h1 class="track-title">
+                  {$currentTrack?.title || $_('player.unknownTitle')}
+                </h1>
+                <div class="quality-badge-wrapper mobile-quality-badge">
+                  <AudioQualityBadge variant="compact" />
+                </div>
               </div>
+              <button
+                type="button"
+                class="mobile-like-btn"
+                class:liked={isCurrentLiked}
+                on:click={() => $currentTrack && toggleLike($currentTrack.id)}
+                aria-label={isCurrentLiked ? $_('player.removeFromLiked') : $_('player.addToLiked')}
+              >
+                <Icon name={isCurrentLiked ? "heart-filled" : "heart"} size={22} />
+              </button>
             </div>
             <ArtistLinks
               artist={$currentTrack?.artist || $_('common.unknownArtist')}
@@ -630,8 +660,8 @@
                 transparent
                 reducedMotion={isAndroid}
                 style={(isAndroid
-                  ? "--lyrics-content-padding: 0.75rem 1.5rem 0.75rem; --lyrics-font-size: 1.22rem; --lyrics-active-font-size: 1.22rem; --lyrics-line-padding: 0.5rem 0; --label-beam-max-width: 180px;"
-                  : "--lyrics-content-padding: 2rem 1.5rem 25vh; --lyrics-font-size: 22px; --lyrics-active-font-size: 24px; --lyrics-line-padding: 0.75rem 0; --label-beam-max-width: 195px;")
+                  ? "--lyrics-content-padding: 0.75rem 1rem 0.75rem; --lyrics-font-size: 1.2rem; --lyrics-active-font-size: 1.25rem; --lyrics-line-padding: 0.45rem 0; --label-beam-max-width: 180px;"
+                  : "--lyrics-content-padding: 1.5rem 1rem 12vh; --lyrics-font-size: 20px; --lyrics-active-font-size: 22px; --lyrics-line-padding: 0.65rem 0; --label-beam-max-width: 195px;")
                   + " " + lyricsDarkPalette}
               />
             {:else}
@@ -640,89 +670,95 @@
           </div>
         {/if}
 
-        {#if !hideAndroidLyricsControls}
-          <div class="player-controls">
-            <div class="progress-bar-container">
-              <span class="time">{formatDuration($currentTime)}</span>
-              <div
-                class="progress-bar hairline-scrubber"
-                class:active-seeking={isSeeking}
-                on:pointerdown={handleSeekPointerDown}
-                on:pointermove={handleSeekPointerMove}
-                on:pointerup={handleSeekPointerUp}
-                on:pointercancel={handleSeekPointerUp}
-                on:keydown={handleSeekKeydown}
-                role="slider"
-                aria-label="Seek"
-                aria-valuenow={Math.round($progress * 100)}
-                aria-valuemin="0"
-                aria-valuemax="100"
-                tabindex="0"
-              >
-                <div class="progress-track">
-                  <div
-                    class="progress-fill"
-                    style="width: {$progress * 100}%"
-                  >
-                    <div class="progress-shimmer"></div>
-                  </div>
-                </div>
+        <div class="player-controls">
+          <div class="progress-bar-container">
+            <span class="time">{formatDuration($currentTime)}</span>
+            <div
+              class="progress-bar hairline-scrubber"
+              class:active-seeking={isSeeking}
+              on:pointerdown={handleSeekPointerDown}
+              on:pointermove={handleSeekPointerMove}
+              on:pointerup={handleSeekPointerUp}
+              on:pointercancel={handleSeekPointerUp}
+              on:keydown={handleSeekKeydown}
+              role="slider"
+              aria-label="Seek"
+              aria-valuenow={Math.round($progress * 100)}
+              aria-valuemin="0"
+              aria-valuemax="100"
+              tabindex="0"
+            >
+              <div class="progress-track">
                 <div
-                  class="progress-thumb"
-                  style="left: {$progress * 100}%"
-                ></div>
+                  class="progress-fill"
+                  style="width: {$progress * 100}%"
+                >
+                  <div class="progress-shimmer"></div>
+                </div>
               </div>
-              <span class="time">{formatDuration($duration)}</span>
+              <div
+                class="progress-thumb"
+                style="left: {$progress * 100}%"
+              ></div>
             </div>
+            <span class="time">{formatDuration($duration)}</span>
+          </div>
 
-            <div class="buttons">
-              <button
-                class="icon-btn shuffle-repeat"
-                class:active={$shuffle}
-                on:click={toggleShuffle}
-                aria-label="Shuffle"
-              >
-                <Icon name="shuffle" size={22} />
-              </button>
-              <button
-                class="icon-btn large"
-                on:click={previousTrack}
-                aria-label="Previous"
-              >
-                <Icon name="skip-back" size={32} />
-              </button>
-              <button
-                class="play-btn large"
-                on:click={togglePlay}
-                aria-label={$isPlaying ? "Pause" : "Play"}
-              >
-                {#if $isPlaying}
-                  <Icon name="pause" size={40} />
-                {:else}
-                  <Icon name="play" size={40} />
-                {/if}
-              </button>
-              <button
-                class="icon-btn large"
-                on:click={nextTrack}
-                aria-label="Next"
-              >
-                <Icon name="skip-forward" size={32} />
-              </button>
-              <button
-                class="icon-btn shuffle-repeat"
-                class:active={$repeat !== "none"}
-                on:click={cycleRepeat}
-                aria-label="Repeat"
-              >
-                <Icon name="repeat" size={22} />
-                {#if $repeat === "one"}<span class="repeat-one-badge">1</span
-                  >{/if}
-              </button>
-            </div>
+          <div class="buttons">
+            <button
+              type="button"
+              class="icon-btn shuffle-repeat"
+              class:active={$shuffle}
+              on:click={toggleShuffle}
+              aria-label={$_('player.shuffle')}
+            >
+              <Icon name="shuffle" size={22} />
+            </button>
+            <button
+              type="button"
+              class="icon-btn large"
+              on:click={previousTrack}
+              aria-label={$_('player.previous')}
+            >
+              <Icon name="skip-back" size={32} />
+            </button>
+            <button
+              type="button"
+              class="play-btn large"
+              on:click={togglePlay}
+              aria-label={$isPlaying ? $_('common.pause') : $_('common.play')}
+            >
+              {#if $isPlaying}
+                <Icon name="pause" size={36} />
+              {:else}
+                <Icon name="play" size={36} />
+              {/if}
+            </button>
+            <button
+              type="button"
+              class="icon-btn large"
+              on:click={nextTrack}
+              aria-label={$_('player.next')}
+            >
+              <Icon name="skip-forward" size={32} />
+            </button>
+            <button
+              type="button"
+              class="icon-btn shuffle-repeat"
+              class:active={$repeat !== "none"}
+              on:click={cycleRepeat}
+              aria-label="Repeat"
+            >
+              <Icon name="repeat" size={22} />
+              {#if $repeat === "one"}<span class="repeat-one-badge">1</span
+                >{/if}
+            </button>
+          </div>
 
+          {#if !isAndroid}
             <div class="mobile-volume-row">
               <button
+                type="button"
                 class="volume-mute-btn"
                 on:click={() => volume.set($volume > 0 ? 0 : 1)}
                 aria-label={$volume > 0 ? "Mute" : "Unmute"}
@@ -788,11 +824,71 @@
                 ></div>
               </div>
             </div>
+          {/if}
+
+          <div class="mobile-utility-row">
+            <button
+              type="button"
+              class="mobile-utility-btn"
+              class:active={$lyricsVisible}
+              on:click={handleMobileLyricsToggle}
+              aria-label={$_('player.lyrics')}
+              title={$_('player.lyrics')}
+            >
+              <Icon name="lyrics" size={20} />
+            </button>
+            <button
+              type="button"
+              class="mobile-utility-btn"
+              on:click={openEqualizerSettings}
+              aria-label={$_('settings.equalizer')}
+              title={$_('settings.equalizer')}
+            >
+              <Icon name="sliders" size={20} />
+            </button>
+            {#if $lyricsData?.lines?.length}
+              <button
+                type="button"
+                class="mobile-utility-btn"
+                on:click={() => (showLyricCardModal = true)}
+                aria-label="Share Lyric Card"
+                title="Share Lyric Card"
+              >
+                <Icon name="share" size={20} />
+              </button>
+            {/if}
+            <button
+              type="button"
+              class="mobile-utility-btn connect-btn"
+              class:active={connectedDevices > 0}
+              on:click={() => (showConnectPanel = true)}
+              aria-label={$_('connect.connectToDevice')}
+              title={$_('connect.connectToDevice')}
+            >
+              <Icon name="connect" size={20} />
+              {#if connectedDevices > 0}
+                <span class="device-dot"></span>
+              {/if}
+            </button>
           </div>
-        {/if}
+        </div>
 
         {#if !$lyricsVisible && $lyricsData?.lines}
-          <div class="compact-lyrics-mobile" in:fade>
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
+          <div
+            class="compact-lyrics-mobile"
+            role="button"
+            tabindex="0"
+            aria-label={$_('player.showLyrics')}
+            on:click={handleMobileLyricsToggle}
+            on:keydown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                handleMobileLyricsToggle();
+              }
+            }}
+            in:fade
+          >
             {#each [$activeLine - 1, $activeLine, $activeLine + 1].filter((idx) => idx >= 0 && idx < $lyricsData.lines.length) as lineIdx (lineIdx)}
               {@const line = $lyricsData.lines[lineIdx]}
               {@const isCurrent = lineIdx === $activeLine}
@@ -1013,17 +1109,49 @@
   </div>
 {/if}
 
+{#if $isFullScreen && $isMobile && showMobileMenu}
+  <FullScreenMobileBottomSheet
+    bind:showMobileMenu
+    bind:showConnectPanel
+    on:trackInfo={() => {
+      showMobileMenu = false;
+      showMetadataModal = true;
+    }}
+    {albumArt}
+  />
+{/if}
+
+{#if $isFullScreen && showLyricCardModal}
+  <LyricCardModal
+    bind:open={showLyricCardModal}
+    onClose={() => (showLyricCardModal = false)}
+  />
+{/if}
+
+{#if showMetadataModal && $currentTrack}
+  <MetadataModal
+    track={$currentTrack}
+    onClose={() => (showMetadataModal = false)}
+  />
+{/if}
+
 {#if showConnectPanel}
   <ConnectPanel on:close={() => (showConnectPanel = false)} />
 {/if}
 
 <style>
   .fullscreen-player {
+    --fs-text: #ffffff;
+    --fs-text-muted: rgba(255, 255, 255, 0.72);
+    --fs-text-subdued: rgba(255, 255, 255, 0.45);
+    --fs-surface: rgba(255, 255, 255, 0.1);
+    --fs-surface-hover: rgba(255, 255, 255, 0.18);
+
     position: fixed;
     inset: 0;
-    z-index: 2000;
-    background-color: #000;
-    color: #fff;
+    z-index: var(--z-fullscreen, 2000);
+    background-color: #000000;
+    color: var(--fs-text);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -1321,7 +1449,7 @@
   }
 
   .action-btn.active {
-    color: #ff4d4d;
+    color: var(--error-color, #ff4d4d);
   }
 
   @media (max-height: 900px) {
@@ -1457,12 +1585,16 @@
     flex-direction: column;
     position: relative;
     z-index: 10;
-    will-change: transform;
     touch-action: pan-y;
+  }
+
+  .mobile-player-container.is-dragging {
+    will-change: transform;
   }
 
   .mobile-header-zone {
     width: 100%;
+    flex-shrink: 0;
     z-index: 100;
     touch-action: pan-y;
   }
@@ -1470,32 +1602,52 @@
   .mobile-drag-pill {
     width: 36px;
     height: 4px;
-    background: rgba(255, 255, 255, 0.3);
+    background: var(--fs-surface-hover);
     border-radius: 2px;
-    margin: calc(var(--safe-area-top) + 6px) auto 0;
+    margin: calc(var(--safe-area-top, 0px) + 8px) auto 0;
   }
 
   .mobile-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0.5rem 1.5rem 0.75rem;
+    gap: var(--spacing-sm);
+    padding: 0.25rem calc(0.75rem + var(--safe-area-right, 0px)) 0.5rem calc(0.75rem + var(--safe-area-left, 0px));
     z-index: 100;
   }
 
   .chevron-btn {
     background: none;
     border: none;
-    color: #fff;
+    color: var(--fs-text);
     cursor: pointer;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-full);
+    padding: 0;
+    flex-shrink: 0;
+  }
+
+  .chevron-btn.header-back-btn {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    min-height: 48px;
   }
 
   .now-playing-label {
+    flex: 1;
+    text-align: center;
     text-transform: uppercase;
-    font-size: 0.7rem;
+    font-size: 0.72rem;
     font-weight: var(--font-weight-bold);
-    letter-spacing: 0.1em;
-    opacity: 0.6;
+    letter-spacing: 0.08em;
+    color: var(--fs-text-muted);
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1503,23 +1655,26 @@
   }
 
   .player-content.mobile-view {
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    padding: 0.5rem 2rem 2rem;
-    height: 100%;
-    gap: 1.25rem;
+    justify-content: space-between;
+    padding: 0.25rem calc(1.5rem + var(--safe-area-right, 0px)) calc(16px + var(--safe-area-bottom, 0px)) calc(1.5rem + var(--safe-area-left, 0px));
+    gap: clamp(0.65rem, 1.8vh, 1.25rem);
     z-index: 10;
+    overflow: hidden;
   }
 
   .mobile-view .art-container {
-    width: 100%;
+    width: min(100%, 38vh);
     aspect-ratio: 1;
     border-radius: 18px;
     overflow: hidden;
-    max-height: 46vh;
     margin: 0 auto;
+    flex-shrink: 0;
     box-shadow: 0 20px 48px -12px rgba(0, 0, 0, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--fs-surface);
   }
 
   .mobile-view .art-container img {
@@ -1530,22 +1685,66 @@
 
   .mobile-view .track-info {
     text-align: left;
+    flex-shrink: 0;
+  }
+
+  .mobile-view .track-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    width: 100%;
+  }
+
+  .mobile-view .track-title-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    min-width: 0;
+    flex: 1;
   }
 
   .mobile-view .track-title {
-    flex: 1;
+    flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 1.75rem;
+    font-size: clamp(1.35rem, 3vh, 1.75rem);
     font-weight: 800;
-    margin-bottom: 0.5rem;
+    margin-bottom: 0.25rem;
+    color: var(--fs-text);
+  }
+
+  .mobile-like-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: var(--radius-full);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--fs-text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 0;
+    transition: transform var(--transition-fast), color var(--transition-fast);
+  }
+
+  .mobile-like-btn.liked {
+    color: var(--accent-primary);
+  }
+
+  .mobile-like-btn:active {
+    transform: scale(0.9);
   }
 
   .mobile-view .track-artist {
-    font-size: 1.1rem;
-    color: rgba(255, 255, 255, 0.6);
+    font-size: 1.05rem;
+    color: var(--fs-text-muted);
     background: none;
     border: none;
     padding: 0;
@@ -1557,8 +1756,8 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.9rem;
-    color: rgba(255, 255, 255, 0.4);
+    font-size: 0.875rem;
+    color: var(--fs-text-subdued);
     background: none;
     border: none;
     padding: 0;
@@ -1573,18 +1772,20 @@
 
   .mobile-view .player-controls {
     width: 100%;
+    flex-shrink: 0;
   }
 
   .mobile-view .progress-bar-container {
     display: flex;
     align-items: center;
-    gap: 0.85rem;
-    margin-bottom: 1.25rem;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
   }
 
   .mobile-view .progress-bar {
     flex: 1;
-    height: 36px; /* tall touch hit area for effortless scrubbing */
+    height: 44px; /* 44dp touch hit area for effortless scrubbing */
+    min-height: 44px;
     background: transparent;
     border-radius: 9999px;
     position: relative;
@@ -1597,14 +1798,13 @@
   .mobile-view .progress-track {
     width: 100%;
     height: 4px; /* hairline minimalist rest state */
-    background: rgba(255, 255, 255, 0.18);
+    background: var(--fs-surface-hover);
     border-radius: 9999px;
     overflow: hidden;
     position: relative;
     transition: height 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
   }
 
-  .mobile-view .progress-bar:hover .progress-track,
   .mobile-view .progress-bar.active-seeking .progress-track {
     height: 8px; /* reactive expansion on touch/scrub */
   }
@@ -1614,7 +1814,7 @@
     background: linear-gradient(
       90deg,
       var(--accent-primary) 0%,
-      color-mix(in srgb, var(--accent-primary) 70%, #ffffff) 50%,
+      color-mix(in srgb, var(--accent-primary) 70%, var(--fs-text)) 50%,
       var(--accent-primary) 100%
     );
     background-size: 200% 100%;
@@ -1651,37 +1851,34 @@
 
   .mobile-view .progress-thumb {
     position: absolute;
-    width: 12px;
-    height: 12px;
-    background: #fff;
+    width: 14px;
+    height: 14px;
+    background: var(--fs-text);
     border-radius: 50%;
-    transform: translateX(-50%) scale(0);
+    transform: translateX(-50%) scale(1);
     top: 50%;
-    margin-top: -6px;
+    margin-top: -7px;
     box-shadow: 0 0 10px rgba(0, 0, 0, 0.5), 0 0 8px var(--accent-primary);
-    transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1), opacity 160ms ease;
-    opacity: 0;
+    transition: transform 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    opacity: 1;
     pointer-events: none;
   }
 
-  .mobile-view .progress-bar:hover .progress-thumb,
   .mobile-view .progress-bar.active-seeking .progress-thumb {
-    transform: translateX(-50%) scale(1.25);
-    opacity: 1;
+    transform: translateX(-50%) scale(1.3);
   }
 
   .mobile-view .time {
     font-size: var(--font-size-xs);
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.01em;
-    opacity: 0.65;
+    color: var(--fs-text-muted);
     min-width: 36px;
-    transition: opacity 160ms ease;
+    transition: color 160ms ease;
   }
 
-  .mobile-view .progress-bar.active-seeking ~ .time,
-  .mobile-view .progress-bar-container:hover .time {
-    opacity: 1;
+  .mobile-view .progress-bar.active-seeking ~ .time {
+    color: var(--fs-text);
   }
 
   .mobile-view .buttons {
@@ -1691,18 +1888,59 @@
     width: 100%;
   }
 
+  .mobile-view .icon-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    color: var(--fs-text-muted);
+  }
+
+  .mobile-view .icon-btn.large {
+    width: 48px;
+    height: 48px;
+    min-width: 48px;
+    min-height: 48px;
+    color: var(--fs-text);
+  }
+
+  .mobile-view .icon-btn.active {
+    color: var(--accent-primary);
+  }
+
+  .mobile-view .shuffle-repeat {
+    position: relative;
+  }
+
+  .mobile-view .repeat-one-badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    font-size: 0.6rem;
+    font-weight: 800;
+    background: var(--accent-primary);
+    color: var(--text-on-accent, #000000);
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+
   .mobile-view .mobile-volume-row {
     display: flex;
     align-items: center;
     gap: 0.75rem;
     width: 100%;
-    margin-top: var(--spacing-lg);
-    margin-bottom: var(--spacing-sm);
+    margin-top: var(--spacing-sm);
+    margin-bottom: var(--spacing-xs);
     padding: 0 var(--spacing-xs);
   }
 
   .mobile-view .mobile-volume-row .volume-icon {
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--fs-text-muted);
     flex-shrink: 0;
   }
 
@@ -1717,6 +1955,7 @@
     min-height: 44px;
     flex-shrink: 0;
     cursor: pointer;
+    color: var(--fs-text);
   }
 
   /* same as the desktop playerbar's
@@ -1724,17 +1963,19 @@
      since mobile has no hover state */
   .mobile-view .mobile-volume-row .volume-bar {
     flex: 1;
-    height: 28px; /* tall touch hit area, matches progress-bar */
+    height: 44px;
+    min-height: 44px;
     display: flex;
     align-items: center;
     position: relative;
     cursor: pointer;
+    touch-action: none;
   }
 
   .mobile-view .mobile-volume-row .volume-track {
     width: 100%;
     height: 4px;
-    background-color: var(--bg-highlight);
+    background-color: var(--fs-surface-hover);
     border-radius: var(--radius-full);
     overflow: hidden;
   }
@@ -1749,7 +1990,7 @@
     position: absolute;
     width: 14px;
     height: 14px;
-    background-color: var(--text-primary);
+    background-color: var(--fs-text);
     border-radius: var(--radius-full);
     transform: translateX(-50%);
     top: 50%;
@@ -1760,41 +2001,99 @@
   .mobile-view .play-btn.large {
     width: 64px;
     height: 64px;
-    background: #fff;
-    color: #000;
+    background: var(--fs-text);
+    color: #000000;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
   }
 
+  .mobile-utility-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    margin-top: var(--spacing-sm);
+    padding: 0 var(--spacing-sm);
+  }
+
+  .mobile-utility-btn {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: var(--radius-full);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--fs-text-muted);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    transition: color var(--transition-fast), background-color var(--transition-fast), transform var(--transition-fast);
+  }
+
+  .mobile-utility-btn.active {
+    color: var(--accent-primary);
+    background: var(--fs-surface);
+  }
+
+  .mobile-utility-btn:active {
+    transform: scale(0.92);
+    background: var(--fs-surface);
+  }
+
+  .mobile-utility-btn .device-dot {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent-primary);
+  }
+
   .mobile-header-btns {
     display: flex;
-    gap: 0.5rem;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
   }
 
   .chevron-btn.active {
-    color: #1ed760;
+    color: var(--accent-primary);
   }
 
   .mobile-lyrics-wrapper {
     flex: 1;
+    min-height: 0;
     overflow: hidden;
-    margin-top: -1rem;
-    margin-bottom: 0;
+    margin: 0;
   }
 
+  .no-lyrics {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--fs-text-subdued);
+    text-align: center;
+  }
 
   .compact-lyrics-mobile {
-    margin-top: 1rem;
+    margin-top: 0;
     text-align: center;
-    color: #fff;
-    min-height: 4.5em;
-    padding: 0 1rem;
-    line-height: 1.4;
+    color: var(--fs-text);
+    min-height: 3.6em;
+    padding: 0 0.5rem;
+    line-height: 1.35;
     overflow: hidden;
     overflow-wrap: break-word;
     word-break: break-word;
+    cursor: pointer;
+    flex-shrink: 1;
   }
 
   .compact-line {

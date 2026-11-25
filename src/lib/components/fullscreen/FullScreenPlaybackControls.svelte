@@ -39,7 +39,9 @@
   function handleSeekPointerUp(e: PointerEvent) {
     if (isSeeking) {
       isSeeking = false;
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {}
     }
   }
 
@@ -63,7 +65,9 @@
   function handleVolumePointerUp(e: PointerEvent) {
     if (isVolumeSeeking) {
       isVolumeSeeking = false;
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      try {
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {}
     }
   }
 
@@ -112,6 +116,7 @@
       on:pointerdown={handleSeekPointerDown}
       on:pointermove={handleSeekPointerMove}
       on:pointerup={handleSeekPointerUp}
+      on:pointercancel={handleSeekPointerUp}
       on:keydown={handleSeekKeydown}
       role="slider"
       aria-label="Seek track"
@@ -255,47 +260,49 @@
 
   .desktop-progress-bar {
     width: 100%;
-    height: 4px;
-    background: rgba(255, 255, 255, 0.2);
-    border-radius: 2px;
+    height: 20px;
+    display: flex;
+    align-items: center;
     position: relative;
     cursor: pointer;
-    margin-bottom: 0.75rem;
+    touch-action: none;
+    margin-bottom: 0.4rem;
   }
 
   .progress-track {
     width: 100%;
-    height: 100%;
+    height: 4px;
+    background: var(--fs-surface-hover, rgba(255, 255, 255, 0.2));
     overflow: hidden;
     border-radius: 2px;
   }
 
   .progress-fill {
     height: 100%;
-    background: #ffffff;
+    background: var(--fs-text, #ffffff);
     border-radius: 2px;
     transition: width 0.1s linear;
   }
 
   .desktop-progress-bar:hover .progress-fill {
-    background: #fff;
+    background: var(--fs-text, #ffffff);
   }
 
   .progress-thumb-dot {
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    background: #ffffff;
+    background: var(--fs-text, #ffffff);
     position: absolute;
     top: 50%;
     transform: translate(-50%, -50%);
     pointer-events: none;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    box-shadow: var(--shadow-sm);
     transition: box-shadow 0.2s ease, transform 0.2s ease;
   }
 
   .desktop-progress-bar:hover .progress-thumb-dot {
-    box-shadow: 0 0 16px var(--accent-primary, #1DB954);
+    box-shadow: 0 0 16px var(--accent-primary);
     transform: translate(-50%, -50%) scale(1.4);
   }
 
@@ -303,7 +310,7 @@
     display: flex;
     justify-content: space-between;
     font-size: 0.8rem;
-    color: rgba(255, 255, 255, 0.4);
+    color: var(--fs-text-subdued, rgba(255, 255, 255, 0.45));
     font-weight: 600;
     letter-spacing: 0.05em;
   }
@@ -319,7 +326,7 @@
   .control-btn {
     background: none;
     border: none;
-    color: rgba(255, 255, 255, 0.35);
+    color: var(--fs-text-subdued, rgba(255, 255, 255, 0.45));
     cursor: pointer;
     transition: all 0.2s;
     display: flex;
@@ -331,19 +338,19 @@
   }
 
   .control-btn:hover {
-    color: #fff;
+    color: var(--fs-text, #ffffff);
     transform: scale(1.1);
   }
 
   .control-btn.secondary {
-    color: rgba(255, 255, 255, 0.75);
+    color: var(--fs-text-muted, rgba(255, 255, 255, 0.75));
   }
 
   .control-btn.play-pause-main {
     width: 56px;
     height: 56px;
-    background: #fff;
-    color: #000;
+    background: var(--fs-text, #ffffff);
+    color: #000000;
     border-radius: 50%;
   }
 
@@ -352,17 +359,17 @@
   }
 
   .control-btn.track-active {
-    color: #1ed760;
+    color: var(--accent-primary);
   }
 
   .repeat-indicator {
     position: absolute;
-    top: 0;
-    right: -4px;
+    top: 2px;
+    right: 0;
     font-size: 0.6rem;
     font-weight: 800;
-    background: #1ed760;
-    color: #000;
+    background: var(--accent-primary);
+    color: var(--text-on-accent, #000000);
     width: 14px;
     height: 14px;
     border-radius: 50%;
@@ -378,7 +385,7 @@
     width: 100%;
     max-width: 280px;
     margin: 1rem auto 0;
-    opacity: 0.5;
+    opacity: 0.6;
     transition: opacity 0.3s;
   }
 
@@ -387,7 +394,7 @@
   }
 
   .volume-icon {
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--fs-text-muted, rgba(255, 255, 255, 0.7));
     flex-shrink: 0;
   }
 
@@ -398,6 +405,8 @@
     background: none;
     border: none;
     padding: 0;
+    min-width: 36px;
+    min-height: 36px;
     flex-shrink: 0;
     cursor: pointer;
   }
@@ -405,24 +414,25 @@
   /* same as the main playerbar's volume-bar */
   .volume-bar {
     flex: 1;
-    height: 12px;
+    height: 24px;
     display: flex;
     align-items: center;
     position: relative;
     cursor: pointer;
+    touch-action: none;
   }
 
   .volume-track {
     width: 100%;
     height: 3px;
-    background-color: rgba(255, 255, 255, 0.15);
+    background-color: var(--fs-surface, rgba(255, 255, 255, 0.15));
     border-radius: 1.5px;
     overflow: hidden;
   }
 
   .volume-fill {
     height: 100%;
-    background-color: #fff;
+    background-color: var(--fs-text, #ffffff);
     border-radius: 1.5px;
   }
 
@@ -430,7 +440,7 @@
     position: absolute;
     width: 12px;
     height: 12px;
-    background-color: #fff;
+    background-color: var(--fs-text, #ffffff);
     border-radius: 50%;
     transform: translateX(-50%) scale(0);
     transition: transform 0.2s;
