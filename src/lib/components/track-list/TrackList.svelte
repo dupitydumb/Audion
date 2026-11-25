@@ -15,6 +15,7 @@
     currentTrack,
     isPlaying,
     addToQueue,
+    shuffle,
     type PlaybackContext,
   } from "$lib/stores/player";
   import { contextMenu, isFullScreen } from "$lib/stores/ui";
@@ -38,10 +39,11 @@
   import { fade } from "svelte/transition";
   import { multiSelect } from "$lib/stores/multiselect";
   import { trackSelectionStore } from "$lib/stores/trackSelectionStore";
-  import { isMobile } from "$lib/stores/mobile";
+  import { isMobile, registerBackHandler } from "$lib/stores/mobile";
   import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
   import MetadataModal from "$lib/components/MetadataModal.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
+  import Icon from "$lib/components/Icon.svelte";
   import { _, locale } from "svelte-i18n";
   import { buildTrackContextMenu, isTrackUnavailable } from "$lib/menus/contextMenus";
   import { providersStore } from "$lib/plugins/providers";
@@ -62,7 +64,13 @@
   export let multiSelectMode: boolean = false;
   export let allowMultiSelectEntry: boolean = false;
   export let onEnterMultiSelect: (() => void) | undefined = undefined;
+  export let onExitMultiSelect: (() => void) | undefined = undefined;
+  export let showMobileActionBar: boolean = true;
+  export let externalScroll: boolean = false;
   export let queueTracks: Track[] | null = null; // New prop for unified queue context
+
+  let localSelectMode = false;
+  $: effectiveMultiSelectMode = multiSelectMode || localSelectMode;
 
   // Virtual scrolling configuration
   // must match the row height in css (desktop 50px, html.layout-mobile 60px)
@@ -77,7 +85,9 @@
   let scrollbarWidth = 0;
   let containerElement: HTMLDivElement;
   let rootElement: HTMLDivElement;
+  let scrollParent: HTMLElement | null = null;
   let resizeObserver: ResizeObserver | undefined;
+  let unregisterBack: (() => void) | null = null;
 
   // Cache structures
   let failedImages = new Set<string>();
@@ -329,13 +339,56 @@
   ) as TrackWithMetadata[];
 
   function handleScroll(e: Event) {
+    if (externalScroll) return;
     const target = e.target as HTMLElement;
     scrollTop = target.scrollTop;
+  }
+
+  function findScrollParent(el: HTMLElement | null): HTMLElement | null {
+    let cur = el?.parentElement ?? null;
+    while (cur) {
+      const style = window.getComputedStyle(cur);
+      if (style.overflowY === "auto" || style.overflowY === "scroll") {
+        return cur;
+      }
+      cur = cur.parentElement;
+    }
+    return null;
+  }
+
+  function updateExternalMetrics() {
+    if (!externalScroll || !containerElement) return;
+    if (!scrollParent) {
+      scrollParent = findScrollParent(containerElement);
+    }
+    if (!scrollParent) {
+      containerHeight = containerElement.clientHeight || window.innerHeight;
+      scrollTop = 0;
+      return;
+    }
+    const parentRect = scrollParent.getBoundingClientRect();
+    const bodyRect = containerElement.getBoundingClientRect();
+    const visibleTop = Math.max(0, parentRect.top - bodyRect.top);
+    const visibleBottom = Math.max(0, Math.min(bodyRect.height, parentRect.bottom - bodyRect.top));
+    scrollTop = visibleTop;
+    containerHeight = Math.max(0, visibleBottom - visibleTop);
+  }
+
+  $: if (externalScroll && (sortedTracks.length >= 0 || rowHeight > 0)) {
+    tick().then(updateExternalMetrics);
   }
 
   // Measure container height on mount
   onMount(() => {
     activeTrackListCount++;
+
+    unregisterBack = registerBackHandler(() => {
+      if (localSelectMode) {
+        exitMobileSelect();
+        return true;
+      }
+      return false;
+    });
 
     // 5: Load playlists once on mount to avoid race conditions
     if ($playlists.length === 0) {
@@ -345,24 +398,42 @@
     if (containerElement) {
       const updateHeight = () => {
         if (!containerElement) return;
+        if (externalScroll) {
+          updateExternalMetrics();
+          return;
+        }
         containerHeight = containerElement.clientHeight;
         scrollbarWidth = Math.max(
           0,
           containerElement.offsetWidth - containerElement.clientWidth,
         );
       };
+
+      if (externalScroll) {
+        scrollParent = findScrollParent(containerElement);
+        scrollParent?.addEventListener("scroll", updateExternalMetrics, { passive: true });
+      }
+
       updateHeight();
 
       if (scrollKey) {
         const saved = getScroll(scrollKey);
-        if (saved > 0 && containerElement) {
-          containerElement.scrollTop = saved;
+        if (saved > 0) {
+          if (externalScroll && scrollParent) {
+            scrollParent.scrollTop = saved;
+            updateExternalMetrics();
+          } else if (containerElement) {
+            containerElement.scrollTop = saved;
+          }
         }
       }
 
       if (typeof ResizeObserver !== 'undefined') {
         resizeObserver = new ResizeObserver(updateHeight);
         resizeObserver.observe(containerElement);
+        if (externalScroll && scrollParent) {
+          resizeObserver.observe(scrollParent);
+        }
       } else {
         window.addEventListener("resize", updateHeight);
       }
@@ -374,11 +445,20 @@
 
   // Cleanup on destroy
   onDestroy(() => {
+    unregisterBack?.();
+    unregisterBack = null;
+    if (localSelectMode) {
+      multiSelect.clearSelections();
+    }
     activeTrackListCount = Math.max(0, activeTrackListCount - 1);
     if (activeTrackListCount === 0) {
       trackSelectionStore.clearSelections();
     }
-    if (scrollKey) saveScroll(scrollKey, scrollTop);
+    if (scrollKey) {
+      saveScroll(scrollKey, externalScroll && scrollParent ? scrollParent.scrollTop : scrollTop);
+    }
+    scrollParent?.removeEventListener("scroll", updateExternalMetrics);
+    scrollParent = null;
     failedImages.clear();
     trackAlbumArtCache.clear();
     albumMap.clear();
@@ -400,6 +480,9 @@
     // Clean up swipe timer
     if (swipeResetTimer) {
       clearTimeout(swipeResetTimer);
+    }
+    if (justSwipedTimer) {
+      clearTimeout(justSwipedTimer);
     }
   });
 
@@ -438,75 +521,12 @@
     return result;
   }
 
-  // Event delegation
-  function handleBodyClick(e: MouseEvent) {
-    const row = (e.target as HTMLElement).closest(".track-row") as HTMLElement | null;
-    if (!row) {
-      if (!multiSelectMode) {
-        trackSelectionStore.clearSelections();
-      }
-      return;
-    }
-
-    const trackId = parseInt(row.getAttribute("data-track-id") || "0");
-
-    // In multi-select mode, clicking toggles selection
-    if (multiSelectMode) {
-      multiSelect.toggleTrack(trackId);
-      return;
-    }
-
-    const trackIndex = trackIndexMap.get(trackId);
-    if (trackIndex === undefined) return;
-
-    const track = sortedTracks[trackIndex];
-    if (!track) return;
-
-    // Check if clicked directly on play icon / hover play / cover play overlay
-    const isPlayAction = !!(e.target as HTMLElement).closest(".hover-play, .cover-play-overlay");
-    if (isPlayAction) {
-      trackSelectionStore.selectSingle(trackId, trackIndex);
-      if (getCachedUnavailable(track)) return;
-
-      if (queueTracks) {
-        const globalIndex = queueTracks.findIndex((t) => t.id === trackId);
-        if (globalIndex !== -1) {
-          playTracks(queueTracks, globalIndex, playbackContext);
-          return;
-        }
-      }
-      playTracks(sortedTracks, trackIndex, playbackContext);
-      return;
-    }
-
-    // Desktop OS table selection
-    if (e.shiftKey) {
-      trackSelectionStore.selectRange(trackIndex, sortedTracks, e.ctrlKey || e.metaKey);
-    } else if (e.ctrlKey || e.metaKey) {
-      trackSelectionStore.toggleTrack(trackId, trackIndex);
-    } else {
-      trackSelectionStore.selectSingle(trackId, trackIndex);
-    }
-
-    row.focus();
-  }
-
-  function handleBodyDoubleClick(e: MouseEvent) {
-    const row = (e.target as HTMLElement).closest(".track-row");
-    if (!row) return;
-
-    const trackId = parseInt(row.getAttribute("data-track-id") || "0");
-    const trackIndex = trackIndexMap.get(trackId);
-
-    if (trackIndex === undefined) return;
-
+  function playTrackAtIndex(trackIndex: number, trackId: number) {
     const track = sortedTracks[trackIndex];
     if (!track || getCachedUnavailable(track)) return;
 
-    // Double click ensures track is focused & selected
     trackSelectionStore.selectSingle(trackId, trackIndex);
 
-    // Use unified queueTracks if available
     if (queueTracks) {
       const globalIndex = queueTracks.findIndex((t) => t.id === trackId);
       if (globalIndex !== -1) {
@@ -514,40 +534,31 @@
         return;
       }
     }
-
     playTracks(sortedTracks, trackIndex, playbackContext);
   }
 
-  async function handleBodyContextMenu(e: MouseEvent) {
-    const row = (e.target as HTMLElement).closest(".track-row");
-    if (!row) return;
-
-    e.preventDefault();
-
-    const trackId = parseInt(row.getAttribute("data-track-id") || "0");
-    const trackIndex = trackIndexMap.get(trackId);
-
-    if (trackIndex === undefined) return;
-
-    const track = sortedTracks[trackIndex];
-    if (!track) return;
-
-    const selectedIds = multiSelectMode ? $multiSelect.selectedTrackIds : $trackSelectionStore.selectedTrackIds;
-    const isTargetSelected = selectedIds.has(trackId);
+  function openTrackContextMenu(
+    clientX: number,
+    clientY: number,
+    track: Track,
+    trackIndex: number,
+  ) {
+    const selectedIds = effectiveMultiSelectMode
+      ? $multiSelect.selectedTrackIds
+      : $trackSelectionStore.selectedTrackIds;
+    const isTargetSelected = selectedIds.has(track.id);
 
     let selectedTracks: Track[] | undefined;
     if (isTargetSelected && selectedIds.size > 1) {
-      // Right-click on already-selected row preserves active selection and passes bulk tracks
       selectedTracks = sortedTracks.filter((t) => selectedIds.has(t.id));
-    } else if (!isTargetSelected && !multiSelectMode) {
-      // Right-click on unselected row selects only that row
-      trackSelectionStore.selectSingle(trackId, trackIndex);
+    } else if (!isTargetSelected && !effectiveMultiSelectMode) {
+      trackSelectionStore.selectSingle(track.id, trackIndex);
     }
 
     contextMenu.set({
       visible: true,
-      x: e.clientX,
-      y: e.clientY,
+      x: clientX,
+      y: clientY,
       items: buildTrackContextMenu({
         track,
         trackIndex,
@@ -566,9 +577,191 @@
         onTracksUpdated: (updated) => {
           tracks = updated;
           trackSelectionStore.clearSelections();
+          if (effectiveMultiSelectMode) {
+            multiSelect.clearSelections();
+          }
         },
       }),
     });
+  }
+
+  function handleRowMoreClick(e: MouseEvent, track: Track, index: number) {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    openTrackContextMenu(rect.left, rect.bottom, track, index);
+  }
+
+  function handleMobileShuffleAll() {
+    const list = queueTracks && queueTracks.length > 0 ? queueTracks : sortedTracks;
+    const playable = list.filter((t) => !getCachedUnavailable(t));
+    if (playable.length === 0) return;
+    shuffle.set(true);
+    const randomTrack = playable[Math.floor(Math.random() * playable.length)];
+    const startIdx = list.findIndex((t) => t.id === randomTrack.id);
+    playTracks(list, startIdx >= 0 ? startIdx : 0, playbackContext);
+  }
+
+  function sortFieldLabel(field: SortField): string {
+    switch (field) {
+      case "title":
+        return $_("trackList.title");
+      case "track_number":
+        return "#";
+      case "artist":
+        return $_("sidebar.artists");
+      case "album":
+        return $_("trackList.album");
+      case "duration":
+        return $_("trackList.duration");
+      case "date_added":
+        return $_("trackList.dateAdded");
+      default:
+        return $_("trackList.sort", { default: "Sort" });
+    }
+  }
+
+  function openMobileSortMenu(e: MouseEvent) {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const fields: { field: SortField; label: string }[] = [
+      ...(!showAlbum ? [{ field: "track_number" as SortField, label: "#" }] : []),
+      { field: "title", label: $_("trackList.title") },
+      { field: "artist", label: $_("sidebar.artists") },
+      ...(showAlbum ? [{ field: "album" as SortField, label: $_("trackList.album") }] : []),
+      { field: "duration", label: $_("trackList.duration") },
+      { field: "date_added", label: $_("trackList.dateAdded") },
+    ];
+    contextMenu.set({
+      visible: true,
+      x: rect.left,
+      y: rect.bottom,
+      items: [
+        {
+          label: $_("trackList.sortDefault", { default: "Default order" }),
+          icon: sortField === null ? "check" : undefined,
+          action: () => {
+            sortField = null;
+            sortDirection = "asc";
+            trackSelectionStore.resetAnchor();
+          },
+        },
+        { type: "separator" },
+        ...fields.map(({ field, label }) => ({
+          label,
+          icon:
+            sortField === field
+              ? sortDirection === "asc"
+                ? "arrow-up"
+                : "arrow-down"
+              : undefined,
+          action: () => toggleSort(field),
+        })),
+      ],
+    });
+  }
+
+  function enterMobileSelect() {
+    if (onEnterMultiSelect) {
+      onEnterMultiSelect();
+    } else {
+      multiSelect.clearSelections();
+      localSelectMode = true;
+    }
+  }
+
+  function exitMobileSelect() {
+    if (onExitMultiSelect) {
+      onExitMultiSelect();
+    } else {
+      localSelectMode = false;
+      multiSelect.clearSelections();
+    }
+  }
+
+  function openMobileBulkActions(e: MouseEvent) {
+    const selectedIds = $multiSelect.selectedTrackIds;
+    const selected = sortedTracks.filter((t) => selectedIds.has(t.id));
+    if (selected.length === 0) return;
+    const firstIdx = trackIndexMap.get(selected[0].id) ?? 0;
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    openTrackContextMenu(rect.left, rect.bottom, selected[0], firstIdx);
+  }
+
+  // Event delegation
+  function handleBodyClick(e: MouseEvent) {
+    if (justSwiped) return;
+    const targetEl = e.target as HTMLElement;
+    if (targetEl.closest(".drag-handle, .row-more-btn, .track-artist, .col-album-cell")) {
+      return;
+    }
+
+    const row = targetEl.closest(".track-row") as HTMLElement | null;
+    if (!row) {
+      if (!effectiveMultiSelectMode) {
+        trackSelectionStore.clearSelections();
+      }
+      return;
+    }
+
+    const trackId = parseInt(row.getAttribute("data-track-id") || "0");
+
+    // In multi-select mode, clicking toggles selection
+    if (effectiveMultiSelectMode) {
+      multiSelect.toggleTrack(trackId);
+      return;
+    }
+
+    const trackIndex = trackIndexMap.get(trackId);
+    if (trackIndex === undefined) return;
+
+    const track = sortedTracks[trackIndex];
+    if (!track) return;
+
+    // On mobile, single-tap on a track row plays immediately (do not require double-tap).
+    // On desktop, clicking directly on play icon / hover play / cover play overlay plays.
+    const isPlayAction = !!targetEl.closest(".hover-play, .cover-play-overlay");
+    if (isPlayAction || $isMobile) {
+      playTrackAtIndex(trackIndex, trackId);
+      return;
+    }
+
+    // Desktop OS table selection
+    if (e.shiftKey) {
+      trackSelectionStore.selectRange(trackIndex, sortedTracks, e.ctrlKey || e.metaKey);
+    } else if (e.ctrlKey || e.metaKey) {
+      trackSelectionStore.toggleTrack(trackId, trackIndex);
+    } else {
+      trackSelectionStore.selectSingle(trackId, trackIndex);
+    }
+
+    row.focus();
+  }
+
+  function handleBodyDoubleClick(e: MouseEvent) {
+    if ($isMobile || effectiveMultiSelectMode) return;
+    const row = (e.target as HTMLElement).closest(".track-row");
+    if (!row) return;
+
+    const trackId = parseInt(row.getAttribute("data-track-id") || "0");
+    const trackIndex = trackIndexMap.get(trackId);
+
+    if (trackIndex === undefined) return;
+    playTrackAtIndex(trackIndex, trackId);
+  }
+
+  async function handleBodyContextMenu(e: MouseEvent) {
+    const row = (e.target as HTMLElement).closest(".track-row");
+    if (!row) return;
+
+    e.preventDefault();
+
+    const trackId = parseInt(row.getAttribute("data-track-id") || "0");
+    const trackIndex = trackIndexMap.get(trackId);
+
+    if (trackIndex === undefined) return;
+
+    const track = sortedTracks[trackIndex];
+    if (!track) return;
+
+    openTrackContextMenu(e.clientX, e.clientY, track, trackIndex);
   }
 
   function handleImageError(albumArt: string) {
@@ -740,16 +933,19 @@
   let swipeStartY = 0;
   let swipeDeltaX = 0;
   let swipingRow: HTMLElement | null = null;
+  let swipingInner: HTMLElement | null = null;
   let swipeTrackId: number | null = null;
   let swipeCommitted = false;
+  let justSwiped = false;
+  let justSwipedTimer: ReturnType<typeof setTimeout> | null = null;
   const SWIPE_THRESHOLD = 80; // px to trigger add-to-queue
   const SWIPE_MAX = 120;
   let swipeResetTimer: ReturnType<typeof setTimeout> | null = null;
 
   function handleSwipeTouchStart(e: TouchEvent) {
-    if (!$isMobile || multiSelectMode) return;
-    // Don't swipe on drag handles
-    if ((e.target as HTMLElement).closest(".drag-handle")) return;
+    if (!$isMobile || effectiveMultiSelectMode) return;
+    // Don't swipe on drag handles or overflow button
+    if ((e.target as HTMLElement).closest(".drag-handle, .row-more-btn")) return;
 
     const touch = e.touches[0];
     swipeStartX = touch.clientX;
@@ -757,9 +953,10 @@
     swipeDeltaX = 0;
     swipeCommitted = false;
 
-    const row = (e.target as HTMLElement).closest(".track-row") as HTMLElement;
+    const row = (e.target as HTMLElement).closest(".track-row") as HTMLElement | null;
     if (row) {
       swipingRow = row;
+      swipingInner = row.querySelector(".track-row-inner") as HTMLElement | null;
       swipeTrackId = parseInt(row.getAttribute("data-track-id") || "0");
     }
   }
@@ -773,16 +970,21 @@
 
     // If vertical movement is dominant, cancel swipe (allow scroll)
     if (Math.abs(dy) > Math.abs(dx) && Math.abs(dx) < 15) {
-      swipingRow.style.transform = "";
-      swipingRow.style.transition = "";
+      if (swipingInner) {
+        swipingInner.style.transform = "";
+        swipingInner.style.transition = "";
+      }
+      swipingRow.classList.remove("swiping", "swipe-queue-ready");
       swipingRow = null;
+      swipingInner = null;
       return;
     }
 
     // Only right-swipe
     if (dx < 0) {
       swipeDeltaX = 0;
-      swipingRow.style.transform = "";
+      if (swipingInner) swipingInner.style.transform = "";
+      swipingRow.classList.remove("swipe-queue-ready");
       return;
     }
 
@@ -791,8 +993,10 @@
 
     swipeDeltaX = Math.min(dx, SWIPE_MAX);
     swipingRow.classList.add("swiping");
-    swipingRow.style.transition = "none";
-    swipingRow.style.transform = `translateX(${swipeDeltaX}px)`;
+    if (swipingInner) {
+      swipingInner.style.transition = "none";
+      swipingInner.style.transform = `translateX(${swipeDeltaX}px)`;
+    }
 
     // Visual feedback: change bg when past threshold
     if (swipeDeltaX >= SWIPE_THRESHOLD) {
@@ -806,11 +1010,20 @@
     if (!swipingRow) return;
 
     const row = swipingRow;
+    const inner = swipingInner;
     const trackId = swipeTrackId;
+
+    if (swipeDeltaX > 10) {
+      justSwiped = true;
+      if (justSwipedTimer) clearTimeout(justSwipedTimer);
+      justSwipedTimer = setTimeout(() => {
+        justSwiped = false;
+      }, 120);
+    }
 
     if (swipeDeltaX >= SWIPE_THRESHOLD && trackId) {
       swipeCommitted = true;
-      row.classList.add("swipe-queue-added");
+      row.classList.add("swipe-queue-added", "swipe-animating");
       row.classList.remove("swipe-queue-ready");
 
       // Find track and add to queue
@@ -825,19 +1038,26 @@
 
       // Animate back after short delay
       swipeResetTimer = setTimeout(() => {
-        row.style.transition = "transform 0.25s ease";
-        row.style.transform = "";
-        row.classList.remove("swipe-queue-added");
+        if (inner) {
+          inner.style.transition = "transform 0.25s ease";
+          inner.style.transform = "";
+        }
+        row.classList.remove("swipe-queue-added", "swiping");
+        setTimeout(() => row.classList.remove("swipe-animating"), 260);
       }, 400);
     } else {
       // Snap back
-      row.style.transition = "transform 0.25s ease";
-      row.style.transform = "";
-      row.classList.remove("swipe-queue-ready");
+      row.classList.add("swipe-animating");
+      if (inner) {
+        inner.style.transition = "transform 0.25s ease";
+        inner.style.transform = "";
+      }
+      row.classList.remove("swipe-queue-ready", "swiping");
+      setTimeout(() => row.classList.remove("swipe-animating"), 260);
     }
-    row.classList.remove("swiping");
 
     swipingRow = null;
+    swipingInner = null;
     swipeTrackId = null;
     swipeDeltaX = 0;
   }
@@ -929,6 +1149,13 @@
 
   function scrollToIndex(index: number) {
     if (!containerElement) return;
+    if (externalScroll && scrollParent) {
+      const parentRect = scrollParent.getBoundingClientRect();
+      const bodyRect = containerElement.getBoundingClientRect();
+      const bodyTopInParent = bodyRect.top - parentRect.top + scrollParent.scrollTop;
+      scrollParent.scrollTop = bodyTopInParent + index * rowHeight;
+      return;
+    }
     containerElement.scrollTop = index * rowHeight;
   }
 
@@ -985,6 +1212,21 @@
 
   function ensureIndexVisible(index: number) {
     if (!containerElement) return;
+    if (externalScroll && scrollParent) {
+      const parentRect = scrollParent.getBoundingClientRect();
+      const bodyRect = containerElement.getBoundingClientRect();
+      const bodyTopInParent = bodyRect.top - parentRect.top + scrollParent.scrollTop;
+      const itemTop = bodyTopInParent + index * rowHeight;
+      const itemBottom = itemTop + rowHeight;
+      const viewTop = scrollParent.scrollTop;
+      const viewBottom = viewTop + scrollParent.clientHeight;
+      if (itemTop < viewTop) {
+        scrollParent.scrollTop = itemTop;
+      } else if (itemBottom > viewBottom) {
+        scrollParent.scrollTop = itemBottom - scrollParent.clientHeight;
+      }
+      return;
+    }
     const itemTop = index * rowHeight;
     const itemBottom = itemTop + rowHeight;
     const viewTop = containerElement.scrollTop;
@@ -1018,7 +1260,7 @@
     // Ctrl / Cmd + A: Select all currently loaded/displayed tracks
     if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
       e.preventDefault();
-      if (multiSelectMode) {
+      if (effectiveMultiSelectMode) {
         multiSelect.selectAll(sortedTracks.map((t) => t.id));
       } else {
         trackSelectionStore.selectAll(sortedTracks.map((t) => t.id));
@@ -1135,7 +1377,7 @@
   />
 {/if}
 
-<div class="track-list" bind:this={rootElement}>
+<div class="track-list" class:external-scroll={externalScroll} bind:this={rootElement}>
   {#if !$isMobile}
     <div class="list-toolbar">
       <span class="toolbar-hint"
@@ -1153,11 +1395,78 @@
         {showAdvancedMetadata ? $_('trackList.hideDetails') : $_('trackList.showDetails')}
       </button>
     </div>
+  {:else if showMobileActionBar && sortedTracks.length > 0}
+    <div class="mobile-track-bar">
+      {#if effectiveMultiSelectMode}
+        <span class="mobile-select-count">
+          {$_("playlist.selectedCount", { values: { count: $multiSelect.selectedTrackIds.size } })}
+        </span>
+        <div class="mobile-bar-actions">
+          <button
+            type="button"
+            class="mobile-bar-btn"
+            on:click={() => {
+              if ($multiSelect.selectedTrackIds.size === sortedTracks.length) {
+                multiSelect.clearSelections();
+              } else {
+                multiSelect.selectAll(sortedTracks.map((t) => t.id));
+              }
+            }}
+          >
+            {$multiSelect.selectedTrackIds.size === sortedTracks.length ? $_("playlist.clearAll") : $_("playlist.selectAll")}
+          </button>
+          <button
+            type="button"
+            class="mobile-bar-btn"
+            disabled={$multiSelect.selectedTrackIds.size === 0}
+            on:click|stopPropagation={openMobileBulkActions}
+          >
+            <Icon name="more-vertical" size={16} />
+            <span>{$_("common.actions", { default: "Actions" })}</span>
+          </button>
+          <button
+            type="button"
+            class="mobile-bar-btn primary-pill"
+            on:click={exitMobileSelect}
+          >
+            {$_("shortcuts.doneEditing", { default: "Done" })}
+          </button>
+        </div>
+      {:else}
+        <button
+          type="button"
+          class="mobile-bar-btn primary-pill"
+          on:click={handleMobileShuffleAll}
+        >
+          <Icon name="shuffle" size={16} />
+          <span>{$_("liked.shuffle")}</span>
+        </button>
+        <div class="mobile-bar-actions">
+          <button
+            type="button"
+            class="mobile-bar-btn"
+            class:active={sortField !== null}
+            on:click|stopPropagation={openMobileSortMenu}
+          >
+            <Icon name="arrow-up-down" size={16} />
+            <span>{sortField ? sortFieldLabel(sortField) : $_("trackList.sort", { default: "Sort" })}</span>
+          </button>
+          <button
+            type="button"
+            class="mobile-bar-btn"
+            on:click={enterMobileSelect}
+          >
+            <Icon name="check-circle" size={16} />
+            <span>{$_("trackList.select", { default: "Select" })}</span>
+          </button>
+        </div>
+      {/if}
+    </div>
   {/if}
 
   <!-- Header stays fixed -->
   <TrackListHeader
-    {multiSelectMode}
+    multiSelectMode={effectiveMultiSelectMode}
     {showAlbum}
     {playlistId}
     {scrollbarWidth}
@@ -1175,8 +1484,8 @@
     <div
       class="list-body"
       class:no-album={!showAlbum}
-      class:with-drag={playlistId !== null && !multiSelectMode}
-      class:multiselect={multiSelectMode}
+      class:with-drag={playlistId !== null && !effectiveMultiSelectMode}
+      class:multiselect={effectiveMultiSelectMode}
       class:mobile-album={mobileViewMode === "album"}
       class:mobile-playlist={mobileViewMode === "playlist"}
       class:mobile-library={mobileViewMode === "library"}
@@ -1188,6 +1497,7 @@
       on:touchstart={handleSwipeTouchStart}
       on:touchmove={handleSwipeTouchMove}
       on:touchend={handleSwipeTouchEnd}
+      on:touchcancel={handleSwipeTouchEnd}
       bind:this={containerElement}
     >
       <div
@@ -1200,7 +1510,7 @@
         >
           {#each visibleTracksWithMetadata as { track, albumArt, unavailable, formattedDate }, index (track.id)}
             {@const actualIndex = virtualScrollState.startIndex + index}
-            {@const isSelected = multiSelectMode ? $multiSelect.selectedTrackIds.has(track.id) : $trackSelectionStore.selectedTrackIds.has(track.id)}
+            {@const isSelected = effectiveMultiSelectMode ? $multiSelect.selectedTrackIds.has(track.id) : $trackSelectionStore.selectedTrackIds.has(track.id)}
             {@const isFocused = $trackSelectionStore.focusedIndex === actualIndex}
             <TrackListRow
               {track}
@@ -1212,7 +1522,7 @@
               {isFocused}
               {showAlbum}
               {playlistId}
-              {multiSelectMode}
+              multiSelectMode={effectiveMultiSelectMode}
               {playingTrackId}
               isPlaying={$isPlaying}
               {failedImages}
@@ -1222,6 +1532,7 @@
               dragShift={isDragging ? (dragShifts[actualIndex] ?? 0) : 0}
               onPointerDown={handlePointerDown}
               onImageError={handleImageError}
+              onMoreClick={handleRowMoreClick}
             />
           {/each}
         </div>
@@ -1270,6 +1581,72 @@
     height: 100%;
     overflow: hidden;
     position: relative; /* anchors the jump strip */
+  }
+
+  .track-list.external-scroll {
+    height: auto;
+    overflow: visible;
+  }
+
+  .track-list.external-scroll .list-body {
+    flex: none;
+    overflow: visible;
+  }
+
+  .mobile-track-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-xs) var(--spacing-md);
+    min-height: 48px;
+    flex-shrink: 0;
+  }
+
+  .mobile-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+    flex-shrink: 0;
+  }
+
+  .mobile-select-count {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: var(--accent-primary);
+    white-space: nowrap;
+  }
+
+  .mobile-bar-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 12px;
+    border-radius: var(--radius-full);
+    background-color: var(--surface-subtle, rgba(255, 255, 255, 0.08));
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    white-space: nowrap;
+    transition: background-color var(--transition-fast);
+  }
+
+  .mobile-bar-btn:active:not(:disabled) {
+    background-color: var(--surface-subtle-hover, rgba(255, 255, 255, 0.14));
+  }
+
+  .mobile-bar-btn.active {
+    color: var(--accent-primary);
+    background-color: var(--accent-subtle);
+  }
+
+  .mobile-bar-btn.primary-pill {
+    background-color: var(--accent-primary);
+    color: var(--text-on-accent, #fff);
+    padding: 0 16px;
   }
 
   /* alphabetical jump indicator */
@@ -1435,6 +1812,10 @@
   .virtual-spacer { position: relative; width: 100%; }
   .virtual-content { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
 
+  :global(.track-row-inner) {
+    display: contents;
+  }
+
   :global(.track-row) {
     display: grid;
     grid-template-columns: 40px 1fr 1fr 80px 140px;
@@ -1556,10 +1937,76 @@
   :global(html.layout-mobile .list-header) { display: none; }
   :global(html.layout-mobile .quality-tag) { display: none; }
   :global(html.layout-mobile .cover-play-overlay) { display: none; }
-  :global(html.layout-mobile .drag-handle) { opacity: 1; }
-  :global(html.layout-mobile .track-row) { gap: var(--spacing-sm); padding: var(--spacing-xs) var(--spacing-sm); height: 60px; min-height: 60px; }
+  :global(html.layout-mobile .drag-handle) {
+    opacity: 1;
+    width: 32px;
+    min-width: 0;
+    height: 44px;
+    min-height: 44px;
+  }
+  :global(html.layout-mobile .col-checkbox) {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  :global(html.layout-mobile .row-more-btn) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    border-radius: var(--radius-full);
+    color: var(--text-subdued);
+    flex-shrink: 0;
+  }
+  :global(html.layout-mobile .row-more-btn:active) {
+    background-color: var(--surface-subtle, rgba(255, 255, 255, 0.08));
+    color: var(--text-primary);
+  }
+  :global(html.layout-mobile .track-name-marquee) {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  :global(html.layout-mobile .track-row) {
+    display: block;
+    position: relative;
+    overflow: hidden;
+    padding: 0;
+    height: 60px;
+    min-height: 60px;
+  }
+  :global(html.layout-mobile .track-row-inner) {
+    display: grid;
+    grid-template-columns: 48px 1fr auto 44px;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-xs) var(--spacing-xs) var(--spacing-xs) var(--spacing-sm);
+    align-items: center;
+    width: 100%;
+    height: 100%;
+    box-sizing: border-box;
+    position: relative;
+    z-index: 1;
+    border-radius: var(--radius-md);
+    background-color: transparent;
+  }
+  :global(html.layout-mobile .track-row.swiping .track-row-inner),
+  :global(html.layout-mobile .track-row.swipe-animating .track-row-inner) {
+    background-color: var(--bg-base);
+  }
+  :global(html.layout-mobile .track-row.playing .track-row-inner) {
+    background-color: var(--bg-surface);
+  }
+  :global(html.layout-mobile .track-row.selected .track-row-inner) {
+    background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.16);
+  }
+  :global(html.layout-mobile .track-row.selected.playing .track-row-inner) {
+    background-color: rgba(var(--accent-primary-rgb, 29, 185, 84), 0.26);
+  }
 
-  :global(html.layout-mobile) .list-body.mobile-album :global(.track-row) { grid-template-columns: 32px 1fr 48px; padding-left: var(--spacing-sm); }
+  :global(html.layout-mobile) .list-body.mobile-album :global(.track-row-inner) { grid-template-columns: 32px 1fr auto 44px; padding-left: var(--spacing-sm); }
   :global(html.layout-mobile) .list-body.mobile-album :global(.col-num) { display: flex; align-items: center; justify-content: center; font-size: 0.9375rem; color: var(--text-subdued); }
   :global(html.layout-mobile) .list-body.mobile-album :global(.track-row.playing .col-num) { color: var(--accent-primary); }
   :global(html.layout-mobile) .list-body.mobile-album :global(.col-cover) { display: none; }
@@ -1572,48 +2019,70 @@
   :global(html.layout-mobile .eq-bar:nth-child(3)) { height: 40%; animation-delay: 0.4s; }
   :global(html.layout-mobile .eq-bar:nth-child(4)) { height: 80%; animation-delay: 0.6s; }
   @keyframes eq-bounce { 0%, 100% { height: 20%; } 50% { height: 100%; } }
-  :global(html.layout-mobile) .list-body.mobile-album :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); }
+  :global(html.layout-mobile) .list-body.mobile-album :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); white-space: nowrap; flex-shrink: 0; }
   :global(html.layout-mobile) .list-body.mobile-album :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-subdued); }
   :global(html.layout-mobile) .list-body.mobile-album :global(.col-duration) { font-size: var(--font-size-xs); color: var(--text-subdued); }
-  :global(html.layout-mobile) .list-body.mobile-album.with-drag :global(.track-row) { grid-template-columns: 28px 32px 1fr 48px; }
-  :global(html.layout-mobile) .list-body.mobile-album.multiselect :global(.track-row) { grid-template-columns: 36px 32px 1fr 48px; }
+  :global(html.layout-mobile) .list-body.mobile-album.with-drag :global(.track-row-inner) { grid-template-columns: 32px 32px 1fr auto 44px; }
+  :global(html.layout-mobile) .list-body.mobile-album.multiselect :global(.track-row-inner) { grid-template-columns: 44px 32px 1fr auto 44px; }
 
-  :global(html.layout-mobile) .list-body.mobile-playlist :global(.track-row) { grid-template-columns: 48px 1fr 48px; padding-left: var(--spacing-sm); }
+  :global(html.layout-mobile) .list-body.mobile-playlist :global(.track-row-inner) { grid-template-columns: 48px 1fr auto 44px; padding-left: var(--spacing-sm); }
   :global(html.layout-mobile) .list-body.mobile-playlist :global(.col-num) { display: none; }
   :global(html.layout-mobile) .list-body.mobile-playlist :global(.col-album-cell) { display: none; }
   :global(html.layout-mobile) .list-body.mobile-playlist :global(.cover-wrapper), :global(html.layout-mobile) .list-body.mobile-playlist :global(.cover-image), :global(html.layout-mobile) .list-body.mobile-playlist :global(.cover-placeholder) { width: 48px; height: 48px; border-radius: var(--radius-sm); }
   :global(html.layout-mobile) .list-body.mobile-playlist :global(.col-cover) { justify-content: flex-start; align-items: center; }
   :global(html.layout-mobile) .list-body.mobile-playlist :global(.col-title) { padding-top: 0; justify-content: center; }
-  :global(html.layout-mobile) .list-body.mobile-playlist :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); }
+  :global(html.layout-mobile) .list-body.mobile-playlist :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); white-space: nowrap; flex-shrink: 0; }
   :global(html.layout-mobile) .list-body.mobile-playlist :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-subdued); margin-top: 0; }
   :global(html.layout-mobile) .list-body.mobile-playlist :global(.col-duration) { font-size: var(--font-size-xs); color: var(--text-subdued); }
-  :global(html.layout-mobile) .list-body.mobile-playlist.with-drag :global(.track-row) { grid-template-columns: 28px 48px 1fr 48px; }
-  :global(html.layout-mobile) .list-body.mobile-playlist.multiselect :global(.track-row) { grid-template-columns: 36px 48px 1fr 48px; }
+  :global(html.layout-mobile) .list-body.mobile-playlist.with-drag :global(.track-row-inner) { grid-template-columns: 32px 48px 1fr auto 44px; }
+  :global(html.layout-mobile) .list-body.mobile-playlist.multiselect :global(.track-row-inner) { grid-template-columns: 44px 48px 1fr auto 44px; }
 
-  :global(html.layout-mobile) .list-body.mobile-library :global(.track-row) { grid-template-columns: 48px 1fr 48px; padding-left: var(--spacing-sm); }
+  :global(html.layout-mobile) .list-body.mobile-library :global(.track-row-inner) { grid-template-columns: 48px 1fr auto 44px; padding-left: var(--spacing-sm); }
   :global(html.layout-mobile) .list-body.mobile-library :global(.col-num) { display: none; }
   :global(html.layout-mobile) .list-body.mobile-library :global(.col-album-cell) { display: none; }
   :global(html.layout-mobile) .list-body.mobile-library :global(.cover-wrapper), :global(html.layout-mobile) .list-body.mobile-library :global(.cover-image), :global(html.layout-mobile) .list-body.mobile-library :global(.cover-placeholder) { width: 48px; height: 48px; border-radius: var(--radius-sm); }
   :global(html.layout-mobile) .list-body.mobile-library :global(.col-cover) { justify-content: flex-start; align-items: center; }
   :global(html.layout-mobile) .list-body.mobile-library :global(.col-title) { padding-top: 0; justify-content: center; }
-  :global(html.layout-mobile) .list-body.mobile-library :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); }
+  :global(html.layout-mobile) .list-body.mobile-library :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-semibold); color: var(--text-primary); white-space: nowrap; flex-shrink: 0; }
   :global(html.layout-mobile) .list-body.mobile-library :global(.track-artist) { font-size: var(--font-size-xs); color: var(--text-subdued); margin-top: 2px; }
   :global(html.layout-mobile) .list-body.mobile-library :global(.col-duration) { font-size: var(--font-size-xs); color: var(--text-subdued); }
-  :global(html.layout-mobile) .list-body.mobile-library.with-drag :global(.track-row) { grid-template-columns: 28px 48px 1fr 48px; }
-  :global(html.layout-mobile) .list-body.mobile-library.multiselect :global(.track-row),
-  :global(html.layout-mobile) .list-body.mobile-library.multiselect.no-album :global(.track-row) { grid-template-columns: 36px 48px 1fr 48px; }
+  :global(html.layout-mobile) .list-body.mobile-library.with-drag :global(.track-row-inner) { grid-template-columns: 32px 48px 1fr auto 44px; }
+  :global(html.layout-mobile) .list-body.mobile-library.multiselect :global(.track-row-inner),
+  :global(html.layout-mobile) .list-body.mobile-library.multiselect.no-album :global(.track-row-inner) { grid-template-columns: 44px 48px 1fr auto 44px; }
 
   :global(html.layout-mobile .track-row.playing .track-name) { color: var(--accent-primary); }
   :global(html.layout-mobile .track-row.playing .col-num) { color: var(--accent-primary); }
   :global(html.layout-mobile .downloaded-icon) { margin-left: 2px; }
   :global(html.layout-mobile .downloaded-icon svg) { width: 12px; height: 12px; }
 
-  :global(html.layout-mobile .track-row) { position: relative; }
-  :global(html.layout-mobile .track-row.swiping) { will-change: transform; }
-  :global(html.layout-mobile .track-row::before) { content: ""; position: absolute; inset: 0; border-radius: var(--radius-md); background-color: transparent; transition: background-color 0.15s ease; z-index: -1; pointer-events: none; }
-  :global(html.layout-mobile .track-row.swipe-queue-ready::before) { background-color: color-mix(in srgb, var(--accent-primary), transparent 80%); }
-  :global(html.layout-mobile .track-row.swipe-queue-added::before) { background-color: color-mix(in srgb, var(--accent-primary), transparent 65%); }
-  :global(html.layout-mobile .track-row::after) { content: "+"; position: absolute; left: 8px; top: 50%; transform: translateY(-50%); font-size: 1.25rem; font-weight: var(--font-weight-bold); color: var(--accent-primary); opacity: 0; transition: opacity 0.15s ease; pointer-events: none; z-index: -1; }
-  :global(html.layout-mobile .track-row.swipe-queue-ready::after) { opacity: 1; }
-  :global(html.layout-mobile .track-row.swipe-queue-added::after) { content: "✓"; opacity: 1; }
+  :global(html.layout-mobile .track-row.swiping .track-row-inner) { will-change: transform; }
+  :global(html.layout-mobile .swipe-bg) {
+    position: absolute;
+    inset: 0;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    padding-left: 16px;
+    background-color: transparent;
+    color: var(--accent-primary);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 0;
+    transition: opacity 0.15s ease, background-color 0.15s ease;
+  }
+  :global(html.layout-mobile .swipe-bg .swipe-icon-check) { display: none; }
+  :global(html.layout-mobile .track-row.swiping .swipe-bg) {
+    opacity: 0.7;
+    background-color: color-mix(in srgb, var(--accent-primary), transparent 88%);
+  }
+  :global(html.layout-mobile .track-row.swipe-queue-ready .swipe-bg) {
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--accent-primary), transparent 78%);
+  }
+  :global(html.layout-mobile .track-row.swipe-queue-added .swipe-bg) {
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--accent-primary), transparent 65%);
+  }
+  :global(html.layout-mobile .track-row.swipe-queue-added .swipe-bg .swipe-icon-plus) { display: none; }
+  :global(html.layout-mobile .track-row.swipe-queue-added .swipe-bg .swipe-icon-check) { display: inline-flex; }
 </style>

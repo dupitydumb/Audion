@@ -308,10 +308,10 @@
             <button
                 class="btn-secondary"
                 on:click={() => (showImportModal = true)}
-                title="Import .m3u, .m3u8, JSON or text playlist with 3-tier matching"
+                title={$_("playlists.importPlaylistHint", { default: "Import .m3u, .m3u8, JSON or text playlist" })}
             >
                 <Icon name="upload" size={20} />
-                Import Playlist
+                {$_("playlists.importPlaylist", { default: "Import Playlist" })}
             </button>
             <button
                 class="btn-secondary"
@@ -346,24 +346,26 @@
                 placeholder={$_("playlists.playlistNamePlaceholder")}
                 aria-label="Playlist name"
             />
-            <button
-                class="btn-primary"
-                on:click={handleCreatePlaylist}
-                disabled={isCreating || !newPlaylistName.trim()}
-            >
-                {isCreating
-                    ? $_("playlists.creating")
-                    : $_("common.create")}
-            </button>
-            <button
-                class="btn-secondary"
-                on:click={() => {
-                    showCreateForm = false;
-                    newPlaylistName = "";
-                }}
-            >
-                {$_("common.cancel")}
-            </button>
+            <div class="create-form-actions">
+                <button
+                    class="btn-primary"
+                    on:click={handleCreatePlaylist}
+                    disabled={isCreating || !newPlaylistName.trim()}
+                >
+                    {isCreating
+                        ? $_("playlists.creating")
+                        : $_("common.create")}
+                </button>
+                <button
+                    class="btn-secondary"
+                    on:click={() => {
+                        showCreateForm = false;
+                        newPlaylistName = "";
+                    }}
+                >
+                    {$_("common.cancel")}
+                </button>
+            </div>
         </div>
     {/if}
 
@@ -383,18 +385,20 @@
                 placeholder={$_("playlists.newNamePlaceholder")}
                 aria-label="New playlist name"
             />
-            <button
-                class="btn-primary"
-                on:click={commitRename}
-                disabled={isRenaming || !renameValue.trim()}
-            >
-                {isRenaming
-                    ? $_("common.saving")
-                    : $_("common.rename")}
-            </button>
-            <button class="btn-secondary" on:click={cancelRename}
-                >{$_("common.cancel")}</button
-            >
+            <div class="create-form-actions">
+                <button
+                    class="btn-primary"
+                    on:click={commitRename}
+                    disabled={isRenaming || !renameValue.trim()}
+                >
+                    {isRenaming
+                        ? $_("common.saving")
+                        : $_("common.rename")}
+                </button>
+                <button class="btn-secondary" on:click={cancelRename}
+                    >{$_("common.cancel")}</button
+                >
+            </div>
         </div>
     {/if}
 
@@ -444,16 +448,17 @@
         display: flex;
         flex-direction: column;
         height: 100%;
-        padding: var(--spacing-md);
-        padding-bottom: 0;
+        padding: 0;
     }
 
     .view-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin-bottom: var(--spacing-lg);
+        padding: var(--spacing-md) var(--spacing-md) 0;
+        margin-bottom: var(--spacing-sm);
         flex-shrink: 0;
+        gap: var(--spacing-sm);
     }
 
     .view-header h1 {
@@ -483,18 +488,55 @@
     }
 
     :global(html.layout-mobile) .view-header {
-        justify-content: flex-end;
+        justify-content: flex-start;
+    }
+
+    :global(html.layout-mobile) .header-actions {
+        width: 100%;
+        gap: var(--spacing-xs);
+    }
+
+    :global(html.layout-mobile) .header-actions .btn-secondary {
+        min-height: 44px;
+        padding: var(--spacing-xs) var(--spacing-md);
+        font-size: var(--font-size-sm);
     }
 
     .create-form {
         display: flex;
         align-items: center;
         gap: var(--spacing-sm);
-        margin-bottom: var(--spacing-lg);
+        margin: var(--spacing-sm) var(--spacing-md) 0;
         padding: var(--spacing-md);
         background-color: var(--bg-elevated);
         border-radius: var(--radius-md);
         flex-shrink: 0;
+    }
+
+    .create-form-actions {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        flex-shrink: 0;
+    }
+
+    :global(html.layout-mobile) .create-form {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    :global(html.layout-mobile) .create-form input {
+        width: 100%;
+        min-height: 44px;
+    }
+
+    :global(html.layout-mobile) .create-form-actions {
+        width: 100%;
+    }
+
+    :global(html.layout-mobile) .create-form-actions button {
+        flex: 1;
+        min-height: 44px;
     }
 
     .create-form input {

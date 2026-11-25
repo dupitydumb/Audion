@@ -8,7 +8,7 @@
     import { loadPlaylists, playlists } from "$lib/stores/library";
     import { addTracksToPlaylist } from "$lib/services/playlistHelpers";
     import { addToast } from "$lib/stores/toast";
-    import { isMobile } from "$lib/stores/mobile";
+    import { isMobile, registerBackHandler } from "$lib/stores/mobile";
     import { searchQuery, clearSearch } from "$lib/stores/search";
     import Icon from "$lib/components/Icon.svelte";
 
@@ -41,9 +41,14 @@
     onMount(() => {
         // Activate multi-select mode
         multiSelect.activate(playlistId);
+        const unregisterBack = registerBackHandler(() => {
+            handleCancel();
+            return true;
+        });
 
         return () => {
             // Cleanup on unmount
+            unregisterBack();
             multiSelect.deactivate();
         };
     });
@@ -172,6 +177,7 @@
             tracks={filteredTracks} 
             showAlbum={!$isMobile}
             multiSelectMode={true}
+            showMobileActionBar={false}
         />
     </div>
 
@@ -446,8 +452,10 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 40px;
-        height: 40px;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
         border-radius: var(--radius-full);
         color: var(--text-primary);
         flex-shrink: 0;
@@ -502,8 +510,9 @@
         margin: var(--spacing-sm) var(--spacing-sm) var(--spacing-sm);
         background-color: var(--bg-elevated);
         border-radius: var(--radius-md);
-        padding: 0 var(--spacing-md);
-        height: 36px;
+        padding: 0 var(--spacing-xs) 0 var(--spacing-md);
+        height: 44px;
+        min-height: 44px;
     }
 
     .filter-icon {
@@ -533,9 +542,12 @@
         align-items: center;
         justify-content: center;
         color: var(--text-subdued);
-        padding: 4px;
-        min-height: 28px;
-        min-width: 28px;
+        padding: 0;
+        width: 44px;
+        height: 44px;
+        min-height: 44px;
+        min-width: 44px;
+        flex-shrink: 0;
         border-radius: var(--radius-full);
     }
 
@@ -546,10 +558,10 @@
     /* Mobile floating action button */
     .mobile-fab-container {
         position: fixed;
-        bottom: calc(60px + env(safe-area-inset-bottom) + 12px);
+        bottom: calc(var(--bottom-chrome-inset, 76px) + 12px);
         left: var(--spacing-md);
         right: var(--spacing-md);
-        z-index: 950;
+        z-index: var(--z-toast, 1100);
         pointer-events: none;
     }
 
@@ -593,6 +605,6 @@
     }
 
     .multiselect-container.mobile .tracklist-container :global(.list-body) {
-        padding-bottom: calc(60px + 52px + env(safe-area-inset-bottom) + 32px);
+        padding-bottom: calc(var(--bottom-chrome-inset, 76px) + 76px);
     }
 </style>

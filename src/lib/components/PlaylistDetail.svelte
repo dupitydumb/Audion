@@ -13,8 +13,9 @@
     import { pinnedItems } from "$lib/stores/pinned";
     import { contextMenu } from "$lib/stores/ui";
     import { buildPlaylistContextMenu } from "$lib/menus/contextMenus";
-    import { playTracks, addToQueue } from "$lib/stores/player";
+    import { playTracks, addToQueue, currentPlaylistId, isPlaying, togglePlay } from "$lib/stores/player";
     import { goToPlaylists, goToTracksMultiSelect } from "$lib/stores/view";
+    import { isMobile, registerBackHandler } from "$lib/stores/mobile";
     import { loadPlaylists, playlists, playlistPendingTracks, drainPendingTracks } from "$lib/stores/library";
     import { multiSelect } from "$lib/stores/multiselect";
     import TrackList from "./track-list/TrackList.svelte";
@@ -43,6 +44,31 @@
     let editName = "";
     let coverInput: HTMLInputElement;
     let coverHovered = false;
+    let headerElement: HTMLElement | undefined = undefined;
+    let isScrolledPastHero = false;
+
+    $: isThisPlaylistPlaying = $isPlaying && $currentPlaylistId === playlistId;
+
+    function handlePlayPause() {
+        if (isThisPlaylistPlaying) {
+            togglePlay();
+        } else {
+            handlePlayAll();
+        }
+    }
+
+    function handleScroll(e: Event) {
+        const target = e.currentTarget as HTMLElement;
+        if (target && typeof target.scrollTop === "number") {
+            const heroHeight = headerElement ? Math.max(120, headerElement.offsetHeight - 56) : 180;
+            isScrolledPastHero = target.scrollTop >= heroHeight;
+        }
+    }
+
+    function handleCoverTap() {
+        if (!$isMobile || !playlist) return;
+        coverInput?.click();
+    }
 
     // in-place selection of this playlist's own tracks
     // (separate from MultiSelectTrackView's "add to playlist" flow)
@@ -342,6 +368,22 @@
 
     onMount(() => {
         loadPlaylistData();
+        const unregisterBack = registerBackHandler(() => {
+            if (menuOpen) {
+                closeMenu();
+                return true;
+            }
+            if (isEditing) {
+                isEditing = false;
+                return true;
+            }
+            if (selectModeActive) {
+                exitSelectMode();
+                return true;
+            }
+            return false;
+        });
+        return unregisterBack;
     });
 
     // Reload when playlistId changes
@@ -399,7 +441,7 @@
 
 <svelte:window on:keydown={handleWindowKeydown} />
 
-<div class="playlist-detail">
+<div class="playlist-detail" on:scroll={handleScroll}>
     {#if loading}
         <div class="loading">
             <div class="spinner"></div>
@@ -408,23 +450,46 @@
             >
         </div>
     {:else if playlist}
-        <header
-            class="playlist-header"
-            on:contextmenu={handleHeaderContextMenu}
-            role="region"
-            aria-label="Playlist header"
+        <!-- Sticky 56px Top Bar -->
+        <div
+            class="sticky-top-bar"
+            class:scrolled={isScrolledPastHero}
+            aria-label="Playlist navigation and actions"
         >
-            <div class="header-actions">
+            <div class="sticky-left">
+                <button
+                    class="top-bar-btn"
+                    on:click={goToPlaylists}
+                    aria-label={$_("playlist.backToPlaylists")}
+                    title={$_("playlist.backToPlaylists")}
+                >
+                    <Icon name="arrow-left" size={22} />
+                </button>
+                <span class="sticky-title" class:revealed={isScrolledPastHero}>
+                    {playlist.name}
+                </span>
+            </div>
+            <div class="sticky-right">
+                <button
+                    class="sticky-play-btn"
+                    class:revealed={isScrolledPastHero}
+                    on:click={handlePlayPause}
+                    disabled={tracks.length === 0}
+                    aria-label={isThisPlaylistPlaying ? $_("common.pause") : $_("common.play")}
+                >
+                    <Icon name={isThisPlaylistPlaying ? "pause" : "play"} size={18} />
+                </button>
                 <div class="menu-wrapper" role="presentation" on:keydown={handleMenuKeydown}>
                     <button
-                        class="back-btn"
-                        on:click={toggleMenu}
+                        class="top-bar-btn"
+                        on:click|stopPropagation={toggleMenu}
                         title={$_("playlist.moreOptions")}
                         bind:this={menuTriggerEl}
                         aria-haspopup="menu"
                         aria-expanded={menuOpen}
+                        aria-label={$_("playlist.moreOptions")}
                     >
-                        <Icon name="more-horizontal" size={20} />
+                        <Icon name={$isMobile ? "more-vertical" : "more-horizontal"} size={20} />
                     </button>
 
                     {#if menuOpen}
@@ -434,6 +499,16 @@
                                 <Icon name="edit" size={16} />
                                 {$_('contextMenu.rename')}
                             </button>
+                            <button class="dropdown-item" role="menuitem" on:click={() => { closeMenu(); coverInput?.click(); }}>
+                                <Icon name="image" size={16} />
+                                {hasCustomCover ? $_('playlist.changeCoverLabel') : $_('playlist.addCoverTooltip')}
+                            </button>
+                            {#if hasCustomCover}
+                                <button class="dropdown-item danger" role="menuitem" on:click={() => { closeMenu(); handleRemoveCover(); }}>
+                                    <Icon name="trash" size={16} />
+                                    {$_('playlist.removeCoverTitle')}
+                                </button>
+                            {/if}
                             <button class="dropdown-item" role="menuitem" on:click={() => handleExportZip(getSelectedTracks())}>
                                 <Icon name="folder" size={16} />
                                 {$_('contextMenu.exportToZip')}
@@ -446,16 +521,25 @@
                         </div>
                     {/if}
                 </div>
-
-                <button class="back-btn close-btn" on:click={goToPlaylists} title={$_("common.close")}>
-                    <Icon name="x" size={20} />
-                </button>
             </div>
+        </div>
+
+        <header
+            class="playlist-header"
+            on:contextmenu={handleHeaderContextMenu}
+            role="region"
+            aria-label="Playlist header"
+            bind:this={headerElement}
+        >
             <div
                 class="playlist-cover"
                 on:mouseenter={() => (coverHovered = true)}
                 on:mouseleave={() => (coverHovered = false)}
-                role="presentation"
+                on:click={handleCoverTap}
+                role="button"
+                tabindex="0"
+                aria-label={hasCustomCover ? $_("playlist.changeCoverTooltip") : $_("playlist.addCoverTooltip")}
+                on:keydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); coverInput?.click(); } }}
             >
                 <img
                     src={coverSrc}
@@ -469,21 +553,25 @@
                     on:change={(e) => handleCoverFile(e)}
                     style="display:none"
                 />
-                {#if coverHovered}
-                    <div class="cover-overlay">
+                {#if coverHovered || $isMobile}
+                    <div class="cover-overlay" class:mobile-visible={$isMobile}>
                         {#if hasCustomCover}
                             <button
                                 class="cover-overlay-btn cover-delete-btn"
-                                on:click={handleRemoveCover}
+                                on:click|stopPropagation={handleRemoveCover}
                                 title={$_("playlist.removeCoverTooltip")}
+                                aria-label={$_("playlist.removeCoverTooltip")}
                             >
                                 <Icon name="trash" size={20} />
                             </button>
                         {/if}
                         <button
                             class="cover-overlay-btn cover-add-btn"
-                            on:click={() => coverInput?.click()}
+                            on:click|stopPropagation={() => coverInput?.click()}
                             title={hasCustomCover
+                                ? $_("playlist.changeCoverTooltip")
+                                : $_("playlist.addCoverTooltip")}
+                            aria-label={hasCustomCover
                                 ? $_("playlist.changeCoverTooltip")
                                 : $_("playlist.addCoverTooltip")}
                         >
@@ -510,11 +598,24 @@
                         on:keydown={handleKeyDown}
                         on:blur={handleRename}
                         class="edit-input"
+                        autofocus
                     />
                 {:else}
-                    <h1 class="playlist-title" on:dblclick={startEditing}>
-                        {playlist.name}
-                    </h1>
+                    <div class="playlist-title-row">
+                        <h1 class="playlist-title" on:dblclick={startEditing}>
+                            {playlist.name}
+                        </h1>
+                        {#if $isMobile}
+                            <button
+                                type="button"
+                                class="title-edit-btn"
+                                on:click={startEditing}
+                                aria-label={$_("contextMenu.rename")}
+                            >
+                                <Icon name="edit" size={16} />
+                            </button>
+                        {/if}
+                    </div>
                 {/if}
                 <div class="playlist-meta">
                     <span
@@ -577,9 +678,11 @@
                     {tracks}
                     showAlbum={false}
                     {playlistId}
+                    externalScroll={true}
                     multiSelectMode={selectModeActive}
                     allowMultiSelectEntry={!selectModeActive}
                     onEnterMultiSelect={enterSelectMode}
+                    onExitMultiSelect={exitSelectMode}
                     playbackContext={{
                         type: "playlist",
                         playlistId,
@@ -613,6 +716,11 @@
         display: flex;
         flex-direction: column;
         height: 100%;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-y: contain;
+        position: relative;
     }
 
     .loading,
@@ -641,76 +749,121 @@
         }
     }
 
+    .sticky-top-bar {
+        position: sticky;
+        top: 0;
+        z-index: var(--z-sticky, 100);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 56px;
+        margin-bottom: -56px;
+        padding: 0 var(--spacing-sm);
+        background: transparent;
+        border-bottom: 1px solid transparent;
+        transition: background-color 0.22s ease, border-color 0.22s ease;
+        flex-shrink: 0;
+    }
+
+    .sticky-top-bar.scrolled {
+        background: color-mix(in srgb, var(--bg-base) 90%, transparent);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        border-bottom-color: var(--border-subtle, var(--border-color));
+    }
+
+    .sticky-left,
+    .sticky-right {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+    }
+
+    .sticky-left {
+        min-width: 0;
+        flex: 1;
+    }
+
+    .top-bar-btn {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+        border-radius: var(--radius-full);
+        background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: background-color var(--transition-fast);
+    }
+
+    .sticky-top-bar.scrolled .top-bar-btn {
+        background: transparent;
+    }
+
+    .top-bar-btn:hover {
+        background: var(--surface-subtle-hover, rgba(255, 255, 255, 0.12));
+    }
+
+    .sticky-title {
+        font-size: var(--font-size-md);
+        font-weight: var(--font-weight-bold);
+        color: var(--text-primary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+        padding: 0 var(--spacing-xs);
+    }
+
+    .sticky-title.revealed {
+        opacity: 1;
+    }
+
+    .sticky-play-btn {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        min-height: 40px;
+        border-radius: var(--radius-full);
+        background: var(--accent-primary);
+        color: var(--text-on-accent, #fff);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        cursor: pointer;
+        flex-shrink: 0;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease, transform var(--transition-fast);
+    }
+
+    .sticky-play-btn.revealed {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
     .playlist-header {
         display: flex;
         gap: var(--spacing-lg);
-        padding: var(--spacing-lg);
+        padding: calc(56px + var(--spacing-md)) var(--spacing-lg) var(--spacing-lg);
         background: linear-gradient(
             180deg,
             var(--bg-surface) 0%,
             var(--bg-base) 100%
         );
         position: relative;
-    }
-
-    .header-actions {
-        position: absolute;
-        top: var(--spacing-md);
-        right: var(--spacing-md);
-        display: flex;
-        gap: var(--spacing-xs);
-        z-index: 10;
+        flex-shrink: 0;
     }
 
     .menu-wrapper {
         position: relative;
-    }
-
-    .back-btn {
-        width: 40px;
-        height: 40px;
-        border-radius: var(--radius-full);
-        background-color: rgba(0, 0, 0, 0.5);
-        backdrop-filter: blur(8px);
-        color: var(--text-primary);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all var(--transition-fast);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-
-    .back-btn::after {
-        content: attr(title);
-        position: absolute;
-        bottom: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        padding: var(--spacing-xs) var(--spacing-sm);
-        background-color: var(--bg-surface);
-        color: var(--text-primary);
-        font-size: var(--font-size-xs);
-        border-radius: var(--radius-sm);
-        white-space: nowrap;
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity var(--transition-fast);
-        margin-bottom: 8px;
-        box-shadow: var(--shadow-md);
-    }
-
-    .back-btn:hover::after {
-        opacity: 1;
-    }
-
-    .back-btn:hover {
-        background-color: rgba(220, 38, 38, 0.9);
-        border-color: rgba(220, 38, 38, 0.4);
-        transform: scale(1.05);
-    }
-
-    .back-btn:active {
-        transform: scale(0.95);
     }
 
     .menu-backdrop {
@@ -739,6 +892,7 @@
         align-items: center;
         gap: var(--spacing-sm);
         padding: var(--spacing-sm) var(--spacing-md);
+        min-height: 44px;
         font-size: 0.9rem;
         color: var(--text-secondary);
         background: none;
@@ -824,18 +978,55 @@
         }
     }
 
+    .cover-overlay.mobile-visible {
+        background: linear-gradient(
+            to top,
+            rgba(0, 0, 0, 0.55) 0%,
+            transparent 55%
+        );
+        opacity: 1;
+        animation: none;
+    }
+
     .cover-overlay-btn {
-        width: 36px;
-        height: 36px;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
         border-radius: var(--radius-full);
-        background-color: rgba(0, 0, 0, 0.6);
+        background-color: rgba(0, 0, 0, 0.65);
         backdrop-filter: blur(8px);
         display: flex;
         align-items: center;
         justify-content: center;
         color: white;
         transition: all var(--transition-fast);
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .playlist-title-row {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        max-width: 100%;
+    }
+
+    .title-edit-btn {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+        border-radius: var(--radius-full);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-secondary);
+        flex-shrink: 0;
+    }
+
+    .title-edit-btn:active {
+        background-color: var(--surface-subtle-hover, rgba(255, 255, 255, 0.12));
+        color: var(--text-primary);
     }
 
     .cover-overlay-btn:hover {
@@ -918,8 +1109,7 @@
     }
 
     .playlist-tracks {
-        flex: 1;
-        overflow-y: auto;
+        flex: 1 0 auto;
     }
 
     .empty-state {
@@ -967,14 +1157,8 @@
         flex-direction: column;
         align-items: center;
         text-align: center;
-        padding: var(--spacing-md)
-            var(--spacing-md) var(--spacing-md);
+        padding: calc(56px + var(--spacing-sm)) var(--spacing-md) var(--spacing-md);
         gap: var(--spacing-md);
-    }
-
-    :global(html.layout-mobile) .header-actions {
-        top: var(--spacing-sm);
-        right: var(--spacing-sm);
     }
 
     :global(html.layout-mobile) .playlist-cover {
@@ -986,6 +1170,10 @@
         align-items: center;
     }
 
+    :global(html.layout-mobile) .playlist-title-row {
+        justify-content: center;
+    }
+
     :global(html.layout-mobile) .playlist-title {
         font-size: 1.5rem;
         word-break: break-word;
@@ -993,6 +1181,7 @@
 
     :global(html.layout-mobile) .edit-input {
         font-size: 1.5rem;
+        text-align: center;
     }
 
     :global(html.layout-mobile) .playlist-meta {
@@ -1011,11 +1200,6 @@
     :global(html.layout-mobile) .btn-secondary {
         padding: var(--spacing-sm) var(--spacing-lg);
         font-size: var(--font-size-base);
-        min-height: 44px;
-    }
-
-    :global(html.layout-mobile) .icon-btn {
-        min-width: 44px;
         min-height: 44px;
     }
 </style>

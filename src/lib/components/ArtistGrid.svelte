@@ -160,9 +160,7 @@
   onItemContextMenu={handleArtistContextMenu}
   emptyStateConfig={emptyState}
   cardWidthDesktop={200}
-  cardWidthMobile={140}
   cardHeightDesktop={240}
-  cardHeightMobile={190}
   let:item={artist}
 >
   {@const pictureUrl = resolvedPictures.get(artist.name) ?? null}

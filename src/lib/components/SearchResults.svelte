@@ -18,22 +18,31 @@
         goToArtistDetail,
         goToPlaylistDetail,
     } from "$lib/stores/view";
-    import { playTracks } from "$lib/stores/player";
+    import { playTracks, addToQueue } from "$lib/stores/player";
     import ArtistLinks from "$lib/components/ArtistLinks.svelte";
     import MarqueeText from "$lib/components/MarqueeText.svelte";
-    import { formatDuration } from "$lib/api/tauri";
+    import {
+        formatDuration,
+        getPlaylistTracks,
+        deletePlaylist,
+        type Playlist,
+    } from "$lib/api/tauri";
     import {
         albums,
+        loadPlaylists,
         getAlbumCoverFromTracks,
         resolveTrackCover,
     } from "$lib/stores/library";
     import { customArtworks } from "$lib/stores/customArtwork";
     import { contextMenu } from "$lib/stores/ui";
+    import { confirm } from "$lib/stores/dialogs";
+    import { isMobile } from "$lib/stores/mobile";
     import { playlistCovers } from "$lib/stores/playlistCovers";
     import {
         buildTrackContextMenu,
         buildAlbumContextMenu,
         buildArtistContextMenu,
+        buildPlaylistContextMenu,
         isTrackUnavailable,
     } from "$lib/menus/contextMenus";
 
@@ -170,12 +179,13 @@
         e: MouseEvent,
         track: any,
         index: number,
+        anchorRect?: DOMRect,
     ) {
         e.preventDefault();
         contextMenu.set({
             visible: true,
-            x: e.clientX,
-            y: e.clientY,
+            x: anchorRect ? anchorRect.left : e.clientX,
+            y: anchorRect ? anchorRect.bottom : e.clientY,
             items: buildTrackContextMenu({
                 track,
                 trackIndex: index,
@@ -185,6 +195,82 @@
                 t: $_,
             }),
         });
+    }
+
+    function openTrackMore(e: MouseEvent, track: any, index: number) {
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        handleTrackContextMenu(e, track, index, rect);
+    }
+
+    async function handlePlayPlaylist(playlist: Playlist) {
+        try {
+            const tracks = await getPlaylistTracks(playlist.id);
+            if (tracks.length > 0) {
+                playTracks(tracks, 0, {
+                    type: "playlist",
+                    playlistId: playlist.id,
+                    displayName: playlist.name,
+                });
+            }
+        } catch (err) {
+            console.error("Failed to play playlist:", err);
+        }
+    }
+
+    async function handleAddPlaylistToQueue(playlist: Playlist) {
+        try {
+            const tracks = await getPlaylistTracks(playlist.id);
+            if (tracks.length > 0) addToQueue(tracks);
+        } catch (err) {
+            console.error("Failed to add playlist to queue:", err);
+        }
+    }
+
+    async function handleDeletePlaylist(playlist: Playlist) {
+        if (
+            !(await confirm(
+                $_("playlists.deleteConfirm", { values: { name: playlist.name } }),
+                {
+                    title: $_("playlists.deletePlaylist"),
+                    confirmLabel: $_("playlists.delete"),
+                    danger: true,
+                },
+            ))
+        ) {
+            return;
+        }
+        try {
+            await deletePlaylist(playlist.id);
+            await loadPlaylists();
+        } catch (err) {
+            console.error("Failed to delete playlist:", err);
+        }
+    }
+
+    function handlePlaylistContextMenu(
+        e: MouseEvent,
+        playlist: Playlist,
+        anchorRect?: DOMRect,
+    ) {
+        e.preventDefault();
+        contextMenu.set({
+            visible: true,
+            x: anchorRect ? anchorRect.left : e.clientX,
+            y: anchorRect ? anchorRect.bottom : e.clientY,
+            items: buildPlaylistContextMenu({
+                playlist,
+                variant: 'grid',
+                onPlay: () => handlePlayPlaylist(playlist),
+                onAddToQueue: () => handleAddPlaylistToQueue(playlist),
+                onDelete: () => handleDeletePlaylist(playlist),
+                t: $_,
+            }),
+        });
+    }
+
+    function openPlaylistMore(e: MouseEvent, playlist: Playlist) {
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        handlePlaylistContextMenu(e, playlist, rect);
     }
 
     function handleAlbumContextMenu(e: MouseEvent, album: any) {
@@ -232,10 +318,10 @@
                 {#if key === "tracks" && $searchResults.tracks.length > 0}
                     <section class="result-section">
                         <h2 class="section-title">
-                            <button class="section-pill pill-inactive" aria-pressed="false" title={$_("common.tracks")}>
+                            <span class="section-pill pill-inactive">
                                 <span class="pill-label">{$_("common.tracks")}</span>
                                 <span class="pill-count">{$searchResults.tracks.length}</span>
-                            </button>
+                            </span>
                         </h2>
                         <div class="tracks-list">
                             {#each $searchResults.tracks.slice(0, visibleTracks) as track, index}
@@ -301,6 +387,16 @@
                                     <span class="track-duration"
                                         >{formatDuration(track.duration)}</span
                                     >
+                                    {#if $isMobile}
+                                        <button
+                                            type="button"
+                                            class="row-more-btn"
+                                            aria-label={$_("playlist.moreOptions")}
+                                            on:click|stopPropagation={(e) => openTrackMore(e, track, index)}
+                                        >
+                                            <Icon name="more-vertical" size={20} />
+                                        </button>
+                                    {/if}
                                 </div>
                             {/each}
                             {#if $searchResults.tracks.length > visibleTracks}
@@ -314,10 +410,10 @@
                 {:else if key === "albums" && $searchResults.albums.length > 0}
                     <section class="result-section">
                         <h2 class="section-title">
-                            <button class="section-pill pill-inactive" aria-pressed="false" title={$_("sidebar.albums")}>
+                            <span class="section-pill pill-inactive">
                                 <span class="pill-label">{$_("sidebar.albums")}</span>
                                 <span class="pill-count">{$searchResults.albums.length}</span>
-                            </button>
+                            </span>
                         </h2>
                         <div class="albums-grid">
                             {#each $searchResults.albums.slice(0, visibleAlbums) as album}
@@ -386,10 +482,10 @@
                 {:else if key === "artists" && $searchResults.artists.length > 0}
                     <section class="result-section">
                         <h2 class="section-title">
-                            <button class="section-pill pill-inactive" aria-pressed="false" title={$_("sidebar.artists")}>
+                            <span class="section-pill pill-inactive">
                                 <span class="pill-label">{$_("sidebar.artists")}</span>
                                 <span class="pill-count">{$searchResults.artists.length}</span>
-                            </button>
+                            </span>
                         </h2>
                         <div class="artists-grid">
                             {#each $searchResults.artists.slice(0, visibleArtists) as artist}
@@ -431,17 +527,26 @@
                 {:else if key === "playlists" && $searchResults.playlists?.length > 0}
                     <section class="result-section">
                         <h2 class="section-title">
-                            <button class="section-pill pill-inactive" aria-pressed="false" title={$_("sidebar.playlists")}>
+                            <span class="section-pill pill-inactive">
                                 <span class="pill-label">{$_("sidebar.playlists")}</span>
                                 <span class="pill-count">{$searchResults.playlists.length}</span>
-                            </button>
+                            </span>
                         </h2>
                         <div class="playlists-grid">
                             {#each $searchResults.playlists.slice(0, visiblePlaylists) as playlist}
                                 {@const coverSrc = getPlaylistCover(playlist)}
-                                <button
+                                <div
                                     class="playlist-card"
+                                    role="button"
+                                    tabindex="0"
                                     on:click={() => handlePlaylistClick(playlist.id, playlist.name)}
+                                    on:keydown={(e) => {
+                                        if (e.key === "Enter" || e.key === " ") {
+                                            e.preventDefault();
+                                            handlePlaylistClick(playlist.id, playlist.name);
+                                        }
+                                    }}
+                                    on:contextmenu={(e) => handlePlaylistContextMenu(e, playlist)}
                                 >
                                     <div class="playlist-cover">
                                         <img
@@ -455,8 +560,18 @@
                                         <span class="playlist-name truncate"
                                             >{playlist.name}</span
                                         >
+                                        {#if $isMobile}
+                                            <button
+                                                type="button"
+                                                class="card-more-btn"
+                                                aria-label={$_("playlist.moreOptions")}
+                                                on:click|stopPropagation={(e) => openPlaylistMore(e, playlist)}
+                                            >
+                                                <Icon name="more-vertical" size={18} />
+                                            </button>
+                                        {/if}
                                     </div>
-                                </button>
+                                </div>
                             {/each}
                         </div>
                         {#if $searchResults.playlists.length > visiblePlaylists}
@@ -474,12 +589,6 @@
 <style>
     .search-results {
         padding: var(--spacing-md);
-    }
-
-    :global(html.layout-mobile) .search-results {
-        padding-bottom: calc(
-            var(--mobile-bottom-inset, 130px) + var(--spacing-md)
-        );
     }
 
     .no-results {
@@ -667,10 +776,34 @@
         text-align: right;
     }
 
-    @media (max-width: 640px) {
-        .track-album {
-            display: none;
-        }
+    :global(html.layout-mobile) .track-album {
+        display: none;
+    }
+
+    :global(html.layout-mobile) .track-item {
+        gap: var(--spacing-sm);
+        padding: var(--spacing-xs) var(--spacing-xs) var(--spacing-xs) var(--spacing-sm);
+        min-height: 56px;
+    }
+
+    .row-more-btn,
+    .card-more-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+        border-radius: var(--radius-full);
+        color: var(--text-subdued);
+        flex-shrink: 0;
+    }
+
+    .row-more-btn:active,
+    .card-more-btn:active {
+        background-color: var(--surface-subtle-hover, rgba(255, 255, 255, 0.12));
+        color: var(--text-primary);
     }
 
     .load-more {
@@ -821,6 +954,7 @@
         padding: var(--spacing-sm);
         transition: background-color var(--transition-normal);
         text-align: left;
+        cursor: pointer;
     }
 
     .playlist-card:hover {
@@ -844,15 +978,27 @@
 
     .playlist-info {
         display: flex;
-        flex-direction: column;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
         gap: var(--spacing-xs);
         width: 100%;
+        min-width: 0;
     }
 
     .playlist-name {
         font-size: var(--font-size-base);
         font-weight: var(--font-weight-semibold);
         color: var(--text-primary);
+        flex: 1;
+        min-width: 0;
+    }
+
+    :global(html.layout-mobile) .albums-grid,
+    :global(html.layout-mobile) .artists-grid,
+    :global(html.layout-mobile) .playlists-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
     }
     .link-text {
         background: none;

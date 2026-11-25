@@ -3,6 +3,7 @@
   import type { Track } from "$lib/api/tauri";
   import ArtistLinks from "$lib/components/ArtistLinks.svelte";
   import Icon from "$lib/components/Icon.svelte";
+  import MarqueeText from "$lib/components/MarqueeText.svelte";
   import { formatDuration } from "$lib/api/tauri";
   import { isMobile } from "$lib/stores/mobile";
   import { multiSelect } from "$lib/stores/multiselect";
@@ -29,11 +30,14 @@
 
   export let onPointerDown: (e: PointerEvent, index: number) => void;
   export let onImageError: (art: string) => void;
+  export let onMoreClick: ((e: MouseEvent, track: Track, index: number) => void) | undefined = undefined;
   export let formattedDate: string = '';
 
   /** row's own hover state, used to drive marquee start/stop for the
    *  artist chips in this row (see ArtistLinks marqueeTrigger=external */
   let rowHovered = false;
+
+  $: isMobilePlaying = $isMobile && playingTrackId === track.id && isPlaying;
 
   function handleArtistSelect(name: string) {
     if (name) {
@@ -84,11 +88,18 @@
   aria-selected={isSelected}
   tabindex={isFocused ? 0 : (actualIndex === 0 ? 0 : -1)}
   style={dragShift !== 0 ? `transform: translateY(${dragShift}px)` : undefined}
-  draggable="true"
+  draggable={!$isMobile}
   on:dragstart={handleDragStart}
   on:mouseenter={() => (rowHovered = true)}
   on:mouseleave={() => (rowHovered = false)}
 >
+  {#if $isMobile}
+    <div class="swipe-bg" aria-hidden="true">
+      <span class="swipe-icon swipe-icon-plus"><Icon name="plus" size={20} /></span>
+      <span class="swipe-icon swipe-icon-check"><Icon name="check" size={20} /></span>
+    </div>
+  {/if}
+  <div class="track-row-inner">
   {#if multiSelectMode}
     <div
       class="col-checkbox"
@@ -111,6 +122,7 @@
       on:click|stopPropagation
       on:dblclick|stopPropagation
       title={$_('player.dragToReorder')}
+      aria-label={$_('player.dragToReorder')}
       role="button"
       tabindex="-1"
     >
@@ -155,9 +167,17 @@
     </span>
     <div class="col-title">
       <div class="title-row">
-        <span class="track-name truncate"
-          >{track.title || $_('player.unknownTitle')}</span
+        <MarqueeText
+          trigger="external"
+          active={isMobilePlaying}
+          pauseOnHover="none"
+          resetKey={track.id}
+          containerClass="track-name-marquee"
         >
+          <span class="track-name"
+            >{track.title || $_('player.unknownTitle')}</span
+          >
+        </MarqueeText>
 
         {#if !track.source_type || track.source_type === "local" || track.local_src}
           <span class="downloaded-icon" title={$_('album.downloaded')}>
@@ -192,7 +212,7 @@
         chipClass="track-artist truncate"
         marquee
         marqueeTrigger="external"
-        marqueeActive={rowHovered}
+        marqueeActive={isMobilePlaying}
         resetKey={track.id}
         on:select={(e) => handleArtistSelect(e.detail)}
       />
@@ -249,5 +269,15 @@
   <span class="col-duration">{formatDuration(track.duration)}</span>
   {#if !$isMobile}
     <span class="col-date-added">{formattedDate}</span>
+  {:else}
+    <button
+      type="button"
+      class="row-more-btn"
+      aria-label={$_('playlist.moreOptions')}
+      on:click|stopPropagation={(e) => onMoreClick?.(e, track, actualIndex)}
+    >
+      <Icon name="more-vertical" size={20} />
+    </button>
   {/if}
+  </div>
 </div>

@@ -242,14 +242,18 @@
 
   .cover.round {
     border-radius: var(--radius-full);
-    width: 140px;
-    height: 140px;
-    aspect-ratio: unset;
+    width: min(100%, 160px);
+    height: auto;
+    aspect-ratio: 1;
+    margin-left: auto;
+    margin-right: auto;
   }
 
   :global(html.layout-mobile) .cover.round {
-    width: 100px;
-    height: 100px;
+    width: 100%;
+    max-width: none;
+    height: auto;
+    aspect-ratio: 1;
   }
 
   .cover :global(img) {
@@ -543,8 +547,25 @@
   :global(html.layout-mobile) .media-card {
     padding: var(--spacing-sm);
   }
+  :global(html.layout-mobile) .media-card:hover {
+    background-color: var(--bg-elevated);
+  }
+  :global(html.layout-mobile) .media-card.now-playing:hover,
+  :global(html.layout-mobile) .media-card.paused:hover {
+    background-color: var(--accent-subtle);
+    opacity: 1;
+  }
   :global(html.layout-mobile) .cover {
     margin-bottom: var(--spacing-sm);
+  }
+  :global(html.layout-mobile) .cover-overlay,
+  :global(html.layout-mobile) .pause-button-overlay,
+  :global(html.layout-mobile) .play-button::after,
+  :global(html.layout-mobile) .pause-button-overlay::after {
+    display: none !important;
+  }
+  :global(html.layout-mobile) .playing-indicator-container {
+    pointer-events: none;
   }
   :global(html.layout-mobile .text-track:not(.secondary)) .text-inner {
     font-size: var(--font-size-sm);

@@ -1,5 +1,6 @@
 <script lang="ts" generics="T">
-    import { onMount, onDestroy } from 'svelte';
+    import { onMount, onDestroy, tick } from 'svelte';
+    import { isMobile } from '$lib/stores/mobile';
     import Icon from '$lib/components/Icon.svelte';
     import SkeletonCard from '$lib/components/common/SkeletonCard.svelte';
 
@@ -22,9 +23,9 @@
 
     // Virtual scrolling configuration
     export let cardWidthDesktop = 180;
-    export let cardWidthMobile = 140;
+    export let cardWidthMobile = 150;
     export let gridGapDesktop = 24;
-    export let gridGapMobile = 8;
+    export let gridGapMobile = 12;
     export let cardHeightDesktop = 260;
     export let cardHeightMobile = 210;
     export let overscan = 2;
@@ -40,6 +41,7 @@
     // Scroll Memory
     export let initialScrollTop = 0;
     export let currentScrollTop = 0; // bind:currentScrollTop
+    export let externalScroll = false;
 
     let scrollRestored = false;
 
@@ -48,8 +50,9 @@
     let containerHeight = 600;
     let scrollTop = 0;
     let containerElement: HTMLDivElement;
+    let scrollParent: HTMLElement | null = null;
 
-    $: isMobileView = containerWidth > 0 && containerWidth < 600;
+    $: isMobileView = $isMobile || (containerWidth > 0 && containerWidth < 600);
     $: cardWidth = isMobileView ? cardWidthMobile : cardWidthDesktop;
     $: gridGap = isMobileView ? gridGapMobile : gridGapDesktop;
     $: cardHeight = isMobileView ? cardHeightMobile : cardHeightDesktop;
@@ -62,9 +65,11 @@
             console.error('[VirtualizedGrid] Invalid container dimensions:', { containerWidth, containerHeight });
     }
 
-    // Calculate columns based on container width
+    // Calculate columns based on container width (compact phones in mobile layout always get 2 columns)
     $: autoColumns = Math.max(1, Math.floor((containerWidth + gridGap) / (cardWidth + gridGap)));
-    $: columns = (columnsBreakpoint > 0 && containerWidth < columnsBreakpoint) ? columnsBelow : autoColumns;
+    $: effectiveBreakpoint = columnsBreakpoint > 0 ? columnsBreakpoint : ($isMobile ? 600 : 0);
+    $: effectiveColumnsBelow = columnsBreakpoint > 0 ? columnsBelow : 2;
+    $: columns = (effectiveBreakpoint > 0 && containerWidth < effectiveBreakpoint) ? effectiveColumnsBelow : autoColumns;
 
     // Dynamic width of cards to fit exactly 1fr stretching
     $: dynamicCardWidth = columns > 0 ? (containerWidth - (columns - 1) * gridGap) / columns : cardWidth;
@@ -176,8 +181,44 @@
     }
 
     function handleScroll(e: Event) {
+        if (externalScroll) return;
         scrollTop = (e.target as HTMLElement).scrollTop;
         currentScrollTop = scrollTop;
+    }
+
+    function findScrollParent(el: HTMLElement | null): HTMLElement | null {
+        let cur = el?.parentElement ?? null;
+        while (cur) {
+            const style = window.getComputedStyle(cur);
+            if (style.overflowY === 'auto' || style.overflowY === 'scroll') {
+                return cur;
+            }
+            cur = cur.parentElement;
+        }
+        return null;
+    }
+
+    function updateExternalMetrics() {
+        if (!externalScroll || !containerElement) return;
+        if (!scrollParent) {
+            scrollParent = findScrollParent(containerElement);
+        }
+        if (!scrollParent) {
+            containerHeight = containerElement.clientHeight || window.innerHeight;
+            scrollTop = 0;
+            return;
+        }
+        const parentRect = scrollParent.getBoundingClientRect();
+        const bodyRect = containerElement.getBoundingClientRect();
+        const visibleTop = Math.max(0, parentRect.top - bodyRect.top);
+        const visibleBottom = Math.max(0, Math.min(bodyRect.height, parentRect.bottom - bodyRect.top));
+        scrollTop = visibleTop;
+        containerHeight = Math.max(0, visibleBottom - visibleTop);
+        currentScrollTop = scrollParent.scrollTop;
+    }
+
+    $: if (externalScroll && items.length >= 0) {
+        tick().then(updateExternalMetrics);
     }
 
     // Infinite scroll
@@ -206,22 +247,40 @@
 
         const update = () => {
             if (!containerElement) return;
-            containerHeight = Math.max(0, containerElement.clientHeight);
             const style = window.getComputedStyle(containerElement);
             const paddingLeft = style ? parseFloat(style.paddingLeft) || 0 : 0;
             const paddingRight = style ? parseFloat(style.paddingRight) || 0 : 0;
             containerWidth = Math.max(0, containerElement.clientWidth - paddingLeft - paddingRight);
+            if (externalScroll) {
+                updateExternalMetrics();
+            } else {
+                containerHeight = Math.max(0, containerElement.clientHeight);
+            }
         };
+
+        if (externalScroll) {
+            scrollParent = findScrollParent(containerElement);
+            scrollParent?.addEventListener('scroll', updateExternalMetrics, { passive: true });
+        }
+
         update();
 
         if (initialScrollTop > 0) {
-            containerElement.scrollTop = initialScrollTop;
+            if (externalScroll && scrollParent) {
+                scrollParent.scrollTop = initialScrollTop;
+                updateExternalMetrics();
+            } else {
+                containerElement.scrollTop = initialScrollTop;
+            }
         }
         scrollRestored = true;
 
         if (typeof ResizeObserver !== 'undefined') {
             resizeObserver = new ResizeObserver(update);
             resizeObserver.observe(containerElement);
+            if (externalScroll && scrollParent) {
+                resizeObserver.observe(scrollParent);
+            }
         } else {
             window.addEventListener('resize', update);
             return () => window.removeEventListener('resize', update);
@@ -229,6 +288,8 @@
     });
 
     onDestroy(() => {
+        scrollParent?.removeEventListener('scroll', updateExternalMetrics);
+        scrollParent = null;
         resizeObserver?.disconnect();
         resizeObserver = undefined;
         itemIndexMap.clear();
@@ -260,6 +321,7 @@
 {:else if items.length > 0}
     <div
         class="virtualized-grid-container"
+        class:external-scroll={externalScroll}
         style="padding: {padding}; visibility: {scrollRestored || initialScrollTop === 0 ? 'visible' : 'hidden'};"
         on:scroll={handleScroll}
         on:click={handleBodyClick}
@@ -315,6 +377,11 @@
         scroll-behavior: auto;
         -webkit-overflow-scrolling: touch;
         overscroll-behavior-y: contain;
+    }
+
+    .virtualized-grid-container.external-scroll {
+        height: auto;
+        overflow: visible;
     }
 
     .skeleton-grid-container {

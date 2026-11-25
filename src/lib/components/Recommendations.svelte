@@ -498,7 +498,14 @@
     }
 
     :global(html.layout-mobile) .rec-content {
-        padding: var(--spacing-md) var(--spacing-md)
-            calc(var(--mobile-bottom-inset, 130px) + var(--spacing-lg));
+        padding: var(--spacing-md);
+    }
+
+    :global(html.layout-mobile) .play-btn {
+        opacity: 1;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
     }
 </style>

@@ -1,9 +1,11 @@
 <script lang="ts">
     import { getLikedTracks, exportLikedSongsZip, type Track } from "$lib/api/tauri";
     import { likedTrackIds } from "$lib/stores/liked";
-    import { playTracks, shuffle, addToQueue } from "$lib/stores/player";
+    import { playTracks, shuffle, addToQueue, currentTrack, isPlaying, togglePlay } from "$lib/stores/player";
     import { contextMenu } from "$lib/stores/ui";
     import { addToast } from "$lib/stores/toast";
+    import { isMobile } from "$lib/stores/mobile";
+    import { goBack, goToHome, navigationHistory } from "$lib/stores/view";
     import { buildLikedSongsContextMenu } from "$lib/menus/contextMenus";
     import { _ } from "svelte-i18n";
     import TrackList from "./track-list/TrackList.svelte";
@@ -18,8 +20,25 @@
     // Header transition calculations
     $: headerOpacity = Math.max(0, 1 - scrollTop / 150);
     $: headerScale = Math.max(0.85, 1 - scrollTop / 800);
-    $: headerTranslateY = -scrollTop * 0.4;
     $: isHeaderSmall = scrollTop > 60;
+    $: isScrolledPastHero = scrollTop > 140;
+    $: isLikedPlaying = $isPlaying && tracks.some((t) => t.id === $currentTrack?.id);
+
+    function handleBack() {
+        if ($navigationHistory.canGoBack) {
+            goBack();
+        } else {
+            goToHome();
+        }
+    }
+
+    function handlePlayPause() {
+        if (isLikedPlaying) {
+            togglePlay();
+        } else {
+            handlePlayAll();
+        }
+    }
 
     async function loadTracks(_ids: Set<number>) {
         try {
@@ -64,12 +83,12 @@
         }
     }
 
-    function handleHeaderContextMenu(e: MouseEvent) {
+    function handleHeaderContextMenu(e: MouseEvent, anchorRect?: DOMRect) {
         e.preventDefault();
         contextMenu.set({
             visible: true,
-            x: e.clientX,
-            y: e.clientY,
+            x: anchorRect ? anchorRect.left : e.clientX,
+            y: anchorRect ? anchorRect.bottom : e.clientY,
             items: buildLikedSongsContextMenu({
                 tracks,
                 onPlay: handlePlayAll,
@@ -82,18 +101,63 @@
         });
     }
 
+    function openHeaderMenu(e: MouseEvent) {
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        handleHeaderContextMenu(e, rect);
+    }
+
     function handleScroll(e: Event) {
-        scrollTop = (e.target as HTMLElement).scrollTop;
+        scrollTop = (e.currentTarget as HTMLElement).scrollTop;
     }
 </script>
 
-<div class="liked-songs-view">
+<div class="liked-songs-view" on:scroll={handleScroll}>
+    <!-- Sticky 56px Top Bar -->
+    <div
+        class="sticky-top-bar"
+        class:scrolled={isScrolledPastHero}
+        aria-label="Liked Songs navigation"
+    >
+        <div class="sticky-left">
+            <button
+                class="top-bar-btn"
+                on:click={handleBack}
+                aria-label={$_("common.back")}
+                title={$_("common.back")}
+            >
+                <Icon name="arrow-left" size={22} />
+            </button>
+            <span class="sticky-title" class:revealed={isScrolledPastHero}>
+                {$_("sidebar.likedSongs")}
+            </span>
+        </div>
+        <div class="sticky-right">
+            <button
+                class="sticky-play-btn"
+                class:revealed={isScrolledPastHero}
+                on:click={handlePlayPause}
+                disabled={tracks.length === 0}
+                aria-label={isLikedPlaying ? $_("common.pause") : $_("artist.playAll")}
+            >
+                <Icon name={isLikedPlaying ? "pause" : "play"} size={18} />
+            </button>
+            <button
+                class="top-bar-btn"
+                on:click|stopPropagation={openHeaderMenu}
+                aria-label={$_("common.more")}
+                title={$_("common.more")}
+            >
+                <Icon name={$isMobile ? "more-vertical" : "more-horizontal"} size={20} />
+            </button>
+        </div>
+    </div>
+
     <!-- Header -->
     <header
         class="liked-header"
         class:is-small={isHeaderSmall}
         style:opacity={headerOpacity}
-        style:transform="translateY({headerTranslateY}px) scale({headerScale})"
+        style:transform="scale({headerScale})"
         on:contextmenu={handleHeaderContextMenu}
         aria-label="Liked Songs header"
     >
@@ -143,7 +207,7 @@
     </div>
 
     <!-- Track List -->
-    <div class="liked-body" on:scroll={handleScroll}>
+    <div class="liked-body">
         {#if loading}
             <div class="loading">
                 {$_("liked.loading")}
@@ -163,6 +227,7 @@
                 {tracks}
                 showAlbum={true}
                 scrollKey="liked-songs"
+                externalScroll={true}
             />
         {/if}
     </div>
@@ -174,6 +239,111 @@
         display: flex;
         flex-direction: column;
         background-color: var(--bg-base);
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-y: contain;
+        position: relative;
+    }
+
+    .sticky-top-bar {
+        position: sticky;
+        top: 0;
+        z-index: var(--z-sticky, 100);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 56px;
+        margin-bottom: -56px;
+        padding: 0 var(--spacing-sm);
+        background: transparent;
+        border-bottom: 1px solid transparent;
+        transition: background-color 0.22s ease, border-color 0.22s ease;
+        flex-shrink: 0;
+    }
+
+    .sticky-top-bar.scrolled {
+        background: color-mix(in srgb, var(--bg-base) 90%, transparent);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        border-bottom-color: var(--border-subtle, var(--border-color));
+    }
+
+    .sticky-left,
+    .sticky-right {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+    }
+
+    .sticky-left {
+        min-width: 0;
+        flex: 1;
+    }
+
+    .top-bar-btn {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+        border-radius: var(--radius-full);
+        background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: background-color var(--transition-fast);
+    }
+
+    .sticky-top-bar.scrolled .top-bar-btn {
+        background: transparent;
+    }
+
+    .top-bar-btn:hover {
+        background: var(--surface-subtle-hover, rgba(255, 255, 255, 0.12));
+    }
+
+    .sticky-title {
+        font-size: var(--font-size-md);
+        font-weight: var(--font-weight-bold);
+        color: var(--text-primary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+        padding: 0 var(--spacing-xs);
+    }
+
+    .sticky-title.revealed {
+        opacity: 1;
+    }
+
+    .sticky-play-btn {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        min-height: 40px;
+        border-radius: var(--radius-full);
+        background: var(--accent-primary);
+        color: var(--text-on-accent, #fff);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        cursor: pointer;
+        flex-shrink: 0;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease, transform var(--transition-fast);
+    }
+
+    .sticky-play-btn.revealed {
+        opacity: 1;
+        pointer-events: auto;
     }
 
     /* Header */
@@ -183,7 +353,7 @@
         align-items: center;
         text-align: center;
         gap: var(--spacing-md);
-        padding: 30px var(--spacing-xl) 15px;
+        padding: 64px var(--spacing-xl) 15px;
         background: linear-gradient(
             180deg,
             color-mix(in srgb, var(--accent-primary) 20%, transparent) 0%,
@@ -294,7 +464,7 @@
         min-width: 170px;
         padding: 0 32px 0 8px;
         background-color: var(--accent-primary);
-        color: white;
+        color: var(--text-on-accent, #fff);
         font-weight: var(--font-weight-bold);
         border: none;
         border-radius: var(--radius-full);
@@ -357,11 +527,9 @@
         filter: grayscale(1);
     }
 
-    /* Body - fills remaining space */
+    /* Body - flows naturally in outer scroll container */
     .liked-body {
-        flex: 1;
-        min-height: 0;
-        overflow: hidden;
+        flex: 1 0 auto;
     }
 
     /* Empty / Loading State */
@@ -392,8 +560,7 @@
         flex-direction: column;
         align-items: center;
         text-align: center;
-        padding: var(--spacing-md)
-            var(--spacing-md) var(--spacing-md);
+        padding: calc(56px + var(--spacing-sm)) var(--spacing-md) var(--spacing-sm);
     }
 
     :global(html.layout-mobile) .liked-gradient-bg {
@@ -403,5 +570,28 @@
 
     :global(html.layout-mobile) .liked-title {
         font-size: 2rem;
+    }
+
+    :global(html.layout-mobile) .liked-controls {
+        padding: var(--spacing-md);
+    }
+
+    :global(html.layout-mobile) .controls-wrapper {
+        gap: var(--spacing-sm);
+    }
+
+    :global(html.layout-mobile) .play-all-btn,
+    :global(html.layout-mobile) .shuffle-btn {
+        flex: 1 1 0;
+        min-width: 0;
+        max-width: 200px;
+        height: 48px;
+        padding: 0 var(--spacing-md);
+        font-size: var(--font-size-base);
+    }
+
+    :global(html.layout-mobile) .btn-icon {
+        width: 32px;
+        height: 32px;
     }
 </style>

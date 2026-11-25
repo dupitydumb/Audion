@@ -28,6 +28,7 @@
         albums as libraryAlbums,
         addExternalTrackToLibrary,
     } from "$lib/stores/library";
+    import { isMobile, registerBackHandler } from "$lib/stores/mobile";
     import MediaCard from "./MediaCard.svelte";
     import Icon from "$lib/components/Icon.svelte";
 
@@ -655,6 +656,14 @@
             activeTab = "all";
             executeSearch();
         }
+        const unregisterBack = registerBackHandler(() => {
+            if (navStack.length > 1) {
+                popNav();
+                return true;
+            }
+            return false;
+        });
+        return unregisterBack;
     });
 </script>
 
@@ -886,6 +895,11 @@
                                             class:playing={isCurrentTrackPlaying(
                                                 track,
                                             )}
+                                            on:click={(e) => {
+                                                if ($isMobile && !(e.target as HTMLElement).closest("button, .song-col-art")) {
+                                                    playSong(track, trackResults);
+                                                }
+                                            }}
                                             on:dblclick={() =>
                                                 playSong(track, trackResults)}
                                         >
@@ -1181,6 +1195,11 @@
                                         class:playing={isCurrentTrackPlaying(
                                             track,
                                         )}
+                                        on:click={(e) => {
+                                            if ($isMobile && !(e.target as HTMLElement).closest("button, .song-col-art")) {
+                                                playSong(track, trackResults);
+                                            }
+                                        }}
                                         on:dblclick={() =>
                                             playSong(track, trackResults)}
                                     >
@@ -1578,6 +1597,16 @@
                                         class:playing={isCurrentTrackPlaying(
                                             track,
                                         )}
+                                        on:click={(e) => {
+                                            if ($isMobile && !(e.target as HTMLElement).closest("button, .song-col-art") && currentAlbumDetail?.tracks) {
+                                                playSong(
+                                                    track,
+                                                    currentAlbumDetail.tracks,
+                                                    currentAlbumDetail.title,
+                                                    currentAlbumDetail.cover_url,
+                                                );
+                                            }
+                                        }}
                                         on:dblclick={() =>
                                             currentAlbumDetail?.tracks &&
                                             playSong(
@@ -1809,6 +1838,14 @@
                                         class:playing={isCurrentTrackPlaying(
                                             track,
                                         )}
+                                        on:click={(e) => {
+                                            if ($isMobile && !(e.target as HTMLElement).closest("button, .song-col-art") && currentArtistDetail?.tracks) {
+                                                playSong(
+                                                    track,
+                                                    currentArtistDetail.tracks,
+                                                );
+                                            }
+                                        }}
                                         on:dblclick={() =>
                                             currentArtistDetail?.tracks &&
                                             playSong(
@@ -2888,8 +2925,7 @@
     }
 
     :global(html.layout-mobile) .discover-content {
-        padding: var(--spacing-md) var(--spacing-md)
-            calc(var(--mobile-bottom-inset, 130px) + var(--spacing-xl));
+        padding: var(--spacing-md);
     }
 
     :global(html.layout-mobile) .tab-bar {
@@ -2917,11 +2953,16 @@
     }
 
     :global(html.layout-mobile) .breadcrumb-item {
-        min-height: 40px;
+        min-height: 44px;
+        min-width: 44px;
+        padding: 8px 10px;
     }
 
+    :global(html.layout-mobile) .play-icon-btn,
     :global(html.layout-mobile) .love-btn {
         opacity: 1;
+        min-width: 44px;
+        min-height: 44px;
     }
 
     :global(html.layout-mobile) .song-col-album,
@@ -2937,8 +2978,8 @@
     }
 
     :global(html.layout-mobile) .card-grid {
-        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-        gap: var(--spacing-sm);
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
     }
 
     :global(html.layout-mobile) .hero-header {

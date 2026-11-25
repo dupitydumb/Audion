@@ -29,6 +29,7 @@
     import { addToast } from "$lib/stores/toast";
     import { goto } from "$app/navigation";
     import { _, locale } from "svelte-i18n";
+    import { isMobile } from "$lib/stores/mobile";
     import Icon from "$lib/components/Icon.svelte";
 
     export let albumId: number;
@@ -202,13 +203,13 @@
     import { contextMenu } from "$lib/stores/ui";
     import { buildAlbumContextMenu } from "$lib/menus/contextMenus";
 
-    function handleContextMenu(e: MouseEvent) {
+    function handleContextMenu(e: MouseEvent, anchorRect?: DOMRect) {
         if (!album) return;
         e.preventDefault();
         contextMenu.set({
             visible: true,
-            x: e.clientX,
-            y: e.clientY,
+            x: anchorRect ? anchorRect.left : e.clientX,
+            y: anchorRect ? anchorRect.bottom : e.clientY,
             items: buildAlbumContextMenu({
                 album,
                 showPlay: true,
@@ -219,6 +220,11 @@
                 t: $_,
             }),
         });
+    }
+
+    function openHeaderMenu(e: MouseEvent) {
+        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        handleContextMenu(e, rect);
     }
 
     // Dynamic Ambient Hero Banner Palette
@@ -277,9 +283,9 @@
     let isScrolledPastHero = false;
 
     function handleScroll(e: Event) {
-        const target = (e.currentTarget || e.target) as HTMLElement;
+        const target = e.currentTarget as HTMLElement;
         if (target && typeof target.scrollTop === "number") {
-            const heroHeight = headerElement ? headerElement.offsetHeight : 232;
+            const heroHeight = headerElement ? Math.max(120, headerElement.offsetHeight - 56) : 180;
             isScrolledPastHero = target.scrollTop >= heroHeight;
         }
     }
@@ -309,7 +315,7 @@
     }
 </script>
 
-<div class="album-detail" on:scroll|capture={handleScroll}>
+<div class="album-detail" on:scroll={handleScroll}>
     {#if loading}
         <div class="album-skeleton" aria-busy="true" aria-label={$_("album.loading")}>
             <header class="album-header skeleton-hero">
@@ -339,6 +345,58 @@
             </div>
         </div>
     {:else if album && shouldShowAlbum}
+        <!-- Sticky 56px Top Bar -->
+        <div
+            class="sticky-action-bar"
+            class:visible={isScrolledPastHero}
+            aria-label="Album navigation and actions"
+        >
+            <div class="sticky-left">
+                <button
+                    class="top-bar-btn"
+                    on:click={goToAlbums}
+                    aria-label={$_("album.backToAlbums")}
+                    title={$_("album.backToAlbums")}
+                >
+                    <Icon name="arrow-left" size={22} />
+                </button>
+                <div class="sticky-meta" class:revealed={isScrolledPastHero}>
+                    <span class="sticky-title">{album.name}</span>
+                    <span class="sticky-sep">•</span>
+                    <span class="sticky-artist">{album.artist || $_("common.unknownArtist")}</span>
+                </div>
+            </div>
+            <div class="sticky-right">
+                <button
+                    class="top-bar-btn sticky-reveal"
+                    class:revealed={isScrolledPastHero}
+                    class:liked={isAlbumLiked}
+                    on:click={handleToggleLike}
+                    aria-label={isAlbumLiked ? $_("liked.unlike") : $_("liked.like")}
+                    title={isAlbumLiked ? $_("liked.unlike") : $_("liked.like")}
+                >
+                    <Icon name={isAlbumLiked ? "heart-filled" : "heart"} size={18} />
+                </button>
+                <button
+                    class="sticky-play-btn sticky-reveal"
+                    class:revealed={isScrolledPastHero}
+                    on:click={handlePlayPause}
+                    aria-label={isThisAlbumPlaying ? $_("common.pause") : $_("album.play")}
+                    title={isThisAlbumPlaying ? $_("common.pause") : $_("album.play")}
+                >
+                    <Icon name={isThisAlbumPlaying ? "pause" : "play"} size={18} />
+                </button>
+                <button
+                    class="top-bar-btn"
+                    on:click|stopPropagation={openHeaderMenu}
+                    aria-label={$_("common.more")}
+                    title={$_("common.more")}
+                >
+                    <Icon name={$isMobile ? "more-vertical" : "more-horizontal"} size={20} />
+                </button>
+            </div>
+        </div>
+
         <header
             class="album-header"
             class:light-hero={heroIsLight}
@@ -347,13 +405,6 @@
             aria-label="Album Header"
             bind:this={headerElement}
         >
-            <button
-                class="back-btn"
-                on:click={goToAlbums}
-                aria-label="Back to Albums"
-            >
-                <Icon name="arrow-left" size={24} />
-            </button>
             <div class="album-cover">
                 {#if getAlbumCoverFromTracks(album.id)}
                     <img
@@ -455,50 +506,8 @@
         {/if}
 
         <section class="track-list-section">
-            <!-- Compact Sticky Action Bar anchored at the top of the track list -->
-            <div
-                class="sticky-action-bar"
-                class:visible={isScrolledPastHero}
-                aria-label="Compact action bar"
-            >
-                <div class="sticky-left">
-                    <button
-                        class="sticky-play-btn"
-                        on:click={handlePlayPause}
-                        aria-label={isThisAlbumPlaying ? $_("common.pause") : $_("album.play")}
-                        title={isThisAlbumPlaying ? $_("common.pause") : $_("album.play")}
-                    >
-                        <Icon name={isThisAlbumPlaying ? "pause" : "play"} size={18} />
-                    </button>
-                    <div class="sticky-meta">
-                        <span class="sticky-title">{album.name}</span>
-                        <span class="sticky-sep">•</span>
-                        <span class="sticky-artist">{album.artist || $_("common.unknownArtist")}</span>
-                    </div>
-                </div>
-                <div class="sticky-right">
-                    <button
-                        class="sticky-action-btn"
-                        class:liked={isAlbumLiked}
-                        on:click={handleToggleLike}
-                        aria-label={isAlbumLiked ? $_("liked.unlike") : $_("liked.like")}
-                        title={isAlbumLiked ? $_("liked.unlike") : $_("liked.like")}
-                    >
-                        <Icon name={isAlbumLiked ? "heart-filled" : "heart"} size={18} />
-                    </button>
-                    <button
-                        class="sticky-action-btn"
-                        on:click={handleContextMenu}
-                        aria-label={$_("common.more")}
-                        title={$_("common.more")}
-                    >
-                        <Icon name="more-horizontal" size={18} />
-                    </button>
-                </div>
-            </div>
-
             {#if groupedTracks.length > 1}
-                {#each groupedTracks as group}
+                {#each groupedTracks as group, i}
                     <div class="disc-group">
                         <div class="disc-header">
                             <span class="disc-icon">
@@ -513,6 +522,8 @@
                         <TrackList
                             tracks={group.tracks}
                             showAlbum={false}
+                            externalScroll={true}
+                            showMobileActionBar={i === 0}
                             playbackContext={{
                                 type: "album",
                                 albumId,
@@ -526,6 +537,7 @@
                 <TrackList
                     {tracks}
                     showAlbum={false}
+                    externalScroll={true}
                     playbackContext={{
                         type: "album",
                         albumId,
@@ -550,6 +562,11 @@
         display: flex;
         flex-direction: column;
         height: 100%;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-y: contain;
+        position: relative;
     }
 
     .loading,
@@ -582,7 +599,7 @@
         position: relative;
         display: flex;
         gap: var(--spacing-lg);
-        padding: var(--spacing-lg);
+        padding: calc(56px + var(--spacing-md)) var(--spacing-lg) var(--spacing-lg);
         background: linear-gradient(
             180deg,
             color-mix(in srgb, var(--hero-accent-color, var(--bg-surface)) 45%, var(--bg-surface) 55%) 0%,
@@ -590,6 +607,7 @@
         );
         overflow: hidden;
         transition: background 0.4s ease;
+        flex-shrink: 0;
     }
 
     .album-header > * {
@@ -630,44 +648,36 @@
         opacity: 1;
     }
 
-    /* ── Sticky Action Toolbar on Scroll ── */
+    /* ── Sticky Action Toolbar on Scroll (56px) ── */
     .sticky-action-bar {
         position: sticky;
         top: 0;
-        z-index: 25;
+        z-index: var(--z-sticky, 100);
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 0 var(--spacing-lg);
-        height: 0;
-        max-height: 0;
-        opacity: 0;
-        overflow: hidden;
-        pointer-events: none;
-        background: rgba(18, 18, 18, 0.88);
-        backdrop-filter: blur(18px);
-        -webkit-backdrop-filter: blur(18px);
+        padding: 0 var(--spacing-sm);
+        height: 56px;
+        margin-bottom: -56px;
+        background: transparent;
         border-bottom: 1px solid transparent;
-        transition: height 0.22s cubic-bezier(0.2, 0, 0, 1),
-                    max-height 0.22s cubic-bezier(0.2, 0, 0, 1),
-                    opacity 0.22s cubic-bezier(0.2, 0, 0, 1),
+        transition: background-color 0.22s ease,
                     border-color 0.22s ease;
         flex-shrink: 0;
     }
 
     .sticky-action-bar.visible {
-        height: 52px;
-        max-height: 52px;
-        opacity: 1;
-        pointer-events: auto;
-        border-bottom-color: var(--border-color);
+        background: color-mix(in srgb, var(--bg-base) 90%, transparent);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        border-bottom-color: var(--border-subtle, var(--border-color));
     }
 
     .sticky-left,
     .sticky-right {
         display: flex;
         align-items: center;
-        gap: var(--spacing-md);
+        gap: var(--spacing-xs);
     }
 
     .sticky-left {
@@ -675,19 +685,61 @@
         flex: 1;
     }
 
-    .sticky-play-btn {
-        width: 36px;
-        height: 36px;
+    .top-bar-btn {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
         border-radius: var(--radius-full);
-        background: var(--accent-primary);
-        color: var(--text-on-accent, #000);
+        background: color-mix(in srgb, var(--bg-elevated) 72%, transparent);
+        color: var(--text-primary);
         display: flex;
         align-items: center;
         justify-content: center;
         border: none;
         cursor: pointer;
         flex-shrink: 0;
-        transition: transform var(--transition-fast), background var(--transition-fast);
+        transition: background-color var(--transition-fast), color var(--transition-fast), opacity 0.2s ease;
+    }
+
+    .sticky-action-bar.visible .top-bar-btn {
+        background: transparent;
+    }
+
+    .top-bar-btn:hover {
+        background: var(--surface-subtle-hover, rgba(255, 255, 255, 0.12));
+    }
+
+    .top-bar-btn.liked {
+        color: var(--accent-primary);
+    }
+
+    .sticky-reveal {
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease, transform var(--transition-fast);
+    }
+
+    .sticky-reveal.revealed {
+        opacity: 1;
+        pointer-events: auto;
+    }
+
+    .sticky-play-btn {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        min-height: 40px;
+        border-radius: var(--radius-full);
+        background: var(--accent-primary);
+        color: var(--text-on-accent, #fff);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: none;
+        cursor: pointer;
+        flex-shrink: 0;
+        transition: transform var(--transition-fast), opacity 0.2s ease;
     }
 
     .sticky-play-btn:hover {
@@ -703,10 +755,17 @@
         overflow: hidden;
         white-space: nowrap;
         text-overflow: ellipsis;
+        opacity: 0;
+        transition: opacity 0.2s ease;
+        padding: 0 var(--spacing-xs);
+    }
+
+    .sticky-meta.revealed {
+        opacity: 1;
     }
 
     .sticky-title {
-        font-size: var(--font-size-base);
+        font-size: var(--font-size-md);
         font-weight: var(--font-weight-bold);
         color: var(--text-primary);
         overflow: hidden;
@@ -716,6 +775,7 @@
     .sticky-sep {
         color: var(--text-subdued);
         font-size: var(--font-size-xs);
+        flex-shrink: 0;
     }
 
     .sticky-artist {
@@ -723,29 +783,6 @@
         color: var(--text-secondary);
         overflow: hidden;
         text-overflow: ellipsis;
-    }
-
-    .sticky-action-btn {
-        width: 36px;
-        height: 36px;
-        border-radius: var(--radius-full);
-        background: transparent;
-        color: var(--text-secondary);
-        border: none;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: color var(--transition-fast), transform var(--transition-fast);
-    }
-
-    .sticky-action-btn:hover {
-        color: var(--text-primary);
-        transform: scale(1.1);
-    }
-
-    .sticky-action-btn.liked {
-        color: var(--accent-primary);
     }
 
     /* ── Skeleton Shimmer Loader ── */
@@ -1003,9 +1040,7 @@
     }
 
     .track-list-section {
-        flex: 1;
-        overflow-y: auto;
-        min-height: 0;
+        flex: 1 0 auto;
     }
 
     /* multi-disc: each disc's TrackList is unconstrained, so its .list-body
@@ -1164,14 +1199,13 @@
         flex-direction: column;
         align-items: center;
         text-align: center;
-        padding: var(--spacing-md)
-            var(--spacing-md) var(--spacing-md);
+        padding: calc(56px + var(--spacing-sm)) var(--spacing-md) var(--spacing-md);
         gap: var(--spacing-md);
     }
 
-    :global(html.layout-mobile) .back-btn {
-        top: var(--spacing-sm);
-        left: var(--spacing-sm);
+    :global(html.layout-mobile) .sticky-sep,
+    :global(html.layout-mobile) .sticky-artist {
+        display: none;
     }
 
     :global(html.layout-mobile) .album-cover {

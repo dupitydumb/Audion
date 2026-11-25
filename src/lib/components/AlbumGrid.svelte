@@ -30,6 +30,7 @@
     });
 
     export let albums: Album[] = [];
+    export let externalScroll: boolean = false;
 
     // Playback state
     $: playingAlbumId = $currentAlbumId;
@@ -117,14 +118,13 @@
 
 <VirtualizedGrid
     items={sortedAlbums}
+    {externalScroll}
     bind:currentScrollTop
     initialScrollTop={currentScrollTop}
     onItemClick={handleAlbumClick}
     onItemContextMenu={handleAlbumContextMenu}
     onLoadMore={handleLoadMore}
     emptyStateConfig={emptyState}
-    columnsBreakpoint={480}
-    columnsBelow={2}
     let:item={album}
 >
     {@const cover = getAlbumCoverFromTracks(album.id)}
