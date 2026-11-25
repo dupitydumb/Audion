@@ -126,6 +126,7 @@
         display: flex;
         flex-direction: column;
         gap: var(--spacing-md);
+        animation: springScaleIn 0.28s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
     }
 
     .dialog-title {

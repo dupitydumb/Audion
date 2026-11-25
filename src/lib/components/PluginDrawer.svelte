@@ -265,6 +265,7 @@
         max-height: 75dvh;
         padding-bottom: var(--safe-area-bottom, 0px);
         box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.4);
+        animation: springSlideUp 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
     }
 
     :global(html.layout-mobile) .drawer-drag-handle {

@@ -2,7 +2,7 @@
   import { get } from "svelte/store";
   import { _ } from "svelte-i18n";
   import { fade, fly } from "svelte/transition";
-  import { cubicInOut } from "svelte/easing";
+  import { cubicInOut, cubicOut } from "svelte/easing";
   import { flip } from "svelte/animate";
   import {
     isFullScreen,
@@ -523,6 +523,7 @@
         class="mobile-player-container"
         class:is-dragging={isDismissDragging || isDismissAnimating}
         style={sheetTranslateY !== 0 ? `transform: translate3d(0, ${sheetTranslateY}px, 0);` : ""}
+        in:fly={{ y: 120, duration: $nativeTransitionActive ? 0 : 320, easing: cubicOut }}
         on:touchstart={handleMobileTouchStart}
         on:touchmove={handleMobileTouchMove}
         on:touchend={handleMobileTouchEnd}
@@ -1754,6 +1755,7 @@
 
   .mobile-like-btn.liked {
     color: var(--accent-primary);
+    animation: heartPop 0.32s var(--ease-spring-snappy, cubic-bezier(0.34, 1.56, 0.64, 1));
   }
 
   .mobile-like-btn:active {

@@ -274,6 +274,7 @@
     display: flex;
     flex-direction: column;
     gap: 1px;
+    animation: springScaleIn 0.22s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
   }
 
   .artist-tap-menu-item {

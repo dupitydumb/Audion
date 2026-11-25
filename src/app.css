@@ -161,6 +161,28 @@ body.has-mini-player,
   100% { transform: translate3d(2%, 3%, 0) scale(1.03) rotate(-1deg); }
 }
 
+@keyframes springScaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes springSlideUp {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 36px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
 html.layout-mobile .press-squish:active {
   transform: scale(0.92);
   transition: transform 0.12s var(--ease-spring-snappy);

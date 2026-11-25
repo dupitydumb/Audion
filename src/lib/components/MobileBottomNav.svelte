@@ -156,7 +156,6 @@
 
 <style>
     .bottom-nav {
-        position: relative;
         position: fixed;
         bottom: 0;
         left: 0;
@@ -184,15 +183,25 @@
     .active-pill-slider {
         position: absolute;
         top: 8px;
-        left: calc(var(--safe-area-left, 0px) + (var(--active-tab-idx, 0) * ((100% - var(--safe-area-left, 0px) - var(--safe-area-right, 0px)) / 4)) + (((100% - var(--safe-area-left, 0px) - var(--safe-area-right, 0px)) / 4) - 52px) / 2);
+        left: var(--safe-area-left, 0px);
+        width: calc((100% - var(--safe-area-left, 0px) - var(--safe-area-right, 0px)) / 4);
+        height: 28px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 0;
+        pointer-events: none;
+        transform: translate3d(calc(var(--active-tab-idx, 0) * 100%), 0, 0);
+        transition: transform 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
+        will-change: transform;
+    }
+
+    .active-pill-slider::after {
+        content: "";
         width: 52px;
         height: 28px;
         background: var(--surface-subtle-hover);
         border-radius: var(--radius-full, 9999px);
-        z-index: 0;
-        pointer-events: none;
-        transition: left 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
-        will-change: left;
     }
 
     @media (prefers-reduced-motion: reduce) {

@@ -89,7 +89,7 @@
 
 {#if lite}
   {#if $meshSettings.enabled}
-    <div class="mesh-fallback" style={liteStyle}></div>
+    <div class="mesh-fallback" class:paused={!$isPlaying} style={liteStyle}></div>
   {/if}
 {:else}
   <canvas bind:this={canvas} class="mesh-canvas" style={canvasStyle}></canvas>
@@ -119,6 +119,10 @@
       radial-gradient(circle at 20% 80%, var(--c2, #0a0a0a) 0%, transparent 60%),
       radial-gradient(circle at 80% 80%, var(--c3, #0a0a0a) 0%, transparent 60%),
       #0a0a0a;
+  }
+
+  .mesh-fallback.paused {
+    animation-play-state: paused;
   }
 
   @media (prefers-reduced-motion: reduce) {

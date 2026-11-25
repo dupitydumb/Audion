@@ -391,7 +391,7 @@
         border: none;
         border-top: 1px solid var(--border-color);
         z-index: var(--z-sheet, 3000);
-        transition: transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+        transition: transform 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
     }
 
     :global(html.layout-mobile) .mobile-handle-zone {

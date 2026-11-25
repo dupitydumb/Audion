@@ -1053,6 +1053,7 @@
     max-height: 90dvh;
     border-radius: 20px 20px 0 0;
     border-bottom: none;
+    animation: springSlideUp 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
   }
 
   :global(html.layout-mobile) .modal-header {
