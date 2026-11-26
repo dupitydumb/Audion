@@ -12,6 +12,8 @@
   import { addToast } from "$lib/stores/toast";
   import { confirm } from "$lib/stores/dialogs";
   import { tick, onDestroy } from "svelte";
+  import { getIsLinux } from "$lib/api/tauri";
+  import { isReducedMotion } from "$lib/motion";
   import Icon from "$lib/components/Icon.svelte";
   import { appSettings } from "$lib/stores/settings";
   import SettingRow from "./SettingRow.svelte";
@@ -107,7 +109,7 @@
   // ---------------------------------------------------------------------
   function handleRenderModeToggle(checked: boolean) {
     const mode: LyricsRenderMode = checked ? 'dynamic' : 'legacy';
-    const canAnimate = typeof document !== 'undefined' && 'startViewTransition' in document;
+    const canAnimate = typeof document !== 'undefined' && 'startViewTransition' in document && !getIsLinux() && !isReducedMotion();
     if (canAnimate) {
       (document as any).startViewTransition(async () => {
         lyricsRenderMode.set(mode);

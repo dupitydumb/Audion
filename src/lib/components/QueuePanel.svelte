@@ -858,8 +858,8 @@
         border-radius: var(--radius-md);
         transition:
             background-color var(--transition-fast),
-            transform 180ms cubic-bezier(0.2, 0, 0, 1),
-            opacity 150ms ease;
+            transform 180ms var(--ease-spring-gentle),
+            opacity var(--transition-fast);
         box-sizing: border-box;
     }
 

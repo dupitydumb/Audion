@@ -1,8 +1,9 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
     import { onMount } from "svelte";
-    import { fade, fly, scale } from "svelte/transition";
-    import { backOut, cubicOut } from "svelte/easing";
+    import { fade, fly } from "svelte/transition";
+    import { cubicOut } from "svelte/easing";
+    import { artCrossfadeOut, iconPopTransition } from "$lib/motion";
     import { get } from "svelte/store";
     import {
         currentTrack,
@@ -487,7 +488,7 @@
                     style="view-transition-name: {($isFullScreen || getIsLinux()) ? 'none' : 'player-album-art'};"
                 >
                     {#key $currentTrack.id}
-                        <div class="album-art-inner" in:fly={{ y: 6, duration: 220, easing: cubicOut }} out:fade={{ duration: 150 }}>
+                        <div class="album-art-inner" in:fly={{ y: 6, duration: 220, easing: cubicOut }} out:artCrossfadeOut>
                             {#if albumArt && !imageLoadFailed}
                                 <img
                                     src={albumArt}
@@ -554,7 +555,7 @@
                     title={$_('player.shuffle')}
                 >
                     {#key $shuffle}
-                        <span class="icon-pop" in:scale={{ start: 0.72, duration: 150, easing: backOut }}>
+                        <span class="icon-pop" in:iconPopTransition>
                             <Icon name="shuffle" size={20} />
                         </span>
                     {/key}
@@ -598,7 +599,7 @@
                     })}
                 >
                     {#key $repeat}
-                        <span class="icon-pop" in:scale={{ start: 0.72, duration: 150, easing: backOut }}>
+                        <span class="icon-pop" in:iconPopTransition>
                             <Icon name={$repeat === "one" ? "repeat-1" : "repeat"} size={20} />
                         </span>
                     {/key}

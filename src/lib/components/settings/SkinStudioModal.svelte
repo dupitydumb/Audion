@@ -2,6 +2,7 @@
   import { createEventDispatcher, onMount, onDestroy } from "svelte";
   import { get } from "svelte/store";
   import { fade, scale } from "svelte/transition";
+  import { modalBackdropTransition, modalBoxTransition } from "$lib/motion";
   import Icon from "$lib/components/Icon.svelte";
   import {
     theme,
@@ -619,7 +620,7 @@ return () => cancelAnimationFrame(animId);`,
     class="modal-backdrop"
     class:docked={viewMode === 'docked'}
     class:popped-out={isPoppedOut}
-    transition:fade={{ duration: 180 }}
+    transition:modalBackdropTransition
     on:click={handleBackdropClick}
   >
     <div
@@ -630,7 +631,7 @@ return () => cancelAnimationFrame(animId);`,
       aria-modal={viewMode === 'modal'}
       aria-labelledby="skin-studio-title"
       tabindex="-1"
-      transition:scale={{ duration: 220, start: 0.96 }}
+      transition:modalBoxTransition
     >
       <div class="studio-header">
         <div class="studio-title-wrap">

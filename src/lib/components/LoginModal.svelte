@@ -2,7 +2,8 @@
     import { onDestroy } from "svelte";
     import { _ } from "svelte-i18n";
     import { showLoginModal, startLogin, connectCustomServerPassword, testCustomServerConnection, loginModalMode, customServerStatus } from "$lib/stores/sync";
-    import { registerBackHandler, modalSheetTransition } from "$lib/stores/mobile";
+    import { isMobile, registerBackHandler, modalSheetTransition } from "$lib/stores/mobile";
+    import { modalBackdropTransition } from "$lib/motion";
     import { fade, slide } from "svelte/transition";
     import Icon from "$lib/components/Icon.svelte";
 
@@ -126,9 +127,10 @@
 {#if $showLoginModal}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div class="overlay" transition:fade={{ duration: 150 }} on:click={close}>
+    <div class="overlay" class:mobile-menu-backdrop={$isMobile} transition:modalBackdropTransition on:click={close}>
         <div
             class="modal"
+            class:mobile-menu-sheet={$isMobile}
             transition:modalSheetTransition
             on:click|stopPropagation
             role="dialog"
@@ -137,6 +139,11 @@
                 ? $_('auth.signInTitle', { default: 'Account & Sync' })
                 : $_('auth.customServerTitle', { default: 'Connect to Custom Server' })}
         >
+            {#if $isMobile}
+                <div class="sheet-handle-zone" aria-hidden="true">
+                    <div class="sheet-handle"></div>
+                </div>
+            {/if}
             <div class="modal-top-bar">
                 <div class="modal-header-content">
                     <h2>{$_('auth.signInTitle', { default: 'Account & Sync' })}</h2>
@@ -909,28 +916,9 @@
         outline: 2px solid var(--accent-primary);
     }
 
-    :global(html.layout-mobile) .overlay {
-        align-items: flex-end;
-        padding: var(--safe-area-top, 16px) 0 0;
-    }
-
-    :global(html.layout-mobile) .modal {
-        position: relative;
-        max-width: 100%;
-        border-radius: 20px 20px 0 0;
-        border-bottom: none;
-    }
-
-    :global(html.layout-mobile) .modal::before {
-        content: "";
-        position: absolute;
-        top: 8px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 36px;
-        height: 4px;
-        border-radius: 2px;
-        background: var(--bg-highlight);
+    /* Mobile: uses shared .mobile-menu-backdrop / .mobile-menu-sheet from app.css */
+    :global(html.layout-mobile) .modal.mobile-menu-sheet {
+        padding-bottom: 0;
     }
 
     :global(html.layout-mobile) .modal-footer {

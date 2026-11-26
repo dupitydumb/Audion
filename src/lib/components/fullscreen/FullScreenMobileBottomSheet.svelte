@@ -2,6 +2,7 @@
   import { _ } from "svelte-i18n";
   import { createEventDispatcher, onDestroy } from "svelte";
   import { fade, fly } from "svelte/transition";
+  import { modalBackdropTransition, sheetInTransition, sheetOutTransition } from "$lib/motion";
   import { get } from "svelte/store";
   import { currentTrack, addToQueue } from "$lib/stores/player";
   import { toggleFullScreen, isStatsForNerdsOpen } from "$lib/stores/ui";
@@ -143,7 +144,7 @@
 <div
   class="mobile-menu-backdrop"
   on:click={() => (showMobileMenu = false)}
-  transition:fade={{ duration: 200 }}
+  transition:modalBackdropTransition
   role="presentation"
 >
   <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -156,8 +157,9 @@
     on:touchend={handleSheetTouchEnd}
     on:touchcancel={handleSheetTouchEnd}
     on:click|stopPropagation
-    style={dragY > 0 ? `transform: translate3d(0, ${dragY}px, 0); transition: none;` : ""}
-    transition:fly={{ y: 300, duration: 300 }}
+    style={dragY > 0 ? `transform: translate3d(0, ${dragY}px, 0); transition: none;` : "transform: translate3d(0, 0, 0);"}
+    in:sheetInTransition
+    out:sheetOutTransition
     role="dialog"
     aria-modal="true"
     tabindex="-1"

@@ -1,7 +1,6 @@
 <script lang="ts">
   import { get } from "svelte/store";
-  import { scale } from "svelte/transition";
-  import { backOut } from "svelte/easing";
+  import { iconPopTransition } from "$lib/motion";
   import {
     progress,
     currentTime,
@@ -152,7 +151,7 @@
       aria-label="Shuffle"
     >
       {#key $shuffle}
-        <span class="icon-pop" in:scale={{ start: 0.72, duration: 150, easing: backOut }}>
+        <span class="icon-pop" in:iconPopTransition>
           <Icon name="shuffle" size={18} />
         </span>
       {/key}
@@ -185,7 +184,7 @@
       aria-label="Repeat"
     >
       {#key $repeat}
-        <span class="icon-pop" in:scale={{ start: 0.72, duration: 150, easing: backOut }}>
+        <span class="icon-pop" in:iconPopTransition>
           <Icon name={$repeat === "one" ? "repeat-1" : "repeat"} size={18} />
         </span>
       {/key}

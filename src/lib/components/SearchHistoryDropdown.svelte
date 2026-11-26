@@ -1,5 +1,7 @@
 <script lang="ts">
   import { _ } from 'svelte-i18n';
+  import { flip } from 'svelte/animate';
+  import { FLIP_MOTION, popoverInTransition, popoverOutTransition } from '$lib/motion';
   import {
     resolvedSearchHistory,
     removeHistoryItem,
@@ -57,7 +59,7 @@
 
 {#if $resolvedSearchHistory.length > 0}
   <!-- preventDefault on mousedown keeps input focused when clicking dropdown items -->
-  <div class="search-history-dropdown" role="listbox" on:mousedown|preventDefault>
+  <div class="search-history-dropdown" role="listbox" on:mousedown|preventDefault in:popoverInTransition out:popoverOutTransition>
     <div class="history-header">
       <span class="history-title">{$_('search.searchHistory')}</span>
       <button class="clear-btn" on:click={handleClear}>
@@ -66,7 +68,7 @@
     </div>
     <ul class="history-list">
       {#each $resolvedSearchHistory as entry (entry.index)}
-        <li class="history-item" role="option" aria-selected="false">
+        <li class="history-item" role="option" aria-selected="false" animate:flip={FLIP_MOTION}>
           <div
             class="history-item-btn"
             role="button"

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
   import { fade, fly, slide } from "svelte/transition";
+  import { modalBackdropTransition, modalBoxTransition } from "$lib/motion";
   import {
     wsStore,
     type RemoteDevice,
@@ -97,13 +98,12 @@
   class="connect-overlay"
   on:click|self={close}
   on:keydown|self={(e) => e.key === "Escape" && close()}
-  transition:fade={{ duration: 250 }}
+  transition:modalBackdropTransition
   role="presentation"
 >
   <div
     class="connect-panel glass"
-    in:fly={{ y: 30, duration: 400, opacity: 0 }}
-    out:fly={{ y: 20, duration: 200, opacity: 0 }}
+    transition:modalBoxTransition
   >
     <header>
       <div class="title-wrap">

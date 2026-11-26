@@ -22,10 +22,13 @@ export function appleSpring(t: number): number {
 }
 
 export function modalSheetTransition(node: Element) {
-    if (get(isMobile)) {
-        return fly(node, { y: 340, duration: 380, opacity: 1, easing: appleSpring });
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+        return { duration: 0 };
     }
-    return scale(node, { duration: 220, start: 0.94, easing: appleSpring });
+    if (get(isMobile)) {
+        return fly(node, { y: 320, duration: 320, opacity: 1, easing: appleSpring });
+    }
+    return scale(node, { duration: 220, start: 0.95, easing: appleSpring });
 }
 
 // Core state: is the viewport mobile-sized? Kept for informational/responsive

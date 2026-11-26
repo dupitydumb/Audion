@@ -753,3 +753,58 @@ body.resizing-sidebar {
 body.resizing-sidebar * {
   cursor: col-resize !important;
 }
+
+/* Shared mobile bottom sheet shell */
+html.layout-mobile .mobile-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+  z-index: var(--z-sheet, 3000);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: var(--safe-area-top, 16px) 0 0;
+}
+
+html.layout-mobile .mobile-menu-sheet {
+  position: relative;
+  top: auto;
+  left: auto;
+  right: auto;
+  width: 100%;
+  max-width: 560px;
+  max-height: 85dvh;
+  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+  color: var(--text-primary);
+  backdrop-filter: blur(32px) saturate(190%);
+  -webkit-backdrop-filter: blur(32px) saturate(190%);
+  border-radius: 24px 24px 0 0;
+  border: none;
+  border-top: 1px solid var(--border-subtle, var(--border-color));
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+  padding-bottom: calc(16px + var(--safe-area-bottom, 0px));
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: none;
+  transition: transform var(--dur-enter, 320ms) var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+html.layout-mobile .mobile-menu-sheet::-webkit-scrollbar {
+  display: none;
+}
+
+html.layout-mobile .sheet-handle-zone {
+  padding: 12px 0 8px;
+  display: flex;
+  justify-content: center;
+  cursor: grab;
+  flex-shrink: 0;
+}
+
+html.layout-mobile .sheet-handle {
+  width: 36px;
+  height: 4px;
+  background: var(--text-tertiary, var(--bg-highlight));
+  border-radius: 2px;
+}

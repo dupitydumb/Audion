@@ -1,21 +1,23 @@
 <script lang="ts">
     import { contextMenu, type ContextMenuItem } from "$lib/stores/ui";
-    import { fade, fly, scale } from "svelte/transition";
     import { onMount, onDestroy, tick } from "svelte";
-    import { isMobile, registerBackHandler, appleSpring } from "$lib/stores/mobile";
+    import { isMobile, registerBackHandler } from "$lib/stores/mobile";
+    import {
+        modalBackdropTransition,
+        popoverInTransition,
+        popoverOutTransition,
+        sheetInTransition,
+        sheetOutTransition,
+        submenuInTransition,
+        submenuOutTransition,
+    } from "$lib/motion";
 
     function sheetIn(node: Element) {
-        if ($isMobile) {
-            return fly(node, { y: 340, duration: 380, opacity: 1, easing: appleSpring });
-        }
-        return scale(node, { start: 0.94, opacity: 0, duration: 160, easing: appleSpring });
+        return $isMobile ? sheetInTransition(node) : popoverInTransition(node);
     }
 
     function sheetOut(node: Element) {
-        if ($isMobile) {
-            return fly(node, { y: 340, duration: 280, opacity: 1, easing: appleSpring });
-        }
-        return fade(node, { duration: 75 });
+        return $isMobile ? sheetOutTransition(node) : popoverOutTransition(node);
     }
     import Icon from "$lib/components/Icon.svelte";
 
@@ -155,8 +157,9 @@
         <!-- svelte-ignore a11y-click-events-have-key-events -->
         <div
             class="context-menu-backdrop"
+            class:mobile-menu-backdrop={$isMobile}
             on:click={closeMenu}
-            transition:fade={{ duration: 200 }}
+            transition:modalBackdropTransition
             role="presentation"
         ></div>
     {/if}
@@ -164,6 +167,7 @@
     {#key $isMobile ? "mobile" : `${$contextMenu.x}-${$contextMenu.y}`}
     <div
         class="context-menu"
+        class:mobile-menu-sheet={$isMobile}
         bind:this={menuElement}
         style={$isMobile
             ? (dragY > 0 ? `transform: translate3d(0, ${dragY}px, 0); transition: none;` : "transform: translate3d(0, 0, 0);")
@@ -177,14 +181,14 @@
     >
         {#if $isMobile}
             <div
-                class="mobile-handle-zone"
+                class="sheet-handle-zone"
                 on:touchstart|stopPropagation={(e) => handleSheetTouchStart(e, true)}
                 on:touchmove|stopPropagation={handleSheetTouchMove}
                 on:touchend|stopPropagation={handleSheetTouchEnd}
                 on:touchcancel|stopPropagation={handleSheetTouchEnd}
                 role="presentation"
             >
-                <div class="mobile-handle"></div>
+                <div class="sheet-handle"></div>
             </div>
         {/if}
 
@@ -227,7 +231,8 @@
                     {#if activeSubmenu === item.label}
                         <div
                             class="submenu"
-                            transition:fade={{ duration: 100 }}
+                            in:submenuInTransition
+                            out:submenuOutTransition
                         >
                             {#each item.submenu as subitem}
                                 {#if subitem.type !== 'separator'}
@@ -380,53 +385,16 @@
         flex-direction: column;
     }
 
-    /* ── Mobile ── */
-    :global(html.layout-mobile) .context-menu-backdrop {
-        position: fixed;
-        inset: 0;
-        background-color: rgba(0, 0, 0, 0.6);
-        backdrop-filter: blur(2px);
-        z-index: var(--z-sheet, 3000);
-    }
-
-    :global(html.layout-mobile) .context-menu {
+    /* ── Mobile (uses shared .mobile-menu-backdrop / .mobile-menu-sheet from app.css) ── */
+    :global(html.layout-mobile) .context-menu.mobile-menu-sheet {
         position: fixed;
         bottom: 0;
         left: 0;
         right: 0;
         top: auto;
-        width: 100%;
-        min-width: 100%;
-        max-width: 100%;
-        max-height: 75dvh;
-        overflow-y: auto;
-        overscroll-behavior-y: contain;
-        border-bottom-left-radius: 0;
-        border-bottom-right-radius: 0;
-        border-top-left-radius: 16px;
-        border-top-right-radius: 16px;
-        padding: var(--spacing-sm);
-        padding-bottom: calc(16px + var(--safe-area-bottom, 0px));
-        box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.4);
-        border: none;
-        border-top: 1px solid var(--border-color);
-        z-index: var(--z-sheet, 3000);
-        transition: transform 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
-    }
-
-    :global(html.layout-mobile) .mobile-handle-zone {
-        padding: 8px 0 12px;
-        display: flex;
-        justify-content: center;
-        cursor: grab;
-        flex-shrink: 0;
-    }
-
-    :global(html.layout-mobile) .mobile-handle {
-        width: 40px;
-        height: 4px;
-        background-color: var(--bg-highlight);
-        border-radius: var(--radius-full);
+        margin: 0 auto;
+        min-width: 0;
+        padding: 0 var(--spacing-sm) calc(16px + var(--safe-area-bottom, 0px));
     }
 
     :global(html.layout-mobile) .menu-item,
@@ -438,6 +406,12 @@
         align-items: center;
         gap: var(--spacing-md);
         border-radius: var(--radius-md);
+        transition: background-color var(--transition-fast),
+                    transform 120ms var(--ease-spring-snappy);
+    }
+
+    :global(html.layout-mobile) .menu-item:active {
+        transform: scale(0.98);
     }
 
     :global(html.layout-mobile) .menu-item.has-submenu {

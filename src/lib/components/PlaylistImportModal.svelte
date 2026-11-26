@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher, onDestroy } from "svelte";
   import { fade, scale } from "svelte/transition";
+  import { modalBackdropTransition } from "$lib/motion";
   import Icon from "$lib/components/Icon.svelte";
   import { isMobile, registerBackHandler, modalSheetTransition } from "$lib/stores/mobile";
   import { addToast } from "$lib/stores/toast";
@@ -228,13 +229,19 @@
 </script>
 
 {#if open}
-  <div class="modal-backdrop" transition:fade={{ duration: 150 }}>
+  <div class="modal-backdrop" class:mobile-menu-backdrop={$isMobile} transition:modalBackdropTransition>
     <div
       class="modal-container"
+      class:mobile-menu-sheet={$isMobile}
       transition:modalSheetTransition
       role="dialog"
       aria-modal="true"
     >
+      {#if $isMobile}
+        <div class="sheet-handle-zone" aria-hidden="true">
+          <div class="sheet-handle"></div>
+        </div>
+      {/if}
       <!-- Header -->
       <div class="modal-header">
         <div class="header-title-group">
@@ -1042,33 +1049,14 @@
     cursor: not-allowed;
   }
 
-  /* Mobile bottom-sheet / full-height layout */
-  :global(html.layout-mobile) .modal-backdrop {
-    align-items: flex-end;
-    padding: var(--safe-area-top, 16px) 0 0;
-  }
-
-  :global(html.layout-mobile) .modal-container {
-    max-width: 100%;
+  /* Mobile bottom-sheet uses shared .mobile-menu-backdrop / .mobile-menu-sheet from app.css */
+  :global(html.layout-mobile) .modal-container.mobile-menu-sheet {
     max-height: 90dvh;
-    border-radius: 20px 20px 0 0;
-    border-bottom: none;
+    padding-bottom: 0;
   }
 
   :global(html.layout-mobile) .modal-header {
-    padding: 1.25rem 1rem 0.85rem;
-  }
-
-  :global(html.layout-mobile) .modal-header::before {
-    content: "";
-    position: absolute;
-    top: 0.45rem;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 36px;
-    height: 4px;
-    border-radius: 2px;
-    background: var(--bg-highlight);
+    padding: 0.25rem 1rem 0.85rem;
   }
 
   :global(html.layout-mobile) .btn-icon {

@@ -17,6 +17,7 @@
     import MenuBar from "./MenuBar.svelte";
     import Breadcrumbs from "./Breadcrumbs.svelte";
     import Icon from "$lib/components/Icon.svelte";
+    import { iconPopTransition } from "$lib/motion";
 
     const appWindow = getCurrentWindow();
     let isMaximized = false;
@@ -276,7 +277,7 @@
                 />
                 {#if searchInput}
                     {#if $searchResults.hasResults}
-                        <span class="search-count">
+                        <span class="search-count" transition:iconPopTransition>
                             {$_('nav.resultsCount', { values: { count: $searchResults.tracks.length +
                                 $searchResults.albums.length +
                                 $searchResults.artists.length +
@@ -285,6 +286,7 @@
                     {/if}
                     <button
                         class="clear-search"
+                        transition:iconPopTransition
                         on:click={handleClearSearch}
                         title={$_('nav.clearSearchHint')}
                     >

@@ -3,6 +3,7 @@
   import { _ } from "svelte-i18n";
   import { fade, fly } from "svelte/transition";
   import { cubicInOut, cubicOut } from "svelte/easing";
+  import { artCrossfadeIn, artCrossfadeOut } from "$lib/motion";
   import { flip } from "svelte/animate";
   import {
     isFullScreen,
@@ -525,9 +526,9 @@
             class="art-container"
             class:playing={$isPlaying}
             in:fly={{
-              y: isAndroid ? 8 : 20,
-              duration: isAndroid ? 180 : 500,
-              delay: isAndroid ? 0 : 100,
+              y: isAndroid ? 8 : 16,
+              duration: isAndroid ? 160 : 240,
+              easing: cubicOut,
             }}
           >
             {#if albumArt}
@@ -537,16 +538,8 @@
                   alt="Album Art"
                   decoding="async"
                   class="art-flip"
-                  in:fly={{
-                    x: 300,
-                    duration: 400,
-                    easing: cubicInOut,
-                  }}
-                  out:fly={{
-                    x: -300,
-                    duration: 300,
-                    easing: cubicInOut,
-                  }}
+                  in:artCrossfadeIn
+                  out:artCrossfadeOut
                 />
               {/key}
             {:else}

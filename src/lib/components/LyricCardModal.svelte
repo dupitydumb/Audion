@@ -7,7 +7,8 @@
   import { resolveTrackCover } from "$lib/stores/library";
   import { proxyFetchBytes, saveImageToGallery } from "$lib/api/tauri";
   import { addToast } from "$lib/stores/toast";
-  import { registerBackHandler, modalSheetTransition } from "$lib/stores/mobile";
+  import { isMobile, registerBackHandler, modalSheetTransition } from "$lib/stores/mobile";
+  import { modalBackdropTransition } from "$lib/motion";
   import Icon from "$lib/components/Icon.svelte";
 
   export let open: boolean = false;
@@ -893,17 +894,24 @@
 {#if open}
   <div
     class="lyric-card-overlay"
-    transition:fade={{ duration: 160 }}
+    class:mobile-menu-backdrop={$isMobile}
+    transition:modalBackdropTransition
     role="presentation"
     on:click|self={onClose}
   >
     <div
       class="lyric-card-modal"
+      class:mobile-menu-sheet={$isMobile}
       transition:modalSheetTransition
       role="dialog"
       aria-modal="true"
       aria-label="Shareable Lyric Card"
     >
+      {#if $isMobile}
+        <div class="sheet-handle-zone" aria-hidden="true">
+          <div class="sheet-handle"></div>
+        </div>
+      {/if}
       <header class="modal-header">
         <div class="header-left">
           <Icon name="image" size={18} />
@@ -1416,34 +1424,15 @@
     outline-offset: 2px;
   }
 
-  /* ── Phone: bottom sheet ────────────────────────────────── */
-  :global(html.layout-mobile) .lyric-card-overlay {
-    align-items: flex-end;
-    padding: var(--safe-area-top, 16px) 0 0;
-  }
-
-  :global(html.layout-mobile) .lyric-card-modal {
-    max-width: 100%;
+  /* ── Phone: uses shared .mobile-menu-backdrop / .mobile-menu-sheet from app.css ── */
+  :global(html.layout-mobile) .lyric-card-modal.mobile-menu-sheet {
     max-height: 90dvh;
-    border-radius: 20px 20px 0 0;
-    border-bottom: none;
+    padding-bottom: 0;
   }
 
   :global(html.layout-mobile) .modal-header {
     position: relative;
-    padding: 16px 16px 12px;
-  }
-
-  :global(html.layout-mobile) .modal-header::before {
-    content: "";
-    position: absolute;
-    top: 6px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 36px;
-    height: 4px;
-    border-radius: 2px;
-    background: rgba(255, 255, 255, 0.22);
+    padding: 4px 16px 12px;
   }
 
   :global(html.layout-mobile) .btn-close {

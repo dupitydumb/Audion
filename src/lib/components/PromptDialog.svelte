@@ -1,6 +1,6 @@
 <script lang="ts">
     import { promptDialogStore, closePromptDialog } from "$lib/stores/dialogs";
-    import { fade, scale } from "svelte/transition";
+    import { modalBackdropTransition, modalBoxTransition } from "$lib/motion";
     import { onDestroy, tick } from "svelte";
     import { registerBackHandler } from "$lib/stores/mobile";
 
@@ -64,12 +64,12 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
         class="dialog-overlay"
-        transition:fade={{ duration: 150 }}
+        transition:modalBackdropTransition
         on:click={handleCancel}
     >
         <div
             class="dialog-box"
-            transition:scale={{ duration: 200, start: 0.95 }}
+            transition:modalBoxTransition
             on:click|stopPropagation
             role="dialog"
             aria-modal="true"
@@ -126,7 +126,6 @@
         display: flex;
         flex-direction: column;
         gap: var(--spacing-md);
-        animation: springScaleIn 0.28s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
     }
 
     .dialog-title {

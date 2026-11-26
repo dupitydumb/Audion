@@ -702,12 +702,22 @@
         gap: var(--spacing-md);
         padding: var(--spacing-sm);
         border-radius: var(--radius-sm);
-        transition: background-color var(--transition-fast);
+        transition: background-color var(--transition-fast),
+                    transform 120ms var(--ease-spring-snappy);
         text-align: left;
     }
 
     .track-item:hover {
         background-color: var(--bg-elevated);
+    }
+
+    .track-item:active {
+        transform: scale(0.985);
+    }
+
+    .track-item:focus-visible {
+        outline: 2px solid var(--accent-primary);
+        outline-offset: -2px;
     }
 
     .track-art {

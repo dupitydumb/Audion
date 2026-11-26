@@ -1,13 +1,13 @@
 <script lang="ts">
     import { flip } from "svelte/animate";
-    import { cubicOut } from "svelte/easing";
+    import { FLIP_MOTION } from "$lib/motion";
     import { toasts } from "$lib/stores/toast";
     import Toast from "./Toast.svelte";
 </script>
 
 <div class="toast-container">
     {#each $toasts as toast (toast.id)}
-        <div class="toast-slot" animate:flip={{ duration: 200, easing: cubicOut }}>
+        <div class="toast-slot" animate:flip={FLIP_MOTION}>
             <Toast {toast} />
         </div>
     {/each}

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { fade, fly } from "svelte/transition";
+    import { toastInTransition, toastOutTransition } from "$lib/motion";
     import type { Toast } from "$lib/stores/toast";
     import { toasts } from "$lib/stores/toast";
     import Icon from "$lib/components/Icon.svelte";
@@ -13,8 +13,8 @@
 
 <div
     class="toast {toast.type}"
-    in:fly={{ y: 40, duration: 350, opacity: 0 }}
-    out:fade={{ duration: 200 }}
+    in:toastInTransition
+    out:toastOutTransition
     role="alert"
 >
     <div class="icon-badge">

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
-  import { fade, fly } from "svelte/transition";
+  import { fly } from "svelte/transition";
+  import { artCrossfadeIn, artCrossfadeOut } from "$lib/motion";
   import ArtistLinks from "$lib/components/ArtistLinks.svelte";
   import { goToArtistDetail } from "$lib/stores/view";
   import {
@@ -176,7 +177,7 @@
       <div class="track-info-group">
         <div class="mini-cover">
           {#key $currentTrack?.id}
-            <div class="mini-cover-inner" in:fade={{ duration: 200 }} out:fade={{ duration: 150 }}>
+            <div class="mini-cover-inner" in:artCrossfadeIn out:artCrossfadeOut>
               {#if albumArt && !imageLoadFailed}
                 <img
                   src={albumArt}

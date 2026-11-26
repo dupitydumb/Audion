@@ -21,6 +21,7 @@
   import { onDestroy } from "svelte";
   import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
   import { isMobile, registerBackHandler, modalSheetTransition } from "$lib/stores/mobile";
+  import { modalBackdropTransition } from "$lib/motion";
   import Icon from "$lib/components/Icon.svelte";
   import { createSflxExtensionAdapter } from "$lib/plugins/sflx-adapter";
   import { globalProviders } from "$lib/plugins/providers";
@@ -984,17 +985,24 @@
 {#if showPermissionModal && selectedPlugin}
   <div
     class="modal-overlay"
+    class:mobile-menu-backdrop={$isMobile}
     on:click={closePermissionModal}
-    transition:fade={{ duration: 160 }}
+    transition:modalBackdropTransition
     role="dialog"
     aria-modal="true"
   >
     <div
       class="modal"
+      class:mobile-menu-sheet={$isMobile}
       on:click|stopPropagation
       transition:modalSheetTransition
       role="document"
     >
+      {#if $isMobile}
+        <div class="sheet-handle-zone" aria-hidden="true">
+          <div class="sheet-handle"></div>
+        </div>
+      {/if}
       <div class="modal-header">
         <h2>
           {pendingPermissions.length > 0 || (selectedPlugin.manifest.cross_plugin_access && selectedPlugin.manifest.cross_plugin_access.length > 0)
@@ -2266,32 +2274,10 @@
     min-height: 44px;
   }
 
-  /* Permission / install modal — bottom sheet respecting safe areas */
-  :global(html.layout-mobile) .modal-overlay {
-    align-items: flex-end;
-    padding: var(--safe-area-top, 16px) 0 0;
-  }
-
-  :global(html.layout-mobile) .modal {
-    position: relative;
-    width: 100%;
-    max-width: 100%;
+  /* Permission / install modal — uses shared .mobile-menu-backdrop / .mobile-menu-sheet from app.css */
+  :global(html.layout-mobile) .modal.mobile-menu-sheet {
     max-height: 90dvh;
-    padding: 20px var(--spacing-md) var(--spacing-md);
-    border-radius: 20px 20px 0 0;
-    border-bottom: none;
-  }
-
-  :global(html.layout-mobile) .modal::before {
-    content: "";
-    position: absolute;
-    top: 8px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 36px;
-    height: 4px;
-    border-radius: 2px;
-    background: var(--bg-highlight);
+    padding: 0 var(--spacing-md) calc(var(--spacing-md) + var(--safe-area-bottom, 0px));
   }
 
   :global(html.layout-mobile) .modal-header {

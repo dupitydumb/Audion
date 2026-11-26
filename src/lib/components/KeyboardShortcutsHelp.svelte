@@ -1,6 +1,7 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
     import { fade, fly } from "svelte/transition";
+    import { modalBackdropTransition, modalBoxTransition } from "$lib/motion";
     import {
         isShortcutsHelpVisible,
         hideShortcutsHelp,
@@ -270,7 +271,7 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
         class="shortcuts-overlay"
-        transition:fade={{ duration: 200 }}
+        transition:modalBackdropTransition
         on:click={handleClose}
         on:keydown={(e) => e.key === "Escape" && handleClose()}
         role="dialog"
@@ -281,7 +282,7 @@
         <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
             class="shortcuts-modal"
-            transition:fly={{ y: 20, duration: 300 }}
+            transition:modalBoxTransition
             on:click|stopPropagation
             on:keydown|stopPropagation
         >

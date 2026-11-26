@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { fade } from "svelte/transition";
-  import { modalSheetTransition } from "$lib/stores/mobile";
+  import { isMobile, modalSheetTransition } from "$lib/stores/mobile";
+  import { modalBackdropTransition } from "$lib/motion";
   import { getAudioTelemetry, type AudioTelemetry, isTauri } from "$lib/api/tauri";
   import { nativeAudioListDevices, type DeviceList } from "$lib/services/native-audio";
   import { appSettings } from "$lib/stores/settings";
@@ -183,17 +184,24 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="stats-hud-backdrop"
+    class:mobile-menu-backdrop={$isMobile}
     on:click={handleBackdropClick}
-    transition:fade={{ duration: 140 }}
+    transition:modalBackdropTransition
   >
     <div
       class="stats-hud-card"
+      class:mobile-menu-sheet={$isMobile}
       on:click|stopPropagation
       transition:modalSheetTransition
       role="dialog"
       aria-modal="true"
       aria-label="Stats for Nerds Telemetry"
     >
+      {#if $isMobile}
+        <div class="sheet-handle-zone" aria-hidden="true">
+          <div class="sheet-handle"></div>
+        </div>
+      {/if}
       <!-- Header -->
       <div class="hud-header">
         <div class="hud-title-group">
@@ -777,35 +785,13 @@
     font-family: inherit;
   }
 
-  /* Mobile: native bottom sheet aligned with app theme */
-  :global(html.layout-mobile) .stats-hud-backdrop {
-    align-items: flex-end;
-    justify-content: center;
-    padding: var(--safe-area-top, 16px) 0 0;
-  }
-
-  :global(html.layout-mobile) .stats-hud-card {
-    width: 100%;
-    max-width: 100%;
-    max-height: 85dvh;
-    border-radius: 20px 20px 0 0;
-    border-bottom: none;
+  /* Mobile: uses shared .mobile-menu-backdrop / .mobile-menu-sheet from app.css */
+  :global(html.layout-mobile) .stats-hud-card.mobile-menu-sheet {
+    padding-bottom: 0;
   }
 
   :global(html.layout-mobile) .hud-header {
-    padding: 16px 16px 12px;
-  }
-
-  :global(html.layout-mobile) .hud-header::before {
-    content: "";
-    position: absolute;
-    top: 6px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 36px;
-    height: 4px;
-    border-radius: 2px;
-    background: var(--bg-highlight);
+    padding: 4px 16px 12px;
   }
 
   :global(html.layout-mobile) .btn-hud-close {

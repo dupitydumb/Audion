@@ -20,6 +20,7 @@
     import { isMobile, registerBackHandler } from "$lib/stores/mobile";
     import { addToast } from "$lib/stores/toast";
     import { importLyricsContent } from "$lib/stores/lyrics";
+    import { popoverInTransition, popoverOutTransition } from "$lib/motion";
     import { LYRICS_SOURCES, type LyricsSource } from "$lib/lyrics";
     import LyricsView from "./LyricsView.svelte";
     import LyricCardModal from "./LyricCardModal.svelte";
@@ -77,14 +78,7 @@
     $: if (!$lyricsLoading) sourceMenuOpen = false;
 
     function showPaxKeyToast(message: string) {
-        const toast = document.createElement('div');
-        toast.style.cssText = `position:fixed; bottom:calc(var(--bottom-chrome-inset, 136px) + 12px); left:50%; transform:translateX(-50%); max-width:calc(100vw - 32px); background:var(--error-color, #c0392b); color:var(--text-on-accent, #fff); padding:10px 16px; border-radius:8px; z-index:var(--z-modal, 4000); font-size:13px; line-height:1.35; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.3); opacity:0; transition:0.3s; display:flex; align-items:center; justify-content:center; gap:12px; white-space:normal; word-break:break-word;`;
-        const text = document.createElement('span');
-        text.textContent = message;
-        toast.appendChild(text);
-        document.body.appendChild(toast);
-        requestAnimationFrame(() => toast.style.opacity = '1');
-        setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 300); }, 4000);
+        addToast(message, "error", 4000);
     }
 
     let _appleKeyToastShown = false;
@@ -295,7 +289,7 @@
                         </button>
 
                         {#if sourceMenuOpen}
-                            <ul class="source-menu" role="listbox" aria-label="Lyrics source">
+                            <ul class="source-menu" role="listbox" aria-label="Lyrics source" in:popoverInTransition out:popoverOutTransition>
                                 {#if $availableSources.includes('user')}
                                     {@const isActive = $lyricsData?.source === 'user'}
                                     {@const isCached = $availableSources.includes('user')}
