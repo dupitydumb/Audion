@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import { currentTrack, activeBackend, isPlaying } from "$lib/stores/player";
   import { isStatsForNerdsOpen } from "$lib/stores/ui";
+  import { audioChain, initAudioChainListener } from "$lib/stores/audioChain";
   import {
     isTauri,
     getAudioTelemetry,
@@ -69,7 +70,12 @@
     }
   }
 
+  $: if ($audioChain.active && $audioChain.backend === "native" && $activeBackend !== "html5") {
+    refreshTelemetry(0);
+  }
+
   onMount(() => {
+    initAudioChainListener();
     refreshTelemetry();
   });
 
@@ -105,7 +111,10 @@
     return match ? match[1].toUpperCase() : "";
   }
 
-  $: tCodec = cleanCodec(telemetry?.codec);
+  $: isHtml5 = $activeBackend === "html5" && !track;
+  $: effectiveTelemetry = isHtml5 ? null : telemetry;
+
+  $: tCodec = cleanCodec(effectiveTelemetry?.codec);
   $: trackFormat = cleanCodec(activeTrack?.format);
   $: pathExt = getExtFromPath(activeTrack?.path || activeTrack?.local_src);
 
@@ -147,7 +156,7 @@
     if (tCodec === "AAC / ALAC" || trackFormat === "M4A" || pathExt === "M4A") {
       // If telemetry reports bit_depth (e.g. 16 or 24) or bit rate is lossless (> 450 kbps)
       if (
-        (telemetry?.bit_depth && telemetry.bit_depth > 0) ||
+        (effectiveTelemetry?.bit_depth && effectiveTelemetry.bit_depth > 0) ||
         (activeTrack?.bitrate && activeTrack.bitrate > 450)
       ) {
         return "ALAC";
@@ -161,11 +170,12 @@
 
   $: hasCodec = !!codec && !EMPTY_CODECS.has(codec);
 
-  $: bitDepth =
-    telemetry?.bit_depth || (codec === "FLAC" || codec === "ALAC" ? 16 : null);
-  $: sampleRate = telemetry?.sample_rate || 44100;
+  $: bitDepth = effectiveTelemetry?.bit_depth ?? null;
+  $: sampleRate = effectiveTelemetry?.sample_rate ?? null;
 
-  $: isHiRes = sampleRate > 48000 || (bitDepth !== null && bitDepth >= 24);
+  $: isHiRes =
+    (sampleRate !== null && sampleRate > 48000) ||
+    (bitDepth !== null && bitDepth >= 24);
   $: isLossless = isHiRes || LOSSLESS_CODECS.has(codec);
   $: hasInfo = isLossless || hasCodec || !!activeTrack?.bitrate;
 
@@ -177,10 +187,10 @@
       ? "Lossless"
       : hasCodec
         ? codec
-        : "HQ";
+        : "Stream";
 
   $: detailText = isHiRes
-    ? `${bitDepth ? `${bitDepth}-bit/` : ""}${Math.round(sampleRate / 1000)}kHz`
+    ? `${bitDepth ? `${bitDepth}-bit/` : ""}${sampleRate ? `${Math.round(sampleRate / 1000)}kHz` : ""}`.replace(/\/$/, "")
     : isLossless
       ? bitDepth
         ? `${bitDepth}-bit`
@@ -205,7 +215,7 @@
     class:clickable
     on:click={handleClick}
     title={clickable
-      ? "Audio Pipeline Specs (Click for Stats for Nerds)"
+      ? "Audio Quality (Click for Audion Chain)"
       : "Audio Quality"}
     aria-label="Audio Quality Specs"
   >
