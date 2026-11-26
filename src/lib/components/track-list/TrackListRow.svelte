@@ -189,12 +189,6 @@
           >
         </MarqueeText>
 
-        {#if !track.source_type || track.source_type === "local" || track.local_src}
-          <span class="downloaded-icon" title={$_('album.downloaded')}>
-            <Icon name="check-circle" size={14} />
-          </span>
-        {/if}
-
         {#if track.format}
           {@const formatUpper = track.format.toUpperCase()}
           {@const displayFormat =
@@ -216,16 +210,27 @@
           </span>
         {/if}
       </div>
-      <ArtistLinks
-        artist={track.artist || $_('common.unknownArtist')}
-        artists={track.artists}
-        chipClass="track-artist truncate"
-        marquee
-        marqueeTrigger="external"
-        marqueeActive={isMobilePlaying}
-        resetKey={track.id}
-        on:select={(e) => handleArtistSelect(e.detail)}
-      />
+      <div class="mobile-subtitle-row">
+        {#if !track.source_type || track.source_type === "local"}
+          <span class="local-file-icon" title="Local">
+            <Icon name="smartphone" size={11} strokeWidth={2.2} />
+          </span>
+        {:else if track.local_src}
+          <span class="downloaded-icon" title={$_('album.downloaded')}>
+            <Icon name="downloaded" size={9} strokeWidth={2.75} />
+          </span>
+        {/if}
+        <ArtistLinks
+          artist={track.artist || $_('common.unknownArtist')}
+          artists={track.artists}
+          chipClass="track-artist truncate"
+          marquee
+          marqueeTrigger="external"
+          marqueeActive={isMobilePlaying}
+          resetKey={track.id}
+          on:select={(e) => handleArtistSelect(e.detail)}
+        />
+      </div>
     </div>
   {:else}
     <div class="col-artist">

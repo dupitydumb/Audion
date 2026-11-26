@@ -1553,7 +1553,7 @@
       >
         <div
           class="virtual-content"
-          style="transform: translateY({virtualScrollState.offsetY}px);"
+          style="top: {Math.round(virtualScrollState.offsetY)}px;"
         >
           {#each visibleTracksWithMetadata as { track, albumArt, unavailable, formattedDate }, index (track.id)}
             {@const actualIndex = virtualScrollState.startIndex + index}
@@ -1857,7 +1857,7 @@
   /* pan-y => vertical scroll stays on the compositor, only horizontal swipes reach the touch handlers */
   .list-body { flex: 1; overflow-y: auto; overflow-x: hidden; position: relative; overscroll-behavior-y: contain; touch-action: pan-y; }
   .virtual-spacer { position: relative; width: 100%; }
-  .virtual-content { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
+  .virtual-content { position: absolute; top: 0; left: 0; right: 0; }
 
   :global(.track-row-inner) {
     display: contents;
@@ -2146,8 +2146,36 @@
 
   :global(html.layout-mobile .track-row.playing .track-name) { color: var(--accent-primary); }
   :global(html.layout-mobile .track-row.playing .col-num) { color: var(--accent-primary); }
-  :global(html.layout-mobile .downloaded-icon) { margin-left: 2px; }
-  :global(html.layout-mobile .downloaded-icon svg) { width: 12px; height: 12px; }
+  :global(html.layout-mobile .mobile-subtitle-row) {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    margin-top: 2px;
+  }
+  :global(html.layout-mobile .mobile-subtitle-row .track-artist) { margin-top: 0; }
+  :global(html.layout-mobile .downloaded-icon) {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background-color: var(--accent-primary);
+    color: var(--text-on-accent, #000000);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 0;
+    flex-shrink: 0;
+  }
+  :global(html.layout-mobile .downloaded-icon svg) { width: 9px; height: 9px; }
+  :global(html.layout-mobile .local-file-icon) {
+    color: var(--text-subdued);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    opacity: 0.85;
+  }
+  :global(html.layout-mobile .local-file-icon svg) { width: 11px; height: 11px; }
 
   :global(html.layout-mobile .track-row.swiping .track-row-inner) { will-change: transform; }
   :global(html.layout-mobile .swipe-bg) {
