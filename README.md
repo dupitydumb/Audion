@@ -1,14 +1,12 @@
-<p align="center">
-  <img width="850" height="230" alt="AudionBanner" src="https://github.com/user-attachments/assets/8649842c-118a-4b24-a987-6bb4be6a9036" />
-</p>
+<div align="center">
 
-<h1 align="center">Audion</h1>
+<img alt="Audion" src="promotional/audion-banner@2x.png" width="520" height="auto" />
 
-<p align="center">
+<p>
   <strong>A local-first music player for your own library</strong>
 </p>
 
-<p align="center">
+<p>
   <a href="https://github.com/dupitydumb/Audion/releases/latest"><img src="https://img.shields.io/github/v/release/dupitydumb/Audion?style=for-the-badge&labelColor=0d1117" alt="Version"></a>
   <a href="https://github.com/dupitydumb/Audion/releases"><img src="https://img.shields.io/github/downloads/dupitydumb/Audion/total?style=for-the-badge&logo=github&labelColor=0d1117" alt="Downloads"></a>
   <a href="https://github.com/dupitydumb/Audion/stargazers"><img src="https://img.shields.io/github/stars/dupitydumb/Audion?style=for-the-badge&logo=github&labelColor=0d1117" alt="Stars"></a>
@@ -17,108 +15,30 @@
   <a href="https://discord.gg/27XRVQsBd9"><img src="https://img.shields.io/discord/1234567890?style=for-the-badge&color=5865F2&labelColor=0d1117&logo=discord&logoColor=white" alt="Discord"></a>
 </p>
 
-<p align="center">
+<p>
+  <a href="https://fmhy.net/audio#audio-players" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/available/fmhy/cozy.svg" alt="Featured on FMHY" height="55"/></a>
+</p>
+
+<p>
   <img src="https://img.shields.io/badge/platform-Windows-brightgreen.svg" alt="Windows">
   <img src="https://img.shields.io/badge/platform-macOS-brightgreen.svg" alt="macOS">
   <img src="https://img.shields.io/badge/platform-Linux-brightgreen.svg" alt="Linux">
   <img src="https://img.shields.io/badge/platform-Android-brightgreen.svg" alt="Android">
 </p>
 
-<p align="center">
-  <a href="#-download"><strong>Download</strong></a> ·
-  <a href="#-features"><strong>Features</strong></a> ·
-  <a href="#-screenshots"><strong>Screenshots</strong></a> ·
-  <a href="#-self-hosted-server-docker"><strong>Self-Hosted Server</strong></a> ·
-  <a href="#-build-from-source"><strong>Build from Source</strong></a> ·
-  <a href="#-agent-skills"><strong>Agent Skills</strong></a> ·
-  <a href="#-contributing"><strong>Contributing</strong></a> ·
-  <a href="#-support"><strong>Support</strong></a>
+<p>
+  <a href="#-screenshots"><b>Screenshots</b></a> &nbsp;·&nbsp;
+  <a href="#-features"><b>Features</b></a> &nbsp;·&nbsp;
+  <a href="#-download"><b>Download</b></a> &nbsp;·&nbsp;
+  <a href="#-self-hosted-server-docker"><b>Self-Hosted Server</b></a> &nbsp;·&nbsp;
+  <a href="#%EF%B8%8F-build-from-source"><b>Build from Source</b></a> &nbsp;·&nbsp;
+  <a href="#-faq"><b>FAQ</b></a> &nbsp;·&nbsp;
+  <a href="#-support"><b>Support</b></a>
 </p>
 
-<p align="center">
-  <a href="https://fmhy.net/audio#audio-players" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/available/fmhy/cozy.svg" alt="Featured on FMHY" height="55"/></a>
-</p>
+</div>
 
----
-
-## 🎵 What is Audion?
-
-Audion is a desktop and mobile player for the music you already own. Index your folders once, then get synced lyrics, smart queues, custom themes, plugins, and streaming to any device — all without an account, tracking, or a permanent internet connection.
-
-**In short:** your files, beautiful interface, nothing phoning home.
-
----
-
-## ✨ Features
-
-<table>
-  <tr>
-    <td width="50%" valign="top">
-
-#### Playback & Output
-- **Rock-solid playback** for FLAC, MP3, AAC, ALAC, Opus (native decoder) and more.
-- **Exclusive DAC output** on Windows (WASAPI) and Linux (ALSA) for bit-perfect audio, bypassing the OS mixer.
-- **Exclusive-mode & audiophile telemetry** — codec, bit depth, and sample rate in Stats for Nerds.
-- **Queue management** with shuffle, repeat, next-up reordering, and queue persistence.
-- **Cross-provider streaming handoff** — play from your library or a configured provider without changing apps.
-- **Android Auto** — browse, control, and queue from the car display, including cold start.
-
-    </td>
-    <td width="50%" valign="top">
-
-#### Library & Organization
-- **Automatic library scanning** with metadata extraction and incremental rescans.
-- **Smart playlists** and custom playlist management.
-- **Duplicate detection & merging**, with background audio-hash migration.
-- **Folder & format aware** organisation that scales to large libraries.
-- **Tracklist virtualization** for fast browsing on desktop and mobile.
-
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-
-#### Lyrics
-- **Synced lyrics** from LRCLIB.
-- **Karaoke-style word highlighting** in full screen and the lyric card.
-- **Cached offline** — lyrics you've loaded stay available without a connection.
-- **Export and share** lyric cards from desktop and mobile.
-
-    </td>
-    <td width="50%" valign="top">
-
-#### Customization
-- **Light, dark, or follow the system** — themes switch live with your OS appearance.
-- **Custom accent colors** and per-element color overrides.
-- **Skin Studio** with built-in and custom local skins.
-- **Artwork-driven theming** with a player bar matched to album art.
-- **Island mini-player** with a Dynamic Island-inspired floating or notch layout.
-- **Keyboard shortcuts** and full-screen mode.
-
-    </td>
-  </tr>
-  <tr>
-    <td width="50%" valign="top">
-
-#### Plugins & Providers
-- **JavaScript/WASM plugin system** with a built-in marketplace. [Learn more →](./PLUGINS.md)
-- **Human-readable plugin catalog** with categories (Streaming, Metadata, Lyrics, Library, Integration, Appearance, Utility) and capability badges.
-- **Provider management** in Settings with priority ordering and per-provider toggles.
-- **Stream, metadata, and lyrics providers** that bridge into the player.
-
-    </td>
-    <td width="50%" valign="top">
-
-#### Everywhere
-- **Windows, macOS, Linux (AppImage, Flatpak, AUR), and Android**.
-- **Per-ABI Android APKs** — `arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64` — plus a universal build.
-- **Self-hosted streaming** from your own Docker server.
-- **Scrobbling** to Last.fm and ListenBrainz, with an offline queue.
-- **Localized UI** in English, Russian, French, and Spanish.
-
-    </td>
-  </tr>
-</table>
+Audion is a desktop, mobile, and TV player for the music you already own. Index your folders once, then get synced lyrics, AutoMix crossfading, custom skins, plugins, and self-hosted streaming — all without an account, tracking, or a permanent internet connection.
 
 ---
 
@@ -127,39 +47,136 @@ Audion is a desktop and mobile player for the music you already own. Index your 
 <div align="center">
 
 ### Desktop
-<div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;">
-  <a href="https://github.com/user-attachments/assets/7aa5f266-6b36-47cc-930c-b56f3883acc0">
-    <img src="https://github.com/user-attachments/assets/878874db-8615-4881-b4c7-531d1d89874f" width="400" alt="Fullscreen Mode" style="border-radius: 8px; border: 1px solid #333;" />
-  </a>
-  <a href="https://github.com/user-attachments/assets/a67ec2d7-1859-4b86-bf20-0ba218e800e4">
-    <img src="https://github.com/user-attachments/assets/a67ec2d7-1859-4b86-bf20-0ba218e800e4" width="400" alt="Plugin Marketplace" style="border-radius: 8px; border: 1px solid #333;" />
-  </a>
-  <a href="https://github.com/user-attachments/assets/94164ad4-4783-474d-886f-4a407979d902">
-    <img src="https://github.com/user-attachments/assets/94164ad4-4783-474d-886f-4a407979d902" width="400" alt="Main Page" style="border-radius: 8px; border: 1px solid #333;" />
-  </a>
-  <a href="https://github.com/user-attachments/assets/65a86a0d-6d28-4bd6-9ce9-b68bfae54be7">
-    <img src="https://github.com/user-attachments/assets/65a86a0d-6d28-4bd6-9ce9-b68bfae54be7" width="400" alt="Home Page" style="border-radius: 8px; border: 1px solid #333;" />
-  </a>
-  <a href="https://github.com/user-attachments/assets/878874db-8615-4881-b4c7-531d1d89874f">
-    <img src="https://github.com/user-attachments/assets/7aa5f266-6b36-47cc-930c-b56f3883acc0" width="400" alt="Theme Selection" style="border-radius: 8px; border: 1px solid #333;" />
-  </a>
-</div>
+
+<table>
+  <tr>
+    <td width="50%">
+      <a href="promotional/Main_Desktop.png">
+        <img src="promotional/Main_Desktop.png" width="100%" alt="Audion Desktop Library" />
+      </a>
+    </td>
+    <td width="50%">
+      <a href="promotional/Fullscreen_Desktop.png">
+        <img src="promotional/Fullscreen_Desktop.png" width="100%" alt="Audion Desktop Fullscreen" />
+      </a>
+    </td>
+  </tr>
+</table>
 
 ### Mobile (Android)
-<div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;">
-  <a href="https://github.com/user-attachments/assets/74f38713-b645-4abc-bad8-a70793de0e87">
-    <img src="https://github.com/user-attachments/assets/74f38713-b645-4abc-bad8-a70793de0e87" width="240" alt="Android Library" style="border-radius: 8px; border: 1px solid #333;" />
-  </a>
-  <a href="https://github.com/user-attachments/assets/f3bc93c4-1b46-4fff-8226-dcc9c8622922">
-    <img src="https://github.com/user-attachments/assets/f3bc93c4-1b46-4fff-8226-dcc9c8622922" width="240" alt="Android Home" style="border-radius: 8px; border: 1px solid #333;" />
-  </a>
-  <a href="https://github.com/user-attachments/assets/583c41ea-3205-49bb-bb94-f59d168f7bdc">
-    <img src="https://github.com/user-attachments/assets/583c41ea-3205-49bb-bb94-f59d168f7bdc" width="240" alt="Android Fullscreen" style="border-radius: 8px; border: 1px solid #333;" />
-  </a>
-</div>
+
+<table>
+  <tr>
+    <td width="33%">
+      <a href="promotional/Main_Android.png">
+        <img src="promotional/Main_Android.png" width="100%" alt="Audion Android Home" />
+      </a>
+    </td>
+    <td width="33%">
+      <a href="promotional/Fullscreen_Android.png">
+        <img src="promotional/Fullscreen_Android.png" width="100%" alt="Audion Android Fullscreen" />
+      </a>
+    </td>
+    <td width="33%">
+      <a href="promotional/Stats_Android.png">
+        <img src="promotional/Stats_Android.png" width="100%" alt="Audion Android Stats" />
+      </a>
+    </td>
+  </tr>
+</table>
+
+### Tablet & TV
+
+<table>
+  <tr>
+    <td width="33%">
+      <a href="promotional/Main_TV_Tablet.png">
+        <img src="promotional/Main_TV_Tablet.png" width="100%" alt="Audion Tablet & TV Home" />
+      </a>
+    </td>
+    <td width="33%">
+      <a href="promotional/Library_TV_Tablet.png">
+        <img src="promotional/Library_TV_Tablet.png" width="100%" alt="Audion Tablet & TV Library" />
+      </a>
+    </td>
+    <td width="33%">
+      <a href="promotional/Fullscreen_TV_Tablet.png">
+        <img src="promotional/Fullscreen_TV_Tablet.png" width="100%" alt="Audion Tablet & TV Fullscreen" />
+      </a>
+    </td>
+  </tr>
+</table>
 
 <p><em>Click any screenshot to view full size</em></p>
+
 </div>
+
+---
+
+## ✨ Features
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <p><b>Playback & Output</b></p>
+      <p>
+        Rock-solid playback for FLAC, MP3, AAC, ALAC, Opus, and more. Includes
+        exclusive DAC output on Windows (WASAPI) and Linux (ALSA) for bit-perfect
+        audio, AutoMix crossfading, live codec/bit-depth/sample-rate telemetry in
+        Stats for Nerds, persistent queues, and Android Auto support.
+      </p>
+    </td>
+    <td width="50%" valign="top">
+      <p><b>Library & Organization</b></p>
+      <p>
+        Automatic library scanning with metadata extraction and incremental
+        rescans. Organize with smart playlists, duplicate detection and merging,
+        folder- and format-aware browsing, and virtualized tracklists built for
+        large collections on desktop and mobile.
+      </p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <p><b>Lyrics</b></p>
+      <p>
+        Synced lyrics from LRCLIB with karaoke-style word highlighting in
+        fullscreen mode and lyric cards. Loaded lyrics are cached offline
+        automatically, and you can export or share lyric cards from both desktop
+        and mobile.
+      </p>
+    </td>
+    <td width="50%" valign="top">
+      <p><b>Customization & Skins</b></p>
+      <p>
+        Light, dark, or system-matched themes with custom accent colors and
+        artwork-driven theming. Includes Skin Studio for built-in and local
+        skins, an Island mini-player, keyboard shortcuts, and responsive layouts
+        for desktop, mobile, tablet, and TV.
+      </p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <p><b>Plugins & Providers</b></p>
+      <p>
+        JavaScript/WASM plugin system with a built-in marketplace
+        (<a href="./PLUGINS.md">learn more</a>). Manage stream, metadata, and
+        lyrics providers in Settings with priority ordering, per-provider
+        toggles, and cross-provider handoff.
+      </p>
+    </td>
+    <td width="50%" valign="top">
+      <p><b>Everywhere & Private</b></p>
+      <p>
+        Available on Windows, macOS, Linux (AppImage, Flatpak, AUR), and
+        Android (per-ABI and universal APKs). Supports self-hosted Docker
+        streaming, Last.fm and ListenBrainz scrobbling with an offline queue,
+        and localization in English, Russian, French, and Spanish.
+      </p>
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -207,7 +224,7 @@ Virtual machines (VirtualBox, VMware, QEMU) and Flatpak/AppImage sandbox restric
 
 ### Android Notes
 
-Install builds only from the official Releases page, and enable "Install unknown apps" for whichever app you download the APK with. Individual per-ABI APKs are smaller; use the `universal` APK if you are unsure of your device architecture.
+Install builds only from the official Releases page, and enable "Install unknown apps" for whichever app you download the APK with. Individual per-ABI APKs (`arm64-v8a`, `armeabi-v7a`, `x86`, `x86_64`) are smaller; use the `universal` APK if you are unsure of your device architecture.
 
 ---
 
@@ -290,15 +307,45 @@ Install a single skill with `npx skills add dupitydumb/Audion-Skills --skill aud
 
 ## ❓ FAQ
 
-**Is Audion free?** Yes — free and open source under GPLv3. Donations are voluntary.
+<details>
+<summary><b>Is Audion free?</b></summary>
+<br>
 
-**Does it need an internet connection?** No. Playback, lyrics caching, and library management work fully offline. Network access is only needed for optional features such as online lyric sources, scrobbling, provider streaming, and updates.
+Yes — free and open source under GPLv3. Donations are voluntary.
 
-**Where is my music stored?** Wherever it already lives. Audion indexes your folders in place and never moves or re-encodes your files.
+</details>
 
-**Does it phone home?** No telemetry or tracking. Cloud sync and scrobbling are opt-in.
+<details>
+<summary><b>Does it need an internet connection?</b></summary>
+<br>
 
-**How do I request a feature or report a bug?** Open an [issue](https://github.com/dupitydumb/Audion/issues) or join the [Discord](https://discord.gg/27XRVQsBd9).
+No. Playback, lyrics caching, and library management work fully offline. Network access is only needed for optional features such as online lyric sources, scrobbling, provider streaming, and updates.
+
+</details>
+
+<details>
+<summary><b>Where is my music stored?</b></summary>
+<br>
+
+Wherever it already lives. Audion indexes your folders in place and never moves or re-encodes your files.
+
+</details>
+
+<details>
+<summary><b>Does it phone home?</b></summary>
+<br>
+
+No telemetry or tracking. Cloud sync and scrobbling are opt-in.
+
+</details>
+
+<details>
+<summary><b>How do I request a feature or report a bug?</b></summary>
+<br>
+
+Open an [issue](https://github.com/dupitydumb/Audion/issues) or join the [Discord](https://discord.gg/27XRVQsBd9).
+
+</details>
 
 ---
 
@@ -316,14 +363,13 @@ Contributions are welcome — translations, bug reports, plugins, and code.
 
 ## 💙 Support
 
-Audion is free and stays free. If it has earned a spot in your rotation:
-
-<p>
-  <a href="https://ko-fi.com/N4N5UMNR1"><img src="https://img.shields.io/badge/Ko--fi-Support-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support on Ko-fi"></a>
-  <a href="https://www.patreon.com/AudionPlayer"><img src="https://img.shields.io/badge/Patreon-Support-F96854?style=for-the-badge&logo=patreon&logoColor=white" alt="Support on Patreon"></a>
-</p>
-
-Support pays for hosting, development time, and code-signing certificates — nothing else.
+> [!NOTE]
+> Audion is free and stays free. Support pays for hosting, development time, and code-signing certificates — nothing else.
+>
+> <p>
+>   <a href="https://ko-fi.com/N4N5UMNR1"><img src="https://img.shields.io/badge/Ko--fi-Support-FF5E5B?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Support on Ko-fi"></a>
+>   <a href="https://www.patreon.com/AudionPlayer"><img src="https://img.shields.io/badge/Patreon-Support-F96854?style=for-the-badge&logo=patreon&logoColor=white" alt="Support on Patreon"></a>
+> </p>
 
 ---
 
@@ -333,7 +379,8 @@ Licensed under the **GNU General Public License v3.0 or later** (GPL-3.0-or-late
 
 Audion is an independent project: it hosts no media and is not affiliated with any streaming service it may integrate with through plugins.
 
----
+> [!TIP]
+> **Star the repo** to get notified about all new releases directly from GitHub.
 
 <p align="center">
   Built with <a href="https://tauri.app">Tauri</a> and <a href="https://svelte.dev">Svelte</a>
