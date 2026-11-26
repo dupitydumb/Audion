@@ -12,7 +12,7 @@
   <a href="https://github.com/dupitydumb/Audion/stargazers"><img src="https://img.shields.io/github/stars/dupitydumb/Audion?style=for-the-badge&logo=github&labelColor=0d1117" alt="Stars"></a>
   <a href="https://github.com/dupitydumb/Audion/blob/master/LICENSE"><img src="https://img.shields.io/github/license/dupitydumb/Audion?style=for-the-badge&labelColor=0d1117" alt="License"></a>
   <a href="https://aur.archlinux.org/packages/audion-bin"><img src="https://img.shields.io/aur/version/audion-bin?style=for-the-badge&logo=arch-linux&labelColor=0d1117" alt="AUR"></a>
-  <a href="https://discord.gg/27XRVQsBd9"><img src="https://img.shields.io/discord/1234567890?style=for-the-badge&color=5865F2&labelColor=0d1117&logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://discord.gg/27XRVQsBd9"><img src="https://img.shields.io/discord/1459798744806592568?style=for-the-badge&color=5865F2&labelColor=0d1117&logo=discord&logoColor=white&label=Discord" alt="Discord"></a>
 </p>
 
 <p>
@@ -20,10 +20,11 @@
 </p>
 
 <p>
-  <img src="https://img.shields.io/badge/platform-Windows-brightgreen.svg" alt="Windows">
-  <img src="https://img.shields.io/badge/platform-macOS-brightgreen.svg" alt="macOS">
-  <img src="https://img.shields.io/badge/platform-Linux-brightgreen.svg" alt="Linux">
-  <img src="https://img.shields.io/badge/platform-Android-brightgreen.svg" alt="Android">
+  <a href="#-download"><img src="https://img.shields.io/badge/Windows-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows"></a>
+  <a href="#-download"><img src="https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white" alt="macOS"></a>
+  <a href="#-download"><img src="https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux"></a>
+  <a href="#-download"><img src="https://img.shields.io/badge/Android-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android"></a>
+  <a href="#-download"><img src="https://img.shields.io/badge/Android%20TV-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android TV"></a>
 </p>
 
 <p>
