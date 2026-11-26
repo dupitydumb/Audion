@@ -14,6 +14,7 @@
   } from "$lib/services/native-audio";
   import { getAudioExclusiveCapability, type ExclusiveCapability } from "$lib/api/tauri";
   import { html5SetReplayGainEnabled } from "$lib/services/html5-audio";
+  import { isStatsForNerdsOpen } from "$lib/stores/ui";
   import Icon from "$lib/components/Icon.svelte";
   import { onMount } from "svelte";
   import { createEventDispatcher } from "svelte";
@@ -439,6 +440,20 @@
           on:change={(e) => equalizer.setEnabled(e.detail)}
         />
       </div>
+    </SettingRow>
+
+    <SettingRow
+      id="setting-audion-chain"
+      label={$_('audionChain.title', { default: 'Audion Chain' })}
+      description={$_('audionChain.subtitle', { default: 'Inspect the live audio signal path and bit-perfect verdict.' })}
+    >
+      <button
+        type="button"
+        class="refresh-btn"
+        on:click={() => isStatsForNerdsOpen.set(true)}
+      >
+        {$_('audionChain.openButton', { default: 'Inspect Chain' })}
+      </button>
     </SettingRow>
   </div>
 </section>

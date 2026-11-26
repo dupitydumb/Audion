@@ -1,3 +1,4 @@
+pub mod chain;
 pub mod decision;
 pub mod directive;
 pub mod dsp;
@@ -20,6 +21,7 @@ pub mod worker;
 mod tests_native_playback;
 
 // Re-export key types that lib.rs / other modules use
+pub use chain::AudionChain;
 pub use dsp::EqSettings;
 pub use mod_types::{AudioDeviceInfo, AudioEvent, AudioTelemetry, DeviceList};
 pub use player::PlayerStateSync;
@@ -372,6 +374,16 @@ pub fn audio_get_telemetry(state: State<'_, PlaybackStateSync>) -> Result<AudioT
         .lock()
         .map(|t| t.clone())
         .map_err(|_| "Telemetry lock poisoned".into())
+}
+
+#[tauri::command]
+pub fn get_audio_chain(state: State<'_, PlaybackStateSync>) -> Result<AudionChain, String> {
+    let t = state
+        .telemetry
+        .lock()
+        .map(|t| t.clone())
+        .map_err(|_| "Telemetry lock poisoned".to_string())?;
+    Ok(AudionChain::from_telemetry(&t))
 }
 
 #[tauri::command]

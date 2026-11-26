@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use crossbeam::channel::{unbounded, Receiver, Sender};
 use tauri::Emitter;
 
+use super::chain::AudionChain;
 use super::dsp::EqSettings;
 use super::event_bridge;
 use super::mod_types::{AudioEvent, AudioTelemetry, DeviceList, ExclusiveStatus};
@@ -141,13 +142,24 @@ impl PlaybackStateSync {
 
             // engine-owned fields win over whatever the per-track telemetry says
             let publish_engine_telemetry = |engine: &AudioEngine| {
-                if let Some(mut t) = engine.decision.current_telemetry() {
+                let mut snapshot = if let Some(mut t) = engine.decision.current_telemetry() {
                     engine.apply_telemetry(&mut t);
                     if let Ok(mut lock) = telemetry_clone.lock() {
-                        *lock = t;
+                        *lock = t.clone();
                     }
+                    Some(t)
                 } else if let Ok(mut lock) = telemetry_clone.lock() {
                     engine.apply_telemetry(&mut lock);
+                    Some(lock.clone())
+                } else {
+                    None
+                };
+
+                if let Some(t) = snapshot.take() {
+                    if let Some(app_handle) = event_bridge::get_app_handle() {
+                        let chain = AudionChain::from_telemetry(&t);
+                        let _ = app_handle.emit("audio_chain_updated", &chain);
+                    }
                 }
             };
 
@@ -320,23 +332,31 @@ impl PlaybackStateSync {
                                     tracing::warn!("[AUDIO] seek_absolute error: {}", e);
                                 }
                             }
-                            AudioCommand::SetVolume(v) => engine.set_volume(v),
+                            AudioCommand::SetVolume(v) => {
+                                engine.set_volume(v);
+                                publish_engine_telemetry(engine);
+                            }
                             AudioCommand::SetEq(s) => {
                                 eq_settings = s.clone();
                                 engine.set_eq(&s);
+                                publish_engine_telemetry(engine);
                             }
                             AudioCommand::SetRepeatOne(v) => engine.set_repeat_one(v),
                             AudioCommand::SetReplayGainEnabled(v) => {
                                 engine.set_replay_gain_enabled(v);
+                                publish_engine_telemetry(engine);
                             }
                             AudioCommand::SetLimiterEnabled(v) => {
                                 engine.set_limiter_enabled(v);
+                                publish_engine_telemetry(engine);
                             }
                             AudioCommand::SetSkipSilence(v) => {
                                 engine.set_skip_silence_enabled(v);
+                                publish_engine_telemetry(engine);
                             }
                             AudioCommand::SetAutomix(v) => {
                                 engine.set_automix_enabled(v);
+                                publish_engine_telemetry(engine);
                             }
                             AudioCommand::SetExclusiveMode { enabled, reply } => {
                                 let result = if enabled {
@@ -409,6 +429,7 @@ impl PlaybackStateSync {
                             }
                             AudioCommand::SetCrossfadeSeconds(secs) => {
                                 engine.set_crossfade_seconds(secs);
+                                publish_engine_telemetry(engine);
                             }
                             AudioCommand::TriggerCrossfade => {
                                 engine.trigger_crossfade();

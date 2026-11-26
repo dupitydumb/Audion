@@ -1293,5 +1293,15 @@
     "artist": "Artist",
     "playAll": "Play All",
     "library": "Subsonic Library"
+  },
+  "audionChain": {
+    "title": "Audion Chain",
+    "subtitle": "Live audio signal path",
+    "verdictBitPerfect": "Bit-Perfect",
+    "verdictLossless": "Lossless",
+    "verdictProcessed": "Processed",
+    "reasonsLabel": "Signal path notes",
+    "empty": "Play a track to inspect its live signal path.",
+    "openButton": "Inspect Chain"
   }
 }

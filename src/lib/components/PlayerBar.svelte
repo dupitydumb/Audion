@@ -29,6 +29,7 @@
         isFullScreen,
         toggleFullScreen,
         isQueueVisible,
+        isStatsForNerdsOpen,
         toggleQueue,
         toggleMiniPlayer,
     } from "$lib/stores/ui";
@@ -676,12 +677,17 @@
             <div class="plugin-slot" bind:this={slotEnd}></div>
 
             <div class="utility-controls utility-controls-desktop">
-                <!-- Backend indicator -->
-                {#if $activeBackend === 'native'}
-                    <span class="backend-badge native" title={$_('player.nativeAudioBackend')}>N</span>
-                {:else if $activeBackend === 'html5'}
-                    <span class="backend-badge html5" title={$_('player.html5AudioBackend')}>H</span>
-                {/if}
+                <button
+                    class="icon-btn"
+                    class:active={$isStatsForNerdsOpen}
+                    on:click={() => isStatsForNerdsOpen.update((v) => !v)}
+                    title={$_('audionChain.title', { default: 'Audion Chain' })}
+                    aria-label={$_('audionChain.title', { default: 'Audion Chain' })}
+                >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M3 12h3l2-6 4 12 3-8 2 2h4" />
+                    </svg>
+                </button>
                 <!-- Connect button moved into utility group -->
                 <button
                     class="icon-btn connect-btn"
@@ -1584,32 +1590,6 @@
         }
     }
 
-
-    /* Backend indicator badge */
-    .backend-badge {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 0.6rem;
-        font-weight: 700;
-        letter-spacing: 0.04em;
-        width: 16px;
-        height: 16px;
-        border-radius: 3px;
-        flex-shrink: 0;
-        line-height: 1;
-        opacity: 0.6;
-        transition: opacity 0.2s;
-    }
-    .backend-badge:hover {
-        opacity: 1;
-    }
-    .backend-badge.native,
-    .backend-badge.html5 {
-        color: var(--text-on-player, var(--text-subdued));
-        background: none;
-        border: 1px solid currentColor;
-    }
 
     /* LIVE badge */
     .live-badge {

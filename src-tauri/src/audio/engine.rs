@@ -131,6 +131,8 @@ pub struct AudioEngine {
     pub output_label: String,
     /// id of the opened device, reused by every rebuild
     pub selected_device_id: Option<String>,
+    pub shared_backend: String,
+    pub shared_format: Option<String>,
 }
 
 /// what the engine is asked to open
@@ -153,6 +155,17 @@ fn attach_chain(
         #[cfg(target_os = "windows")]
         OutputSink::Wasapi(sink) => sink.attach(Box::new(source)),
         OutputSink::Closed => Err("Audio output is closed".to_string()),
+    }
+}
+
+fn cpal_sample_format_label(fmt: cpal::SampleFormat) -> String {
+    match fmt {
+        cpal::SampleFormat::F32 => "f32le".to_string(),
+        cpal::SampleFormat::F64 => "f64le".to_string(),
+        cpal::SampleFormat::I16 => "s16le".to_string(),
+        cpal::SampleFormat::I24 => "s24le".to_string(),
+        cpal::SampleFormat::I32 => "s32le".to_string(),
+        other => format!("{:?}", other).to_ascii_lowercase(),
     }
 }
 
@@ -286,6 +299,8 @@ impl AudioEngine {
         let mut exclusive_error = None;
         let mut exclusive_backend = None;
         let mut exclusive_format = None;
+        let shared_backend = format!("{} (Shared)", host.id().name());
+        let mut shared_format: Option<String> = None;
 
         let (output, device_sample_rate, device_channels, selected_device_id) =
             match mode {
@@ -295,6 +310,7 @@ impl AudioEngine {
                         preferred_device_id.as_deref(),
                         &all_devices,
                     )?;
+                    shared_format = Some(cpal_sample_format_label(config.sample_format()));
                     (
                         OutputSink::Shared(sink),
                         NonZero::new(config.sample_rate()).ok_or("Device reported sample rate of 0")?,
@@ -325,6 +341,7 @@ impl AudioEngine {
                                 preferred_device_id.as_deref(),
                                 &all_devices,
                             )?;
+                            shared_format = Some(cpal_sample_format_label(config.sample_format()));
                             (
                                 OutputSink::Shared(sink),
                                 NonZero::new(config.sample_rate()).ok_or("Device reported sample rate of 0")?,
@@ -443,6 +460,8 @@ impl AudioEngine {
                 output,
                 output_label,
                 selected_device_id,
+                shared_backend,
+                shared_format,
             },
             event_rx,
             gated_worker_rx,
@@ -795,6 +814,25 @@ impl AudioEngine {
         t.exclusive_backend = self.exclusive_backend.clone();
         t.exclusive_format = self.exclusive_format.clone();
         t.exclusive_error = self.exclusive_error.clone();
+        t.shared_backend = Some(self.shared_backend.clone());
+        t.shared_format = self.shared_format.clone();
+        t.eq_enabled = self.eq_settings.enabled && !self.exclusive_active;
+        t.eq_active = t.eq_enabled
+            && (self.eq_settings.preamp_db.abs() > 0.01
+                || self.eq_settings.bands.iter().any(|b| b.gain.abs() > 0.01));
+        t.replay_gain_enabled =
+            self.replay_gain_enabled.load(Ordering::Relaxed) && !self.exclusive_active;
+        t.skip_silence_enabled =
+            self.skip_silence_enabled.load(Ordering::Relaxed) && !self.exclusive_active;
+        t.automix_enabled =
+            self.automix_enabled.load(Ordering::Relaxed) && !self.exclusive_active;
+        t.crossfade_seconds = if self.exclusive_active {
+            0
+        } else {
+            self.user_crossfade_seconds
+        };
+        t.crossfade_active = !self.exclusive_active && self.fading_out.is_some();
+        t.volume = self.volume;
     }
 
     /// nothing is playing; schedule the exclusive stream for release

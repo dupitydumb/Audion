@@ -29,6 +29,16 @@ pub struct AudioTelemetry {
     pub exclusive_backend: Option<String>,
     pub exclusive_format: Option<String>,
     pub exclusive_error: Option<String>,
+    pub shared_backend: Option<String>,
+    pub shared_format: Option<String>,
+    pub eq_enabled: bool,
+    pub eq_active: bool,
+    pub replay_gain_enabled: bool,
+    pub skip_silence_enabled: bool,
+    pub automix_enabled: bool,
+    pub crossfade_seconds: u32,
+    pub crossfade_active: bool,
+    pub volume: f32,
 }
 
 impl Default for AudioTelemetry {
@@ -52,6 +62,16 @@ impl Default for AudioTelemetry {
             exclusive_backend: None,
             exclusive_format: None,
             exclusive_error: None,
+            shared_backend: None,
+            shared_format: None,
+            eq_enabled: false,
+            eq_active: false,
+            replay_gain_enabled: true,
+            skip_silence_enabled: false,
+            automix_enabled: false,
+            crossfade_seconds: 0,
+            crossfade_active: false,
+            volume: 1.0,
         }
     }
 }

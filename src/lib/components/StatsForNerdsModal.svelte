@@ -8,6 +8,7 @@
   import { currentTrack, activeBackend, isPlaying, currentTime, duration } from "$lib/stores/player";
   import { isStatsForNerdsOpen } from "$lib/stores/ui";
   import Icon from "$lib/components/Icon.svelte";
+  import AudionChain from "$lib/components/AudionChain.svelte";
   import { providerTelemetryStore, globalProviders, type ProviderTelemetryEntry } from "$lib/plugins/providers";
 
   export let open: boolean = false;
@@ -223,7 +224,7 @@
           on:click|stopPropagation={() => activeTab = 'audio'}
         >
           <Icon name="info" size={12} />
-          <span>Audio Engine</span>
+          <span>Audion Chain</span>
         </button>
         <button
           type="button"
@@ -240,171 +241,10 @@
         </button>
       </div>
 
-      <!-- Tab Panel 1: Live Specs Table -->
+      <!-- Tab Panel 1: Audion Chain Signal Path -->
       {#if activeTab === 'audio'}
         <div id="panel-audio" role="tabpanel" aria-labelledby="tab-audio" class="hud-body">
-          <!-- Playback State & Clock -->
-          <div class="hud-row">
-            <span class="hud-label">Playback</span>
-            <span class="hud-val mono-val">
-              {#if $isPlaying}
-                <span class="ok-val">Playing</span> ({formatTime($currentTime)} / {formatTime(totalDurationSec)})
-              {:else if $currentTrack}
-                <span class="warn-val">Paused</span> ({formatTime($currentTime)} / {formatTime(totalDurationSec)})
-              {:else}
-                <span class="text-subdued">Stopped (Idle)</span>
-              {/if}
-            </span>
-          </div>
-
-          <!-- Track Title / Path -->
-          {#if $currentTrack}
-            <div class="hud-row">
-              <span class="hud-label">Track</span>
-              <span class="hud-val truncate" title="{$currentTrack.title} — {$currentTrack.artist}">
-                {$currentTrack.title} — {$currentTrack.artist}
-              </span>
-            </div>
-          {/if}
-
-          <!-- Audio Backend -->
-          <div class="hud-row">
-            <span class="hud-label">Backend</span>
-            <span class="hud-val accent-val">
-              {backendLabel}
-            </span>
-          </div>
-
-          <!-- Codec & Container -->
-          <div class="hud-row">
-            <span class="hud-label">Codec</span>
-            <span class="hud-val pill-val highlight">
-              {resolvedCodec}
-            </span>
-          </div>
-
-          <!-- Bit Depth -->
-          <div class="hud-row">
-            <span class="hud-label">Bit Depth</span>
-            <span class="hud-val mono-val">
-              {resolvedBitDepth}
-            </span>
-          </div>
-
-          <!-- Source Sample Rate -->
-          <div class="hud-row">
-            <span class="hud-label">Source Rate</span>
-            <span class="hud-val mono-val">
-              {#if live && telemetry?.sample_rate}
-                {formatSampleRate(telemetry.sample_rate)}
-              {:else}
-                <span class="text-subdued">—</span>
-              {/if}
-            </span>
-          </div>
-
-          <!-- Device Output Rate -->
-          <div class="hud-row">
-            <span class="hud-label">Output Clock</span>
-            <span class="hud-val mono-val">
-              {#if live && telemetry?.device_sample_rate}
-                {formatSampleRate(telemetry.device_sample_rate)}
-              {:else}
-                <span class="text-subdued">—</span>
-              {/if}
-            </span>
-          </div>
-
-          <!-- Resampler Status -->
-          <div class="hud-row">
-            <span class="hud-label">Resampling</span>
-            {#if !live || !telemetry}
-              <span class="hud-val text-subdued">—</span>
-            {:else if telemetry.resampler_active}
-              <span class="hud-val warn-val">
-                Rubato FFT ({telemetry.sample_rate} → {telemetry.device_sample_rate} Hz)
-              </span>
-            {:else}
-              <span class="hud-val ok-val">Direct (No Resample)</span>
-            {/if}
-          </div>
-
-          <!-- Channels -->
-          <div class="hud-row">
-            <span class="hud-label">Channels</span>
-            <span class="hud-val mono-val">
-              {#if live && telemetry?.channels}
-                {telemetry.channels} {telemetry.channels === 1 ? '(Mono)' : telemetry.channels === 2 ? '(Stereo)' : `(${telemetry.channels}ch)`}
-              {:else}
-                <span class="text-subdued">—</span>
-              {/if}
-            </span>
-          </div>
-
-          <!-- Bitrate -->
-          {#if $currentTrack?.bitrate}
-            <div class="hud-row">
-              <span class="hud-label">Bitrate</span>
-              <span class="hud-val mono-val">{$currentTrack.bitrate} kbps</span>
-            </div>
-          {/if}
-
-          <!-- Safety Limiter -->
-          <div class="hud-row">
-            <span class="hud-label">Peak Limiter</span>
-            <span class="hud-val mono-val">
-              {#if telemetry}
-                {telemetry.limiter_enabled ? 'Active (Lookahead Safety)' : 'Bypassed'}
-              {:else}
-                <span class="text-subdued">—</span>
-              {/if}
-            </span>
-          </div>
-
-          <!-- ReplayGain -->
-          <div class="hud-row">
-            <span class="hud-label">ReplayGain</span>
-            <span class="hud-val mono-val">
-              {#if telemetry?.replay_gain_db != null}
-                {telemetry.replay_gain_db > 0 ? '+' : ''}{telemetry.replay_gain_db.toFixed(1)} dB
-              {:else if telemetry}
-                None applied
-              {:else}
-                <span class="text-subdued">—</span>
-              {/if}
-            </span>
-          </div>
-
-          <!-- Active Sink -->
-          <div class="hud-row">
-            <span class="hud-label">Output Device</span>
-            <span class="hud-val truncate mono-val">
-              {outputDeviceLabel}
-            </span>
-          </div>
-
-          <!-- Exclusive DAC -->
-          <div class="hud-row">
-            <span class="hud-label">Exclusive Access</span>
-            <span class="hud-val mono-val">
-              {#if !telemetry}
-                <span class="text-subdued">—</span>
-              {:else if telemetry.exclusive_active}
-                <span class="ok-val">Active</span>
-                {telemetry.exclusive_backend ? `— ${telemetry.exclusive_backend}` : ''}
-                {telemetry.exclusive_format ? `(${telemetry.exclusive_format})` : ''}
-              {:else if telemetry.exclusive_suspended}
-                <span class="warn-val">Suspended</span>
-                — {telemetry.exclusive_error ?? 'released after pause'}
-              {:else if telemetry.exclusive_error}
-                <span class="warn-val">Unavailable</span> — {telemetry.exclusive_error}
-              {:else if !telemetry.exclusive_supported}
-                <span class="text-subdued">Not supported on this platform</span>
-              {:else}
-                <span class="text-subdued">Off</span>
-              {/if}
-            </span>
-          </div>
+          <AudionChain />
         </div>
       {:else}
         <!-- Tab Panel 2: Providers Matrix -->
