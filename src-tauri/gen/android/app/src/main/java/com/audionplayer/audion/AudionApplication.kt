@@ -7,7 +7,7 @@ class AudionApplication : Application() {
         super.onCreate()
         try {
             System.loadLibrary("c++_shared")
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             // Handle error - this might happen if the library isn't bundled or on very old devices
         }
         try {
