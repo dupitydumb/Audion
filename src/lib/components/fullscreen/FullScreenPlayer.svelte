@@ -64,6 +64,7 @@
   import LyricCardModal from "../LyricCardModal.svelte";
   import Icon from "$lib/components/Icon.svelte";
   import AudioQualityBadge from "$lib/components/AudioQualityBadge.svelte";
+  import { appSettings } from "$lib/stores/settings";
 
   let showMeshSettings = false;
   let showLyricCardModal = false;
@@ -675,6 +676,14 @@
                 >
                   <div class="progress-shimmer"></div>
                 </div>
+                {#if $duration > 15 && $appSettings?.crossfadeSeconds > 0}
+                  {@const automixPct = Math.min(30, ($appSettings.crossfadeSeconds / $duration) * 100)}
+                  <div
+                    class="automix-cue-zone"
+                    style="width: {automixPct}%;"
+                    title="Automix Handoff Zone ({$appSettings.crossfadeSeconds}s)"
+                  ></div>
+                {/if}
               </div>
               <div
                 class="progress-thumb"
@@ -1795,6 +1804,17 @@
     overflow: hidden;
     position: relative;
     transition: height 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .mobile-view .automix-cue-zone {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    background: linear-gradient(to right, transparent, color-mix(in srgb, var(--accent-primary) 42%, transparent));
+    border-left: 1.5px solid color-mix(in srgb, var(--accent-primary) 80%, #ffffff);
+    pointer-events: none;
+    border-radius: 0 9999px 9999px 0;
   }
 
   .mobile-view .progress-track.loading::after {

@@ -8,6 +8,7 @@
     shuffle,
     repeat,
     isPlaying,
+    isTrackLoading,
     volume,
     toggleShuffle,
     previousTrack,
@@ -19,6 +20,7 @@
   } from "$lib/stores/player";
   import Icon from "$lib/components/Icon.svelte";
   import { formatDuration } from "$lib/api/tauri";
+  import { appSettings } from "$lib/stores/settings";
 
   let isSeeking = false;
 
@@ -114,6 +116,7 @@
   <div class="desktop-progress-container">
     <div
       class="desktop-progress-bar"
+      class:active-seeking={isSeeking}
       on:pointerdown={handleSeekPointerDown}
       on:pointermove={handleSeekPointerMove}
       on:pointerup={handleSeekPointerUp}
@@ -126,11 +129,21 @@
       aria-valuemax="100"
       tabindex="0"
     >
-      <div class="progress-track">
+      <div class="progress-track" class:loading={$isTrackLoading}>
         <div
           class="progress-fill"
           style="width: {$progress * 100}%"
-        ></div>
+        >
+          <div class="progress-shimmer"></div>
+        </div>
+        {#if $duration > 15 && $appSettings?.crossfadeSeconds > 0}
+          {@const automixPct = Math.min(30, ($appSettings.crossfadeSeconds / $duration) * 100)}
+          <div
+            class="automix-cue-zone"
+            style="width: {automixPct}%;"
+            title="Automix Handoff Zone ({$appSettings.crossfadeSeconds}s)"
+          ></div>
+        {/if}
       </div>
       <div
         class="progress-thumb-dot"
@@ -269,7 +282,7 @@
 
   .desktop-progress-bar {
     width: 100%;
-    height: 20px;
+    height: 24px;
     display: flex;
     align-items: center;
     position: relative;
@@ -283,36 +296,107 @@
     height: 4px;
     background: var(--fs-surface-hover, rgba(255, 255, 255, 0.2));
     overflow: hidden;
-    border-radius: 2px;
+    border-radius: 9999px;
+    position: relative;
+    transition: height 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .automix-cue-zone {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    background: linear-gradient(to right, transparent, color-mix(in srgb, var(--accent-primary) 42%, transparent));
+    border-left: 1.5px solid color-mix(in srgb, var(--accent-primary) 80%, #ffffff);
+    pointer-events: none;
+    border-radius: 0 9999px 9999px 0;
+  }
+
+  .desktop-progress-bar:hover .progress-track,
+  .desktop-progress-bar.active-seeking .progress-track {
+    height: 8px;
+  }
+
+  .progress-track.loading::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--accent-primary) 65%, transparent) 50%,
+      transparent 100%
+    );
+    animation: fs-desktop-loading-shimmer 1.15s ease-in-out infinite;
   }
 
   .progress-fill {
     height: 100%;
-    background: var(--fs-text, #ffffff);
-    border-radius: 2px;
-    transition: width 0.1s linear;
+    background: linear-gradient(
+      90deg,
+      var(--accent-primary) 0%,
+      color-mix(in srgb, var(--accent-primary) 70%, var(--fs-text, #ffffff)) 50%,
+      var(--accent-primary) 100%
+    );
+    background-size: 200% 100%;
+    border-radius: 9999px;
+    position: relative;
+    transition: width 100ms linear;
   }
 
-  .desktop-progress-bar:hover .progress-fill {
-    background: var(--fs-text, #ffffff);
+  .desktop-progress-bar.active-seeking .progress-fill {
+    transition: none;
+  }
+
+  .progress-shimmer {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255, 255, 255, 0.28) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    animation: fs-desktop-shimmer-sheen 3.2s infinite linear;
+  }
+
+  @keyframes fs-desktop-shimmer-sheen {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+
+  @keyframes fs-desktop-loading-shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
   }
 
   .progress-thumb-dot {
-    width: 10px;
-    height: 10px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     background: var(--fs-text, #ffffff);
     position: absolute;
     top: 50%;
-    transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%) scale(1);
     pointer-events: none;
-    box-shadow: var(--shadow-sm);
-    transition: box-shadow 0.2s ease, transform 0.2s ease;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.5), 0 0 8px var(--accent-primary);
+    transition: transform 180ms var(--ease-spring-snappy, cubic-bezier(0.34, 1.56, 0.64, 1)),
+                box-shadow 180ms ease;
   }
 
-  .desktop-progress-bar:hover .progress-thumb-dot {
-    box-shadow: 0 0 16px var(--accent-primary);
-    transform: translate(-50%, -50%) scale(1.4);
+  .desktop-progress-bar:hover .progress-thumb-dot,
+  .desktop-progress-bar.active-seeking .progress-thumb-dot {
+    box-shadow: 0 0 14px rgba(0, 0, 0, 0.6), 0 0 12px var(--accent-primary);
+    transform: translate(-50%, -50%) scale(1.42);
   }
 
   .time-row {

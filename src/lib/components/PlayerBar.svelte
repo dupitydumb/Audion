@@ -653,7 +653,9 @@
                             <div
                                 class="progress-fill"
                                 style="width: {displayProgress * 100}%"
-                            ></div>
+                            >
+                                <div class="progress-shimmer"></div>
+                            </div>
                             {#if $duration > 15 && $appSettings?.crossfadeSeconds > 0}
                                 {@const automixPct = Math.min(30, ($appSettings.crossfadeSeconds / $duration) * 100)}
                                 <div
@@ -1493,11 +1495,17 @@
 
     .progress-track {
         width: 100%;
-        height: 7px;
+        height: 4px;
         background-color: var(--bg-highlight);
         border-radius: var(--radius-full);
         overflow: hidden;
         position: relative;
+        transition: height 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    .progress-bar:not(.live-bar):hover .progress-track,
+    .progress-bar:not(.live-bar).seeking .progress-track {
+        height: 8px;
     }
 
     .automix-cue-zone {
@@ -1505,7 +1513,8 @@
         right: 0;
         top: 0;
         bottom: 0;
-        background: linear-gradient(to right, transparent, rgba(29, 185, 84, 0.4));
+        background: linear-gradient(to right, transparent, color-mix(in srgb, var(--accent-primary) 42%, transparent));
+        border-left: 1.5px solid color-mix(in srgb, var(--accent-primary) 80%, #ffffff);
         pointer-events: none;
         border-radius: 0 var(--radius-full) var(--radius-full) 0;
     }
@@ -1524,6 +1533,39 @@
         background-color: var(--text-on-player, var(--text-secondary));
         border-radius: var(--radius-full);
         transition: background-color var(--transition-fast);
+    }
+
+    .progress-bar:not(.live-bar) .progress-fill {
+        background: linear-gradient(
+            90deg,
+            var(--accent-primary) 0%,
+            color-mix(in srgb, var(--accent-primary) 70%, var(--text-primary)) 50%,
+            var(--accent-primary) 100%
+        );
+        background-size: 200% 100%;
+        position: relative;
+    }
+
+    .progress-shimmer {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+            90deg,
+            transparent 0%,
+            rgba(255, 255, 255, 0.28) 50%,
+            transparent 100%
+        );
+        background-size: 200% 100%;
+        animation: playerbar-shimmer-sheen 3.2s infinite linear;
+    }
+
+    @keyframes playerbar-shimmer-sheen {
+        0% {
+            background-position: 200% 0;
+        }
+        100% {
+            background-position: -200% 0;
+        }
     }
 
     .progress-bar:not(.seeking) .progress-fill {
@@ -1548,14 +1590,17 @@
         background-color: var(--text-primary);
         border-radius: var(--radius-full);
         transform: translateX(-50%) scale(0);
-        transition: transform var(--transition-fast);
-        box-shadow: var(--shadow-md);
+        transition: transform 180ms var(--ease-spring-snappy, cubic-bezier(0.34, 1.56, 0.64, 1)),
+                    box-shadow 180ms ease;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.5), 0 0 8px var(--accent-primary);
+        pointer-events: none;
     }
 
     .progress-bar:hover .progress-thumb,
+    .progress-bar.seeking .progress-thumb,
     .volume-bar:hover .volume-thumb {
         transform: translateX(-50%) scale(1.25);
-        box-shadow: 0 0 12px var(--accent-primary);
+        box-shadow: 0 0 14px rgba(0, 0, 0, 0.6), 0 0 12px var(--accent-primary);
     }
 
     /* Floating glass pill tooltips */
