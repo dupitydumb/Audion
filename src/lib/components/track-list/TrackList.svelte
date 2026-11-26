@@ -1829,8 +1829,13 @@
     padding-left: var(--spacing-lg);
     align-items: center;
     border-radius: var(--radius-md);
-    transition: background-color var(--transition-fast);
+    transition: background-color var(--transition-fast),
+                transform 120ms var(--ease-spring-snappy);
     width: 100%; text-align: left; height: 50px; box-sizing: border-box;
+  }
+  :global(.track-row:active:not(.dragging):not(.unavailable)) {
+    transform: scaleX(0.995) scaleY(0.97);
+    transform-origin: left center;
   }
   :global(.track-row.has-details) { height: 68px; }
   .list-body.with-drag :global(.track-row) { grid-template-columns: 32px 40px 1fr 1fr 80px 140px; }

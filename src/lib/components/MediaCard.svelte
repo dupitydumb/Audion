@@ -185,7 +185,8 @@
     background-color: var(--bg-elevated);
     border-radius: var(--radius-md);
     padding: var(--spacing-md);
-    transition: background-color var(--transition-normal);
+    transition: background-color var(--transition-normal),
+                transform var(--transition-fast) var(--ease-spring-snappy);
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -199,6 +200,9 @@
 
   .media-card:hover {
     background-color: var(--bg-surface);
+  }
+  .media-card:active {
+    transform: scale(0.97);
   }
   .media-card.now-playing {
     background-color: var(--accent-subtle);

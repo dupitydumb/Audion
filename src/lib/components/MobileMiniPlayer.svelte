@@ -1,6 +1,6 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
-  import { fly } from "svelte/transition";
+  import { fade, fly } from "svelte/transition";
   import ArtistLinks from "$lib/components/ArtistLinks.svelte";
   import { goToArtistDetail } from "$lib/stores/view";
   import {
@@ -175,17 +175,21 @@
     <div class="mini-player-content">
       <div class="track-info-group">
         <div class="mini-cover">
-          {#if albumArt && !imageLoadFailed}
-            <img
-              src={albumArt}
-              alt="Cover art"
-              on:error={() => (imageLoadFailed = true)}
-            />
-          {:else}
-            <div class="cover-placeholder">
-              <Icon name="music" size={16} />
+          {#key $currentTrack?.id}
+            <div class="mini-cover-inner" in:fade={{ duration: 200 }} out:fade={{ duration: 150 }}>
+              {#if albumArt && !imageLoadFailed}
+                <img
+                  src={albumArt}
+                  alt="Cover art"
+                  on:error={() => (imageLoadFailed = true)}
+                />
+              {:else}
+                <div class="cover-placeholder">
+                  <Icon name="music" size={16} />
+                </div>
+              {/if}
             </div>
-          {/if}
+          {/key}
         </div>
         <div class="track-text">
           <div class="track-title-row">
@@ -378,6 +382,7 @@
   }
 
   .mini-cover {
+    position: relative;
     width: 40px;
     height: 40px;
     border-radius: var(--radius-sm);
@@ -385,6 +390,13 @@
     flex-shrink: 0;
     background: var(--bg-surface);
     box-shadow: var(--shadow-sm);
+  }
+
+  .mini-cover-inner {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
   }
 
   .mini-cover img {

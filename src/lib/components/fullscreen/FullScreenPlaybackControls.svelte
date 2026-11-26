@@ -1,5 +1,7 @@
 <script lang="ts">
   import { get } from "svelte/store";
+  import { scale } from "svelte/transition";
+  import { backOut } from "svelte/easing";
   import {
     progress,
     currentTime,
@@ -149,7 +151,11 @@
       on:click={toggleShuffle}
       aria-label="Shuffle"
     >
-      <Icon name="shuffle" size={18} />
+      {#key $shuffle}
+        <span class="icon-pop" in:scale={{ start: 0.72, duration: 150, easing: backOut }}>
+          <Icon name="shuffle" size={18} />
+        </span>
+      {/key}
     </button>
     <button
       class="control-btn secondary"
@@ -178,7 +184,11 @@
       on:click={cycleRepeat}
       aria-label="Repeat"
     >
-      <Icon name={$repeat === "one" ? "repeat-1" : "repeat"} size={18} />
+      {#key $repeat}
+        <span class="icon-pop" in:scale={{ start: 0.72, duration: 150, easing: backOut }}>
+          <Icon name={$repeat === "one" ? "repeat-1" : "repeat"} size={18} />
+        </span>
+      {/key}
       {#if $repeat === "one"}<span class="repeat-indicator">1</span>{/if}
     </button>
   </div>
@@ -328,7 +338,7 @@
     border: none;
     color: var(--fs-text-subdued, rgba(255, 255, 255, 0.45));
     cursor: pointer;
-    transition: all 0.2s;
+    transition: transform 150ms var(--ease-spring-snappy), opacity 150ms ease, color 0.2s;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -340,6 +350,17 @@
   .control-btn:hover {
     color: var(--fs-text, #ffffff);
     transform: scale(1.1);
+  }
+
+  .control-btn:active {
+    transform: scale(0.88);
+    opacity: 0.78;
+  }
+
+  .icon-pop {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .control-btn.secondary {
@@ -356,6 +377,11 @@
 
   .control-btn.play-pause-main:hover {
     transform: scale(1.08);
+  }
+
+  .control-btn.play-pause-main:active {
+    transform: scale(0.92);
+    opacity: 0.9;
   }
 
   .control-btn.track-active {

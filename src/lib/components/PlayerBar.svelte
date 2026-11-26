@@ -1,8 +1,8 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
     import { onMount } from "svelte";
-    import { fly } from "svelte/transition";
-    import { cubicOut } from "svelte/easing";
+    import { fade, fly, scale } from "svelte/transition";
+    import { backOut, cubicOut } from "svelte/easing";
     import { get } from "svelte/store";
     import {
         currentTrack,
@@ -487,7 +487,7 @@
                     style="view-transition-name: {($isFullScreen || getIsLinux()) ? 'none' : 'player-album-art'};"
                 >
                     {#key $currentTrack.id}
-                        <div class="album-art-inner" in:fly={{ y: 6, duration: 220, easing: cubicOut }}>
+                        <div class="album-art-inner" in:fly={{ y: 6, duration: 220, easing: cubicOut }} out:fade={{ duration: 150 }}>
                             {#if albumArt && !imageLoadFailed}
                                 <img
                                     src={albumArt}
@@ -553,7 +553,11 @@
                     on:click={toggleShuffle}
                     title={$_('player.shuffle')}
                 >
-                    <Icon name="shuffle" size={20} />
+                    {#key $shuffle}
+                        <span class="icon-pop" in:scale={{ start: 0.72, duration: 150, easing: backOut }}>
+                            <Icon name="shuffle" size={20} />
+                        </span>
+                    {/key}
                 </button>
                 <button
                     class="icon-btn"
@@ -593,7 +597,11 @@
                         },
                     })}
                 >
-                    <Icon name={$repeat === "one" ? "repeat-1" : "repeat"} size={20} />
+                    {#key $repeat}
+                        <span class="icon-pop" in:scale={{ start: 0.72, duration: 150, easing: backOut }}>
+                            <Icon name={$repeat === "one" ? "repeat-1" : "repeat"} size={20} />
+                        </span>
+                    {/key}
                     {#if $repeat === "one"}
                         <span class="repeat-one">1</span>
                     {/if}
@@ -1130,6 +1138,7 @@
     }
 
     .album-art {
+        position: relative;
         width: 54px;
         height: 54px;
         border-radius: 14px;
@@ -1167,6 +1176,8 @@
     }
 
     .album-art-inner {
+        position: absolute;
+        inset: 0;
         width: 100%;
         height: 100%;
     }
@@ -1321,6 +1332,21 @@
     .controls-buttons .icon-btn {
         width: 34px;
         height: 34px;
+        transition: transform var(--transition-fast, 150ms) var(--ease-spring-snappy),
+                    opacity var(--transition-fast, 150ms) ease,
+                    background-color var(--transition-fast),
+                    color var(--transition-fast);
+    }
+
+    .controls-buttons .icon-btn:active {
+        transform: scale(0.88);
+        opacity: 0.78;
+    }
+
+    .icon-pop {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
     }
 
     .controls-buttons .icon-btn svg {
@@ -1352,6 +1378,10 @@
         transform: scale(1.08);
         background-color: var(--accent-hover);
         z-index: 100;
+    }
+
+    .play-btn:active {
+        transform: scale(0.92);
     }
 
     .play-btn-spinner {

@@ -166,7 +166,7 @@
         class="context-menu"
         bind:this={menuElement}
         style={$isMobile
-            ? (dragY > 0 ? `transform: translate3d(0, ${dragY}px, 0); transition: none;` : "")
+            ? (dragY > 0 ? `transform: translate3d(0, ${dragY}px, 0); transition: none;` : "transform: translate3d(0, 0, 0);")
             : `top: ${adjustedY}px; left: ${adjustedX}px;`}
         on:touchstart={(e) => handleSheetTouchStart(e, false)}
         on:touchmove={handleSheetTouchMove}

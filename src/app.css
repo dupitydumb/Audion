@@ -112,6 +112,11 @@
   --transition-fast: 150ms var(--ease-in-out);
   --transition-normal: 250ms var(--ease-in-out);
   --transition-slow: 400ms var(--ease-out-expo);
+  --dur-instant: 100ms;
+  --dur-enter: 320ms;
+  --dur-exit: 200ms;
+  --dur-large: 380ms;
+  --spring-stagger-step: 30ms;
 
   /* Safe Area Insets (for notches/status bars) */
   --safe-area-top: env(safe-area-inset-top, 0px);
@@ -132,6 +137,11 @@ body.has-mini-player,
     --transition-fast: 0ms;
     --transition-normal: 0ms;
     --transition-slow: 0ms;
+    --dur-instant: 0ms;
+    --dur-enter: 0ms;
+    --dur-exit: 0ms;
+    --dur-large: 0ms;
+    --spring-stagger-step: 0ms;
   }
 
   *,

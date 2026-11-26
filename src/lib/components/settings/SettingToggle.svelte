@@ -78,14 +78,31 @@
     height: 18px;
     background-color: #ffffff;
     border-radius: 50%;
-    transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1),
+    transform-origin: left center;
+    transition: transform 220ms var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1)),
                 background-color 0.2s ease;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   }
 
   .setting-toggle-btn.active .setting-toggle-handle {
-    transform: translateX(20px);
+    animation: knob-on 220ms var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
     background-color: var(--text-on-accent, #000000);
+  }
+
+  .setting-toggle-btn:not(.active) .setting-toggle-handle {
+    animation: knob-off 200ms var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1)) forwards;
+  }
+
+  @keyframes knob-on {
+    0% { transform: translateX(0) scaleX(1); }
+    40% { transform: translateX(8px) scaleX(1.28); }
+    100% { transform: translateX(20px) scaleX(1); }
+  }
+
+  @keyframes knob-off {
+    0% { transform: translateX(20px) scaleX(1); }
+    40% { transform: translateX(6px) scaleX(1.28); }
+    100% { transform: translateX(0) scaleX(1); }
   }
 </style>
 
