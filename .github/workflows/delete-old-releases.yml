@@ -40,7 +40,7 @@ jobs:
         run: |
           echo "Fetching all releases..."
           gh release list --repo "$REPO" --limit 100 --json tagName,name,publishedAt \
-            | jq -r '.[] | select(.tagName | ltrimstr("v") | split(".") | map(tonumber) |
+            | jq -r '.[] | select(.tagName | ltrimstr("v") | split(".") | map(split("-")[0] | tonumber) |
                 (.[0] < 1) or
                 (.[0] == 1 and .[1] < 4) or
                 (.[0] == 1 and .[1] == 4 and (.[2] // 0) <= 4)
