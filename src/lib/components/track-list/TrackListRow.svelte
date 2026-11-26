@@ -106,6 +106,12 @@
     <div
       class="col-checkbox"
       on:click|stopPropagation={() => multiSelect.toggleTrack(track.id)}
+      on:keydown|stopPropagation={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          multiSelect.toggleTrack(track.id);
+        }
+      }}
       role="checkbox"
       aria-checked={isSelected}
       tabindex="0"

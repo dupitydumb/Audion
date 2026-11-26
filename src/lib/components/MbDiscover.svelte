@@ -239,6 +239,14 @@
         }
     }
 
+    function handleSongRowKeydown(e: KeyboardEvent, onPlay: () => void) {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onPlay();
+        }
+    }
+
     async function executeSearch() {
         const q = searchInput.trim();
         if (!q || q.length < 2) return;
@@ -895,11 +903,17 @@
                                             class:playing={isCurrentTrackPlaying(
                                                 track,
                                             )}
+                                            role="button"
+                                            tabindex="0"
                                             on:click={(e) => {
                                                 if ($isMobile && !(e.target as HTMLElement).closest("button, .song-col-art")) {
                                                     playSong(track, trackResults);
                                                 }
                                             }}
+                                            on:keydown={(e) =>
+                                                handleSongRowKeydown(e, () =>
+                                                    playSong(track, trackResults),
+                                                )}
                                             on:dblclick={() =>
                                                 playSong(track, trackResults)}
                                         >
@@ -930,9 +944,11 @@
                                                     {/if}
                                                 </button>
                                             </div>
-                                            <div
+                                            <button
+                                                type="button"
                                                 class="song-col-art"
-                                                on:click={() =>
+                                                aria-label={track.album || $_("discover.tabReleases")}
+                                                on:click|stopPropagation={() =>
                                                     navigateToAlbum(
                                                         track.album_id,
                                                         track.album,
@@ -957,7 +973,7 @@
                                                         />
                                                     </div>
                                                 {/if}
-                                            </div>
+                                            </button>
                                             <div class="song-col-info">
                                                 <span class="song-title"
                                                     >{track.title}</span
@@ -1040,23 +1056,29 @@
                                 </div>
                                 <div class="card-grid">
                                     {#each albumResults.slice(0, 6) as album}
-                                        <div
-                                            class="card-wrapper"
-                                            on:click={() =>
-                                                navigateToAlbum(
-                                                    album.id,
-                                                    album.title,
-                                                    album.artist,
-                                                    album.provider_id,
-                                                    album.cover_url,
-                                                )}
-                                        >
+                                        <div class="card-wrapper">
                                             <MediaCard
                                                 primaryText={album.title}
                                                 secondaryText={album.artist}
                                                 isNowPlaying={findLocalAlbumId(
                                                     album.title,
                                                 ) !== undefined}
+                                                on:click={() =>
+                                                    navigateToAlbum(
+                                                        album.id,
+                                                        album.title,
+                                                        album.artist,
+                                                        album.provider_id,
+                                                        album.cover_url,
+                                                    )}
+                                                on:play={() =>
+                                                    navigateToAlbum(
+                                                        album.id,
+                                                        album.title,
+                                                        album.artist,
+                                                        album.provider_id,
+                                                        album.cover_url,
+                                                    )}
                                             >
                                                 <div
                                                     slot="cover"
@@ -1117,16 +1139,7 @@
                                 </div>
                                 <div class="card-grid">
                                     {#each artistResults.slice(0, 6) as artist}
-                                        <div
-                                            class="card-wrapper"
-                                            on:click={() =>
-                                                navigateToArtist(
-                                                    artist.id,
-                                                    artist.name,
-                                                    artist.provider_id,
-                                                    artist.avatar_url,
-                                                )}
-                                        >
+                                        <div class="card-wrapper">
                                             <MediaCard
                                                 variant="round"
                                                 primaryText={artist.name}
@@ -1136,6 +1149,20 @@
                                                 isNowPlaying={isArtistInLibrary(
                                                     artist.name,
                                                 )}
+                                                on:click={() =>
+                                                    navigateToArtist(
+                                                        artist.id,
+                                                        artist.name,
+                                                        artist.provider_id,
+                                                        artist.avatar_url,
+                                                    )}
+                                                on:play={() =>
+                                                    navigateToArtist(
+                                                        artist.id,
+                                                        artist.name,
+                                                        artist.provider_id,
+                                                        artist.avatar_url,
+                                                    )}
                                             >
                                                 <div
                                                     slot="cover"
@@ -1195,11 +1222,17 @@
                                         class:playing={isCurrentTrackPlaying(
                                             track,
                                         )}
+                                        role="button"
+                                        tabindex="0"
                                         on:click={(e) => {
                                             if ($isMobile && !(e.target as HTMLElement).closest("button, .song-col-art")) {
                                                 playSong(track, trackResults);
                                             }
                                         }}
+                                        on:keydown={(e) =>
+                                            handleSongRowKeydown(e, () =>
+                                                playSong(track, trackResults),
+                                            )}
                                         on:dblclick={() =>
                                             playSong(track, trackResults)}
                                     >
@@ -1230,9 +1263,11 @@
                                                 {/if}
                                             </button>
                                         </div>
-                                        <div
+                                        <button
+                                            type="button"
                                             class="song-col-art"
-                                            on:click={() =>
+                                            aria-label={track.album || $_("discover.tabReleases")}
+                                            on:click|stopPropagation={() =>
                                                 navigateToAlbum(
                                                     track.album_id,
                                                     track.album,
@@ -1255,7 +1290,7 @@
                                                     />
                                                 </div>
                                             {/if}
-                                        </div>
+                                        </button>
                                         <div class="song-col-info">
                                             <span class="song-title"
                                                 >{track.title}</span
@@ -1335,23 +1370,29 @@
                         {:else}
                             <div class="card-grid">
                                 {#each albumResults as album}
-                                    <div
-                                        class="card-wrapper"
-                                        on:click={() =>
-                                            navigateToAlbum(
-                                                album.id,
-                                                album.title,
-                                                album.artist,
-                                                album.provider_id,
-                                                album.cover_url,
-                                            )}
-                                    >
+                                    <div class="card-wrapper">
                                         <MediaCard
                                             primaryText={album.title}
                                             secondaryText={album.artist}
                                             isNowPlaying={findLocalAlbumId(
                                                 album.title,
                                             ) !== undefined}
+                                            on:click={() =>
+                                                navigateToAlbum(
+                                                    album.id,
+                                                    album.title,
+                                                    album.artist,
+                                                    album.provider_id,
+                                                    album.cover_url,
+                                                )}
+                                            on:play={() =>
+                                                navigateToAlbum(
+                                                    album.id,
+                                                    album.title,
+                                                    album.artist,
+                                                    album.provider_id,
+                                                    album.cover_url,
+                                                )}
                                         >
                                             <div
                                                 slot="cover"
@@ -1405,16 +1446,7 @@
                         {:else}
                             <div class="card-grid">
                                 {#each artistResults as artist}
-                                    <div
-                                        class="card-wrapper"
-                                        on:click={() =>
-                                            navigateToArtist(
-                                                artist.id,
-                                                artist.name,
-                                                artist.provider_id,
-                                                artist.avatar_url,
-                                            )}
-                                    >
+                                    <div class="card-wrapper">
                                         <MediaCard
                                             variant="round"
                                             primaryText={artist.name}
@@ -1424,6 +1456,20 @@
                                             isNowPlaying={isArtistInLibrary(
                                                 artist.name,
                                             )}
+                                            on:click={() =>
+                                                navigateToArtist(
+                                                    artist.id,
+                                                    artist.name,
+                                                    artist.provider_id,
+                                                    artist.avatar_url,
+                                                )}
+                                            on:play={() =>
+                                                navigateToArtist(
+                                                    artist.id,
+                                                    artist.name,
+                                                    artist.provider_id,
+                                                    artist.avatar_url,
+                                                )}
                                         >
                                             <div
                                                 slot="cover"
@@ -1597,6 +1643,8 @@
                                         class:playing={isCurrentTrackPlaying(
                                             track,
                                         )}
+                                        role="button"
+                                        tabindex="0"
                                         on:click={(e) => {
                                             if ($isMobile && !(e.target as HTMLElement).closest("button, .song-col-art") && currentAlbumDetail?.tracks) {
                                                 playSong(
@@ -1607,6 +1655,17 @@
                                                 );
                                             }
                                         }}
+                                        on:keydown={(e) =>
+                                            handleSongRowKeydown(e, () => {
+                                                if (currentAlbumDetail?.tracks) {
+                                                    playSong(
+                                                        track,
+                                                        currentAlbumDetail.tracks,
+                                                        currentAlbumDetail.title,
+                                                        currentAlbumDetail.cover_url,
+                                                    );
+                                                }
+                                            })}
                                         on:dblclick={() =>
                                             currentAlbumDetail?.tracks &&
                                             playSong(
@@ -1838,6 +1897,8 @@
                                         class:playing={isCurrentTrackPlaying(
                                             track,
                                         )}
+                                        role="button"
+                                        tabindex="0"
                                         on:click={(e) => {
                                             if ($isMobile && !(e.target as HTMLElement).closest("button, .song-col-art") && currentArtistDetail?.tracks) {
                                                 playSong(
@@ -1846,6 +1907,15 @@
                                                 );
                                             }
                                         }}
+                                        on:keydown={(e) =>
+                                            handleSongRowKeydown(e, () => {
+                                                if (currentArtistDetail?.tracks) {
+                                                    playSong(
+                                                        track,
+                                                        currentArtistDetail.tracks,
+                                                    );
+                                                }
+                                            })}
                                         on:dblclick={() =>
                                             currentArtistDetail?.tracks &&
                                             playSong(
@@ -1965,23 +2035,30 @@
                             </div>
                             <div class="card-grid">
                                 {#each filteredDiscography as album}
-                                    <div
-                                        class="card-wrapper"
-                                        on:click={() =>
-                                            navigateToAlbum(
-                                                album.id,
-                                                album.title,
-                                                album.artist ||
-                                                    currentArtistDetail?.name,
-                                                album.provider_id,
-                                                album.cover_url,
-                                            )}
-                                    >
+                                    <div class="card-wrapper">
                                         <MediaCard
                                             primaryText={album.title}
                                             secondaryText={album.year
                                                 ? String(album.year)
                                                 : album.release_type || ""}
+                                            on:click={() =>
+                                                navigateToAlbum(
+                                                    album.id,
+                                                    album.title,
+                                                    album.artist ||
+                                                        currentArtistDetail?.name,
+                                                    album.provider_id,
+                                                    album.cover_url,
+                                                )}
+                                            on:play={() =>
+                                                navigateToAlbum(
+                                                    album.id,
+                                                    album.title,
+                                                    album.artist ||
+                                                        currentArtistDetail?.name,
+                                                    album.provider_id,
+                                                    album.cover_url,
+                                                )}
                                         >
                                             <div
                                                 slot="cover"
@@ -2441,6 +2518,12 @@
         background: var(--bg-highlight);
     }
 
+    .song-row:focus-visible {
+        outline: 2px solid var(--accent-primary);
+        outline-offset: -2px;
+        background: var(--bg-highlight);
+    }
+
     .song-row.playing {
         background: var(--accent-subtle);
     }
@@ -2489,6 +2572,15 @@
         overflow: hidden;
         flex-shrink: 0;
         cursor: pointer;
+        background: none;
+        border: none;
+        padding: 0;
+        display: block;
+    }
+
+    .song-col-art:focus-visible {
+        outline: 2px solid var(--accent-primary);
+        outline-offset: 2px;
     }
 
     .song-col-art img {
@@ -2583,6 +2675,7 @@
     }
 
     .song-row:hover .love-btn,
+    .song-row:focus-within .love-btn,
     .love-btn:focus-visible {
         opacity: 1;
     }
@@ -3006,5 +3099,94 @@
 
     :global(html.layout-mobile) .header-subtitle {
         font-size: var(--font-size-xs);
+    }
+
+    /* ── Focus-Visible for D-Pad & Keyboard ── */
+    .tab:focus-visible {
+        outline: 2px solid var(--accent-primary);
+        outline-offset: -2px;
+        color: var(--text-primary);
+        background: var(--bg-elevated);
+        border-radius: var(--radius-sm);
+    }
+
+    .back-nav-btn:focus-visible,
+    .breadcrumb-item:focus-visible,
+    .view-all-link:focus-visible,
+    .filter-toggle-btn:focus-visible,
+    .link-btn:focus-visible,
+    .artist-pill-btn:focus-visible,
+    .clear-btn:focus-visible,
+    .wiki-link:focus-visible {
+        outline: 2px solid var(--accent-primary);
+        outline-offset: 2px;
+    }
+
+    .play-icon-btn:focus-visible {
+        outline: 2px solid var(--accent-primary);
+        outline-offset: 1px;
+    }
+
+    /* ── Landscape Tablet & Smart TV Overrides ── */
+    :global(html.layout-wide-mobile) .header-row,
+    :global(html.layout-tv) .header-row {
+        flex-direction: row;
+        align-items: center;
+    }
+
+    :global(html.layout-wide-mobile) .search-composite,
+    :global(html.layout-tv) .search-composite {
+        flex-direction: row;
+        align-items: center;
+    }
+
+    :global(html.layout-wide-mobile) .search-composite select,
+    :global(html.layout-tv) .search-composite select {
+        width: auto;
+    }
+
+    :global(html.layout-wide-mobile) .song-col-album,
+    :global(html.layout-wide-mobile) .song-col-dur,
+    :global(html.layout-wide-mobile) .song-col-num,
+    :global(html.layout-tv) .song-col-album,
+    :global(html.layout-tv) .song-col-dur,
+    :global(html.layout-tv) .song-col-num {
+        display: block;
+    }
+
+    :global(html.layout-wide-mobile) .card-grid {
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: var(--spacing-md);
+    }
+
+    :global(html.layout-tv) .card-grid {
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+        gap: var(--spacing-lg);
+    }
+
+    :global(html.layout-wide-mobile) .hero-header,
+    :global(html.layout-tv) .hero-header {
+        flex-direction: row;
+        align-items: flex-end;
+        text-align: left;
+        padding: 24px;
+        gap: var(--spacing-lg);
+    }
+
+    :global(html.layout-wide-mobile) .hero-meta-line,
+    :global(html.layout-tv) .hero-meta-line {
+        justify-content: flex-start;
+    }
+
+    :global(html.layout-tv) .hero-cover,
+    :global(html.layout-tv) .hero-avatar {
+        width: 200px;
+        height: 200px;
+    }
+
+    :global(html.layout-tv) .discover-header,
+    :global(html.layout-tv) .discover-content {
+        padding-left: max(var(--spacing-xl), var(--tv-overscan-x, 24px));
+        padding-right: max(var(--spacing-xl), var(--tv-overscan-x, 24px));
     }
 </style>

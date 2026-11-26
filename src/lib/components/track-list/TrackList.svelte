@@ -39,7 +39,7 @@
   import { fade } from "svelte/transition";
   import { multiSelect } from "$lib/stores/multiselect";
   import { trackSelectionStore } from "$lib/stores/trackSelectionStore";
-  import { isMobile, registerBackHandler } from "$lib/stores/mobile";
+  import { isMobile, isTV, registerBackHandler } from "$lib/stores/mobile";
   import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
   import MetadataModal from "$lib/components/MetadataModal.svelte";
   import EmptyState from "$lib/components/EmptyState.svelte";
@@ -1273,8 +1273,40 @@
       return;
     }
 
+    const targetEl = e.target as HTMLElement | null;
+    const isInteractiveChild = !!targetEl?.closest("button, [role='checkbox'], a");
+    if (isInteractiveChild && (e.key === " " || e.code === "Space" || e.key === "Enter")) {
+      return;
+    }
+
+    const activeEl = document.activeElement as HTMLElement | null;
+    const activeRow = activeEl?.closest(".track-row") as HTMLElement | null;
+    const activeRowAttr = activeRow?.getAttribute("data-track-index");
+    const activeRowIndex = activeRowAttr !== null && activeRowAttr !== undefined && activeRowAttr !== ""
+      ? parseInt(activeRowAttr, 10)
+      : null;
+
     const currentState = trackSelectionStore.getState();
-    const currentFocused = currentState.focusedIndex;
+    const currentFocused =
+      currentState.focusedIndex !== null
+        ? currentState.focusedIndex
+        : (activeRowIndex !== null && !Number.isNaN(activeRowIndex) ? activeRowIndex : null);
+
+    // D-Pad Left/Right between track row and its overflow menu button on mobile/TV
+    if (($isMobile || $isTV) && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+      if (e.key === "ArrowRight" && activeRow && !activeEl?.closest(".row-more-btn")) {
+        const moreBtn = activeRow.querySelector<HTMLButtonElement>(".row-more-btn");
+        if (moreBtn) {
+          e.preventDefault();
+          moreBtn.focus();
+          return;
+        }
+      } else if (e.key === "ArrowLeft" && activeEl?.closest(".row-more-btn") && activeRow) {
+        e.preventDefault();
+        activeRow.focus();
+        return;
+      }
+    }
 
     // Spacebar: Play/Pause or toggle
     if (e.key === " " || e.code === "Space") {
@@ -1336,6 +1368,16 @@
     if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End" || e.key === "PageDown" || e.key === "PageUp") {
       if (!isInsideList) return;
       if (sortedTracks.length === 0) return;
+
+      // Allow D-Pad spatial navigation to exit list at top/bottom boundaries
+      if ($isMobile || $isTV) {
+        if (e.key === "ArrowUp" && (currentFocused === 0 || !activeRow)) {
+          return;
+        }
+        if (e.key === "ArrowDown" && currentFocused === sortedTracks.length - 1) {
+          return;
+        }
+      }
 
       e.preventDefault();
       let nextIndex = currentFocused ?? 0;
@@ -2136,5 +2178,61 @@
     background-color: color-mix(in srgb, var(--accent-primary), transparent 65%);
   }
   :global(html.layout-mobile .track-row.swipe-queue-added .swipe-bg .swipe-icon-plus) { display: none; }
+  :global(html.layout-tv) .mobile-track-bar {
+    padding-left: max(var(--spacing-md), var(--tv-overscan-x, 16px));
+    padding-right: max(var(--spacing-md), var(--tv-overscan-x, 16px));
+  }
+
+  :global(html.layout-tv) .list-body {
+    padding-left: var(--tv-overscan-x, 0px);
+    padding-right: var(--tv-overscan-x, 0px);
+  }
+
+  :global(html.layout-tv .track-row:focus-visible),
+  :global(html.layout-tv .track-row.focused) {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: -2px;
+  }
+
+  :global(html.layout-mobile .row-more-btn:focus-visible) {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: -2px;
+    background-color: var(--surface-subtle, rgba(255, 255, 255, 0.08));
+    color: var(--text-primary);
+  }
+
+  :global(html.layout-wide-mobile .quality-tag),
+  :global(html.layout-tv .quality-tag) {
+    display: inline-flex;
+  }
+
+  :global(html.layout-wide-mobile) .list-body.mobile-playlist:not(.no-album) :global(.col-album-cell),
+  :global(html.layout-tv) .list-body.mobile-playlist:not(.no-album) :global(.col-album-cell),
+  :global(html.layout-wide-mobile) .list-body.mobile-library:not(.no-album) :global(.col-album-cell),
+  :global(html.layout-tv) .list-body.mobile-library:not(.no-album) :global(.col-album-cell) {
+    display: block;
+  }
+
+  :global(html.layout-wide-mobile) .list-body.mobile-playlist:not(.no-album) :global(.track-row-inner),
+  :global(html.layout-tv) .list-body.mobile-playlist:not(.no-album) :global(.track-row-inner),
+  :global(html.layout-wide-mobile) .list-body.mobile-library:not(.no-album) :global(.track-row-inner),
+  :global(html.layout-tv) .list-body.mobile-library:not(.no-album) :global(.track-row-inner) {
+    grid-template-columns: 48px minmax(0, 1.4fr) minmax(0, 1fr) auto 44px;
+  }
+
+  :global(html.layout-wide-mobile) .list-body.mobile-playlist.with-drag:not(.no-album) :global(.track-row-inner),
+  :global(html.layout-tv) .list-body.mobile-playlist.with-drag:not(.no-album) :global(.track-row-inner),
+  :global(html.layout-wide-mobile) .list-body.mobile-library.with-drag:not(.no-album) :global(.track-row-inner),
+  :global(html.layout-tv) .list-body.mobile-library.with-drag:not(.no-album) :global(.track-row-inner) {
+    grid-template-columns: 32px 48px minmax(0, 1.4fr) minmax(0, 1fr) auto 44px;
+  }
+
+  :global(html.layout-wide-mobile) .list-body.mobile-playlist.multiselect:not(.no-album) :global(.track-row-inner),
+  :global(html.layout-tv) .list-body.mobile-playlist.multiselect:not(.no-album) :global(.track-row-inner),
+  :global(html.layout-wide-mobile) .list-body.mobile-library.multiselect:not(.no-album) :global(.track-row-inner),
+  :global(html.layout-tv) .list-body.mobile-library.multiselect:not(.no-album) :global(.track-row-inner) {
+    grid-template-columns: 44px 48px minmax(0, 1.4fr) minmax(0, 1fr) auto 44px;
+  }
+
   :global(html.layout-mobile .track-row.swipe-queue-added .swipe-bg .swipe-icon-check) { display: inline-flex; }
 </style>

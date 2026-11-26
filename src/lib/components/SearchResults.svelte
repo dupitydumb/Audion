@@ -166,6 +166,14 @@
         goToArtistDetail(artistName);
     }
 
+    function handleCardKeydown(e: KeyboardEvent, action: () => void) {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            action();
+        }
+    }
+
     function handlePlaylistClick(playlistId: number, name: string) {
         addItemToHistory({ type: 'playlist', id: playlistId });
         clearSearch();
@@ -332,15 +340,16 @@
                                     role="button"
                                     tabindex="0"
                                     on:click={() => handleTrackClick(index)}
-                                    on:keydown={(e) => {
-                                        if (e.key === "Enter" || e.key === " ") {
-                                            handleTrackClick(index);
-                                        }
-                                    }}
+                                    on:keydown={(e) =>
+                                        handleCardKeydown(e, () =>
+                                            handleTrackClick(index),
+                                        )}
                                     on:contextmenu={(e) =>
                                         handleTrackContextMenu(e, track, index)}
                                     on:mouseenter={() => (hoveredTrackIndex = index)}
                                     on:mouseleave={() => (hoveredTrackIndex = null)}
+                                    on:focusin={() => (hoveredTrackIndex = index)}
+                                    on:focusout={() => (hoveredTrackIndex = null)}
                                 >
                                     <div class="track-art">
                                         {#if albumArt}
@@ -424,15 +433,16 @@
                                     role="button"
                                     tabindex="0"
                                     on:click={() => handleAlbumClick(album.id)}
-                                    on:keydown={(e) => {
-                                        if (e.key === "Enter" || e.key === " ") {
-                                            handleAlbumClick(album.id);
-                                        }
-                                    }}
+                                    on:keydown={(e) =>
+                                        handleCardKeydown(e, () =>
+                                            handleAlbumClick(album.id),
+                                        )}
                                     on:contextmenu={(e) =>
                                         handleAlbumContextMenu(e, album)}
                                     on:mouseenter={() => (hoveredAlbumId = album.id)}
                                     on:mouseleave={() => (hoveredAlbumId = null)}
+                                    on:focusin={() => (hoveredAlbumId = album.id)}
+                                    on:focusout={() => (hoveredAlbumId = null)}
                                 >
                                     <div
                                         class="album-art"
@@ -547,12 +557,10 @@
                                     role="button"
                                     tabindex="0"
                                     on:click={() => handlePlaylistClick(playlist.id, playlist.name)}
-                                    on:keydown={(e) => {
-                                        if (e.key === "Enter" || e.key === " ") {
-                                            e.preventDefault();
-                                            handlePlaylistClick(playlist.id, playlist.name);
-                                        }
-                                    }}
+                                    on:keydown={(e) =>
+                                        handleCardKeydown(e, () =>
+                                            handlePlaylistClick(playlist.id, playlist.name),
+                                        )}
                                     on:contextmenu={(e) => handlePlaylistContextMenu(e, playlist)}
                                 >
                                     <div
@@ -852,12 +860,35 @@
         background-color: var(--bg-elevated);
         border-radius: var(--radius-md);
         padding: var(--spacing-sm);
-        transition: background-color var(--transition-normal);
+        transition: background-color var(--transition-normal), transform var(--transition-fast);
         text-align: left;
     }
 
     .album-card:hover {
         background-color: var(--bg-surface);
+    }
+
+    .album-card:focus-visible,
+    .artist-card:focus-visible,
+    .playlist-card:focus-visible {
+        outline: 2px solid var(--accent-primary);
+        outline-offset: 2px;
+        background-color: var(--bg-surface);
+    }
+
+    :global(html.layout-tv) .album-card:focus-visible,
+    :global(html.layout-tv) .artist-card:focus-visible,
+    :global(html.layout-tv) .playlist-card:focus-visible {
+        transform: scale(1.03);
+    }
+
+    .load-more:focus-visible,
+    .track-album:focus-visible,
+    .row-more-btn:focus-visible,
+    .card-more-btn:focus-visible,
+    .link-text:focus-visible {
+        outline: 2px solid var(--accent-primary);
+        outline-offset: 2px;
     }
 
     .album-art {
@@ -1019,6 +1050,30 @@
     :global(html.layout-mobile) .playlists-grid {
         grid-template-columns: repeat(2, 1fr);
         gap: 12px;
+    }
+
+    :global(html.layout-wide-mobile) .albums-grid,
+    :global(html.layout-wide-mobile) .artists-grid,
+    :global(html.layout-wide-mobile) .playlists-grid {
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: var(--spacing-md);
+    }
+
+    :global(html.layout-tv) .albums-grid,
+    :global(html.layout-tv) .artists-grid,
+    :global(html.layout-tv) .playlists-grid {
+        grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+        gap: var(--spacing-lg);
+    }
+
+    :global(html.layout-wide-mobile) .track-album,
+    :global(html.layout-tv) .track-album {
+        display: block;
+    }
+
+    :global(html.layout-tv) .search-results {
+        padding-left: max(var(--spacing-xl), var(--tv-overscan-x, 24px));
+        padding-right: max(var(--spacing-xl), var(--tv-overscan-x, 24px));
     }
     .link-text {
         background: none;

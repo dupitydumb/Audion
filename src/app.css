@@ -809,8 +809,25 @@ html.layout-mobile .sheet-handle {
   border-radius: 2px;
 }
 
+/* Wide-mobile (landscape tablet) & Smart TV rail + full-width player tokens */
+html.layout-wide-mobile,
+html.layout-tv {
+  --mobile-rail-width: 88px;
+  --wide-player-height: 80px;
+  --bottom-chrome-inset: var(--safe-area-bottom, 0px);
+}
+
+html.layout-wide-mobile body.has-mini-player,
+html.layout-wide-mobile .has-mini-player,
+html.layout-tv body.has-mini-player,
+html.layout-tv .has-mini-player {
+  --bottom-chrome-inset: calc(var(--wide-player-height) + var(--safe-area-bottom, 0px));
+}
+
 /* Smart TV D-Pad focus visibility & overscan safe margins */
 html.layout-tv {
+  --mobile-rail-width: 96px;
+  --wide-player-height: 88px;
   --tv-overscan-x: clamp(16px, 2.5vw, 36px);
 }
 

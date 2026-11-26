@@ -1,5 +1,6 @@
 <script lang="ts">
   import { _ } from "svelte-i18n";
+  import { get } from "svelte/store";
   import { fly } from "svelte/transition";
   import { artCrossfadeIn, artCrossfadeOut } from "$lib/motion";
   import ArtistLinks from "$lib/components/ArtistLinks.svelte";
@@ -12,12 +13,16 @@
     nextTrack,
     previousTrack,
     progress,
+    currentTime,
     duration,
+    seek,
+    volume,
+    setVolume,
     isStreaming,
   } from "$lib/stores/player";
   import { likedTrackIds, toggleLike } from "$lib/stores/liked";
   import { openFullScreen } from "$lib/stores/ui";
-  import { getAlbum } from "$lib/api/tauri";
+  import { formatDuration, getAlbum } from "$lib/api/tauri";
   import { resolveTrackCover } from "$lib/stores/library";
   import { customArtworks } from "$lib/stores/customArtwork";
   import Icon from "$lib/components/Icon.svelte";
@@ -77,9 +82,150 @@
     togglePlay();
   }
 
+  function handlePrevious(e: Event) {
+    e.stopPropagation();
+    previousTrack();
+  }
+
   function handleNext(e: Event) {
     e.stopPropagation();
     nextTrack();
+  }
+
+  // Wide-layout seekable progress bar state
+  let seekBarElement: HTMLDivElement;
+  let isSeeking = false;
+  let isDraggingSeek = false;
+  let seekStartSecs = 0;
+  let seekPos = 0;
+
+  $: displayProgress = isSeeking ? seekPos : $progress;
+  $: displayCurrentTime = isSeeking ? seekPos * ($duration || 0) : $currentTime;
+
+  function updateSeekFromClientX(clientX: number) {
+    if (!seekBarElement) return;
+    const rect = seekBarElement.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    seekPos = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  }
+
+  function handleSeekStart(e: PointerEvent) {
+    e.stopPropagation();
+    if (!seekBarElement || isLive) return;
+    if (!$currentTrack || !$duration || $duration <= 0) return;
+    if (isDraggingSeek) return;
+    isSeeking = true;
+    isDraggingSeek = true;
+    seekStartSecs = get(currentTime);
+    try {
+      (e.currentTarget as HTMLElement)?.setPointerCapture(e.pointerId);
+    } catch {}
+    updateSeekFromClientX(e.clientX);
+  }
+
+  function handleSeekMove(e: PointerEvent) {
+    if (!isDraggingSeek) return;
+    updateSeekFromClientX(e.clientX);
+  }
+
+  async function handleSeekEnd(e?: PointerEvent) {
+    if (!isDraggingSeek) return;
+    if (e) {
+      try {
+        (e.currentTarget as HTMLElement)?.releasePointerCapture(e.pointerId);
+      } catch {}
+    }
+    isDraggingSeek = false;
+    const targetPos = seekPos;
+    const startSecs = seekStartSecs;
+    currentTime.set(targetPos * $duration);
+    try {
+      await seek(targetPos, startSecs);
+    } finally {
+      isSeeking = false;
+    }
+  }
+
+  function handleSeekKey(e: KeyboardEvent) {
+    if (!$currentTrack || !$duration || $duration <= 0 || isLive) return;
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+      e.preventDefault();
+      e.stopPropagation();
+      const step = 5 / $duration;
+      const base = isSeeking ? seekPos : get(progress);
+      const nextPos = Math.max(
+        0,
+        Math.min(1, base + (e.key === "ArrowRight" ? step : -step))
+      );
+      seek(nextPos);
+    }
+  }
+
+  // Wide-layout volume & mute state
+  let volumeBarElement: HTMLDivElement;
+  let isVolumeChanging = false;
+  let lastNonZeroVolume = 0.7;
+
+  $: if ($volume >= 0.05) {
+    lastNonZeroVolume = $volume;
+  }
+
+  function toggleMute(e: Event) {
+    e.stopPropagation();
+    if ($volume > 0) {
+      if ($volume >= 0.05) {
+        lastNonZeroVolume = $volume;
+      }
+      setVolume(0);
+    } else {
+      setVolume(lastNonZeroVolume >= 0.05 ? lastNonZeroVolume : 0.7);
+    }
+  }
+
+  function updateVolumeFromClientX(clientX: number) {
+    if (!volumeBarElement) return;
+    const rect = volumeBarElement.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const pos = (clientX - rect.left) / rect.width;
+    setVolume(Math.max(0, Math.min(1, pos)));
+  }
+
+  function handleVolumeStart(e: PointerEvent) {
+    e.stopPropagation();
+    if (isVolumeChanging) return;
+    isVolumeChanging = true;
+    try {
+      (e.currentTarget as HTMLElement)?.setPointerCapture(e.pointerId);
+    } catch {}
+    updateVolumeFromClientX(e.clientX);
+  }
+
+  function handleVolumeMove(e: PointerEvent) {
+    if (!isVolumeChanging) return;
+    updateVolumeFromClientX(e.clientX);
+  }
+
+  function handleVolumeEnd(e?: PointerEvent) {
+    if (!isVolumeChanging) return;
+    if (e) {
+      try {
+        (e.currentTarget as HTMLElement)?.releasePointerCapture(e.pointerId);
+      } catch {}
+    }
+    isVolumeChanging = false;
+  }
+
+  function handleVolumeKey(e: KeyboardEvent) {
+    const step = 0.05;
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+      e.preventDefault();
+      e.stopPropagation();
+      setVolume(Math.min(1, $volume + step));
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+      e.preventDefault();
+      e.stopPropagation();
+      setVolume(Math.max(0, $volume - step));
+    }
   }
 
   // Touch gesture tracking (Swipe up to expand, swipe left/right to skip)
@@ -153,6 +299,7 @@
     on:touchend={handleTouchEnd}
     on:touchcancel={handleTouchCancel}
     on:keydown={(e) => {
+      if (e.target !== e.currentTarget) return;
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         handleOpenPlayer();
@@ -213,6 +360,15 @@
       <div class="mini-controls">
         <button
           type="button"
+          class="control-btn prev-btn"
+          on:click={handlePrevious}
+          aria-label={$_('player.previous')}
+        >
+          <Icon name="skip-back" size={20} />
+        </button>
+
+        <button
+          type="button"
           class="control-btn like-btn"
           class:liked={isCurrentLiked}
           on:click={handleLike}
@@ -247,6 +403,96 @@
           <Icon name="skip-forward" size={20} />
         </button>
       </div>
+
+      <div
+        class="wide-player-right"
+        on:click|stopPropagation
+        on:touchstart|stopPropagation
+        role="presentation"
+      >
+        <div class="wide-progress-group">
+          {#if isLive}
+            <span class="live-badge">{$_('player.live')}</span>
+            <div class="wide-slider-track">
+              <div class="wide-slider-fill live"></div>
+            </div>
+            <span class="wide-time">{formatDuration($currentTime)}</span>
+          {:else}
+            <span class="wide-time">{formatDuration(displayCurrentTime)}</span>
+            <div
+              class="wide-slider wide-seek-bar"
+              class:dragging={isSeeking}
+              bind:this={seekBarElement}
+              on:click|stopPropagation
+              on:touchstart|stopPropagation
+              on:pointerdown={handleSeekStart}
+              on:pointermove={handleSeekMove}
+              on:pointerup={handleSeekEnd}
+              on:pointercancel={handleSeekEnd}
+              on:keydown={handleSeekKey}
+              role="slider"
+              aria-label={$_('player.seek')}
+              aria-valuenow={Math.round(displayProgress * 100)}
+              aria-valuemin="0"
+              aria-valuemax="100"
+              tabindex="0"
+            >
+              <div class="wide-slider-track">
+                <div
+                  class="wide-slider-fill"
+                  style="width: {displayProgress * 100}%"
+                ></div>
+              </div>
+              <div
+                class="wide-slider-thumb"
+                style="left: {displayProgress * 100}%"
+              ></div>
+            </div>
+            <span class="wide-time">{formatDuration($duration)}</span>
+          {/if}
+        </div>
+
+        <div class="wide-volume-group">
+          <button
+            type="button"
+            class="control-btn mute-btn"
+            on:click={toggleMute}
+            aria-label={$volume > 0 ? $_('player.mute') : $_('player.unmute')}
+            title={$volume > 0 ? $_('player.mute') : $_('player.unmute')}
+          >
+            <Icon name={$volume === 0 ? "volume-x" : $volume < 0.5 ? "volume-1" : "volume-2"} size={20} />
+          </button>
+          <div
+            class="wide-slider wide-volume-bar"
+            class:dragging={isVolumeChanging}
+            bind:this={volumeBarElement}
+            on:click|stopPropagation
+            on:touchstart|stopPropagation
+            on:pointerdown={handleVolumeStart}
+            on:pointermove={handleVolumeMove}
+            on:pointerup={handleVolumeEnd}
+            on:pointercancel={handleVolumeEnd}
+            on:keydown={handleVolumeKey}
+            role="slider"
+            aria-label="Volume"
+            aria-valuenow={Math.round($volume * 100)}
+            aria-valuemin="0"
+            aria-valuemax="100"
+            tabindex="0"
+          >
+            <div class="wide-slider-track">
+              <div
+                class="wide-slider-fill"
+                style="width: {$volume * 100}%"
+              ></div>
+            </div>
+            <div
+              class="wide-slider-thumb"
+              style="left: {$volume * 100}%"
+            ></div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 {/if}
@@ -255,8 +501,8 @@
   .mobile-mini-player {
     position: fixed;
     bottom: calc(var(--mobile-nav-height, 64px) + var(--mobile-mini-player-gap, 8px) + var(--safe-area-bottom, 0px));
-    left: calc(var(--spacing-sm) + var(--safe-area-left, 0px));
-    right: calc(var(--spacing-sm) + var(--safe-area-right, 0px));
+    left: calc(var(--spacing-sm) + var(--tv-overscan-x, var(--safe-area-left, 0px)));
+    right: calc(var(--spacing-sm) + var(--tv-overscan-x, var(--safe-area-right, 0px)));
     height: var(--mobile-mini-player-height, 64px);
     background: color-mix(in srgb, var(--player-bg, var(--bg-elevated)) 88%, transparent);
     color: var(--player-text, var(--text-on-player, var(--text-primary)));
@@ -503,6 +749,192 @@
   .control-btn:focus-visible {
     outline: 2px solid var(--accent-primary);
     outline-offset: 1px;
+    background: var(--surface-subtle-hover, color-mix(in srgb, var(--player-text, var(--text-primary)) 12%, transparent));
+  }
+
+  .prev-btn {
+    display: none;
+  }
+
+  .wide-player-right {
+    display: none;
+  }
+
+  :global(html.layout-wide-mobile) .mobile-mini-player,
+  :global(html.layout-tv) .mobile-mini-player {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    max-width: none;
+    width: 100%;
+    height: calc(var(--wide-player-height, 80px) + var(--safe-area-bottom, 0px));
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    padding-bottom: var(--safe-area-bottom, 0px);
+    z-index: calc(var(--z-bottom-nav, 1000) + 1);
+  }
+
+  :global(html.layout-wide-mobile) .mini-progress-bar,
+  :global(html.layout-tv) .mini-progress-bar {
+    display: none;
+  }
+
+  :global(html.layout-wide-mobile) .mini-player-content,
+  :global(html.layout-tv) .mini-player-content {
+    display: grid;
+    grid-template-columns: minmax(200px, 1fr) auto minmax(220px, 1fr);
+    gap: var(--spacing-md, 16px);
+    padding: 0 calc(var(--spacing-lg, 20px) + var(--tv-overscan-x, var(--safe-area-right, 0px))) 0 calc(var(--spacing-lg, 20px) + var(--tv-overscan-x, var(--safe-area-left, 0px)));
+  }
+
+  :global(html.layout-wide-mobile) .mini-cover {
+    width: 56px;
+    height: 56px;
+  }
+
+  :global(html.layout-tv) .mini-cover {
+    width: 64px;
+    height: 64px;
+  }
+
+  :global(html.layout-wide-mobile) .mini-controls,
+  :global(html.layout-tv) .mini-controls {
+    gap: var(--spacing-xs, 4px);
+    justify-self: center;
+  }
+
+  :global(html.layout-wide-mobile) .prev-btn,
+  :global(html.layout-tv) .prev-btn {
+    display: inline-flex;
+    order: 1;
+  }
+
+  :global(html.layout-wide-mobile) .play-pause-btn,
+  :global(html.layout-tv) .play-pause-btn {
+    order: 2;
+  }
+
+  :global(html.layout-wide-mobile) .next-btn,
+  :global(html.layout-tv) .next-btn {
+    order: 3;
+  }
+
+  :global(html.layout-wide-mobile) .like-btn,
+  :global(html.layout-tv) .like-btn {
+    order: 4;
+  }
+
+  :global(html.layout-wide-mobile) .wide-player-right,
+  :global(html.layout-tv) .wide-player-right {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md, 16px);
+    min-width: 0;
+    width: 100%;
+    justify-self: end;
+  }
+
+  .wide-progress-group {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs, 6px);
+    flex: 1;
+    min-width: 120px;
+  }
+
+  .wide-time {
+    font-size: var(--font-size-xs, 0.75rem);
+    font-variant-numeric: tabular-nums;
+    color: color-mix(in srgb, var(--player-text, var(--text-on-player, var(--text-secondary))) 75%, transparent);
+    min-width: 34px;
+    text-align: center;
+    flex-shrink: 0;
+    user-select: none;
+  }
+
+  .wide-volume-group {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs, 4px);
+    flex-shrink: 0;
+  }
+
+  .wide-slider {
+    position: relative;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    touch-action: none;
+    flex: 1;
+    border-radius: var(--radius-sm, 4px);
+  }
+
+  .wide-volume-bar {
+    flex: 0 0 88px;
+    width: 88px;
+  }
+
+  .wide-slider:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
+  }
+
+  .wide-slider-track {
+    position: relative;
+    width: 100%;
+    height: 4px;
+    background: color-mix(in srgb, var(--player-text, var(--text-primary)) 20%, transparent);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+
+  .wide-slider-fill {
+    height: 100%;
+    background: var(--accent-primary);
+    border-radius: 999px;
+  }
+
+  .wide-slider-fill.live {
+    width: 100%;
+    background: linear-gradient(
+      90deg,
+      var(--error-color, #e53935),
+      var(--accent-warning, #ff7043),
+      var(--error-color, #e53935)
+    );
+    background-size: 200% 100%;
+    animation: mini-live-shimmer 3s ease-in-out infinite;
+  }
+
+  .wide-slider-thumb {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--player-text, var(--text-primary));
+    box-shadow: var(--shadow-sm);
+    transform: translate(-50%, -50%) scale(0.85);
+    opacity: 0;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    pointer-events: none;
+  }
+
+  .wide-slider:hover .wide-slider-thumb,
+  .wide-slider:focus-visible .wide-slider-thumb,
+  .wide-slider.dragging .wide-slider-thumb {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  :global(html.layout-tv) .control-btn {
+    min-width: 48px;
+    min-height: 48px;
+    width: 48px;
+    height: 48px;
   }
 
   .control-btn:active {

@@ -1,6 +1,6 @@
 <script lang="ts">
     import { _ } from "svelte-i18n";
-    import { mobileSearchOpen } from "$lib/stores/mobile";
+    import { mobileSearchOpen, isWideMobile, isTV } from "$lib/stores/mobile";
     import {
         currentView,
         goToHome,
@@ -100,6 +100,22 @@
         }
     }
 
+    function handleNavKeydown(e: KeyboardEvent) {
+        const isRail = $isWideMobile || $isTV;
+        const prevKey = isRail ? "ArrowUp" : "ArrowLeft";
+        const nextKey = isRail ? "ArrowDown" : "ArrowRight";
+        if (e.key !== prevKey && e.key !== nextKey) return;
+        const nav = e.currentTarget as HTMLElement | null;
+        if (!nav) return;
+        const buttons = Array.from(nav.querySelectorAll<HTMLButtonElement>("button.nav-item"));
+        const currentIndex = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        if (currentIndex === -1) return;
+        e.preventDefault();
+        const delta = e.key === nextKey ? 1 : -1;
+        const nextIndex = (currentIndex + delta + buttons.length) % buttons.length;
+        buttons[nextIndex]?.focus();
+    }
+
     onMount(() => {
         if (pluginSlot) {
             uiSlotManager.registerContainer("mobile:bottomnav", pluginSlot);
@@ -110,11 +126,12 @@
     });
 </script>
 
-<nav class="bottom-nav" class:has-player={!!$currentTrack} style="--active-tab-idx: {activeTabIndex};">
+<nav class="bottom-nav" class:has-player={!!$currentTrack} style="--active-tab-idx: {activeTabIndex};" on:keydown={handleNavKeydown}>
     {#if activeTabIndex >= 0}
         <div class="active-pill-slider" aria-hidden="true"></div>
     {/if}
     <button
+        type="button"
         class="nav-item"
         class:active={activeTab === "home"}
         on:click={() => handleTabClick("home")}
@@ -124,6 +141,7 @@
     </button>
 
     <button
+        type="button"
         class="nav-item"
         class:active={activeTab === "library"}
         on:click={() => handleTabClick("library")}
@@ -133,6 +151,7 @@
     </button>
 
     <button
+        type="button"
         class="nav-item"
         class:active={activeTab === "discover"}
         on:click={() => handleTabClick("discover")}
@@ -142,6 +161,7 @@
     </button>
 
     <button
+        type="button"
         class="nav-item"
         class:active={activeTab === "plugins"}
         on:click={() => handleTabClick("plugins")}
@@ -183,8 +203,8 @@
     .active-pill-slider {
         position: absolute;
         top: 8px;
-        left: var(--safe-area-left, 0px);
-        width: calc((100% - var(--safe-area-left, 0px) - var(--safe-area-right, 0px)) / 4);
+        left: var(--tv-overscan-x, var(--safe-area-left, 0px));
+        width: calc((100% - var(--tv-overscan-x, var(--safe-area-left, 0px)) - var(--tv-overscan-x, var(--safe-area-right, 0px))) / 4);
         height: 28px;
         display: flex;
         justify-content: center;
@@ -194,6 +214,67 @@
         transform: translate3d(calc(var(--active-tab-idx, 0) * 100%), 0, 0);
         transition: transform 0.32s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
         will-change: transform;
+    }
+
+    :global(html.layout-wide-mobile) .bottom-nav,
+    :global(html.layout-tv) .bottom-nav {
+        top: 0;
+        left: 0;
+        right: auto;
+        bottom: 0;
+        width: var(--mobile-rail-width, 88px);
+        height: auto;
+        flex-direction: column;
+        justify-content: flex-start;
+        align-items: stretch;
+        gap: 12px;
+        padding-top: calc(var(--spacing-lg, 24px) + var(--safe-area-top, 0px));
+        padding-left: 0;
+        padding-right: 0;
+        padding-bottom: var(--spacing-md, 16px);
+        border-top: none;
+        border-right: 1px solid var(--border-subtle);
+        border-radius: 0;
+    }
+
+    :global(html.layout-tv) .bottom-nav {
+        width: var(--mobile-rail-width, 96px);
+    }
+
+    :global(html.layout-wide-mobile) .bottom-nav.has-player,
+    :global(html.layout-tv) .bottom-nav.has-player {
+        bottom: calc(var(--wide-player-height, 80px) + var(--safe-area-bottom, 0px));
+    }
+
+    :global(html.layout-tv) .bottom-nav.has-player {
+        bottom: calc(var(--wide-player-height, 88px) + var(--safe-area-bottom, 0px));
+    }
+
+    :global(html.layout-wide-mobile) .active-pill-slider,
+    :global(html.layout-tv) .active-pill-slider {
+        top: calc(var(--spacing-lg, 24px) + var(--safe-area-top, 0px));
+        left: 0;
+        width: calc(100% - 16px);
+        height: 56px;
+        transform: translate3d(8px, calc(var(--active-tab-idx, 0) * 68px), 0);
+    }
+
+    :global(html.layout-wide-mobile) .active-pill-slider::after,
+    :global(html.layout-tv) .active-pill-slider::after {
+        width: 100%;
+        height: 100%;
+        border-radius: var(--radius-md, 10px);
+    }
+
+    :global(html.layout-wide-mobile) .nav-item,
+    :global(html.layout-tv) .nav-item {
+        flex: 0 0 56px;
+        width: 100%;
+        height: 56px;
+        min-height: 56px;
+        padding: 6px 8px;
+        gap: 4px;
+        z-index: 1;
     }
 
     .active-pill-slider::after {

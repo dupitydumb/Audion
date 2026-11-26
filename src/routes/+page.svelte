@@ -240,11 +240,11 @@
         <ContextMenu />
       </div>
       <PlayerBar />
-      <KeyboardShortcuts />
-      <KeyboardShortcutsHelp />
     {/if}
 
     {#if !$isMiniPlayer}
+      <KeyboardShortcuts />
+      <KeyboardShortcutsHelp />
       <PluginDrawer />
       <ToastContainer />
       {#if $pluginStore.pendingUpdates.length > 0}
@@ -328,6 +328,11 @@
     flex-direction: column;
     overflow: hidden;
     background-color: var(--bg-base);
+  }
+
+  :global(html.layout-wide-mobile) .mobile-layout,
+  :global(html.layout-tv) .mobile-layout {
+    padding-left: var(--mobile-rail-width, 88px);
   }
 
   .mobile-content {

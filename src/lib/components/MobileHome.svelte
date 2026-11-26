@@ -31,7 +31,7 @@
     import { isStatsWrappedOpen } from "$lib/stores/ui";
     import { progressiveScan, isScanning } from "$lib/stores/progressiveScan";
     import { addToast } from "$lib/stores/toast";
-    import { useDesktopTitleBar } from "$lib/stores/mobile";
+    import { useDesktopTitleBar, isTV } from "$lib/stores/mobile";
     import { subsonicConnected } from "$lib/stores/subsonic";
     import { customArtworks } from "$lib/stores/customArtwork";
     import { appSettings } from "$lib/stores/settings";
@@ -152,10 +152,51 @@
     }
 
     function handleKeydown(e: KeyboardEvent, callback: () => void) {
+        if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             callback();
         }
+    }
+
+    function syncTvArtistTabindex(node: HTMLElement, tv: boolean) {
+        let observer: MutationObserver | null = null;
+
+        const apply = (isTvMode: boolean) => {
+            const chips = node.querySelectorAll<HTMLElement>(
+                '[role="button"] .artist-chip, [role="button"] .artist-tap-more'
+            );
+            for (const el of chips) {
+                if (isTvMode) {
+                    el.setAttribute("tabindex", "-1");
+                } else if (el.classList.contains("artist-tap-more")) {
+                    el.setAttribute("tabindex", "0");
+                } else {
+                    el.removeAttribute("tabindex");
+                }
+            }
+        };
+
+        const setup = (isTvMode: boolean) => {
+            observer?.disconnect();
+            observer = null;
+            apply(isTvMode);
+            if (isTvMode) {
+                observer = new MutationObserver(() => apply(true));
+                observer.observe(node, { childList: true, subtree: true });
+            }
+        };
+
+        setup(tv);
+
+        return {
+            update(nextTv: boolean) {
+                setup(nextTv);
+            },
+            destroy() {
+                observer?.disconnect();
+            },
+        };
     }
 
     async function handleAddFolder() {
@@ -246,7 +287,7 @@
     }
 </script>
 
-<div class="mobile-home">
+<div class="mobile-home" use:syncTvArtistTabindex={$isTV}>
     <!-- Header with greeting + settings gear -->
     <header class="home-header">
         <h1>{$_(`home.${getGreetingKey()}`)}</h1>
@@ -261,6 +302,7 @@
                     class="add-music-btn"
                     on:click={handleAddFolder}
                     title={$_('sidebar.addMusicFolder')}
+                    aria-label={$_('sidebar.addMusicFolder')}
                 >
                     <Icon name="folder" size={22} />
                 </button>
@@ -304,6 +346,7 @@
         </div>
     {/if}
 
+    <div class="home-highlights">
     <!-- Liked Songs Banner -->
     <div class="liked-songs-banner-container">
         <button class="liked-songs-banner" on:click={goToLikedSongs}>
@@ -328,6 +371,7 @@
                 class="hero-card"
                 role="button"
                 tabindex="0"
+                aria-label={$topTracks[0].track.title}
                 on:click={(e) =>
                     handleContainerClick(e, () => handlePlayTopTrack(0))}
                 on:keydown={(e) =>
@@ -386,6 +430,7 @@
             </div>
         </section>
     {/if}
+    </div>
 
     <!-- Quick Play Grid (Spotify-style 2-column compact cards) -->
     {#if quickPlayAlbums.length > 0}
@@ -462,6 +507,7 @@
                         class="wide-card"
                         role="button"
                         tabindex="0"
+                        aria-label={track.title || "Unknown"}
                         on:click={(e) =>
                             handleContainerClick(e, () =>
                                 handlePlayRecentlyPlayed(i),
@@ -511,6 +557,7 @@
                         class="top-song-item"
                         role="button"
                         tabindex="0"
+                        aria-label={track.title || "Unknown"}
                         on:click={(e) =>
                             handleContainerClick(e, () =>
                                 handlePlayTopTrack(i),
@@ -562,6 +609,7 @@
                         class="top-song-item"
                         role="button"
                         tabindex="0"
+                        aria-label={album.name}
                         on:click={(e) =>
                             handleContainerClick(e, () =>
                                 goToAlbumDetail(album.id),
@@ -616,6 +664,7 @@
                         class="spotify-card"
                         role="button"
                         tabindex="0"
+                        aria-label={track.title || "Unknown"}
                         on:click={(e) =>
                             handleContainerClick(e, () => handlePlayTrack(i))}
                         on:keydown={(e) =>
@@ -671,6 +720,7 @@
                                         class="chart-mini-row" 
                                         role="button"
                                         tabindex="0"
+                                        aria-label={`${item.title} - ${item.artist}`}
                                         on:click={(e) => handleContainerClick(e, () => playApiTrack(item, chart.items))}
                                         on:keydown={(e) => handleKeydown(e, () => playApiTrack(item, chart.items))}
                                     >
@@ -721,6 +771,7 @@
 
 <style>
     .mobile-home {
+        --home-pad-x: var(--spacing-md);
         flex: 1;
         overflow-y: auto;
         overflow-x: hidden;
@@ -728,6 +779,11 @@
         -webkit-overflow-scrolling: touch;
         -webkit-tap-highlight-color: transparent;
         user-select: none;
+        scroll-padding-block: 16px;
+    }
+
+    .home-highlights {
+        display: contents;
     }
 
     .home-header {
@@ -735,7 +791,7 @@
         align-items: center;
         justify-content: space-between;
         padding: var(--spacing-lg)
-            var(--spacing-md) var(--spacing-md);
+            var(--home-pad-x) var(--spacing-md);
     }
 
     .home-header h1 {
@@ -834,7 +890,7 @@
         display: flex;
         flex-wrap: wrap;
         gap: var(--spacing-sm);
-        padding: 0 var(--spacing-md) var(--spacing-md);
+        padding: 0 var(--home-pad-x) var(--spacing-md);
     }
 
     .quick-chip {
@@ -854,13 +910,15 @@
         -webkit-tap-highlight-color: transparent;
     }
 
+    .quick-chip:hover,
+    .quick-chip:focus-visible,
     .quick-chip:active {
         background-color: var(--surface-subtle-hover);
     }
 
     /* ===== Liked Songs Banner ===== */
     .liked-songs-banner-container {
-        padding: 0 var(--spacing-md) var(--spacing-lg);
+        padding: 0 var(--home-pad-x) var(--spacing-lg);
     }
 
     .liked-songs-banner {
@@ -874,9 +932,14 @@
         cursor: pointer;
         text-align: left;
         color: white;
-        transition: transform 0.2s ease;
+        transition: transform 0.2s ease, filter 0.2s ease;
         -webkit-tap-highlight-color: transparent;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    .liked-songs-banner:hover,
+    .liked-songs-banner:focus-visible {
+        filter: brightness(1.08);
     }
 
     .liked-songs-banner:active {
@@ -922,7 +985,7 @@
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 8px;
-        padding: 0 var(--spacing-md) var(--spacing-lg);
+        padding: 0 var(--home-pad-x) var(--spacing-lg);
     }
 
     .quick-play-card {
@@ -942,6 +1005,8 @@
         -webkit-tap-highlight-color: transparent;
     }
 
+    .quick-play-card:hover,
+    .quick-play-card:focus-visible,
     .quick-play-card:active {
         background-color: var(--surface-subtle-hover);
     }
@@ -976,7 +1041,7 @@
         font-size: 1.25rem;
         font-weight: var(--font-weight-bold);
         color: var(--text-primary);
-        padding: 0 var(--spacing-md);
+        padding: 0 var(--home-pad-x);
         margin-bottom: var(--spacing-sm);
     }
 
@@ -984,7 +1049,8 @@
         display: flex;
         overflow-x: auto;
         gap: 12px;
-        padding: 0 var(--spacing-md) var(--spacing-md);
+        padding: 4px var(--home-pad-x) var(--spacing-md);
+        scroll-padding-inline: var(--home-pad-x);
         scroll-snap-type: x mandatory;
         -webkit-overflow-scrolling: touch;
         scrollbar-width: none;
@@ -1010,6 +1076,8 @@
         -webkit-tap-highlight-color: transparent;
     }
 
+    .spotify-card:hover,
+    .spotify-card:focus-visible,
     .spotify-card:active {
         background-color: var(--bg-surface);
     }
@@ -1048,6 +1116,8 @@
         box-shadow: var(--shadow-md);
     }
 
+    .spotify-card:hover .card-play-btn,
+    .spotify-card:focus-visible .card-play-btn,
     .spotify-card:active .card-play-btn {
         opacity: 1;
         transform: translateY(0);
@@ -1152,6 +1222,11 @@
         -webkit-tap-highlight-color: transparent;
     }
 
+    .wide-card:hover,
+    .wide-card:focus-visible {
+        background-color: var(--bg-surface);
+    }
+
     .wide-card:active {
         background-color: var(--bg-surface);
         transform: scale(0.98);
@@ -1185,7 +1260,7 @@
     .top-songs-list {
         display: flex;
         flex-direction: column;
-        padding: 0 var(--spacing-md);
+        padding: 0 var(--home-pad-x);
         gap: 4px;
     }
 
@@ -1195,10 +1270,13 @@
         gap: 12px;
         padding: 8px;
         border-radius: var(--radius-sm);
+        cursor: pointer;
         transition: background-color 0.2s ease;
         -webkit-tap-highlight-color: transparent;
     }
 
+    .top-song-item:hover,
+    .top-song-item:focus-visible,
     .top-song-item:active {
         background-color: var(--surface-subtle-hover);
     }
@@ -1263,7 +1341,7 @@
 
     /* ===== New Hero Card Style ===== */
     .hero-section {
-        padding: 0 var(--spacing-md) var(--spacing-lg);
+        padding: 0 var(--home-pad-x) var(--spacing-lg);
     }
 
     .hero-card {
@@ -1280,7 +1358,13 @@
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
         border: none;
         cursor: pointer;
+        transition: transform 0.2s ease, filter 0.2s ease;
         -webkit-tap-highlight-color: transparent;
+    }
+
+    .hero-card:hover,
+    .hero-card:focus-visible {
+        filter: brightness(1.06);
     }
 
     .hero-card:active {
@@ -1289,7 +1373,7 @@
 
     /* ===== Recap Card Style ===== */
     .recap-card-container {
-        padding: 0 var(--spacing-md) var(--spacing-lg);
+        padding: 0 var(--home-pad-x) var(--spacing-lg);
     }
 
     .recap-card {
@@ -1311,8 +1395,13 @@
         text-align: left;
         cursor: pointer;
         box-shadow: var(--shadow-md);
-        transition: transform 0.2s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1));
+        transition: transform 0.2s var(--ease-spring-smooth, cubic-bezier(0.16, 1, 0.3, 1)), filter 0.2s ease;
         -webkit-tap-highlight-color: transparent;
+    }
+
+    .recap-card:hover,
+    .recap-card:focus-visible {
+        filter: brightness(1.06);
     }
 
     .recap-card:active {
@@ -1523,7 +1612,15 @@
         display: flex;
         align-items: center;
         gap: 12px;
+        padding: 4px;
+        border-radius: var(--radius-sm);
         cursor: pointer;
+        transition: background-color 0.2s ease;
+    }
+
+    .chart-mini-row:hover,
+    .chart-mini-row:focus-visible {
+        background-color: var(--surface-subtle-hover);
     }
 
     .chart-mini-row:active {
@@ -1574,5 +1671,90 @@
 
     .mini-play {
         color: var(--text-subdued);
+    }
+
+    /* ===== Landscape Tablet & Smart TV Overrides ===== */
+    :global(html.layout-wide-mobile) .mobile-home {
+        --home-pad-x: 24px;
+    }
+
+    :global(html.layout-tv) .mobile-home {
+        --home-pad-x: var(--tv-overscan-x, 24px);
+    }
+
+    :global(html.layout-wide-mobile) .home-highlights,
+    :global(html.layout-tv) .home-highlights {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: var(--spacing-md);
+        padding: 0 var(--home-pad-x) var(--spacing-lg);
+        align-items: stretch;
+    }
+
+    :global(html.layout-wide-mobile) .home-highlights .liked-songs-banner-container,
+    :global(html.layout-wide-mobile) .home-highlights .hero-section,
+    :global(html.layout-tv) .home-highlights .liked-songs-banner-container,
+    :global(html.layout-tv) .home-highlights .hero-section {
+        padding: 0;
+    }
+
+    :global(html.layout-wide-mobile) .home-highlights .liked-songs-banner,
+    :global(html.layout-tv) .home-highlights .liked-songs-banner {
+        height: 100%;
+    }
+
+    :global(html.layout-wide-mobile) .quick-play-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+    }
+
+    :global(html.layout-tv) .quick-play-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+    }
+
+    :global(html.layout-tv) .quick-play-card {
+        height: 64px;
+    }
+
+    :global(html.layout-tv) .quick-play-art {
+        width: 64px;
+        height: 64px;
+    }
+
+    :global(html.layout-wide-mobile) .top-songs-list,
+    :global(html.layout-tv) .top-songs-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px 16px;
+    }
+
+    :global(html.layout-tv) .home-header h1 {
+        font-size: 2rem;
+    }
+
+    :global(html.layout-tv) .section-title {
+        font-size: 1.4rem;
+    }
+
+    :global(html.layout-tv) .hero-card {
+        height: 210px;
+    }
+
+    :global(html.layout-tv) .carousel-container {
+        scroll-snap-type: x proximity;
+        gap: 16px;
+    }
+
+    :global(html.layout-tv) .spotify-card {
+        width: 180px;
+    }
+
+    :global(html.layout-tv) .wide-card {
+        width: 280px;
+    }
+
+    :global(html.layout-tv) .chart-card {
+        width: 320px;
     }
 </style>

@@ -59,23 +59,26 @@
         }
     }
 
-    // Album cover collage / hero art for shareable recap (replaces unreliable external artist pics)
+    // Album cover collage / hero art for shareable recap (deduped by album_id and URL)
     let failedCoverUrls = new Set<string>();
     $: recapCovers = (() => {
         const urls: string[] = [];
-        const seen = new Set<string>();
-        const pushUrl = (u: string | null | undefined) => {
-            if (!u || seen.has(u) || failedCoverUrls.has(u)) return;
-            seen.add(u);
+        const seenUrls = new Set<string>();
+        const seenAlbums = new Set<number>();
+        const pushUrl = (u: string | null | undefined, albumId?: number | null) => {
+            if (!u || seenUrls.has(u) || failedCoverUrls.has(u)) return;
+            if (albumId && seenAlbums.has(albumId)) return;
+            seenUrls.add(u);
+            if (albumId) seenAlbums.add(albumId);
             urls.push(u);
         };
         for (const alb of $topAlbums) {
             if (urls.length >= 4) break;
-            if (alb.album_art) pushUrl(getAlbumArtSrc(alb.album_art));
+            if (alb.album_art) pushUrl(getAlbumArtSrc(alb.album_art), alb.id);
         }
         for (const item of $topTracks) {
             if (urls.length >= 4) break;
-            pushUrl(resolveTrackCover(item.track));
+            pushUrl(resolveTrackCover(item.track), item.track.album_id);
         }
         return urls;
     })();
@@ -196,41 +199,50 @@
 
     const imageCache = new Map<string, HTMLImageElement>();
 
-    // Helper to load image for canvas (cached, fast-path for Tauri asset URLs)
+    // Helper to load image for canvas (cached, fast-path for Tauri asset URLs, hard 2s timeout)
     async function loadImage(src: string): Promise<HTMLImageElement> {
         const cached = imageCache.get(src);
         if (cached) return cached;
 
-        let finalSrc = src;
-        if (isTauriAssetUrl(src)) {
-            try {
-                const resp = await fetch(src);
-                if (resp.ok) {
-                    finalSrc = await blobToDataUrl(await resp.blob());
+        const doLoad = async (): Promise<HTMLImageElement> => {
+            let finalSrc = src;
+            if (isTauriAssetUrl(src)) {
+                try {
+                    const resp = await fetch(src);
+                    if (resp.ok) {
+                        finalSrc = await blobToDataUrl(await resp.blob());
+                    }
+                } catch {
+                    // Fall back to direct URL if fetch fails
                 }
-            } catch {
-                // Fall back to direct URL if fetch fails
+            } else if (src.startsWith("http")) {
+                try {
+                    const base64 = await proxyFetchBytes(src);
+                    const ext = src.split(".").pop()?.toLowerCase();
+                    const mime = ext === "png" ? "image/png" : "image/jpeg";
+                    finalSrc = `data:${mime};base64,${base64}`;
+                } catch (e) {
+                    console.warn("[StatsWrapped] Proxy fetch failed for image:", src, e);
+                }
             }
-        } else if (src.startsWith("http")) {
-            try {
-                const base64 = await proxyFetchBytes(src);
-                const ext = src.split(".").pop()?.toLowerCase();
-                const mime = ext === "png" ? "image/png" : "image/jpeg";
-                finalSrc = `data:${mime};base64,${base64}`;
-            } catch (e) {
-                console.warn("[StatsWrapped] Proxy fetch failed for image:", src, e);
-            }
-        }
 
-        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-            const el = new Image();
-            el.crossOrigin = "anonymous";
-            el.onload = () => resolve(el);
-            el.onerror = reject;
-            el.src = finalSrc;
-        });
-        imageCache.set(src, img);
-        return img;
+            const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+                const el = new Image();
+                el.crossOrigin = "anonymous";
+                el.onload = () => resolve(el);
+                el.onerror = reject;
+                el.src = finalSrc;
+            });
+            imageCache.set(src, img);
+            return img;
+        };
+
+        return Promise.race([
+            doLoad(),
+            new Promise<HTMLImageElement>((_, reject) =>
+                setTimeout(() => reject(new Error("Image load timeout")), 2000)
+            ),
+        ]);
     }
 
     async function exportToImage() {
@@ -429,6 +441,51 @@
         }
     }
 
+    function roundRectPath(
+        ctx: CanvasRenderingContext2D,
+        x: number,
+        y: number,
+        w: number,
+        h: number,
+        r: number,
+    ) {
+        const radius = Math.min(r, w / 2, h / 2);
+        ctx.beginPath();
+        ctx.moveTo(x + radius, y);
+        ctx.arcTo(x + w, y, x + w, y + h, radius);
+        ctx.arcTo(x + w, y + h, x, y + h, radius);
+        ctx.arcTo(x, y + h, x, y, radius);
+        ctx.arcTo(x, y, x + w, y, radius);
+        ctx.closePath();
+    }
+
+    function drawImageCover(
+        ctx: CanvasRenderingContext2D,
+        img: HTMLImageElement,
+        dx: number,
+        dy: number,
+        dw: number,
+        dh: number,
+    ) {
+        const iw = img.naturalWidth || img.width;
+        const ih = img.naturalHeight || img.height;
+        if (!iw || !ih) return;
+        const targetRatio = dw / dh;
+        const srcRatio = iw / ih;
+        let sx = 0,
+            sy = 0,
+            sw = iw,
+            sh = ih;
+        if (srcRatio > targetRatio) {
+            sw = ih * targetRatio;
+            sx = (iw - sw) / 2;
+        } else if (srcRatio < targetRatio) {
+            sh = iw / targetRatio;
+            sy = (ih - sh) / 2;
+        }
+        ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh);
+    }
+
     async function drawFinalRecap(
         ctx: CanvasRenderingContext2D,
         width = 1080,
@@ -455,23 +512,33 @@
         ctx.fillRect(0, 0, width, height);
 
         if (recapTheme === "frosted" && loadedCovers[0]) {
-            ctx.save();
-            const scale =
-                Math.max(
-                    width / loadedCovers[0].width,
-                    height / loadedCovers[0].height,
-                ) * 1.15;
-            const sw = loadedCovers[0].width * scale;
-            const sh = loadedCovers[0].height * scale;
-            ctx.filter = "blur(70px) brightness(0.32) saturate(1.5)";
-            ctx.drawImage(
-                loadedCovers[0],
-                (width - sw) / 2,
-                (height - sh) / 2,
-                sw,
-                sh,
-            );
-            ctx.restore();
+            // Downsample to a tiny offscreen canvas instead of running a huge 70px blur on 1080x1920 (which freezes WebViews)
+            const blurCanvas = document.createElement("canvas");
+            blurCanvas.width = 48;
+            blurCanvas.height = 48;
+            const bctx = blurCanvas.getContext("2d");
+            if (bctx) {
+                bctx.drawImage(loadedCovers[0], 0, 0, 48, 48);
+                ctx.save();
+                ctx.globalAlpha = 0.42;
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = "high";
+                const scale =
+                    Math.max(
+                        width / loadedCovers[0].width,
+                        height / loadedCovers[0].height,
+                    ) * 1.15;
+                const sw = loadedCovers[0].width * scale;
+                const sh = loadedCovers[0].height * scale;
+                ctx.drawImage(
+                    blurCanvas,
+                    (width - sw) / 2,
+                    (height - sh) / 2,
+                    sw,
+                    sh,
+                );
+                ctx.restore();
+            }
         } else if (recapTheme === "mesh") {
             const gradTL = ctx.createRadialGradient(
                 width * 0.2,
@@ -518,35 +585,32 @@
         }
 
         // Card surface
-        const cardX = isSquare ? 72 : 88;
-        const cardY = isSquare ? 72 : 168;
+        const cardX = 56;
+        const cardY = isSquare ? 56 : 112;
         const cardW = width - cardX * 2;
         const cardH = height - cardY * 2;
 
         if (recapTheme !== "minimal") {
-            ctx.save();
-            ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
-            ctx.shadowBlur = 64;
-            ctx.shadowOffsetY = 24;
+            ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+            roundRectPath(ctx, cardX, cardY + 14, cardW, cardH, 44);
+            ctx.fill();
+
             ctx.fillStyle =
                 recapTheme === "frosted"
-                    ? "rgba(18, 20, 28, 0.72)"
+                    ? "rgba(18, 20, 28, 0.78)"
                     : recapTheme === "vinyl"
                       ? "#131419"
-                      : "rgba(16, 17, 24, 0.82)";
-            ctx.beginPath();
-            ctx.roundRect(cardX, cardY, cardW, cardH, 44);
+                      : "rgba(16, 17, 24, 0.85)";
+            roundRectPath(ctx, cardX, cardY, cardW, cardH, 44);
             ctx.fill();
-            ctx.restore();
 
             ctx.strokeStyle = "rgba(255, 255, 255, 0.14)";
             ctx.lineWidth = 2.5;
-            ctx.beginPath();
-            ctx.roundRect(cardX, cardY, cardW, cardH, 44);
+            roundRectPath(ctx, cardX, cardY, cardW, cardH, 44);
             ctx.stroke();
         }
 
-        const pad = isSquare ? 48 : 64;
+        const pad = isSquare ? 44 : 52;
         const innerX = cardX + pad;
         const innerW = cardW - pad * 2;
 
@@ -557,27 +621,27 @@
         ctx.fillText(
             $_("recap.recapYear", { values: { year } }).toUpperCase(),
             innerX,
-            cardY + (isSquare ? 56 : 74),
+            cardY + (isSquare ? 54 : 68),
         );
 
         try {
             const logoImg = await loadImage("/logo.png");
-            const logoSize = isSquare ? 42 : 50;
+            const logoSize = isSquare ? 42 : 48;
             ctx.drawImage(
                 logoImg,
                 cardX + cardW - pad - logoSize,
-                cardY + (isSquare ? 30 : 44),
+                cardY + (isSquare ? 28 : 38),
                 logoSize,
                 logoSize,
             );
         } catch {}
 
         // Visual hero block (Album collage, single cover, or Vinyl sleeve + disc)
-        const artSize = isSquare ? 260 : 450;
-        const artY = cardY + (isSquare ? 94 : 132);
+        const artSize = isSquare ? 260 : 560;
+        const artY = cardY + (isSquare ? 90 : 124);
         const artX =
             recapTheme === "vinyl"
-                ? innerX + (isSquare ? 24 : 76)
+                ? innerX + (isSquare ? 24 : 56)
                 : (width - artSize) / 2;
 
         if (recapTheme === "vinyl") {
@@ -623,25 +687,20 @@
             for (let i = 0; i < 4; i++) {
                 const [cx, cy] = positions[i];
                 ctx.save();
-                ctx.beginPath();
-                ctx.roundRect(cx, cy, cell, cell, 16);
+                roundRectPath(ctx, cx, cy, cell, cell, 18);
                 ctx.clip();
-                ctx.drawImage(loadedCovers[i], cx, cy, cell, cell);
+                drawImageCover(ctx, loadedCovers[i], cx, cy, cell, cell);
                 ctx.restore();
             }
         } else if (loadedCovers.length >= 1) {
             ctx.save();
-            ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
-            ctx.shadowBlur = 32;
-            ctx.beginPath();
-            ctx.roundRect(artX, artY, artSize, artSize, 22);
+            roundRectPath(ctx, artX, artY, artSize, artSize, 24);
             ctx.clip();
-            ctx.drawImage(loadedCovers[0], artX, artY, artSize, artSize);
+            drawImageCover(ctx, loadedCovers[0], artX, artY, artSize, artSize);
             ctx.restore();
         } else {
             ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
-            ctx.beginPath();
-            ctx.roundRect(artX, artY, artSize, artSize, 22);
+            roundRectPath(ctx, artX, artY, artSize, artSize, 24);
             ctx.fill();
             ctx.strokeStyle = accentColor;
             ctx.lineWidth = 4;
@@ -651,11 +710,11 @@
         }
 
         // Top artists and songs columns
-        const listY = artY + artSize + (isSquare ? 44 : 74);
+        const listY = artY + artSize + (isSquare ? 44 : 68);
         const col1X = innerX;
-        const col2X = innerX + innerW * 0.52;
-        const rowStep = isSquare ? 42 : 56;
-        const fontSize = isSquare ? 24 : 30;
+        const col2X = innerX + innerW * 0.51;
+        const rowStep = isSquare ? 42 : 70;
+        const fontSize = isSquare ? 24 : 33;
 
         ctx.textAlign = "left";
         ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
@@ -664,100 +723,167 @@
         ctx.fillText($_("recap.topSongs").toUpperCase(), col2X, listY);
 
         $topArtists.slice(0, 5).forEach((art, i) => {
-            const y = listY + (isSquare ? 40 : 56) + i * rowStep;
+            const y = listY + (isSquare ? 40 : 60) + i * rowStep;
             ctx.fillStyle = accentColor;
             ctx.font = `900 ${fontSize}px Inter, sans-serif`;
             ctx.fillText(`${i + 1}`, col1X, y);
 
-            const raw = art.artist.toString();
-            const name = raw.length > 15 ? raw.substring(0, 13) + "…" : raw;
+            const raw = (art?.artist ?? $_("common.unknownArtist")).toString();
+            const name = raw.length > 16 ? raw.substring(0, 14) + "…" : raw;
             ctx.fillStyle = "#ffffff";
             ctx.font = `700 ${fontSize}px Inter, sans-serif`;
-            ctx.fillText(name, col1X + 34, y);
+            ctx.fillText(name, col1X + 36, y);
         });
 
         $topTracks.slice(0, 5).forEach((item, i) => {
-            const y = listY + (isSquare ? 40 : 56) + i * rowStep;
+            const y = listY + (isSquare ? 40 : 60) + i * rowStep;
             ctx.fillStyle = accentColor;
             ctx.font = `900 ${fontSize}px Inter, sans-serif`;
             ctx.fillText(`${i + 1}`, col2X, y);
 
             const titleText = item.track.title || $_("common.unknownTrack");
             const title =
-                titleText.length > 16 ? titleText.substring(0, 14) + "…" : titleText;
+                titleText.length > 17 ? titleText.substring(0, 15) + "…" : titleText;
             ctx.fillStyle = "#ffffff";
             ctx.font = `700 ${fontSize}px Inter, sans-serif`;
-            ctx.fillText(title, col2X + 34, y);
+            ctx.fillText(title, col2X + 36, y);
         });
 
-        // Footer stat blocks
-        const pillH = isSquare ? 104 : 136;
-        const pillY = cardY + cardH - (isSquare ? 36 : 56) - pillH;
-        const pillW = (innerW - 24) / 2;
-        const pill1X = innerX;
-        const pill2X = innerX + pillW + 24;
+        // #1 Artist spotlight strip on tall 9:16 card to balance vertical rhythm
+        const pillH = isSquare ? 104 : 148;
+        const bottomPad = isSquare ? 36 : 76;
+        const pillY = cardY + cardH - bottomPad - pillH;
 
-        for (const px of [pill1X, pill2X]) {
+        if (!isSquare && $topArtists[0]) {
+            const spotH = 128;
+            const spotY = pillY - 24 - spotH;
+            ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+            roundRectPath(ctx, innerX, spotY, innerW, spotH, 22);
+            ctx.fill();
+            ctx.strokeStyle = accentColor + "55";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.textAlign = "left";
+            ctx.fillStyle = accentColor;
+            ctx.font = "800 20px Inter, sans-serif";
+            ctx.fillText($_("recap.numberOneArtist").toUpperCase(), innerX + 28, spotY + 46);
+
+            const topName = ($topArtists[0]?.artist ?? $_("common.unknownArtist")).toString();
+            const clippedTop = topName.length > 24 ? topName.substring(0, 22) + "…" : topName;
+            ctx.fillStyle = "#ffffff";
+            ctx.font = "900 38px Inter, sans-serif";
+            ctx.fillText(clippedTop, innerX + 28, spotY + 96);
+
+            ctx.textAlign = "right";
+            ctx.fillStyle = "rgba(255, 255, 255, 0.72)";
+            ctx.font = "700 26px Inter, sans-serif";
+            ctx.fillText(`${$topArtists[0].play_count} ${$_("recap.plays")}`, innerX + innerW - 28, spotY + 92);
+        }
+
+        // Footer stat blocks (3 columns on 9:16, 2 columns on 1:1)
+        const statCols = isSquare ? 2 : 3;
+        const pillGap = 20;
+        const pillW = (innerW - pillGap * (statCols - 1)) / statCols;
+
+        for (let c = 0; c < statCols; c++) {
+            const px = innerX + c * (pillW + pillGap);
             ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
-            ctx.beginPath();
-            ctx.roundRect(px, pillY, pillW, pillH, 20);
+            roundRectPath(ctx, px, pillY, pillW, pillH, 20);
             ctx.fill();
             ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
             ctx.lineWidth = 2;
             ctx.stroke();
         }
 
-        ctx.textAlign = "left";
-        ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
-        ctx.font = `800 ${isSquare ? 16 : 20}px Inter, sans-serif`;
-        ctx.fillText(
-            $_("recap.minutesListened").toUpperCase(),
-            pill1X + 24,
-            pillY + (isSquare ? 34 : 44),
-        );
-        ctx.fillText(
-            $_("recap.topGenre").toUpperCase(),
-            pill2X + 24,
-            pillY + (isSquare ? 34 : 44),
-        );
-
-        const valFont = isSquare ? 38 : 50;
-        ctx.fillStyle = "#ffffff";
-        ctx.font = `900 ${valFont}px Inter, sans-serif`;
-        ctx.fillText(
-            formatMinutes($statsSummary?.total_duration_seconds || 0),
-            pill1X + 24,
-            pillY + (isSquare ? 82 : 106),
-        );
-
         const genreText = topGenres[0] ? topGenres[0][0] : $_("recap.musicFallback");
         const clippedGenre =
-            genreText.length > 11 ? genreText.substring(0, 10) + "…" : genreText;
-        ctx.fillStyle = accentColor;
-        ctx.fillText(clippedGenre, pill2X + 24, pillY + (isSquare ? 82 : 106));
+            genreText.length > 10 ? genreText.substring(0, 9) + "…" : genreText;
+        const statsColsData = isSquare
+            ? [
+                  {
+                      label: $_("recap.minutesListened").toUpperCase(),
+                      value: formatMinutes($statsSummary?.total_duration_seconds || 0),
+                      color: "#ffffff",
+                  },
+                  {
+                      label: $_("recap.topGenre").toUpperCase(),
+                      value: clippedGenre,
+                      color: accentColor,
+                  },
+              ]
+            : [
+                  {
+                      label: $_("recap.minutesListened").toUpperCase(),
+                      value: formatMinutes($statsSummary?.total_duration_seconds || 0),
+                      color: "#ffffff",
+                  },
+                  {
+                      label: $_("recap.totalPlays").toUpperCase(),
+                      value: ($statsSummary?.total_plays || 0).toLocaleString(),
+                      color: "#ffffff",
+                  },
+                  {
+                      label: $_("recap.topGenre").toUpperCase(),
+                      value: clippedGenre,
+                      color: accentColor,
+                  },
+              ];
+
+        ctx.textAlign = "left";
+        statsColsData.forEach((col, c) => {
+            const px = innerX + c * (pillW + pillGap);
+            ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+            ctx.font = `800 ${isSquare ? 16 : 18}px Inter, sans-serif`;
+            ctx.fillText(col.label, px + 22, pillY + (isSquare ? 42 : 52));
+            ctx.fillStyle = col.color;
+            ctx.font = `900 ${isSquare ? 36 : 42}px Inter, sans-serif`;
+            ctx.fillText(col.value, px + 22, pillY + (isSquare ? 82 : 108));
+        });
+
+        if (!isSquare) {
+            ctx.textAlign = "center";
+            ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+            ctx.font = "700 20px Inter, sans-serif";
+            ctx.fillText(
+                $_("recap.aboardAudion", { values: { month: currentMonthName } }).toUpperCase(),
+                width / 2,
+                cardY + cardH - 30,
+            );
+        }
     }
 
     let previewRenderGen = 0;
     async function renderRecapPreview() {
         if (!recapPreviewCanvas || currentSlide !== 5 || !show) return;
         const gen = ++previewRenderGen;
-        const w = 1080;
-        const h = recapAspect === "1:1" ? 1080 : 1920;
+        try {
+            const w = 1080;
+            const h = recapAspect === "1:1" ? 1080 : 1920;
 
-        // Draw onto an offscreen canvas first so rapid template switches never flicker
-        const offscreen = document.createElement("canvas");
-        offscreen.width = w;
-        offscreen.height = h;
-        const octx = offscreen.getContext("2d");
-        if (!octx) return;
-        await drawFinalRecap(octx, w, h);
+            const pw = 540;
+            const ph = recapAspect === "1:1" ? 540 : 960;
+            if (recapPreviewCanvas.width !== pw || recapPreviewCanvas.height !== ph) {
+                recapPreviewCanvas.width = pw;
+                recapPreviewCanvas.height = ph;
+            }
 
-        if (gen !== previewRenderGen || !recapPreviewCanvas) return;
-        recapPreviewCanvas.width = w;
-        recapPreviewCanvas.height = h;
-        const ctx = recapPreviewCanvas.getContext("2d");
-        if (!ctx) return;
-        ctx.drawImage(offscreen, 0, 0);
+            const offscreen = document.createElement("canvas");
+            offscreen.width = pw;
+            offscreen.height = ph;
+            const octx = offscreen.getContext("2d");
+            if (!octx) return;
+            octx.scale(0.5, 0.5);
+            await drawFinalRecap(octx, w, h);
+
+            if (gen !== previewRenderGen || !recapPreviewCanvas) return;
+            const ctx = recapPreviewCanvas.getContext("2d");
+            if (!ctx) return;
+            ctx.clearRect(0, 0, pw, ph);
+            ctx.drawImage(offscreen, 0, 0);
+        } catch (err) {
+            console.error("[StatsWrapped] Preview render failed:", err);
+        }
     }
 
     $: if (
@@ -1127,7 +1253,7 @@
 
     .header {
         position: relative;
-        z-index: 10;
+        z-index: 100;
         flex-shrink: 0;
         padding-top: calc(var(--spacing-xs) + var(--safe-area-top, 0px));
     }
@@ -1182,6 +1308,7 @@
         justify-content: center;
         position: relative;
         z-index: 10;
+        overflow: hidden;
         padding: var(--spacing-sm) 0;
     }
 
