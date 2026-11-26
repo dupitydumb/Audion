@@ -46,6 +46,7 @@ export const currentTrackId = derived(currentTrack, ($t) => $t?.id ?? null);
 
 // Playing state
 export const isPlaying = writable(false);
+export const isTrackLoading = writable(false);
 
 // Queue
 export const queue = writable<Track[]>([]);

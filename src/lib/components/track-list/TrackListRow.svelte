@@ -6,6 +6,7 @@
   import MarqueeText from "$lib/components/MarqueeText.svelte";
   import { formatDuration } from "$lib/api/tauri";
   import { isMobile } from "$lib/stores/mobile";
+  import { isTrackLoading } from "$lib/stores/player";
   import { multiSelect } from "$lib/stores/multiselect";
   import { trackSelectionStore } from "$lib/stores/trackSelectionStore";
   import { goToArtistDetail, goToAlbumDetail } from "$lib/stores/view";
@@ -130,7 +131,9 @@
     </div>
   {/if}
   <span class="col-num">
-    {#if playingTrackId === track.id && isPlaying}
+    {#if playingTrackId === track.id && $isTrackLoading}
+      <span class="row-loading-spinner" aria-hidden="true"></span>
+    {:else if playingTrackId === track.id && isPlaying}
       <span class="equalizer-bars">
         <span class="eq-bar"></span>
         <span class="eq-bar"></span>
@@ -281,3 +284,21 @@
   {/if}
   </div>
 </div>
+
+<style>
+  .row-loading-spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--accent-primary);
+    border-top-color: transparent;
+    border-radius: 50%;
+    display: inline-block;
+    animation: row-spin 0.7s linear infinite;
+  }
+
+  @keyframes row-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+</style>

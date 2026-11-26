@@ -4,7 +4,7 @@
 export type { ActiveBackend, PlaybackContext } from './stores';
 export {
     activeBackend, currentTrack, currentTrackId, currentTime, duration,
-    isPlaying, queue, queueIndex, userQueueCount, volume, shuffle, repeat,
+    isPlaying, isTrackLoading, queue, queueIndex, userQueueCount, volume, shuffle, repeat,
     shuffledIndices, shuffledIndex, playbackContext, currentPlaylistId,
     currentAlbumId, currentArtistName, pluginEvents,
     sliderToAudioVolume, audioVolumeToSlider, isStreaming,

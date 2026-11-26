@@ -16,6 +16,7 @@
   import {
     currentTrack,
     isPlaying,
+    isTrackLoading,
     togglePlay,
     nextTrack,
     previousTrack,
@@ -644,7 +645,7 @@
               aria-valuemax="100"
               tabindex="0"
             >
-              <div class="progress-track">
+              <div class="progress-track" class:loading={$isTrackLoading}>
                 <div
                   class="progress-fill"
                   style="width: {$progress * 100}%"
@@ -681,10 +682,14 @@
             <button
               type="button"
               class="play-btn large"
+              class:loading={$isTrackLoading}
               on:click={togglePlay}
               aria-label={$isPlaying ? $_('common.pause') : $_('common.play')}
+              aria-busy={$isTrackLoading}
             >
-              {#if $isPlaying}
+              {#if $isTrackLoading}
+                <span class="fs-play-spinner" aria-hidden="true"></span>
+              {:else if $isPlaying}
                 <Icon name="pause" size={36} />
               {:else}
                 <Icon name="play" size={36} />
@@ -1706,6 +1711,43 @@
     overflow: hidden;
     position: relative;
     transition: height 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .mobile-view .progress-track.loading::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--accent-primary) 65%, transparent) 50%,
+      transparent 100%
+    );
+    animation: fs-loading-shimmer 1.15s ease-in-out infinite;
+  }
+
+  .fs-play-spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: fs-spin 0.7s linear infinite;
+  }
+
+  @keyframes fs-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes fs-loading-shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
   }
 
   .mobile-view .progress-bar.active-seeking .progress-track {

@@ -27,7 +27,7 @@ import {
     html5SetVolume, html5SwapPreload, html5Preload, html5StartCrossfade,
 } from '$lib/services/html5-audio';
 import {
-    activeBackend, currentTrack, currentTime, duration, isPlaying,
+    activeBackend, currentTrack, currentTime, duration, isPlaying, isTrackLoading,
     queue, queueIndex, userQueueCount, volume, shuffle, repeat,
     shuffledIndices, shuffledIndex, playbackContext, pluginEvents,
     classifyAudioPath, isStreaming, sliderToAudioVolume,
@@ -105,6 +105,8 @@ export function broadcastState(force = false) {
 
 // ─── Crossfade triggers ───────────────────────────────────────────────────────
 
+let _crossfadeRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
 async function _triggerHtml5Crossfade(): Promise<void> {
     const q = get(queue);
     const nextIdx = _advanceQueueIndex(true);
@@ -114,6 +116,7 @@ async function _triggerHtml5Crossfade(): Promise<void> {
 
     const nextTrackObj = q[nextIdx];
     if (!nextTrackObj) return;
+    _ensureNumericId(nextTrackObj);
 
     const streaming = isStreaming(nextTrackObj) || !!(nextTrackObj as any).stream_url || (nextTrackObj.path && (nextTrackObj.path.startsWith('http://') || nextTrackObj.path.startsWith('https://')));
     if (!streaming) {
@@ -133,8 +136,12 @@ async function _triggerHtml5Crossfade(): Promise<void> {
         // so native and HTML5 auto advances go through exactly one code path
         playerHtml5CrossfadeCommitted().catch(console.error);
     } else {
-        // reset (reckoning as any)._hasCrossfaded = false
-        reckoning.resetHasCrossfaded();
+        // Retry after a 1s cooldown instead of spamming every animation frame
+        if (_crossfadeRetryTimer) clearTimeout(_crossfadeRetryTimer);
+        _crossfadeRetryTimer = setTimeout(() => {
+            _crossfadeRetryTimer = null;
+            reckoning.resetHasCrossfaded();
+        }, 1000);
     }
 }
 
@@ -358,6 +365,19 @@ export async function playTrack(
     _ensureNumericId(track);
     const previousTrackObj = get(currentTrack);
     const sessionId = ++_currentSessionId;
+    if (_crossfadeRetryTimer) {
+        clearTimeout(_crossfadeRetryTimer);
+        _crossfadeRetryTimer = null;
+    }
+
+    // Optimistic UI update so stream clicks show immediate feedback while resolving/buffering
+    isTrackLoading.set(true);
+    currentTrack.set(track);
+    currentTime.set(startTime);
+    duration.set(track.duration || 0);
+    if (get(activeBackend) === 'html5') {
+        html5Stop();
+    }
 
     // Record play for the previous track (if any)
     if (previousTrackObj && _playStartTime > 0) {
@@ -649,6 +669,10 @@ export async function playTrack(
         console.error('[Player] Playback failed type:', typeof err);
         console.error('[Player] Playback failed JSON:', JSON.stringify(err));
         addToast(`Playback failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
+    } finally {
+        if (sessionId === _currentSessionId) {
+            isTrackLoading.set(false);
+        }
     }
 }
 
@@ -737,6 +761,12 @@ export function playTracks(
 }
 
 export async function togglePlay(): Promise<void> {
+    if (get(isTrackLoading) && !get(isPlaying)) {
+        // Cancel an in-flight stream load rather than calling resume() on an unready element
+        ++_currentSessionId;
+        isTrackLoading.set(false);
+        return;
+    }
     if (get(isPlaying)) {
         await pause();
     } else {
@@ -1199,6 +1229,7 @@ async function _scheduleHtml5Preload(): Promise<void> {
 
     const nextTrackObj = q[nextIdx];
     if (!nextTrackObj) return;
+    _ensureNumericId(nextTrackObj);
 
     // prefer a full stream resolved earlier this session over the persisted preview path
     let audioPath = nextTrackObj.local_src || (nextTrackObj as any).stream_url || nextTrackObj.path;

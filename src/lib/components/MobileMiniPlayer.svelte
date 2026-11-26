@@ -6,6 +6,7 @@
   import {
     currentTrack,
     isPlaying,
+    isTrackLoading,
     togglePlay,
     nextTrack,
     previousTrack,
@@ -163,7 +164,7 @@
     transition:fly={{ y: 50, duration: 250 }}
   >
     <!-- Display-only 2px hairline progress indicator at the top -->
-    <div class="mini-progress-bar" aria-hidden="true">
+    <div class="mini-progress-bar" class:loading={$isTrackLoading} aria-hidden="true">
       {#if isLive}
         <div class="mini-progress-fill live"></div>
       {:else}
@@ -218,10 +219,14 @@
         <button
           type="button"
           class="control-btn play-pause-btn"
+          class:loading={$isTrackLoading}
           on:click={handlePlayPause}
           aria-label={$isPlaying ? $_('common.pause') : $_('common.play')}
+          aria-busy={$isTrackLoading}
         >
-          {#if $isPlaying}
+          {#if $isTrackLoading}
+            <span class="mini-play-spinner" aria-hidden="true"></span>
+          {:else if $isPlaying}
             <Icon name="pause" size={20} />
           {:else}
             <Icon name="play" size={20} />
@@ -284,6 +289,44 @@
     background: var(--border-subtle, color-mix(in srgb, var(--text-primary) 10%, transparent));
     pointer-events: none;
     z-index: 2;
+    overflow: hidden;
+  }
+
+  .mini-progress-bar.loading::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--accent-primary) 70%, transparent) 50%,
+      transparent 100%
+    );
+    animation: mini-loading-shimmer 1.1s ease-in-out infinite;
+  }
+
+  .mini-play-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: mini-spin 0.7s linear infinite;
+  }
+
+  @keyframes mini-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes mini-loading-shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(100%);
+    }
   }
 
   .mini-progress-fill {

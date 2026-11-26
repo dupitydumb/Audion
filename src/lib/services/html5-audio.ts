@@ -16,6 +16,7 @@ export interface Html5Callbacks {
     onError: (message: string) => void;
     onTimeUpdate: (position: number, duration: number) => void;
     onPlayStateChange: (isPlaying: boolean) => void;
+    onBufferingChange?: (isBuffering: boolean) => void;
 }
 
 export function html5SetCallbacks(callbacks: Html5Callbacks): void {
@@ -24,6 +25,8 @@ export function html5SetCallbacks(callbacks: Html5Callbacks): void {
 
 export async function html5Play(path: string, volume: number, startTime = 0, replayGainDb: number | null = null): Promise<void> {
     html5ClearPreload();
+    cleanupFadeout();
+    activeTargetVolume = volume;
     let audio = getHtml5Audio();
 
     html5SetTrackReplayGain(replayGainDb);
@@ -136,11 +139,13 @@ export async function html5Preload(path: string, trackId: string | number | null
     } else {
         isPreloadDash = false;
         const resolvedPath = await resolvePlaylistUrl(path);
-        // Mirror prepareHtml5AudioForPath: crossOrigin needed for all http streams (EQ on or off)
-        if (classifyAudioPath(resolvedPath) === 'stream') {
+        // Only set crossOrigin when WebAudio EQ/graph will attach, so non-CORS streams still play/preload
+        const eqEnabled = get(equalizer).enabled;
+        const needsGraph = (eqEnabled && canUseHtml5EqForPath(resolvedPath)) || replayGainNeedsGraph(resolvedPath);
+        if (needsGraph) {
             preloadAudio.crossOrigin = 'anonymous';
-        } else if (get(equalizer).enabled && canUseHtml5EqForPath(resolvedPath)) {
-            preloadAudio.crossOrigin = 'anonymous';
+        } else {
+            preloadAudio.removeAttribute('crossorigin');
         }
         preloadAudio.src = resolvedPath;
         preloadAudio.load();
@@ -263,6 +268,7 @@ export function cleanupFadeout(): void {
         clearInterval(crossfadeRampTimer);
         crossfadeRampTimer = null;
     }
+    crossfadeProgress = 1;
     if (fadeoutAudio) {
         try {
             fadeoutAudio.pause();
@@ -295,8 +301,11 @@ export async function html5StartCrossfade(trackId: string | number | null, targe
     fadeoutAudio = html5Audio;
     fadeoutDashPlayer = dashPlayer;
     fadeoutSourceNode = html5AudioSourceNode;
+    html5AudioSourceNode = null;
+    html5AudioSourceElement = null;
 
     // 2. Promote preload to primary
+    const wasPreloadDash = isPreloadDash;
     html5Audio = preloadAudio;
     dashPlayer = preloadDashPlayer;
 
@@ -310,6 +319,7 @@ export async function html5StartCrossfade(trackId: string | number | null, targe
     preloadTrackId = null;
     preloadReady = false;
     preloadReplayGainDb = null;
+    isPreloadDash = false;
 
     if (preloadTimeoutId) {
         clearTimeout(preloadTimeoutId);
@@ -324,32 +334,23 @@ export async function html5StartCrossfade(trackId: string | number | null, targe
     setupHtml5AudioListeners(html5Audio);
 
     // Initial volumes for transition
+    activeTargetVolume = targetVolume;
     const startVolume = fadeoutAudio ? fadeoutAudio.volume : targetVolume;
     html5Audio.volume = 0;
 
-    // 3. Connect new audio to the EQ filters if EQ is enabled
+    // 3. Connect new audio to the full WebAudio graph (EQ + ReplayGain + Analyser) if needed
     const eqEnabled = get(equalizer).enabled;
     const canUseEq = nextPath ? canUseHtml5EqForPath(nextPath) : false;
+    const useGraph = (eqEnabled && canUseEq) || (nextPath ? replayGainNeedsGraph(nextPath) : false);
 
-    if (eqEnabled && canUseEq && html5AudioContext && html5EqFilters.length > 0) {
-        try {
-            // Keep fadeoutSourceNode connected to filters.
-            // Create a new source node for the new primary audio.
-            html5AudioSourceNode = html5AudioContext.createMediaElementSource(html5Audio);
-            html5AudioSourceElement = html5Audio;
-            html5AudioSourceNode.connect(html5EqFilters[0]);
-            await resumeHtml5AudioContext();
-        } catch (err) {
-            console.error('[Html5Audio] Failed to connect crossfade audio to EQ:', err);
-        }
-    } else {
-        html5AudioSourceNode = null;
-        html5AudioSourceElement = null;
+    if (useGraph) {
+        ensureHtml5EqGraph(html5Audio);
+        await resumeHtml5AudioContext();
     }
 
     // 4. Start play on the new primary audio
     try {
-        if (isPreloadDash && dashPlayer) {
+        if (wasPreloadDash && dashPlayer) {
             dashPlayer.play();
         } else {
             await html5Audio.play();
@@ -360,21 +361,23 @@ export async function html5StartCrossfade(trackId: string | number | null, targe
         return false;
     }
 
-    // 5. Volume ramping loop in Javascript
+    // 5. Volume ramping loop in Javascript (reads live activeTargetVolume so slider changes aren't clobbered)
     const startTime = performance.now();
     const durationMs = durationSecs * 1000;
     const intervalMs = 30;
+    crossfadeProgress = 0;
 
     crossfadeRampTimer = setInterval(() => {
         const elapsed = performance.now() - startTime;
         const progress = Math.min(elapsed / durationMs, 1.0);
+        crossfadeProgress = progress;
 
         if (fadeoutAudio) {
             fadeoutAudio.volume = startVolume * (1.0 - progress);
         }
 
         if (html5Audio) {
-            html5Audio.volume = targetVolume * progress;
+            html5Audio.volume = activeTargetVolume * progress;
         }
 
         if (progress >= 1.0) {
@@ -393,6 +396,7 @@ export async function html5StartCrossfade(trackId: string | number | null, targe
 }
 
 export function html5Pause(): void {
+    cleanupFadeout();
     getHtml5Audio().pause();
 }
 
@@ -425,8 +429,9 @@ export function html5Seek(positionRatio: number): void {
 
 /** volume is already converted (logarithmic), not the raw slider value */
 export function html5SetVolume(audioVolume: number): void {
+    activeTargetVolume = audioVolume;
     if (!html5Audio) return; // Don't create the element just to set volume (mirrors old guard)
-    html5Audio.volume = audioVolume;
+    html5Audio.volume = crossfadeRampTimer ? audioVolume * crossfadeProgress : audioVolume;
 }
 
 export function html5SetEq(state: EqualizerState): void {
@@ -560,6 +565,8 @@ let fadeoutDashPlayer: any | null = null;
 let fadeoutSourceNode: MediaElementAudioSourceNode | null = null;
 let fadeoutTimer: any = null;
 let crossfadeRampTimer: any = null;
+let activeTargetVolume = 1;
+let crossfadeProgress = 1;
 
 // =============================================================================
 // INTERNAL: AUDIO PATH CLASSIFICATION
@@ -670,12 +677,14 @@ function recreateHtml5AudioElement(): HTMLAudioElement {
 function setupHtml5AudioListeners(audio: HTMLAudioElement): void {
     audio.addEventListener('ended', () => {
         if (audio !== html5Audio) return;
+        registeredCallbacks?.onBufferingChange?.(false);
         registeredCallbacks?.onEnded();
     });
 
     audio.addEventListener('error', () => {
         if (audio !== html5Audio) return;
         console.error('[Html5Audio] Audio error:', audio.error);
+        registeredCallbacks?.onBufferingChange?.(false);
         registeredCallbacks?.onError(audio.error?.message || 'Unknown error');
     });
 
@@ -684,8 +693,29 @@ function setupHtml5AudioListeners(audio: HTMLAudioElement): void {
         registeredCallbacks?.onPlayStateChange(true);
     });
 
+    audio.addEventListener('playing', () => {
+        if (audio !== html5Audio) return;
+        registeredCallbacks?.onBufferingChange?.(false);
+    });
+
+    audio.addEventListener('canplay', () => {
+        if (audio !== html5Audio) return;
+        registeredCallbacks?.onBufferingChange?.(false);
+    });
+
+    audio.addEventListener('waiting', () => {
+        if (audio !== html5Audio || audio.paused) return;
+        registeredCallbacks?.onBufferingChange?.(true);
+    });
+
+    audio.addEventListener('stalled', () => {
+        if (audio !== html5Audio || audio.paused) return;
+        registeredCallbacks?.onBufferingChange?.(true);
+    });
+
     audio.addEventListener('pause', () => {
         if (audio !== html5Audio) return;
+        registeredCallbacks?.onBufferingChange?.(false);
         registeredCallbacks?.onPlayStateChange(false);
     });
 
@@ -731,9 +761,11 @@ async function prepareHtml5AudioForPath(audio: HTMLAudioElement, path: string): 
     const canUseEq = canUseHtml5EqForPath(path);
     const useGraph = (eqEnabled && canUseEq) || replayGainNeedsGraph(path);
 
-    // Always set crossOrigin for stream URLs so Range requests work without CORS errors
-    if (classifyAudioPath(path) === 'stream') {
+    // Only set crossOrigin when attaching to WebAudio graph; forcing it on all streams breaks non-CORS servers
+    if (useGraph) {
         audio.crossOrigin = 'anonymous';
+    } else {
+        audio.removeAttribute('crossorigin');
     }
 
     if (useGraph) {

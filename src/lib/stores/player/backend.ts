@@ -2,7 +2,7 @@
 import { get } from 'svelte/store';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 import {
-    activeBackend, isPlaying, currentTrack, currentTime, duration, volume,
+    activeBackend, isPlaying, isTrackLoading, currentTrack, currentTime, duration, volume,
     shuffle, repeat, queue, queueIndex,
     sliderToAudioVolume, pluginEvents,
 } from './stores';
@@ -126,8 +126,14 @@ export async function initAudioBackend(): Promise<void> {
         onPlayStateChange: (playing) => {
             if (get(activeBackend) === 'html5') {
                 isPlaying.set(playing);
+                if (playing) isTrackLoading.set(false);
                 updateMediaSessionPlaybackState(playing ? 'playing' : 'paused');
                 updateSmtcPlaybackState(playing ? 'playing' : 'paused');
+            }
+        },
+        onBufferingChange: (buffering) => {
+            if (get(activeBackend) === 'html5') {
+                isTrackLoading.set(buffering);
             }
         },
     });

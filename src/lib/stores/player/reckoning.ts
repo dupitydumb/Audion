@@ -140,7 +140,12 @@ function _html5Tick(): void {
 
     // Crossfade threshold check runs every frame for timing accuracy.
     const settings = get(appSettings);
-    if (settings.crossfadeSeconds > 0 && state.duration > settings.crossfadeSeconds && !_hasCrossfaded) {
+    if (
+        settings.crossfadeSeconds > 0 &&
+        isFinite(state.duration) &&
+        state.duration > settings.crossfadeSeconds + 1 &&
+        !_hasCrossfaded
+    ) {
         const threshold = state.duration - settings.crossfadeSeconds;
         if (state.position >= threshold) {
             _hasCrossfaded = true;

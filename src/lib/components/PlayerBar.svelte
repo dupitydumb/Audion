@@ -7,6 +7,7 @@
     import {
         currentTrack,
         isPlaying,
+        isTrackLoading,
         volume,
         currentTime,
         duration,
@@ -562,10 +563,16 @@
                 </button>
                 <button
                     class="play-btn"
+                    class:loading={$isTrackLoading}
                     on:click={togglePlay}
-                    title={$isPlaying ? $_('common.pause') : $_('common.play')}
+                    title={$isTrackLoading ? "Loading stream..." : $isPlaying ? $_('common.pause') : $_('common.play')}
+                    aria-busy={$isTrackLoading}
                 >
-                    <Icon name={$isPlaying ? "pause" : "play"} size={24} />
+                    {#if $isTrackLoading}
+                        <span class="play-btn-spinner" aria-hidden="true"></span>
+                    {:else}
+                        <Icon name={$isPlaying ? "pause" : "play"} size={24} />
+                    {/if}
                 </button>
                 <button class="icon-btn" on:click={nextTrack} title={$_('player.next')}>
                     <Icon name="skip-forward" size={24} />
@@ -632,7 +639,7 @@
                                 {formatDuration(hoverTime)}
                             </div>
                         {/if}
-                        <div class="progress-track">
+                        <div class="progress-track" class:loading={$isTrackLoading}>
                             <div
                                 class="progress-fill"
                                 style="width: {displayProgress * 100}%"
@@ -1339,6 +1346,43 @@
         transform: scale(1.08);
         background-color: var(--accent-hover);
         z-index: 100;
+    }
+
+    .play-btn-spinner {
+        width: 20px;
+        height: 20px;
+        border: 2.5px solid currentColor;
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: playerSpin 0.7s linear infinite;
+    }
+
+    .progress-track.loading::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+            90deg,
+            transparent 0%,
+            color-mix(in srgb, var(--accent-primary) 55%, transparent) 50%,
+            transparent 100%
+        );
+        animation: trackLoadingShimmer 1.15s ease-in-out infinite;
+    }
+
+    @keyframes playerSpin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    @keyframes trackLoadingShimmer {
+        0% {
+            transform: translateX(-100%);
+        }
+        100% {
+            transform: translateX(100%);
+        }
     }
 
     .icon-btn {
