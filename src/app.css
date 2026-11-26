@@ -808,3 +808,13 @@ html.layout-mobile .sheet-handle {
   background: var(--text-tertiary, var(--bg-highlight));
   border-radius: 2px;
 }
+
+/* Smart TV D-Pad focus visibility & overscan safe margins */
+html.layout-tv {
+  --tv-overscan-x: clamp(16px, 2.5vw, 36px);
+}
+
+html.layout-tv :focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}

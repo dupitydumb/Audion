@@ -29,6 +29,7 @@
     mobileSearchOpen,
     dispatchBackHandlers,
   } from "$lib/stores/mobile";
+  import { initDpadNavigation } from "$lib/utils/dpadNavigation";
   import { initAndroidNotification } from "$lib/services/android-notification";
   import { initConsoleCapture } from "$lib/services/console-capture";
   import { loadLikedTracks } from "$lib/stores/liked";
@@ -87,6 +88,7 @@
   }
 
   let handleVisibilityChange: (() => void) | null = null;
+  let cleanupDpadNavigation: (() => void) | null = null;
   let unlistenRequestLastView: (() => void) | null = null;
   let migrationPhase: "loading" | "success" | "errors" | "failed" = "loading";
   let migrationTracks = 0;
@@ -242,6 +244,7 @@
     await initPlatformDetection();
 
     initMobileDetection();
+    cleanupDpadNavigation = initDpadNavigation();
     await initAudioBackend();
 
     // tray artist click => focus window + navigate to artist detail
@@ -443,6 +446,10 @@
 
     if (unlistenCoverCached) {
       unlistenCoverCached();
+    }
+
+    if (cleanupDpadNavigation) {
+      cleanupDpadNavigation();
     }
 
     // Cleanup Android back handler & body class

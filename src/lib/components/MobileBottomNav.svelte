@@ -172,8 +172,8 @@
         justify-content: stretch;
         align-items: flex-start;
         padding-top: 6px;
-        padding-left: var(--safe-area-left, 0px);
-        padding-right: var(--safe-area-right, 0px);
+        padding-left: var(--tv-overscan-x, var(--safe-area-left, 0px));
+        padding-right: var(--tv-overscan-x, var(--safe-area-right, 0px));
         padding-bottom: var(--safe-area-bottom, 0px);
         z-index: var(--z-bottom-nav, 1000);
         -webkit-tap-highlight-color: transparent;
@@ -240,6 +240,12 @@
         overflow: hidden;
         text-overflow: ellipsis;
         line-height: 1.2;
+    }
+
+    .nav-item:focus-visible {
+        outline: 2px solid var(--accent-primary);
+        outline-offset: -2px;
+        color: var(--text-primary);
     }
 
     .nav-item:active {

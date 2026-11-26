@@ -65,6 +65,10 @@
   function handleKeyDown(e: KeyboardEvent) {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
+      if (document.documentElement.classList.contains("layout-tv")) {
+        (e.currentTarget as HTMLElement)?.click();
+        return;
+      }
       if (isNowPlaying) {
         dispatch("pause");
       } else {
@@ -200,6 +204,14 @@
 
   .media-card:hover {
     background-color: var(--bg-surface);
+  }
+  .media-card:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
+    background-color: var(--bg-surface);
+  }
+  :global(html.layout-tv) .media-card:focus-visible {
+    transform: scale(1.03);
   }
   .media-card:active {
     transform: scale(0.97);

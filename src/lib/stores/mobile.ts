@@ -141,6 +141,26 @@ export const isWideMobile = derived(
     ([$mobile, $landscape, { width, height }]) => $mobile && $landscape && width >= 768 && height > 540
 );
 
+export function detectIsTVSync(): boolean {
+    if (typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent.toLowerCase();
+    return /tv|leanback|aft|bravia|shield|mibox|chromecast|android tv/i.test(ua);
+}
+
+export const isTVPlatform = writable(detectIsTVSync());
+
+export const isTV = derived(
+    [isTVPlatform, isMobile, isLandscape, viewportSize],
+    ([$tvPlatform, $mobile, $landscape, { width, height }]) => {
+        if ($tvPlatform) return true;
+        if (!$mobile || !$landscape || width < 960 || height <= 540) return false;
+        if (typeof window !== 'undefined' && window.matchMedia?.('(pointer: fine)').matches) {
+            return false;
+        }
+        return true;
+    }
+);
+
 // auto-close the mobile sidebar drawer whenever layout leaves mobile mode
 // (platform change, override change, or PIP engaging)
 isMobile.subscribe(($mobile) => {
@@ -167,6 +187,9 @@ if (typeof document !== 'undefined') {
     });
     isWideMobile.subscribe(($wide) => {
         document.documentElement.classList.toggle('layout-wide-mobile', $wide);
+    });
+    isTV.subscribe(($tv) => {
+        document.documentElement.classList.toggle('layout-tv', $tv);
     });
 }
 

@@ -39,6 +39,7 @@
         type ShortcutBinding,
     } from "$lib/stores/shortcuts";
     import { appSettings } from "$lib/stores/settings";
+    import { isMobile, isTV } from "$lib/stores/mobile";
 
     // Volume step (5%)
     const VOLUME_STEP = 0.05;
@@ -240,6 +241,17 @@
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "i") {
             e.preventDefault();
             isStatsForNerdsOpen.update(v => !v);
+            return;
+        }
+
+        // On mobile/TV, keep bare arrow keys free for D-Pad spatial focus navigation
+        const isBareArrow =
+            !e.ctrlKey &&
+            !e.altKey &&
+            !e.metaKey &&
+            !e.shiftKey &&
+            (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight");
+        if (isBareArrow && (get(isMobile) || get(isTV))) {
             return;
         }
 
