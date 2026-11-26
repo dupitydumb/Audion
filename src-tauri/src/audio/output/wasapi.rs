@@ -5,12 +5,13 @@
 //! `AUTOCONVERTPCM`), so the exclusive path is built directly on the windows
 //! crate. All COM work happens on the render thread; no COM pointer crosses it.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
-use crossbeam::channel::{unbounded, Sender};
+use crossbeam::channel::{bounded, unbounded, Receiver, Sender};
 use rodio::Source;
 use windows::core::{GUID, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{
@@ -235,12 +236,21 @@ enum SinkCmd {
     Shutdown,
 }
 
+const PRODUCER_CHUNK_SAMPLES: usize = 1024;
+const PRODUCER_POOL_CHUNKS: usize = 16;
+
+struct AudioChunk {
+    generation: u64,
+    data: Vec<f32>,
+}
+
 pub struct WasapiExclusiveSink {
     cmd_tx: Sender<SinkCmd>,
     stop: Arc<AtomicBool>,
     health: Arc<ExclusiveHealth>,
     format: NegotiatedFormat,
     thread: Option<JoinHandle<()>>,
+    producer_thread: Option<JoinHandle<()>>,
 }
 
 impl WasapiExclusiveSink {
@@ -252,12 +262,29 @@ impl WasapiExclusiveSink {
         channels: u16,
     ) -> Result<Self, String> {
         let (cmd_tx, cmd_rx) = unbounded();
+        let (full_tx, full_rx) = bounded::<AudioChunk>(PRODUCER_POOL_CHUNKS);
+        let (free_tx, free_rx) = bounded::<Vec<f32>>(PRODUCER_POOL_CHUNKS);
+        for _ in 0..PRODUCER_POOL_CHUNKS {
+            let _ = free_tx.send(Vec::with_capacity(PRODUCER_CHUNK_SAMPLES));
+        }
+
         let stop = Arc::new(AtomicBool::new(false));
+        let source_gen = Arc::new(AtomicU64::new(0));
         let health = Arc::new(ExclusiveHealth::new());
         let (result_tx, result_rx) = mpsc::channel::<Result<NegotiatedFormat, String>>();
 
+        let prod_stop = stop.clone();
+        let prod_gen = source_gen.clone();
+        let producer_thread = std::thread::Builder::new()
+            .name("wasapi-producer".to_string())
+            .spawn(move || {
+                producer_loop(cmd_rx, full_tx, free_rx, prod_stop, prod_gen);
+            })
+            .map_err(|e| format!("Failed to spawn exclusive producer thread: {}", e))?;
+
         let thread_health = health.clone();
         let thread_stop = stop.clone();
+        let thread_gen = source_gen.clone();
         let thread = std::thread::Builder::new()
             .name("wasapi-exclusive".to_string())
             .spawn(move || {
@@ -265,8 +292,10 @@ impl WasapiExclusiveSink {
                     endpoint_id,
                     sample_rate,
                     channels,
-                    cmd_rx,
+                    full_rx,
+                    free_tx,
                     thread_stop,
+                    thread_gen,
                     thread_health,
                     result_tx,
                 );
@@ -280,15 +309,20 @@ impl WasapiExclusiveSink {
                 health,
                 format,
                 thread: Some(thread),
+                producer_thread: Some(producer_thread),
             }),
             Ok(Err(e)) => {
                 stop.store(true, Ordering::Release);
+                let _ = cmd_tx.send(SinkCmd::Shutdown);
                 let _ = thread.join();
+                let _ = producer_thread.join();
                 Err(e)
             }
             Err(_) => {
                 stop.store(true, Ordering::Release);
+                let _ = cmd_tx.send(SinkCmd::Shutdown);
                 let _ = thread.join();
+                let _ = producer_thread.join();
                 Err("Timed out opening exclusive output".to_string())
             }
         }
@@ -302,7 +336,7 @@ impl WasapiExclusiveSink {
         &self.health
     }
 
-    /// hands the render thread its source, once the engine chain is built
+    /// hands the producer thread its source, once the engine chain is built
     pub fn attach(&self, source: Box<dyn Source<Item = f32> + Send>) -> Result<(), String> {
         if source.sample_rate().get() != self.format.sample_rate {
             return Err(format!(
@@ -320,7 +354,7 @@ impl WasapiExclusiveSink {
         }
         self.cmd_tx
             .send(SinkCmd::Source(source))
-            .map_err(|_| "Exclusive render thread is gone".to_string())
+            .map_err(|_| "Exclusive producer thread is gone".to_string())
     }
 }
 
@@ -330,6 +364,75 @@ impl Drop for WasapiExclusiveSink {
         let _ = self.cmd_tx.send(SinkCmd::Shutdown);
         if let Some(t) = self.thread.take() {
             let _ = t.join();
+        }
+        if let Some(t) = self.producer_thread.take() {
+            let _ = t.join();
+        }
+    }
+}
+
+/// Decodes/pulls samples off the real-time WASAPI render thread into recycled
+/// chunk buffers so `Source::next()` never stalls the Pro Audio thread.
+fn producer_loop(
+    cmd_rx: Receiver<SinkCmd>,
+    full_tx: Sender<AudioChunk>,
+    free_rx: Receiver<Vec<f32>>,
+    stop: Arc<AtomicBool>,
+    source_gen: Arc<AtomicU64>,
+) {
+    let mut current: Option<Box<dyn Source<Item = f32> + Send>> = None;
+    let mut generation = source_gen.load(Ordering::Acquire);
+
+    while !stop.load(Ordering::Acquire) {
+        // When idle (no active source), block until a new source or shutdown arrives.
+        if current.is_none() {
+            match cmd_rx.recv() {
+                Ok(SinkCmd::Source(s)) => {
+                    generation = source_gen.fetch_add(1, Ordering::AcqRel) + 1;
+                    current = Some(s);
+                }
+                Ok(SinkCmd::Shutdown) | Err(_) => break,
+            }
+        }
+
+        // Drain any newer source commands without blocking.
+        loop {
+            match cmd_rx.try_recv() {
+                Ok(SinkCmd::Source(s)) => {
+                    generation = source_gen.fetch_add(1, Ordering::AcqRel) + 1;
+                    current = Some(s);
+                }
+                Ok(SinkCmd::Shutdown) => {
+                    stop.store(true, Ordering::Release);
+                    return;
+                }
+                Err(crossbeam::channel::TryRecvError::Empty) => break,
+                Err(crossbeam::channel::TryRecvError::Disconnected) => return,
+            }
+        }
+
+        // Wait for a recycled buffer (with timeout so Shutdown/new Source stays responsive).
+        let mut buf = match free_rx.recv_timeout(Duration::from_millis(20)) {
+            Ok(b) => b,
+            Err(crossbeam::channel::RecvTimeoutError::Timeout) => continue,
+            Err(crossbeam::channel::RecvTimeoutError::Disconnected) => break,
+        };
+        buf.clear();
+
+        if let Some(src) = current.as_mut() {
+            for _ in 0..PRODUCER_CHUNK_SAMPLES {
+                match src.next() {
+                    Some(s) => buf.push(clamp_sample(s)),
+                    None => {
+                        current = None;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if full_tx.send(AudioChunk { generation, data: buf }).is_err() {
+            break;
         }
     }
 }
@@ -387,8 +490,10 @@ fn render_thread(
     endpoint_id: Option<String>,
     sample_rate: u32,
     channels: u16,
-    cmd_rx: crossbeam::channel::Receiver<SinkCmd>,
+    full_rx: Receiver<AudioChunk>,
+    free_tx: Sender<Vec<f32>>,
     stop: Arc<AtomicBool>,
+    source_gen: Arc<AtomicU64>,
     health: Arc<ExclusiveHealth>,
     result_tx: mpsc::Sender<Result<NegotiatedFormat, String>>,
 ) {
@@ -429,7 +534,9 @@ fn render_thread(
     let render = match unsafe { client.GetService::<IAudioRenderClient>() } {
         Ok(r) => r,
         Err(e) => {
-            let _ = unsafe { CloseHandle(render_event) };
+            if let Some(ev) = render_event {
+                let _ = unsafe { CloseHandle(ev) };
+            }
             drop(client);
             drop(device);
             let msg = format!("Failed to get render client: {}", e);
@@ -442,7 +549,7 @@ fn render_thread(
     let bytes_per_frame = channels as usize * (kind.container_bits() as usize / 8);
 
     // Pre-roll initial silence before starting the hardware clock (required by
-    // WASAPI event-driven exclusive mode to avoid an immediate first-cycle underrun).
+    // WASAPI exclusive mode to avoid an immediate first-cycle underrun).
     if let Ok(ptr) = unsafe { render.GetBuffer(buffer_size) } {
         let bytes = unsafe {
             std::slice::from_raw_parts_mut(ptr, buffer_size as usize * bytes_per_frame)
@@ -452,7 +559,9 @@ fn render_thread(
     }
 
     if let Err(e) = unsafe { client.Start() } {
-        let _ = unsafe { CloseHandle(render_event) };
+        if let Some(ev) = render_event {
+            let _ = unsafe { CloseHandle(ev) };
+        }
         drop(render);
         drop(client);
         drop(device);
@@ -469,41 +578,78 @@ fn render_thread(
         sample_format: kind.label().to_string(),
     }));
 
-    let mut current: Option<Box<dyn Source<Item = f32> + Send>> = None;
+    let timer_sleep = Duration::from_millis(
+        ((buffer_size as u64 * 1000) / (sample_rate.max(1) as u64 * 4))
+            .max(3)
+            .min(15),
+    );
+    let mut staging: VecDeque<f32> = VecDeque::with_capacity(PRODUCER_CHUNK_SAMPLES * 2);
     let mut scratch: Vec<f32> = Vec::with_capacity(buffer_size as usize * channels as usize);
+    let mut active_gen = source_gen.load(Ordering::Acquire);
 
     loop {
         if stop.load(Ordering::Acquire) {
             break;
         }
-        loop {
-            match cmd_rx.try_recv() {
-                Ok(SinkCmd::Source(s)) => current = Some(s),
-                Ok(SinkCmd::Shutdown) => {
-                    stop.store(true, Ordering::Release);
+
+        let frames = match render_event {
+            Some(ev) => {
+                let wait = unsafe { WaitForSingleObject(ev, 50) };
+                if wait == WAIT_TIMEOUT {
+                    continue;
+                }
+                if wait != WAIT_OBJECT_0 {
+                    health.fail("Exclusive render event wait failed".to_string());
                     break;
                 }
-                Err(crossbeam::channel::TryRecvError::Empty) => break,
-                Err(crossbeam::channel::TryRecvError::Disconnected) => {
-                    stop.store(true, Ordering::Release);
+                buffer_size
+            }
+            None => {
+                // Timer-driven exclusive fallback for legacy drivers without EVENTCALLBACK.
+                std::thread::sleep(timer_sleep);
+                if stop.load(Ordering::Acquire) {
                     break;
                 }
+                let padding = match unsafe { client.GetCurrentPadding() } {
+                    Ok(p) => p,
+                    Err(e) => {
+                        health.fail(format!("Failed to query exclusive padding: {}", e));
+                        break;
+                    }
+                };
+                let avail = buffer_size.saturating_sub(padding);
+                if avail == 0 {
+                    continue;
+                }
+                avail
+            }
+        };
+
+        let sample_count = frames as usize * channels as usize;
+
+        // If a new source was attached, flush any buffered samples from the previous track.
+        let latest_gen = source_gen.load(Ordering::Acquire);
+        if latest_gen != active_gen {
+            staging.clear();
+            active_gen = latest_gen;
+        }
+
+        // Drain ready chunks from producer without blocking.
+        while let Ok(mut chunk) = full_rx.try_recv() {
+            if chunk.generation == active_gen {
+                staging.extend(chunk.data.iter().copied());
+            } else if chunk.generation > active_gen {
+                staging.clear();
+                active_gen = chunk.generation;
+                staging.extend(chunk.data.iter().copied());
+            }
+            chunk.data.clear();
+            let _ = free_tx.try_send(chunk.data);
+            if staging.len() >= sample_count {
+                break;
             }
         }
-        if stop.load(Ordering::Acquire) {
-            break;
-        }
 
-        let wait = unsafe { WaitForSingleObject(render_event, 50) };
-        if wait == WAIT_TIMEOUT {
-            continue;
-        }
-        if wait != WAIT_OBJECT_0 {
-            health.fail("Exclusive render event wait failed".to_string());
-            break;
-        }
-
-        let frames = buffer_size;
         let buffer_ptr = match unsafe { render.GetBuffer(frames) } {
             Ok(p) => p,
             Err(e) => {
@@ -512,37 +658,21 @@ fn render_thread(
             }
         };
 
-        let sample_count = frames as usize * channels as usize;
         scratch.clear();
-        scratch.reserve(sample_count);
-        let mut ended = false;
-        for _ in 0..sample_count {
-            match current.as_mut() {
-                Some(src) => match src.next() {
-                    Some(s) => scratch.push(clamp_sample(s)),
-                    None => {
-                        ended = true;
-                        break;
-                    }
-                },
-                None => break,
+        let take = staging.len().min(sample_count);
+        for _ in 0..take {
+            if let Some(s) = staging.pop_front() {
+                scratch.push(s);
             }
         }
-        if ended {
-            // track ended: keep the stream alive with silence so the engine
-            // controls the transition, it owns the next source
-            current = None;
+        if scratch.len() < sample_count {
             scratch.resize(sample_count, 0.0);
         }
 
         let bytes = unsafe {
             std::slice::from_raw_parts_mut(buffer_ptr, frames as usize * bytes_per_frame)
         };
-        if scratch.len() == sample_count {
-            write_samples(bytes, &scratch, kind);
-        } else {
-            bytes.fill(0);
-        }
+        write_samples(bytes, &scratch, kind);
 
         if let Err(e) = unsafe { render.ReleaseBuffer(frames, 0) } {
             health.fail(format!("Failed to release exclusive buffer: {}", e));
@@ -554,7 +684,9 @@ fn render_thread(
         let _ = client.Stop();
         let _ = client.Reset();
     }
-    let _ = unsafe { CloseHandle(render_event) };
+    if let Some(ev) = render_event {
+        let _ = unsafe { CloseHandle(ev) };
+    }
     drop(render);
     drop(client);
     drop(device);
@@ -588,6 +720,46 @@ unsafe fn activate_endpoint(
     }
 }
 
+unsafe fn initialize_exclusive_with_flags(
+    device: &IMMDevice,
+    client: &mut IAudioClient,
+    sample_rate: u32,
+    buffer_duration: i64,
+    periodicity: i64,
+    stream_flags: u32,
+    wf: *const WAVEFORMATEX,
+) -> windows::core::Result<()> {
+    unsafe {
+        let init = client.Initialize(
+            AUDCLNT_SHAREMODE_EXCLUSIVE,
+            stream_flags,
+            buffer_duration,
+            periodicity,
+            wf,
+            None,
+        );
+        if let Err(e) = init {
+            if e.code() == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED {
+                let aligned_frames = client.GetBufferSize()?;
+                let aligned_duration =
+                    ((10_000_000.0 * aligned_frames as f64 / sample_rate as f64) + 0.5) as i64;
+                let aligned_period = if periodicity == 0 { 0 } else { aligned_duration };
+                *client = device.Activate(CLSCTX_ALL, None)?;
+                return client.Initialize(
+                    AUDCLNT_SHAREMODE_EXCLUSIVE,
+                    stream_flags,
+                    aligned_duration,
+                    aligned_period,
+                    wf,
+                    None,
+                );
+            }
+            return Err(e);
+        }
+        Ok(())
+    }
+}
+
 unsafe fn initialize_exclusive_client(
     device: &IMMDevice,
     client: &mut IAudioClient,
@@ -595,18 +767,16 @@ unsafe fn initialize_exclusive_client(
     buffer_duration: i64,
     fallback_period: i64,
     wf: *const WAVEFORMATEX,
-) -> Result<(u32, HANDLE), String> {
+) -> Result<(u32, Option<HANDLE>), String> {
     unsafe {
-        let event = CreateEventW(None, false, false, PCWSTR::null())
-            .map_err(|e| format!("Failed to create render event: {}", e))?;
-
-        let mut init = client.Initialize(
-            AUDCLNT_SHAREMODE_EXCLUSIVE,
+        let mut init = initialize_exclusive_with_flags(
+            device,
+            client,
+            sample_rate,
+            buffer_duration,
+            buffer_duration,
             AUDCLNT_STREAMFLAGS_EVENTCALLBACK as u32,
-            buffer_duration,
-            buffer_duration,
             wf,
-            None,
         );
 
         // Some USB DAC drivers reject durations above their max exclusive period;
@@ -615,64 +785,50 @@ unsafe fn initialize_exclusive_client(
             if e.code() == AUDCLNT_E_INVALID_DEVICE_PERIOD && buffer_duration != fallback_period {
                 if let Ok(new_client) = device.Activate::<IAudioClient>(CLSCTX_ALL, None) {
                     *client = new_client;
-                    init = client.Initialize(
-                        AUDCLNT_SHAREMODE_EXCLUSIVE,
+                    init = initialize_exclusive_with_flags(
+                        device,
+                        client,
+                        sample_rate,
+                        fallback_period,
+                        fallback_period,
                         AUDCLNT_STREAMFLAGS_EVENTCALLBACK as u32,
-                        fallback_period,
-                        fallback_period,
                         wf,
-                        None,
                     );
                 }
             }
         }
 
-        if let Err(e) = init {
-            if e.code() == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED {
-                let aligned_frames = match client.GetBufferSize() {
-                    Ok(s) => s,
-                    Err(err) => {
-                        let _ = CloseHandle(event);
-                        return Err(format!("Failed to read aligned buffer size: {}", err));
-                    }
-                };
-                let aligned_duration =
-                    ((10_000_000.0 * aligned_frames as f64 / sample_rate as f64) + 0.5) as i64;
-
-                let new_client: IAudioClient = match device.Activate(CLSCTX_ALL, None) {
-                    Ok(c) => c,
-                    Err(err) => {
-                        let _ = CloseHandle(event);
-                        return Err(format!("Failed to re-activate IAudioClient: {}", err));
-                    }
-                };
-                *client = new_client;
-
-                if let Err(err) = client.Initialize(
-                    AUDCLNT_SHAREMODE_EXCLUSIVE,
-                    AUDCLNT_STREAMFLAGS_EVENTCALLBACK as u32,
-                    aligned_duration,
-                    aligned_duration,
-                    wf,
-                    None,
-                ) {
-                    let _ = CloseHandle(event);
-                    return Err(format!("Exclusive Initialize (aligned) failed: {}", err));
-                }
-            } else {
-                let _ = CloseHandle(event);
-                return Err(format!("Exclusive Initialize failed: {}", e));
+        if init.is_ok() {
+            let event = CreateEventW(None, false, false, PCWSTR::null())
+                .map_err(|e| format!("Failed to create render event: {}", e))?;
+            if client.SetEventHandle(event).is_ok() {
+                let size = client
+                    .GetBufferSize()
+                    .map_err(|e| format!("Failed to read buffer size: {}", e))?;
+                return Ok((size, Some(event)));
             }
+            let _ = CloseHandle(event);
         }
 
-        if let Err(e) = client.SetEventHandle(event) {
-            let _ = CloseHandle(event);
-            return Err(format!("Failed to bind render event: {}", e));
-        }
+        // Legacy non-event-driven fallback (timer-driven exclusive mode).
+        *client = device
+            .Activate(CLSCTX_ALL, None)
+            .map_err(|e| format!("Failed to re-activate IAudioClient: {}", e))?;
+        initialize_exclusive_with_flags(
+            device,
+            client,
+            sample_rate,
+            buffer_duration,
+            0,
+            0,
+            wf,
+        )
+        .map_err(|e| format!("Exclusive Initialize failed (event and timer modes): {}", e))?;
+
         let size = client
             .GetBufferSize()
             .map_err(|e| format!("Failed to read buffer size: {}", e))?;
-        Ok((size, event))
+        Ok((size, None))
     }
 }
 
@@ -681,7 +837,7 @@ unsafe fn negotiate_and_init(
     client: &mut IAudioClient,
     sample_rate: u32,
     channels: u16,
-) -> Result<(SampleKind, u32, HANDLE), String> {
+) -> Result<(SampleKind, u32, Option<HANDLE>), String> {
     unsafe {
         let mut default_period: i64 = 0;
         let mut min_period: i64 = 0;
