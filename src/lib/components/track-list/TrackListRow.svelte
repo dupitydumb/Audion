@@ -83,6 +83,7 @@
   class:drag-over={isDragOver}
   class:selected={isSelected}
   class:focused={isFocused}
+  class:has-details={showAdvancedMetadata && !$isMobile}
   data-track-id={track.id}
   data-track-index={actualIndex}
   role="button"
@@ -253,11 +254,15 @@
           on:select={(e) => handleArtistSelect(e.detail)}
         />
         {#if showAdvancedMetadata}
-          <span class="media-metadata truncate">
-            {track.format ? track.format.toUpperCase() : $_('trackList.unknownFormat')}
-            {#if track.bitrate} • {track.bitrate} kbps{/if}
-            {#if track.source_type} • {track.source_type}{/if}
-          </span>
+          <div class="media-metadata">
+            <span class="meta-chip">{track.format ? track.format.toUpperCase() : $_('trackList.unknownFormat')}</span>
+            {#if track.bitrate}
+              <span class="meta-chip">{track.bitrate} kbps</span>
+            {/if}
+            {#if track.source_type}
+              <span class="meta-chip">{track.source_type}</span>
+            {/if}
+          </div>
         {/if}
       </div>
     </div>

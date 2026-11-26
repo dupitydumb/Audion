@@ -223,7 +223,9 @@
           class:active={activeTab === 'audio'}
           on:click|stopPropagation={() => activeTab = 'audio'}
         >
-          <Icon name="info" size={12} />
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 12h3l2-6 4 12 3-8 2 2h4" />
+          </svg>
           <span>Audion Chain</span>
         </button>
         <button

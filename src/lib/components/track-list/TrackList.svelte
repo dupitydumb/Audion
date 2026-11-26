@@ -76,8 +76,13 @@
   // must match the row height in css (desktop 50px, html.layout-mobile 60px)
   // a wrong value => rows jump every time the visible window shifts
   const DESKTOP_ROW_HEIGHT = 50;
+  const DESKTOP_DETAILS_ROW_HEIGHT = 68;
   const MOBILE_ROW_HEIGHT = 60;
-  $: rowHeight = $isMobile ? MOBILE_ROW_HEIGHT : DESKTOP_ROW_HEIGHT;
+  $: rowHeight = $isMobile
+    ? MOBILE_ROW_HEIGHT
+    : showAdvancedMetadata
+      ? DESKTOP_DETAILS_ROW_HEIGHT
+      : DESKTOP_ROW_HEIGHT;
   const OVERSCAN = 5; // Extra rows to render above/below viewport
 
   let containerHeight = 600; // Will be calculated from container
@@ -1827,6 +1832,7 @@
     transition: background-color var(--transition-fast);
     width: 100%; text-align: left; height: 50px; box-sizing: border-box;
   }
+  :global(.track-row.has-details) { height: 68px; }
   .list-body.with-drag :global(.track-row) { grid-template-columns: 32px 40px 1fr 1fr 80px 140px; }
   .list-body.no-album :global(.track-row) { grid-template-columns: 40px 1fr 80px 140px; }
   .list-body.no-album.with-drag :global(.track-row) { grid-template-columns: 32px 40px 1fr 80px 140px; }
@@ -1887,7 +1893,7 @@
   :global(.artist-thumb) { display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex-shrink: 0; }
   :global(.cover-image-small) { width: 28px; height: 28px; border-radius: 6px; object-fit: cover; }
   :global(.cover-placeholder-small) { width: 28px; height: 28px; border-radius: 6px; background-color: var(--bg-highlight); color: var(--text-subdued); display: flex; align-items: center; justify-content: center; }
-  :global(.artist-meta) { display: flex; flex-direction: column; justify-content: center; min-width: 0; gap: 1px; }
+  :global(.artist-meta) { display: flex; flex-direction: column; justify-content: center; min-width: 0; gap: 2px; }
   :global(.title-row) { display: flex; align-items: center; gap: var(--spacing-sm); min-width: 0; }
   :global(.track-name) { font-size: 0.9375rem; font-weight: var(--font-weight-medium); color: var(--text-primary); line-height: var(--line-height-tight); margin: 0; }
 
@@ -1897,7 +1903,25 @@
 
   :global(.track-artist) { font-size: var(--font-size-sm); color: var(--text-subdued); background: none; border: none; padding: 0; margin: 0; text-align: left; max-width: fit-content; line-height: var(--line-height-tight); min-height: 0; }
   :global(.track-artist:hover:not(:disabled)) { color: var(--text-primary); text-decoration: underline; cursor: pointer; }
-  :global(.media-metadata) { font-size: 0.7rem; color: var(--text-subdued); opacity: 0.9; }
+  :global(.media-metadata) {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-top: 2px;
+    min-width: 0;
+    overflow: hidden;
+  }
+  :global(.meta-chip) {
+    font-size: 0.65rem;
+    line-height: 1.2;
+    padding: 1px 6px;
+    border-radius: var(--radius-sm, 4px);
+    background: var(--surface-subtle, var(--bg-highlight));
+    border: 1px solid var(--border-subtle, var(--border-color));
+    color: var(--text-subdued);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
 
   :global(.col-album-cell) { font-size: var(--font-size-base); color: var(--text-secondary); background: none; border: none; padding: 0; width: 100%; justify-self: stretch; text-align: left; line-height: var(--line-height-tight); }
   :global(.col-album-cell:hover:not(:disabled)) { color: var(--text-primary); text-decoration: underline; cursor: pointer; }
