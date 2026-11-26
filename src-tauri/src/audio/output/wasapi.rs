@@ -18,6 +18,7 @@ use windows::Win32::Foundation::{
 };
 use windows::Win32::Media::Audio::{
     eMultimedia, eRender, IAudioClient, IAudioRenderClient, IMMDevice, IMMDeviceEnumerator,
+    AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED, AUDCLNT_E_INVALID_DEVICE_PERIOD,
     AUDCLNT_SHAREMODE_EXCLUSIVE, AUDCLNT_STREAMFLAGS_EVENTCALLBACK, WAVEFORMATEX,
     WAVEFORMATEXTENSIBLE, WAVEFORMATEXTENSIBLE_0,
 };
@@ -25,7 +26,10 @@ use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_ALL,
     COINIT_MULTITHREADED,
 };
-use windows::Win32::System::Threading::{CreateEventW, WaitForSingleObject};
+use windows::Win32::System::Threading::{
+    AvRevertMmThreadCharacteristics, AvSetMmThreadCharacteristicsW, CreateEventW,
+    GetCurrentThread, SetThreadPriority, WaitForSingleObject, THREAD_PRIORITY_TIME_CRITICAL,
+};
 
 use super::NegotiatedFormat;
 
@@ -44,6 +48,7 @@ enum SampleKind {
     F32,
     S32,
     S24,
+    S24P,
     S16,
 }
 
@@ -51,6 +56,7 @@ impl SampleKind {
     fn container_bits(self) -> u16 {
         match self {
             Self::F32 | Self::S32 | Self::S24 => 32,
+            Self::S24P => 24,
             Self::S16 => 16,
         }
     }
@@ -59,7 +65,7 @@ impl SampleKind {
         match self {
             Self::F32 => 32,
             Self::S32 => 32,
-            Self::S24 => 24,
+            Self::S24 | Self::S24P => 24,
             Self::S16 => 16,
         }
     }
@@ -68,7 +74,7 @@ impl SampleKind {
         match self {
             Self::F32 => "f32le",
             Self::S32 => "s32le",
-            Self::S24 => "s24le",
+            Self::S24 | Self::S24P => "s24le",
             Self::S16 => "s16le",
         }
     }
@@ -148,15 +154,19 @@ fn f32_to_i32(x: f32) -> i32 {
     }
 }
 
-/// 24 valid bits left-justified in a 32-bit container
-fn f32_to_i24_in_i32(x: f32) -> i32 {
+/// 24-bit signed sample in [-8_388_608, 8_388_607]
+fn f32_to_i24(x: f32) -> i32 {
     let s = clamp_sample(x) as f64;
-    let v = if s < 0.0 {
+    if s < 0.0 {
         (s * 8_388_608.0) as i32
     } else {
         (s * 8_388_607.0) as i32
-    };
-    v << 8
+    }
+}
+
+/// 24 valid bits left-justified in a 32-bit container
+fn f32_to_i24_in_i32(x: f32) -> i32 {
+    f32_to_i24(x) << 8
 }
 
 fn write_samples(buf: &mut [u8], samples: &[f32], kind: SampleKind) {
@@ -174,6 +184,12 @@ fn write_samples(buf: &mut [u8], samples: &[f32], kind: SampleKind) {
         SampleKind::S24 => {
             for (dst, s) in buf.chunks_exact_mut(4).zip(samples) {
                 dst.copy_from_slice(&f32_to_i24_in_i32(*s).to_le_bytes());
+            }
+        }
+        SampleKind::S24P => {
+            for (dst, s) in buf.chunks_exact_mut(3).zip(samples) {
+                let le = f32_to_i24(*s).to_le_bytes();
+                dst.copy_from_slice(&le[..3]);
             }
         }
         SampleKind::S16 => {
@@ -337,6 +353,36 @@ impl Drop for ComGuard {
     }
 }
 
+/// Boosts the exclusive render thread to Windows MMCSS "Pro Audio" priority
+/// (matching shared-mode audiodg.exe) so UI/OS scheduling jitter doesn't cause
+/// USB DAC buffer underruns.
+struct MmcssGuard {
+    task_handle: Option<HANDLE>,
+}
+
+impl MmcssGuard {
+    fn enter() -> Self {
+        let mut task_index: u32 = 0;
+        let task_handle = unsafe {
+            AvSetMmThreadCharacteristicsW(windows::core::w!("Pro Audio"), &mut task_index).ok()
+        };
+        if task_handle.is_none() {
+            unsafe {
+                let _ = SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_TIME_CRITICAL);
+            }
+        }
+        Self { task_handle }
+    }
+}
+
+impl Drop for MmcssGuard {
+    fn drop(&mut self) {
+        if let Some(h) = self.task_handle {
+            let _ = unsafe { AvRevertMmThreadCharacteristics(h) };
+        }
+    }
+}
+
 fn render_thread(
     endpoint_id: Option<String>,
     sample_rate: u32,
@@ -356,8 +402,10 @@ fn render_thread(
             return;
         }
     };
+    let _mmcss = MmcssGuard::enter();
+
     let prepared = unsafe { activate_endpoint(endpoint_id.as_deref()) };
-    let (device, client) = match prepared {
+    let (device, mut client) = match prepared {
         Ok(v) => v,
         Err(e) => {
             health.fail(e.clone());
@@ -366,7 +414,7 @@ fn render_thread(
         }
     };
 
-    let opened = unsafe { negotiate_and_init(&client, sample_rate, channels) };
+    let opened = unsafe { negotiate_and_init(&device, &mut client, sample_rate, channels) };
     let (kind, buffer_size, render_event) = match opened {
         Ok(v) => v,
         Err(e) => {
@@ -391,6 +439,18 @@ fn render_thread(
         }
     };
 
+    let bytes_per_frame = channels as usize * (kind.container_bits() as usize / 8);
+
+    // Pre-roll initial silence before starting the hardware clock (required by
+    // WASAPI event-driven exclusive mode to avoid an immediate first-cycle underrun).
+    if let Ok(ptr) = unsafe { render.GetBuffer(buffer_size) } {
+        let bytes = unsafe {
+            std::slice::from_raw_parts_mut(ptr, buffer_size as usize * bytes_per_frame)
+        };
+        bytes.fill(0);
+        let _ = unsafe { render.ReleaseBuffer(buffer_size, 0) };
+    }
+
     if let Err(e) = unsafe { client.Start() } {
         let _ = unsafe { CloseHandle(render_event) };
         drop(render);
@@ -409,9 +469,8 @@ fn render_thread(
         sample_format: kind.label().to_string(),
     }));
 
-    let bytes_per_frame = channels as usize * (kind.container_bits() as usize / 8);
     let mut current: Option<Box<dyn Source<Item = f32> + Send>> = None;
-    let mut scratch: Vec<f32> = Vec::new();
+    let mut scratch: Vec<f32> = Vec::with_capacity(buffer_size as usize * channels as usize);
 
     loop {
         if stop.load(Ordering::Acquire) {
@@ -529,21 +588,113 @@ unsafe fn activate_endpoint(
     }
 }
 
+unsafe fn initialize_exclusive_client(
+    device: &IMMDevice,
+    client: &mut IAudioClient,
+    sample_rate: u32,
+    buffer_duration: i64,
+    fallback_period: i64,
+    wf: *const WAVEFORMATEX,
+) -> Result<(u32, HANDLE), String> {
+    unsafe {
+        let event = CreateEventW(None, false, false, PCWSTR::null())
+            .map_err(|e| format!("Failed to create render event: {}", e))?;
+
+        let mut init = client.Initialize(
+            AUDCLNT_SHAREMODE_EXCLUSIVE,
+            AUDCLNT_STREAMFLAGS_EVENTCALLBACK as u32,
+            buffer_duration,
+            buffer_duration,
+            wf,
+            None,
+        );
+
+        // Some USB DAC drivers reject durations above their max exclusive period;
+        // fall back to the device's native default/min period before failing.
+        if let Err(ref e) = init {
+            if e.code() == AUDCLNT_E_INVALID_DEVICE_PERIOD && buffer_duration != fallback_period {
+                if let Ok(new_client) = device.Activate::<IAudioClient>(CLSCTX_ALL, None) {
+                    *client = new_client;
+                    init = client.Initialize(
+                        AUDCLNT_SHAREMODE_EXCLUSIVE,
+                        AUDCLNT_STREAMFLAGS_EVENTCALLBACK as u32,
+                        fallback_period,
+                        fallback_period,
+                        wf,
+                        None,
+                    );
+                }
+            }
+        }
+
+        if let Err(e) = init {
+            if e.code() == AUDCLNT_E_BUFFER_SIZE_NOT_ALIGNED {
+                let aligned_frames = match client.GetBufferSize() {
+                    Ok(s) => s,
+                    Err(err) => {
+                        let _ = CloseHandle(event);
+                        return Err(format!("Failed to read aligned buffer size: {}", err));
+                    }
+                };
+                let aligned_duration =
+                    ((10_000_000.0 * aligned_frames as f64 / sample_rate as f64) + 0.5) as i64;
+
+                let new_client: IAudioClient = match device.Activate(CLSCTX_ALL, None) {
+                    Ok(c) => c,
+                    Err(err) => {
+                        let _ = CloseHandle(event);
+                        return Err(format!("Failed to re-activate IAudioClient: {}", err));
+                    }
+                };
+                *client = new_client;
+
+                if let Err(err) = client.Initialize(
+                    AUDCLNT_SHAREMODE_EXCLUSIVE,
+                    AUDCLNT_STREAMFLAGS_EVENTCALLBACK as u32,
+                    aligned_duration,
+                    aligned_duration,
+                    wf,
+                    None,
+                ) {
+                    let _ = CloseHandle(event);
+                    return Err(format!("Exclusive Initialize (aligned) failed: {}", err));
+                }
+            } else {
+                let _ = CloseHandle(event);
+                return Err(format!("Exclusive Initialize failed: {}", e));
+            }
+        }
+
+        if let Err(e) = client.SetEventHandle(event) {
+            let _ = CloseHandle(event);
+            return Err(format!("Failed to bind render event: {}", e));
+        }
+        let size = client
+            .GetBufferSize()
+            .map_err(|e| format!("Failed to read buffer size: {}", e))?;
+        Ok((size, event))
+    }
+}
+
 unsafe fn negotiate_and_init(
-    client: &IAudioClient,
+    device: &IMMDevice,
+    client: &mut IAudioClient,
     sample_rate: u32,
     channels: u16,
 ) -> Result<(SampleKind, u32, HANDLE), String> {
     unsafe {
+        let mut default_period: i64 = 0;
         let mut min_period: i64 = 0;
         client
-            .GetDevicePeriod(None, Some(&mut min_period))
+            .GetDevicePeriod(Some(&mut default_period), Some(&mut min_period))
             .map_err(|e| format!("Failed to read device period: {}", e))?;
-        let buffer_duration =
-            (min_period * 4).max(20 * HNS_PER_MS).min(200 * HNS_PER_MS);
+        let fallback_period = default_period.max(min_period).max(HNS_PER_MS);
+        let buffer_duration = (fallback_period * 4)
+            .max(40 * HNS_PER_MS)
+            .min(200 * HNS_PER_MS);
 
         let mut chosen: Option<(SampleKind, WAVEFORMATEXTENSIBLE)> = None;
-        for kind in [SampleKind::F32, SampleKind::S32, SampleKind::S24] {
+        for kind in [SampleKind::F32, SampleKind::S32, SampleKind::S24, SampleKind::S24P] {
             let wf = make_extensible(sample_rate, channels, kind);
             let hr = client.IsFormatSupported(
                 AUDCLNT_SHAREMODE_EXCLUSIVE,
@@ -576,32 +727,14 @@ unsafe fn negotiate_and_init(
                         None,
                     );
                     if hr.0 == 0 {
-                        // initialize straight from the plain header
-                        let event = CreateEventW(None, false, false, PCWSTR::null())
-                            .map_err(|e| format!("Failed to create render event: {}", e))?;
-                        let init = client.Initialize(
-                            AUDCLNT_SHAREMODE_EXCLUSIVE,
-                            AUDCLNT_STREAMFLAGS_EVENTCALLBACK as u32,
+                        let (size, event) = initialize_exclusive_client(
+                            device,
+                            client,
+                            sample_rate,
                             buffer_duration,
-                            buffer_duration,
+                            fallback_period,
                             &plain as *const WAVEFORMATEX,
-                            None,
-                        );
-                        if let Err(e) = init {
-                            let _ = CloseHandle(event);
-                            return Err(format!("Exclusive Initialize failed: {}", e));
-                        }
-                        if let Err(e) = client.SetEventHandle(event) {
-                            let _ = CloseHandle(event);
-                            return Err(format!("Failed to bind render event: {}", e));
-                        }
-                        let size = match client.GetBufferSize() {
-                            Ok(s) => s,
-                            Err(e) => {
-                                let _ = CloseHandle(event);
-                                return Err(format!("Failed to read buffer size: {}", e));
-                            }
-                        };
+                        )?;
                         return Ok((SampleKind::S16, size, event));
                     }
                     return Err(format!(
@@ -617,28 +750,14 @@ unsafe fn negotiate_and_init(
             }
         };
 
-        let event = CreateEventW(None, false, false, PCWSTR::null())
-            .map_err(|e| format!("Failed to create render event: {}", e))?;
-
-        let init = client.Initialize(
-            AUDCLNT_SHAREMODE_EXCLUSIVE,
-            AUDCLNT_STREAMFLAGS_EVENTCALLBACK as u32,
+        let (size, event) = initialize_exclusive_client(
+            device,
+            client,
+            sample_rate,
             buffer_duration,
-            buffer_duration,
+            fallback_period,
             &wf.Format as *const WAVEFORMATEX,
-            None,
-        );
-        if let Err(e) = init {
-            let _ = CloseHandle(event);
-            return Err(format!("Exclusive Initialize failed: {}", e));
-        }
-        if let Err(e) = client.SetEventHandle(event) {
-            let _ = CloseHandle(event);
-            return Err(format!("Failed to bind render event: {}", e));
-        }
-        let size = client
-            .GetBufferSize()
-            .map_err(|e| format!("Failed to read buffer size: {}", e))?;
+        )?;
         Ok((kind, size, event))
     }
 }
