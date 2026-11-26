@@ -3,7 +3,7 @@
   import { _ } from "svelte-i18n";
   import { fade, fly } from "svelte/transition";
   import { cubicInOut, cubicOut } from "svelte/easing";
-  import { artCrossfadeIn, artCrossfadeOut } from "$lib/motion";
+  import { artCrossfadeIn, artCrossfadeOut, iconPopTransition } from "$lib/motion";
   import { flip } from "svelte/animate";
   import {
     isFullScreen,
@@ -31,7 +31,7 @@
     cycleRepeat,
     playbackContext,
   } from "$lib/stores/player";
-  import { isMobile, registerBackHandler } from "$lib/stores/mobile";
+  import { isMobile, isCompactLandscape, isWideMobile, registerBackHandler } from "$lib/stores/mobile";
   import { lyricsVisible, toggleLyrics } from "$lib/stores/lyrics";
   import { goToArtistDetail, goToAlbumDetail, goToSettings } from "$lib/stores/view";
   import ArtistLinks from "$lib/components/ArtistLinks.svelte";
@@ -502,26 +502,43 @@
             <button
               type="button"
               class="chevron-btn"
-              class:active={$isQueueVisible}
-              on:click={handleMobileQueueToggle}
-              aria-label={$_('player.queue')}
+              class:active={$lyricsVisible}
+              on:click={handleMobileLyricsToggle}
+              aria-label={$_('player.lyrics')}
+              title={$_('player.lyrics')}
             >
-              <Icon name="queue" size={22} />
+              <Icon name="lyrics" size={20} />
             </button>
             <button
               type="button"
               class="chevron-btn"
+              class:active={$isQueueVisible}
+              on:click={handleMobileQueueToggle}
+              aria-label={$_('player.queue')}
+            >
+              <Icon name="queue" size={20} />
+            </button>
+            <button
+              type="button"
+              class="chevron-btn more-btn"
               on:click={() => (showMobileMenu = !showMobileMenu)}
               aria-label="More options"
             >
-              <Icon name="more-vertical" size={22} />
+              <Icon name="more-vertical" size={20} />
+              {#if connectedDevices > 0}
+                <span class="device-dot" aria-hidden="true"></span>
+              {/if}
             </button>
           </div>
         </div>
       </div>
 
-      <div class="player-content mobile-view">
-        {#if !$lyricsVisible}
+      <div
+        class="player-content mobile-view"
+        class:compact-landscape={$isCompactLandscape}
+        class:wide-mobile={$isWideMobile}
+      >
+        {#if !$lyricsVisible || $isCompactLandscape || $isWideMobile}
           <div
             class="art-container"
             class:playing={$isPlaying}
@@ -548,13 +565,22 @@
               </div>
             {/if}
           </div>
+        {/if}
 
+        {#if !$lyricsVisible || $isWideMobile}
           <div class="track-info">
             <div class="track-title-row">
               <div class="track-title-meta">
-                <h1 class="track-title">
-                  {$currentTrack?.title || $_('player.unknownTitle')}
-                </h1>
+                <MarqueeText
+                  trigger="always"
+                  pauseOnHover="reset"
+                  resetKey={$currentTrack?.id}
+                  containerClass="mobile-title-marquee"
+                >
+                  <h1 class="track-title">
+                    {$currentTrack?.title || $_('player.unknownTitle')}
+                  </h1>
+                </MarqueeText>
                 <div class="quality-badge-wrapper mobile-quality-badge">
                   <AudioQualityBadge variant="compact" />
                 </div>
@@ -598,7 +624,8 @@
               {/if}
             {/if}
           </div>
-        {:else}
+        {/if}
+        {#if $lyricsVisible || $isWideMobile}
           <!-- In-place Lyrics for Mobile with nested gesture guard -->
           <div
             class="mobile-lyrics-wrapper"
@@ -610,8 +637,10 @@
                 transparent
                 reducedMotion={isAndroid}
                 style={(isAndroid
-                  ? "--lyrics-content-padding: 0.75rem 1rem 0.75rem; --lyrics-font-size: 1.2rem; --lyrics-active-font-size: 1.25rem; --lyrics-line-padding: 0.45rem 0; --label-beam-max-width: 180px;"
-                  : "--lyrics-content-padding: 1.5rem 1rem 12vh; --lyrics-font-size: 20px; --lyrics-active-font-size: 22px; --lyrics-line-padding: 0.65rem 0; --label-beam-max-width: 195px;")
+                  ? "--lyrics-content-padding: 0.75rem 0; --lyrics-font-size: 1.15rem; --lyrics-active-font-size: 1.45rem; --lyrics-line-padding: 0.5rem 0; --label-beam-max-width: 180px;"
+                  : $isWideMobile
+                    ? "--lyrics-content-padding: 1.5rem 0; --lyrics-font-size: clamp(1.25rem, 2.2vh, 1.75rem); --lyrics-active-font-size: clamp(1.5rem, 2.7vh, 2.1rem); --lyrics-line-padding: 0.7rem 0; --label-beam-max-width: 220px;"
+                    : "--lyrics-content-padding: 1.5rem 0 12vh; --lyrics-font-size: 1.2rem; --lyrics-active-font-size: 1.5rem; --lyrics-line-padding: 0.65rem 0; --label-beam-max-width: 195px;")
                   + " " + lyricsDarkPalette}
               />
             {:else}
@@ -620,6 +649,7 @@
           </div>
         {/if}
 
+        {#if !$lyricsVisible || $isWideMobile}
         <div class="player-controls">
           <div class="progress-bar-container">
             <span class="time">{formatDuration($currentTime)}</span>
@@ -662,7 +692,11 @@
               on:click={toggleShuffle}
               aria-label={$_('player.shuffle')}
             >
-              <Icon name="shuffle" size={22} />
+              {#key $shuffle}
+                <span class="icon-pop" in:iconPopTransition>
+                  <Icon name="shuffle" size={22} />
+                </span>
+              {/key}
             </button>
             <button
               type="button"
@@ -703,60 +737,19 @@
               on:click={cycleRepeat}
               aria-label="Repeat"
             >
-              <Icon name="repeat" size={22} />
+              {#key $repeat}
+                <span class="icon-pop" in:iconPopTransition>
+                  <Icon name={$repeat === "one" ? "repeat-1" : "repeat"} size={22} />
+                </span>
+              {/key}
               {#if $repeat === "one"}<span class="repeat-one-badge">1</span
                 >{/if}
             </button>
           </div>
-
-          <div class="mobile-utility-row">
-            <button
-              type="button"
-              class="mobile-utility-btn"
-              class:active={$lyricsVisible}
-              on:click={handleMobileLyricsToggle}
-              aria-label={$_('player.lyrics')}
-              title={$_('player.lyrics')}
-            >
-              <Icon name="lyrics" size={20} />
-            </button>
-            <button
-              type="button"
-              class="mobile-utility-btn"
-              on:click={openEqualizerSettings}
-              aria-label={$_('settings.equalizer')}
-              title={$_('settings.equalizer')}
-            >
-              <Icon name="sliders" size={20} />
-            </button>
-            {#if $lyricsData?.lines?.length}
-              <button
-                type="button"
-                class="mobile-utility-btn"
-                on:click={() => (showLyricCardModal = true)}
-                aria-label="Share Lyric Card"
-                title="Share Lyric Card"
-              >
-                <Icon name="share" size={20} />
-              </button>
-            {/if}
-            <button
-              type="button"
-              class="mobile-utility-btn connect-btn"
-              class:active={connectedDevices > 0}
-              on:click={() => (showConnectPanel = true)}
-              aria-label={$_('connect.connectToDevice')}
-              title={$_('connect.connectToDevice')}
-            >
-              <Icon name="connect" size={20} />
-              {#if connectedDevices > 0}
-                <span class="device-dot"></span>
-              {/if}
-            </button>
-          </div>
         </div>
+        {/if}
 
-        {#if !$lyricsVisible && $lyricsData?.lines}
+        {#if !$lyricsVisible && !$isCompactLandscape && !$isWideMobile && $lyricsData?.lines}
           <!-- svelte-ignore a11y-click-events-have-key-events -->
           <div
             class="compact-lyrics-mobile"
@@ -999,6 +992,11 @@
     on:trackInfo={() => {
       showMobileMenu = false;
       showMetadataModal = true;
+    }}
+    on:equalizer={openEqualizerSettings}
+    on:lyricCard={() => {
+      showMobileMenu = false;
+      showLyricCardModal = true;
     }}
     {albumArt}
   />
@@ -1540,16 +1538,105 @@
   .player-content.mobile-view {
     flex: 1;
     min-height: 0;
+    width: 100%;
+    max-width: 520px;
+    margin: 0 auto;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
-    padding: 0.25rem calc(1.5rem + var(--safe-area-right, 0px)) calc(16px + var(--safe-area-bottom, 0px)) calc(1.5rem + var(--safe-area-left, 0px));
+    padding: 0.25rem calc(1.125rem + var(--safe-area-right, 0px)) calc(16px + var(--safe-area-bottom, 0px)) calc(1.125rem + var(--safe-area-left, 0px));
     gap: clamp(0.65rem, 1.8vh, 1.25rem);
     z-index: 10;
     overflow: hidden;
   }
 
+  .player-content.mobile-view.compact-landscape {
+    display: grid;
+    grid-template-columns: minmax(150px, 38%) 1fr;
+    grid-template-rows: auto auto;
+    align-content: center;
+    align-items: center;
+    column-gap: 1.5rem;
+    row-gap: 0.5rem;
+    max-width: 860px;
+  }
+
+  .player-content.mobile-view.compact-landscape .art-container {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    width: min(100%, 58vh);
+    margin: 0 auto;
+  }
+
+  .player-content.mobile-view.compact-landscape .track-info {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: end;
+  }
+
+  .player-content.mobile-view.compact-landscape .player-controls {
+    grid-column: 2;
+    grid-row: 2;
+    align-self: start;
+  }
+
+  .player-content.mobile-view.compact-landscape .mobile-lyrics-wrapper {
+    grid-column: 2;
+    grid-row: 1 / 3;
+    height: 100%;
+    max-height: calc(100dvh - 88px);
+  }
+
+  .player-content.mobile-view.wide-mobile {
+    display: grid;
+    grid-template-columns: minmax(280px, 44%) 1fr;
+    grid-template-rows: auto auto auto;
+    align-content: center;
+    align-items: center;
+    column-gap: clamp(1.5rem, 3vw, 3rem);
+    row-gap: 1rem;
+    max-width: 1120px;
+    padding: 0.5rem calc(clamp(1.25rem, 3vw, 3rem) + var(--safe-area-right, 0px)) calc(24px + var(--safe-area-bottom, 0px)) calc(clamp(1.25rem, 3vw, 3rem) + var(--safe-area-left, 0px));
+  }
+
+  .player-content.mobile-view.wide-mobile .art-container {
+    grid-column: 1;
+    grid-row: 1;
+    width: min(100%, 46vh);
+  }
+
+  .player-content.mobile-view.wide-mobile .track-info {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .player-content.mobile-view.wide-mobile .player-controls {
+    grid-column: 1;
+    grid-row: 3;
+  }
+
+  .player-content.mobile-view.wide-mobile .mobile-lyrics-wrapper {
+    grid-column: 2;
+    grid-row: 1 / 4;
+    height: 100%;
+    max-height: calc(100dvh - 110px);
+  }
+
+  :global(html.layout-wide-mobile) .mobile-header {
+    padding: 0.5rem calc(clamp(1.25rem, 3vw, 3rem) + var(--safe-area-right, 0px)) 0.5rem calc(clamp(1.25rem, 3vw, 3rem) + var(--safe-area-left, 0px));
+  }
+
+  .chevron-btn:focus-visible,
+  .mobile-like-btn:focus-visible,
+  .mobile-view .icon-btn:focus-visible,
+  .mobile-view .play-btn.large:focus-visible,
+  .mobile-view .progress-bar:focus-visible {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 2px;
+  }
+
   .mobile-view .art-container {
+    position: relative;
     width: min(100%, 38vh);
     aspect-ratio: 1;
     border-radius: 18px;
@@ -1577,7 +1664,10 @@
     }
   }
 
-  .mobile-view .art-container img {
+  .mobile-view .art-container img,
+  .mobile-view .art-container .art-placeholder {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -1604,11 +1694,12 @@
     flex: 1;
   }
 
-  .mobile-view .track-title {
+  .mobile-view :global(.mobile-title-marquee) {
     flex: 0 1 auto;
     min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
+  }
+
+  .mobile-view .track-title {
     white-space: nowrap;
     font-size: clamp(1.35rem, 3vh, 1.75rem);
     font-weight: 800;
@@ -1833,6 +1924,20 @@
     min-width: 44px;
     min-height: 44px;
     color: var(--fs-text-muted);
+    transition: transform var(--transition-fast) var(--ease-spring-snappy),
+                opacity var(--transition-fast),
+                color var(--transition-fast);
+  }
+
+  .mobile-view .icon-btn:active {
+    transform: scale(0.88);
+    opacity: 0.78;
+  }
+
+  .mobile-view .icon-pop {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .mobile-view .icon-btn.large {
@@ -1885,43 +1990,18 @@
     transform: scale(0.90);
   }
 
-  .mobile-utility-row {
+  .mobile-header-btns {
     display: flex;
     align-items: center;
-    justify-content: space-around;
-    margin-top: var(--spacing-sm);
-    padding: 0 var(--spacing-sm);
+    gap: 0;
+    flex-shrink: 0;
   }
 
-  .mobile-utility-btn {
+  .chevron-btn.more-btn {
     position: relative;
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    min-height: 44px;
-    border-radius: var(--radius-full);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--fs-text-muted);
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    padding: 0;
-    transition: color var(--transition-fast), background-color var(--transition-fast), transform var(--transition-fast);
   }
 
-  .mobile-utility-btn.active {
-    color: var(--accent-primary);
-    background: var(--fs-surface);
-  }
-
-  .mobile-utility-btn:active {
-    transform: scale(0.92);
-    background: var(--fs-surface);
-  }
-
-  .mobile-utility-btn .device-dot {
+  .chevron-btn .device-dot {
     position: absolute;
     top: 8px;
     right: 8px;
@@ -1929,13 +2009,6 @@
     height: 7px;
     border-radius: 50%;
     background: var(--accent-primary);
-  }
-
-  .mobile-header-btns {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    flex-shrink: 0;
   }
 
   .chevron-btn.active {
@@ -1959,33 +2032,39 @@
   }
 
   .compact-lyrics-mobile {
-    margin-top: 0;
+    margin-top: 0.25rem;
     text-align: center;
     color: var(--fs-text);
-    min-height: 3.6em;
-    padding: 0 0.5rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 5.2em;
+    padding: 0;
     line-height: 1.35;
     overflow: hidden;
     overflow-wrap: break-word;
     word-break: break-word;
     cursor: pointer;
-    flex-shrink: 1;
+    flex-shrink: 0;
   }
 
   .compact-line {
-    transition: all 0.3s ease;
+    transition: opacity var(--transition-normal), transform var(--transition-normal);
   }
 
   .compact-line.current {
-    font-size: 1.05rem;
+    font-size: 1.2rem;
     font-weight: var(--font-weight-bold);
-    margin: 0.25rem 0;
+    margin: 0.3rem 0;
   }
 
   .compact-line.dimmed {
-    font-size: 0.85rem;
+    font-size: 0.95rem;
     font-weight: var(--font-weight-medium);
-    opacity: 0.4;
+    opacity: 0.5;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
 

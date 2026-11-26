@@ -35,6 +35,15 @@ export function modalSheetTransition(node: Element) {
 // use elsewhere in the UI but doesn't drive mobile/desktop layout
 export const isMobileViewport = writable(false);
 
+const initialW = typeof window !== 'undefined' ? window.innerWidth : 0;
+const initialH = typeof window !== 'undefined' ? window.innerHeight : 0;
+const viewportSize = writable({ width: initialW, height: initialH });
+
+export const isLandscape = derived(
+    viewportSize,
+    ({ width, height }) => width > height && width > 0
+);
+
 // Is the sidebar drawer open on mobile?
 export const isMobileSidebarOpen = writable(false);
 
@@ -122,6 +131,16 @@ export const useDesktopTitleBar = derived(
     }
 );
 
+export const isCompactLandscape = derived(
+    [isMobile, isLandscape, viewportSize],
+    ([$mobile, $landscape, { height }]) => $mobile && $landscape && height > 0 && height <= 540
+);
+
+export const isWideMobile = derived(
+    [isMobile, isLandscape, viewportSize],
+    ([$mobile, $landscape, { width, height }]) => $mobile && $landscape && width >= 768 && height > 540
+);
+
 // auto-close the mobile sidebar drawer whenever layout leaves mobile mode
 // (platform change, override change, or PIP engaging)
 isMobile.subscribe(($mobile) => {
@@ -139,6 +158,15 @@ if (typeof document !== 'undefined') {
         const root = document.documentElement;
         root.classList.toggle('layout-mobile', $mobile);
         root.classList.toggle('layout-desktop', !$mobile);
+    });
+    isLandscape.subscribe(($landscape) => {
+        document.documentElement.classList.toggle('layout-landscape', $landscape);
+    });
+    isCompactLandscape.subscribe(($compact) => {
+        document.documentElement.classList.toggle('layout-compact-landscape', $compact);
+    });
+    isWideMobile.subscribe(($wide) => {
+        document.documentElement.classList.toggle('layout-wide-mobile', $wide);
     });
 }
 
@@ -193,6 +221,12 @@ let mediaQuery: MediaQueryList | null = null;
 export function initMobileDetection() {
     // 1. Media query detection (informational only => does not drive layout)
     if (typeof window !== 'undefined') {
+        const updateViewport = () => {
+            viewportSize.set({ width: window.innerWidth, height: window.innerHeight });
+        };
+        updateViewport();
+        window.addEventListener('resize', updateViewport);
+
         mediaQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`);
         isMobileViewport.set(mediaQuery.matches);
 

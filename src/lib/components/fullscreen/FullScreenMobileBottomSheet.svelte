@@ -6,6 +6,7 @@
   import { get } from "svelte/store";
   import { currentTrack, addToQueue } from "$lib/stores/player";
   import { toggleFullScreen, isStatsForNerdsOpen } from "$lib/stores/ui";
+  import { lyricsData } from "$lib/stores/lyrics";
   import { likedTrackIds, toggleLike } from "$lib/stores/liked";
   import { playlists, albums, adjustPlaylistTrackCount } from "$lib/stores/library";
   import { addToast } from "$lib/stores/toast";
@@ -31,7 +32,7 @@
   export let showConnectPanel = false;
   export let albumArt: string | null = null;
 
-  const dispatch = createEventDispatcher<{ trackInfo: void }>();
+  const dispatch = createEventDispatcher<{ trackInfo: void; equalizer: void; lyricCard: void }>();
 
   let showPlaylistPicker = false;
   let sheetEl: HTMLDivElement | null = null;
@@ -353,6 +354,28 @@
         {/if}
       </div>
     </div>
+
+    <!-- Equalizer -->
+    <button
+      type="button"
+      class="sheet-item"
+      on:click={() => { showMobileMenu = false; dispatch('equalizer'); }}
+    >
+      <Icon name="sliders" size={22} />
+      <span>{$_('settings.equalizer')}</span>
+    </button>
+
+    <!-- Share Lyric Card -->
+    {#if $lyricsData?.lines?.length}
+      <button
+        type="button"
+        class="sheet-item"
+        on:click={() => { showMobileMenu = false; dispatch('lyricCard'); }}
+      >
+        <Icon name="share" size={22} />
+        <span>Share Lyric Card</span>
+      </button>
+    {/if}
 
     <!-- Connect to Device -->
     <button
