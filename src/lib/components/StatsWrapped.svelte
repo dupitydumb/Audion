@@ -25,7 +25,21 @@
 
     let currentSlide = 0;
     let canvas: HTMLCanvasElement;
+    let recapPreviewCanvas: HTMLCanvasElement;
     let isExporting = false;
+
+    type RecapTheme = "frosted" | "vinyl" | "mesh" | "minimal";
+    type RecapAspect = "9:16" | "1:1";
+
+    const recapThemes: { id: RecapTheme; label: string }[] = [
+        { id: "frosted", label: "Frosted" },
+        { id: "vinyl", label: "Vinyl" },
+        { id: "mesh", label: "Mesh" },
+        { id: "minimal", label: "Minimal" },
+    ];
+
+    let recapTheme: RecapTheme = "frosted";
+    let recapAspect: RecapAspect = "9:16";
 
     // Genre data from MusicBrainz
     let topGenres: [string, number][] = [];
@@ -45,25 +59,26 @@
         }
     }
 
-    // Artist picture handling
-    let topArtistPictureUrl: string | null = null;
-    let failedArtistImage = false;
-
-    async function fetchArtistPicture(name: string) {
-        if (!name) return;
-        try {
-            const plugin = (window as any).tidalSearchPlugin;
-            if (plugin) {
-                const result = await plugin.searchArtistPictureForRPC(name);
-                if (result) {
-                    topArtistPictureUrl = result;
-                    failedArtistImage = false;
-                }
-            }
-        } catch (e) {
-            console.warn("[StatsWrapped] Artist picture fetch failed:", e);
+    // Album cover collage / hero art for shareable recap (replaces unreliable external artist pics)
+    let failedCoverUrls = new Set<string>();
+    $: recapCovers = (() => {
+        const urls: string[] = [];
+        const seen = new Set<string>();
+        const pushUrl = (u: string | null | undefined) => {
+            if (!u || seen.has(u) || failedCoverUrls.has(u)) return;
+            seen.add(u);
+            urls.push(u);
+        };
+        for (const alb of $topAlbums) {
+            if (urls.length >= 4) break;
+            if (alb.album_art) pushUrl(getAlbumArtSrc(alb.album_art));
         }
-    }
+        for (const item of $topTracks) {
+            if (urls.length >= 4) break;
+            pushUrl(resolveTrackCover(item.track));
+        }
+        return urls;
+    })();
 
     // Reset to first slide whenever reopened, and fetch data
     let wasShown = false;
@@ -75,8 +90,6 @@
     }
 
     $: if (show && !genresFetched) fetchGenres();
-    $: if (show && $topArtists[0])
-        fetchArtistPicture($topArtists[0].artist.toString());
 
     function handleKeydown(e: KeyboardEvent) {
         if (!show) return;
@@ -165,33 +178,59 @@
         return Math.floor(seconds / 60).toLocaleString();
     }
 
-    // Helper to load image for canvas
+    function isTauriAssetUrl(src: string): boolean {
+        return (
+            src.startsWith("asset:") ||
+            /\/\/(asset|tauri)\.localhost(?::\d+)?\//i.test(src)
+        );
+    }
+
+    function blobToDataUrl(blob: Blob): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    const imageCache = new Map<string, HTMLImageElement>();
+
+    // Helper to load image for canvas (cached, fast-path for Tauri asset URLs)
     async function loadImage(src: string): Promise<HTMLImageElement> {
-        // If it's a remote URL, fetch via proxy to bypass CORS
+        const cached = imageCache.get(src);
+        if (cached) return cached;
+
         let finalSrc = src;
-        if (src.startsWith("http") && !src.includes("tauri.localhost")) {
+        if (isTauriAssetUrl(src)) {
+            try {
+                const resp = await fetch(src);
+                if (resp.ok) {
+                    finalSrc = await blobToDataUrl(await resp.blob());
+                }
+            } catch {
+                // Fall back to direct URL if fetch fails
+            }
+        } else if (src.startsWith("http")) {
             try {
                 const base64 = await proxyFetchBytes(src);
-                // Determine mime type from URL or default to jpeg
                 const ext = src.split(".").pop()?.toLowerCase();
                 const mime = ext === "png" ? "image/png" : "image/jpeg";
                 finalSrc = `data:${mime};base64,${base64}`;
             } catch (e) {
-                console.warn(
-                    "[StatsWrapped] Proxy fetch failed for image:",
-                    src,
-                    e,
-                );
+                console.warn("[StatsWrapped] Proxy fetch failed for image:", src, e);
             }
         }
 
-        return new Promise((resolve, reject) => {
-            const img = new Image();
-            img.crossOrigin = "anonymous";
-            img.onload = () => resolve(img);
-            img.onerror = reject;
-            img.src = finalSrc;
+        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+            const el = new Image();
+            el.crossOrigin = "anonymous";
+            el.onload = () => resolve(el);
+            el.onerror = reject;
+            el.src = finalSrc;
         });
+        imageCache.set(src, img);
+        return img;
     }
 
     async function exportToImage() {
@@ -202,59 +241,61 @@
             const ctx = canvas.getContext("2d");
             if (!ctx) return;
 
-            // 1080x1920 is standard for IG stories
-            canvas.width = 1080;
-            canvas.height = 1920;
+            // 1080x1920 is standard for IG stories; 1080x1080 for square summary posts
+            const exportWidth = 1080;
+            const exportHeight =
+                currentSlide === 5 && recapAspect === "1:1" ? 1080 : 1920;
+            canvas.width = exportWidth;
+            canvas.height = exportHeight;
 
-            // Premium Gradient Background
-            const grad = ctx.createLinearGradient(0, 0, 1080, 1920);
-            grad.addColorStop(0, "#000000");
-            grad.addColorStop(0.5, "#1a1a1a");
-            grad.addColorStop(1, "#000000");
-            ctx.fillStyle = grad;
-            ctx.fillRect(0, 0, 1080, 1920);
-
-            // Vibrant mesh glow based on slide
-            const meshGrad = ctx.createRadialGradient(
-                540,
-                960,
-                0,
-                540,
-                960,
-                1500,
-            );
-            if (currentSlide === 1) {
-                // Top Tracks: Pink/Purple
-                meshGrad.addColorStop(0, "rgba(255, 0, 128, 0.4)");
-            } else if (currentSlide === 2) {
-                // Top Artist: Cyan/Blue
-                meshGrad.addColorStop(0, "rgba(0, 223, 216, 0.4)");
+            if (currentSlide === 5) {
+                await drawFinalRecap(ctx, exportWidth, exportHeight);
             } else {
-                // Others: Green/Spotify vibes
-                meshGrad.addColorStop(0, "rgba(30, 215, 96, 0.4)");
+                // Premium Gradient Background
+                const grad = ctx.createLinearGradient(0, 0, 1080, 1920);
+                grad.addColorStop(0, "#000000");
+                grad.addColorStop(0.5, "#1a1a1a");
+                grad.addColorStop(1, "#000000");
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, 1080, 1920);
+
+                // Vibrant mesh glow based on slide
+                const meshGrad = ctx.createRadialGradient(
+                    540,
+                    960,
+                    0,
+                    540,
+                    960,
+                    1500,
+                );
+                if (currentSlide === 1) {
+                    meshGrad.addColorStop(0, "rgba(255, 0, 128, 0.4)");
+                } else if (currentSlide === 2) {
+                    meshGrad.addColorStop(0, "rgba(0, 223, 216, 0.4)");
+                } else {
+                    meshGrad.addColorStop(0, "rgba(30, 215, 96, 0.4)");
+                }
+                meshGrad.addColorStop(1, "rgba(0,0,0,0)");
+                ctx.fillStyle = meshGrad;
+                ctx.fillRect(0, 0, 1080, 1920);
+
+                // Header
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "900 40px Inter, sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText("AUDION RECAP", 540, 120);
+
+                if (currentSlide === 0) await drawIntro(ctx);
+                else if (currentSlide === 1) await drawTopTracks(ctx);
+                else if (currentSlide === 2) await drawTopArtist(ctx);
+                else if (currentSlide === 3) await drawSummary(ctx);
+                else if (currentSlide === 4) await drawGenreSlide(ctx);
+
+                // Footer
+                ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+                ctx.font = "bold 32px Inter, sans-serif";
+                ctx.fillText("AUDION", 540, 1820);
             }
-            meshGrad.addColorStop(1, "rgba(0,0,0,0)");
-            ctx.fillStyle = meshGrad;
-            ctx.fillRect(0, 0, 1080, 1920);
-
-            // Header
-            ctx.fillStyle = "#ffffff";
-            ctx.font = "900 40px Inter, sans-serif";
-            ctx.textAlign = "center";
-            ctx.fillText("AUDION RECAP", 540, 120);
-
-            // Draw content based on slide
-            if (currentSlide === 0) await drawIntro(ctx);
-            else if (currentSlide === 1) await drawTopTracks(ctx);
-            else if (currentSlide === 2) await drawTopArtist(ctx);
-            else if (currentSlide === 3) await drawSummary(ctx);
-            else if (currentSlide === 4) await drawGenreSlide(ctx);
-            else await drawFinalRecap(ctx);
-
-            // Footer
-            ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
-            ctx.font = "bold 32px Inter, sans-serif";
-            ctx.fillText("AUDION", 540, 1820);
 
             const dataUrl = canvas.toDataURL("image/png");
             const base64Data = dataUrl.split(",")[1];
@@ -388,135 +429,350 @@
         }
     }
 
-    async function drawFinalRecap(ctx: CanvasRenderingContext2D) {
+    async function drawFinalRecap(
+        ctx: CanvasRenderingContext2D,
+        width = 1080,
+        height = 1920,
+    ) {
         const year = new Date().getFullYear().toString();
-        const mainColor = "#fa243c"; // Apple Music Red
-        const bgColor = "#0a0a0a";
+        const isSquare = height === 1080;
+        const cssAccent =
+            typeof window !== "undefined"
+                ? getComputedStyle(document.documentElement)
+                      .getPropertyValue("--accent-primary")
+                      .trim()
+                : "";
+        const accentColor = cssAccent || "#1db954";
 
-        // 1. Smooth Mesh Gradient Background
-        ctx.fillStyle = bgColor;
-        ctx.fillRect(0, 0, 1080, 1920);
+        const loadedCovers = (
+            await Promise.all(
+                recapCovers.slice(0, 4).map((url) => loadImage(url).catch(() => null)),
+            )
+        ).filter((img): img is HTMLImageElement => img !== null);
 
-        // Radial Top Left
-        const gradTL = ctx.createRadialGradient(200, 200, 0, 200, 200, 1000);
-        gradTL.addColorStop(0, "rgba(250, 36, 60, 0.4)");
-        gradTL.addColorStop(1, "rgba(0, 0, 0, 0)");
-        ctx.fillStyle = gradTL;
-        ctx.fillRect(0, 0, 1080, 1920);
+        // Backdrop by template
+        ctx.fillStyle = recapTheme === "minimal" ? "#0d0e12" : "#08090e";
+        ctx.fillRect(0, 0, width, height);
 
-        // Radial Bottom Right
-        const gradBR = ctx.createRadialGradient(880, 1720, 0, 880, 1720, 1000);
-        gradBR.addColorStop(0, "rgba(64, 156, 255, 0.3)");
-        gradBR.addColorStop(1, "rgba(0, 0, 0, 0)");
-        ctx.fillStyle = gradBR;
-        ctx.fillRect(0, 0, 1080, 1920);
+        if (recapTheme === "frosted" && loadedCovers[0]) {
+            ctx.save();
+            const scale =
+                Math.max(
+                    width / loadedCovers[0].width,
+                    height / loadedCovers[0].height,
+                ) * 1.15;
+            const sw = loadedCovers[0].width * scale;
+            const sh = loadedCovers[0].height * scale;
+            ctx.filter = "blur(70px) brightness(0.32) saturate(1.5)";
+            ctx.drawImage(
+                loadedCovers[0],
+                (width - sw) / 2,
+                (height - sh) / 2,
+                sw,
+                sh,
+            );
+            ctx.restore();
+        } else if (recapTheme === "mesh") {
+            const gradTL = ctx.createRadialGradient(
+                width * 0.2,
+                height * 0.16,
+                0,
+                width * 0.2,
+                height * 0.16,
+                width * 0.85,
+            );
+            gradTL.addColorStop(0, accentColor + "66");
+            gradTL.addColorStop(1, "rgba(0, 0, 0, 0)");
+            ctx.fillStyle = gradTL;
+            ctx.fillRect(0, 0, width, height);
 
-        // 2. Centered Main Card
-        const cardWidth = 850;
-        const cardHeight = 1500;
-        const cardX = (1080 - cardWidth) / 2;
-        const cardY = (1920 - cardHeight) / 2;
+            const gradBR = ctx.createRadialGradient(
+                width * 0.82,
+                height * 0.84,
+                0,
+                width * 0.82,
+                height * 0.84,
+                width * 0.8,
+            );
+            gradBR.addColorStop(0, "rgba(72, 132, 255, 0.34)");
+            gradBR.addColorStop(1, "rgba(0, 0, 0, 0)");
+            ctx.fillStyle = gradBR;
+            ctx.fillRect(0, 0, width, height);
+        } else if (recapTheme === "vinyl") {
+            const studioGlow = ctx.createRadialGradient(
+                width / 2,
+                height * 0.35,
+                0,
+                width / 2,
+                height * 0.35,
+                width * 0.75,
+            );
+            studioGlow.addColorStop(0, "rgba(255, 255, 255, 0.08)");
+            studioGlow.addColorStop(1, "rgba(0, 0, 0, 0)");
+            ctx.fillStyle = studioGlow;
+            ctx.fillRect(0, 0, width, height);
+        } else if (recapTheme === "minimal") {
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(36, 36, width - 72, height - 72);
+        }
 
-        ctx.save();
-        ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
-        ctx.shadowBlur = 60;
-        ctx.shadowOffsetY = 30;
-        ctx.fillStyle = "#ffffff";
-        ctx.beginPath();
-        ctx.roundRect(cardX, cardY, cardWidth, cardHeight, 60);
-        ctx.fill();
-        ctx.restore();
+        // Card surface
+        const cardX = isSquare ? 72 : 88;
+        const cardY = isSquare ? 72 : 168;
+        const cardW = width - cardX * 2;
+        const cardH = height - cardY * 2;
 
-        // 3. Card Header (Branding)
-        ctx.textAlign = "center";
-        ctx.fillStyle = "#000000";
-        ctx.font = "900 36px Inter, sans-serif";
-        ctx.fillText($_("recap.recapYear", { values: { year } }), 540, cardY + 100);
+        if (recapTheme !== "minimal") {
+            ctx.save();
+            ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
+            ctx.shadowBlur = 64;
+            ctx.shadowOffsetY = 24;
+            ctx.fillStyle =
+                recapTheme === "frosted"
+                    ? "rgba(18, 20, 28, 0.72)"
+                    : recapTheme === "vinyl"
+                      ? "#131419"
+                      : "rgba(16, 17, 24, 0.82)";
+            ctx.beginPath();
+            ctx.roundRect(cardX, cardY, cardW, cardH, 44);
+            ctx.fill();
+            ctx.restore();
+
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.14)";
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.roundRect(cardX, cardY, cardW, cardH, 44);
+            ctx.stroke();
+        }
+
+        const pad = isSquare ? 48 : 64;
+        const innerX = cardX + pad;
+        const innerW = cardW - pad * 2;
+
+        // Header row
+        ctx.textAlign = "left";
+        ctx.fillStyle = accentColor;
+        ctx.font = "900 24px Inter, sans-serif";
+        ctx.fillText(
+            $_("recap.recapYear", { values: { year } }).toUpperCase(),
+            innerX,
+            cardY + (isSquare ? 56 : 74),
+        );
 
         try {
             const logoImg = await loadImage("/logo.png");
-            ctx.drawImage(logoImg, 540 - 30, cardY + 130, 60, 60);
-        } catch (e) {}
+            const logoSize = isSquare ? 42 : 50;
+            ctx.drawImage(
+                logoImg,
+                cardX + cardW - pad - logoSize,
+                cardY + (isSquare ? 30 : 44),
+                logoSize,
+                logoSize,
+            );
+        } catch {}
 
-        // 4. Visual Piece
-        const imgSize = 580; // Reduced from 650
-        const imgX = (1080 - imgSize) / 2;
-        const imgY = cardY + 200; // Moved up slightly
+        // Visual hero block (Album collage, single cover, or Vinyl sleeve + disc)
+        const artSize = isSquare ? 260 : 450;
+        const artY = cardY + (isSquare ? 94 : 132);
+        const artX =
+            recapTheme === "vinyl"
+                ? innerX + (isSquare ? 24 : 76)
+                : (width - artSize) / 2;
 
-        if ($topArtists[0]) {
-            if (topArtistPictureUrl && !failedArtistImage) {
-                try {
-                    const img = await loadImage(topArtistPictureUrl);
-                    ctx.save();
-                    ctx.beginPath();
-                    ctx.roundRect(imgX, imgY, imgSize, imgSize, 20);
-                    ctx.clip();
-                    ctx.drawImage(img, imgX, imgY, imgSize, imgSize);
-                    ctx.restore();
-                } catch {
-                    ctx.fillStyle = mainColor;
-                    ctx.beginPath();
-                    ctx.roundRect(imgX, imgY, imgSize, imgSize, 20);
-                    ctx.fill();
-                }
-            } else {
-                ctx.fillStyle = mainColor;
+        if (recapTheme === "vinyl") {
+            // Vinyl record peeking out to the right of the sleeve
+            const discR = artSize * 0.46;
+            const discCx = artX + artSize * 0.92;
+            const discCy = artY + artSize / 2;
+
+            ctx.save();
+            ctx.fillStyle = "#0a0a0c";
+            ctx.beginPath();
+            ctx.arc(discCx, discCy, discR, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.strokeStyle = "rgba(255,255,255,0.09)";
+            ctx.lineWidth = 2;
+            for (const rFrac of [0.85, 0.72, 0.58]) {
                 ctx.beginPath();
-                ctx.roundRect(imgX, imgY, imgSize, imgSize, 20);
-                ctx.fill();
+                ctx.arc(discCx, discCy, discR * rFrac, 0, Math.PI * 2);
+                ctx.stroke();
             }
+
+            ctx.fillStyle = accentColor;
+            ctx.beginPath();
+            ctx.arc(discCx, discCy, discR * 0.28, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = "#0a0a0c";
+            ctx.beginPath();
+            ctx.arc(discCx, discCy, discR * 0.08, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
         }
 
-        // 5. Grid Stats
+        if (loadedCovers.length >= 4 && recapTheme !== "vinyl") {
+            const gap = isSquare ? 8 : 14;
+            const cell = (artSize - gap) / 2;
+            const positions = [
+                [artX, artY],
+                [artX + cell + gap, artY],
+                [artX, artY + cell + gap],
+                [artX + cell + gap, artY + cell + gap],
+            ];
+            for (let i = 0; i < 4; i++) {
+                const [cx, cy] = positions[i];
+                ctx.save();
+                ctx.beginPath();
+                ctx.roundRect(cx, cy, cell, cell, 16);
+                ctx.clip();
+                ctx.drawImage(loadedCovers[i], cx, cy, cell, cell);
+                ctx.restore();
+            }
+        } else if (loadedCovers.length >= 1) {
+            ctx.save();
+            ctx.shadowColor = "rgba(0, 0, 0, 0.45)";
+            ctx.shadowBlur = 32;
+            ctx.beginPath();
+            ctx.roundRect(artX, artY, artSize, artSize, 22);
+            ctx.clip();
+            ctx.drawImage(loadedCovers[0], artX, artY, artSize, artSize);
+            ctx.restore();
+        } else {
+            ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+            ctx.beginPath();
+            ctx.roundRect(artX, artY, artSize, artSize, 22);
+            ctx.fill();
+            ctx.strokeStyle = accentColor;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(artX + artSize / 2, artY + artSize / 2, artSize * 0.24, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+
+        // Top artists and songs columns
+        const listY = artY + artSize + (isSquare ? 44 : 74);
+        const col1X = innerX;
+        const col2X = innerX + innerW * 0.52;
+        const rowStep = isSquare ? 42 : 56;
+        const fontSize = isSquare ? 24 : 30;
+
         ctx.textAlign = "left";
-        let textY = imgY + imgSize + 80; // Reduced gap
-
-        ctx.fillStyle = "rgba(0,0,0,0.5)";
-        ctx.font = "bold 28px Inter, sans-serif";
-        ctx.fillText($_("recap.topArtists").toUpperCase(), cardX + 80, textY);
-        ctx.fillText($_("recap.topSongs").toUpperCase(), cardX + 450, textY);
-
-        ctx.fillStyle = "#000000";
-        ctx.font = "900 38px Inter, sans-serif"; // Slightly smaller font
+        ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+        ctx.font = `800 ${isSquare ? 18 : 22}px Inter, sans-serif`;
+        ctx.fillText($_("recap.topArtists").toUpperCase(), col1X, listY);
+        ctx.fillText($_("recap.topSongs").toUpperCase(), col2X, listY);
 
         $topArtists.slice(0, 5).forEach((art, i) => {
-            const name =
-                art.artist.toString().length > 15
-                    ? art.artist.toString().substring(0, 12) + "..."
-                    : art.artist;
-            ctx.fillText(`${i + 1} ${name}`, cardX + 80, textY + 60 + i * 50); // Reduced line height
+            const y = listY + (isSquare ? 40 : 56) + i * rowStep;
+            ctx.fillStyle = accentColor;
+            ctx.font = `900 ${fontSize}px Inter, sans-serif`;
+            ctx.fillText(`${i + 1}`, col1X, y);
+
+            const raw = art.artist.toString();
+            const name = raw.length > 15 ? raw.substring(0, 13) + "…" : raw;
+            ctx.fillStyle = "#ffffff";
+            ctx.font = `700 ${fontSize}px Inter, sans-serif`;
+            ctx.fillText(name, col1X + 34, y);
         });
 
         $topTracks.slice(0, 5).forEach((item, i) => {
+            const y = listY + (isSquare ? 40 : 56) + i * rowStep;
+            ctx.fillStyle = accentColor;
+            ctx.font = `900 ${fontSize}px Inter, sans-serif`;
+            ctx.fillText(`${i + 1}`, col2X, y);
+
             const titleText = item.track.title || $_("common.unknownTrack");
             const title =
-                titleText.length > 20
-                    ? titleText.substring(0, 17) + "..."
-                    : titleText; // More space for titles
-            ctx.fillText(`${i + 1} ${title}`, cardX + 450, textY + 60 + i * 50); // Reduced line height
+                titleText.length > 16 ? titleText.substring(0, 14) + "…" : titleText;
+            ctx.fillStyle = "#ffffff";
+            ctx.font = `700 ${fontSize}px Inter, sans-serif`;
+            ctx.fillText(title, col2X + 34, y);
         });
 
-        // 6. Footer Stats
-        const footerY = cardY + cardHeight - 220; // Moved up more to clear buttons
-        ctx.textAlign = "center";
+        // Footer stat blocks
+        const pillH = isSquare ? 104 : 136;
+        const pillY = cardY + cardH - (isSquare ? 36 : 56) - pillH;
+        const pillW = (innerW - 24) / 2;
+        const pill1X = innerX;
+        const pill2X = innerX + pillW + 24;
 
-        ctx.fillStyle = "rgba(0,0,0,0.4)";
-        ctx.font = "bold 28px Inter, sans-serif";
-        ctx.fillText($_("recap.minutesListened").toUpperCase(), 540 - 200, footerY);
-        ctx.fillText($_("recap.topGenre").toUpperCase(), 540 + 200, footerY);
+        for (const px of [pill1X, pill2X]) {
+            ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
+            ctx.beginPath();
+            ctx.roundRect(px, pillY, pillW, pillH, 20);
+            ctx.fill();
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
 
-        ctx.fillStyle = "#000000";
-        ctx.font = "900 80px Inter, sans-serif";
+        ctx.textAlign = "left";
+        ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+        ctx.font = `800 ${isSquare ? 16 : 20}px Inter, sans-serif`;
+        ctx.fillText(
+            $_("recap.minutesListened").toUpperCase(),
+            pill1X + 24,
+            pillY + (isSquare ? 34 : 44),
+        );
+        ctx.fillText(
+            $_("recap.topGenre").toUpperCase(),
+            pill2X + 24,
+            pillY + (isSquare ? 34 : 44),
+        );
+
+        const valFont = isSquare ? 38 : 50;
+        ctx.fillStyle = "#ffffff";
+        ctx.font = `900 ${valFont}px Inter, sans-serif`;
         ctx.fillText(
             formatMinutes($statsSummary?.total_duration_seconds || 0),
-            540 - 200,
-            footerY + 80,
+            pill1X + 24,
+            pillY + (isSquare ? 82 : 106),
         );
-        ctx.fillText(
-            topGenres[0] ? topGenres[0][0] : $_("recap.musicFallback"),
-            540 + 200,
-            footerY + 80,
-        );
+
+        const genreText = topGenres[0] ? topGenres[0][0] : $_("recap.musicFallback");
+        const clippedGenre =
+            genreText.length > 11 ? genreText.substring(0, 10) + "…" : genreText;
+        ctx.fillStyle = accentColor;
+        ctx.fillText(clippedGenre, pill2X + 24, pillY + (isSquare ? 82 : 106));
+    }
+
+    let previewRenderGen = 0;
+    async function renderRecapPreview() {
+        if (!recapPreviewCanvas || currentSlide !== 5 || !show) return;
+        const gen = ++previewRenderGen;
+        const w = 1080;
+        const h = recapAspect === "1:1" ? 1080 : 1920;
+
+        // Draw onto an offscreen canvas first so rapid template switches never flicker
+        const offscreen = document.createElement("canvas");
+        offscreen.width = w;
+        offscreen.height = h;
+        const octx = offscreen.getContext("2d");
+        if (!octx) return;
+        await drawFinalRecap(octx, w, h);
+
+        if (gen !== previewRenderGen || !recapPreviewCanvas) return;
+        recapPreviewCanvas.width = w;
+        recapPreviewCanvas.height = h;
+        const ctx = recapPreviewCanvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(offscreen, 0, 0);
+    }
+
+    $: if (
+        show &&
+        currentSlide === 5 &&
+        recapPreviewCanvas &&
+        (recapTheme ||
+            recapAspect ||
+            recapCovers ||
+            $topArtists ||
+            $topTracks ||
+            $statsSummary ||
+            topGenres)
+    ) {
+        void renderRecapPreview();
     }
 </script>
 
@@ -739,87 +995,46 @@
                         <p class="mb-credit">{$_('recap.genresViaMusicBrainz')}</p>
                     </div>
                 {:else if currentSlide === 5}
-                    <div class="slide final-slide" in:fade={{ duration: 600 }}>
-                        <div class="premium-recap-container">
-                            <div class="premium-card">
-                                <div class="card-logo-row">
-                                    <h2 class="card-recap-title">
-                                        {$_('recap.recapYear', { values: { year: new Date().getFullYear() } })}
-                                    </h2>
-                                    <img
-                                        src="/logo.png"
-                                        alt=""
-                                        class="card-logo"
-                                    />
-                                </div>
+                    <div class="slide final-slide" in:fade={{ duration: 400 }}>
+                        <div class="recap-studio">
+                            <div class="recap-preview-frame" class:square={recapAspect === "1:1"}>
+                                <canvas
+                                    bind:this={recapPreviewCanvas}
+                                    class="recap-preview-canvas"
+                                    aria-label="Shareable recap preview"
+                                ></canvas>
+                            </div>
 
-                                <div class="card-image-box">
-                                    {#if topArtistPictureUrl && !failedArtistImage}
-                                        <img
-                                            src={topArtistPictureUrl}
-                                            alt=""
-                                            class="artist-img-recap"
-                                            on:error={() =>
-                                                (failedArtistImage = true)}
-                                        />
-                                    {:else if $topArtists[0]}
-                                        <div class="artist-initials">
-                                            {$topArtists[0].artist
-                                                .toString()
-                                                .substring(0, 2)}
-                                        </div>
-                                    {/if}
+                            <div class="recap-controls" role="toolbar" aria-label="Recap template options">
+                                <div class="recap-control-group" role="group" aria-label="Template">
+                                    {#each recapThemes as t}
+                                        <button
+                                            type="button"
+                                            class="recap-pill-btn"
+                                            class:active={recapTheme === t.id}
+                                            on:click={() => (recapTheme = t.id)}
+                                        >
+                                            {t.label}
+                                        </button>
+                                    {/each}
                                 </div>
-
-                                <div class="card-grid">
-                                    <div class="grid-col">
-                                        <span class="grid-label"
-                                            >{$_('recap.topArtists')}</span
-                                        >
-                                        {#each $topArtists.slice(0, 5) as art, i}
-                                            <div class="grid-item">
-                                                <span class="num">{i + 1}</span>
-                                                <span class="name"
-                                                    >{art.artist}</span
-                                                >
-                                            </div>
-                                        {/each}
-                                    </div>
-                                    <div class="grid-col">
-                                        <span class="grid-label">{$_('recap.topSongs')}</span
-                                        >
-                                        {#each $topTracks.slice(0, 5) as item, i}
-                                            <div class="grid-item">
-                                                <span class="num">{i + 1}</span>
-                                                <span class="name"
-                                                    >{item.track.title}</span
-                                                >
-                                            </div>
-                                        {/each}
-                                    </div>
-                                </div>
-
-                                <div class="card-footer-stats">
-                                    <div class="footer-stat">
-                                        <span class="stat-label"
-                                            >{$_('recap.minutesListened')}</span
-                                        >
-                                        <span class="stat-value"
-                                            >{formatMinutes(
-                                                $statsSummary?.total_duration_seconds ||
-                                                    0,
-                                            )}</span
-                                        >
-                                    </div>
-                                    <div class="footer-stat text-right">
-                                        <span class="stat-label">{$_('recap.topGenre')}</span
-                                        >
-                                        <span class="stat-value"
-                                            >{topGenres[0]
-                                                ? topGenres[0][0]
-                                                : $_('recap.musicFallback')}</span
-                                        >
-                                    </div>
+                                <div class="recap-control-group" role="group" aria-label="Aspect ratio">
+                                    <button
+                                        type="button"
+                                        class="recap-pill-btn"
+                                        class:active={recapAspect === "9:16"}
+                                        on:click={() => (recapAspect = "9:16")}
+                                    >
+                                        9:16
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="recap-pill-btn"
+                                        class:active={recapAspect === "1:1"}
+                                        on:click={() => (recapAspect = "1:1")}
+                                    >
+                                        1:1
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -1178,130 +1393,79 @@
         justify-content: center;
     }
 
-    .premium-recap-container {
+    .recap-studio {
         width: 100%;
-        max-height: 100%;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-    }
-
-    .premium-card {
-        width: 100%;
-        max-height: 100%;
-        overflow-y: auto;
-        background: #ffffff;
-        border-radius: 24px;
-        color: #111111;
-        padding: 18px 20px;
+        height: 100%;
         display: flex;
         flex-direction: column;
-        gap: 10px;
-        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
-    }
-
-    .card-logo-row {
-        display: flex;
-        justify-content: space-between;
         align-items: center;
-        margin-bottom: 5px;
+        justify-content: center;
+        gap: 12px;
+        min-height: 0;
     }
 
-    .card-recap-title {
-        font-size: 1.2rem;
-        font-weight: 900;
-        letter-spacing: 2px;
-        margin: 0;
-    }
-
-    .card-logo {
-        width: 32px;
-        height: 32px;
-    }
-
-    .card-image-box {
-        width: min(68%, 220px);
-        margin: 0 auto;
-        aspect-ratio: 1;
-        background: #16161a;
-        border-radius: 12px;
-        overflow: hidden;
+    .recap-preview-frame {
+        flex: 1;
+        min-height: 0;
+        width: 100%;
         display: flex;
         align-items: center;
         justify-content: center;
     }
 
-    .artist-initials {
-        font-size: 3.25rem;
-        font-weight: 900;
+    .recap-preview-canvas {
+        max-height: 100%;
+        max-width: 100%;
+        width: auto;
+        height: auto;
+        border-radius: 18px;
+        box-shadow: 0 20px 54px rgba(0, 0, 0, 0.55);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+    }
+
+    .recap-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        flex-shrink: 0;
+    }
+
+    .recap-control-group {
+        display: inline-flex;
+        padding: 3px;
+        border-radius: 9999px;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        gap: 2px;
+    }
+
+    .recap-pill-btn {
+        background: transparent;
+        border: none;
+        color: rgba(255, 255, 255, 0.72);
+        font-size: 0.75rem;
+        font-weight: 700;
+        padding: 6px 12px;
+        min-height: 32px;
+        border-radius: 9999px;
+        cursor: pointer;
+        transition: background-color var(--transition-fast), color var(--transition-fast);
+    }
+
+    .recap-pill-btn:hover {
         color: #ffffff;
-        text-transform: uppercase;
     }
 
-    .card-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 16px;
-        margin: 6px 0;
+    .recap-pill-btn.active {
+        background: var(--accent-primary);
+        color: var(--text-on-accent, #000000);
     }
 
-    .grid-col {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        min-width: 0;
-    }
-
-    .grid-label {
-        font-size: 0.7rem;
-        font-weight: 800;
-        text-transform: uppercase;
-        color: rgba(0, 0, 0, 0.65);
-        margin-bottom: 4px;
-    }
-
-    .grid-item {
-        display: flex;
-        gap: 6px;
-        font-size: var(--font-size-xs);
-        font-weight: 800;
-        white-space: nowrap;
-        overflow: hidden;
-    }
-
-    .grid-item .num {
-        color: rgba(0, 0, 0, 0.5);
-    }
-
-    .grid-item .name {
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    .card-footer-stats {
-        display: flex;
-        justify-content: space-between;
-        margin-top: auto;
-        padding-top: 12px;
-        border-top: 1px solid rgba(0, 0, 0, 0.12);
-    }
-
-    .footer-stat {
-        display: flex;
-        flex-direction: column;
-    }
-
-    .footer-stat .stat-label {
-        font-size: 0.65rem;
-        font-weight: 800;
-        text-transform: uppercase;
-        color: rgba(0, 0, 0, 0.65);
-    }
-
-    .footer-stat .stat-value {
-        font-size: 1.2rem;
-        font-weight: 900;
-        line-height: 1.1;
+    .recap-pill-btn:focus-visible {
+        outline: 2px solid #ffffff;
+        outline-offset: 2px;
     }
 
     .text-right {

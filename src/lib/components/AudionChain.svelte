@@ -226,6 +226,13 @@
         transition: background-color var(--transition-fast), border-color var(--transition-fast);
     }
 
+    .verdict-badge:focus-visible,
+    .stage-title-btn:focus-visible {
+        outline: 2px solid var(--accent-primary);
+        outline-offset: 2px;
+        border-radius: var(--radius-sm, 4px);
+    }
+
     .verdict-badge:hover {
         background: var(--surface-subtle-hover, var(--bg-highlight));
     }
