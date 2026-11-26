@@ -1,0 +1,108 @@
+name: Backup Old Releases (≤ v1.4.4)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run only — list releases that would be backed up without downloading"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: write
+
+jobs:
+  backup:
+    name: Download and archive release assets
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+
+    steps:
+      - name: List releases to back up
+        id: list
+        run: |
+          echo "Fetching all releases..."
+          gh release list --repo "$REPO" --limit 100 --json tagName,name,publishedAt \
+            | jq -r '.[] | select(.tagName | ltrimstr("v") | split(".") | map(tonumber) |
+                (.[0] < 1) or
+                (.[0] == 1 and .[1] < 4) or
+                (.[0] == 1 and .[1] == 4 and (.[2] // 0) <= 4)
+              ) | .tagName' \
+            > old_tags.txt
+
+          echo "Tags to back up:"
+          cat old_tags.txt
+
+          COUNT=$(wc -l < old_tags.txt | tr -d ' ')
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+
+      - name: Exit early if nothing to back up
+        if: steps.list.outputs.count == '0'
+        run: |
+          echo "No releases ≤ v1.4.4 found. Nothing to do."
+          exit 0
+
+      - name: Download all assets
+        if: inputs.dry_run == 'false'
+        run: |
+          mkdir -p backup
+          MANIFEST="backup/MANIFEST.txt"
+          echo "# Audion release backup — $(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$MANIFEST"
+          echo "# Releases: $(cat old_tags.txt | tr '\n' ' ')" >> "$MANIFEST"
+          echo "" >> "$MANIFEST"
+
+          while IFS= read -r tag; do
+            echo "--- Backing up $tag ---"
+            mkdir -p "backup/$tag"
+
+            # Save release notes
+            gh release view "$tag" --repo "$REPO" \
+              --json tagName,name,body,publishedAt,assets \
+              > "backup/$tag/release-metadata.json"
+
+            # Download all assets
+            ASSETS=$(gh release view "$tag" --repo "$REPO" \
+              --json assets --jq '.assets[].name')
+
+            if [ -z "$ASSETS" ]; then
+              echo "  (no assets)"
+              echo "$tag: no assets" >> "$MANIFEST"
+            else
+              for asset in $ASSETS; do
+                echo "  Downloading $asset"
+                gh release download "$tag" --repo "$REPO" \
+                  --pattern "$asset" --dir "backup/$tag" --clobber
+                echo "$tag/$asset" >> "$MANIFEST"
+              done
+            fi
+          done < old_tags.txt
+
+          echo ""
+          echo "Backup complete. Manifest:"
+          cat "$MANIFEST"
+
+      - name: Dry run summary
+        if: inputs.dry_run == 'true'
+        run: |
+          echo "=== DRY RUN — no files downloaded ==="
+          while IFS= read -r tag; do
+            echo ""
+            echo "--- $tag ---"
+            gh release view "$tag" --repo "$REPO" \
+              --json assets --jq '.assets[].name'
+          done < old_tags.txt
+
+      - name: Upload backup archive as artifact
+        if: inputs.dry_run == 'false'
+        uses: actions/upload-artifact@v4
+        with:
+          name: audion-release-backup-v1.4.4-and-older
+          path: backup/
+          retention-days: 90
+          if-no-files-found: warn

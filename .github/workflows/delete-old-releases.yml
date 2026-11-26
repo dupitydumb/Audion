@@ -1,0 +1,76 @@
+name: Delete Old Releases (≤ v1.4.4)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type DELETE to confirm permanent deletion of all releases ≤ v1.4.4"
+        required: true
+        type: string
+      delete_tags:
+        description: "Also delete the git tags (removes the refs entirely)"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
+
+permissions:
+  contents: write
+
+jobs:
+  delete:
+    name: Delete old releases from GitHub
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+
+    steps:
+      - name: Verify confirmation
+        run: |
+          if [ "${{ inputs.confirm }}" != "DELETE" ]; then
+            echo "ERROR: Confirmation input was '${{ inputs.confirm }}' — must be exactly DELETE."
+            exit 1
+          fi
+          echo "Confirmation accepted."
+
+      - name: List releases to delete
+        run: |
+          echo "Fetching all releases..."
+          gh release list --repo "$REPO" --limit 100 --json tagName,name,publishedAt \
+            | jq -r '.[] | select(.tagName | ltrimstr("v") | split(".") | map(tonumber) |
+                (.[0] < 1) or
+                (.[0] == 1 and .[1] < 4) or
+                (.[0] == 1 and .[1] == 4 and (.[2] // 0) <= 4)
+              ) | .tagName' \
+            > old_tags.txt
+
+          echo "Releases marked for deletion:"
+          cat old_tags.txt
+
+          COUNT=$(wc -l < old_tags.txt | tr -d ' ')
+          if [ "$COUNT" -eq 0 ]; then
+            echo "No releases ≤ v1.4.4 found. Nothing to delete."
+            exit 0
+          fi
+
+      - name: Delete releases (and optionally tags)
+        run: |
+          while IFS= read -r tag; do
+            echo "Deleting release: $tag"
+            gh release delete "$tag" --repo "$REPO" --yes || \
+              echo "  WARNING: Could not delete release $tag (may already be gone)"
+
+            if [ "${{ inputs.delete_tags }}" = "true" ]; then
+              echo "  Deleting git tag: $tag"
+              git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" \
+                ":refs/tags/$tag" 2>&1 || \
+                echo "  WARNING: Could not delete tag $tag"
+            fi
+          done < old_tags.txt
+
+          echo ""
+          echo "Done. Remaining releases:"
+          gh release list --repo "$REPO" --limit 20
