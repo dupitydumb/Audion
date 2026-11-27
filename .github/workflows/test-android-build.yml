@@ -1,0 +1,287 @@
+name: Test Android Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Android Rust target architecture to test'
+        required: false
+        default: 'aarch64'
+        type: choice
+        options:
+          - aarch64
+          - armv7
+          - i686
+          - x86_64
+          - all
+      build_aab:
+        description: 'Also build and verify Android App Bundle (.aab)'
+        required: false
+        default: false
+        type: boolean
+      use_ephemeral_keystore:
+        description: 'Force ephemeral test keystore instead of repo signing secrets'
+        required: false
+        default: false
+        type: boolean
+  pull_request:
+    paths:
+      - 'src-tauri/gen/android/**'
+      - 'src-tauri/src/android_auto/**'
+      - 'src-tauri/src/lib.rs'
+      - 'src-tauri/tauri.conf.json'
+      - 'src-tauri/Cargo.toml'
+      - '.github/workflows/test-android-build.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  prepare-matrix:
+    name: Resolve Android target matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - name: Build target matrix
+        id: set
+        env:
+          TARGET: ${{ inputs.target || 'aarch64' }}
+        run: |
+          python3 -c '
+          import json, os
+          target = os.environ.get("TARGET", "aarch64")
+          all_legs = [
+              {"abi": "arm64-v8a", "target": "aarch64", "rust_target": "aarch64-linux-android", "ndk_triple": "aarch64-linux-android"},
+              {"abi": "armeabi-v7a", "target": "armv7", "rust_target": "armv7-linux-androideabi", "ndk_triple": "arm-linux-androideabi"},
+              {"abi": "x86", "target": "i686", "rust_target": "i686-linux-android", "ndk_triple": "i686-linux-android"},
+              {"abi": "x86_64", "target": "x86_64", "rust_target": "x86_64-linux-android", "ndk_triple": "x86_64-linux-android"},
+          ]
+          legs = all_legs if target == "all" else [l for l in all_legs if l["target"] == target]
+          if not legs:
+              raise SystemExit(f"Unknown target: {target}")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write("matrix=" + json.dumps({"include": legs}) + "\n")
+          '
+
+  test-android-build:
+    name: Android Build (${{ matrix.abi }})
+    runs-on: ubuntu-latest
+    needs: prepare-matrix
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
+    env:
+      GRADLE_OPTS: -Xmx4096m
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4.0.1
+        with:
+          packages: 'platform-tools'
+
+      - name: Setup Node and Rust (composite action)
+        uses: ./.github/actions/setup
+        with:
+          platform: android
+          rust_targets: ${{ matrix.rust_target }}
+          cache_key: test-android-${{ matrix.abi }}
+
+      - name: Cache Gradle
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('src-tauri/gen/android/**/*.gradle*', 'src-tauri/gen/android/**/gradle-wrapper.properties', 'src-tauri/gen/android/buildSrc/**') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Setup Signing (Secrets or Ephemeral Keystore)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
+          FORCE_EPHEMERAL: ${{ inputs.use_ephemeral_keystore || false }}
+        run: |
+          set -euo pipefail
+          if [ "$FORCE_EPHEMERAL" != "true" ] && [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEY_PROPERTIES" ]; then
+            echo "Using repository Android signing secrets"
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > src-tauri/gen/android/release.keystore
+            printf '%s\n' "$ANDROID_KEY_PROPERTIES" > src-tauri/gen/android/key.properties
+          else
+            echo "Generating ephemeral test keystore with keytool"
+            rm -f src-tauri/gen/android/release.keystore src-tauri/gen/android/app/release.keystore
+            keytool -genkeypair -v \
+              -keystore src-tauri/gen/android/release.keystore \
+              -alias test \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 30 \
+              -storepass testpass \
+              -keypass testpass \
+              -dname "CN=Audion CI Test, OU=CI, O=Audion, L=Test, ST=Test, C=US"
+            cat > src-tauri/gen/android/key.properties << 'EOF'
+          keyAlias=test
+          keyPassword=testpass
+          storeFile=release.keystore
+          storePassword=testpass
+          EOF
+          fi
+          cp src-tauri/gen/android/release.keystore src-tauri/gen/android/app/release.keystore
+          cp src-tauri/gen/android/key.properties src-tauri/gen/android/app/key.properties
+
+      - name: Initialize Android project
+        run: npm run tauri android init
+
+      - name: Verify Android project initialized
+        run: |
+          test -f src-tauri/gen/android/app/src/main/java/com/audionplayer/audion/MainActivity.kt || {
+            echo "::error::MainActivity.kt missing after init — tauri android init may have failed"
+            exit 1
+          }
+          test -f src-tauri/gen/android/gradlew || {
+            echo "::error::gradlew missing after init"
+            exit 1
+          }
+
+      - name: Bundle libc++_shared.so into jniLibs
+        env:
+          ABI: ${{ matrix.abi }}
+          TRIPLE: ${{ matrix.ndk_triple }}
+        run: |
+          set -euo pipefail
+          NDK_VERSION="29.0.14206865"
+          NDK_DIR="${ANDROID_HOME}/ndk/${NDK_VERSION}"
+          if [ ! -d "$NDK_DIR" ]; then
+            NDK_DIR="$(find "${ANDROID_HOME}/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          fi
+          if [ -z "$NDK_DIR" ] || [ ! -d "$NDK_DIR" ]; then
+            echo "::error::No NDK found under ${ANDROID_HOME}/ndk/"
+            exit 1
+          fi
+          echo "Using NDK: $NDK_DIR"
+          echo "NDK_DIR=$NDK_DIR" >> "$GITHUB_ENV"
+
+          TOOLCHAIN="${NDK_DIR}/toolchains/llvm/prebuilt/linux-x86_64"
+          JNI_DIR="src-tauri/gen/android/app/src/main/jniLibs"
+          SO=$(find "${TOOLCHAIN}" -name "libc++_shared.so" -path "*/${TRIPLE}/*" | head -1)
+          if [ -z "$SO" ]; then
+            echo "::error::libc++_shared.so not found for ${ABI} (triple: ${TRIPLE})"
+            find "${TOOLCHAIN}" -name "libc++_shared.so" || true
+            exit 1
+          fi
+          mkdir -p "${JNI_DIR}/${ABI}"
+          cp "$SO" "${JNI_DIR}/${ABI}/"
+          echo "Copied: $SO -> ${JNI_DIR}/${ABI}/"
+
+      - name: Build Android APK (${{ matrix.abi }})
+        run: npm run tauri android build -- --apk --target ${{ matrix.target }}
+
+      - name: Build Android App Bundle (.aab) (${{ matrix.abi }})
+        if: inputs.build_aab == true
+        run: npm run tauri android build -- --aab --target ${{ matrix.target }}
+
+      - name: Verify APK contents, JNI exports, Manifest & Signature
+        env:
+          ABI: ${{ matrix.abi }}
+          BUILD_AAB: ${{ inputs.build_aab || false }}
+        run: |
+          set -euo pipefail
+          APK_DIR="src-tauri/gen/android/app/build/outputs/apk"
+          UNIVERSAL_FLAVOR="${APK_DIR}/universal/release/app-universal-release.apk"
+          if [ -f "$UNIVERSAL_FLAVOR" ]; then
+            APK="$UNIVERSAL_FLAVOR"
+          else
+            mapfile -t APKS < <(find "$APK_DIR" -name "*.apk")
+            if [ "${#APKS[@]}" -ne 1 ]; then
+              echo "::error::Expected exactly one APK for ${ABI}, found ${#APKS[@]}:"
+              printf '%s\n' "${APKS[@]}"
+              exit 1
+            fi
+            APK="${APKS[0]}"
+          fi
+          echo "Inspecting APK: $APK"
+
+          LIST="$RUNNER_TEMP/apk-entries.txt"
+          unzip -Z1 "$APK" > "$LIST"
+
+          grep -q "^lib/${ABI}/libc++_shared.so$" "$LIST" || {
+            echo "::error::libc++_shared.so missing from APK"
+            exit 1
+          }
+          grep -q "^lib/${ABI}/libaudion_lib.so$" "$LIST" || {
+            echo "::error::libaudion_lib.so missing from APK"
+            exit 1
+          }
+
+          # Extract libaudion_lib.so and verify every Kotlin external fun has a matching JNI export
+          TMP_SO="$RUNNER_TEMP/libaudion_lib.so"
+          unzip -p "$APK" "lib/${ABI}/libaudion_lib.so" > "$TMP_SO"
+          LLVM_NM="${NDK_DIR}/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-nm"
+          SYMBOLS="$RUNNER_TEMP/jni-symbols.txt"
+          "$LLVM_NM" -D --defined-only "$TMP_SO" > "$SYMBOLS"
+
+          REQUIRED_JNI=(
+            "Java_com_audionplayer_audion_MainActivity_initAudioContext"
+            "Java_com_audionplayer_audion_AudionLibraryBridge_initAudioContextNative"
+            "Java_com_audionplayer_audion_AudionLibraryBridge_registerNotificationCallbackNative"
+            "Java_com_audionplayer_audion_AudionLibraryBridge_registerSafDeleteCallbackNative"
+            "Java_com_audionplayer_audion_AudionLibraryBridge_initDatabaseNative"
+            "Java_com_audionplayer_audion_AudionLibraryBridge_getChildrenNative"
+            "Java_com_audionplayer_audion_AudionLibraryBridge_getItemNative"
+            "Java_com_audionplayer_audion_AudionLibraryBridge_searchNative"
+            "Java_com_audionplayer_audion_AudionLibraryBridge_playTrackNative"
+            "Java_com_audionplayer_audion_AudionLibraryBridge_resumeNative"
+            "Java_com_audionplayer_audion_AudionLibraryBridge_pauseNative"
+            "Java_com_audionplayer_audion_AudionLibraryBridge_stopNative"
+            "Java_com_audionplayer_audion_AudionLibraryBridge_seekNative"
+            "Java_com_audionplayer_audion_AudionLibraryBridge_nextNative"
+            "Java_com_audionplayer_audion_AudionLibraryBridge_previousNative"
+            "Java_com_audionplayer_audion_AudionLibraryBridge_setShuffleNative"
+            "Java_com_audionplayer_audion_AudionLibraryBridge_setRepeatNative"
+          )
+          for sym in "${REQUIRED_JNI[@]}"; do
+            if ! grep -qw "$sym" "$SYMBOLS"; then
+              echo "::error::Missing JNI export in libaudion_lib.so: $sym"
+              exit 1
+            fi
+          done
+          echo "All ${#REQUIRED_JNI[@]} JNI exports verified in libaudion_lib.so!"
+
+          # Verify manifest package ID and APK signature
+          BT="$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)"
+          "$BT/aapt2" dump badging "$APK" | grep -q "package: name='com.audionplayer.audion'" || {
+            echo "::error::APK package ID is not com.audionplayer.audion"
+            "$BT/aapt2" dump badging "$APK" | head -5
+            exit 1
+          }
+          "$BT/apksigner" verify --verbose --print-certs "$APK"
+
+          mkdir -p android-test-out
+          cp "$APK" "android-test-out/audion_test_${ABI}.apk"
+
+          if [ "$BUILD_AAB" = "true" ]; then
+            AAB=$(find "src-tauri/gen/android/app/build/outputs/bundle" -name "*.aab" | head -1)
+            test -f "$AAB" || { echo "::error::AAB requested but not found"; exit 1; }
+            cp "$AAB" "android-test-out/audion_test_${ABI}.aab"
+            echo "Verified AAB: $AAB"
+          fi
+
+      - name: Upload test Android artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-android-${{ matrix.abi }}
+          path: android-test-out/*
+          if-no-files-found: error
+          retention-days: 3
