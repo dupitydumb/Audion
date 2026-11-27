@@ -70,6 +70,14 @@ mod android_audio_context {
     // non static native method
     /// so the second parameter is the calling Activity instance
     #[unsafe(no_mangle)]
+    pub extern "system" fn Java_com_audionplayer_audion_MainActivity_initAudioContext(
+        env: jni::JNIEnv<'_>,
+        activity: jni::objects::JObject<'_>,
+    ) {
+        init_once(&env, activity);
+    }
+
+    #[unsafe(no_mangle)]
     pub extern "system" fn Java_com_audion_app_MainActivity_initAudioContext(
         env: jni::JNIEnv<'_>,
         activity: jni::objects::JObject<'_>,
@@ -78,6 +86,17 @@ mod android_audio_context {
     }
 
     /// JNI export for AudionApplication.onCreate
+    #[unsafe(no_mangle)]
+    pub extern "system" fn Java_com_audionplayer_audion_AudionLibraryBridge_initAudioContextNative<
+        'local,
+    >(
+        env: jni::JNIEnv<'local>,
+        _class: jni::objects::JClass<'local>,
+        context: jni::objects::JObject<'local>,
+    ) {
+        init_once(&env, context);
+    }
+
     #[unsafe(no_mangle)]
     pub extern "system" fn Java_com_audion_app_AudionLibraryBridge_initAudioContextNative<
         'local,
