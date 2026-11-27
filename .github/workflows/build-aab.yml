@@ -1,0 +1,171 @@
+name: Build Android AAB
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag, or SHA to build (leave empty to use the selected workflow branch)'
+        required: false
+        default: ''
+        type: string
+      playstore:
+        description: 'Play Store build (--playstore, strips default plugin registry)'
+        required: false
+        default: true
+        type: boolean
+      use_ephemeral_keystore:
+        description: 'Force ephemeral test keystore instead of repo signing secrets'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build-aab:
+    name: Build Signed Universal AAB
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GRADLE_OPTS: -Xmx4096m
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4.0.1
+        with:
+          packages: 'platform-tools'
+
+      - name: Setup Node and Rust (all Android ABIs)
+        uses: ./.github/actions/setup
+        with:
+          platform: android
+          rust_targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+          cache_key: android-aab-universal
+
+      - name: Cache Gradle
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('src-tauri/gen/android/**/*.gradle*', 'src-tauri/gen/android/**/gradle-wrapper.properties', 'src-tauri/gen/android/buildSrc/**') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Setup Signing (Secrets or Ephemeral Keystore)
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEY_PROPERTIES: ${{ secrets.ANDROID_KEY_PROPERTIES }}
+          FORCE_EPHEMERAL: ${{ inputs.use_ephemeral_keystore || false }}
+        run: |
+          set -euo pipefail
+          if [ "$FORCE_EPHEMERAL" != "true" ] && [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEY_PROPERTIES" ]; then
+            echo "Using repository Android signing secrets"
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > src-tauri/gen/android/release.keystore
+            printf '%s\n' "$ANDROID_KEY_PROPERTIES" > src-tauri/gen/android/key.properties
+          else
+            echo "::warning::Signing secrets missing or ephemeral mode enabled — generating temporary test keystore"
+            rm -f src-tauri/gen/android/release.keystore src-tauri/gen/android/app/release.keystore
+            keytool -genkeypair -v \
+              -keystore src-tauri/gen/android/release.keystore \
+              -alias test \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 30 \
+              -storepass testpass \
+              -keypass testpass \
+              -dname "CN=Audion CI Test, OU=CI, O=Audion, L=Test, ST=Test, C=US"
+            cat > src-tauri/gen/android/key.properties << 'EOF'
+          keyAlias=test
+          keyPassword=testpass
+          storeFile=release.keystore
+          storePassword=testpass
+          EOF
+          fi
+          cp src-tauri/gen/android/release.keystore src-tauri/gen/android/app/release.keystore
+          cp src-tauri/gen/android/key.properties src-tauri/gen/android/app/key.properties
+
+      - name: Initialize Android project
+        run: npm run tauri android init
+
+      - name: Verify Android project initialized
+        run: |
+          test -f src-tauri/gen/android/app/src/main/java/com/audionplayer/audion/MainActivity.kt || {
+            echo "::error::MainActivity.kt missing after init"
+            exit 1
+          }
+          test -f src-tauri/gen/android/gradlew || {
+            echo "::error::gradlew missing after init"
+            exit 1
+          }
+
+      - name: Build Universal AAB
+        env:
+          PLAYSTORE: ${{ inputs.playstore }}
+        run: |
+          if [ "$PLAYSTORE" = "true" ]; then
+            npm run android:build -- --playstore
+          else
+            npm run tauri android build -- --aab
+          fi
+
+      - name: Verify and package AAB
+        env:
+          PLAYSTORE: ${{ inputs.playstore }}
+        run: |
+          set -euo pipefail
+          VER=$(jq -r '.version' src-tauri/tauri.conf.json)
+          BUNDLE_DIR="src-tauri/gen/android/app/build/outputs/bundle"
+          AAB=$(find "$BUNDLE_DIR" -name "*.aab" | head -1)
+          if [ -z "$AAB" ] || [ ! -f "$AAB" ]; then
+            echo "::error::No .aab file produced under $BUNDLE_DIR"
+            exit 1
+          fi
+          echo "Found AAB: $AAB"
+
+          LIST="$RUNNER_TEMP/aab-entries.txt"
+          unzip -Z1 "$AAB" > "$LIST"
+
+          for abi in arm64-v8a armeabi-v7a x86 x86_64; do
+            grep -q "lib/${abi}/libaudion_lib.so$" "$LIST" || {
+              echo "::error::libaudion_lib.so missing for ${abi} inside AAB"
+              exit 1
+            }
+            grep -q "lib/${abi}/libc++_shared.so$" "$LIST" || {
+              echo "::error::libc++_shared.so missing for ${abi} inside AAB"
+              exit 1
+            }
+          done
+          echo "Verified all 4 ABIs (libaudion_lib.so + libc++_shared.so) in AAB!"
+
+          jarsigner -verify -verbose -certs "$AAB" > /dev/null
+          echo "AAB signature verified with jarsigner!"
+
+          mkdir -p aab-out
+          SUFFIX=""
+          if [ "$PLAYSTORE" = "true" ]; then
+            SUFFIX="_playstore"
+          fi
+          OUT="aab-out/audion_${VER}_android${SUFFIX}.aab"
+          cp "$AAB" "$OUT"
+          ls -lh "$OUT"
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-aab
+          path: aab-out/*.aab
+          if-no-files-found: error
+          retention-days: 14
