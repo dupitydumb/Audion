@@ -1,55 +1,31 @@
-## [v1.5.1] - 2026-11-24
+## [v1.5.2] - 2026-11-27
 
-### Highlights: Desktop Responsive Sidebar & Dock Overhaul, Multi-Track Selection, Perceptual Volume, Streaming Safeguards, and Android Release Signing
+### Highlights: Lyrics Auto-Scroll Fix, Stream Playback Stability, Toast Coalescing, Accent Preservation, and Android Icon & Build Polish
 
-### 🎨 Desktop UI Overhaul
+### 🎨 UI & Theme Fixes
 
-* **Responsive Left Sidebar & 64px Icon Rail**:
-  * Automatically collapses into a sleek 64px icon rail on compact screens ($\le$1024px, or $\le$1200px when the inspector dock is active).
-  * Keeps the Audion logo, `<SyncStatus />`, and watcher indicators pinned and interactive at the top of the rail with full tooltips.
-  * Added a manual collapse/expand header button and double-click splitter shortcut with memory for custom widths.
-  * Playlists in the sidebar now support drag-and-drop targeting for quickly adding tracks.
-* **Unified Right Inspector Dock**:
-  * Collapsible side dock featuring **Now Playing**, **Lyrics**, and **Queue** tabs.
-  * Guaranteed 1:1 square cover artwork with zero flex collapse across all screen sizes.
-  * Restored lyrics action bar with one-click **Lyric Card Generator & Sharing** and **Lyrics File Import** (`.lrc`, `.ttml`, `.xml`, `.srt`, `.json`).
-* **Multi-Row Track Selection**:
-  * Select multiple tracks across your library using `Shift` for range selection, `Ctrl`/`Cmd` for individual toggles, and `Ctrl+A` to select all.
-  * Batch add selected tracks to any playlist or append them to the playback queue in one click.
-* **Ambient Hero Banners & Shimmer Loading**:
-  * Album and Artist detail headers now feature dynamic palette-driven backdrop gradients with contrast scrims.
-  * Smooth shimmer skeleton loaders for cards and track rows during data loads.
+* **Right Inspector Lyrics Auto-Scroll**:
+  * Fixed the right inspector dock lyrics container flex layout so synced lyrics auto-scroll and scroll manually as expected.
+* **Accent & Progress Bar Color Preservation**:
+  * Fixed `matchPlayerToArt` track-change updates so only the player bar background updates, preserving custom and plugin-applied `--accent-primary` and progress bar colors.
+* **Toast Deduplication & Stack Cap**:
+  * Coalesces repeated identical toasts into a single toast with a `×N` badge and caps the visible stack at 3, preventing screen overflow during bulk album saves or repeated errors.
+* **English Localization Completeness**:
+  * Added 15 missing English locale keys in `en.json` across Artist, TrackList, Sidebar, Playlists, Lyrics, and Player UI.
 
-### ✨ UI Polish & Animations
+### 🎧 Audio & Playback
 
-* **Motion & Depth Transitions**:
-  * Added damped spring transitions across desktop popovers, view depth transitions, tab switches, shared-element hero cover morphs, and staggered grid animations.
-  * Unified mobile drawer, modal, and bottom context menu slide-up transitions with damped spring physics.
-  * Added a spring pop-in animation to the desktop context menu that cleanly re-animates when re-opened at a new position.
-* **PlayerBar & Queue Polish**:
-  * Added track-change transitions for album art and track details, a spring-pop heart animation, and animated responsive collapsing into the overflow menu without overlapping the progress bar or hiding the volume slider on normal desktop widths.
-  * Fixed active player controls (shuffle, repeat, sleep timer, and device indicator) to follow skin and theme `--accent-primary` colors.
-  * Added a floating drag ghost and smooth row-parting animations when reordering tracks in the Queue panel.
-* **Sidebar, Titlebar & TrackList Refinement**:
-  * Polished sidebar and titlebar light-mode contrast, button press feedback, spring rail collapse transitions, and collapsed section dividers.
-  * Fixed titlebar breadcrumbs overlapping the search bar on smaller windows with clean truncation and responsive hiding on narrow widths.
-  * Boosted hero cover backdrop vibrancy, theme-aligned the TrackList jump strip and selected rows, and added an animated equalizer soundwave indicator for the playing track.
+* **HTML5 Stream Error Fix**:
+  * Cleanly detaches `<audio>` sources on stop/cleanup/backend switches and guards against empty resolved stream URLs, eliminating spurious `Empty src attribute` errors when playing streams or transitioning tracks.
 
-### 🎧 Audio & Playback Polish
+### 🧩 Plugins & Library
 
-* **Streaming Playback Safeguards**:
-  * Hardened the playback engine to explicitly protect live audio feeds (e.g. internet radio) from being misclassified as preview tracks or hijacked by cross-provider query handoffs.
-* **Perceptual Cubic Volume Curve**:
-  * Implemented acoustic cubic volume scaling ($v^3$) for natural, gradual volume control at lower listening levels instead of harsh linear steps.
-* **Decoupled Smooth Scrubbing**:
-  * Eliminated rubber-band bouncing and dead-reckoning jitter when scrubbing the progress bar.
+* **Artist Picture Resolver Hook**:
+  * Added a unified `resolveArtistPicture` hook supporting `CoverSource` (`type: 'artist'`) and `MetadataProvider` plugins across `ArtistGrid` and `ArtistDetail`, with legacy fallback preserved.
 
-### 📱 Mobile & Platform
+### 📱 Android & Mobile
 
-* **Interactive Bottom-Sheet Player**:
-  * Fluid swipe-to-dismiss gesture for the mobile player with velocity detection and boundary guards.
-  * Word-synchronized lyrics catch-up clock for synchronized lyric scrolling.
-* **Platform & Packaging**:
-  * **Android Release Signing**: Configured official release AAB/APK signing via keystore.
-  * **Windows Titlebar Controls**: Native double-click titlebar to maximize and restore windows.
-  * **App Identifier**: Standardised application identifier to `com.audionplayer.audion`.
+* **Adaptive Launcher Icon Polish**:
+  * Updated the Android adaptive icon with a full-bleed gradient background and centered safe-zone foreground glyph so the logo no longer clips or looks tight inside circular/squircle launchers.
+* **Android Runtime & Packaging**:
+  * Fixed `com.audionplayer.audion` JNI `initAudioContext` exports for native audio initialization and Gradle `libc++_shared.so` bundling for both `.apk` and `.aab` builds.
