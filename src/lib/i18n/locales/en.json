@@ -54,7 +54,10 @@
     "downloadedTrack": "Downloaded \"{title}\"",
     "downloadingTrack": "Downloading \"{title}\"...",
     "reorderTracksFailed": "Failed to reorder tracks: {error}",
-    "selectTracks": "Select tracks"
+    "selectTracks": "Select tracks",
+    "select": "Select",
+    "sort": "Sort",
+    "sortDefault": "Default order"
   },
   "album": {
     "loading": "Loading album...",
@@ -98,7 +101,8 @@
     "noDiscography": "No discography found.",
     "artworkUpdated": "Artist artwork updated",
     "emptyHint": "Add a music folder to see your artists",
-    "noArtistsFound": "No artists found"
+    "noArtistsFound": "No artists found",
+    "goToArtist": "Go to Artist"
   },
   "home": {
     "goodMorning": "Good morning",
@@ -176,7 +180,9 @@
     "delete": "Delete",
     "moveDown": "Move down",
     "moveUp": "Move up",
-    "proceed": "Proceed"
+    "proceed": "Proceed",
+    "actions": "Actions",
+    "more": "More"
   },
   "player": {
     "nowPlaying": "Now Playing",
@@ -229,7 +235,8 @@
     "sleepTimerFade": "Smooth volume fade-out",
     "addedToPlaylist": "Added to {name}",
     "deleteTrackConfirm": "Are you sure you want to delete \"{title}\" from your library?",
-    "minutesLeft": "{minutes}m left"
+    "minutesLeft": "{minutes}m left",
+    "statsForNerds": "Stats for Nerds"
   },
   "sidebar": {
     "subsonic": "Subsonic",
@@ -259,7 +266,9 @@
     "scanFailed": "Failed to scan music folder",
     "update": "Update",
     "updateInstalledTooltip": "Update installed · click to restart",
-    "viewUpdateDetails": "View update details"
+    "viewUpdateDetails": "View update details",
+    "collapse": "Collapse sidebar",
+    "expand": "Expand sidebar"
   },
   "settings": {
     "title": "Settings",
@@ -748,7 +757,6 @@
     "toggleLastFm": "Toggle Last.fm",
     "authorizeLastfm": "Authorize on Last.fm ↗",
     "openingBrowser": "Opening Browser...",
-    "disconnect": "Disconnect",
     "user": "User",
     "connected": "Connected",
     "languageDesc": "Choose your preferred language for the interface",
@@ -972,7 +980,9 @@
     "emptyTitle": "Songs you like will appear here",
     "loading": "Loading liked songs...",
     "shuffle": "Shuffle",
-    "songsCount": "{count, plural, one {# song} other {# songs}}"
+    "songsCount": "{count, plural, one {# song} other {# songs}}",
+    "like": "Like",
+    "unlike": "Unlike"
   },
   "lyrics": {
     "cached": "Cached",
@@ -992,7 +1002,8 @@
     "unavailable": "No lyrics available",
     "unavailableTrack": "No lyrics available for this track.",
     "unsynced": "Unsynced",
-    "wordSync": "Word sync"
+    "wordSync": "Word sync",
+    "importedSuccess": "Lyrics imported successfully"
   },
   "main": {
     "delete": "Delete",
@@ -1021,7 +1032,8 @@
     "scanningTracksFound": "Scanning... {count} tracks found",
     "deleteTrackConfirm": "Are you sure you want to delete \"{title}\" from your library?",
     "deleteAlbumConfirm": "Are you sure you want to delete the album \"{name}\" and all its tracks from your library?",
-    "moreTracks": "And {count} more tracks..."
+    "moreTracks": "And {count} more tracks...",
+    "goToAlbum": "Go to Album"
   },
   "menu": {
     "added": "added",
@@ -1119,7 +1131,9 @@
     "newPlaylist": "New Playlist",
     "playlistNamePlaceholder": "Playlist name...",
     "deleteConfirm": "Delete playlist \"{name}\"?",
-    "renaming": "Renaming \"{name}\""
+    "renaming": "Renaming \"{name}\"",
+    "importPlaylist": "Import Playlist",
+    "importPlaylistHint": "Import .m3u, .m3u8, JSON or text playlist"
   },
   "pluginDrawer": {
     "closeTitle": "Close (Esc)",
