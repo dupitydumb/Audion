@@ -91,6 +91,10 @@ jobs:
             VERSION=$(jq -r '.version' src-tauri/tauri.conf.json)-beta
             PRERELEASE=true
           elif [ "$INPUT_RELEASE_TYPE" = "hotfix" ]; then
+            if [ -z "$INPUT_TAG_NAME" ]; then
+              echo "::error::tag_name is required when release_type is hotfix"
+              exit 1
+            fi
             VERSION=$(echo "$INPUT_TAG_NAME" | sed 's/^v//')
             PRERELEASE=false
             TAG_NAME="$INPUT_TAG_NAME"
@@ -1121,61 +1125,115 @@ jobs:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           VERSION: ${{ needs.create-release.outputs.version }}
           TAG_NAME: ${{ needs.create-release.outputs.tag_name }}
+          RELEASE_TYPE: ${{ inputs.release_type }}
+          RES_WINDOWS: ${{ needs.release-windows.result }}
+          RES_LINUX: ${{ needs.release-linux.result }}
+          RES_FLATPAK: ${{ needs.release-flatpak.result }}
+          RES_MACOS: ${{ needs.release-macos.result }}
+          RES_ANDROID: ${{ needs.release-android.result }}
         run: |
           if [ -z "$DISCORD_WEBHOOK_URL" ]; then exit 0; fi
-
-          # Extract release notes highlights from releasenote.md
-          NOTES=""
-          if [ -f releasenote.md ]; then
-            NOTES=$(head -n 45 releasenote.md | grep -v '^## \[' | head -c 1800)
-          fi
-          if [ -z "$NOTES" ]; then
-            NOTES="Audion $TAG_NAME release artifacts are now available for download across all platforms."
-          fi
 
           RELEASE_URL="https://github.com/${{ github.repository }}/releases/tag/${TAG_NAME}"
           CHANGELOG_URL="https://github.com/${{ github.repository }}/blob/master/releasenote.md"
 
-          PAYLOAD=$(jq -n \
-            --arg title "🚀 Audion ${TAG_NAME} Released!" \
-            --arg desc "$NOTES" \
-            --arg rel_url "$RELEASE_URL" \
-            --arg change_url "$CHANGELOG_URL" \
-            '{
-              embeds: [{
-                title: $title,
-                description: $desc,
-                color: 1947988,
-                url: $rel_url,
-                fields: [
-                  {
-                    name: "📱 Platforms & Packages",
-                    value: "🪟 Windows (.exe, .msi, .msix)\n🐧 Linux (.AppImage, .deb)\n📦 Flatpak (.flatpak)\n🍎 macOS (.dmg, .app.tar.gz)\n🤖 Android (.apk)",
-                    inline: false
+          if [ "$RELEASE_TYPE" = "hotfix" ]; then
+            UPDATED_ASSETS=""
+            [ "$RES_WINDOWS" = "success" ] && UPDATED_ASSETS="${UPDATED_ASSETS}🪟 Windows (.exe, .msi)\n"
+            [ "$RES_LINUX" = "success" ] && UPDATED_ASSETS="${UPDATED_ASSETS}🐧 Linux (.AppImage, .deb, .rpm)\n"
+            [ "$RES_FLATPAK" = "success" ] && UPDATED_ASSETS="${UPDATED_ASSETS}📦 Flatpak (.flatpak)\n"
+            [ "$RES_MACOS" = "success" ] && UPDATED_ASSETS="${UPDATED_ASSETS}🍎 macOS (.dmg, .app.tar.gz)\n"
+            [ "$RES_ANDROID" = "success" ] && UPDATED_ASSETS="${UPDATED_ASSETS}🤖 Android (.apk)\n"
+            if [ -z "$UPDATED_ASSETS" ]; then
+              UPDATED_ASSETS="No platform assets were updated."
+            fi
+
+            PAYLOAD=$(jq -n \
+              --arg title "🔧 Audion ${TAG_NAME} Hotfix Updated" \
+              --arg desc "Release assets for **${TAG_NAME}** have been updated." \
+              --arg assets "$(printf '%b' "$UPDATED_ASSETS")" \
+              --arg rel_url "$RELEASE_URL" \
+              '{
+                embeds: [{
+                  title: $title,
+                  description: $desc,
+                  color: 16753920,
+                  url: $rel_url,
+                  fields: [
+                    {
+                      name: "📦 Updated Assets",
+                      value: $assets,
+                      inline: false
+                    }
+                  ],
+                  footer: {
+                    text: "Audion Release Pipeline (Hotfix)"
                   }
-                ],
-                footer: {
-                  text: "Audion Release Pipeline"
-                }
-              }],
-              components: [{
-                type: 1,
-                components: [
-                  {
-                    type: 2,
-                    style: 5,
-                    label: "Download Release",
-                    url: $rel_url,
-                    emoji: { name: "📦" }
-                  },
-                  {
-                    type: 2,
-                    style: 5,
-                    label: "Full Release Notes",
-                    url: $change_url,
-                    emoji: { name: "📜" }
+                }],
+                components: [{
+                  type: 1,
+                  components: [
+                    {
+                      type: 2,
+                      style: 5,
+                      label: "Download Release",
+                      url: $rel_url,
+                      emoji: { name: "📦" }
+                    }
+                  ]
+                }]
+              }')
+          else
+            # Extract release notes highlights from releasenote.md
+            NOTES=""
+            if [ -f releasenote.md ]; then
+              NOTES=$(head -n 45 releasenote.md | grep -v '^## \[' | head -c 1800)
+            fi
+            if [ -z "$NOTES" ]; then
+              NOTES="Audion $TAG_NAME release artifacts are now available for download across all platforms."
+            fi
+
+            PAYLOAD=$(jq -n \
+              --arg title "🚀 Audion ${TAG_NAME} Released!" \
+              --arg desc "$NOTES" \
+              --arg rel_url "$RELEASE_URL" \
+              --arg change_url "$CHANGELOG_URL" \
+              '{
+                embeds: [{
+                  title: $title,
+                  description: $desc,
+                  color: 1947988,
+                  url: $rel_url,
+                  fields: [
+                    {
+                      name: "📱 Platforms & Packages",
+                      value: "🪟 Windows (.exe, .msi, .msix)\n🐧 Linux (.AppImage, .deb)\n📦 Flatpak (.flatpak)\n🍎 macOS (.dmg, .app.tar.gz)\n🤖 Android (.apk)",
+                      inline: false
+                    }
+                  ],
+                  footer: {
+                    text: "Audion Release Pipeline"
                   }
-                ]
-              }]
-            }')
+                }],
+                components: [{
+                  type: 1,
+                  components: [
+                    {
+                      type: 2,
+                      style: 5,
+                      label: "Download Release",
+                      url: $rel_url,
+                      emoji: { name: "📦" }
+                    },
+                    {
+                      type: 2,
+                      style: 5,
+                      label: "Full Release Notes",
+                      url: $change_url,
+                      emoji: { name: "📜" }
+                    }
+                  ]
+                }]
+              }')
+          fi
           curl -H "Content-Type: application/json" -X POST -d "$PAYLOAD" "$DISCORD_WEBHOOK_URL"
