@@ -175,6 +175,7 @@ export interface CoverQuery {
   title: string;
   artist?: string;
   album?: string;
+  type?: 'cover' | 'artist';
 }
 
 export interface CoverResult {

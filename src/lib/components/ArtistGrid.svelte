@@ -16,6 +16,7 @@
   import { saveScroll, getScroll } from "$lib/stores/scrollMemory";
   import { pinnedItems, isPinned } from "$lib/stores/pinned";
   import { buildArtistContextMenu } from "$lib/menus/contextMenus";
+  import { resolveArtistPicture } from "$lib/plugins/artist-picture";
 
   let currentScrollTop = getScroll("artists");
 
@@ -69,13 +70,7 @@
   async function fetchArtistPicture(
     artistName: string,
   ): Promise<string | null> {
-    try {
-      const plugin = (window as any).tidalSearchPlugin;
-      if (!plugin) return null;
-      return (await plugin.searchArtistPictureForRPC(artistName)) ?? null;
-    } catch {
-      return null;
-    }
+    return resolveArtistPicture(artistName);
   }
 
   $: resolveArtistPictures(artists);

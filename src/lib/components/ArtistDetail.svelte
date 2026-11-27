@@ -36,6 +36,7 @@
     import { addToast } from "$lib/stores/toast";
     import { contextMenu } from "$lib/stores/ui";
     import { buildArtistContextMenu } from "$lib/menus/contextMenus";
+    import { resolveArtistPicture } from "$lib/plugins/artist-picture";
     import { _, locale } from "svelte-i18n";
     import { isMobile } from "$lib/stores/mobile";
     import Icon from "$lib/components/Icon.svelte";
@@ -189,20 +190,7 @@
         }
 
         try {
-            console.log("[ArtistDetail] Checking for tidalSearchPlugin...");
-            const plugin = (window as any).tidalSearchPlugin;
-            console.log("[ArtistDetail] Plugin available:", !!plugin);
-
-            if (!plugin) {
-                console.log("[ArtistDetail] Plugin not available yet");
-                return;
-            }
-
-            console.log("[ArtistDetail] Calling searchArtistPictureForRPC...");
-            // Call Tidal search plugin to get artist image
-            const result = await plugin.searchArtistPictureForRPC(name);
-            console.log("[ArtistDetail] Result from plugin:", result);
-
+            const result = await resolveArtistPicture(name);
             if (result) {
                 artistPictureUrl = result;
                 failedImage = false;
