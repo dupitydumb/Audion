@@ -713,28 +713,15 @@ export const lightDefaults: Record<keyof CustomColors, string> = {
     playerBg: '#ffffff',
 };
 
-// Apply theme to CSS variables
-export function applyTheme(state: ThemeState): void {
-    if (typeof document === 'undefined') return;
-
-    const root = document.documentElement;
-    const isDark = state.mode === 'dark' ||
+function resolveIsDark(state: ThemeState): boolean {
+    return state.mode === 'dark' ||
         (state.mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+}
 
+/** Update only --player-bg and --text-on-player (used by both applyTheme and art palette updates). */
+function applyPlayerBarColor(root: HTMLElement, state: ThemeState, isDark: boolean): string {
     const modeDefaults = isDark ? darkDefaults : lightDefaults;
-    const c = state.customColors;
-
-    // Background tokens — go transparent when a bg layer is active so it shows through
-    const hasBgLayer = state.background.type !== 'none';
-    root.style.setProperty('--bg-base', hasBgLayer ? 'transparent' : (c.bgBase ?? modeDefaults.bgBase));
-    root.style.setProperty('--bg-elevated', c.bgElevated ?? modeDefaults.bgElevated);
-    root.style.setProperty('--bg-surface', c.bgSurface ?? modeDefaults.bgSurface);
-    root.style.setProperty('--bg-highlight', c.bgHighlight ?? modeDefaults.bgHighlight);
-    root.style.setProperty('--bg-press', isDark ? '#535353' : '#c0c0c0');
-
-    // Sidebar / player slots (fall back to bg-elevated if not set)
-    root.style.setProperty('--sidebar-bg', c.sidebarBg ?? (hasBgLayer ? 'transparent' : modeDefaults.sidebarBg));
-    const resolvedPlayerBg = c.playerBg ?? modeDefaults.playerBg;
+    const resolvedPlayerBg = state.customColors.playerBg ?? modeDefaults.playerBg;
     root.style.setProperty('--player-bg', resolvedPlayerBg);
     applyPlayerText(root, resolvedPlayerBg);
 
@@ -749,6 +736,31 @@ export function applyTheme(state: ThemeState): void {
             applyPlayerText(root, artColor);
         }
     }
+
+    return resolvedPlayerBg;
+}
+
+// Apply theme to CSS variables
+export function applyTheme(state: ThemeState): void {
+    if (typeof document === 'undefined') return;
+
+    const root = document.documentElement;
+    const isDark = resolveIsDark(state);
+
+    const modeDefaults = isDark ? darkDefaults : lightDefaults;
+    const c = state.customColors;
+
+    // Background tokens — go transparent when a bg layer is active so it shows through
+    const hasBgLayer = state.background.type !== 'none';
+    root.style.setProperty('--bg-base', hasBgLayer ? 'transparent' : (c.bgBase ?? modeDefaults.bgBase));
+    root.style.setProperty('--bg-elevated', c.bgElevated ?? modeDefaults.bgElevated);
+    root.style.setProperty('--bg-surface', c.bgSurface ?? modeDefaults.bgSurface);
+    root.style.setProperty('--bg-highlight', c.bgHighlight ?? modeDefaults.bgHighlight);
+    root.style.setProperty('--bg-press', isDark ? '#535353' : '#c0c0c0');
+
+    // Sidebar / player slots (fall back to bg-elevated if not set)
+    root.style.setProperty('--sidebar-bg', c.sidebarBg ?? (hasBgLayer ? 'transparent' : modeDefaults.sidebarBg));
+    const resolvedPlayerBg = applyPlayerBarColor(root, state, isDark);
 
     // Text tokens
     root.style.setProperty('--text-primary', c.textPrimary ?? modeDefaults.textPrimary);
@@ -953,6 +965,9 @@ export function closeSkinStudio() {
 // matchPlayerToArt can already be true
 // it reads darkDefaults/lightDefaults, which are consts declared further down this file, so running it any earlier throws
 albumPalette.subscribe(() => {
+    if (typeof document === 'undefined') return;
     const state = get(theme);
-    if (state.matchPlayerToArt) applyTheme(state);
+    if (state.matchPlayerToArt) {
+        applyPlayerBarColor(document.documentElement, state, resolveIsDark(state));
+    }
 });
