@@ -3,6 +3,11 @@ name: Test Android Build
 on:
   workflow_dispatch:
     inputs:
+      ref:
+        description: 'Branch, tag, or SHA to build (leave empty to use the selected workflow branch)'
+        required: false
+        default: ''
+        type: string
       target:
         description: 'Android Rust target architecture to test'
         required: false
@@ -78,6 +83,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.ref || github.ref }}
           persist-credentials: false
 
       - name: Setup Java
