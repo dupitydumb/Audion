@@ -55,6 +55,9 @@ export async function html5Play(path: string, volume: number, startTime = 0, rep
     } else {
         // Resolve playlist-format URLs (.m3u, .pls, .m3u8) to direct stream URLs
         const resolvedPath = await resolvePlaylistUrl(path);
+        if (!resolvedPath) {
+            throw new Error('Cannot play stream: resolved stream URL is empty');
+        }
         audio = await prepareHtml5AudioForPath(audio, resolvedPath);
 
         audio.src = resolvedPath;
@@ -139,6 +142,10 @@ export async function html5Preload(path: string, trackId: string | number | null
     } else {
         isPreloadDash = false;
         const resolvedPath = await resolvePlaylistUrl(path);
+        if (!resolvedPath || !preloadAudio) {
+            html5ClearPreload();
+            return;
+        }
         // Only set crossOrigin when WebAudio EQ/graph will attach, so non-CORS streams still play/preload
         const eqEnabled = get(equalizer).enabled;
         const needsGraph = (eqEnabled && canUseHtml5EqForPath(resolvedPath)) || replayGainNeedsGraph(resolvedPath);
@@ -171,8 +178,7 @@ export async function html5SwapPreload(trackId: string | number | null, volume: 
     }
 
     if (html5Audio) {
-        html5Audio.pause();
-        html5Audio.src = '';
+        clearAudioElementSource(html5Audio);
     }
     if (dashPlayer) {
         try { dashPlayer.destroy(); } catch (_) {}
@@ -244,8 +250,7 @@ export function html5ClearPreload(): void {
         canplayFallbackTimer = null;
     }
     if (preloadAudio) {
-        preloadAudio.pause();
-        preloadAudio.src = '';
+        clearAudioElementSource(preloadAudio);
         preloadAudio = null;
     }
     if (preloadDashPlayer) {
@@ -271,8 +276,7 @@ export function cleanupFadeout(): void {
     crossfadeProgress = 1;
     if (fadeoutAudio) {
         try {
-            fadeoutAudio.pause();
-            fadeoutAudio.src = '';
+            clearAudioElementSource(fadeoutAudio);
         } catch (_) {}
         fadeoutAudio = null;
     }
@@ -409,9 +413,7 @@ export function html5Stop(): void {
     html5ClearPreload();
     cleanupFadeout();
     if (!html5Audio) return; // Don't create the element just to stop it
-    const audio = html5Audio;
-    audio.pause();
-    audio.src = '';
+    clearAudioElementSource(html5Audio);
 
     if (dashPlayer) {
         try { dashPlayer.destroy(); } catch (_) { }
@@ -466,8 +468,7 @@ export function html5GetState(): { position: number; duration: number; isPlaying
 export function html5Cleanup(): void {
     cleanupFadeout();
     if (html5Audio) {
-        html5Audio.pause();
-        html5Audio.src = '';
+        clearAudioElementSource(html5Audio);
     }
     if (dashPlayer) {
         try { dashPlayer.destroy(); } catch (_) { }
@@ -660,10 +661,16 @@ function cleanupHtml5EqGraph(): void {
     }
 }
 
+/** Pause and detach media source without triggering an empty-src MEDIA_ELEMENT_ERROR. */
+function clearAudioElementSource(audio: HTMLAudioElement): void {
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.load();
+}
+
 function recreateHtml5AudioElement(): HTMLAudioElement {
     if (html5Audio) {
-        html5Audio.pause();
-        html5Audio.src = '';
+        clearAudioElementSource(html5Audio);
     }
 
     cleanupHtml5EqGraph();
@@ -683,6 +690,8 @@ function setupHtml5AudioListeners(audio: HTMLAudioElement): void {
 
     audio.addEventListener('error', () => {
         if (audio !== html5Audio) return;
+        // Ignore spurious error events fired when source was intentionally detached.
+        if (!audio.getAttribute('src')) return;
         console.error('[Html5Audio] Audio error:', audio.error);
         registeredCallbacks?.onBufferingChange?.(false);
         registeredCallbacks?.onError(audio.error?.message || 'Unknown error');
