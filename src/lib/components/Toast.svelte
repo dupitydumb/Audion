@@ -29,6 +29,9 @@
         {/if}
     </div>
     <span class="message">{toast.message}</span>
+    {#if toast.count && toast.count > 1}
+        <span class="count-badge" aria-label="{toast.count} occurrences">×{toast.count}</span>
+    {/if}
     <button class="close-btn" on:click={close} aria-label="Dismiss">
         <Icon name="x" size={16} />
     </button>
@@ -102,6 +105,18 @@
         overflow: hidden;
         text-overflow: ellipsis;
         color: inherit;
+    }
+
+    .count-badge {
+        flex-shrink: 0;
+        font-size: 0.72rem;
+        font-weight: var(--font-weight-bold, 700);
+        line-height: 1;
+        padding: 3px 7px;
+        border-radius: var(--radius-full);
+        background-color: color-mix(in srgb, currentColor 18%, transparent);
+        color: inherit;
+        font-variant-numeric: tabular-nums;
     }
 
     /* ── Close button ── */
